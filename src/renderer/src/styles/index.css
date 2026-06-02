@@ -1,19 +1,287 @@
 @import "tailwindcss";
 
-/* Phase 3 will replace these with the taste-saas token ladder (4-level
- * elevation, --page-pl/pr, motion). For now: just enough so the Phase 1
- * smoke screen reads. */
+/* ---------- Dark mode: class-based ---------- */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------- Light theme (default) ----------
+   Token names, hex values, and oklch curves match the openma console palette
+   verbatim so the desktop's shadcn + ai-elements surfaces feel like the same
+   product. If you change a token here, sync to
+   open-managed-agents/apps/console/src/index.css. */
+:root {
+  --brand: oklch(0.68 0.19 25);        /* #FF6B50 in oklch */
+  --brand-hover: oklch(0.62 0.19 25);
+  --brand-subtle: oklch(0.96 0.03 25);
+  /* Dark warm tone for AA contrast on brand (~5.4:1). White on coral is
+     2.96:1 — AA-fail at every UI text size — so brand-fg stays dark. */
+  --brand-fg: #3d2520;
+
+  /* Elevation ladder. Card sits ABOVE the sidebar stage, so the card bg has
+     to be the brightest tone of the three. Console's #fefefe / #f8f8f7 has
+     ~1% luminance gap — invisible at desktop scale. We open it up a couple
+     extra points so the floating card actually looks elevated against the
+     stage. Surface (`bg-bg-surface`) stays distinct from card so tool
+     blocks / chips inside the card still read as nested. */
+  --bg: #ffffff;
+  --bg-sidebar: #efeeec;
+  --bg-surface: #f5f4f1;
+  --bg-overlay: oklch(0 0 0 / 0.3);
+
+  --fg: #1a1a1a;
+  --fg-muted: #6b6b6b;
+  --fg-subtle: #a1a1a1;
+
+  --border: #e4e4e2;
+  --border-strong: #d0d0ce;
+
+  --success: oklch(0.6 0.18 145);
+  --success-subtle: oklch(0.96 0.04 145);
+  --warning: oklch(0.7 0.16 75);
+  --warning-subtle: oklch(0.96 0.04 75);
+  --danger: oklch(0.58 0.22 25);
+  --danger-subtle: oklch(0.96 0.04 25);
+  --info: oklch(0.58 0.16 260);
+  --info-subtle: oklch(0.96 0.03 260);
+  --accent-violet: oklch(0.55 0.2 300);
+  --accent-violet-subtle: oklch(0.96 0.03 300);
+
+  --shadow-md: 0 4px 12px -4px rgb(0 0 0 / 0.12);
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.08);
+
+  /* Motion tokens. Default Tailwind transitions feel "computer-y". These
+     give interactions weight without being slow.
+       soft   — iOS-style spring out; modal/toast/menu reveal
+       snap   — tight ease-out; press states, hover state changes
+       quart  — gentle deceleration; layout-affecting changes */
+  --ease-soft: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-snap: cubic-bezier(0.5, 0, 0.1, 1);
+  --ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --dur-quick: 100ms;
+  --dur-base: 150ms;
+  --dur-slow: 220ms;
+
+  --ring: var(--brand);
+  color-scheme: light;
+}
+
+/* ---------- Dark theme ---------- */
+.dark {
+  --brand: oklch(0.7 0.18 25);
+  --brand-hover: oklch(0.76 0.16 25);
+  --brand-subtle: oklch(0.25 0.06 25);
+  --brand-fg: #3d2520;
+
+  /* Same elevation strategy in dark mode — card brightest, surface mid,
+     sidebar darkest stage. */
+  --bg: #1c1c1c;
+  --bg-sidebar: #121212;
+  --bg-surface: #262624;
+  --bg-overlay: oklch(0 0 0 / 0.6);
+
+  --fg: #ececec;
+  --fg-muted: #a0a0a0;
+  --fg-subtle: #888;
+
+  --border: #2e2e2c;
+  --border-strong: #404040;
+
+  --success: oklch(0.76 0.16 145);
+  --success-subtle: oklch(0.22 0.05 145);
+  --warning: oklch(0.8 0.14 75);
+  --warning-subtle: oklch(0.22 0.05 75);
+  --danger: oklch(0.72 0.18 25);
+  --danger-subtle: oklch(0.22 0.05 25);
+  --info: oklch(0.72 0.14 260);
+  --info-subtle: oklch(0.22 0.04 260);
+  --accent-violet: oklch(0.72 0.16 300);
+  --accent-violet-subtle: oklch(0.22 0.05 300);
+
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.4);
+
+  --ring: var(--brand);
+  color-scheme: dark;
+}
+
+/* ---------- Tailwind theme tokens ----------
+   Exposes the OMA palette to Tailwind v4 utilities (`bg-bg`, `text-fg-muted`,
+   `border-border`, etc.) AND aliases the shadcn primitive token names so
+   shadcn copy-paste components (`bg-popover`, `text-muted-foreground`,
+   `bg-secondary`, ...) resolve onto the same palette. Without those aliases
+   shadcn primitives render unstyled (Tailwind v4 silently emits no rule when
+   the looked-up token is undefined). */
+@theme {
+  --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-sans: "Geist Variable", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "SF Mono", Menlo, Consolas, monospace;
+
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-brand-fg: var(--brand-fg);
+
+  --color-bg: var(--bg);
+  --color-bg-sidebar: var(--bg-sidebar);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-overlay: var(--bg-overlay);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-accent-violet: var(--accent-violet);
+  --color-accent-violet-subtle: var(--accent-violet-subtle);
+
+  --color-ring: var(--ring);
+
+  /* shadcn primitive aliases — see file-level comment. */
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--bg);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--bg);
+  --color-popover-foreground: var(--fg);
+  --color-primary: var(--brand);
+  --color-primary-foreground: var(--brand-fg);
+  --color-secondary: var(--bg-surface);
+  --color-secondary-foreground: var(--fg);
+  --color-muted: var(--bg-surface);
+  --color-muted-foreground: var(--fg-muted);
+  --color-accent: var(--bg-surface);
+  --color-accent-foreground: var(--fg);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: #ffffff;
+  --color-input: var(--border);
+
+  --radius: 0.5rem;
+  --radius-md: 0.5rem;
+
+  /* shadcn Sidebar primitive lookups — aliased straight through so the
+     sidebar shares the existing palette. */
+  --color-sidebar: var(--bg-sidebar);
+  --color-sidebar-foreground: var(--fg);
+  --color-sidebar-primary: var(--brand);
+  --color-sidebar-primary-foreground: var(--brand-fg);
+  --color-sidebar-accent: var(--bg-surface);
+  --color-sidebar-accent-foreground: var(--fg);
+  --color-sidebar-border: var(--border);
+  --color-sidebar-ring: var(--brand);
+}
+
+/* ---------- Base typography ---------- */
+body {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Viewport lock — the AppShell sidebar + breadcrumb header are global frame
+   elements that MUST NEVER scroll out of view. Pinning html/body/#root at
+   exactly the viewport height forces every scroll to happen inside <main>
+   (the only `overflow-y: auto` container in the shell). */
 html,
 body,
 #root {
   height: 100%;
+  margin: 0;
   overflow: hidden;
 }
 
-body {
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: #0b0b0c;
-  color: #e5e7eb;
+/* Focus ring — brand-colored. @layer base lets per-element
+   focus-visible:outline-none variants override. Unlayered rules win over
+   layered ones regardless of specificity, so the layer matters. */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Subtle scrollbar. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-subtle);
+}
+
+/* BrandLoader dot pulse — wave from left to right via staggered animation-delay
+   on each child. Smoother than animate-pulse (Tailwind defaults are opacity
+   0.5↔1) because the dots dim further (0.25) and back, giving a clear "moving"
+   feel. Used by the brand-mark loader inside Button and inline empty states. */
+@keyframes brand-loader-dot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50%      { opacity: 1;    transform: translateY(-1px); }
+}
+.brand-loader-dot {
+  display: inline-block;
+  animation: brand-loader-dot 1200ms var(--ease-soft) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-loader-dot { animation: none; opacity: 0.6; }
+}
+
+/* Skeleton placeholder pulse — quieter than animate-pulse (Tailwind's default
+   goes opacity 0.5↔1, which reads as "flashing" in long lists). This stays
+   subtle: 0.4↔0.65 with the same soft easing as the rest. */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4;  }
+  50%      { opacity: 0.65; }
+}
+.skeleton-pulse { animation: skeleton-pulse 1500ms var(--ease-soft) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-pulse { animation: none; opacity: 0.55; }
+}
+
+/* ---------- Reduced motion ----------
+   WCAG 2.3.3 (AAA). Zeroing out the motion tokens lets every component that
+   reads --dur-* / --ease-* (Tailwind arbitrary values or inline styles) honor
+   the OS signal automatically. Tailwind's own animate-* keyframes bypass our
+   tokens so the explicit overrides catch them. animate-spin slows but doesn't
+   freeze — a stuck spinner reads as "broken". */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  .dark {
+    --dur-quick: 1ms;
+    --dur-base: 1ms;
+    --dur-slow: 1ms;
+  }
+  .animate-pulse,
+  .animate-bounce {
+    animation: none !important;
+  }
+  .animate-spin {
+    animation-duration: 5s !important;
+  }
+}
+
+/* Drag region for the macOS hidden-titlebar window. The AppShell's top stage
+   row carries this class so a click-drag anywhere in the empty header area
+   moves the window. Buttons inside it opt out via `-webkit-app-region: no-drag`. */
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
 }

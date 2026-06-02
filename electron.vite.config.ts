@@ -20,7 +20,6 @@ export default defineConfig({
     resolve: {
       alias: {
         "@shared": resolve(__dirname, "src/shared"),
-        "@acp": resolve(__dirname, "packages/acp/src"),
       },
     },
   },
@@ -37,9 +36,6 @@ export default defineConfig({
         external: ["electron"],
         output: { format: "cjs", entryFileNames: "[name].cjs" },
       },
-    },
-    resolve: {
-      alias: { "@shared": resolve(__dirname, "src/shared") },
     },
   },
   renderer: {

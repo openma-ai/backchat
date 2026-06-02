@@ -1,25 +1,79 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/sonner";
+import { AppShell } from "@/components/shell/AppShell";
+import { Sidebar } from "@/components/shell/Sidebar";
+import { Topbar } from "@/components/shell/Topbar";
+import { ChatView } from "@/components/chat/ChatView";
+import { sessionStore, selectActiveId, useSessionStore } from "@/lib/session-store";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles/index.css";
 
-function App() {
-  const [pong, setPong] = useState<string>("…");
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 60_000, refetchOnWindowFocus: false },
+  },
+});
 
+function makeId(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function App() {
+  // Forward main → renderer events into the store. Subscribed once at root —
+  // every sub-tree reads via useSessionStore.
   useEffect(() => {
-    window.openma
-      .ping("phase-1")
-      .then(setPong)
-      .catch((e: unknown) => setPong(`ipc error: ${String(e)}`));
+    const off = window.openma.onSessionEvent((e) => sessionStore.apply(e));
+    void window.openma.sessionAnnounce();
+    return off;
+  }, []);
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => window.openma.agentsList(),
+  });
+
+  const activeId = useSessionStore(selectActiveId);
+
+  const startSession = useCallback(async (agent_id: string) => {
+    const session_id = makeId("sess");
+    const agentLabel =
+      agents.find((a) => a.id === agent_id)?.label ?? agent_id;
+    sessionStore.registerStarting(session_id, agent_id, `${agentLabel} · ${session_id.slice(5, 11)}`);
+    sessionStore.setActive(session_id);
+    await window.openma.sessionStart({ session_id, agent_id });
+  }, [agents]);
+
+  const prompt = useCallback(async (session_id: string, text: string) => {
+    const turn_id = makeId("turn");
+    sessionStore.registerTurn(turn_id, session_id, text);
+    await window.openma.sessionPrompt({ session_id, turn_id, text });
+  }, []);
+
+  const cancelActive = useCallback(() => {
+    const active = sessionStore.active();
+    if (active?.activeTurnId) {
+      void window.openma.sessionCancel({
+        session_id: active.id,
+        turn_id: active.activeTurnId,
+      });
+    }
   }, []);
 
   return (
-    <main className="flex h-full items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-3xl font-medium tracking-tight">openma desktop</h1>
-        <p className="mt-3 text-sm opacity-60">phase 1 scaffold</p>
-        <p className="mt-6 text-xs font-mono opacity-50">main ⇄ renderer: {pong}</p>
-      </div>
-    </main>
+    <AppShell
+      sidebar={<Sidebar agents={agents} onNewSession={startSession} />}
+      topbar={<Topbar onCancel={cancelActive} />}
+    >
+      <ChatView
+        onPrompt={prompt}
+        onStartSession={startSession}
+        agents={agents}
+      />
+      <Toaster position="bottom-right" />
+    </AppShell>
   );
 }
 
@@ -27,6 +81,8 @@ const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </StrictMode>,
 );

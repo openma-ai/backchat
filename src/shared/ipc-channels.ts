@@ -6,19 +6,18 @@
  */
 
 export const InvokeChannel = {
-  // Phase 1: nothing yet. Future:
-  // SessionList: "session:list",
-  // SessionStart: "session:start",
-  // SessionPrompt: "session:prompt",
-  // SessionCancel: "session:cancel",
-  // SessionDispose: "session:dispose",
   Ping: "app:ping",
+  AgentsList: "agents:list",
+  SessionStart: "session:start",
+  SessionPrompt: "session:prompt",
+  SessionCancel: "session:cancel",
+  SessionDispose: "session:dispose",
+  SessionAnnounce: "session:announce",
 } as const;
 
 export const PushChannel = {
-  // Future:
-  // SessionEvent: "session:event",
-  // PermissionRequest: "permission:request",
+  /** Out-of-band push for session lifecycle + streamed events. */
+  SessionEvent: "session:event",
 } as const;
 
 export type InvokeChannelName = (typeof InvokeChannel)[keyof typeof InvokeChannel];

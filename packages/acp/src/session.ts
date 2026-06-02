@@ -58,7 +58,13 @@ export class AcpSessionImpl implements AcpSession {
 
     const client: Client = {
       sessionUpdate: async (params) => {
-        this.#pushEvent(params);
+        // ACP wraps every streamed update in a SessionNotification:
+        //   { sessionId, update: { sessionUpdate: "agent_message_chunk", … } }
+        // Push only the inner `update` to the consumer — the session id is
+        // already known from the AcpSession instance, so the wrapper just
+        // forces every consumer to do a redundant `.update.foo` indirection.
+        const inner = (params as { update?: unknown })?.update;
+        this.#pushEvent(inner !== undefined ? inner : params);
       },
       requestPermission: async (params) => {
         if (cb.requestPermission) {

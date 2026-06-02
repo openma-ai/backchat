@@ -1,9 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, shell } from "electron";
 import { join } from "node:path";
-import { InvokeChannel } from "@shared/ipc-channels.js";
-
-// `__dirname` is injected by electron-vite's ESM shim — don't redeclare it,
-// the bundle already supplies `const __dirname = import.meta.dirname;`.
+import { registerIpc } from "./ipc.js";
+import { setSessionRoot } from "./session-cwd.js";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -26,14 +24,11 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
 
-  // Open every <a target="_blank"> in the user's real browser instead of a
-  // new Electron window — we never want a webview popup carrying chrome.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
   });
 
-  // electron-vite dev server vs production bundle.
   if (process.env["ELECTRON_RENDERER_URL"]) {
     void mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   } else {
@@ -41,16 +36,10 @@ function createWindow(): void {
   }
 }
 
-function registerIpc(): void {
-  ipcMain.handle(InvokeChannel.Ping, (_e, msg: string) => {
-    const reply = `pong: ${msg}`;
-    process.stdout.write(`[ipc-ping] ${reply}\n`);
-    return reply;
-  });
-}
-
 app.whenReady().then(() => {
-  registerIpc();
+  const userData = app.getPath("userData");
+  setSessionRoot(join(userData, "sessions"));
+  registerIpc({ registryCachePath: join(userData, "registry-cache.json") });
   createWindow();
 
   app.on("activate", () => {

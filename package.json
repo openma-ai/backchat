@@ -18,9 +18,31 @@
     "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@open-managed-agents-desktop/acp": "workspace:*",
+    "@radix-ui/react-collapsible": "^1.1.12",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@radix-ui/react-use-controllable-state": "^1.2.2",
+    "@streamdown/cjk": "^1.0.3",
+    "@streamdown/code": "^1.1.1",
+    "@streamdown/math": "^1.0.2",
+    "@streamdown/mermaid": "^1.0.2",
+    "ai": "^6.0.194",
     "better-sqlite3": "^12.10.0",
-    "node-pty": "^1.1.0"
+    "motion": "^12.40.0",
+    "nanoid": "^5.1.11",
+    "node-pty": "^1.1.0",
+    "radix-ui": "^1.4.3",
+    "shiki": "^4.1.0",
+    "streamdown": "^2.5.0",
+    "use-stick-to-bottom": "^1.1.4"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
@@ -46,6 +68,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
     "zod": "^4.4.3"
@@ -53,12 +76,31 @@
   "build": {
     "appId": "dev.openma.desktop",
     "productName": "openma desktop",
-    "directories": { "output": "release/${version}" },
-    "files": ["out/**/*"],
-    "asarUnpack": ["**/*.node"],
-    "mac": { "target": ["dmg"], "category": "public.app-category.developer-tools" },
-    "win": { "target": ["nsis"] },
-    "linux": { "target": ["AppImage"] }
+    "directories": {
+      "output": "release/${version}"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    }
   },
   "pnpm": {
     "onlyBuiltDependencies": [

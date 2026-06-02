@@ -13,11 +13,7 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "outDir": "out/_node",
-    "rootDir": ".",
-    "paths": {
-      "@shared/*": ["./src/shared/*"],
-      "@acp/*": ["./packages/acp/src/*"]
-    }
+    "rootDir": "."
   },
   "include": [
     "src/main/**/*.ts",
