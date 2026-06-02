@@ -191,7 +191,7 @@ function waitForReady(sessionId: string, ms: number): Promise<void> {
 
 function EmptyStateIntro({ hasDefaultAgent }: { hasDefaultAgent: boolean }) {
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center px-2 text-center">
+    <div className="reveal-in flex min-h-[60vh] flex-col items-center justify-center px-2 text-center">
       <div className="mx-auto mb-4 inline-flex size-10 items-center justify-center rounded-full bg-brand-subtle text-brand-fg">
         <SparklesIcon className="size-5" />
       </div>
@@ -239,7 +239,7 @@ function TurnBlock({ turn }: { turn: Turn }) {
     rendered.plan.length > 0;
 
   return (
-    <div className="group/turn mb-8 space-y-3" data-turn-id={turn.id}>
+    <div className="group/turn reveal-in mb-8 space-y-3" data-turn-id={turn.id}>
       {turn.promptText && (
         <Message from="user">
           <MessageContent>

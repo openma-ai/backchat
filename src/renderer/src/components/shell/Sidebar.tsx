@@ -163,48 +163,53 @@ function SessionRowButton({
   active: boolean;
   onClick: () => void;
 }) {
+  const running = row.status === "running" || row.status === "starting";
+  const errored = row.status === "errored";
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+        "group relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
+        // Single tiny color affordance for errors — everything else stays
+        // monochrome. Colored dots were too dashboard-y. The icon glow
+        // (below) carries running state without a circus.
+        errored && "text-danger",
         active
           ? "bg-bg-surface text-fg"
-          : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+          : !errored && "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+        // Spring-ish ease on bg + color transitions. taste-saas tokens
+        // give us the curve; --dur-base is the snappy 150ms tier.
+        "transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-soft)]",
       )}
       title={row.lastError ?? row.agent_id}
     >
-      <StatusDot status={row.status} />
       <span className="flex-1 truncate">{row.label}</span>
       {row.agent_id && (
-        <AgentIcon
-          agentId={row.agent_id}
-          className="size-3.5 shrink-0 text-fg-subtle group-hover:text-fg-muted"
-          title={row.agent_id}
-        />
+        <span
+          className={cn(
+            "relative inline-flex shrink-0 items-center justify-center",
+            // Running: brand-tinted icon with a slow breathing halo. No
+            // colored dot, no badge, no ring — just the icon itself
+            // feeling alive. taste-saas calls this "the only thing that
+            // moves earns the attention".
+            running ? "text-brand" : "text-fg-subtle group-hover:text-fg-muted",
+            "transition-colors duration-[var(--dur-base)] ease-[var(--ease-soft)]",
+          )}
+        >
+          {running && (
+            <span
+              aria-hidden="true"
+              className="agent-breath pointer-events-none absolute inset-[-4px] rounded-full"
+            />
+          )}
+          <AgentIcon
+            agentId={row.agent_id}
+            className="relative size-3.5"
+            title={row.agent_id}
+          />
+        </span>
       )}
     </button>
-  );
-}
-
-function StatusDot({ status }: { status: SessionRow["status"] }) {
-  const color =
-    status === "running"
-      ? "bg-brand"
-      : status === "ready"
-        ? "bg-success"
-        : status === "errored"
-          ? "bg-danger"
-          : status === "starting"
-            ? "bg-warning"
-            : status === "draft"
-              ? "bg-fg-subtle"
-              : "bg-fg-subtle";
-  return (
-    <span
-      className={cn("size-1.5 shrink-0 rounded-full", color)}
-      aria-hidden="true"
-    />
   );
 }

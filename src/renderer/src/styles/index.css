@@ -9,12 +9,19 @@
    product. If you change a token here, sync to
    open-managed-agents/apps/console/src/index.css. */
 :root {
-  --brand: oklch(0.68 0.19 25);        /* #FF6B50 in oklch */
-  --brand-hover: oklch(0.62 0.19 25);
-  --brand-subtle: oklch(0.96 0.03 25);
-  /* Dark warm tone for AA contrast on brand (~5.4:1). White on coral is
-     2.96:1 — AA-fail at every UI text size — so brand-fg stays dark. */
-  --brand-fg: #3d2520;
+  /* Muted clay — a desaturated cousin of openma console's coral. The
+     console runs at 0.19 chroma which works in a dashboard/data context
+     but reads as "marketing red" in a chat surface. Drop the chroma to
+     ~0.07 and the hue keeps its warm earthen identity without the
+     web2.0-promotional vibe. brand-subtle holds the tint for hover /
+     row-selection chrome; brand-hover is slightly darker for press
+     states. */
+  --brand: oklch(0.62 0.08 30);
+  --brand-hover: oklch(0.55 0.09 28);
+  --brand-subtle: oklch(0.94 0.02 30);
+  /* brand-fg stays dark — light text on muted clay still doesn't hit
+     AA-normal (~3.8:1); the warm dark holds ~7:1. */
+  --brand-fg: #2a1a14;
 
   /* Elevation ladder. Card sits ABOVE the sidebar stage, so the card bg has
      to be the brightest tone of the three. Console's #fefefe / #f8f8f7 has
@@ -66,10 +73,12 @@
 
 /* ---------- Dark theme ---------- */
 .dark {
-  --brand: oklch(0.7 0.18 25);
-  --brand-hover: oklch(0.76 0.16 25);
-  --brand-subtle: oklch(0.25 0.06 25);
-  --brand-fg: #3d2520;
+  /* Muted clay, slightly lighter in dark mode so it still reads on the
+     dark stage without re-introducing the saturated coral. */
+  --brand: oklch(0.7 0.07 30);
+  --brand-hover: oklch(0.76 0.07 30);
+  --brand-subtle: oklch(0.28 0.04 30);
+  --brand-fg: #2a1a14;
 
   /* Same elevation strategy in dark mode — card brightest, surface mid,
      sidebar darkest stage. */
@@ -252,6 +261,42 @@ body,
 .skeleton-pulse { animation: skeleton-pulse 1500ms var(--ease-soft) infinite; }
 @media (prefers-reduced-motion: reduce) {
   .skeleton-pulse { animation: none; opacity: 0.55; }
+}
+
+/* Agent icon breathing halo — only renders while a session is running. A
+   soft brand-tinted glow behind the agent's mark in the sidebar that
+   gently expands and dims. Replaces the colored status-dot ladder
+   (green/yellow/red) with one tasteful signal: the icon is alive, and
+   you can see it breathing. */
+@keyframes agent-breath {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+    box-shadow: 0 0 0 0 var(--brand);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--brand) 35%, transparent);
+  }
+}
+.agent-breath {
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  animation: agent-breath 2400ms var(--ease-soft) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-breath { animation: none; opacity: 0.4; }
+}
+
+/* Message reveal — when a turn renders a new bubble or block, fade + tiny
+   slide-up. Lives on .reveal-in (one-shot via React mount). */
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.reveal-in { animation: reveal-in var(--dur-slow) var(--ease-soft) both; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal-in { animation: none; opacity: 1; }
 }
 
 /* ---------- Reduced motion ----------

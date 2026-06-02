@@ -29,19 +29,16 @@ export interface SessionRow {
    *  rename, persisting to SQLite. */
   label: string;
   /** Lifecycle:
-   *    "draft"     → empty session, no IPC fired yet. Created by clicking
-   *                  "+ New chat"; flips to "starting" the moment the user
-   *                  sends their first prompt.
+   *    "draft"     → empty session, no IPC fired yet.
+   *    "persisted" → loaded from disk; ACP child NOT spawned (spawns
+   *                  lazily on first prompt with resume.acp_session_id).
    *    "starting"  → session.start IPC fired; awaiting session.ready.
-   *    "ready"     → no in-flight turn.
+   *    "ready"     → ACP child is alive, no in-flight turn.
    *    "running"   → a turn is streaming.
-   *    "errored"   → start failed (unknown agent, missing binary, ACP
-   *                  handshake refused). Surface lastError, ask user to
-   *                  start a new one.
-   *    "disposed"  → main process killed the child. We drop the row from
-   *                  the store soon after this state.
+   *    "errored"   → start failed; lastError carries the reason.
+   *    "disposed"  → main process killed the child.
    */
-  status: "draft" | "starting" | "ready" | "running" | "errored" | "disposed";
+  status: "draft" | "persisted" | "starting" | "ready" | "running" | "errored" | "disposed";
   lastError?: string;
   createdAt: number;
   /** turn_id of the in-flight prompt, if any. */
