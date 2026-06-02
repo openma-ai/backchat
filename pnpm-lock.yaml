@@ -71,6 +71,9 @@ importers:
       shiki:
         specifier: ^4.1.0
         version: 4.1.0
+      simple-icons:
+        specifier: ^16.22.0
+        version: 16.22.0
       smol-toml:
         specifier: ^1.6.1
         version: 1.6.1
@@ -3660,6 +3663,10 @@ packages:
 
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
+
+  simple-icons@16.22.0:
+    resolution: {integrity: sha512-/raPcEWh89R2O2IMmHum6W2dF99NNX3yWikVXKUalkDIWz3Rw/S2S+oDPTgJcIGsRh+25m0y8vj4aBaV/KPz3Q==}
+    engines: {node: '>=0.12.18'}
 
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
@@ -8023,6 +8030,8 @@ snapshots:
       '@types/hast': 3.0.4
 
   signal-exit@3.0.7: {}
+
+  simple-icons@16.22.0: {}
 
   simple-update-notifier@2.0.0:
     dependencies:

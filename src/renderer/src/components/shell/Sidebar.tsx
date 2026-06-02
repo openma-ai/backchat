@@ -17,6 +17,7 @@ import {
   useSessionStore,
   type SessionRow,
 } from "@/lib/session-store";
+import { AgentIcon } from "@/components/AgentIcon";
 
 /**
  * Sidebar — sessions list + "+ New chat" + Settings link + theme toggle.
@@ -172,13 +173,17 @@ function SessionRowButton({
           ? "bg-bg-surface text-fg"
           : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
       )}
-      title={row.lastError}
+      title={row.lastError ?? row.agent_id}
     >
       <StatusDot status={row.status} />
       <span className="flex-1 truncate">{row.label}</span>
-      <span className="font-mono text-[10px] text-fg-subtle group-hover:text-fg-muted">
-        {row.agent_id ? row.agent_id.replace(/-acp$/, "") : "—"}
-      </span>
+      {row.agent_id && (
+        <AgentIcon
+          agentId={row.agent_id}
+          className="size-3.5 shrink-0 text-fg-subtle group-hover:text-fg-muted"
+          title={row.agent_id}
+        />
+      )}
     </button>
   );
 }
