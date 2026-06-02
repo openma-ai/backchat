@@ -37,7 +37,6 @@
     "ai": "^6.0.194",
     "motion": "^12.40.0",
     "nanoid": "^5.1.11",
-    "node-pty": "^1.1.0",
     "radix-ui": "^1.4.3",
     "shiki": "^4.1.0",
     "smol-toml": "^1.6.1",
@@ -104,8 +103,7 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron",
-      "esbuild",
-      "node-pty"
+      "esbuild"
     ]
   }
 }

@@ -2,6 +2,7 @@ import { useEffect, useCallback } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
+import { BrokerModal } from "@/components/shell/BrokerModal";
 import { sessionStore, selectActive } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
 
@@ -50,6 +51,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   return (
     <AppShell sidebar={<Sidebar />} topbar={<Topbar onCancel={cancelActive} />}>
       {children}
+      <BrokerModal />
     </AppShell>
   );
 }

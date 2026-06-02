@@ -52,6 +52,42 @@ const api: OpenmaApi = {
     ipcRenderer.on(PushChannel.SettingsChanged, listener);
     return () => ipcRenderer.removeListener(PushChannel.SettingsChanged, listener);
   },
+
+  // ----- Brokers (Phase 6) -----
+  onPermissionRequest: (handler) => {
+    const l = (_e: IpcRendererEvent, ask: import("../shared/api.js").PermissionAskInfo) =>
+      handler(ask);
+    ipcRenderer.on(PushChannel.PermissionRequest, l);
+    return () => ipcRenderer.removeListener(PushChannel.PermissionRequest, l);
+  },
+  permissionRespond: (requestId, optionId) =>
+    ipcRenderer.invoke(InvokeChannel.PermissionRespond, { requestId, optionId }) as Promise<void>,
+
+  onFsWriteApproval: (handler) => {
+    const l = (_e: IpcRendererEvent, ask: import("../shared/api.js").FsWriteAskInfo) =>
+      handler(ask);
+    ipcRenderer.on(PushChannel.FsWriteApproval, l);
+    return () => ipcRenderer.removeListener(PushChannel.FsWriteApproval, l);
+  },
+  fsApprovalRespond: (requestId, approved) =>
+    ipcRenderer.invoke(InvokeChannel.FsApprovalRespond, { requestId, approved }) as Promise<void>,
+
+  onTerminalOutput: (handler) => {
+    const l = (
+      _e: IpcRendererEvent,
+      f: import("../shared/api.js").TerminalOutputFrame,
+    ) => handler(f);
+    ipcRenderer.on(PushChannel.TerminalOutput, l);
+    return () => ipcRenderer.removeListener(PushChannel.TerminalOutput, l);
+  },
+  onTerminalExit: (handler) => {
+    const l = (
+      _e: IpcRendererEvent,
+      f: import("../shared/api.js").TerminalExitFrame,
+    ) => handler(f);
+    ipcRenderer.on(PushChannel.TerminalExit, l);
+    return () => ipcRenderer.removeListener(PushChannel.TerminalExit, l);
+  },
 };
 
 contextBridge.exposeInMainWorld("openma", api);

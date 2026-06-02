@@ -60,8 +60,10 @@ export interface SessionManagerDeps {
   resolveMcpServers: (agentId: string) => unknown[];
   /** Per-session client callbacks (permission/fs/terminal). Returned object's
    *  identity changes per session — each call yields a closure bound to the
-   *  given session_id so brokers know which window to dispatch to. */
-  buildCallbacks: (sessionId: string) => ClientCallbacks;
+   *  given session_id so brokers know which window to dispatch to. The
+   *  spawn cwd is passed so the fs broker can scope "inside cwd → auto
+   *  allow" without re-deriving the path. */
+  buildCallbacks: (sessionId: string, sessionCwd: string) => ClientCallbacks;
   /** Settings-driven defaults consulted when `start()` arrives without an
    *  agent_id or cwd. Returning empty / undefined falls back to the
    *  registry overlay defaults (first detected agent for agent_id;
@@ -214,7 +216,7 @@ export class SessionManager {
         },
         mcpServers: this.#resolveMcpServers(agent.id) as never,
         resumeAcpSessionId: p.resume?.acp_session_id,
-        clientCallbacks: this.#buildCallbacks(p.session_id),
+        clientCallbacks: this.#buildCallbacks(p.session_id, sessionCwd),
       });
       this.#sessions.set(p.session_id, {
         acp: acpSession,
@@ -371,7 +373,18 @@ export class SessionManager {
     for (const ctrl of sess.turns.values()) ctrl.abort();
     await sess.acp.dispose().catch(() => undefined);
     this.#sessions.delete(session_id);
+    // Unblock any pending permission / fs / terminal request for this
+    // session — its ACP child is gone, no one will answer them.
+    this.#onSessionGone?.(session_id);
   }
+
+  /** Optional hook fired after a session's ACP child is killed. ipc.ts
+   *  wires this to brokers.cancelPendingFor so any pending UI promises
+   *  (permission modal, fs approval) unwind. */
+  setOnSessionGone(handler: (sessionId: string) => void): void {
+    this.#onSessionGone = handler;
+  }
+  #onSessionGone?: (sessionId: string) => void;
 }
 
 /**

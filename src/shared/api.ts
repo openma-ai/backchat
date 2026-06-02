@@ -47,6 +47,47 @@ export interface PersistedEventInfo {
   ts: number;
 }
 
+/** Permission ask pushed from the agent. Renderer surfaces a modal with
+ *  one button per `options` entry; on click, calls permissionRespond. */
+export interface PermissionAskInfo {
+  requestId: string;
+  sessionId: string;
+  /** Opaque ACP ToolCallUpdate — we render `title` / `kind` / `rawInput`. */
+  toolCall: unknown;
+  options: Array<{
+    optionId: string;
+    name: string;
+    /** ACP PermissionOptionKind — drives icon + button color. */
+    kind: "allow_once" | "allow_always" | "reject_once" | "reject_always";
+  }>;
+}
+
+/** Outbound write-approval ask for out-of-cwd writes. Shown with a tiny
+ *  diff preview in the modal. */
+export interface FsWriteAskInfo {
+  requestId: string;
+  sessionId: string;
+  path: string;
+  byteSize: number;
+  /** First ~1 KB of the proposed content. */
+  newPreview: string;
+  /** First ~1 KB of the current file (empty if the file does not exist). */
+  oldPreview: string;
+}
+
+export interface TerminalOutputFrame {
+  sessionId: string;
+  terminalId: string;
+  chunk: string;
+}
+
+export interface TerminalExitFrame {
+  sessionId: string;
+  terminalId: string;
+  exitCode: number | null;
+  signal: string | null;
+}
+
 export interface OpenmaApi {
   /** Smoke test for the IPC channel. */
   ping(msg: string): Promise<string>;
@@ -83,6 +124,22 @@ export interface OpenmaApi {
   settingsPatch(partial: Partial<Settings>): Promise<void>;
   /** Notified on every patch. Returns an unsubscribe fn. */
   onSettingsChanged(handler: (s: Settings) => void): () => void;
+
+  // ----- Brokers (Phase 6) -----
+
+  /** Subscribe to permission asks pushed from the main process. Modal
+   *  decides; call `permissionRespond` with the chosen optionId (or null
+   *  for cancel). */
+  onPermissionRequest(handler: (ask: PermissionAskInfo) => void): () => void;
+  permissionRespond(requestId: string, optionId: string | null): Promise<void>;
+
+  /** Out-of-cwd write approval flow. */
+  onFsWriteApproval(handler: (ask: FsWriteAskInfo) => void): () => void;
+  fsApprovalRespond(requestId: string, approved: boolean): Promise<void>;
+
+  /** Per-terminal live output. */
+  onTerminalOutput(handler: (frame: TerminalOutputFrame) => void): () => void;
+  onTerminalExit(handler: (frame: TerminalExitFrame) => void): () => void;
 }
 
 declare global {

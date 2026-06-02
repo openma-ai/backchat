@@ -19,6 +19,18 @@ import { detectAll, getKnownAgents, loadRegistry } from "@open-managed-agents-de
 import { SessionManager } from "./session-manager.js";
 import { settingsStore } from "./settings-store.js";
 import { listSessions, loadHistory } from "./sql-store.js";
+import {
+  cancelPendingFor,
+  createTerminal,
+  killTerminal,
+  readTextFile,
+  registerBrokers,
+  releaseTerminal,
+  requestPermission,
+  terminalOutput,
+  waitForTerminalExit,
+  writeTextFile,
+} from "./brokers.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -71,9 +83,31 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
         envOverride,
       };
     },
-    // Phase 6 swaps with real permission/fs/terminal brokers.
-    buildCallbacks: () => ({}),
+    // Phase 6: permission / fs / terminal brokers — wired so the agent
+    // can actually read files, write files, run commands. Defaults are no
+    // longer "deny" — they go to a renderer modal (permission, out-of-cwd
+    // writes) or straight to child_process (terminal).
+    //
+    // The brokers accept/return `unknown` shapes that match ACP's
+    // request/response schema at runtime; the vendored acp package's
+    // ClientCallbacks type narrows on the SDK types. We trust the
+    // brokers to follow the schema (smoke-tested against claude-acp).
+    buildCallbacks: (sessionId, sessionCwd) => ({
+      requestPermission: (params) =>
+        requestPermission(sessionId, params) as never,
+      readTextFile: (params) => readTextFile(params) as never,
+      writeTextFile: (params) =>
+        writeTextFile(sessionId, sessionCwd, params) as never,
+      createTerminal: async (params) =>
+        createTerminal(sessionId, sessionCwd, params) as never,
+      terminalOutput: async (params) => terminalOutput(params) as never,
+      releaseTerminal: async (params) => releaseTerminal(params) as never,
+      waitForTerminalExit: (params) =>
+        waitForTerminalExit(params) as never,
+      killTerminal: async (params) => killTerminal(params) as never,
+    }),
   });
+  sessionManager.setOnSessionGone(cancelPendingFor);
 
   ipcMain.handle(InvokeChannel.Ping, (_e, msg: string) => {
     const reply = `pong: ${msg}`;
@@ -136,6 +170,9 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
       if (!w.isDestroyed()) w.webContents.send(PushChannel.SettingsChanged, s);
     }
   });
+
+  // Wire permission / fs-approval response IPCs.
+  registerBrokers();
 
   return sessionManager;
 }
