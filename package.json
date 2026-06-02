@@ -43,6 +43,7 @@
     "shiki": "^4.1.0",
     "smol-toml": "^1.6.1",
     "streamdown": "^2.5.0",
+    "streaming-markdown": "^0.2.15",
     "use-stick-to-bottom": "^1.1.4"
   },
   "devDependencies": {

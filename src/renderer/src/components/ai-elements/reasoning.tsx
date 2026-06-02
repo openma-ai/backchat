@@ -196,13 +196,12 @@ export const ReasoningTrigger = memo(
 export type ReasoningContentProps = ComponentProps<
   typeof CollapsibleContent
 > & {
-  children: string;
+  // Phase 5.1: was `string` originally for Streamdown; now ReactNode so the
+  // dual-track renderer can drop a <StreamingMarkdown> while the turn is
+  // running and a plain <div> after.
+  children: ReactNode;
 };
 
-// Phase 3: plain text rendering — markdown / math / mermaid shipped by
-// Streamdown is overkill for thought streams (no code blocks expected). Phase
-// 5 swaps this back to <Streamdown plugins={cjk, code, math, mermaid}> when
-// the chat surface actually wants to render assistant markdown elsewhere.
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
     <CollapsibleContent
@@ -213,7 +212,7 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <div className="whitespace-pre-wrap font-mono text-xs">{children}</div>
+      {children}
     </CollapsibleContent>
   )
 );

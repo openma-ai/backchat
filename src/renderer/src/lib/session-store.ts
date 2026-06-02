@@ -56,11 +56,33 @@ export interface TurnEvent {
   receivedAt: number;
 }
 
+/** Lightweight typed deltas emitted on the per-turn STREAM channel — the
+ *  one consumed by the DOM-mutating <StreamingMarkdown> component. We never
+ *  push these through React state; each delta is a direct callback into the
+ *  subscriber. React only sees the structural store updates (turn start,
+ *  tool change, complete) via the regular `#version` channel.
+ *
+ *  This is the load-bearing performance trick — see Phase 5.1 design notes.
+ *  Without it, streaming a multi-KB markdown response into React state
+ *  forces a full reconciliation on every chunk and you get the visible
+ *  "stall" Claude Desktop / Alma avoid. */
+export type StreamDelta =
+  | { kind: "assistant"; text: string }
+  | { kind: "thought"; text: string };
+
+export type StreamSubscriber = (d: StreamDelta) => void;
+
 export interface Turn {
   id: string;
   sessionId: string;
   promptText: string;
   events: TurnEvent[];
+  /** Accumulated assistant text. The streaming channel pushes deltas into a
+   *  DOM-mutating renderer; this string is the SAME content but kept in JS
+   *  so a late-mounting component (e.g. user scrolls back into the turn)
+   *  can pick up the current state without re-running every event. */
+  assistantText: string;
+  thoughtText: string;
   status: "running" | "complete" | "error" | "cancelled";
   errorMessage?: string;
   startedAt: number;
@@ -83,11 +105,50 @@ class SessionStore {
    *  reference so multiple components reading different slices each get
    *  their own stable result. */
   #snapshotCache = new WeakMap<(s: SessionStore) => unknown, { version: number; value: unknown }>();
+  /** Per-turn stream subscribers — bypass React. When a chunk arrives we
+   *  mutate `Turn.assistantText` in place (no immutable replacement, no
+   *  version bump) AND broadcast the delta here. The <StreamingMarkdown>
+   *  component is the only subscriber; it calls `parser_write` on a ref'd
+   *  div and React stays asleep. */
+  #streamSubscribers = new Map<string, Set<StreamSubscriber>>();
 
   subscribe = (l: () => void): (() => void) => {
     this.#listeners.add(l);
     return () => this.#listeners.delete(l);
   };
+
+  /** Subscribe to the per-turn STREAM channel. The handler fires synchronously
+   *  on each chunk; no React render is involved. Use this to drive a
+   *  DOM-mutating renderer like streaming-markdown. Returns an unsubscribe
+   *  fn. If the turn already has accumulated text by the time you subscribe
+   *  (late mount), the current text is replayed once. */
+  subscribeTurnStream(turnId: string, h: StreamSubscriber): () => void {
+    let set = this.#streamSubscribers.get(turnId);
+    if (!set) {
+      set = new Set();
+      this.#streamSubscribers.set(turnId, set);
+    }
+    set.add(h);
+    // Replay current state — so a late mount can rebuild the rendered DOM
+    // from the in-memory accumulator without re-running every event.
+    const turn = this.#turns.get(turnId);
+    if (turn) {
+      if (turn.thoughtText) h({ kind: "thought", text: turn.thoughtText });
+      if (turn.assistantText) h({ kind: "assistant", text: turn.assistantText });
+    }
+    return () => {
+      const s = this.#streamSubscribers.get(turnId);
+      if (!s) return;
+      s.delete(h);
+      if (s.size === 0) this.#streamSubscribers.delete(turnId);
+    };
+  }
+
+  #emitStream(turnId: string, d: StreamDelta) {
+    const subs = this.#streamSubscribers.get(turnId);
+    if (!subs) return;
+    for (const s of subs) s(d);
+  }
 
   getVersion = (): number => this.#version;
 
@@ -204,6 +265,8 @@ class SessionStore {
       sessionId,
       promptText,
       events: [],
+      assistantText: "",
+      thoughtText: "",
       status: "running",
       startedAt: Date.now(),
     });
@@ -267,17 +330,56 @@ class SessionStore {
             sessionId: ev.session_id,
             promptText: "",
             events: [{ payload: ev.event, receivedAt: Date.now() }],
+            assistantText: "",
+            thoughtText: "",
             status: "running",
             startedAt: Date.now(),
           });
-        } else {
-          // Push events into a NEW array so turn snapshots also detect
-          // change. (Same identity rule as session rows.)
-          this.#turns.set(ev.turn_id, {
-            ...turn,
-            events: [...turn.events, { payload: ev.event, receivedAt: Date.now() }],
-          });
+          break;
         }
+
+        // Fast path for streaming text — bypass React. assistant_message_chunk
+        // and agent_thought_chunk arrive at high frequency (one per token);
+        // routing them through React state would force a reconciliation per
+        // chunk and visibly stall on long messages. Instead we mutate the
+        // turn's accumulator in place and broadcast on the stream channel,
+        // which the DOM-mutating <StreamingMarkdown> consumes directly.
+        // Crucially this branch DOES NOT call `this.#emit()` — React stays
+        // asleep during the stream.
+        const ev2 = ev.event as { sessionUpdate?: string; content?: { type?: string; text?: string } } | null;
+        const tag = ev2?.sessionUpdate;
+        if (tag === "agent_message_chunk" || tag === "agent_thought_chunk") {
+          const c = ev2?.content;
+          if (c?.type === "text" && typeof c.text === "string" && c.text.length > 0) {
+            // In-place mutate (intentional). React doesn't read this field
+            // during the stream — only on turn-complete unmount-and-replace
+            // — so identity stability is irrelevant here. The savings:
+            // tens of thousands of avoided reconciliations per long turn.
+            if (tag === "agent_message_chunk") {
+              turn.assistantText += c.text;
+              this.#emitStream(ev.turn_id, { kind: "assistant", text: c.text });
+            } else {
+              turn.thoughtText += c.text;
+              this.#emitStream(ev.turn_id, { kind: "thought", text: c.text });
+            }
+            // Append to events log too — used by tools-only fallback
+            // renderers and debug inspection. We DO replace the array (not
+            // mutate) because React-side tool list reducers still inspect
+            // `events` via reduceTurn() for the structural pieces, and
+            // they need referential change detection.
+            // BUT we don't `#emit` here either; the next structural event
+            // (tool_call, plan, complete) carries the bump.
+            turn.events = [...turn.events, { payload: ev.event, receivedAt: Date.now() }];
+            return;
+          }
+        }
+
+        // Structural event — replace events array AND bump version so React
+        // re-renders the affected turn block.
+        this.#turns.set(ev.turn_id, {
+          ...turn,
+          events: [...turn.events, { payload: ev.event, receivedAt: Date.now() }],
+        });
         break;
       }
       case "session.complete": {

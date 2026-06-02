@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
 import { CircleStopIcon, SendIcon, SparklesIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { Streamdown } from "streamdown";
 import {
   Conversation,
   ConversationContent,
@@ -30,9 +31,11 @@ import {
   selectTurnsFor,
   sessionStore,
   useSessionStore,
+  type Turn,
 } from "@/lib/session-store";
 import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
 import { useSettings } from "@/lib/settings-store";
+import { StreamingMarkdown } from "./StreamingMarkdown";
 
 /**
  * ChatView — the right pane.
@@ -102,16 +105,7 @@ export function ChatView() {
           ) : turns.length === 0 ? (
             <SessionIntro agentId={active.agent_id} cwd={active.cwd} />
           ) : (
-            turns.map((turn) => (
-              <TurnBlock
-                key={turn.id}
-                turnId={turn.id}
-                promptText={turn.promptText}
-                events={turn.events}
-                status={turn.status}
-                errorMessage={turn.errorMessage}
-              />
-            ))
+            turns.map((turn) => <TurnBlock key={turn.id} turn={turn} />)
           )}
         </ConversationContent>
         <ConversationScrollButton />
@@ -210,55 +204,55 @@ function SessionIntro({ agentId, cwd }: { agentId: string; cwd: string }) {
   );
 }
 
-function TurnBlock({
-  turnId,
-  promptText,
-  events,
-  status,
-  errorMessage,
-}: {
-  turnId: string;
-  promptText: string;
-  events: { payload: unknown }[];
-  status: string;
-  errorMessage?: string;
-}) {
-  const rendered: TurnRender = reduceTurn(events);
+function TurnBlock({ turn }: { turn: Turn }) {
+  // For tool calls / plans / available_commands we still depend on the
+  // event reducer — those structural pieces want React reconciliation
+  // (they're low-frequency and want patch semantics for tool_call_update).
+  const rendered: TurnRender = reduceTurn(turn.events);
+
+  const isStreaming = turn.status === "running";
+  const hasAssistant = turn.assistantText.length > 0;
+  const hasThought = turn.thoughtText.length > 0;
   const hasAnything =
-    rendered.assistantText ||
-    rendered.thoughtText ||
+    hasAssistant ||
+    hasThought ||
     rendered.tools.length > 0 ||
     rendered.plan.length > 0;
 
   return (
-    <div className="group/turn mb-8 space-y-3" data-turn-id={turnId}>
-      {promptText && (
+    <div className="group/turn mb-8 space-y-3" data-turn-id={turn.id}>
+      {turn.promptText && (
         <Message from="user">
           <MessageContent>
-            <p className="whitespace-pre-wrap">{promptText}</p>
+            <p className="whitespace-pre-wrap">{turn.promptText}</p>
           </MessageContent>
         </Message>
       )}
 
-      {/* Assistant pieces all share a 32px gutter on the left so the
-          conversation reads as a column anchored against an avatar slot
-          rather than text crashing into the card edge. The avatar dot itself
-          is rendered by the AssistantGutter wrapper below. */}
-      {(rendered.plan.length > 0 ||
-        rendered.thoughtText ||
-        rendered.tools.length > 0 ||
-        rendered.assistantText ||
+      {(hasAnything ||
         rendered.notes.length > 0 ||
-        (!hasAnything && status === "running") ||
-        status === "error" ||
-        status === "cancelled") && (
+        (!hasAnything && isStreaming) ||
+        turn.status === "error" ||
+        turn.status === "cancelled") && (
         <AssistantGutter>
           {rendered.plan.length > 0 && <PlanBlock entries={rendered.plan} />}
 
-          {rendered.thoughtText && (
-            <Reasoning isStreaming={status === "running"} defaultOpen={false}>
+          {hasThought && (
+            <Reasoning isStreaming={isStreaming} defaultOpen={false}>
               <ReasoningTrigger />
-              <ReasoningContent>{rendered.thoughtText}</ReasoningContent>
+              <ReasoningContent>
+                {/* While streaming, render thought via the DOM-mutating
+                    track. Once the turn is done, swap to a plain memoized
+                    block. ReasoningContent itself is just a Collapsible
+                    panel; we replace its inner text view based on status. */}
+                {isStreaming ? (
+                  <StreamingMarkdown turnId={turn.id} kind="thought" />
+                ) : (
+                  <div className="whitespace-pre-wrap font-mono text-xs">
+                    {turn.thoughtText}
+                  </div>
+                )}
+              </ReasoningContent>
             </Reasoning>
           )}
 
@@ -270,12 +264,30 @@ function TurnBlock({
             </div>
           )}
 
-          {rendered.assistantText && (
+          {/* Assistant message — the dual track. While the turn streams we
+              render via streaming-markdown directly into a ref'd div, no
+              React reconciliation per chunk. Once the turn is `complete`
+              we hand the final text to <Streamdown> for the canonical
+              memoized render with shiki / mermaid / math plugins. The
+              swap is a single React render, instant and visually
+              continuous because both tracks produce structurally similar
+              HTML (paragraphs, lists, code blocks). */}
+          {(hasAssistant || isStreaming) && (
             <Message from="assistant">
               <MessageContent>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
-                  {rendered.assistantText}
-                </div>
+                {isStreaming ? (
+                  <StreamingMarkdown turnId={turn.id} kind="assistant" />
+                ) : (
+                  // Streamdown's type expects `children?: string` plus
+                  // ReactNode (intersection), which TS 6 + React 19 types
+                  // interpret as needing multiple children. Spread the
+                  // children via a known-good runtime path with the prop
+                  // explicitly typed as string.
+                  <StreamdownText className={cn(
+                    "text-sm leading-relaxed text-fg",
+                    "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+                  )} text={turn.assistantText} />
+                )}
               </MessageContent>
             </Message>
           )}
@@ -286,20 +298,30 @@ function TurnBlock({
             </p>
           ))}
 
-          {!hasAnything && status === "running" && (
+          {!hasAnything && isStreaming && (
             <p className="text-xs text-fg-muted">
               <span className="brand-loader-dot">·</span>{" "}
-              <span className="brand-loader-dot" style={{ animationDelay: "120ms" }}>·</span>{" "}
-              <span className="brand-loader-dot" style={{ animationDelay: "240ms" }}>·</span>
+              <span
+                className="brand-loader-dot"
+                style={{ animationDelay: "120ms" }}
+              >
+                ·
+              </span>{" "}
+              <span
+                className="brand-loader-dot"
+                style={{ animationDelay: "240ms" }}
+              >
+                ·
+              </span>
             </p>
           )}
 
-          {status === "error" && (
+          {turn.status === "error" && (
             <p className="rounded-md bg-danger-subtle px-3 py-2 text-xs text-danger">
-              {errorMessage ?? "Turn failed."}
+              {turn.errorMessage ?? "Turn failed."}
             </p>
           )}
-          {status === "cancelled" && (
+          {turn.status === "cancelled" && (
             <p className="text-xs italic text-fg-subtle">cancelled</p>
           )}
         </AssistantGutter>
@@ -492,6 +514,23 @@ function safeJson(v: unknown): string {
   } catch {
     return String(v);
   }
+}
+
+/** Thin wrapper that hides Streamdown's awkward `children?: string`
+ *  typing under TS 6 + React 19. Streamdown reads `children` at runtime
+ *  to get the markdown source; we hand it the string via createElement to
+ *  sidestep the JSX type intersection that TS can't reconcile. */
+function StreamdownText({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}) {
+  return createElement(Streamdown as unknown as React.ComponentType<{
+    children: string;
+    className?: string;
+  }>, { className, children: text });
 }
 
 function shortPath(p: string): string {

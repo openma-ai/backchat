@@ -88,20 +88,16 @@ export function reduceTurn(events: readonly { payload: unknown }[]): TurnRender 
       { type?: string; params?: unknown; error?: string };
     const kind = p?.sessionUpdate ?? p?.type;
     switch (kind) {
-      case "agent_message_chunk": {
-        const c = (p as ChunkPayload).content;
-        if (c?.type === "text" && typeof c.text === "string") {
-          out.assistantText += c.text;
-        }
+      // assistant + thought chunks are intentionally NOT accumulated here.
+      // Phase 5.1 routes them through the dedicated stream channel into
+      // <StreamingMarkdown>, which mutates the DOM directly and never goes
+      // through React. Re-deriving them on every render would re-introduce
+      // the O(N) per-frame work this whole architecture exists to avoid.
+      // The accumulated strings live on Turn.assistantText / .thoughtText
+      // for the post-stream Streamdown render.
+      case "agent_message_chunk":
+      case "agent_thought_chunk":
         break;
-      }
-      case "agent_thought_chunk": {
-        const c = (p as ChunkPayload).content;
-        if (c?.type === "text" && typeof c.text === "string") {
-          out.thoughtText += c.text;
-        }
-        break;
-      }
       case "tool_call": {
         const id = (p as ToolCallPayload).toolCallId;
         if (!id) break;
