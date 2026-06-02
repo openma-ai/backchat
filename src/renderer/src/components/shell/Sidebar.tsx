@@ -48,20 +48,12 @@ export function Sidebar() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Brand row — h-11. The "+ New chat" button lives here so a click is
-          always one move away regardless of which sidebar section is open. */}
-      <div className="app-drag-region flex h-11 shrink-0 items-center justify-between pl-3 pr-1">
-        <button
-          type="button"
-          onClick={() => void navigate({ to: "/" })}
-          className="app-no-drag font-mono text-[13px] tracking-tight"
-          aria-label="openma home"
-        >
-          <span className="text-fg-muted">[</span>
-          <span className="font-medium max-md:hidden">openma</span>
-          <span className="text-fg-muted max-md:hidden">]</span>
-        </button>
-
+      {/* Top row — h-11. Just the "+ New chat" affordance pinned right.
+          No brand mark: the window title bar already identifies the app
+          (macOS hidden-titlebar still shows the app name on app-switch);
+          spending a full row on `[openma]` was real estate competing with
+          the chat list, and the audit pass flagged it as redundant. */}
+      <div className="app-drag-region flex h-11 shrink-0 items-center justify-end pr-1">
         <Button
           variant="ghost"
           size="icon"
