@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* Phase 3 will replace these with the taste-saas token ladder (4-level
+ * elevation, --page-pl/pr, motion). For now: just enough so the Phase 1
+ * smoke screen reads. */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #0b0b0c;
+  color: #e5e7eb;
+}

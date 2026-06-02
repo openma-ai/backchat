@@ -1,0 +1,71 @@
+{
+  "name": "openma-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Local-first desktop client for any ACP agent",
+  "main": "out/main/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "package": "electron-vite build && electron-builder",
+    "package:dir": "electron-vite build && electron-builder --dir",
+    "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty"
+  },
+  "dependencies": {
+    "@open-managed-agents-desktop/acp": "workspace:*",
+    "better-sqlite3": "^12.10.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "@tailwindcss/vite": "^4.3.0",
+    "@tanstack/react-query": "^5.100.14",
+    "@tanstack/react-router": "^1.170.10",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.2.16",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "electron": "^42.3.1",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "lucide-react": "^1.17.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-hook-form": "^7.77.0",
+    "react-markdown": "^10.1.0",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "zod": "^4.4.3"
+  },
+  "build": {
+    "appId": "dev.openma.desktop",
+    "productName": "openma desktop",
+    "directories": { "output": "release/${version}" },
+    "files": ["out/**/*"],
+    "asarUnpack": ["**/*.node"],
+    "mac": { "target": ["dmg"], "category": "public.app-category.developer-tools" },
+    "win": { "target": ["nsis"] },
+    "linux": { "target": ["AppImage"] }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "better-sqlite3",
+      "node-pty"
+    ]
+  }
+}

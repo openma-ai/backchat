@@ -1,0 +1,20 @@
+{
+  "name": "@open-managed-agents-desktop/acp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node-spawner": "./src/spawners/node.ts",
+    "./registry": "./src/registry.ts",
+    "./known-agents": "./src/known-agents.ts"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.23.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^6.0.3"
+  }
+}
