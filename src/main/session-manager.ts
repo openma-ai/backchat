@@ -32,6 +32,13 @@ import { NodeSpawner } from "@open-managed-agents-desktop/acp/node-spawner";
 import { resolveKnownAgent } from "@open-managed-agents-desktop/acp/registry";
 import type { SessionEventOut, SessionStartParams, SessionPromptParams } from "../shared/session-events.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
+import {
+  appendEvent,
+  appendEventsTx,
+  archiveSession,
+  touchSession,
+  upsertSession,
+} from "./sql-store.js";
 
 export type Sender = (msg: SessionEventOut) => void;
 
@@ -216,6 +223,17 @@ export class SessionManager {
         cwd: sessionCwd,
         turns: new Map(),
       });
+      // Persist the session shell — title stays empty for now, the renderer
+      // can later derive it from the first user prompt or let the user
+      // rename. ACP session id is captured so we can pass it back as
+      // resume.acp_session_id on next launch.
+      upsertSession({
+        id: p.session_id,
+        agent_id: agent.id,
+        cwd: sessionCwd,
+        acp_session_id: acpSession.acpSessionId,
+        last_used_at: Date.now(),
+      });
       this.#send({
         type: "session.ready",
         session_id: p.session_id,
@@ -246,19 +264,43 @@ export class SessionManager {
     const ctrl = new AbortController();
     sess.turns.set(p.turn_id, ctrl);
     let promptErr: string | null = null;
+
+    // Per-turn accumulators for persistence. We DO NOT persist every
+    // agent_message_chunk individually — would be thousands of rows per
+    // turn. Instead we collect the full text and write one row at end.
+    // Structural events (tool_call, plan) are buffered too and written
+    // in the same end-of-turn transaction.
+    let assistantText = "";
+    let thoughtText = "";
+    const structuralEvents: Array<{ type: string; data: unknown }> = [];
+    // Persist the user prompt up front — even if the turn errors halfway,
+    // we want the user's message in the log for replay.
+    appendEvent(p.session_id, "user_prompt", { text: p.text });
+    touchSession(p.session_id);
+
     try {
       for await (const ev of sess.acp.prompt(p.text, { abortSignal: ctrl.signal })) {
         if (ctrl.signal.aborted) break;
-        // AcpSession yields synthetic sentinel events at end-of-stream:
-        //   { type: "promptComplete", response }  → ACP returned cleanly
-        //   { type: "promptError",    error }     → ACP returned an error
-        // The latter often carries the only signal that the turn failed
-        // (wrong model id, auth missing). Forward as session.error.
         const t = (ev as { type?: string } | null | undefined)?.type;
         if (t === "promptComplete") continue;
         if (t === "promptError") {
           promptErr = (ev as { error?: string }).error ?? "ACP prompt error (no message)";
           continue;
+        }
+        // Accumulate text on the main side too — the renderer does its own
+        // accumulation for live display, but we need a server-side copy to
+        // persist at end-of-turn.
+        const ev2 = ev as { sessionUpdate?: string; content?: { type?: string; text?: string } } | null;
+        const tag = ev2?.sessionUpdate;
+        if (tag === "agent_message_chunk" || tag === "agent_thought_chunk") {
+          const c = ev2?.content;
+          if (c?.type === "text" && typeof c.text === "string") {
+            if (tag === "agent_message_chunk") assistantText += c.text;
+            else thoughtText += c.text;
+          }
+        } else if (tag) {
+          // Structural — buffer for persistence.
+          structuralEvents.push({ type: tag, data: ev });
         }
         this.#send({
           type: "session.event",
@@ -286,6 +328,17 @@ export class SessionManager {
       });
     } finally {
       sess.turns.delete(p.turn_id);
+      // Single-shot end-of-turn persist. Order matters: assistant text
+      // arrives chronologically after thought + tool calls in the
+      // replay, which matches the order the renderer originally saw
+      // them (Reasoning block above tools above message).
+      const persist: Array<{ type: string; data: unknown }> = [];
+      if (thoughtText) persist.push({ type: "agent_thought", data: { text: thoughtText } });
+      persist.push(...structuralEvents);
+      if (assistantText) persist.push({ type: "agent_message", data: { text: assistantText } });
+      if (persist.length > 0) appendEventsTx(p.session_id, persist);
+      // Bump last_used_at so the sidebar reorders.
+      touchSession(p.session_id);
     }
   }
 
@@ -298,6 +351,12 @@ export class SessionManager {
   async dispose(session_id: string, opts?: { removeCwd?: boolean }): Promise<void> {
     await this.#killChild(session_id);
     if (opts?.removeCwd) await removeSessionCwd(session_id);
+    // Archive (soft-delete) in the persisted store so the sidebar stops
+    // showing it but the history rows stay for any future "show archived"
+    // surface. Hard delete waits for an explicit user gesture.
+    try {
+      archiveSession(session_id);
+    } catch { /* db may not be open in test paths */ }
     this.#send({ type: "session.disposed", session_id });
   }
 

@@ -83,6 +83,25 @@ export function ChatView() {
       // ready (with a 10s budget) before firing prompt.
       void window.openma.sessionStart({ session_id: target.id, agent_id: agentId });
       await waitForReady(target.id, 10_000);
+    } else if (target.status === "ready" && !target.activeTurnId) {
+      // Persisted session — its ACP child might not be alive yet (sidebar
+      // seeded from disk, no IPC has been fired). SessionManager.start is
+      // idempotent: if a session with this id is already running, it
+      // re-acks immediately; otherwise it spawns and ACP session/load's
+      // the conversation history via resume.acp_session_id. We always
+      // try resume; on agents that don't advertise loadSession the
+      // runtime falls back to a fresh session/new and the renderer-side
+      // history (replayed from SQLite) stays visible as a read-only
+      // record above the fresh continuation.
+      void window.openma.sessionStart({
+        session_id: target.id,
+        agent_id: target.agent_id,
+        cwd: target.cwd || undefined,
+        resume: target.acp_session_id
+          ? { acp_session_id: target.acp_session_id }
+          : undefined,
+      });
+      await waitForReady(target.id, 10_000);
     }
     const turn_id = `turn-${Math.random().toString(36).slice(2, 10)}`;
     sessionStore.registerTurn(turn_id, target.id, text);

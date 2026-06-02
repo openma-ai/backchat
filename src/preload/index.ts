@@ -29,6 +29,15 @@ const api: OpenmaApi = {
   sessionAnnounce: () =>
     ipcRenderer.invoke(InvokeChannel.SessionAnnounce) as Promise<void>,
 
+  sessionsList: (limit) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsList, limit) as Promise<
+      import("../shared/api.js").PersistedSessionInfo[]
+    >,
+  sessionsLoadHistory: (sessionId) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsLoadHistory, sessionId) as Promise<
+      import("../shared/api.js").PersistedEventInfo[]
+    >,
+
   onSessionEvent: (handler) => {
     const listener = (_e: IpcRendererEvent, msg: SessionEventOut) => handler(msg);
     ipcRenderer.on(PushChannel.SessionEvent, listener);

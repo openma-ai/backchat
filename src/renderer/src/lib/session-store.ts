@@ -287,6 +287,78 @@ class SessionStore {
     this.#sessions.set(id, update(prev));
   }
 
+  /** Seed the in-memory store with persisted rows fetched from the SQLite
+   *  backing on app launch. Rows land with status="ready" — no IPC is
+   *  fired; the actual ACP child is spawned lazily on first prompt. */
+  seedPersisted(
+    rows: Array<{
+      id: string;
+      agent_id: string;
+      cwd: string;
+      acp_session_id: string;
+      title: string;
+      last_used_at: number;
+      created_at: number;
+    }>,
+  ): void {
+    for (const r of rows) {
+      if (this.#sessions.has(r.id)) continue;
+      this.#sessions.set(r.id, {
+        id: r.id,
+        agent_id: r.agent_id,
+        cwd: r.cwd,
+        acp_session_id: r.acp_session_id,
+        label: r.title || `${r.agent_id} · ${r.id.slice(0, 6)}`,
+        status: "ready",
+        createdAt: r.created_at,
+      });
+    }
+    this.#emit();
+  }
+
+  /** Replay persisted events into a turn structure so the chat view can
+   *  render history. `events` rows come from sessions.loadHistory; we
+   *  collapse them into one Turn per user_prompt boundary so the visual
+   *  matches a live conversation. */
+  replayHistory(
+    sessionId: string,
+    rows: Array<{ seq: number; type: string; data: string; ts: number }>,
+  ): void {
+    let current: Turn | null = null;
+    let order = 0;
+    for (const r of rows) {
+      const data = safeParse(r.data);
+      if (r.type === "user_prompt") {
+        // Flush the previous turn, start a new one.
+        if (current) this.#turns.set(current.id, current);
+        const tid = `replay-${sessionId}-${order++}`;
+        current = {
+          id: tid,
+          sessionId,
+          promptText: (data as { text?: string })?.text ?? "",
+          events: [],
+          assistantText: "",
+          thoughtText: "",
+          status: "complete",
+          startedAt: r.ts,
+          endedAt: r.ts,
+        };
+      } else if (current) {
+        if (r.type === "agent_thought") {
+          current.thoughtText += (data as { text?: string })?.text ?? "";
+        } else if (r.type === "agent_message") {
+          current.assistantText += (data as { text?: string })?.text ?? "";
+        } else {
+          // Structural events kept on the events list — same shape the
+          // live reducer consumes via reduceTurn (tool_call etc.).
+          current.events.push({ payload: data, receivedAt: r.ts });
+        }
+      }
+    }
+    if (current) this.#turns.set(current.id, current);
+    this.#emit();
+  }
+
   // ------- Reducer driven by main → renderer push events -------
   //
   // Every mutation that changes a SessionRow REPLACES the row in the Map
@@ -453,6 +525,14 @@ export const selectTurnsFor = (sessionId: string) => (s: SessionStore) =>
 /** Imperative new-draft helper for routes that don't have a hook in scope. */
 export function newDraftSession(): string {
   return sessionStore.newDraft();
+}
+
+function safeParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
 }
 
 /** React hook — re-renders whenever the store version bumps. Components

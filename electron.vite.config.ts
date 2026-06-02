@@ -10,10 +10,20 @@ export default defineConfig({
       outDir: "out/main",
       rollupOptions: {
         input: { index: resolve(__dirname, "src/main/index.ts") },
-        // `electron` is a runtime built-in inside the Electron process, not
-        // an npm package to bundle. The bundle hits a wrapper otherwise that
-        // calls `process.execPath install.js` thinking it's in dev install
-        // mode.
+        // electron is a runtime built-in inside the Electron process, not
+        // an npm package to bundle. The bundle hits a wrapper otherwise
+        // that calls `process.execPath install.js` thinking it's in dev
+        // install mode.
+        //
+        // better-sqlite3 is a native module — its bindings() lookup walks
+        // the filesystem from the require()ing file. Inlining the package
+        // breaks that lookup; externalize so Node resolves the package
+        // directory normally and finds build/Release/better_sqlite3.node.
+        //
+        // externalizeDepsPlugin() reads package.json#dependencies and
+        // marks each one external; we still need this explicit entry for
+        // `electron` (which lives in devDependencies — built into the
+        // runtime, not bundled).
         external: ["electron"],
       },
     },

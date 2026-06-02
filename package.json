@@ -35,7 +35,6 @@
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
     "ai": "^6.0.194",
-    "better-sqlite3": "^12.10.0",
     "motion": "^12.40.0",
     "nanoid": "^5.1.11",
     "node-pty": "^1.1.0",
@@ -47,11 +46,9 @@
     "use-stick-to-bottom": "^1.1.4"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.4",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.100.14",
     "@tanstack/react-router": "^1.170.10",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.0",
     "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
@@ -108,7 +105,6 @@
     "onlyBuiltDependencies": [
       "electron",
       "esbuild",
-      "better-sqlite3",
       "node-pty"
     ]
   }

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { registerIpc } from "./ipc.js";
 import { setSessionRoot } from "./session-cwd.js";
 import { settingsStore } from "./settings-store.js";
+import { openSessionDb } from "./sql-store.js";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -53,6 +54,7 @@ app.whenReady().then(async () => {
 
   const userData = app.getPath("userData");
   setSessionRoot(join(userData, "sessions"));
+  openSessionDb(join(userData, "sessions.db"));
   registerIpc({ registryCachePath: join(userData, "registry-cache.json") });
   createWindow();
 

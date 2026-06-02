@@ -13,6 +13,8 @@ export const InvokeChannel = {
   SessionCancel: "session:cancel",
   SessionDispose: "session:dispose",
   SessionAnnounce: "session:announce",
+  SessionsList: "sessions:list",
+  SessionsLoadHistory: "sessions:loadHistory",
   SettingsGet: "settings:get",
   SettingsPatch: "settings:patch",
 } as const;

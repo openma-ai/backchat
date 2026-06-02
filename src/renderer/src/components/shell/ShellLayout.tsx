@@ -22,6 +22,12 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const off = window.openma.onSessionEvent((e) => sessionStore.apply(e));
     void window.openma.sessionAnnounce();
+    // Seed sidebar from persisted state on first mount. This is what makes
+    // yesterday's chats appear in the sidebar after a relaunch, without
+    // spawning their ACP children — those happen lazily on first prompt.
+    void window.openma
+      .sessionsList(200)
+      .then((rows) => sessionStore.seedPersisted(rows));
     return off;
   }, []);
 

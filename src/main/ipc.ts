@@ -8,7 +8,7 @@
 
 import { BrowserWindow, ipcMain } from "electron";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
-import type { AgentInfo } from "../shared/api.js";
+import type { AgentInfo, PersistedEventInfo, PersistedSessionInfo } from "../shared/api.js";
 import type {
   SessionEventOut,
   SessionPromptParams,
@@ -18,6 +18,7 @@ import type { Settings } from "../shared/settings.js";
 import { detectAll, getKnownAgents, loadRegistry } from "@open-managed-agents-desktop/acp/registry";
 import { SessionManager } from "./session-manager.js";
 import { settingsStore } from "./settings-store.js";
+import { listSessions, loadHistory } from "./sql-store.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -113,6 +114,13 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
       sessionManager.dispose(p.session_id, { removeCwd: p.remove_cwd }),
   );
   ipcMain.handle(InvokeChannel.SessionAnnounce, () => sessionManager.announceAll());
+
+  ipcMain.handle(InvokeChannel.SessionsList, (_e, limit?: number):
+    PersistedSessionInfo[] => listSessions(limit));
+  ipcMain.handle(
+    InvokeChannel.SessionsLoadHistory,
+    (_e, sessionId: string): PersistedEventInfo[] => loadHistory(sessionId),
+  );
 
   // ---- Settings ----
   ipcMain.handle(InvokeChannel.SettingsGet, (): Settings => settingsStore.get());
