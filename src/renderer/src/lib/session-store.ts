@@ -28,9 +28,20 @@ export interface SessionRow {
   /** UI label. Phase 3 derives from agent + short id; Phase 4 lets the user
    *  rename, persisting to SQLite. */
   label: string;
-  /** "starting" → "ready" → "running" (during turn) → "ready" again on
-   *  complete. "errored" if start failed. */
-  status: "starting" | "ready" | "running" | "errored" | "disposed";
+  /** Lifecycle:
+   *    "draft"     → empty session, no IPC fired yet. Created by clicking
+   *                  "+ New chat"; flips to "starting" the moment the user
+   *                  sends their first prompt.
+   *    "starting"  → session.start IPC fired; awaiting session.ready.
+   *    "ready"     → no in-flight turn.
+   *    "running"   → a turn is streaming.
+   *    "errored"   → start failed (unknown agent, missing binary, ACP
+   *                  handshake refused). Surface lastError, ask user to
+   *                  start a new one.
+   *    "disposed"  → main process killed the child. We drop the row from
+   *                  the store soon after this state.
+   */
+  status: "draft" | "starting" | "ready" | "running" | "errored" | "disposed";
   lastError?: string;
   createdAt: number;
   /** turn_id of the in-flight prompt, if any. */
@@ -130,6 +141,41 @@ class SessionStore {
   setActive(id: string | null): void {
     if (this.#activeId === id) return;
     this.#activeId = id;
+    this.#emit();
+  }
+
+  /** Cold-create entry point. Pushes a draft session into the store
+   *  without firing any IPC — the actual `session.start` happens when the
+   *  user submits their first prompt (see promoteDraft). Returns the new
+   *  session id so the caller can navigate to /chat/$id. */
+  newDraft(): string {
+    const id = `sess-${Math.random().toString(36).slice(2, 10)}`;
+    this.#sessions.set(id, {
+      id,
+      agent_id: "",
+      cwd: "",
+      acp_session_id: "",
+      label: "New chat",
+      status: "draft",
+      createdAt: Date.now(),
+    });
+    this.#activeId = id;
+    this.#emit();
+    return id;
+  }
+
+  /** Mark a draft as starting — the renderer calls this right before firing
+   *  session.start IPC. Lets the UI show "Starting…" before the spawn
+   *  actually completes. The agent_id is what the renderer chose (default
+   *  from settings); the row persists it so the chat header stays useful
+   *  while the bg/acp_session_id catch up via session.ready. */
+  promoteDraft(id: string, agent_id: string, label: string): void {
+    this.#mutateSession(id, (s) => ({
+      ...s,
+      agent_id,
+      label,
+      status: "starting",
+    }));
     this.#emit();
   }
 
@@ -302,11 +348,17 @@ export const selectActive = (s: SessionStore) => s.active();
 export const selectTurnsFor = (sessionId: string) => (s: SessionStore) =>
   s.turnsFor(sessionId);
 
+/** Imperative new-draft helper for routes that don't have a hook in scope. */
+export function newDraftSession(): string {
+  return sessionStore.newDraft();
+}
+
 /** React hook — re-renders whenever the store version bumps. Components
  *  request the slice they care about via a selector; results are cached by
  *  version so identity-sensitive comparisons (referential equality) stay
- *  stable between mutations. Pass a STABLE selector reference (top-level
- *  function or memoized) to get the most out of the cache. */
+ *  stable between mutations. Pass a STABLE selector reference (one of the
+ *  `select*` exports above, or a useMemo'd factory) — inline arrows miss
+ *  the cache. */
 export function useSessionStore<T>(selector: (s: SessionStore) => T): T {
   return useSyncExternalStore(
     sessionStore.subscribe,

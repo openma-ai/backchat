@@ -1,7 +1,8 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, dialog, shell } from "electron";
 import { join } from "node:path";
 import { registerIpc } from "./ipc.js";
 import { setSessionRoot } from "./session-cwd.js";
+import { settingsStore } from "./settings-store.js";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -36,7 +37,20 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Load settings before anything else — registerIpc reads the MCP server
+  // list during SessionManager construction. A broken config.toml is a
+  // user-fixable error, not a crash; show a dialog and continue with
+  // in-memory defaults.
+  try {
+    await settingsStore.load();
+  } catch (e) {
+    dialog.showErrorBox(
+      "Settings file error",
+      `${(e as Error).message}\n\nopenma-desktop will start with default settings.`,
+    );
+  }
+
   const userData = app.getPath("userData");
   setSessionRoot(join(userData, "sessions"));
   registerIpc({ registryCachePath: join(userData, "registry-cache.json") });

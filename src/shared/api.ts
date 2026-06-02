@@ -10,6 +10,7 @@ import type {
   SessionPromptParams,
   SessionStartParams,
 } from "./session-events.js";
+import type { Settings } from "./settings.js";
 
 export interface AgentInfo {
   id: string;
@@ -42,6 +43,14 @@ export interface OpenmaApi {
 
   /** Subscribe to push events. Returns an unsubscribe fn. */
   onSessionEvent(handler: (e: SessionEventOut) => void): () => void;
+
+  // ----- Settings -----
+
+  settingsGet(): Promise<Settings>;
+  /** Shallow merge — top-level keys replaced wholesale. */
+  settingsPatch(partial: Partial<Settings>): Promise<void>;
+  /** Notified on every patch. Returns an unsubscribe fn. */
+  onSettingsChanged(handler: (s: Settings) => void): () => void;
 }
 
 declare global {

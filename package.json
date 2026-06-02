@@ -41,6 +41,7 @@
     "node-pty": "^1.1.0",
     "radix-ui": "^1.4.3",
     "shiki": "^4.1.0",
+    "smol-toml": "^1.6.1",
     "streamdown": "^2.5.0",
     "use-stick-to-bottom": "^1.1.4"
   },

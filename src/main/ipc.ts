@@ -14,8 +14,10 @@ import type {
   SessionPromptParams,
   SessionStartParams,
 } from "../shared/session-events.js";
+import type { Settings } from "../shared/settings.js";
 import { detectAll, getKnownAgents, loadRegistry } from "@open-managed-agents-desktop/acp/registry";
 import { SessionManager } from "./session-manager.js";
+import { settingsStore } from "./settings-store.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -43,11 +45,32 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
 
   const sessionManager = new SessionManager({
     send,
-    // Phase 2: no MCP servers yet. Phase 8 wires McpConfigStore here.
-    resolveMcpServers: () => [],
-    // Phase 2: no permission/fs/terminal brokers yet — every callback
-    // bubbles into the runtime's default-deny. Phase 6 swaps this with real
-    // brokers.
+    // MCP servers come from settings now — Phase 8 finishes the per-agent
+    // override matrix; for now we pass every configured server through to
+    // every spawn. ACP McpServer shape matches our SettingsMcpServer.
+    resolveMcpServers: () => settingsStore.get().mcp_servers as unknown[],
+    resolveDefaults: () => {
+      const s = settingsStore.get();
+      return {
+        agentId: s.default.agent_id || undefined,
+        cwd: s.default.workspace_path || undefined,
+      };
+    },
+    resolveAgentOverride: (agentId) => {
+      const o = settingsStore.get().agents.find((a) => a.id === agentId);
+      if (!o) return undefined;
+      // Convert the {name,value}[] pairs back to the Record<string,string>
+      // shape NodeSpawner consumes. Empty values pass through; users may
+      // intentionally set a var to "" to clear an inherited value.
+      const envOverride: Record<string, string> = {};
+      for (const e of o.env) envOverride[e.name] = e.value;
+      return {
+        commandOverride: o.command_override,
+        argsOverride: o.args_override,
+        envOverride,
+      };
+    },
+    // Phase 6 swaps with real permission/fs/terminal brokers.
     buildCallbacks: () => ({}),
   });
 
@@ -90,6 +113,21 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
       sessionManager.dispose(p.session_id, { removeCwd: p.remove_cwd }),
   );
   ipcMain.handle(InvokeChannel.SessionAnnounce, () => sessionManager.announceAll());
+
+  // ---- Settings ----
+  ipcMain.handle(InvokeChannel.SettingsGet, (): Settings => settingsStore.get());
+  ipcMain.handle(
+    InvokeChannel.SettingsPatch,
+    (_e, partial: Partial<Settings>) => settingsStore.patch(partial),
+  );
+  // Push every settings mutation out to all open windows. Subscribed once
+  // at registration; never unsubscribed (the store lives for the process
+  // lifetime).
+  settingsStore.subscribe((s) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send(PushChannel.SettingsChanged, s);
+    }
+  });
 
   return sessionManager;
 }

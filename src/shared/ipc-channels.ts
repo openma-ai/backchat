@@ -13,11 +13,16 @@ export const InvokeChannel = {
   SessionCancel: "session:cancel",
   SessionDispose: "session:dispose",
   SessionAnnounce: "session:announce",
+  SettingsGet: "settings:get",
+  SettingsPatch: "settings:patch",
 } as const;
 
 export const PushChannel = {
   /** Out-of-band push for session lifecycle + streamed events. */
   SessionEvent: "session:event",
+  /** Whole-settings push fired after each patch — renderer subscribes once
+   *  and re-renders settings-driven UI without polling. */
+  SettingsChanged: "settings:changed",
 } as const;
 
 export type InvokeChannelName = (typeof InvokeChannel)[keyof typeof InvokeChannel];

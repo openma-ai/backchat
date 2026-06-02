@@ -11,6 +11,7 @@ import type {
   SessionPromptParams,
   SessionStartParams,
 } from "../shared/session-events.js";
+import type { Settings } from "../shared/settings.js";
 
 const api: OpenmaApi = {
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
@@ -32,6 +33,15 @@ const api: OpenmaApi = {
     const listener = (_e: IpcRendererEvent, msg: SessionEventOut) => handler(msg);
     ipcRenderer.on(PushChannel.SessionEvent, listener);
     return () => ipcRenderer.removeListener(PushChannel.SessionEvent, listener);
+  },
+
+  settingsGet: () => ipcRenderer.invoke(InvokeChannel.SettingsGet) as Promise<Settings>,
+  settingsPatch: (partial) =>
+    ipcRenderer.invoke(InvokeChannel.SettingsPatch, partial) as Promise<void>,
+  onSettingsChanged: (handler) => {
+    const listener = (_e: IpcRendererEvent, s: Settings) => handler(s);
+    ipcRenderer.on(PushChannel.SettingsChanged, listener);
+    return () => ipcRenderer.removeListener(PushChannel.SettingsChanged, listener);
   },
 };
 

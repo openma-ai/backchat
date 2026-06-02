@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleStopIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Conversation,
   ConversationContent,
-  ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent } from "@/components/ai-elements/message";
@@ -25,35 +25,66 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
+  newDraftSession,
   selectActive,
   selectTurnsFor,
+  sessionStore,
   useSessionStore,
 } from "@/lib/session-store";
 import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
+import { useSettings } from "@/lib/settings-store";
 
 /**
- * ChatView — the right pane. Renders the active session's turns through the
- * ai-elements primitives. Phase 3 covers the visible 80% of the protocol:
- * user bubbles, assistant text, tool calls, optional thinking, plan list,
- * and the synthetic permission/error notes. Phase 5 adds markdown rendering
- * (Streamdown), DiffBlock for `kind=edit`, TerminalBlock for `kind=execute`,
- * etc.
+ * ChatView — the right pane.
+ *
+ * Cold-create flow: if active.status === "draft", the composer's submit
+ * promotes the draft (registers agent_id from settings, fires session.start
+ * IPC), awaits session.ready via a one-shot subscription, then fires
+ * session.prompt. The store flips to "ready" on session.ready.
+ *
+ * Without an active session in scope (e.g. /chat/$id with an unknown id),
+ * the page shows a "start a chat" hint. The user clicks "+ New chat" in the
+ * sidebar to get back to a real session.
  */
-export function ChatView({
-  onPrompt,
-  onStartSession,
-  agents,
-}: {
-  onPrompt: (sessionId: string, text: string) => void;
-  onStartSession: (agentId: string) => void;
-  agents: Array<{ id: string; label: string; detected: boolean; installHint?: string }>;
-}) {
+export function ChatView() {
   const active = useSessionStore(selectActive);
   const turnsSelector = useMemo(
-    () => (active ? selectTurnsFor(active.id) : () => [] as ReturnType<ReturnType<typeof selectTurnsFor>>),
+    () =>
+      active
+        ? selectTurnsFor(active.id)
+        : () => [] as ReturnType<ReturnType<typeof selectTurnsFor>>,
     [active?.id],
   );
   const turns = useSessionStore(turnsSelector);
+  const settings = useSettings();
+  const navigate = useNavigate();
+
+  const onSubmit = async (text: string) => {
+    let target = active;
+    if (!target) {
+      // No session at all — caller pressed Enter on the home page's empty
+      // composer. Create a draft on the fly and route to it before
+      // continuing. Most users will use the sidebar "+ New chat" instead,
+      // but supporting this shape lets the home page act as one-shot ask.
+      const sid = newDraftSession();
+      target = sessionStore.get(sid)!;
+      void navigate({ to: "/chat/$sessionId", params: { sessionId: sid } });
+    }
+    if (target.status === "draft") {
+      const agentId = settings?.default.agent_id || "";
+      sessionStore.promoteDraft(target.id, agentId, agentId || "(default agent)");
+      // Fire session.start. We don't await — session.ready arrives via the
+      // push channel and the store flips status. The prompt below races
+      // against ready; SessionManager idempotently handles a prompt-before-
+      // ready by erroring out. To keep things deterministic we wait for
+      // ready (with a 10s budget) before firing prompt.
+      void window.openma.sessionStart({ session_id: target.id, agent_id: agentId });
+      await waitForReady(target.id, 10_000);
+    }
+    const turn_id = `turn-${Math.random().toString(36).slice(2, 10)}`;
+    sessionStore.registerTurn(turn_id, target.id, text);
+    await window.openma.sessionPrompt({ session_id: target.id, turn_id, text });
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -61,16 +92,13 @@ export function ChatView({
         <ConversationContent
           className={cn(
             "mx-auto w-full max-w-3xl px-4 py-6",
-            // Pin content to the bottom of the viewport when short — chat
-            // surfaces feel wrong when the latest message floats near the
-            // top with empty space below. min-h-full makes the column at
-            // least as tall as the scroller; flex-col + justify-end puts
-            // gravity at the bottom.
             "flex min-h-full flex-col justify-end",
           )}
         >
-          {!active ? (
-            <NoSessionIntro agents={agents} onStart={onStartSession} />
+          {!active || active.status === "draft" ? (
+            <EmptyStateIntro
+              hasDefaultAgent={!!settings?.default.agent_id}
+            />
           ) : turns.length === 0 ? (
             <SessionIntro agentId={active.agent_id} cwd={active.cwd} />
           ) : (
@@ -90,20 +118,23 @@ export function ChatView({
       </Conversation>
 
       <Composer
-        disabled={!active || active.status === "starting" || active.status === "errored"}
+        disabled={
+          (active?.status === "starting" && !!active?.agent_id) ||
+          active?.status === "errored"
+        }
         running={active?.status === "running"}
         placeholder={
-          !active
-            ? "Pick an agent above to start a session."
+          !active || active.status === "draft"
+            ? "Ask anything to start. Enter to send."
             : active.status === "starting"
-              ? "Starting session…"
+              ? "Starting…"
               : active.status === "errored"
-                ? "Session errored. Start a new one."
+                ? "Session errored. Start a new chat."
                 : active.status === "running"
                   ? "Working… press Stop to cancel."
                   : "Ask anything. Enter to send, Shift+Enter for newline."
         }
-        onSubmit={(text) => active && onPrompt(active.id, text)}
+        onSubmit={onSubmit}
         onCancel={() => {
           if (active?.activeTurnId) {
             void window.openma.sessionCancel({
@@ -123,50 +154,42 @@ export function ChatView({
   );
 }
 
-function NoSessionIntro({
-  agents,
-  onStart,
-}: {
-  agents: Array<{ id: string; label: string; detected: boolean }>;
-  onStart: (agentId: string) => void;
-}) {
-  const detected = agents.filter((a) => a.detected);
+/** One-shot await of session.ready for the given session id. Times out
+ *  after `ms` and resolves anyway (the prompt will then error and the user
+ *  sees the failure via session.error). */
+function waitForReady(sessionId: string, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      off();
+      resolve();
+    }, ms);
+    const off = window.openma.onSessionEvent((e) => {
+      if (
+        (e.type === "session.ready" || e.type === "session.error") &&
+        e.session_id === sessionId
+      ) {
+        clearTimeout(timer);
+        off();
+        resolve();
+      }
+    });
+  });
+}
+
+function EmptyStateIntro({ hasDefaultAgent }: { hasDefaultAgent: boolean }) {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center px-2 text-center">
       <div className="mx-auto mb-4 inline-flex size-10 items-center justify-center rounded-full bg-brand-subtle text-brand-fg">
         <SparklesIcon className="size-5" />
       </div>
-      <h2 className="text-base font-medium text-fg">Start a session</h2>
+      <h2 className="text-base font-medium text-fg">
+        {hasDefaultAgent ? "Start a chat" : "Pick a default agent"}
+      </h2>
       <p className="mt-1 max-w-sm text-sm text-fg-muted">
-        Pick any installed ACP agent. Conversation history stays on your machine.
+        {hasDefaultAgent
+          ? "Type a prompt below to spin up your default ACP agent. Conversation history stays on your machine."
+          : "Open Settings → Agents and pick a default agent to use for new chats."}
       </p>
-      {detected.length > 0 ? (
-        <div className="mt-6 grid w-full max-w-md grid-cols-1 gap-1 text-left">
-          {detected.slice(0, 6).map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => onStart(a.id)}
-              className={cn(
-                "group flex items-center gap-2 rounded-md bg-bg-surface/50 px-3 py-2",
-                "text-sm hover:bg-bg-surface transition-colors",
-              )}
-            >
-              <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
-              <span className="flex-1 truncate font-medium text-fg">{a.label}</span>
-              <span className="font-mono text-[10px] text-fg-subtle group-hover:text-fg-muted">
-                {a.id}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-5 max-w-md rounded-md bg-warning-subtle px-3 py-2 text-xs text-fg">
-          No ACP agents detected on PATH. Install{" "}
-          <span className="font-mono">claude-agent-acp</span>,{" "}
-          <span className="font-mono">codex-acp</span>, or any other and restart.
-        </p>
-      )}
     </div>
   );
 }
