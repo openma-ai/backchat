@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Local-first desktop client for any ACP agent",
+  "author": "openma-desktop contributors",
   "main": "out/main/index.js",
   "type": "module",
   "engines": {

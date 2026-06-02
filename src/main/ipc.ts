@@ -18,7 +18,7 @@ import type { Settings } from "../shared/settings.js";
 import { detectAll, getKnownAgents, loadRegistry } from "@open-managed-agents-desktop/acp/registry";
 import { SessionManager } from "./session-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { listSessions, loadHistory } from "./sql-store.js";
+import { listSessions, loadHistory, searchMessages } from "./sql-store.js";
 import {
   cancelPendingFor,
   createTerminal,
@@ -154,6 +154,10 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
   ipcMain.handle(
     InvokeChannel.SessionsLoadHistory,
     (_e, sessionId: string): PersistedEventInfo[] => loadHistory(sessionId),
+  );
+  ipcMain.handle(
+    InvokeChannel.SessionsSearch,
+    (_e, query: string, limit?: number) => searchMessages(query, limit),
   );
 
   // ---- Settings ----

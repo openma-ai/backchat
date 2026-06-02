@@ -110,6 +110,41 @@ export function openSessionDb(path: string): void {
     );
     CREATE INDEX IF NOT EXISTS events_session_seq_idx
       ON events(session_id, seq);
+
+    -- FTS5 virtual table for Cmd+K message search. Indexes user prompts
+    -- + final assistant messages (the only event types with prose worth
+    -- searching). Triggers below keep it in sync on every event insert /
+    -- session delete; on first launch we'll be empty but new events
+    -- populate it from then on. For historical events the user can
+    -- rebuild via PRAGMA-driven re-index (out of scope for v0.1; the
+    -- FTS just covers forward-going chat).
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+      session_id UNINDEXED,
+      seq UNINDEXED,
+      type UNINDEXED,
+      ts UNINDEXED,
+      text,
+      tokenize = 'unicode61 remove_diacritics 2'
+    );
+
+    -- Auto-populate FTS from new persisted events. We only index the
+    -- prose types: user_prompt, agent_message, agent_thought. Tool
+    -- calls + structural events stay out of search (their JSON is
+    -- noise + not useful for "find that chat where I asked X").
+    CREATE TRIGGER IF NOT EXISTS events_ai_fts AFTER INSERT ON events
+    WHEN new.type IN ('user_prompt', 'agent_message', 'agent_thought')
+    BEGIN
+      INSERT INTO messages_fts(session_id, seq, type, ts, text)
+      VALUES (new.session_id, new.seq, new.type, new.ts, json_extract(new.data, '$.text'));
+    END;
+
+    -- Drop FTS rows when a session is removed (events CASCADE-delete via
+    -- the FK; this trigger keeps FTS aligned). messages_fts is a virtual
+    -- table so no FK; manual cleanup.
+    CREATE TRIGGER IF NOT EXISTS sessions_bd_fts BEFORE DELETE ON sessions
+    BEGIN
+      DELETE FROM messages_fts WHERE session_id = old.id;
+    END;
   `);
 
   _db = db;
@@ -222,4 +257,56 @@ export function appendEventsTx(
 
 export function loadHistory(session_id: string): PersistedEvent[] {
   return stmts().loadHistory.all(session_id) as unknown as PersistedEvent[];
+}
+
+// -------------------- search --------------------
+
+export interface SearchHit {
+  session_id: string;
+  session_title: string;
+  agent_id: string;
+  /** Event seq inside the session — lets the UI jump-scroll later. */
+  seq: number;
+  type: string;
+  ts: number;
+  /** FTS5 snippet — match highlighted with `⁨`/`⁩` braces; the
+   *  renderer strips/replaces them for display. */
+  snippet: string;
+}
+
+/** Full-text search across persisted prose events. Returns the top N
+ *  matches with FTS5 BM25 ranking, joined with the session title so the
+ *  Cmd+K palette can render "session label · matched line". Empty
+ *  query returns []. */
+export function searchMessages(query: string, limit = 20): SearchHit[] {
+  if (!_db) throw new Error("session-store: openSessionDb() not called");
+  const q = query.trim();
+  if (!q) return [];
+  // FTS5 MATCH syntax is its own thing — wrap each word with `*` for
+  // prefix matching so partial typing finds things; quote with double
+  // quotes to swallow user-typed punctuation that would otherwise be
+  // parsed as operators (- means NOT, : is column-qualified, etc).
+  const ftsQuery = q
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => `"${w.replace(/"/g, '""')}"*`)
+    .join(" ");
+  // Inline prepare — search is rare-ish and the query shape doesn't
+  // benefit from caching the way per-row inserts do.
+  const stmt = _db.prepare(`
+    SELECT
+      f.session_id,
+      f.seq,
+      f.type,
+      f.ts,
+      s.title          AS session_title,
+      s.agent_id,
+      snippet(messages_fts, 4, '⁨', '⁩', '…', 12) AS snippet
+    FROM messages_fts f
+    JOIN sessions s ON s.id = f.session_id
+    WHERE messages_fts MATCH ? AND s.archived_at IS NULL
+    ORDER BY bm25(messages_fts), f.ts DESC
+    LIMIT ?
+  `);
+  return stmt.all(ftsQuery, limit) as unknown as SearchHit[];
 }

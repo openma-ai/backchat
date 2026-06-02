@@ -15,6 +15,7 @@ export const InvokeChannel = {
   SessionAnnounce: "session:announce",
   SessionsList: "sessions:list",
   SessionsLoadHistory: "sessions:loadHistory",
+  SessionsSearch: "sessions:search",
   SettingsGet: "settings:get",
   SettingsPatch: "settings:patch",
   PermissionRespond: "permission:respond",
@@ -37,6 +38,11 @@ export const PushChannel = {
   TerminalOutput: "terminal:output",
   /** Terminal exited (success or signal). */
   TerminalExit: "terminal:exit",
+  /** Menu → renderer: route the user to a path (e.g. "/settings"). */
+  MenuNavigate: "menu:navigate",
+  /** Menu → renderer: trigger a renderer action. Payload is a short
+   *  string code: "new-chat" | "command-palette". */
+  MenuAction: "menu:action",
 } as const;
 
 export type InvokeChannelName = (typeof InvokeChannel)[keyof typeof InvokeChannel];

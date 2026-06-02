@@ -1,9 +1,15 @@
 import { useEffect, useCallback } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/shell/AppShell";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
 import { BrokerModal } from "@/components/shell/BrokerModal";
-import { sessionStore, selectActive } from "@/lib/session-store";
+import { CommandPalette } from "@/components/shell/CommandPalette";
+import {
+  newDraftSession,
+  sessionStore,
+  selectActive,
+} from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
 
 /**
@@ -15,22 +21,43 @@ import { useSessionStore } from "@/lib/session-store";
  * Side-effects:
  *   - subscribes to session events on mount and forwards to the store
  *   - re-announces active sessions after a window reload
- *
- * Both effects belong here, not in pages — pages mount/unmount as the user
- * navigates and we'd lose events / re-subscribe redundantly otherwise.
+ *   - listens for native-menu pushes (MenuNavigate / MenuAction)
  */
 export function ShellLayout({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
+
   useEffect(() => {
     const off = window.openma.onSessionEvent((e) => sessionStore.apply(e));
     void window.openma.sessionAnnounce();
-    // Seed sidebar from persisted state on first mount. This is what makes
-    // yesterday's chats appear in the sidebar after a relaunch, without
-    // spawning their ACP children — those happen lazily on first prompt.
     void window.openma
       .sessionsList(200)
       .then((rows) => sessionStore.seedPersisted(rows));
     return off;
   }, []);
+
+  useEffect(() => {
+    const offNav = window.openma.onMenuNavigate((path) => {
+      void navigate({ to: path as never });
+    });
+    const offAct = window.openma.onMenuAction((action) => {
+      if (action === "new-chat") {
+        const sid = newDraftSession();
+        void navigate({
+          to: "/chat/$sessionId",
+          params: { sessionId: sid },
+        });
+      } else if (action === "command-palette") {
+        // CommandPalette listens on window keydown for ⌘K — replay one.
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
+        );
+      }
+    });
+    return () => {
+      offNav();
+      offAct();
+    };
+  }, [navigate]);
 
   const cancelActive = useCallback(() => {
     const active = sessionStore.active();
@@ -42,16 +69,13 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Read active so the topbar re-renders on session changes via this layout.
-  // (Topbar reads it directly too, but having the layout subscribe means a
-  // session.ready arriving while Settings is open still updates the
-  // sidebar state, even though settings doesn't read it.)
   void useSessionStore(selectActive);
 
   return (
     <AppShell sidebar={<Sidebar />} topbar={<Topbar onCancel={cancelActive} />}>
       {children}
       <BrokerModal />
+      <CommandPalette />
     </AppShell>
   );
 }

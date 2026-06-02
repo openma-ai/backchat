@@ -66,15 +66,21 @@ export function Sidebar() {
         </Button>
       </div>
 
-      {/* Cmd+K placeholder — wired in Phase 7. Hidden in narrow mode. */}
+      {/* Cmd+K trigger — fires a synthetic ⌘K so CommandPalette's global
+          handler opens it. Cheaper than threading a context for one button. */}
       <div className="px-2 pb-2 max-md:hidden">
         <button
+          type="button"
+          onClick={() =>
+            window.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
+            )
+          }
           className={cn(
             "app-no-drag flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg-muted",
             "bg-bg-surface/50 hover:bg-bg-surface",
             "transition-colors",
           )}
-          disabled
         >
           <CommandIcon className="size-3.5" />
           <span>Search</span>

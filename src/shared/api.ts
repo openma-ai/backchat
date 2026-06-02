@@ -88,6 +88,19 @@ export interface TerminalExitFrame {
   signal: string | null;
 }
 
+/** A single Cmd+K search hit. Snippet uses ⁨ ⁩ Unicode invisible brackets
+ *  around matched tokens (FTS5 default markers; we substitute them with
+ *  <mark> at render time). */
+export interface SearchHitInfo {
+  session_id: string;
+  session_title: string;
+  agent_id: string;
+  seq: number;
+  type: string;
+  ts: number;
+  snippet: string;
+}
+
 export interface OpenmaApi {
   /** Smoke test for the IPC channel. */
   ping(msg: string): Promise<string>;
@@ -113,6 +126,10 @@ export interface OpenmaApi {
   /** Replay the event log for a persisted session, in seq order. Renderer
    *  feeds these back into its in-memory store to reconstruct turns. */
   sessionsLoadHistory(sessionId: string): Promise<PersistedEventInfo[]>;
+
+  /** Full-text search across persisted chat prose. Used by Cmd+K's
+   *  Search section. Empty query returns []. */
+  sessionsSearch(query: string, limit?: number): Promise<SearchHitInfo[]>;
 
   /** Subscribe to push events. Returns an unsubscribe fn. */
   onSessionEvent(handler: (e: SessionEventOut) => void): () => void;
@@ -140,6 +157,12 @@ export interface OpenmaApi {
   /** Per-terminal live output. */
   onTerminalOutput(handler: (frame: TerminalOutputFrame) => void): () => void;
   onTerminalExit(handler: (frame: TerminalExitFrame) => void): () => void;
+
+  /** Native menu fired a navigate request — payload is the route path. */
+  onMenuNavigate(handler: (path: string) => void): () => void;
+  /** Native menu fired a renderer action — payload is "new-chat" |
+   *  "command-palette". */
+  onMenuAction(handler: (action: string) => void): () => void;
 }
 
 declare global {

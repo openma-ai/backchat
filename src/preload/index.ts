@@ -37,6 +37,10 @@ const api: OpenmaApi = {
     ipcRenderer.invoke(InvokeChannel.SessionsLoadHistory, sessionId) as Promise<
       import("../shared/api.js").PersistedEventInfo[]
     >,
+  sessionsSearch: (query, limit) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsSearch, query, limit) as Promise<
+      import("../shared/api.js").SearchHitInfo[]
+    >,
 
   onSessionEvent: (handler) => {
     const listener = (_e: IpcRendererEvent, msg: SessionEventOut) => handler(msg);
@@ -87,6 +91,17 @@ const api: OpenmaApi = {
     ) => handler(f);
     ipcRenderer.on(PushChannel.TerminalExit, l);
     return () => ipcRenderer.removeListener(PushChannel.TerminalExit, l);
+  },
+
+  onMenuNavigate: (handler) => {
+    const l = (_e: IpcRendererEvent, path: string) => handler(path);
+    ipcRenderer.on(PushChannel.MenuNavigate, l);
+    return () => ipcRenderer.removeListener(PushChannel.MenuNavigate, l);
+  },
+  onMenuAction: (handler) => {
+    const l = (_e: IpcRendererEvent, action: string) => handler(action);
+    ipcRenderer.on(PushChannel.MenuAction, l);
+    return () => ipcRenderer.removeListener(PushChannel.MenuAction, l);
   },
 };
 
