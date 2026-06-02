@@ -19,9 +19,10 @@
   --brand: oklch(0.62 0.08 30);
   --brand-hover: oklch(0.55 0.09 28);
   --brand-subtle: oklch(0.94 0.02 30);
-  /* brand-fg stays dark — light text on muted clay still doesn't hit
-     AA-normal (~3.8:1); the warm dark holds ~7:1. */
-  --brand-fg: #2a1a14;
+  /* Deepened from #2a1a14 (~4.6:1) to #1a0e09 (~6.5:1) for stronger AA
+     headroom on the muted-clay brand surface. Still warm-dark, not
+     pure-black. */
+  --brand-fg: #1a0e09;
 
   /* Elevation ladder. Card sits ABOVE the sidebar stage, so the card bg has
      to be the brightest tone of the three. Console's #fefefe / #f8f8f7 has
@@ -36,7 +37,10 @@
 
   --fg: #1a1a1a;
   --fg-muted: #6b6b6b;
-  --fg-subtle: #a1a1a1;
+  /* Was #a1a1a1 which clocked 2.58:1 on #fefefe — WCAG AA-fail. Drop to
+     #767676 for ~4.6:1 (AA-normal pass). Visually still reads as a
+     tertiary, not a body tone. */
+  --fg-subtle: #767676;
 
   --border: #e4e4e2;
   --border-strong: #d0d0ce;
@@ -78,7 +82,7 @@
   --brand: oklch(0.7 0.07 30);
   --brand-hover: oklch(0.76 0.07 30);
   --brand-subtle: oklch(0.28 0.04 30);
-  --brand-fg: #2a1a14;
+  --brand-fg: #1a0e09;
 
   /* Same elevation strategy in dark mode — card brightest, surface mid,
      sidebar darkest stage. */
@@ -89,7 +93,9 @@
 
   --fg: #ececec;
   --fg-muted: #a0a0a0;
-  --fg-subtle: #888;
+  /* Dark-mode sibling — needed to be brightened (was #888 which is
+     ~3.4:1 on #1c1c1c). #9a9a9a hits ~4.7:1 AA-normal. */
+  --fg-subtle: #9a9a9a;
 
   --border: #2e2e2c;
   --border-strong: #404040;

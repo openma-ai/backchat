@@ -26,7 +26,15 @@ export function AppShell({
     <div
       className={cn(
         "grid h-full bg-bg-sidebar text-fg",
-        "grid-cols-[240px_1fr] grid-rows-[1fr] gap-2 p-2",
+        // Narrow viewport (rare in Electron — minWidth:960 in
+        // BrowserWindow — but possible if the user drags the window
+        // very narrow): collapse the sidebar to its 56px icon strip so
+        // chat content keeps a usable width. The expanded sidebar at
+        // 240px wins back as soon as the viewport is wide enough.
+        // Viewport-based because the AppShell IS the root grid — there's
+        // no outer container for @container to measure against.
+        "max-md:grid-cols-[56px_1fr] grid-cols-[240px_1fr]",
+        "grid-rows-[1fr] gap-2 p-2",
         className,
       )}
     >

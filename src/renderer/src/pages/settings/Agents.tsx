@@ -82,11 +82,17 @@ export function SettingsAgents() {
       </section>
 
       {undetected.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
-            Not installed ({undetected.length})
-          </h2>
-          <ul className="space-y-1">
+        <details className="group">
+          {/* Collapsed by default — the registry has ~30 agents, most of
+              which the user will never install. The few they have are
+              what matters, and they live in the section above. */}
+          <summary className="cursor-pointer list-none text-[10px] font-medium uppercase tracking-wider text-fg-subtle hover:text-fg-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="transition-transform group-open:rotate-90">›</span>
+              Show {undetected.length} not installed
+            </span>
+          </summary>
+          <ul className="mt-3 space-y-1">
             {undetected.map((a) => (
               <li
                 key={a.id}
@@ -116,7 +122,7 @@ export function SettingsAgents() {
           <p className="mt-2 text-[11px] text-fg-subtle">
             Detection re-runs on app launch. Install the agent and restart to see it here.
           </p>
-        </section>
+        </details>
       )}
     </div>
   );

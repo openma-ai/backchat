@@ -58,8 +58,8 @@ export function Sidebar() {
           aria-label="openma home"
         >
           <span className="text-fg-muted">[</span>
-          <span className="font-medium">openma</span>
-          <span className="text-fg-muted">]</span>
+          <span className="font-medium max-md:hidden">openma</span>
+          <span className="text-fg-muted max-md:hidden">]</span>
         </button>
 
         <Button
@@ -74,8 +74,8 @@ export function Sidebar() {
         </Button>
       </div>
 
-      {/* Cmd+K placeholder — wired in Phase 7. */}
-      <div className="px-2 pb-2">
+      {/* Cmd+K placeholder — wired in Phase 7. Hidden in narrow mode. */}
+      <div className="px-2 pb-2 max-md:hidden">
         <button
           className={cn(
             "app-no-drag flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg-muted",
@@ -91,7 +91,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-2">
-        <div className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
+        <div className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wider text-fg-subtle max-md:hidden">
           Chats
         </div>
         {sessions.length === 0 ? (
@@ -131,7 +131,7 @@ export function Sidebar() {
           )}
         >
           <Settings2Icon className="size-3.5" />
-          <span>Settings</span>
+          <span className="max-md:hidden">Settings</span>
         </Link>
         <button
           type="button"
@@ -147,7 +147,7 @@ export function Sidebar() {
           ) : (
             <MoonStarIcon className="size-3.5" />
           )}
-          <span>{effective === "dark" ? "Light mode" : "Dark mode"}</span>
+          <span className="max-md:hidden">{effective === "dark" ? "Light mode" : "Dark mode"}</span>
         </button>
       </div>
     </div>
@@ -178,17 +178,22 @@ function SessionRowButton({
         active
           ? "bg-bg-surface text-fg"
           : !errored && "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
-        // Spring-ish ease on bg + color transitions. taste-saas tokens
-        // give us the curve; --dur-base is the snappy 150ms tier.
-        "transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-soft)]",
+        // Focus-visible: subtle inset ring instead of the global 2px
+        // outline so keyboard-tab through the sidebar reads as
+        // "selected" rather than "outlined".
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand/50 focus-visible:ring-inset",
+        // Animate bg+color via Tailwind's blanket transition-colors —
+        // simpler than spelling out the property list.
+        "transition-colors duration-[var(--dur-base)] ease-[var(--ease-soft)]",
       )}
       title={row.lastError ?? row.agent_id}
     >
-      <span className="flex-1 truncate">{row.label}</span>
+      <span className="flex-1 truncate max-md:hidden">{row.label}</span>
       {row.agent_id && (
         <span
           className={cn(
             "relative inline-flex shrink-0 items-center justify-center",
+            "max-md:mx-auto",
             // Running: brand-tinted icon with a slow breathing halo. No
             // colored dot, no badge, no ring — just the icon itself
             // feeling alive. taste-saas calls this "the only thing that
