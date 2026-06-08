@@ -1,16 +1,74 @@
-import { useEffect, useCallback } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { AppShell } from "@/components/shell/AppShell";
+import { useEffect, useCallback, useState } from "react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  AppShell,
+  SidebarCollapseContext,
+  RightRailCollapseContext,
+  BottomBarCollapseContext,
+} from "@/components/shell/AppShell";
+import { bindRightRailSetter } from "@/lib/right-rail";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
+import { SideChatPanel } from "@/components/shell/SideChatPanel";
+import { BottomPanel } from "@/components/shell/BottomPanel";
 import { BrokerModal } from "@/components/shell/BrokerModal";
 import { CommandPalette } from "@/components/shell/CommandPalette";
 import {
-  newDraftSession,
   sessionStore,
   selectActive,
 } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
+
+const COLLAPSE_KEY = "openma:sidebar-collapsed";
+const RIGHT_KEY = "openma:right-rail-collapsed";
+const BOTTOM_KEY = "openma:bottom-panel-collapsed";
+
+/** Tiny helper for the localStorage-backed collapse pattern used by
+ *  both panels. Keeps the duplicate try/catch out of the layout. The
+ *  initial value is honored only when the key has never been set;
+ *  user toggles persist across reloads. Exposes both `toggle` (flip)
+ *  and `set` (force a value) — `set` is used by features that want
+ *  to ensure the panel is visible regardless of its prior state,
+ *  e.g. auto-opening an HTML preview should expand the right rail
+ *  if it was collapsed but never collapse it if it wasn't. */
+function usePersistedCollapse(key: string, initial = false) {
+  const [collapsed, setCollapsedState] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? initial : v === "1";
+    } catch {
+      return initial;
+    }
+  });
+  const persist = useCallback(
+    (value: boolean) => {
+      try {
+        localStorage.setItem(key, value ? "1" : "0");
+      } catch {
+        /* private mode — non-fatal */
+      }
+    },
+    [key],
+  );
+  const toggle = useCallback(() => {
+    setCollapsedState((c) => {
+      const next = !c;
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+  const set = useCallback(
+    (value: boolean) => {
+      setCollapsedState((c) => {
+        if (c === value) return c;
+        persist(value);
+        return value;
+      });
+    },
+    [persist],
+  );
+  return { collapsed, toggle, set };
+}
 
 /**
  * ShellLayout — root-route layout that wires sidebar + topbar around the
@@ -25,27 +83,41 @@ import { useSessionStore } from "@/lib/session-store";
  */
 export function ShellLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  // The right side-chat rail and the chat-specific topbar chips are
+  // chat-surface chrome — they read as noise on `/settings/*` and
+  // home (`/`), so we only attach them inside `/chat/*`. Without
+  // this gate, the Settings view shows a "hi · sessions/sess-…"
+  // chip in the topbar plus the empty BrowserTab rail (image #96).
+  const isChat = location.pathname.startsWith("/chat/");
+  const sidebarCollapse = usePersistedCollapse(COLLAPSE_KEY);
+  // Side chat starts collapsed — users opt in via the rail toggle so
+  // a first-launch window doesn't show two empty chat surfaces.
+  const rightCollapse = usePersistedCollapse(RIGHT_KEY, true);
+  // Bottom terminal panel — opt-in for the same reason.
+  const bottomCollapse = usePersistedCollapse(BOTTOM_KEY, true);
 
   useEffect(() => {
-    const off = window.openma.onSessionEvent((e) => sessionStore.apply(e));
-    void window.openma.sessionAnnounce();
-    void window.openma
+    const off = window.backchat.onSessionEvent((e) => sessionStore.apply(e));
+    void window.backchat.sessionAnnounce();
+    void window.backchat
       .sessionsList(200)
       .then((rows) => sessionStore.seedPersisted(rows));
     return off;
   }, []);
 
   useEffect(() => {
-    const offNav = window.openma.onMenuNavigate((path) => {
+    const offNav = window.backchat.onMenuNavigate((path) => {
       void navigate({ to: path as never });
     });
-    const offAct = window.openma.onMenuAction((action) => {
+    const offAct = window.backchat.onMenuAction((action) => {
       if (action === "new-chat") {
-        const sid = newDraftSession();
-        void navigate({
-          to: "/chat/$sessionId",
-          params: { sessionId: sid },
-        });
+        // Cold-create: just route to home. A draft session is only
+        // materialized when the user actually submits a prompt in the
+        // home composer (see ChatView.onSubmit). This keeps Cmd+N from
+        // spraying empty draft rows into the sidebar.
+        sessionStore.setActive(null);
+        void navigate({ to: "/" });
       } else if (action === "command-palette") {
         // CommandPalette listens on window keydown for ⌘K — replay one.
         window.dispatchEvent(
@@ -62,7 +134,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   const cancelActive = useCallback(() => {
     const active = sessionStore.active();
     if (active?.activeTurnId) {
-      void window.openma.sessionCancel({
+      void window.backchat.sessionCancel({
         session_id: active.id,
         turn_id: active.activeTurnId,
       });
@@ -71,11 +143,27 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
 
   void useSessionStore(selectActive);
 
+  // Expose the right-rail collapse setter to module-level imperative
+  // callers so non-React code (session store auto-open, plain click
+  // handlers) can ensure the panel is visible before pushing a tab.
+  useEffect(() => bindRightRailSetter(rightCollapse.set), [rightCollapse.set]);
+
   return (
-    <AppShell sidebar={<Sidebar />} topbar={<Topbar onCancel={cancelActive} />}>
-      {children}
-      <BrokerModal />
-      <CommandPalette />
-    </AppShell>
+    <SidebarCollapseContext.Provider value={sidebarCollapse}>
+      <RightRailCollapseContext.Provider value={rightCollapse}>
+        <BottomBarCollapseContext.Provider value={bottomCollapse}>
+          <AppShell
+            sidebar={<Sidebar />}
+            topbar={isChat ? <Topbar onCancel={cancelActive} /> : null}
+            rightPanel={isChat ? <SideChatPanel /> : undefined}
+            bottomPanel={<BottomPanel />}
+          >
+            {children}
+            <BrokerModal />
+            <CommandPalette />
+          </AppShell>
+        </BottomBarCollapseContext.Provider>
+      </RightRailCollapseContext.Provider>
+    </SidebarCollapseContext.Provider>
   );
 }

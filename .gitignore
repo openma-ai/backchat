@@ -9,3 +9,6 @@ out
 .vite
 .tsbuildinfo
 release/
+test-results/
+playwright-report/
+*.bak

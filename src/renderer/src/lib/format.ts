@@ -56,3 +56,28 @@ export function pickTickStep(totalMs: number): number {
   for (const c of candidates) if (c >= target) return c;
   return candidates[candidates.length - 1];
 }
+
+/**
+ * Pretty-print arbitrary tool input/output for the inline expandable
+ * blocks. JSON.stringify with 2-space indent; on cycles or non-JSON
+ * values, falls back to String(v) so the caller never sees an exception.
+ */
+export function safeJson(v: unknown): string {
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
+}
+
+/**
+ * Collapse `$HOME` to `~` in an absolute path for the status bar's cwd
+ * label. Best-effort — the renderer doesn't have direct access to the
+ * OS HOME env var, so we sniff from `navigator.userAgent`'s `User/X`
+ * fragment (Chromium puts it there) and otherwise return the path as-is.
+ */
+export function shortPath(p: string): string {
+  if (!p) return "(no cwd)";
+  const home = "/Users/" + (navigator.userAgent.match(/User\/([^/]+)/)?.[1] ?? "");
+  return home && p.startsWith(home) ? "~" + p.slice(home.length) : p;
+}

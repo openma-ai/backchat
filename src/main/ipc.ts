@@ -1,7 +1,7 @@
 /**
  * IPC handler registration — bridges main's SessionManager to the renderer.
  *
- * Renderer calls `window.openma.foo(...)` (preload), which `ipcRenderer.invoke`s
+ * Renderer calls `window.backchat.foo(...)` (preload), which `ipcRenderer.invoke`s
  * into one of these handlers. Outbound `session.event` etc. are pushed via
  * `webContents.send` from the SessionManager's `Sender` callback.
  */
@@ -18,7 +18,8 @@ import type { Settings } from "../shared/settings.js";
 import { detectAll, getKnownAgents, loadRegistry } from "@open-managed-agents-desktop/acp/registry";
 import { SessionManager } from "./session-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { listSessions, loadHistory, searchMessages } from "./sql-store.js";
+import { archiveSession, deleteSession, listArchivedSessions, listSessions, loadHistory, pinSession, searchMessages, unarchiveSession, unpinSession } from "./sql-store.js";
+import { removeSessionCwd } from "./session-cwd.js";
 import {
   cancelPendingFor,
   createTerminal,
@@ -31,6 +32,11 @@ import {
   waitForTerminalExit,
   writeTextFile,
 } from "./brokers.js";
+// Side-effect import: registers ipcMain handlers for the UI terminal
+// (bottom-panel pty shells). Distinct from the ACP brokers above.
+import "./ui-terminal-broker.js";
+// Side-effect import: directory listing for the side-panel file tree.
+import "./ui-fs-broker.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -67,6 +73,7 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
       return {
         agentId: s.default.agent_id || undefined,
         cwd: s.default.workspace_path || undefined,
+        permissionMode: s.default.permission_mode,
       };
     },
     resolveAgentOverride: (agentId) => {
@@ -151,6 +158,41 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
 
   ipcMain.handle(InvokeChannel.SessionsList, (_e, limit?: number):
     PersistedSessionInfo[] => listSessions(limit));
+  ipcMain.handle(InvokeChannel.SessionsPin, (_e, p: { session_id: string }) =>
+    pinSession(p.session_id));
+  ipcMain.handle(InvokeChannel.SessionsUnpin, (_e, p: { session_id: string }) =>
+    unpinSession(p.session_id));
+  ipcMain.handle(InvokeChannel.SessionsArchive, (_e, p: { session_id: string }) =>
+    archiveSession(p.session_id));
+  ipcMain.handle(InvokeChannel.SessionsUnarchive, (_e, p: { session_id: string }) =>
+    unarchiveSession(p.session_id));
+  ipcMain.handle(InvokeChannel.SessionsListArchived, () => listArchivedSessions());
+  // Hard delete: drop the SQL row (events cascade) AND the on-disk
+  // session dir. Order matters — wipe the dir first so a partial
+  // failure leaves the row to retry from; if we deleted the row
+  // first and the rm threw, the file would be orphaned and harder
+  // to find later. Dispose the ACP child too if it's still running
+  // (e.g. user is deleting an archived session that was somehow
+  // resumed in the background).
+  ipcMain.handle(
+    InvokeChannel.SessionsDelete,
+    async (_e, p: { session_id: string }) => {
+      try {
+        // removeCwd:true here would also be fine, but we always call
+        // removeSessionCwd below anyway, so let dispose just tear
+        // down the ACP child and leave file cleanup to one place.
+        await sessionManager.dispose(p.session_id);
+      } catch {
+        /* not running — fine */
+      }
+      try {
+        await removeSessionCwd(p.session_id);
+      } catch {
+        /* dir might be gone already — fine */
+      }
+      deleteSession(p.session_id);
+    },
+  );
   ipcMain.handle(
     InvokeChannel.SessionsLoadHistory,
     (_e, sessionId: string): PersistedEventInfo[] => loadHistory(sessionId),
@@ -177,6 +219,37 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
 
   // Wire permission / fs-approval response IPCs.
   registerBrokers();
+
+  // Dev-only test hooks — let e2e tests inject canned session.ready /
+  // session.event / session.complete payloads straight onto the renderer
+  // push channel without spawning a real ACP child. Guarded by an env
+  // var so production builds never expose these. Tests set
+  // BACKCHAT_TEST_HOOKS=1 when launching electron.
+  if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
+    process.stdout.write("[ipc] test hooks enabled\n");
+    ipcMain.handle(
+      InvokeChannel.TestInjectSessionRow,
+      (
+        _e,
+        p: { session_id: string; agent_id: string; cwd: string; acp_session_id?: string },
+      ) => {
+        send({
+          type: "session.ready",
+          session_id: p.session_id,
+          acp_session_id: p.acp_session_id ?? `acp-${p.session_id}`,
+          agent_id: p.agent_id,
+          cwd: p.cwd,
+        });
+      },
+    );
+    ipcMain.handle(
+      InvokeChannel.TestInjectSessionEvent,
+      (_e, msg: SessionEventOut) => {
+        // Pass-through — test fully controls what shape it pushes.
+        send(msg);
+      },
+    );
+  }
 
   return sessionManager;
 }

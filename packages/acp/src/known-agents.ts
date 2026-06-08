@@ -22,6 +22,12 @@ export interface KnownAgentEntry {
   id: string;
   label: string;
   spec: AgentSpec;
+  /** Registry-advertised version string (semver). Used by
+   *  acp-binary-update.ts to compare against the locally-installed
+   *  binary's reported version. Optional because overlay entries
+   *  (claude-acp, openclaw, …) don't ship versions; only entries that
+   *  pass through `mapOfficialAgent` carry one. */
+  version?: string;
   installHint?: string;
   homepage?: string;
   /** UI signal: render in the picker's first group. */
@@ -80,7 +86,7 @@ export const OVERLAY_AGENTS: KnownAgentEntry[] = [
   },
   {
     id: "hermes",
-    label: "Hermes (Nous Research)",
+    label: "Hermes",
     spec: { command: "hermes", args: ["acp"] },
     featured: true,
     installHint:

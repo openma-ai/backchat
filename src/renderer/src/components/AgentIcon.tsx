@@ -1,45 +1,40 @@
 /**
  * Agent icon helper.
  *
- * Each known ACP agent gets an icon: simple-icons SVG path when the
- * brand is in the registry (Claude, OpenAI Codex, Gemini), or a lucide
- * fallback for the long tail (OpenCode, Hermes, OpenClaw — projects too
- * young/small to have shipped marks into simple-icons yet).
+ * Brand marks via @lobehub/icons (LLM-specific single-color SVG library):
+ *   - Claude / Gemini still via simple-icons (cleaner Anthropic / Google
+ *     marks than LobeHub's)
+ *   - Codex / OpenCode / Hermes / OpenClaw via LobeHub `.Mono` (the
+ *     monochrome currentColor variant)
  *
- * Color: render with `currentColor` so the icon inherits its host's
- * text color. We want the chrome to be quiet (text-fg-muted by default),
- * not a brand-colored splash — that decision came from the sidebar
- * iteration where every row turned into a Christmas tree of orange/blue
- * marks. Black/grey reads as competent, not promotional.
+ * Color: currentColor everywhere so the icon inherits its host's text
+ * color (text-fg-muted by default).
  */
 
-import { siClaude, siGooglegemini, siZedindustries } from "simple-icons";
-import {
-  BotIcon,
-  CommandIcon,
-  type LucideIcon,
-  TerminalIcon,
-} from "lucide-react";
+import { siClaude, siGooglegemini } from "simple-icons";
+import { BotIcon } from "lucide-react";
+import CodexIcon from "@lobehub/icons/es/Codex";
+import HermesAgentIcon from "@lobehub/icons/es/HermesAgent";
+import OpenClawIcon from "@lobehub/icons/es/OpenClaw";
+import OpenCodeIcon from "@lobehub/icons/es/OpenCode";
 
 type SimpleIcon = { path: string; title: string };
 
 const SIMPLE: Record<string, SimpleIcon> = {
   "claude-acp": siClaude,
-  // codex-acp ships from Zed Industries (the editor team). Their wordmark
-  // is in simple-icons; OpenAI's own slug isn't (the brand pulled it).
-  "codex-acp": siZedindustries,
   "gemini": siGooglegemini,
 };
 
-const LUCIDE: Record<string, LucideIcon> = {
-  opencode: TerminalIcon,
-  hermes: BotIcon,
-  openclaw: CommandIcon,
+type LobeIcon = React.ComponentType<{ size?: number | string; className?: string }>;
+const LOBE: Record<string, LobeIcon> = {
+  "codex-acp": CodexIcon as unknown as LobeIcon,
+  opencode: OpenCodeIcon as unknown as LobeIcon,
+  hermes: HermesAgentIcon as unknown as LobeIcon,
+  openclaw: OpenClawIcon as unknown as LobeIcon,
 };
 
 /** React component that renders the icon for an agent id. Sized via the
- *  `size` class on the wrapper (lucide is sized by Tailwind `size-*`;
- *  simple-icons inline SVG inherits the same box). */
+ *  `size` class on the wrapper. */
 export function AgentIcon({
   agentId,
   className = "size-3.5",
@@ -63,6 +58,9 @@ export function AgentIcon({
       </svg>
     );
   }
-  const Lu = LUCIDE[agentId] ?? BotIcon;
-  return <Lu className={className} aria-label={title ?? agentId} />;
+  const Lobe = LOBE[agentId];
+  if (Lobe) {
+    return <Lobe className={className} aria-label={title ?? agentId} />;
+  }
+  return <BotIcon className={className} aria-label={title ?? agentId} />;
 }

@@ -1,11 +1,11 @@
 /**
  * Preload — runs in the isolated context bridging main and renderer. Exposes
- * only the narrow `OpenmaApi` surface (see src/shared/api.ts). NEVER reaches
+ * only the narrow `BackchatApi` surface (see src/shared/api.ts). NEVER reaches
  * out to `ipcRenderer` directly from the renderer.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
-import type { AgentInfo, OpenmaApi } from "../shared/api.js";
+import type { AgentInfo, BackchatApi } from "../shared/api.js";
 import type {
   SessionEventOut,
   SessionPromptParams,
@@ -13,7 +13,7 @@ import type {
 } from "../shared/session-events.js";
 import type { Settings } from "../shared/settings.js";
 
-const api: OpenmaApi = {
+const api: BackchatApi = {
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
 
   agentsList: () => ipcRenderer.invoke(InvokeChannel.AgentsList) as Promise<AgentInfo[]>,
@@ -41,6 +41,18 @@ const api: OpenmaApi = {
     ipcRenderer.invoke(InvokeChannel.SessionsSearch, query, limit) as Promise<
       import("../shared/api.js").SearchHitInfo[]
     >,
+  sessionsPin: (p: { session_id: string }) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsPin, p) as Promise<void>,
+  sessionsUnpin: (p: { session_id: string }) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsUnpin, p) as Promise<void>,
+  sessionsArchive: (p: { session_id: string }) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsArchive, p) as Promise<void>,
+  sessionsUnarchive: (p: { session_id: string }) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsUnarchive, p) as Promise<void>,
+  sessionsListArchived: () =>
+    ipcRenderer.invoke(InvokeChannel.SessionsListArchived) as Promise<import("../shared/api.js").PersistedSessionInfo[]>,
+  sessionsDelete: (p: { session_id: string }) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsDelete, p) as Promise<void>,
 
   onSessionEvent: (handler) => {
     const listener = (_e: IpcRendererEvent, msg: SessionEventOut) => handler(msg);
@@ -93,6 +105,48 @@ const api: OpenmaApi = {
     return () => ipcRenderer.removeListener(PushChannel.TerminalExit, l);
   },
 
+  // ----- User-facing terminal (bottom panel) -----
+  uiTermSpawn: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiTermSpawn, p) as Promise<{ terminalId: string }>,
+  uiTermInput: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiTermInput, p) as Promise<void>,
+  uiTermResize: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiTermResize, p) as Promise<void>,
+  uiTermDispose: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiTermDispose, p) as Promise<void>,
+  onUiTermData: (handler) => {
+    const l = (
+      _e: IpcRendererEvent,
+      f: { terminalId: string; data: string },
+    ) => handler(f);
+    ipcRenderer.on(PushChannel.UiTermData, l);
+    return () => ipcRenderer.removeListener(PushChannel.UiTermData, l);
+  },
+  onUiTermExit: (handler) => {
+    const l = (
+      _e: IpcRendererEvent,
+      f: { terminalId: string; exitCode: number | null; signal: string | null },
+    ) => handler(f);
+    ipcRenderer.on(PushChannel.UiTermExit, l);
+    return () => ipcRenderer.removeListener(PushChannel.UiTermExit, l);
+  },
+
+  uiFsListDir: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsListDir, p) as Promise<
+      { name: string; isDir: boolean; error?: string }[]
+    >,
+  uiFsHome: () => ipcRenderer.invoke(InvokeChannel.UiFsHome) as Promise<string>,
+  uiFsPickDir: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsPickDir, p ?? {}) as Promise<string | null>,
+  uiFsRecent: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsRecent, p) as Promise<
+      { name: string; path: string; isDir: boolean; mtime: number }[]
+    >,
+  uiFsOpenPath: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsOpenPath, p) as Promise<string>,
+  uiFsGitBranch: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsGitBranch, p) as Promise<string | null>,
+
   onMenuNavigate: (handler) => {
     const l = (_e: IpcRendererEvent, path: string) => handler(path);
     ipcRenderer.on(PushChannel.MenuNavigate, l);
@@ -105,4 +159,23 @@ const api: OpenmaApi = {
   },
 };
 
-contextBridge.exposeInMainWorld("openma", api);
+contextBridge.exposeInMainWorld("backchat", api);
+
+// Dev-only test bridge — exposed as `window.__backchatTest` so e2e
+// tests can push canned session payloads through the same channel a
+// real ACP child would. The main-side handlers are guarded by
+// BACKCHAT_TEST_HOOKS=1 (see ipc.ts), so calling these in production
+// just no-ops at the ipcMain level — but we still gate the preload
+// surface here too, mostly so dev tools don't tab-complete a footgun.
+if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
+  contextBridge.exposeInMainWorld("__backchatTest", {
+    injectSessionRow: (p: {
+      session_id: string;
+      agent_id: string;
+      cwd: string;
+      acp_session_id?: string;
+    }) => ipcRenderer.invoke(InvokeChannel.TestInjectSessionRow, p),
+    injectSessionEvent: (msg: unknown) =>
+      ipcRenderer.invoke(InvokeChannel.TestInjectSessionEvent, msg),
+  });
+}

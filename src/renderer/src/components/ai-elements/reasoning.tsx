@@ -97,22 +97,28 @@ export const Reasoning = memo(
       }
     }, [isStreaming, isOpen, setIsOpen, isExplicitlyClosed]);
 
-    // Auto-close when streaming ends (once only, and only if it ever streamed)
-    useEffect(() => {
-      if (
-        hasEverStreamedRef.current &&
-        !isStreaming &&
-        isOpen &&
-        !hasAutoClosed
-      ) {
-        const timer = setTimeout(() => {
-          setIsOpen(false);
-          setHasAutoClosed(true);
-        }, AUTO_CLOSE_DELAY);
-
-        return () => clearTimeout(timer);
-      }
-    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
+    // Auto-close after streaming ends — DISABLED. codex-style: the
+    // thinking block stays visible after the agent finishes so the
+    // user can re-read the reasoning trail at any time. Re-enable
+    // by uncommenting if a future surface wants the old behavior.
+    // useEffect(() => {
+    //   if (
+    //     hasEverStreamedRef.current &&
+    //     !isStreaming &&
+    //     isOpen &&
+    //     !hasAutoClosed
+    //   ) {
+    //     const timer = setTimeout(() => {
+    //       setIsOpen(false);
+    //       setHasAutoClosed(true);
+    //     }, AUTO_CLOSE_DELAY);
+    //
+    //     return () => clearTimeout(timer);
+    //   }
+    // }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
+    void hasEverStreamedRef;
+    void hasAutoClosed;
+    void setHasAutoClosed;
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {
@@ -129,7 +135,7 @@ export const Reasoning = memo(
     return (
       <ReasoningContext.Provider value={contextValue}>
         <Collapsible
-          className={cn("not-prose mb-4", className)}
+          className={cn("not-prose mb-2", className)}
           onOpenChange={handleOpenChange}
           open={isOpen}
           {...props}
@@ -204,8 +210,8 @@ export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
     <CollapsibleContent
       className={cn(
-        "mt-4 text-sm",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+        "mt-2 text-[13px] leading-6",
+        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-fg-muted outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
         className
       )}
       {...props}

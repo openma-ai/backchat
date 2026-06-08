@@ -15,16 +15,19 @@ export default defineConfig({
         // that calls `process.execPath install.js` thinking it's in dev
         // install mode.
         //
-        // better-sqlite3 is a native module — its bindings() lookup walks
-        // the filesystem from the require()ing file. Inlining the package
-        // breaks that lookup; externalize so Node resolves the package
-        // directory normally and finds build/Release/better_sqlite3.node.
+        // node-pty MUST be external — it's a native module with a runtime
+        // `require('./prebuilds/<plat>-<arch>/pty.node')` relative to the
+        // package's own lib dir. Inlining the JS would break that lookup
+        // because the require path would resolve from out/main/index.js,
+        // where no prebuilds/ folder exists. (`externalizeDepsPlugin()`
+        // SHOULD catch this automatically by reading dependencies, but
+        // we've seen it inline other deps too — explicit beats clever.)
         //
         // externalizeDepsPlugin() reads package.json#dependencies and
         // marks each one external; we still need this explicit entry for
         // `electron` (which lives in devDependencies — built into the
         // runtime, not bundled).
-        external: ["electron"],
+        external: ["electron", "node-pty"],
       },
     },
     resolve: {

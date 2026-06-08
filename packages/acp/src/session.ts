@@ -64,6 +64,20 @@ export class AcpSessionImpl implements AcpSession {
         // already known from the AcpSession instance, so the wrapper just
         // forces every consumer to do a redundant `.update.foo` indirection.
         const inner = (params as { update?: unknown })?.update;
+        // [debug] Dump every raw sessionUpdate notification at the
+        // adapter boundary. If a tool_call / image content arrives here
+        // but doesn't make it to session-manager's downstream tap, the
+        // bug is between this push and the for-await consumer (queue,
+        // backpressure, abort). Useful for diagnosing "renderer 丢东西".
+        try {
+          // eslint-disable-next-line no-console
+          console.log(
+            "[acp-session-rx]",
+            JSON.stringify(inner !== undefined ? inner : params).slice(0, 600),
+          );
+        } catch {
+          /* dbg log must not throw */
+        }
         this.#pushEvent(inner !== undefined ? inner : params);
       },
       requestPermission: async (params) => {
@@ -128,6 +142,38 @@ export class AcpSessionImpl implements AcpSession {
       mcpServers: this.options.mcpServers ?? [],
     });
     this.#sessionId = newSession.sessionId;
+  }
+
+  /** Switch the agent session into a specific mode (e.g. codex's
+   *  `read-only` / `auto` / `full-access`). Returns silently when the
+   *  agent doesn't support setSessionMode at all — older / minimal
+   *  adapters can be ignored, the caller already accepted that risk
+   *  by trying to set a mode.
+   *
+   *  Codex defaults a new session to `read-only`, which forbids any
+   *  sandboxed exec (and therefore the `imagegen` MCP skill, etc).
+   *  Backchat's "auto" / "full access" permission_mode setting needs
+   *  to call through here on session boot or the user sees the agent
+   *  hallucinate ("已生成") instead of actually invoking the tool. */
+  async setMode(modeId: string): Promise<void> {
+    if (!this.#agent || !this.#sessionId) {
+      throw new Error("AcpSession not initialized");
+    }
+    // Optional method — older SDK versions don't have it. Older
+    // adapters might not implement it either; either way we treat
+    // absence as "fine, no-op".
+    const setSessionMode = (this.#agent as { setSessionMode?: (p: unknown) => Promise<unknown> })
+      .setSessionMode;
+    if (typeof setSessionMode !== "function") return;
+    try {
+      await setSessionMode.call(this.#agent, {
+        sessionId: this.#sessionId,
+        modeId,
+      });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(`[acp] setSessionMode("${modeId}") failed:`, e);
+    }
   }
 
   prompt(text: string, opts?: { abortSignal?: AbortSignal }): AsyncIterable<unknown> {

@@ -47,7 +47,7 @@ export function ChatPage() {
     if (!HISTORY_LOADED.has(params.sessionId)) {
       HISTORY_LOADED.add(params.sessionId);
       lastLoadedRef.current = params.sessionId;
-      void window.openma
+      void window.backchat
         .sessionsLoadHistory(params.sessionId)
         .then((rows) => sessionStore.replayHistory(params.sessionId!, rows));
     }

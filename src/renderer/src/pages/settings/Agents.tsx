@@ -21,7 +21,7 @@ export function SettingsAgents() {
   const settings = useSettings();
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
-    queryFn: () => window.openma.agentsList(),
+    queryFn: () => window.backchat.agentsList(),
   });
 
   const defaultId = settings?.default.agent_id ?? "";
@@ -46,7 +46,7 @@ export function SettingsAgents() {
       </header>
 
       <section>
-        <h2 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
+        <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
           Default agent ({detected.length} detected)
         </h2>
         {detected.length === 0 ? (
@@ -63,17 +63,17 @@ export function SettingsAgents() {
                   className={cn(
                     "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
                     defaultId === a.id
-                      ? "bg-brand-subtle/50 text-fg"
+                      ? "bg-bg-surface text-fg"
                       : "bg-bg-surface/40 hover:bg-bg-surface text-fg",
                   )}
                 >
                   {defaultId === a.id ? (
-                    <CheckCircle2Icon className="size-4 shrink-0 text-brand" />
+                    <CheckCircle2Icon className="size-4 shrink-0 text-fg-muted" />
                   ) : (
                     <CircleIcon className="size-4 shrink-0 text-fg-subtle" />
                   )}
                   <span className="flex-1 truncate font-medium">{a.label}</span>
-                  <span className="font-mono text-[10px] text-fg-subtle">{a.id}</span>
+                  <span className="font-mono text-[11px] text-fg-subtle">{a.id}</span>
                 </button>
               </li>
             ))}
@@ -86,7 +86,7 @@ export function SettingsAgents() {
           {/* Collapsed by default — the registry has ~30 agents, most of
               which the user will never install. The few they have are
               what matters, and they live in the section above. */}
-          <summary className="cursor-pointer list-none text-[10px] font-medium uppercase tracking-wider text-fg-subtle hover:text-fg-muted">
+          <summary className="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wider text-fg-subtle hover:text-fg-muted">
             <span className="inline-flex items-center gap-1.5">
               <span className="transition-transform group-open:rotate-90">›</span>
               Show {undetected.length} not installed
@@ -110,7 +110,7 @@ export function SettingsAgents() {
                   </a>
                 )}
                 {a.installHint && (
-                  <Badge variant="secondary" className="font-mono text-[10px]">
+                  <Badge variant="secondary" className="font-mono text-[11px]">
                     {a.installHint.length > 32
                       ? a.installHint.slice(0, 32) + "…"
                       : a.installHint}

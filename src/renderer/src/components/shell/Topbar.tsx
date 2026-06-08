@@ -1,71 +1,135 @@
-import { CircleStopIcon, FolderIcon } from "lucide-react";
+import { CheckIcon, CloudIcon, FolderIcon, MonitorIcon } from "lucide-react";
+import { useLocation } from "@tanstack/react-router";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { selectActive, useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 
 /**
- * Topbar — sits at the h-11 baseline. Shows the active session as a tiny
- * breadcrumb (folder icon → session label → cwd hint → status) plus the
- * cancel-turn button while a turn is streaming.
+ * Topbar — drag region on the main region's top stage row.
  *
- * Empty state: nothing. The sidebar's `[openma]` brand is the global
- * identifier; a second "openma desktop" string here would be redundant
- * with it. We trade an empty topbar for cleaner real estate.
+ *   [folder] [session label] · [cwd?] [runtime] [mode?]
+ *
+ * No Cancel button — composer's Stop button (right side of the input
+ * when running) is the single cancel affordance. The sidebar toggle
+ * lives globally in AppShell (absolute-positioned next to trafficLight).
+ *
+ * Empty when no session is active (home) OR when the user is on a
+ * route that has its own chrome (settings) — the chat-specific chips
+ * read as noise once you've navigated away from the chat surface.
  */
-export function Topbar({ onCancel }: { onCancel: () => void }) {
+export function Topbar(_props: { onCancel: () => void }) {
+  void _props;
   const active = useSessionStore(selectActive);
-  if (!active) return null;
+  const location = useLocation();
+  const isChat = location.pathname.startsWith("/chat/");
+  if (!active || !isChat) return null;
 
-  const cwdHint = displayCwd(active.cwd);
   return (
-    <div className="flex w-full items-center gap-3 text-sm">
+    <div className="flex w-full items-center gap-2 text-sm">
       <div className="app-no-drag flex min-w-0 flex-1 items-center gap-2 text-fg-muted">
         <FolderIcon className="size-3.5 shrink-0" />
-        <span className="shrink-0 truncate text-fg">{active.label}</span>
-        <StatusLabel status={active.status} />
-        {cwdHint && (
-          <span className="ml-1 min-w-0 truncate font-mono text-[11px] text-fg-subtle">
-            {cwdHint}
-          </span>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {active.status === "running" && (
-          <button
-            className="app-no-drag inline-flex items-center gap-1.5 rounded-md bg-bg-surface px-2 py-1 text-xs text-fg-muted hover:bg-bg-surface/80"
-            onClick={onCancel}
-          >
-            <CircleStopIcon className="size-3.5" />
-            Cancel turn
-          </button>
-        )}
+        <span className="truncate text-fg">{active.label}</span>
+        <CwdChip cwd={active.cwd} />
+        <RuntimeChip />
+        <ModeChip modeId={active.currentModeId} />
       </div>
     </div>
   );
 }
 
-/** Compact status label — text only, no colored pill. "ready" hides
- *  entirely (it's the boring default); only states the user might care
- *  about read. errored gets the one danger color we allow. */
-function StatusLabel({ status }: { status: string }) {
-  if (status === "ready") return null;
+/** Runtime location — Local now, Cloud once openma backend wiring lands.
+ *  Always visible in topbar so the user can confirm where this turn will
+ *  execute. Cloud is disabled with a "Coming soon" hint. */
+function RuntimeChip() {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={cn(
+          "app-no-drag inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]",
+          "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg-muted",
+          "focus:outline-none focus:bg-bg-surface/60",
+          "transition-colors",
+        )}
+        title="Where this conversation runs"
+      >
+        <MonitorIcon className="size-3" />
+        <span>Local</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={6} className="min-w-[200px]">
+        <DropdownMenuItem className="flex items-center gap-2 text-xs">
+          <MonitorIcon className="size-3.5 text-fg-subtle" />
+          <span className="flex-1">Local</span>
+          <CheckIcon className="size-3.5 text-fg-muted" />
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled
+          className="flex items-start gap-2 text-xs opacity-60"
+        >
+          <CloudIcon className="mt-0.5 size-3.5 text-fg-subtle" />
+          <div className="min-w-0 flex-1">
+            <div>Cloud</div>
+            <div className="text-[11px] text-fg-subtle">Coming soon</div>
+          </div>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Read-only workspace label — surfaces the cwd the ACP child actually
+ *  spawned into so the user can confirm "this conversation is rooted
+ *  here". Hidden when the session hasn't reached `ready` yet (cwd is
+ *  empty string until session.ready lands). Click opens the dir in
+ *  the OS file browser. */
+function CwdChip({ cwd }: { cwd: string }) {
+  if (!cwd) return null;
+  const short = shortCwd(cwd);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void window.backchat.uiFsOpenPath({ path: cwd });
+      }}
+      title={cwd}
+      className={cn(
+        "shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px]",
+        "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg-muted",
+        "transition-colors",
+      )}
+    >
+      {short}
+    </button>
+  );
+}
+
+function shortCwd(p: string): string {
+  const parts = p.split("/").filter(Boolean);
+  if (parts.length === 0) return "/";
+  if (parts.length <= 2) return "/" + parts.join("/");
+  return "…/" + parts.slice(-2).join("/");
+}
+
+/** Current agent mode chip — driven by ACP `current_mode_update`. Each
+ *  agent owns its own mode catalog (codex: ask/auto/yolo; claude:
+ *  bypass/default; gemini's thinking levels) so we just echo the id the
+ *  agent declared. Hidden when the agent hasn't sent one. */
+function ModeChip({ modeId }: { modeId?: string }) {
+  if (!modeId) return null;
   return (
     <span
       className={cn(
-        "shrink-0 text-[10px] font-medium uppercase tracking-wider",
-        status === "errored" ? "text-danger" : "text-fg-subtle",
+        "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium",
+        "bg-bg-surface text-fg-muted",
       )}
+      title={`Agent mode · ${modeId}`}
     >
-      {status}
+      {modeId}
     </span>
   );
 }
 
-/** Path to show in the topbar. Returns null (not an "(internal)" string)
- *  when the cwd is one of openma-desktop's autocreated per-session dirs
- *  — those are bookkeeping the user didn't pick and shouldn't see. Only
- *  user-chosen workspace paths (Phase 4+) get displayed. */
-function displayCwd(p: string): string | null {
-  if (!p) return null;
-  if (p.includes("/openma-desktop/sessions/")) return null;
-  return p.replace(/^\/Users\/[^/]+/, "~");
-}

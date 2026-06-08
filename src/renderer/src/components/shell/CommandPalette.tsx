@@ -21,11 +21,10 @@ import {
   SearchIcon,
   CornerDownLeftIcon,
 } from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import {
-  newDraftSession,
   selectSessions,
   sessionStore,
   useSessionStore,
@@ -93,7 +92,7 @@ export function CommandPalette() {
       return;
     }
     const handle = setTimeout(() => {
-      void window.openma
+      void window.backchat
         .sessionsSearch(query, 12)
         .then((r) => setHits(r))
         .catch(() => setHits([]));
@@ -129,9 +128,11 @@ export function CommandPalette() {
   };
 
   const actionNewChat = () => {
-    const sid = newDraftSession();
-    pushRecent(sid);
-    void navigate({ to: "/chat/$sessionId", params: { sessionId: sid } });
+    // Cold-create: route to home, no draft session materialized until
+    // the user actually submits a prompt. Same shape as the sidebar's
+    // "+ New chat" button.
+    sessionStore.setActive(null);
+    void navigate({ to: "/" });
     setOpen(false);
   };
   const actionToggleTheme = () => {
@@ -141,10 +142,28 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="!max-w-xl gap-0 overflow-hidden p-0">
+      <DialogContent
+        showCloseButton={false}
+        className={cn(
+          "!max-w-xl gap-0 overflow-hidden p-0",
+          // Stable anchor on growth — top-anchored at 18vh instead of
+          // vertical-centered. List height changes don't shift the dialog
+          // up/down, which is the #1 source of "open flicker / height jump".
+          // Override the default `top-1/2 -translate-y-1/2` shadcn Dialog
+          // applies. We use important to beat shadcn's inline transform.
+          "!top-[18vh] !translate-y-0",
+        )}
+      >
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
         <Command
           shouldFilter={query.length < 2}
-          className="flex max-h-[460px] flex-col"
+          // Container is flex-col but UNBOUNDED in height — the dialog
+          // grows with content. The TOP anchor is fixed (top:15vh on
+          // DialogContent above) so the *header* line never moves; only
+          // the bottom edge grows downward as the list gets longer. Inner
+          // list transitions height with a transition so growth feels
+          // smooth instead of jumping.
+          className="flex flex-col"
           label="Command palette"
         >
           <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
@@ -156,12 +175,24 @@ export function CommandPalette() {
               placeholder="Type a command or search chats…"
               className="flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
             />
-            <kbd className="rounded bg-bg-surface px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle">
+            <kbd className="rounded bg-bg-surface px-1.5 py-0.5 font-mono text-[11px] text-fg-subtle">
               esc
             </kbd>
           </div>
 
-          <Command.List className="flex-1 overflow-y-auto p-1">
+          <Command.List
+            className="overflow-y-auto p-1"
+            // cmdk auto-sets --cmdk-list-height to the measured rendered
+            // height. Use it as the actual height with a transition so
+            // size changes (item count grows / shrinks) animate smoothly
+            // instead of jumping. Cap at 60vh so very long lists scroll
+            // internally instead of pushing the dialog off-screen.
+            style={{
+              height: "min(var(--cmdk-list-height, auto), 60vh)",
+              maxHeight: "60vh",
+              transition: "height 180ms cubic-bezier(0.32, 0.72, 0, 1)",
+            }}
+          >
             <Command.Empty className="px-3 py-6 text-center text-xs text-fg-muted">
               No results.
             </Command.Empty>
@@ -176,10 +207,12 @@ export function CommandPalette() {
                     onSelect={() => goSession(h.session_id)}
                     className={itemClass}
                   >
-                    <AgentIcon
-                      agentId={h.agent_id}
-                      className="size-3.5 shrink-0 text-fg-subtle"
-                    />
+                    <CmdSlot>
+                      <AgentIcon
+                        agentId={h.agent_id}
+                        className="size-3.5 text-fg-subtle"
+                      />
+                    </CmdSlot>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-fg">
                         {h.session_title || h.session_id.slice(0, 12)}
@@ -188,7 +221,7 @@ export function CommandPalette() {
                         <Snippet text={h.snippet} />
                       </div>
                     </div>
-                    <span className="shrink-0 font-mono text-[10px] uppercase text-fg-subtle">
+                    <span className="shrink-0 font-mono text-[11px] uppercase text-fg-subtle">
                       {h.type === "user_prompt" ? "you" : "agent"}
                     </span>
                   </Command.Item>
@@ -206,7 +239,9 @@ export function CommandPalette() {
                     onSelect={() => goSession(s.id)}
                     className={itemClass}
                   >
-                    <ClockIcon className="size-3.5 shrink-0 text-fg-subtle" />
+                    <CmdSlot>
+                      <ClockIcon className="size-3.5 text-fg-subtle" />
+                    </CmdSlot>
                     <span className="flex-1 truncate text-fg">{s.label}</span>
                     {s.agent_id && (
                       <AgentIcon
@@ -226,7 +261,9 @@ export function CommandPalette() {
                 onSelect={actionNewChat}
                 className={itemClass}
               >
-                <MessageSquarePlusIcon className="size-3.5 shrink-0 text-fg-subtle" />
+                <CmdSlot>
+                  <MessageSquarePlusIcon className="size-3.5 text-fg-subtle" />
+                </CmdSlot>
                 <span className="flex-1 text-fg">New chat</span>
                 <KbdHint>n</KbdHint>
               </Command.Item>
@@ -235,18 +272,23 @@ export function CommandPalette() {
                 onSelect={actionToggleTheme}
                 className={itemClass}
               >
-                {effective === "dark" ? (
-                  <SunIcon className="size-3.5 shrink-0 text-fg-subtle" />
-                ) : (
-                  <MoonStarIcon className="size-3.5 shrink-0 text-fg-subtle" />
-                )}
+                <CmdSlot>
+                  {effective === "dark" ? (
+                    <SunIcon className="size-3.5 text-fg-subtle" />
+                  ) : (
+                    <MoonStarIcon className="size-3.5 text-fg-subtle" />
+                  )}
+                </CmdSlot>
                 <span className="flex-1 text-fg">
                   {effective === "dark" ? "Switch to light mode" : "Switch to dark mode"}
                 </span>
               </Command.Item>
             </CmdGroup>
 
-            {/* NAVIGATE — sidebar routes. */}
+            {/* NAVIGATE — sidebar routes. No kbd chord hints here on
+                purpose; we don't wire `g h` / `g ,` chord handlers, and
+                showing fake shortcut hints in a keyboard-first surface
+                erodes trust faster than missing them does. */}
             <CmdGroup heading="Navigate">
               <Command.Item
                 value="nav-home"
@@ -256,9 +298,10 @@ export function CommandPalette() {
                 }}
                 className={itemClass}
               >
-                <SearchIcon className="size-3.5 shrink-0 text-fg-subtle opacity-0" />
+                <CmdSlot>
+                  <SearchIcon className="size-3.5 text-fg-subtle opacity-0" />
+                </CmdSlot>
                 <span className="flex-1 text-fg">Home</span>
-                <KbdHint>g h</KbdHint>
               </Command.Item>
               <Command.Item
                 value="nav-settings"
@@ -268,45 +311,53 @@ export function CommandPalette() {
                 }}
                 className={itemClass}
               >
-                <Settings2Icon className="size-3.5 shrink-0 text-fg-subtle" />
+                <CmdSlot>
+                  <Settings2Icon className="size-3.5 text-fg-subtle" />
+                </CmdSlot>
                 <span className="flex-1 text-fg">Settings</span>
-                <KbdHint>g ,</KbdHint>
               </Command.Item>
             </CmdGroup>
 
-            {/* All chats — last (so Recent + Actions land above the fold). */}
-            {query.length === 0 && sessions.length > 0 && (
-              <CmdGroup heading="All chats">
-                {sessions.slice(0, 30).map((s) => (
-                  <Command.Item
-                    key={`all-${s.id}`}
-                    value={`all-${s.id} ${s.label}`}
-                    onSelect={() => goSession(s.id)}
-                    className={itemClass}
-                  >
-                    {s.agent_id ? (
-                      <AgentIcon
-                        agentId={s.agent_id}
-                        className="size-3.5 shrink-0 text-fg-subtle"
-                      />
-                    ) : (
-                      <span className="size-3.5 shrink-0" />
-                    )}
-                    <span className="flex-1 truncate text-fg">{s.label}</span>
-                  </Command.Item>
-                ))}
-              </CmdGroup>
-            )}
+            {/* All chats — only when the user has more than the 5 Recent
+                items above. Capped at 8 so Recent + Actions + Navigate
+                always stay above the fold. Hidden entirely when there's
+                nothing left to add beyond Recent. */}
+            {query.length === 0 &&
+              sessions.length > recentRows.length && (
+                <CmdGroup heading="All chats">
+                  {sessions
+                    .filter((s) => !recentIds.includes(s.id))
+                    .slice(0, 8)
+                    .map((s) => (
+                      <Command.Item
+                        key={`all-${s.id}`}
+                        value={`all-${s.id} ${s.label}`}
+                        onSelect={() => goSession(s.id)}
+                        className={itemClass}
+                      >
+                        <CmdSlot>
+                          {s.agent_id && (
+                            <AgentIcon
+                              agentId={s.agent_id}
+                              className="size-3.5 text-fg-subtle"
+                            />
+                          )}
+                        </CmdSlot>
+                        <span className="flex-1 truncate text-fg">{s.label}</span>
+                      </Command.Item>
+                    ))}
+                </CmdGroup>
+              )}
           </Command.List>
 
-          <div className="flex items-center justify-end gap-2 border-t border-border/40 px-3 py-1.5 text-[10px] text-fg-subtle">
+          <div className="flex items-center justify-end gap-2 border-t border-border/40 px-3 py-1.5 text-xs text-fg-subtle">
             <span className="inline-flex items-center gap-1">
               <CornerDownLeftIcon className="size-3" />
               to open
             </span>
             <span>·</span>
             <span className="inline-flex items-center gap-1">
-              <kbd className="rounded bg-bg-surface px-1 py-0.5 font-mono text-[9px]">
+              <kbd className="rounded bg-bg-surface px-1 py-0.5 font-mono text-[11px]">
                 ↑↓
               </kbd>
               to navigate
@@ -315,6 +366,14 @@ export function CommandPalette() {
         </Command>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CmdSlot({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex size-4 shrink-0 items-center justify-center">
+      {children}
+    </span>
   );
 }
 
@@ -328,7 +387,7 @@ function CmdGroup({
   return (
     <Command.Group
       heading={
-        <span className="px-2 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
+        <span className="px-2 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
           {heading}
         </span>
       }
@@ -340,7 +399,7 @@ function CmdGroup({
 
 function KbdHint({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="shrink-0 rounded bg-bg-surface px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle">
+    <kbd className="shrink-0 rounded bg-bg-surface px-1.5 py-0.5 font-mono text-[11px] text-fg-subtle">
       {children}
     </kbd>
   );
@@ -356,7 +415,7 @@ function Snippet({ text }: { text: string }) {
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
     parts.push(
-      <mark key={i++} className="rounded bg-brand-subtle px-0.5 text-brand-fg">
+      <mark key={i++} className="rounded bg-fg/10 px-0.5 text-fg">
         {m[1]}
       </mark>,
     );

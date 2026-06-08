@@ -32,7 +32,7 @@ export interface SessionPromptParams {
 }
 
 /** Outbound (main → renderer) wire shapes. The renderer subscribes via
- *  `window.openma.onSessionEvent(handler)` (preload). */
+ *  `window.backchat.onSessionEvent(handler)` (preload). */
 export type SessionEventOut =
   | {
       type: "session.ready";

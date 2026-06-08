@@ -1,9 +1,9 @@
 {
-  "name": "openma-desktop",
+  "name": "backchat",
   "version": "0.0.1",
   "private": true,
   "description": "Local-first desktop client for any ACP agent",
-  "author": "openma-desktop contributors",
+  "author": "backchat contributors",
   "main": "out/main/index.js",
   "type": "module",
   "engines": {
@@ -14,6 +14,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test:e2e": "electron-vite build && playwright test",
     "package": "electron-vite build && electron-builder",
     "package:dir": "electron-vite build && electron-builder --dir",
     "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty"
@@ -21,8 +22,10 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@lobehub/icons": "^5.10.0",
     "@open-managed-agents-desktop/acp": "workspace:*",
     "@radix-ui/react-collapsible": "^1.1.12",
+    "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-scroll-area": "^1.2.10",
@@ -31,15 +34,12 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
-    "@streamdown/cjk": "^1.0.3",
-    "@streamdown/code": "^1.1.1",
-    "@streamdown/math": "^1.0.2",
-    "@streamdown/mermaid": "^1.0.2",
     "ai": "^6.0.194",
+    "liquid-glass-react": "^1.1.1",
     "motion": "^12.40.0",
     "nanoid": "^5.1.11",
+    "node-pty": "1.2.0-beta.13",
     "radix-ui": "^1.4.3",
-    "shiki": "^4.1.0",
     "simple-icons": "^16.22.0",
     "smol-toml": "^1.6.1",
     "streamdown": "^2.5.0",
@@ -47,6 +47,7 @@
     "use-stick-to-bottom": "^1.1.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.100.14",
     "@tanstack/react-router": "^1.170.10",
@@ -54,6 +55,9 @@
     "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -71,11 +75,12 @@
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
+    "vitest": "^4.1.8",
     "zod": "^4.4.3"
   },
   "build": {
-    "appId": "dev.openma.desktop",
-    "productName": "openma desktop",
+    "appId": "dev.openma.backchat",
+    "productName": "Backchat",
     "directories": {
       "output": "release/${version}"
     },
@@ -105,7 +110,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron",
-      "esbuild"
+      "esbuild",
+      "node-pty"
     ]
   }
 }

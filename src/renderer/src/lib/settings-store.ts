@@ -4,7 +4,7 @@ import type { Settings } from "@shared/settings.js";
 /**
  * Settings store hook — reads + subscribes to the main-process settings via
  * IPC. Renderer never owns settings state directly; main is the source of
- * truth (it writes to ~/.openma-desktop/config.toml). The hook caches the
+ * truth (it writes to ~/.openma/config.toml). The hook caches the
  * most recent snapshot in module scope so multiple consumers don't trigger
  * redundant `settings:get` round-trips on mount.
  */
@@ -21,8 +21,8 @@ function notify(s: Settings) {
 async function ensureSubscribed(): Promise<void> {
   if (_ipcWiredUp) return;
   _ipcWiredUp = true;
-  window.openma.onSettingsChanged((s) => notify(s));
-  const initial = await window.openma.settingsGet();
+  window.backchat.onSettingsChanged((s) => notify(s));
+  const initial = await window.backchat.settingsGet();
   notify(initial);
 }
 
@@ -52,5 +52,5 @@ export function getSettings(): Settings | null {
 }
 
 export async function patchSettings(partial: Partial<Settings>): Promise<void> {
-  await window.openma.settingsPatch(partial);
+  await window.backchat.settingsPatch(partial);
 }

@@ -1,6 +1,6 @@
 /**
  * Renderer-facing surface exposed via contextBridge. Renderer code reads this
- * type via `window.openma`. Main owns the implementation; preload forwards.
+ * type via `window.backchat`. Main owns the implementation; preload forwards.
  *
  * Keep narrow: every method is a permission boundary.
  */
@@ -35,6 +35,9 @@ export interface PersistedSessionInfo {
   last_used_at: number;
   created_at: number;
   archived_at: number | null;
+  /** Wall-clock ms the user pinned this row, or null when not pinned.
+   *  Older db files (pre-pin) have the column present but null. */
+  pinned_at: number | null;
 }
 
 /** Public shape of one persisted event. `data` is JSON-encoded text — the
@@ -101,7 +104,7 @@ export interface SearchHitInfo {
   snippet: string;
 }
 
-export interface OpenmaApi {
+export interface BackchatApi {
   /** Smoke test for the IPC channel. */
   ping(msg: string): Promise<string>;
 
@@ -131,6 +134,25 @@ export interface OpenmaApi {
    *  Search section. Empty query returns []. */
   sessionsSearch(query: string, limit?: number): Promise<SearchHitInfo[]>;
 
+  /** Set/clear the "pinned to top of sidebar" flag. Pinned sessions
+   *  appear in a separate section above the regular Chats list,
+   *  ordered by pinned_at desc. */
+  sessionsPin(p: { session_id: string }): Promise<void>;
+  sessionsUnpin(p: { session_id: string }): Promise<void>;
+  /** Archive hides a session from the sidebar. The row + events stay
+   *  in SQLite so Search can find it and the user can unarchive
+   *  later. Does NOT dispose the ACP child (in case of unarchive). */
+  sessionsArchive(p: { session_id: string }): Promise<void>;
+  sessionsUnarchive(p: { session_id: string }): Promise<void>;
+  /** Return every archived session row, newest archive first. The
+   *  Sidebar hides these; Settings → Archive surfaces them so the
+   *  user can restore or hard-delete. */
+  sessionsListArchived(): Promise<PersistedSessionInfo[]>;
+  /** Hard-delete a session. Removes the SQL row (events cascade) and
+   *  the on-disk session dir under `~/.openma/sessions/<id>/`. Caller
+   *  should confirm with the user first — this is irreversible. */
+  sessionsDelete(p: { session_id: string }): Promise<void>;
+
   /** Subscribe to push events. Returns an unsubscribe fn. */
   onSessionEvent(handler: (e: SessionEventOut) => void): () => void;
 
@@ -158,6 +180,72 @@ export interface OpenmaApi {
   onTerminalOutput(handler: (frame: TerminalOutputFrame) => void): () => void;
   onTerminalExit(handler: (frame: TerminalExitFrame) => void): () => void;
 
+  // ----- User-facing terminal (bottom panel) -----
+
+  /** Spawn a new pty-backed shell. Returns the assigned terminalId,
+   *  which the renderer then uses for all subsequent input/resize/
+   *  dispose / data-subscription calls. cols/rows seed the initial
+   *  pty window; cwd defaults to $HOME if omitted. */
+  uiTermSpawn(p: { cwd?: string; cols: number; rows: number }): Promise<{ terminalId: string }>;
+  /** Send keystrokes to the pty. `data` is the raw bytes xterm.js
+   *  hands us via its `onData` callback (already encoded — we pass
+   *  through). */
+  uiTermInput(p: { terminalId: string; data: string }): Promise<void>;
+  /** Window-size change. Send on container resize so curses-style
+   *  programs reflow. */
+  uiTermResize(p: { terminalId: string; cols: number; rows: number }): Promise<void>;
+  /** Kill the pty + clean up listeners. Triggered when the tab closes. */
+  uiTermDispose(p: { terminalId: string }): Promise<void>;
+  /** Batched stdout/stderr chunks from a live pty. One push may carry
+   *  many pty `onData` events coalesced inside a single ~16ms frame to
+   *  keep IPC overhead in line with renderer throughput. */
+  onUiTermData(
+    handler: (frame: { terminalId: string; data: string }) => void,
+  ): () => void;
+  /** The pty exited (clean exit or signal). The renderer paints a
+   *  small footer in the tab and stops listening on the channel. */
+  onUiTermExit(
+    handler: (frame: {
+      terminalId: string;
+      exitCode: number | null;
+      signal: string | null;
+    }) => void,
+  ): () => void;
+
+  // ----- User-facing fs (side-panel file tree) -----
+
+  /** List the entries inside a directory. Folders first, then
+   *  alphabetical. Returns an `error` field per entry when stat()
+   *  failed (broken symlink, permission denied, etc.). Returns one
+   *  synthetic error row when the directory itself can't be read. */
+  uiFsListDir(p: { path: string }): Promise<
+    { name: string; isDir: boolean; error?: string }[]
+  >;
+
+  /** $HOME (or %USERPROFILE% on Windows). Used by the file tree as a
+   *  default root when no chat session has supplied a cwd yet. */
+  uiFsHome(): Promise<string>;
+
+  /** Open the native "Choose folder" dialog. Returns the picked
+   *  absolute path, or null if the user cancelled. */
+  uiFsPickDir(p?: { defaultPath?: string }): Promise<string | null>;
+
+  /** Recent entries in a directory — sorted by mtime (newest first),
+   *  hidden / noise (.dotfiles, node_modules) filtered out. Top N
+   *  returned. Used by the side-panel empty state "推荐" feed. */
+  uiFsRecent(p: { path: string; limit?: number }): Promise<
+    { name: string; path: string; isDir: boolean; mtime: number }[]
+  >;
+
+  /** Open a path with the OS-default handler. Returns "" on success
+   *  or an error message string on failure. */
+  uiFsOpenPath(p: { path: string }): Promise<string>;
+
+  /** Read the current git branch for a workspace dir. Returns the
+   *  branch name (e.g. "main"), or null if the path isn't a git repo,
+   *  the read failed, or HEAD is detached (40-char SHA). */
+  uiFsGitBranch(p: { path: string }): Promise<string | null>;
+
   /** Native menu fired a navigate request — payload is the route path. */
   onMenuNavigate(handler: (path: string) => void): () => void;
   /** Native menu fired a renderer action — payload is "new-chat" |
@@ -167,6 +255,6 @@ export interface OpenmaApi {
 
 declare global {
   interface Window {
-    openma: OpenmaApi;
+    backchat: BackchatApi;
   }
 }

@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
-import { CpuIcon, InfoIcon, PaletteIcon, ServerIcon } from "lucide-react";
+import { ArchiveIcon, CpuIcon, InfoIcon, PaletteIcon, ServerIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,6 +13,7 @@ const TABS: { to: string; label: string; icon: React.ComponentType<{ className?:
   { to: "/settings/agents", label: "Agents", icon: CpuIcon },
   { to: "/settings/mcp-servers", label: "MCP Servers", icon: ServerIcon },
   { to: "/settings/appearance", label: "Appearance", icon: PaletteIcon },
+  { to: "/settings/archive", label: "Archive", icon: ArchiveIcon },
   { to: "/settings/about", label: "About", icon: InfoIcon },
 ];
 
@@ -21,7 +22,7 @@ export function SettingsLayout() {
   return (
     <div className="grid h-full min-h-0 grid-cols-[180px_1fr]">
       <nav className="overflow-y-auto px-3 py-4">
-        <div className="mb-2 px-2 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
+        <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
           Settings
         </div>
         <ul className="space-y-0.5">

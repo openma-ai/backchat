@@ -13,7 +13,11 @@ export type ConversationProps = ComponentProps<typeof StickToBottom>;
 export const Conversation = ({ className, ...props }: ConversationProps) => (
   <StickToBottom
     className={cn("relative flex-1 overflow-y-hidden", className)}
-    initial="smooth"
+    // initial="false" lands the scroll position at the TOP of the
+    // conversation when the component mounts (e.g. when the user opens
+    // an existing chat). Stick-to-bottom still kicks in once they're
+    // actively at the bottom and new turns stream in.
+    initial={false}
     resize="smooth"
     role="log"
     {...props}

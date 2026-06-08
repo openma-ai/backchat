@@ -30,12 +30,14 @@ import { spawn as childSpawn } from "node:child_process";
 import { AcpRuntimeImpl, type AcpSession, type ClientCallbacks } from "@open-managed-agents-desktop/acp";
 import { NodeSpawner } from "@open-managed-agents-desktop/acp/node-spawner";
 import { resolveKnownAgent } from "@open-managed-agents-desktop/acp/registry";
+import { ensureLatestAcpBinary } from "@open-managed-agents-desktop/acp/binary-update";
 import type { SessionEventOut, SessionStartParams, SessionPromptParams } from "../shared/session-events.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
 import {
   appendEvent,
   appendEventsTx,
   archiveSession,
+  setSessionTitleIfEmpty,
   touchSession,
   upsertSession,
 } from "./sql-store.js";
@@ -74,6 +76,7 @@ export interface SessionManagerDeps {
   resolveDefaults: () => {
     agentId?: string;
     cwd?: string;
+    permissionMode?: "ask" | "auto" | "read_only";
   };
   resolveAgentOverride: (
     agentId: string,
@@ -197,11 +200,28 @@ export class SessionManager {
       return;
     }
 
-    // Cwd resolution: caller > settings default > userData fallback. The
-    // last branch creates a per-session dir under userData/sessions which
-    // outlives the daemon (resume-friendly, see session-cwd.ts).
+    // Cwd resolution: caller > settings default > managed-dir fallback.
+    // The last branch creates a per-session dir under ~/.openma/sessions/
+    // which outlives the daemon (resume-friendly, see session-cwd.ts).
     const sessionCwd =
       p.cwd ?? defaults.cwd ?? (await ensureSessionCwd(p.session_id));
+
+    // Best-effort: pull the latest binary for this agent before we spawn,
+    // so a user who hasn't manually upgraded a binary still gets fixes
+    // shipped by the upstream adapter (e.g. codex-acp 0.14.0 added image
+    // generation tool_call emission — without auto-update the user is
+    // stuck on whatever they first installed). Runs at most once per
+    // hour per agent_id; failures (network, permission, arch mismatch)
+    // are swallowed and we fall through to spawning whatever is on disk.
+    if (agent.spec.command === command) {
+      await ensureLatestAcpBinary(agent.id, {
+        registryVersion: agent.version,
+        install: agent.install,
+        command,
+      }).catch(() => {
+        /* swallowed — best-effort */
+      });
+    }
 
     try {
       const acpSession = await this.#runtime.start({
@@ -267,17 +287,30 @@ export class SessionManager {
     sess.turns.set(p.turn_id, ctrl);
     let promptErr: string | null = null;
 
-    // Per-turn accumulators for persistence. We DO NOT persist every
-    // agent_message_chunk individually — would be thousands of rows per
-    // turn. Instead we collect the full text and write one row at end.
-    // Structural events (tool_call, plan) are buffered too and written
-    // in the same end-of-turn transaction.
+    // Per-turn accumulators for persistence. Originally we coalesced
+    // every agent_message_chunk into a single agent_message row at
+    // end-of-turn (saving ~thousands of rows per turn), but that
+    // destroyed the relative ordering between text chunks and
+    // tool_call events — the renderer's timeline view could only show
+    // "all tools, then a final message blob" on replay, while the live
+    // session showed proper interleaving. We now persist each chunk
+    // as it arrives so reload preserves the same time-ordered
+    // structure live sessions get. Cost: maybe O(N) extra rows per
+    // turn (N = tokens emitted), still well under SQLite's comfort
+    // zone for our scale, and we still keep thoughtText/assistantText
+    // accumulators because some other persistence consumers want a
+    // single-string view.
     let assistantText = "";
     let thoughtText = "";
     const structuralEvents: Array<{ type: string; data: unknown }> = [];
     // Persist the user prompt up front — even if the turn errors halfway,
     // we want the user's message in the log for replay.
     appendEvent(p.session_id, "user_prompt", { text: p.text });
+    // First prompt seeds the session title — without this, sidebar rows
+    // for reload-restored sessions fall back to "agent · slug" and look
+    // identical to each other. derivePromptLabel matches the renderer's
+    // logic in ChatView.deriveLabel.
+    setSessionTitleIfEmpty(p.session_id, derivePromptLabel(p.text));
     touchSession(p.session_id);
 
     try {
@@ -289,9 +322,6 @@ export class SessionManager {
           promptErr = (ev as { error?: string }).error ?? "ACP prompt error (no message)";
           continue;
         }
-        // Accumulate text on the main side too — the renderer does its own
-        // accumulation for live display, but we need a server-side copy to
-        // persist at end-of-turn.
         const ev2 = ev as { sessionUpdate?: string; content?: { type?: string; text?: string } } | null;
         const tag = ev2?.sessionUpdate;
         if (tag === "agent_message_chunk" || tag === "agent_thought_chunk") {
@@ -300,8 +330,10 @@ export class SessionManager {
             if (tag === "agent_message_chunk") assistantText += c.text;
             else thoughtText += c.text;
           }
+          // Persist the chunk verbatim — order with structural events
+          // is preserved by insertion into `structuralEvents` here.
+          structuralEvents.push({ type: tag, data: ev });
         } else if (tag) {
-          // Structural — buffer for persistence.
           structuralEvents.push({ type: tag, data: ev });
         }
         this.#send({
@@ -330,15 +362,19 @@ export class SessionManager {
       });
     } finally {
       sess.turns.delete(p.turn_id);
-      // Single-shot end-of-turn persist. Order matters: assistant text
-      // arrives chronologically after thought + tool calls in the
-      // replay, which matches the order the renderer originally saw
-      // them (Reasoning block above tools above message).
-      const persist: Array<{ type: string; data: unknown }> = [];
-      if (thoughtText) persist.push({ type: "agent_thought", data: { text: thoughtText } });
-      persist.push(...structuralEvents);
-      if (assistantText) persist.push({ type: "agent_message", data: { text: assistantText } });
-      if (persist.length > 0) appendEventsTx(p.session_id, persist);
+      // Single-shot end-of-turn persist. Chunks already encode their
+      // chronological place in `structuralEvents`, so we just flush
+      // them in arrival order. No more end-of-turn `agent_message`
+      // coalesced row — that was the source of the replay-order bug
+      // (tools first, big message blob last).
+      if (structuralEvents.length > 0) {
+        appendEventsTx(p.session_id, structuralEvents);
+      }
+      // thoughtText/assistantText accumulators are still maintained for
+      // any in-process consumer; nothing reads them right now but we
+      // keep the strings so the variable surface stays meaningful.
+      void thoughtText;
+      void assistantText;
       // Bump last_used_at so the sidebar reorders.
       touchSession(p.session_id);
     }
@@ -391,7 +427,7 @@ export class SessionManager {
  * Strip env vars that signal "you're already inside another Claude-flavored
  * session". `claude-agent-acp` aborts session/new with "cannot be launched
  * inside another Claude Code session" when CLAUDECODE is inherited (e.g.
- * the user launches openma-desktop from a Claude Code terminal). Same
+ * the user launches Backchat from a Claude Code terminal). Same
  * precaution applies to other ACP agents that detect parent shells.
  *
  * `undefined` rather than `delete` so NodeSpawner's "undefined → unset"
@@ -408,3 +444,15 @@ function scrubAcpSpawnEnv(
     CLAUDE_CODE_SSE_PORT: undefined,
   };
 }
+
+/** Derive a sidebar label from the first prompt. Mirrors
+ *  ChatView.deriveLabel in the renderer — keep in sync if you change
+ *  the truncation length. */
+function derivePromptLabel(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  const firstLine = trimmed.split(/\r?\n/)[0]!;
+  if (firstLine.length <= 40) return firstLine;
+  return firstLine.slice(0, 39).trimEnd() + "…";
+}
+

@@ -1,3 +1,102 @@
+/* ---------- Liquid Glass material ----------
+   Approximates Apple's Liquid Glass (macOS Tahoe 26 / iOS 26) — the
+   essential cues:
+     1. translucent tinted background
+     2. heavy backdrop-filter blur + saturation (the "frost")
+     3. bright inset top edge highlight (the "glass rim")
+     4. layered shadow for depth lift off the stage
+     5. faint inner glow (rim light around all 4 edges)
+
+   Apply via `.liquid-glass` class. The stage MUST have visible color
+   (gradient or wallpaper) for the backdrop-filter to read as glass —
+   on a flat solid stage the blur looks like a slightly washed bg. */
+.liquid-glass {
+  /* Native-vibrancy-scale glass: blur(32px) matches macOS NSVisualEffect
+     "sidebar" material; pushing to 48px+ visibly fogs on lower-end GPUs
+     without adding visual weight (the human eye plateaus around 24-32px
+     blur radius). Keep saturation lift moderate to avoid over-tinting. */
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid color-mix(in srgb, #ffffff 35%, transparent);
+  box-shadow:
+    /* bright top rim — the most recognizable glass tell */
+    inset 0 1px 0 0 color-mix(in srgb, #ffffff 85%, transparent),
+    /* secondary inner rim — bumps the depth a hair more */
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 8%, transparent),
+    /* bottom edge soft */
+    inset 0 -1px 0 0 color-mix(in srgb, #ffffff 22%, transparent),
+    /* near drop */
+    0 1px 3px 0 rgb(0 0 0 / 0.05),
+    /* far drop — sets the card off the stage */
+    0 16px 40px -12px rgb(0 0 0 / 0.22);
+}
+
+/* Liquid-glass-aware selected row — heavier than the sidebar's own
+   glass so the row reads as a solid pebble sitting ON TOP of the
+   glass surface, not a tint inside it. Own backdrop-filter brightens
+   the lensing locally; thicker top rim + deeper bottom rim sells the
+   shape; outer drop pushes it forward in z. */
+/* Liquid-glass-aware selected row — sits on top of the .liquid-glass
+   sidebar. No own backdrop-filter — restacking blur on top of the
+   sidebar's blur(48px) doubles the per-frame paint cost without
+   adding visible material (the underlying frost is already opaque
+   enough). The pebble effect comes from tint + bright top rim +
+   layered drop shadow alone. */
+.liquid-glass-selected {
+  position: relative;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  box-shadow:
+    /* bright top rim — the dominant glass tell */
+    inset 0 1px 0 0 color-mix(in srgb, #ffffff 95%, transparent),
+    /* secondary inner rim — gives the body more material thickness */
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 35%, transparent),
+    /* deeper bottom edge — read as the pebble's underside */
+    inset 0 -1px 0 0 color-mix(in srgb, var(--fg) 8%, transparent),
+    /* very subtle internal vertical gradient via two inset rgba — fakes
+       the top-to-bottom material density that real glass shows */
+    inset 0 2px 12px -4px color-mix(in srgb, #ffffff 50%, transparent),
+    /* outer near drop */
+    0 1px 2px 0 color-mix(in srgb, var(--fg) 10%, transparent),
+    /* outer far drop — pushes the pebble off the glass surface */
+    0 4px 12px -2px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.dark .liquid-glass-selected {
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in srgb, #ffffff 28%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 12%, transparent),
+    inset 0 -1px 0 0 color-mix(in srgb, #000000 35%, transparent),
+    inset 0 2px 12px -4px color-mix(in srgb, #ffffff 14%, transparent),
+    0 1px 2px 0 rgb(0 0 0 / 0.5),
+    0 4px 12px -2px rgb(0 0 0 / 0.55);
+}
+.dark .liquid-glass {
+  background: color-mix(in srgb, var(--bg) 38%, transparent);
+  border-color: color-mix(in srgb, #ffffff 14%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in srgb, #ffffff 22%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 5%, transparent),
+    inset 0 -1px 0 0 color-mix(in srgb, #ffffff 6%, transparent),
+    0 1px 3px 0 rgb(0 0 0 / 0.5),
+    0 16px 40px -12px rgb(0 0 0 / 0.7);
+}
+
+/* Composer-only override of .liquid-glass's drop shadow. The composer
+   is the one liquid-glass card sitting directly above the bottom
+   terminal panel — its 16/40 px far drop lands on the stage gap
+   between the two cards and reads as a horizontal band (image #12).
+   Keep all 4 inset rims (those are the glass material itself), drop
+   only the far drop. Dark mode left alone — the drop reads correctly
+   on a dark stage. */
+.composer-card {
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in srgb, #ffffff 85%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 8%, transparent),
+    inset 0 -1px 0 0 color-mix(in srgb, #ffffff 22%, transparent),
+    0 1px 3px 0 rgb(0 0 0 / 0.05);
+}
+
 @import "tailwindcss";
 
 /* ---------- Dark mode: class-based ---------- */
@@ -9,41 +108,39 @@
    product. If you change a token here, sync to
    open-managed-agents/apps/console/src/index.css. */
 :root {
-  /* Muted clay — a desaturated cousin of openma console's coral. The
-     console runs at 0.19 chroma which works in a dashboard/data context
-     but reads as "marketing red" in a chat surface. Drop the chroma to
-     ~0.07 and the hue keeps its warm earthen identity without the
-     web2.0-promotional vibe. brand-subtle holds the tint for hover /
-     row-selection chrome; brand-hover is slightly darker for press
-     states. */
-  --brand: oklch(0.62 0.08 30);
-  --brand-hover: oklch(0.55 0.09 28);
-  --brand-subtle: oklch(0.94 0.02 30);
-  /* Deepened from #2a1a14 (~4.6:1) to #1a0e09 (~6.5:1) for stronger AA
-     headroom on the muted-clay brand surface. Still warm-dark, not
-     pure-black. */
-  --brand-fg: #1a0e09;
+  /* Brand — vermilion (朱砂红), the exact color from the app icon
+     (#f84f32). Restraint comes from WHERE we use it (rare, only where
+     the eye should jump), not from desaturating into mud. brand-subtle
+     is a near-white warm wash for selection backgrounds. brand-hover
+     is pulled a touch darker for press feedback. */
+  --brand: #f84f32;
+  --brand-hover: oklch(0.62 0.21 36);
+  --brand-subtle: oklch(0.97 0.018 36);
+  /* White on this brand clears AA. */
+  --brand-fg: #ffffff;
 
-  /* Elevation ladder. Card sits ABOVE the sidebar stage, so the card bg has
-     to be the brightest tone of the three. Console's #fefefe / #f8f8f7 has
-     ~1% luminance gap — invisible at desktop scale. We open it up a couple
-     extra points so the floating card actually looks elevated against the
-     stage. Surface (`bg-bg-surface`) stays distinct from card so tool
-     blocks / chips inside the card still read as nested. */
+  /* Elevation ladder — neutral cool gray, NO warm tint. Previous palette
+     was olive-tan and read as "dated" against a brand that's already
+     warm. Cooler neutrals let the brand pop without competing.
+       --bg          pure white card surface
+       --bg-sidebar  cool gray-50 stage so the cards lift visibly
+       --bg-surface  near-bg, used for inline surfaces (chips, bubbles)
+     Pairwise luminance gap ≥ 4% (taste-saas non-negotiable). */
   --bg: #ffffff;
-  --bg-sidebar: #efeeec;
-  --bg-surface: #f5f4f1;
+  --bg-sidebar: #ebecee;
+  --bg-surface: #f4f5f6;
   --bg-overlay: oklch(0 0 0 / 0.3);
 
-  --fg: #1a1a1a;
-  --fg-muted: #6b6b6b;
-  /* Was #a1a1a1 which clocked 2.58:1 on #fefefe — WCAG AA-fail. Drop to
-     #767676 for ~4.6:1 (AA-normal pass). Visually still reads as a
-     tertiary, not a body tone. */
-  --fg-subtle: #767676;
+  /* Text — cool grays, not the previous warm grays. Higher contrast on
+     fg so body text feels crisper. */
+  --fg: #0f1115;
+  --fg-muted: #5b6066;
+  --fg-subtle: #8a8f96;
 
-  --border: #e4e4e2;
-  --border-strong: #d0d0ce;
+  /* Borders — slightly cooler than the surface for a subtle hint of
+     edge without reading as line work. */
+  --border: #e2e4e8;
+  --border-strong: #d0d3d8;
 
   --success: oklch(0.6 0.18 145);
   --success-subtle: oklch(0.96 0.04 145);
@@ -58,6 +155,13 @@
 
   --shadow-md: 0 4px 12px -4px rgb(0 0 0 / 0.12);
   --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.08);
+  /* Card shadows — the floating-card stage uses a soft double-layer drop
+     and a slightly heavier press tone when an input focuses. Minted as
+     tokens so dark mode can warm or cool them independently from light. */
+  --shadow-card-soft: 0 8px 24px -12px rgb(0 0 0 / 0.10), 0 2px 6px -2px rgb(0 0 0 / 0.04);
+  --shadow-card-press: 0 2px 4px -2px rgb(0 0 0 / 0.08), 0 6px 12px -6px rgb(0 0 0 / 0.08);
+  --shadow-input-rest: 0 1px 2px -1px rgb(0 0 0 / 0.05), 0 4px 8px -6px rgb(0 0 0 / 0.06);
+  --shadow-chip-press: 0 1px 2px -1px rgb(0 0 0 / 0.08);
 
   /* Motion tokens. Default Tailwind transitions feel "computer-y". These
      give interactions weight without being slow.
@@ -73,32 +177,100 @@
 
   --ring: var(--brand);
   color-scheme: light;
+
+  /* ---------- Spatial tokens (taste-saas) ----------
+     Wireless: every visible alignment lives in tokens, not in per-component
+     px. If you find yourself writing `pl-3` or `h-11` in a component,
+     it's a smell — consume a token instead.
+
+       --traffic-light-w  78px on macOS for the red/yellow/green chrome.
+                          Sidebar's top stage row pads its left side by
+                          this much so trafficLight buttons don't overlap
+                          any sidebar affordance.
+       --top-row-h        38px — the stage chrome row (sidebar top, card
+                          top breadcrumb). Three top rows on one baseline
+                          (see check.mjs invariant).
+       --row-h            28px — every dense row: sidebar nav row,
+                          toolbar chip, settings tab. Single height,
+                          single source of truth.
+       --row-gap-y        8px — gap between an outer container's top edge
+                          and its first child row. Used by sidebar's
+                          first nav row AND by the card's first content
+                          row so the y-baselines lock across the seam.
+       --stage-inset      8px — the gray band visible around the floating
+                          card (right of card, below card). Same number on
+                          every side that isn't adjacent to the sidebar.
+       --page-pl/--page-pr 16px — single source of truth for inside-card
+                          horizontal padding. Toolbar AND table cushion
+                          consume them; never write a one-off `pl-4`.  */
+  --traffic-light-w: 78px;
+  --top-row-h: 38px;
+  --row-h: 28px;
+  --row-gap-y: 8px;
+  /* Stage inset = the gray band between the cards and the viewport
+     edges. Claude Desktop / Cursor run ~6px — tight enough that the
+     stage reads as a frame, not a moat. */
+  --stage-inset: 6px;
+  --page-pl: 16px;
+  --page-pr: 16px;
+
+  /* Chrome geometry — ONE source for every fixed toggle's y position
+     and every horizontal gap between toggles and the panel edges.
+     All three top-right fixed toggles set `top: var(--chrome-top)`,
+     so their centerY is `chrome-top + chrome-size/2`. The in-panel
+     close button reaches the same centerY via
+     `stage-inset + 1 (border) + chrome-top - stage-inset = chrome-top + 1`.
+
+       --chrome-top    fixed-toggle y from viewport top (matches the
+                       trafficLight calibration in src/main/index.ts).
+       --chrome-size   the toggle button's box width/height; pairs with
+                       Tailwind `size-6` (24 px).
+       --chrome-gap    the horizontal gap shared by:
+                       - fixed terminal toggle → side panel left edge
+                       - side panel left edge  → in-panel close button
+                       - trafficLight right    → main column text start
+                       So toggles read as mirrored across the seam.
+   */
+  --chrome-top: 13px;
+  --chrome-size: 24px;
+  --chrome-gap: 16px;
+
+  /* Side-chat panel width — Codex-style side conversation rail. Sized
+     wider than a Linear properties rail because it hosts a full chat
+     surface (own composer + scrolling turn list). Read by AppShell to
+     size the rail's <aside> and to compute the main column's right
+     padding. */
+  --right-rail-w: 380px;
+  /* Bottom terminal panel height. 160 px ≈ 10 lines of 12 px mono +
+     panel chrome — small enough to feel like a peek, not a workspace.
+     Future PR adds a drag handle to resize. */
+  --bottom-panel-h: 160px;
 }
 
 /* ---------- Dark theme ---------- */
 .dark {
-  /* Muted clay, slightly lighter in dark mode so it still reads on the
-     dark stage without re-introducing the saturated coral. */
-  --brand: oklch(0.7 0.07 30);
-  --brand-hover: oklch(0.76 0.07 30);
-  --brand-subtle: oklch(0.28 0.04 30);
+  /* Brand — same vermilion family as light, lifted in lightness so it
+     stays legible on a dark canvas without losing the icon's identity. */
+  --brand: oklch(0.72 0.20 36);
+  --brand-hover: oklch(0.78 0.20 36);
+  --brand-subtle: oklch(0.30 0.08 36);
+  /* Dark theme subtle is a deep red wash, so a dark warm foreground
+     reads inside chips/highlights painted with it. */
   --brand-fg: #1a0e09;
 
-  /* Same elevation strategy in dark mode — card brightest, surface mid,
-     sidebar darkest stage. */
-  --bg: #1c1c1c;
-  --bg-sidebar: #121212;
-  --bg-surface: #262624;
+  /* Dark elevation — cool charcoal stage, near-black card so the
+     sidebar reads as the brightest layer. */
+  --bg: #1a1d22;
+  --bg-sidebar: #0d1014;
+  --bg-surface: #232730;
   --bg-overlay: oklch(0 0 0 / 0.6);
 
-  --fg: #ececec;
-  --fg-muted: #a0a0a0;
-  /* Dark-mode sibling — needed to be brightened (was #888 which is
-     ~3.4:1 on #1c1c1c). #9a9a9a hits ~4.7:1 AA-normal. */
-  --fg-subtle: #9a9a9a;
+  --fg: #e9eaec;
+  --fg-muted: #9aa0a8;
+  --fg-subtle: #6e747c;
 
-  --border: #2e2e2c;
-  --border-strong: #404040;
+  --border: #2a2e36;
+  --border-strong: #3a3e48;
 
   --success: oklch(0.76 0.16 145);
   --success-subtle: oklch(0.22 0.05 145);
@@ -113,6 +285,12 @@
 
   --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
   --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  /* Dark sibling — shadows are heavier on a dark stage because a soft
+     light-mode shadow disappears entirely. */
+  --shadow-card-soft: 0 8px 24px -12px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.25);
+  --shadow-card-press: 0 2px 4px -2px rgb(0 0 0 / 0.4), 0 6px 12px -6px rgb(0 0 0 / 0.35);
+  --shadow-input-rest: 0 1px 2px -1px rgb(0 0 0 / 0.3), 0 4px 8px -6px rgb(0 0 0 / 0.25);
+  --shadow-chip-press: 0 1px 2px -1px rgb(0 0 0 / 0.35);
 
   --ring: var(--brand);
   color-scheme: dark;
@@ -160,6 +338,15 @@
 
   --color-ring: var(--ring);
 
+  /* Card / input shadow tokens — surfaced as Tailwind utilities so
+     `shadow-card-soft` / `shadow-card-press` / `shadow-input-rest` /
+     `shadow-chip-press` all resolve to the values declared above and
+     swap automatically in dark mode. */
+  --shadow-card-soft: var(--shadow-card-soft);
+  --shadow-card-press: var(--shadow-card-press);
+  --shadow-input-rest: var(--shadow-input-rest);
+  --shadow-chip-press: var(--shadow-chip-press);
+
   /* shadcn primitive aliases — see file-level comment. */
   --color-background: var(--bg);
   --color-foreground: var(--fg);
@@ -197,7 +384,11 @@
 /* ---------- Base typography ---------- */
 body {
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  /* Bumped from 0.875rem (14) to 0.9375rem (15) — gives the whole UI
+     one more pixel of breathing without crossing into the "reading
+     blog post" feel of 16. text-sm now reads as proper body, text-xs
+     as a clear secondary tier instead of "is this readable?". */
+  font-size: 0.9375rem;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -225,20 +416,51 @@ body,
   }
 }
 
-/* Subtle scrollbar. */
+/* Subtle scrollbar — thumb is transparent by default. It fades in only
+   when the user hovers the scrollable region (or when the OS forces it
+   on via Settings → Appearance → "Show scroll bars" = Always). Without
+   this, every Conversation mount triggers a scrollTo() that briefly
+   shows the thumb, then the OS fades it out — visible as a one-frame
+   blip when first opening a chat. */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
+  background: transparent;
+  border-radius: 4px;
+  /* Inset 2px so the thumb doesn't paint to the edge of the gutter —
+     keeps it from looking like a divider line when visible. */
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  transition: background var(--dur-base) var(--ease-soft);
+}
+*:hover > ::-webkit-scrollbar-thumb,
+*:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg) 20%, transparent);
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--fg-subtle);
+  background: color-mix(in srgb, var(--fg) 40%, transparent);
+  background-clip: padding-box;
+}
+
+/* Sidebar nav — override the OS-decided scrollbar width with our own
+   8px so the gutter is a known, fixed size we can mirror onto sibling
+   sticky rows (New chat / Search / Settings) via padding. macOS
+   "Always show scroll bars" otherwise hands us 15px which makes chat
+   rows look narrower than the buttons above. Width 8 + the shared
+   transparent-thumb fade-in keeps it subtle.
+   `scrollbar-width: thin` is the Firefox/standards way to ask for the
+   same; both declarations together cover every renderer. */
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+}
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 8px;
 }
 
 /* BrandLoader dot pulse — wave from left to right via staggered animation-delay
@@ -305,18 +527,53 @@ body,
   .reveal-in { animation: none; opacity: 1; }
 }
 
+/* Composer slide-in — fired when ChatView transitions from empty (home)
+   state to conversation state. The empty-state composer was vertically
+   centered; the conversation composer is bottom-pinned. Without this,
+   the new bottom composer pops in instantly while the empty one
+   disappears. Slide it up from below the viewport edge so the motion
+   feels like the composer "moves to its new home". Same cubic-bezier
+   as the sidebar slide so all the shell motions feel coupled. */
+@keyframes composer-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.composer-slide-in {
+  animation: composer-slide-in 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-slide-in { animation: none; }
+}
+
 /* ---------- Reduced motion ----------
    WCAG 2.3.3 (AAA). Zeroing out the motion tokens lets every component that
    reads --dur-* / --ease-* (Tailwind arbitrary values or inline styles) honor
    the OS signal automatically. Tailwind's own animate-* keyframes bypass our
    tokens so the explicit overrides catch them. animate-spin slows but doesn't
-   freeze — a stuck spinner reads as "broken". */
+   freeze — a stuck spinner reads as "broken".
+
+   Tailwind's plain `transition-colors` defaults to 150ms linear and doesn't
+   read our --dur-* tokens; we zero out `transition-duration` site-wide here
+   so every component (sidebar rows, command items, settings tabs) honors
+   reduced-motion without each having to opt in. */
 @media (prefers-reduced-motion: reduce) {
   :root,
   .dark {
     --dur-quick: 1ms;
     --dur-base: 1ms;
     --dur-slow: 1ms;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
   }
   .animate-pulse,
   .animate-bounce {

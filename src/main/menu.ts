@@ -19,6 +19,7 @@ import {
   shell,
   type MenuItemConstructorOptions,
 } from "electron";
+import { syncTrafficLight } from "./index.js";
 import { PushChannel } from "../shared/ipc-channels.js";
 
 const isMac = process.platform === "darwin";
@@ -101,9 +102,48 @@ export function installAppMenu(opts: {
         { role: "forceReload" },
         { role: "toggleDevTools" },
         { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
+        {
+          label: "Actual Size",
+          accelerator: "CmdOrCtrl+0",
+          click: (_m, win) => {
+            if (!win) return;
+            const w = win as BrowserWindow;
+            void w.webContents.setZoomFactor(1);
+            syncTrafficLight(w);
+          },
+        },
+        {
+          label: "Zoom In",
+          accelerator: "CmdOrCtrl+Plus",
+          click: (_m, win) => {
+            if (!win) return;
+            const w = win as BrowserWindow;
+            // Discrete zoom steps: 0.85 / 1.0 / 1.15 / 1.3 / 1.5
+            // Two zoom-in levels above default cover "I want it bigger"
+            // and "I'm reading from across the room"; the rest of the
+            // chrome stays visually proportional via syncTrafficLight.
+            const STEPS = [0.85, 1.0, 1.15, 1.3, 1.5];
+            const f = w.webContents.getZoomFactor();
+            const next =
+              STEPS.find((s) => s > f + 0.01) ?? STEPS[STEPS.length - 1]!;
+            void w.webContents.setZoomFactor(next);
+            syncTrafficLight(w);
+          },
+        },
+        {
+          label: "Zoom Out",
+          accelerator: "CmdOrCtrl+-",
+          click: (_m, win) => {
+            if (!win) return;
+            const w = win as BrowserWindow;
+            const STEPS = [0.85, 1.0, 1.15, 1.3, 1.5];
+            const f = w.webContents.getZoomFactor();
+            const next =
+              [...STEPS].reverse().find((s) => s < f - 0.01) ?? STEPS[0]!;
+            void w.webContents.setZoomFactor(next);
+            syncTrafficLight(w);
+          },
+        },
         { type: "separator" },
         { role: "togglefullscreen" },
       ],
@@ -129,9 +169,9 @@ export function installAppMenu(opts: {
       role: "help",
       submenu: [
         {
-          label: "openma desktop on GitHub",
+          label: "Backchat on GitHub",
           click: () =>
-            void shell.openExternal("https://github.com/minimax/openma-desktop"),
+            void shell.openExternal("https://github.com/minimax/backchat"),
         },
         {
           label: "Agent Client Protocol docs",

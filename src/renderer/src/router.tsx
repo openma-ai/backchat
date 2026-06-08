@@ -28,6 +28,7 @@ import { SettingsAgents } from "@/pages/settings/Agents";
 import { SettingsAppearance } from "@/pages/settings/Appearance";
 import { SettingsAbout } from "@/pages/settings/About";
 import { SettingsMcpServers } from "@/pages/settings/McpServers";
+import { Archive as SettingsArchive } from "@/pages/settings/Archive";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
 
 const rootRoute = createRootRoute({
@@ -83,6 +84,11 @@ const settingsAbout = createRoute({
   path: "/about",
   component: SettingsAbout,
 });
+const settingsArchive = createRoute({
+  getParentRoute: () => settingsRoot,
+  path: "/archive",
+  component: SettingsArchive,
+});
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -91,6 +97,7 @@ const routeTree = rootRoute.addChildren([
     settingsAgents,
     settingsMcp,
     settingsAppearance,
+    settingsArchive,
     settingsAbout,
   ]),
 ]);

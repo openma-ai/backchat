@@ -8,7 +8,7 @@
  * V8::External::New signature changed and ABI'd-against-N-API binaries
  * don't even compile. node:sqlite sidesteps all of this.
  *
- * Two tables in `userData/sessions.db`:
+ * Two tables in `~/.openma/sessions.db`:
  *
  *   sessions      one row per chat the user has opened
  *   events        append-only log of ACP session updates for replay
@@ -46,6 +46,7 @@ export interface PersistedSession {
   last_used_at: number;
   created_at: number;
   archived_at: number | null;
+  pinned_at: number | null;
 }
 
 export interface PersistedEvent {
@@ -66,7 +67,13 @@ let _stmts: {
   touch: StatementSync;
   setTitle: StatementSync;
   archive: StatementSync;
+  unarchive: StatementSync;
+  pin: StatementSync;
+  unpin: StatementSync;
   list: StatementSync;
+  listArchived: StatementSync;
+  listForSidebar: StatementSync;
+  deleteRow: StatementSync;
   appendEvent: StatementSync;
   loadHistory: StatementSync;
 } | null = null;
@@ -95,10 +102,13 @@ export function openSessionDb(path: string): void {
       title         TEXT NOT NULL DEFAULT '',
       last_used_at  INTEGER NOT NULL,
       created_at    INTEGER NOT NULL,
-      archived_at   INTEGER
+      archived_at   INTEGER,
+      pinned_at     INTEGER
     );
     CREATE INDEX IF NOT EXISTS sessions_last_used_idx
       ON sessions(archived_at, last_used_at DESC);
+    CREATE INDEX IF NOT EXISTS sessions_pinned_idx
+      ON sessions(archived_at, pinned_at DESC);
 
     CREATE TABLE IF NOT EXISTS events (
       seq         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,6 +157,20 @@ export function openSessionDb(path: string): void {
     END;
   `);
 
+  // Idempotent migrations for columns added after a user already has a
+  // db file. SQLite has no `ADD COLUMN IF NOT EXISTS`; probe via
+  // PRAGMA table_info and ALTER only when missing. Match the column
+  // definition in the CREATE TABLE above.
+  const sessionCols = new Set(
+    (db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>)
+      .map((r) => r.name),
+  );
+  if (!sessionCols.has("pinned_at")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN pinned_at INTEGER`);
+    db.exec(`CREATE INDEX IF NOT EXISTS sessions_pinned_idx
+             ON sessions(archived_at, pinned_at DESC)`);
+  }
+
   _db = db;
   _stmts = {
     upsert: db.prepare(`
@@ -166,12 +190,37 @@ export function openSessionDb(path: string): void {
     touch: db.prepare(`UPDATE sessions SET last_used_at = ? WHERE id = ?`),
     setTitle: db.prepare(`UPDATE sessions SET title = ? WHERE id = ?`),
     archive: db.prepare(`UPDATE sessions SET archived_at = ? WHERE id = ?`),
+    unarchive: db.prepare(`UPDATE sessions SET archived_at = NULL WHERE id = ?`),
+    pin: db.prepare(`UPDATE sessions SET pinned_at = ? WHERE id = ?`),
+    unpin: db.prepare(`UPDATE sessions SET pinned_at = NULL WHERE id = ?`),
+    /** Full session list split for the Sidebar's Pinned + Chats sections.
+     *  Pinned first ordered by pinned_at desc, then unpinned by
+     *  last_used_at desc. Archived rows are excluded — they're reached
+     *  via Search instead. Single round trip per render. */
+    listForSidebar: db.prepare(`
+      SELECT * FROM sessions
+      WHERE archived_at IS NULL
+      ORDER BY
+        CASE WHEN pinned_at IS NOT NULL THEN 0 ELSE 1 END,
+        CASE WHEN pinned_at IS NOT NULL THEN pinned_at END DESC,
+        last_used_at DESC
+    `),
     list: db.prepare(`
       SELECT * FROM sessions
       WHERE archived_at IS NULL
       ORDER BY last_used_at DESC
       LIMIT ?
     `),
+    listArchived: db.prepare(`
+      SELECT * FROM sessions
+      WHERE archived_at IS NOT NULL
+      ORDER BY archived_at DESC
+    `),
+    /** Hard-delete a session row. Cascading FK on the events table
+     *  (`ON DELETE CASCADE`) wipes the per-session events in the same
+     *  transaction, so the caller only has to remove the on-disk
+     *  session dir separately. */
+    deleteRow: db.prepare(`DELETE FROM sessions WHERE id = ?`),
     appendEvent: db.prepare(
       `INSERT INTO events (session_id, type, data, ts) VALUES (?, ?, ?, ?)`,
     ),
@@ -179,6 +228,34 @@ export function openSessionDb(path: string): void {
       `SELECT * FROM events WHERE session_id = ? ORDER BY seq ASC`,
     ),
   };
+
+  // One-time backfill: any session row that ended up with an empty title
+  // (sessions created before setSessionTitleIfEmpty shipped) gets seeded
+  // from its first user_prompt event. Truncate to 40 chars to match
+  // derivePromptLabel. Idempotent — only writes when title is empty.
+  db.exec(`
+    UPDATE sessions
+       SET title = (
+         SELECT CASE
+                  WHEN length(json_extract(e.data, '$.text')) <= 40
+                  THEN json_extract(e.data, '$.text')
+                  ELSE substr(json_extract(e.data, '$.text'), 1, 39) || '…'
+                END
+           FROM events e
+          WHERE e.session_id = sessions.id
+            AND e.type = 'user_prompt'
+            AND json_extract(e.data, '$.text') IS NOT NULL
+            AND json_extract(e.data, '$.text') != ''
+       ORDER BY e.seq ASC
+          LIMIT 1
+       )
+     WHERE (title IS NULL OR title = '')
+       AND EXISTS (
+         SELECT 1 FROM events e
+          WHERE e.session_id = sessions.id
+            AND e.type = 'user_prompt'
+       );
+  `);
 }
 
 function stmts() {
@@ -216,12 +293,55 @@ export function setSessionTitle(id: string, title: string): void {
   stmts().setTitle.run(title, id);
 }
 
+/** Conditional version — only writes the title if the row's current
+ *  title is empty. Lets the first user prompt seed a sensible label
+ *  without overwriting whatever the user may have later renamed it to. */
+export function setSessionTitleIfEmpty(id: string, title: string): void {
+  const rows = stmts().list.all(2000) as unknown as PersistedSession[];
+  const row = rows.find((r) => r.id === id);
+  if (!row || row.title) return;
+  stmts().setTitle.run(title, id);
+}
+
 export function archiveSession(id: string): void {
   stmts().archive.run(Date.now(), id);
 }
 
+export function unarchiveSession(id: string): void {
+  stmts().unarchive.run(id);
+}
+
+/** List every archived session, newest archive first. Used by the
+ *  Settings → Archive page so the user can browse and either restore
+ *  or hard-delete. */
+export function listArchivedSessions(): PersistedSession[] {
+  return stmts().listArchived.all() as unknown as PersistedSession[];
+}
+
+/** Hard-delete a session row. The events FK cascade handles per-
+ *  session event rows; the caller is responsible for removing any
+ *  on-disk session directory (the SessionManager owns that path
+ *  layout, not the SQL store). */
+export function deleteSession(id: string): void {
+  stmts().deleteRow.run(id);
+}
+
+export function pinSession(id: string, at: number = Date.now()): void {
+  stmts().pin.run(at, id);
+}
+
+export function unpinSession(id: string): void {
+  stmts().unpin.run(id);
+}
+
 export function listSessions(limit = 200): PersistedSession[] {
   return stmts().list.all(limit) as unknown as PersistedSession[];
+}
+
+/** All non-archived sessions ordered for the Sidebar (Pinned first,
+ *  then Chats by recency). */
+export function listSessionsForSidebar(): PersistedSession[] {
+  return stmts().listForSidebar.all() as unknown as PersistedSession[];
 }
 
 // -------------------- events --------------------

@@ -28,7 +28,7 @@ const AGENT_ID = process.env.ACP_AGENT ?? "claude-acp";
 const PROMPT_TEXT = process.env.ACP_PROMPT ?? "respond with the single word: pong";
 
 async function main() {
-  const root = await mkdtemp(join(tmpdir(), "openma-desktop-smoke-"));
+  const root = await mkdtemp(join(tmpdir(), "backchat-smoke-"));
   setSessionRoot(join(root, "sessions"));
   await loadRegistry({ cachePath: join(root, "registry-cache.json") }).catch(() => undefined);
 

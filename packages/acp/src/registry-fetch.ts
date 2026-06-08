@@ -144,6 +144,7 @@ export function mapOfficialAgent(o: OfficialRegistryAgent): KnownAgentEntry | nu
     id: o.id,
     label: o.name,
     spec,
+    version: o.version,
     installHint,
     install,
     homepage: o.website ?? o.repository,

@@ -1,2 +1,13 @@
 packages:
   - 'packages/*'
+
+# pnpm v11 — allow native build scripts for deps that need them.
+# better-sqlite3 needs node-gyp at install; without this its addon
+# file is missing and require() throws "Could not locate the bindings
+# file" at electron startup. electron-rebuild then rewires it to
+# Electron's ABI via the `rebuild` package.json script.
+allowBuilds:
+  better-sqlite3: true
+  node-pty: true
+  electron: true
+  esbuild: true

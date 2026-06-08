@@ -102,6 +102,10 @@ export interface AcpSession {
   readonly acpSessionId: string;
   readonly options: SessionOptions;
   prompt(text: string, opts?: { abortSignal?: AbortSignal }): AsyncIterable<unknown>;
+  /** Switch agent into a named session mode (e.g. codex `auto`,
+   *  `full-access`). No-op when the agent doesn't expose
+   *  setSessionMode in its capability surface. */
+  setMode(modeId: string): Promise<void>;
   isAlive(): boolean;
   dispose(): Promise<void>;
 }

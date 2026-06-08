@@ -69,7 +69,7 @@ export function SettingsMcpServers() {
         <ul className="divide-y divide-border/40 rounded-lg bg-bg-surface/40">
           {servers.map((s) => (
             <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
-              <Badge variant="secondary" className="text-[10px] uppercase">
+              <Badge variant="secondary" className="text-[11px] uppercase">
                 {s.type}
               </Badge>
               <span className="text-sm font-medium text-fg">{s.name}</span>
@@ -259,7 +259,7 @@ function ServerForm({
               className={cn(
                 "flex-1 rounded px-2 py-1.5 text-xs uppercase tracking-wider transition-colors",
                 f.type === t
-                  ? "bg-bg-surface text-fg shadow-[0_1px_2px_-1px_rgb(0_0_0/0.08)]"
+                  ? "bg-bg-surface text-fg shadow-chip-press"
                   : "text-fg-muted hover:text-fg",
               )}
             >
@@ -414,8 +414,8 @@ function SecretInput({
           type="button"
           onClick={onToggleSecret}
           className={cn(
-            "rounded p-1 text-[9px] uppercase tracking-wider",
-            secret ? "text-brand" : "text-fg-subtle hover:text-fg-muted",
+            "rounded p-1 text-[11px] uppercase tracking-wider",
+            secret ? "text-fg" : "text-fg-subtle hover:text-fg-muted",
           )}
           aria-label={secret ? "Mark non-secret" : "Mark secret"}
           title={secret ? "Marked as secret — value masked" : "Mark as secret"}
@@ -444,5 +444,5 @@ function Field({
 
 const inputClass = cn(
   "h-8 w-full rounded-md bg-bg px-2.5 text-sm text-fg placeholder:text-fg-subtle",
-  "focus:outline-none focus:ring-1 focus:ring-brand/40",
+  "focus:outline-none focus:ring-1 focus:ring-fg/30",
 );

@@ -1,10 +1,11 @@
 /**
- * Settings store — TOML file at ~/.openma-desktop/config.toml.
+ * Settings store — TOML file at ~/.openma/config.toml.
  *
- * The choice of home-dir over userData is intentional: the file is hand-
- * editable, lives next to other dotfiles, and shares the spirit of the
- * ACP-agent dotdirs (~/.claude, ~/.codex). userData is reserved for sqlite
- * and session spawn cwds — opaque, never edited by hand.
+ * Lives under ~/.openma/ so that a future shared openma cli + this
+ * desktop frontend can read the same hand-edited settings. The dotdir
+ * sits next to other ACP-agent dotdirs (~/.claude, ~/.codex). SQLite
+ * + per-session spawn cwds also live under ~/.openma/ now (see
+ * main/index.ts setSessionRoot / openSessionDb).
  *
  * smol-toml is preferred over JSON because:
  *   - users will edit this file by hand for env-var secrets and MCP server
@@ -79,6 +80,19 @@ const SettingsSchema = z.object({
     agent_id: z.string().default(""),
     /** Default cwd for new sessions. Empty string → fallback to $HOME. */
     workspace_path: z.string().default(""),
+    /** Composer permission mode — how the renderer answers ACP permission
+     *  asks. The main-process broker still ASKS for every tool call (it's
+     *  the boundary), but the renderer auto-clicks the matching option
+     *  when the user has picked a non-"ask" mode in the composer chip.
+     *    "ask"       → modal pops as today; user picks per ask.
+     *    "auto"      → renderer picks the first allow_once option (or
+     *                  approves out-of-cwd writes) silently.
+     *    "read_only" → renderer picks the first reject_once option (or
+     *                  denies out-of-cwd writes). Tools that don't write
+     *                  still succeed; tools that write get a clean refuse
+     *                  so the agent can react instead of hanging.
+     */
+    permission_mode: z.enum(["ask", "auto", "read_only"]).default("ask"),
   }),
   appearance: z.object({
     theme: z.enum(["system", "light", "dark"]).default("system"),
@@ -105,7 +119,7 @@ const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({
 
 // -------------------- File location --------------------
 
-export const SETTINGS_DIR = join(homedir(), ".openma-desktop");
+export const SETTINGS_DIR = join(homedir(), ".openma");
 export const SETTINGS_FILE = join(SETTINGS_DIR, "config.toml");
 
 // -------------------- Store --------------------
@@ -197,8 +211,8 @@ class SettingsStore {
    *  comments on round-trip; the header is the only "in-band" hint we get. */
   #serializeWithHeader(s: Settings): string {
     const header = [
-      "# openma-desktop config",
-      "# https://github.com/minimax/openma-desktop",
+      "# backchat config",
+      "# https://github.com/minimax/backchat",
       "#",
       "# Edit this file with the app closed for safest results. The app",
       "# rewrites this file on every settings change and drops comments.",

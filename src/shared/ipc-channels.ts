@@ -16,10 +16,55 @@ export const InvokeChannel = {
   SessionsList: "sessions:list",
   SessionsLoadHistory: "sessions:loadHistory",
   SessionsSearch: "sessions:search",
+  SessionsPin: "sessions:pin",
+  SessionsUnpin: "sessions:unpin",
+  SessionsArchive: "sessions:archive",
+  SessionsUnarchive: "sessions:unarchive",
+  SessionsListArchived: "sessions:listArchived",
+  SessionsDelete: "sessions:delete",
   SettingsGet: "settings:get",
   SettingsPatch: "settings:patch",
   PermissionRespond: "permission:respond",
   FsApprovalRespond: "fs:approvalRespond",
+  /** User-facing terminal — distinct from the ACP-driven terminal/* family
+   *  in brokers.ts (those are command-runners for agents; UiTerm is a
+   *  pty-backed interactive shell shown in the bottom panel). */
+  UiTermSpawn: "uiTerm:spawn",
+  UiTermInput: "uiTerm:input",
+  UiTermResize: "uiTerm:resize",
+  UiTermDispose: "uiTerm:dispose",
+  /** Directory listing — side-panel file tree reads a path's children
+   *  (one level at a time, lazy-expand). Returns name + isDir; the
+   *  renderer is responsible for handling errors (permission denied,
+   *  symlink loops) and showing them inline. */
+  UiFsListDir: "uiFs:listDir",
+  /** $HOME (or %USERPROFILE% on Windows). Used by the file tree as a
+   *  default root when no chat session has assigned a cwd yet. */
+  UiFsHome: "uiFs:home",
+  /** Native "Choose folder" picker. Returns the picked absolute
+   *  path, or null if the user cancelled. */
+  UiFsPickDir: "uiFs:pickDir",
+  /** Recent entries in a directory — list children, sort by mtime
+   *  (newest first), return the top N. Used by the side-panel empty
+   *  state "推荐" feed to surface what the user is actually working
+   *  on in the current workspace. */
+  UiFsRecent: "uiFs:recent",
+  /** Open an arbitrary path with the OS-default handler
+   *  (`shell.openPath`). Used to let the user open a file from the
+   *  recent feed without us needing to ship a preview/editor. */
+  UiFsOpenPath: "uiFs:openPath",
+  /** Read the current git branch for a workspace dir. Returns the
+   *  branch name (e.g. "main"), or null if the path isn't a git
+   *  repo or the read fails. Used by the composer's branch chip. */
+  UiFsGitBranch: "uiFs:gitBranch",
+
+  /** Dev-only test hooks. ONLY registered when env BACKCHAT_TEST_HOOKS=1
+   *  is set at main startup. Used by e2e tests to inject canned session
+   *  events into the store without spawning a real ACP child. NOT a
+   *  production surface — production builds should never see these
+   *  channels reach ipcMain. */
+  TestInjectSessionRow: "__test:injectSessionRow",
+  TestInjectSessionEvent: "__test:injectSessionEvent",
 } as const;
 
 export const PushChannel = {
@@ -38,6 +83,12 @@ export const PushChannel = {
   TerminalOutput: "terminal:output",
   /** Terminal exited (success or signal). */
   TerminalExit: "terminal:exit",
+  /** User-facing terminal — batched stdout/stderr chunks pushed to the
+   *  bottom-panel xterm.js renderer. One push may carry many pty data
+   *  events (batched at ~16ms to match a render frame). */
+  UiTermData: "uiTerm:data",
+  /** User-facing terminal exited (success or signal). */
+  UiTermExit: "uiTerm:exit",
   /** Menu → renderer: route the user to a path (e.g. "/settings"). */
   MenuNavigate: "menu:navigate",
   /** Menu → renderer: trigger a renderer action. Payload is a short

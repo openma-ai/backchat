@@ -4,7 +4,7 @@
  * the schema directly so type drift between the two is caught when the
  * schema changes (the structural shape here would no longer line up).
  *
- * Stored at ~/.openma-desktop/config.toml. See settings-store.ts for
+ * Stored at ~/.openma/config.toml. See settings-store.ts for
  * the full rationale (TOML over JSON, home dir over userData, etc).
  */
 
@@ -14,6 +14,10 @@ export interface SettingsDefault {
   agent_id: string;
   /** Default cwd for new sessions. Empty string → fallback to $HOME. */
   workspace_path: string;
+  /** Composer permission mode. See settings-store.ts for the full
+   *  semantics; "ask" pops the existing broker modal, "auto" silently
+   *  picks allow_once, "read_only" silently picks reject_once. */
+  permission_mode: "ask" | "auto" | "read_only";
 }
 
 export interface SettingsAppearance {

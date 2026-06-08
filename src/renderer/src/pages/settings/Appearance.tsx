@@ -101,7 +101,7 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
+      <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
         {label}
       </h2>
       {children}
@@ -128,7 +128,7 @@ function RadioGroup({
           className={cn(
             "flex-1 rounded px-2 py-1.5 text-xs transition-colors",
             value === o.value
-              ? "bg-bg text-fg shadow-[0_1px_2px_-1px_rgb(0_0_0/0.08)]"
+              ? "bg-bg text-fg shadow-chip-press"
               : "text-fg-muted hover:text-fg",
           )}
         >

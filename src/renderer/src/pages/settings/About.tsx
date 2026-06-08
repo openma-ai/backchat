@@ -9,15 +9,15 @@ export function SettingsAbout() {
         <h1 className="text-base font-medium text-fg">About</h1>
       </header>
       <dl className="space-y-3 text-sm">
-        <Row label="App">openma desktop 0.0.1</Row>
+        <Row label="App">Backchat 0.0.1</Row>
         <Row label="Engine">Electron 42 · React 19 · TanStack Router</Row>
         <Row label="Protocol">Agent Client Protocol 0.23</Row>
         <Row label="Config file">
-          <span className="font-mono">~/.openma-desktop/config.toml</span>
+          <span className="font-mono">~/.openma/config.toml</span>
         </Row>
       </dl>
       <p className="text-xs text-fg-muted">
-        openma desktop is a local-first ACP client. Conversations and tool
+        Backchat is a local-first ACP client. Conversations and tool
         invocations stay on your machine. The configured agents talk to
         their own model providers — review their docs for what leaves the
         machine.

@@ -1,7 +1,7 @@
 /**
- * Session bookkeeping under the desktop's userData dir.
+ * Session bookkeeping under the shared ~/.openma/ dotdir.
  *
- *   userData/
+ *   ~/.openma/
  *     sessions/
  *       <sessionId>/   ← spawn cwd for the ACP child unless caller overrides.
  *
@@ -9,6 +9,9 @@
  * respawn the ACP child in the same dir so transcripts the agent persisted
  * (e.g. claude-acp under ~/.claude/projects/<cwd-hash>/) line up. Removing
  * the cwd is reserved for an explicit "delete session" gesture.
+ *
+ * Same root will be shared by a future openma cli so both frontends see
+ * the same per-session spawn dirs.
  */
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
