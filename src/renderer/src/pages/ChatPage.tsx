@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useParams } from "@tanstack/react-router";
 import { ChatView } from "@/components/chat/ChatView";
-import { sessionStore } from "@/lib/session-store";
+import { sessionStore, useSessionStore, type SessionRow } from "@/lib/session-store";
 
 /**
  * Chat page — backs both `/` (no session) and `/chat/$sessionId`. Syncs the
@@ -18,11 +18,17 @@ import { sessionStore } from "@/lib/session-store";
  * a reload is the most common cause.
  */
 const HISTORY_LOADED = new Set<string>();
+const PREWARMED = new Set<string>();
 
 export function ChatPage() {
   // useParams strict:false because this page is also rendered at "/" with
   // no params. Both shapes resolve cleanly here.
   const params = useParams({ strict: false }) as { sessionId?: string };
+  const routeSessionSelector = useMemo(() => {
+    const sessionId = params.sessionId;
+    return (s: typeof sessionStore) => (sessionId ? s.get(sessionId) : undefined);
+  }, [params.sessionId]);
+  const routeSession = useSessionStore(routeSessionSelector);
   const lastLoadedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -30,7 +36,7 @@ export function ChatPage() {
       sessionStore.setActive(null);
       return;
     }
-    const row = sessionStore.get(params.sessionId);
+    const row = routeSession;
     if (!row) {
       // Persisted seed hasn't landed yet (race with ShellLayout's
       // sessionsList fetch on first mount). Just set the active id so when
@@ -51,7 +57,30 @@ export function ChatPage() {
         .sessionsLoadHistory(params.sessionId)
         .then((rows) => sessionStore.replayHistory(params.sessionId!, rows));
     }
-  }, [params.sessionId]);
+    if (!PREWARMED.has(params.sessionId) && prewarmSessionOnOpen(row)) {
+      PREWARMED.add(params.sessionId);
+    }
+  }, [params.sessionId, routeSession]);
 
   return <ChatView />;
+}
+
+export function prewarmSessionOnOpen(row: SessionRow | undefined): boolean {
+  if (
+    !row ||
+    row.status !== "ready" ||
+    row.activeTurnId ||
+    !row.acp_session_id ||
+    typeof window === "undefined"
+  ) {
+    return false;
+  }
+
+  void window.backchat.sessionStart({
+    session_id: row.id,
+    agent_id: row.agent_id,
+    cwd: row.cwd || undefined,
+    resume: { acp_session_id: row.acp_session_id },
+  });
+  return true;
 }

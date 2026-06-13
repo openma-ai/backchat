@@ -14,9 +14,15 @@ import type {
   SessionPromptParams,
   SessionStartParams,
 } from "../shared/session-events.js";
+import type {
+  PairEventOut,
+  PairPromptParams,
+  PairStartParams,
+} from "../shared/pair-events.js";
 import type { Settings } from "../shared/settings.js";
 import { detectAll, getKnownAgents, loadRegistry } from "@open-managed-agents-desktop/acp/registry";
 import { SessionManager } from "./session-manager.js";
+import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
 import { archiveSession, deleteSession, listArchivedSessions, listSessions, loadHistory, pinSession, searchMessages, unarchiveSession, unpinSession } from "./sql-store.js";
 import { removeSessionCwd } from "./session-cwd.js";
@@ -51,15 +57,36 @@ interface RegisterDeps {
  * picks up via `sessionAnnounce`).
  */
 export function registerIpc(deps: RegisterDeps): SessionManager {
-  const send = (msg: SessionEventOut) => {
-    // Stderr trace — visible in --enable-logging=stdout. One line per event
-    // so smoke tests can grep for the lifecycle markers.
+  // Two outbound sinks: single-session events and pair events. Both
+  // ultimately broadcast to all browser windows, just on distinct
+  // channels so the renderer can wire them to independent reducers.
+  const singleSink = (msg: SessionEventOut) => {
     if (msg.type !== "session.event") {
       process.stdout.write(`[session] ${msg.type} sid=${msg.session_id.slice(0, 8)}\n`);
     }
     for (const w of BrowserWindow.getAllWindows()) {
       if (!w.isDestroyed()) w.webContents.send(PushChannel.SessionEvent, msg);
     }
+  };
+  const pairSink = (msg: PairEventOut) => {
+    if (msg.type !== "pair.event") {
+      process.stdout.write(`[pair] ${msg.type} pid=${msg.pair_id.slice(0, 8)}\n`);
+    }
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send(PushChannel.PairEvent, msg);
+    }
+  };
+
+  // Forward declaration — pairManager is constructed AFTER sessionManager
+  // (it takes sessionManager as a dep), but the SessionManager's send tee
+  // closes over `pairManager` so we need a mutable holder. The tee is
+  // safe to call before pairManager exists: it just falls through to the
+  // single sink, which is the correct behavior for the boot window
+  // before any pair is registered.
+  let pairManager: PairManager | null = null;
+  const send = (msg: SessionEventOut) => {
+    if (pairManager && pairManager.routeOrPassthrough(msg)) return;
+    singleSink(msg);
   };
 
   const sessionManager = new SessionManager({
@@ -116,6 +143,11 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
   });
   sessionManager.setOnSessionGone(cancelPendingFor);
 
+  // Pair manager — sibling of sessionManager. Holds a reference and
+  // calls its 1:1 API; the tee installed above routes pair-owned
+  // session events into PairManager's reshape path.
+  pairManager = new PairManager({ sessionManager, pairSink });
+
   ipcMain.handle(InvokeChannel.Ping, (_e, msg: string) => {
     const reply = `pong: ${msg}`;
     process.stdout.write(`[ipc-ping] ${reply}\n`);
@@ -138,6 +170,16 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     }));
   });
 
+  ipcMain.handle(
+    InvokeChannel.AcpAuthMethods,
+    (_e, agentId: string) => sessionManager.probeAuthMethods(agentId),
+  );
+  ipcMain.handle(
+    InvokeChannel.AcpAuthenticate,
+    (_e, p: { agentId: string; methodId: string }) =>
+      sessionManager.authenticateAgent(p.agentId, p.methodId),
+  );
+
   ipcMain.handle(InvokeChannel.SessionStart, (_e, p: SessionStartParams) =>
     sessionManager.start(p),
   );
@@ -154,7 +196,30 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     (_e, p: { session_id: string; remove_cwd?: boolean }) =>
       sessionManager.dispose(p.session_id, { removeCwd: p.remove_cwd }),
   );
-  ipcMain.handle(InvokeChannel.SessionAnnounce, () => sessionManager.announceAll());
+  ipcMain.handle(InvokeChannel.SessionAnnounce, () => {
+    sessionManager.announceAll();
+    pairManager?.announcePairs();
+  });
+
+  ipcMain.handle(InvokeChannel.PairStart, (_e, p: PairStartParams) =>
+    pairManager!.startPair(p),
+  );
+  ipcMain.handle(InvokeChannel.PairPrompt, (_e, p: PairPromptParams) =>
+    pairManager!.promptPair(p),
+  );
+  ipcMain.handle(
+    InvokeChannel.PairCancel,
+    (_e, p: { pair_id: string; turn_id: string }) =>
+      pairManager!.cancelPair(p.pair_id, p.turn_id),
+  );
+  ipcMain.handle(InvokeChannel.PairDispose, (_e, p: { pair_id: string }) =>
+    pairManager!.disposePair(p.pair_id),
+  );
+  ipcMain.handle(
+    InvokeChannel.PairReleaseMember,
+    (_e, p: { pair_id: string; session_id: string }) =>
+      pairManager!.releaseMember(p.pair_id, p.session_id),
+  );
 
   ipcMain.handle(InvokeChannel.SessionsList, (_e, limit?: number):
     PersistedSessionInfo[] => listSessions(limit));

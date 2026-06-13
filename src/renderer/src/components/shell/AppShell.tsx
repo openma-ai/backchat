@@ -177,12 +177,21 @@ export function AppShell({
       <div
         className="flex h-full min-h-0 flex-col"
         style={{
+          // Main region's padding = rail width + a single `stage-inset`
+          // (6px) of geometric gap. The full `stage-inset * 2` (12px)
+          // from the original formula left a 6px visual gap between
+          // the chat and each rail; halving it to 6px geometric gives
+          // ~2px visual clearance after the rail's liquid-glass blur
+          // halo + border eats ~4px. Result: the chat scrollbar pill
+          // sits right at the rail's halo edge — close enough to read
+          // as "flush", with enough room to not get visually clipped
+          // by the rail's backdrop-filter.
           paddingLeft: leftCollapsed
             ? "var(--stage-inset)"
-            : `calc(${SIDEBAR_W}px + var(--stage-inset) * 2)`,
+            : `calc(${SIDEBAR_W}px + var(--stage-inset))`,
           paddingRight: rightCollapsed || !rightPanel
             ? "var(--stage-inset)"
-            : "calc(var(--right-rail-w) + var(--stage-inset) * 2)",
+            : "calc(var(--right-rail-w) + var(--stage-inset))",
           paddingBottom: bottomReservation,
           transition: resizing ? "none" : MAIN_TR,
         }}
@@ -210,17 +219,15 @@ export function AppShell({
           {topbar}
         </header>
         <main
-          className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-none"
-          style={{
-            // Reserve scrollbar gutter space even when there's nothing to
-            // scroll yet. Without this, the first frame of a chat page
-            // renders without a scrollbar — then content arrives, the
-            // scrollbar appears, and everything shifts left by the
-            // gutter width (~15px). `stable` keeps the gutter present
-            // either way; `both-edges` would mirror it on the left too,
-            // we only need right.
-            scrollbarGutter: "stable",
-          }}
+          // Pages own their own scrolling (e.g. <Conversation> uses
+          // use-stick-to-bottom, SettingsLayout wraps in its own
+          // overflow-y-auto). Keeping AppShell's <main> non-scrolling
+          // means no permanent scrollbar gutter is reserved on the
+          // right — otherwise the chat scroller's right edge sits
+          // 10 px short of where the right rail begins, producing a
+          // visible gap on the chat page. Other pages that need
+          // a scrolling <main> (Settings) declare it themselves.
+          className="relative min-h-0 flex-1"
         >
           {children}
         </main>
@@ -413,17 +420,32 @@ function GlobalTerminalToggle({ hasRightPanel }: { hasRightPanel: boolean }) {
   if (!collapsed) return null;
   // Park to the LEFT of the side-chat toggle / panel. Two states:
   //   - side panel OPEN: terminal toggle's right edge sits
-  //     var(--chrome-gap) from the panel's left edge — mirrors the
-  //     in-panel close button's same gap on the inside, so the two
-  //     toggles read as mirrored across the seam.
+  //     `var(--chrome-gap)` from the panel's left edge — matches the
+  //     LEFT sidebar's `GlobalSidebarToggle` gap, which is also
+  //     `var(--chrome-gap)` from the trafficLight right edge
+  //     (see AppShell.tsx:213 padding calc). The two chrome
+  //     controls (left toggle + right terminal) are visually
+  //     mirrored pairs across the window, with the same gap token
+  //     on each side so the eye reads them as paired at standard
+  //     zoom and scales uniformly when zoom changes.
   //   - side panel CLOSED: side-chat toggle is at right=chrome-gap;
   //     park terminal toggle to its left with chrome-gap between them:
   //     right = chrome-gap + chrome-size + chrome-gap.
+  //
+  // These are all RENDERER px (no /zoom division). The terminal
+  // button is `size-6` (24 CSS px, also renderer-px), and the rail
+  // is at fixed renderer-px width — so the gap to the rail should
+  // scale with the button at the same rate to preserve the
+  // proportion. (Codex's mockup chrome bar has the same property:
+  // icons and gaps scale together at any size.) The earlier /zoom
+  // form was correct for chrome elements that have a fixed device-px
+  // size (trafficLight, OS chrome) but wrong for layout distances
+  // between renderer-px elements.
   const rightOffset = hasRightPanel
     ? rightCollapsed
-      ? "calc((var(--chrome-gap) * 2 + var(--chrome-size)) / var(--zoom, 1))"
-      : "calc(var(--right-rail-w) + var(--stage-inset) + var(--chrome-gap) / var(--zoom, 1))"
-    : "calc(var(--chrome-gap) / var(--zoom, 1))";
+      ? "calc(var(--chrome-gap) + var(--chrome-size) + var(--chrome-gap))"
+      : "calc(var(--right-rail-w) + var(--stage-inset) + var(--chrome-gap))"
+    : "var(--chrome-gap)";
   return (
     <button
       type="button"

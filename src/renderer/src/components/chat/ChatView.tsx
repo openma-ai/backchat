@@ -31,6 +31,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
+import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,6 +69,13 @@ import { reduceTurn, type ToolContentBlock, type TurnRender } from "@/lib/reduce
 import { useSettings } from "@/lib/settings-store";
 import { AgentIcon } from "@/components/AgentIcon";
 import { StreamingMarkdown } from "./StreamingMarkdown";
+import { ConversationTimeline } from "./ConversationTimeline";
+import { isComposerAgentLocked, resolveComposerAgentId } from "@/lib/composer-agent";
+import {
+  CHAT_COMPOSER_FRAME_CLASS,
+  CHAT_GENERATED_IMAGE_CLASS,
+  CHAT_TURN_FRAME_CLASS,
+} from "@/lib/chat-layout";
 
 type AgentOption = {
   id: string;
@@ -280,8 +288,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   // session.event arriving lets the user fire a second prompt and
   // collapse the conversation order.
   const hasActiveTurn = !!active?.activeTurnId;
+  const boundComposerAgentId =
+    active && active.status !== "draft" ? active.agent_id : undefined;
   const composer = (
     <Composer
+      sessionAgentId={boundComposerAgentId}
       disabled={
         (active?.status === "starting" && !!active?.agent_id) ||
         active?.status === "errored"
@@ -409,28 +420,36 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         <>
           <Conversation key={active?.id ?? "none"} className="flex-1 min-h-0">
             <ConversationContent
+              // ConversationContent is the inner scroller of
+              // use-stick-to-bottom. Keep it full-width so the
+              // scrollbar pill (drawn at the right edge of this
+              // element) sits flush against the right edge of the
+              // conversation, where the timeline strip and right
+              // shell live. Horizontal breathing room belongs to the
+              // turn frame below, which is inset to the composer's
+              // rounded-corner safe line rather than the outer card edge.
               className={cn(
-                // Message list width = composer outer width minus composer
-                // padding. Composer is max-w-3xl + px-3, so messages get
-                // the same max-w-3xl AND the same horizontal padding so
-                // each turn's left edge sits exactly under the composer's
-                // textarea left edge. Plus the page's own px-4 gutter
-                // matches the composer's container.
-                "mx-auto w-full max-w-3xl px-4 py-6",
+                "w-full px-0 py-6",
                 "flex min-h-full flex-col",
               )}
             >
               <MarkdownCwdProvider cwd={active?.cwd}>
-                <div className="px-3">
+                <div
+                  className={CHAT_TURN_FRAME_CLASS}
+                  data-chat-column="turns"
+                >
                   {turns.map((turn) => <TurnBlock key={turn.id} turn={turn} />)}
                 </div>
               </MarkdownCwdProvider>
             </ConversationContent>
             <ConversationScrollButton />
+            {!isSide && <ConversationTimeline turns={turns} />}
           </Conversation>
           <div
+            data-chat-column="composer"
             className={cn(
-              "mx-auto w-full max-w-3xl space-y-2 px-4 pb-4",
+              CHAT_COMPOSER_FRAME_CLASS,
+              "space-y-2 pb-4",
               composerTransition === "from-empty-to-conv" && "composer-slide-in",
             )}
           >
@@ -501,7 +520,7 @@ function SessionIntro({ agentId: _agentId, cwd: _cwd }: { agentId: string; cwd: 
   return null;
 }
 
-function TurnBlock({ turn }: { turn: Turn }) {
+export function TurnBlock({ turn }: { turn: Turn }) {
   const rendered: TurnRender = reduceTurn(turn.events);
   const cwd = useContext(MarkdownCwdContext);
 
@@ -1257,7 +1276,7 @@ function ToolContentRenderer({ block }: { block: ToolContentBlock }) {
         <img
           src={src}
           alt=""
-          className="max-h-[400px] rounded border border-border/40"
+          className={CHAT_GENERATED_IMAGE_CLASS}
         />
       );
     }
@@ -1332,6 +1351,7 @@ function shortPath(p: string): string {
 }
 
 function Composer({
+  sessionAgentId,
   disabled,
   running,
   placeholder,
@@ -1346,6 +1366,7 @@ function Composer({
   onSubmit,
   onCancel,
 }: {
+  sessionAgentId?: string;
   disabled: boolean;
   running: boolean | undefined;
   placeholder: string;
@@ -1369,10 +1390,15 @@ function Composer({
     staleTime: 60_000,
   });
   const detectedAgents = agents.filter((a) => a.detected);
+  const agentLocked = isComposerAgentLocked(sessionAgentId);
+  const resolvedDefaultAgentId = resolveComposerAgentId({
+    sessionAgentId,
+    defaultAgentId: settings?.default.agent_id,
+  });
   const currentAgentId =
     lockedAgentId ||
     pickedAgentId ||
-    settings?.default.agent_id ||
+    resolvedDefaultAgentId ||
     detectedAgents[0]?.id ||
     "";
   const currentAgent = agents.find((a) => a.id === currentAgentId);
@@ -1597,7 +1623,7 @@ function Composer({
         <div className="flex items-center gap-2">
           <SessionRunChip
             disabled={!!running}
-            locked={!!lockedAgentId}
+            locked={!!lockedAgentId || agentLocked}
             agents={detectedAgents}
             currentAgentId={currentAgentId}
             currentAgentLabel={currentAgent?.label}
@@ -2494,7 +2520,18 @@ function MarkdownAnchor({
       );
       return;
     }
-    void window.backchat.uiFsOpenPath({ path: target.path });
+    window.backchat.uiFsOpenPath({ path: target.path }).then((err) => {
+      // shell.openPath returns "" on success, an error string on failure.
+      // Surface failures so silent "click did nothing" stops happening —
+      // most common cause is the OS having no default app for the
+      // extension (e.g. .md on a fresh install).
+      console.log("[MarkdownAnchor] openPath", target.path, "err=", JSON.stringify(err));
+      if (err) {
+        toast.error("Couldn't open file", {
+          description: `${target.path}\n\n${err}`,
+        });
+      }
+    });
   };
   return (
     <a

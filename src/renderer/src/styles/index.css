@@ -231,9 +231,31 @@
                        - trafficLight right    → main column text start
                        So toggles read as mirrored across the seam.
    */
-  --chrome-top: 13px;
-  --chrome-size: 24px;
-  --chrome-gap: 16px;
+  /* Top of the chrome toggle row. 12 px here (was 13 px, briefly
+     11) so a 28-px `size-6` toggle's vertical center (top + size/2
+     = 12 + 14 = 26) lands on the in-panel close button's y-center
+     (stage-inset 6 + pt-1.5 6 + size/2 14 = 26). macOS trafficLight
+     sits at ~y 25 (1 px above the toggle), but the trafficLight's
+     visual reference is fuzzy enough that 1 px reads as "aligned".
+     The original 13 px was calibrated for the 24-px size-6 and put
+     every chrome button 2 px below the right size-6 baseline. */
+  --chrome-top: 12px;
+  /* Chrome button box. 28 px ≈ 1.17× the previous 24 px — gives every
+     `size-6` chrome control (sidebar toggle, terminal toggle, in-panel
+     close button) one size tier up so the chrome reads at proper
+     weight on HiDPI screens without per-component surgery. The
+     override below aliases Tailwind's `size-6` to this token so the
+     hundreds of existing `className="size-6 ..."` call sites pick
+     up the new value automatically. */
+  --chrome-size: 28px;
+  /* Same idea: a single token for the gap between chrome controls
+     and adjacent boundaries (trafficLight → sidebar toggle, terminal
+     ↔ side-chat on the right rail, terminal → right rail). 14 px
+     after the size-6 grew from 24 → 28 — at 20 px the right side
+     read as airy next to the now-larger 28-px buttons. 14 px is
+     still wider than the 4-px button inner padding (size-6
+     children get px-1 = 2 each side) so hits don't bleed. */
+  --chrome-gap: 6px;
 
   /* Side-chat panel width — Codex-style side conversation rail. Sized
      wider than a Linear properties rail because it hosts a full chat
@@ -303,6 +325,18 @@
    `bg-secondary`, ...) resolve onto the same palette. Without those aliases
    shadcn primitives render unstyled (Tailwind v4 silently emits no rule when
    the looked-up token is undefined). */
+
+/* Override Tailwind's `size-6` so chrome controls track --chrome-size.
+   Backchat's chrome buttons (sidebar / side-chat / terminal toggles,
+   in-panel close, etc.) are all `className="size-6 ..."` — without
+   this override, raising --chrome-size wouldn't change any of them
+   (Tailwind's `1.5rem` wins by source order in its own layer). One
+   rule, hundreds of call sites covered. Same trick Tailwind v4 uses
+   for its own `container` and `prose` utilities. */
+.size-6 {
+  width: var(--chrome-size);
+  height: var(--chrome-size);
+}
 @theme {
   --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
   --font-sans: "Geist Variable", -apple-system, "Segoe UI", sans-serif;
@@ -461,6 +495,46 @@ body,
 }
 .sidebar-scrollbar::-webkit-scrollbar {
   width: 8px;
+}
+
+/* Chat scroller — Codex-style short pill.
+   Two parallel rules:
+   1. Standards `scrollbar-width` / `scrollbar-color` for the
+      overlay-style pill that macOS Chromium draws natively.
+   2. `::-webkit-scrollbar` pseudos as a fallback for "Always
+      show scroll bars" mode and Linux/Windows classic
+      scrollbars. Without these, classic-mode thumbs auto-size
+      to fill the entire track height, which loses the short
+      pill effect. The `min-height` + `max-height` clamp on
+      the thumb gives a fat short pill; the transparent
+      border insets it from the track edge so it visually
+      floats in the middle. */
+.chat-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 30%, transparent) transparent;
+}
+.chat-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  /* Clamp thumb height between 40px and ~50% of the scroller
+     viewport. Without the floor, classic-mode scrollbars in
+     "Always show" mode make the thumb = track height when
+     content < viewport, which destroys the pill. */
+  min-height: 40px;
+  max-height: 50%;
+}
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--fg) 50%, transparent);
+  background-clip: padding-box;
 }
 
 /* BrandLoader dot pulse — wave from left to right via staggered animation-delay

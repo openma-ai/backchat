@@ -78,6 +78,25 @@ export interface FsWriteAskInfo {
   oldPreview: string;
 }
 
+/** What `acpAuthMethods` returns — the agent's `initialize.authMethods`
+ *  reshaped for the Settings sign-in picker. */
+export interface AcpAuthMethodsResult {
+  /** initialize.agentInfo.title || .name, or null if the agent didn't
+   *  identify itself. Settings uses it as a friendly label
+   *  ("Gemini CLI 登录"). */
+  agentName: string | null;
+  methods: ReadonlyArray<{
+    id: string;
+    name: string;
+    description?: string | null;
+    /** ACP method variant — "env_var" / "terminal" / undefined for
+     *  the default "agent" type. UI may render env_var differently
+     *  (input field for the value instead of a button), but the
+     *  first pass just shows a button for every method. */
+    type?: string;
+  }>;
+}
+
 export interface TerminalOutputFrame {
   sessionId: string;
   terminalId: string;
@@ -112,6 +131,16 @@ export interface BackchatApi {
    *  flagged by detection. Renderer uses this to power the agent picker. */
   agentsList(): Promise<AgentInfo[]>;
 
+  /** Probe an ACP agent for the auth methods it advertises on
+   *  initialize. Settings → Agents calls this to render a sign-in
+   *  picker (one button per method). Throws if the agent isn't on
+   *  PATH / can't be spawned. */
+  acpAuthMethods(agentId: string): Promise<AcpAuthMethodsResult>;
+  /** Run the agent's signin sub-flow for the chosen methodId
+   *  (OAuth browser handoff, API-key validation, ...). Resolves on
+   *  success; rejects with the agent's raw error on failure. */
+  acpAuthenticate(agentId: string, methodId: string): Promise<void>;
+
   sessionStart(p: SessionStartParams): Promise<void>;
   sessionPrompt(p: SessionPromptParams): Promise<void>;
   sessionCancel(p: { session_id: string; turn_id: string }): Promise<void>;
@@ -120,6 +149,22 @@ export interface BackchatApi {
   /** Re-emit `session.ready` for every alive session. Renderer calls this
    *  on mount after a reload. */
   sessionAnnounce(): Promise<void>;
+
+  /** Pair-chat API — fans out to N agents under one session id. The
+   *  renderer mints `pair_id` and a `session_id` per member; backend
+   *  spawns each member as a normal ACP session whose events stream
+   *  via PushChannel.PairEvent. */
+  pairStart(p: import("./pair-events.js").PairStartParams): Promise<void>;
+  pairPrompt(p: import("./pair-events.js").PairPromptParams): Promise<void>;
+  pairCancel(p: { pair_id: string; turn_id: string }): Promise<void>;
+  pairDispose(p: { pair_id: string }): Promise<void>;
+  /** Detach a member from the pair without disposing it. The
+   *  underlying session keeps running and re-appears as a single
+   *  chat in the sidebar. */
+  pairReleaseMember(p: { pair_id: string; session_id: string }): Promise<void>;
+  onPairEvent(
+    handler: (ev: import("./pair-events.js").PairEventOut) => void,
+  ): () => void;
 
   /** List persisted sessions (most-recent first, archived hidden). Used by
    *  the renderer on boot to rebuild the sidebar from disk before any

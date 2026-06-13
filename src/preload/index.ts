@@ -17,6 +17,12 @@ const api: BackchatApi = {
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
 
   agentsList: () => ipcRenderer.invoke(InvokeChannel.AgentsList) as Promise<AgentInfo[]>,
+  acpAuthMethods: (agentId) =>
+    ipcRenderer.invoke(InvokeChannel.AcpAuthMethods, agentId) as Promise<
+      import("../shared/api.js").AcpAuthMethodsResult
+    >,
+  acpAuthenticate: (agentId, methodId) =>
+    ipcRenderer.invoke(InvokeChannel.AcpAuthenticate, { agentId, methodId }) as Promise<void>,
 
   sessionStart: (p: SessionStartParams) =>
     ipcRenderer.invoke(InvokeChannel.SessionStart, p) as Promise<void>,
@@ -28,6 +34,19 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.SessionDispose, p) as Promise<void>,
   sessionAnnounce: () =>
     ipcRenderer.invoke(InvokeChannel.SessionAnnounce) as Promise<void>,
+
+  pairStart: (p) => ipcRenderer.invoke(InvokeChannel.PairStart, p) as Promise<void>,
+  pairPrompt: (p) => ipcRenderer.invoke(InvokeChannel.PairPrompt, p) as Promise<void>,
+  pairCancel: (p) => ipcRenderer.invoke(InvokeChannel.PairCancel, p) as Promise<void>,
+  pairDispose: (p) => ipcRenderer.invoke(InvokeChannel.PairDispose, p) as Promise<void>,
+  pairReleaseMember: (p) =>
+    ipcRenderer.invoke(InvokeChannel.PairReleaseMember, p) as Promise<void>,
+  onPairEvent: (handler) => {
+    const l = (_e: IpcRendererEvent, ev: import("../shared/pair-events.js").PairEventOut) =>
+      handler(ev);
+    ipcRenderer.on(PushChannel.PairEvent, l);
+    return () => ipcRenderer.removeListener(PushChannel.PairEvent, l);
+  },
 
   sessionsList: (limit) =>
     ipcRenderer.invoke(InvokeChannel.SessionsList, limit) as Promise<

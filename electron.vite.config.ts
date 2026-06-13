@@ -54,6 +54,14 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, "src/renderer"),
     plugins: [react(), tailwindcss()],
+    // Pin the dev server port. Without `strictPort: true` electron-vite
+    // silently falls back to 5174 / 5175 / ... when 5173 is held by a
+    // stale process, which then makes `ELECTRON_RENDERER_URL` point at
+    // the wrong port and the Electron window loads a blank page. The
+    // dev script's ELECTRON_RENDERER_URL hand-off to main process
+    // (src/main/index.ts) is the only place this port matters; if you
+    // change it, also update any docs that reference the dev URL.
+    server: { port: 5555, strictPort: true },
     build: {
       outDir: "out/renderer",
       rollupOptions: {

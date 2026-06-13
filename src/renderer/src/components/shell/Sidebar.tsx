@@ -8,6 +8,7 @@ import {
 import { ContextMenu } from "radix-ui";
 import {
   Loader2Icon,
+  LayoutGridIcon,
   PinIcon,
   PinOffIcon,
   PencilIcon,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
   selectActiveId,
@@ -156,6 +158,8 @@ export function Sidebar() {
           </span>
           <span className={labelCls}>New chat</span>
         </button>
+
+        <PairChatLauncher labelCls={labelCls} />
 
         {/* Cmd+K trigger — fires a synthetic ⌘K so CommandPalette opens.
             Visible in collapsed mode too (just the icon); pressing it
@@ -454,5 +458,118 @@ function SessionRow({
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
+  );
+}
+
+/** Inline "Pair chat" launcher — sits under the New chat button in
+ *  the sidebar. Click reveals a small popover listing every detected
+ *  agent with a checkbox; user picks 2-4 then "Start" mints a pair
+ *  and routes to /pair/<id>.
+ *
+ *  Deliberately compact: no modal, no fancy filtering. If the user
+ *  has 3 detected agents and wants a pair, two clicks total.
+ */
+function PairChatLauncher({ labelCls }: { labelCls: string }) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const navigate = useNavigate();
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => window.backchat.agentsList(),
+    enabled: open,
+  });
+  const detected = agents.filter((a) => a.detected);
+
+  const toggle = (id: string) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 4) next.add(id);
+      return next;
+    });
+  };
+
+  const start = () => {
+    if (picked.size < 2) return;
+    const agentIds = detected
+      .map((a) => a.id)
+      .filter((id) => picked.has(id));
+    const pair_id = sessionStore.newDraftPair(agentIds);
+    setOpen(false);
+    setPicked(new Set());
+    void navigate({ to: "/pair/$pairId", params: { pairId: pair_id } });
+  };
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Pair chat"
+          className={cn(
+            "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+            "text-fg hover:bg-bg-surface/60 transition-colors",
+          )}
+          style={{ height: "var(--row-h)" }}
+        >
+          <span className="inline-flex size-4 shrink-0 items-center justify-center text-fg-muted">
+            <LayoutGridIcon className="size-3.5" />
+          </span>
+          <span className={labelCls}>Pair chat</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <div className="px-2 py-1.5 text-[11px] text-fg-subtle">
+          选 2–4 个 agent 一起聊
+        </div>
+        {detected.length === 0 ? (
+          <div className="px-2 py-2 text-xs text-fg-muted">
+            没有检测到 agent
+          </div>
+        ) : (
+          detected.map((a) => {
+            const isPicked = picked.has(a.id);
+            const atCap = !isPicked && picked.size >= 4;
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => toggle(a.id)}
+                disabled={atCap}
+                className={cn(
+                  "flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs",
+                  "hover:bg-bg-surface/60",
+                  atCap && "opacity-50",
+                )}
+              >
+                <span
+                  className={cn(
+                    "size-3.5 rounded border",
+                    isPicked
+                      ? "bg-fg border-fg"
+                      : "border-border bg-transparent",
+                  )}
+                />
+                <span className="flex-1 truncate">{a.label}</span>
+                <span className="font-mono text-[10px] text-fg-subtle">
+                  {a.id}
+                </span>
+              </button>
+            );
+          })
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault();
+            start();
+          }}
+          disabled={picked.size < 2}
+          className="justify-center text-xs"
+        >
+          Start ({picked.size})
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

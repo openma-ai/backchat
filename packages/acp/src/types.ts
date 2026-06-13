@@ -101,7 +101,17 @@ export interface AcpSession {
   readonly id: string;
   readonly acpSessionId: string;
   readonly options: SessionOptions;
+  /** Auth methods the agent advertised on `initialize.authMethods`.
+   *  Settings UI reads this to render per-agent "Sign in / switch
+   *  account" panels. Empty when the agent has no auth gate. */
+  readonly authMethods: readonly schema.AuthMethod[];
+  /** Agent identification (name + version) reported on initialize. */
+  readonly agentInfo: schema.Implementation | null;
   prompt(text: string, opts?: { abortSignal?: AbortSignal }): AsyncIterable<unknown>;
+  /** Drive a user-initiated signin. The agent's sub-flow (OAuth
+   *  browser handoff, API-key validation, …) blocks until done; on
+   *  failure the agent's error propagates unchanged. */
+  authenticate(methodId: string): Promise<void>;
   /** Switch agent into a named session mode (e.g. codex `auto`,
    *  `full-access`). No-op when the agent doesn't expose
    *  setSessionMode in its capability surface. */

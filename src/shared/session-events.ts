@@ -23,6 +23,29 @@ export interface SessionStartParams {
   resume?: { acp_session_id: string };
 }
 
+export interface PairStartParams {
+  /** Stable pair id chosen by the renderer (uuid). */
+  pair_id: string;
+  /** One sub-session id per agent. Renderer mints these alongside
+   *  pair_id so the column-to-session mapping is deterministic
+   *  (grid column N renders sub-session N). */
+  members: Array<{ session_id: string; agent_id: string }>;
+  /** Optional shared workspace cwd. When set, every member spawns
+   *  here (caller accepts that file writes may conflict). When
+   *  omitted, each sub-session gets its own
+   *  ~/.openma/sessions/<session_id>/ via the usual auto-allocator. */
+  workspace_cwd?: string;
+}
+
+export interface PairPromptParams {
+  pair_id: string;
+  /** Shared per-turn id. Each sub-session sees the same turn_id so
+   *  the renderer can group their event streams under one "row" in
+   *  the grid timeline. */
+  turn_id: string;
+  text: string;
+}
+
 export interface SessionPromptParams {
   session_id: string;
   /** Stable per-turn id. Used to route `session.event` and `session.complete`

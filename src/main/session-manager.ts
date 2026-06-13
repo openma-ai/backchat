@@ -119,6 +119,73 @@ export class SessionManager {
     return this.#sessions.size;
   }
 
+  /** Spin up a throwaway AcpSession for the named agent JUST long enough
+   *  to read its `initialize.authMethods` list. Disposed before returning.
+   *
+   *  Used by Settings → Agents to render the per-agent sign-in picker.
+   *  Lives on SessionManager rather than ipc.ts so we reuse the spawner +
+   *  runtime + agent override resolution (custom command, env vars) that
+   *  start() already wired up — keeps the "what binary actually runs"
+   *  logic in one place. */
+  async probeAuthMethods(agentId: string): Promise<{
+    methods: ReadonlyArray<{ id: string; name: string; description?: string | null; type?: string | undefined }>;
+    agentName: string | null;
+  }> {
+    const sess = await this.#openOneShot(agentId);
+    try {
+      return {
+        methods: sess.authMethods.map((m) => ({
+          id: m.id,
+          name: m.name,
+          description: m.description ?? null,
+          type: (m as { type?: string }).type,
+        })),
+        agentName:
+          sess.agentInfo?.title ?? sess.agentInfo?.name ?? null,
+      };
+    } finally {
+      await sess.dispose().catch(() => undefined);
+    }
+  }
+
+  /** User-initiated sign-in. Spawns a one-shot AcpSession and invokes
+   *  the agent's authenticate sub-flow (OAuth browser handoff for
+   *  oauth-personal, API-key validation for the env_var variants).
+   *  Disposed regardless of outcome — keyring/file state the agent
+   *  wrote is what persists. */
+  async authenticateAgent(agentId: string, methodId: string): Promise<void> {
+    const sess = await this.#openOneShot(agentId);
+    try {
+      await sess.authenticate(methodId);
+    } finally {
+      await sess.dispose().catch(() => undefined);
+    }
+  }
+
+  async #openOneShot(agentId: string) {
+    const agent = resolveKnownAgent(agentId);
+    if (!agent) throw new Error(`unknown ACP agent: ${agentId}`);
+    const override = this.#resolveAgentOverride(agent.id) ?? {};
+    const command = override.commandOverride || agent.spec.command;
+    const args = override.argsOverride ?? agent.spec.args;
+    return this.#runtime.start({
+      agent: {
+        command,
+        args,
+        cwd: process.cwd(),
+        env: scrubAcpSpawnEnv({
+          ...(agent.spec.env ?? {}),
+          ...(override.envOverride ?? {}),
+        }),
+      },
+      mcpServers: [],
+      // No client callbacks — auth flows shouldn't try to call back
+      // into permission / fs / terminal handlers. If an agent does
+      // require those during signin, we'll surface the failure and
+      // revisit the contract then.
+    });
+  }
+
   /** Re-announce alive sessions — used by the renderer's mount handshake so a
    *  reload sees what's running. */
   announceAll(): void {

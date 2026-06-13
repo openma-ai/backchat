@@ -23,6 +23,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { ChatPage } from "@/pages/ChatPage";
+import { PairChatPage } from "@/pages/PairChatPage";
 import { ShellLayout } from "@/components/shell/ShellLayout";
 import { SettingsAgents } from "@/pages/settings/Agents";
 import { SettingsAppearance } from "@/pages/settings/Appearance";
@@ -49,6 +50,12 @@ const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chat/$sessionId",
   component: ChatPage,
+});
+
+const pairRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pair/$pairId",
+  component: PairChatPage,
 });
 
 const settingsRoot = createRoute({
@@ -93,6 +100,7 @@ const settingsArchive = createRoute({
 const routeTree = rootRoute.addChildren([
   homeRoute,
   chatRoute,
+  pairRoute,
   settingsRoot.addChildren([
     settingsAgents,
     settingsMcp,

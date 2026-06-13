@@ -8,11 +8,26 @@
 export const InvokeChannel = {
   Ping: "app:ping",
   AgentsList: "agents:list",
+  /** Spin up a one-shot AcpSession just to read the agent's
+   *  initialize.authMethods list, then dispose. Returns a small
+   *  array of {id, name, description?} entries the Settings UI
+   *  uses to render the sign-in picker. */
+  AcpAuthMethods: "acp:authMethods",
+  /** Spin up a one-shot AcpSession and call session.authenticate()
+   *  with the chosen methodId. The agent runs its own sub-flow
+   *  (OAuth browser handoff, API-key validation, ...). Resolves
+   *  on success; rejects with the agent's raw error on failure. */
+  AcpAuthenticate: "acp:authenticate",
   SessionStart: "session:start",
   SessionPrompt: "session:prompt",
   SessionCancel: "session:cancel",
   SessionDispose: "session:dispose",
   SessionAnnounce: "session:announce",
+  PairStart: "pair:start",
+  PairPrompt: "pair:prompt",
+  PairCancel: "pair:cancel",
+  PairDispose: "pair:dispose",
+  PairReleaseMember: "pair:releaseMember",
   SessionsList: "sessions:list",
   SessionsLoadHistory: "sessions:loadHistory",
   SessionsSearch: "sessions:search",
@@ -70,6 +85,9 @@ export const InvokeChannel = {
 export const PushChannel = {
   /** Out-of-band push for session lifecycle + streamed events. */
   SessionEvent: "session:event",
+  /** Pair-chat lifecycle + per-member streamed events. Distinct
+   *  channel so single-chat reducers don't have to filter them. */
+  PairEvent: "pair:event",
   /** Whole-settings push fired after each patch — renderer subscribes once
    *  and re-renders settings-driven UI without polling. */
   SettingsChanged: "settings:changed",

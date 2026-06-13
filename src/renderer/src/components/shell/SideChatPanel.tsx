@@ -126,7 +126,7 @@ export function SideChatPanel() {
           px-3 (12) + border (1) = 13 ≈ chrome-gap (16) on the inside
           edge — close enough that the in-panel button and the fixed
           terminal toggle outside read as mirrored across the seam. */}
-      <div className="shrink-0 flex items-center gap-1 px-3 pt-1.5 pb-2">
+      <div className="shrink-0 flex items-center gap-[var(--chrome-gap)] pl-[var(--chrome-gap)] pr-[var(--chrome-gap)] pt-1.5 pb-2">
         {/* Collapse rail button — image #13: lives inside the panel's
             top-left when expanded. Mirrors the left sidebar toggle's
             position + icon family. */}

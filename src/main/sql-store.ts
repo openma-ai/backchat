@@ -47,6 +47,23 @@ export interface PersistedSession {
   created_at: number;
   archived_at: number | null;
   pinned_at: number | null;
+  /** When this session is a sub-member of a pair-chat, the wrapper pair
+   *  row's id. Sidebar lists hide rows with `pair_id != null` and shows
+   *  the pair row instead. */
+  pair_id: string | null;
+}
+
+export interface PersistedPairSession {
+  id: string;
+  title: string;
+  /** When non-empty, every member of the pair spawns in this cwd. When
+   *  empty, each member gets an isolated `~/.openma/sessions/<member>/`
+   *  via session-cwd's auto-allocation. */
+  workspace_cwd: string;
+  created_at: number;
+  last_used_at: number;
+  archived_at: number | null;
+  pinned_at: number | null;
 }
 
 export interface PersistedEvent {
@@ -76,6 +93,12 @@ let _stmts: {
   deleteRow: StatementSync;
   appendEvent: StatementSync;
   loadHistory: StatementSync;
+  // Pair-chat helpers — see PersistedPairSession + pair_sessions schema.
+  upsertPair: StatementSync;
+  touchPair: StatementSync;
+  setPairTitleIfEmpty: StatementSync;
+  getPair: StatementSync;
+  listPairMembers: StatementSync;
 } | null = null;
 
 export function openSessionDb(path: string): void {
@@ -103,12 +126,36 @@ export function openSessionDb(path: string): void {
       last_used_at  INTEGER NOT NULL,
       created_at    INTEGER NOT NULL,
       archived_at   INTEGER,
-      pinned_at     INTEGER
+      pinned_at     INTEGER,
+      pair_id       TEXT
     );
     CREATE INDEX IF NOT EXISTS sessions_last_used_idx
       ON sessions(archived_at, last_used_at DESC);
-    CREATE INDEX IF NOT EXISTS sessions_pinned_idx
-      ON sessions(archived_at, pinned_at DESC);
+    -- Indexes on pinned_at / pair_id are created after the ALTER
+    -- migrations below — on a pre-existing db those columns may not
+    -- exist yet, and CREATE INDEX here would abort this whole exec.
+
+    -- pair_sessions — the "wrapper" row for a multi-agent chat. Each
+    -- pair fans out the user's prompt to N sub-sessions (one row in
+    -- the sessions table per member, linked via sessions.pair_id). The
+    -- pair itself owns the user-facing title and the cwd policy:
+    --   - workspace_cwd != ''  -> shared cwd, every member spawns there
+    --   - workspace_cwd == ''  -> per-member cwd auto-allocated under
+    --                            ~/.openma/sessions/<sub_id>/
+    -- The pair row also acts as the sidebar entry — sub-sessions are
+    -- "hidden" rows that exist only to carry events for replay.
+    -- "hidden" rows that exist only to carry events for replay.
+    CREATE TABLE IF NOT EXISTS pair_sessions (
+      id             TEXT PRIMARY KEY,
+      title          TEXT NOT NULL DEFAULT '',
+      workspace_cwd  TEXT NOT NULL DEFAULT '',
+      created_at     INTEGER NOT NULL,
+      last_used_at   INTEGER NOT NULL,
+      archived_at    INTEGER,
+      pinned_at      INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS pair_sessions_last_used_idx
+      ON pair_sessions(archived_at, last_used_at DESC);
 
     CREATE TABLE IF NOT EXISTS events (
       seq         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,15 +214,22 @@ export function openSessionDb(path: string): void {
   );
   if (!sessionCols.has("pinned_at")) {
     db.exec(`ALTER TABLE sessions ADD COLUMN pinned_at INTEGER`);
-    db.exec(`CREATE INDEX IF NOT EXISTS sessions_pinned_idx
-             ON sessions(archived_at, pinned_at DESC)`);
   }
+  if (!sessionCols.has("pair_id")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN pair_id TEXT`);
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS sessions_pinned_idx
+      ON sessions(archived_at, pinned_at DESC);
+    CREATE INDEX IF NOT EXISTS sessions_pair_idx
+      ON sessions(pair_id);
+  `);
 
   _db = db;
   _stmts = {
     upsert: db.prepare(`
-      INSERT INTO sessions (id, agent_id, cwd, acp_session_id, title, last_used_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, agent_id, cwd, acp_session_id, title, last_used_at, created_at, pair_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         agent_id       = excluded.agent_id,
         cwd            = excluded.cwd,
@@ -185,7 +239,8 @@ export function openSessionDb(path: string): void {
         title          = CASE WHEN excluded.title != ''
                               THEN excluded.title
                               ELSE sessions.title END,
-        last_used_at   = excluded.last_used_at
+        last_used_at   = excluded.last_used_at,
+        pair_id        = COALESCE(excluded.pair_id, sessions.pair_id)
     `),
     touch: db.prepare(`UPDATE sessions SET last_used_at = ? WHERE id = ?`),
     setTitle: db.prepare(`UPDATE sessions SET title = ? WHERE id = ?`),
@@ -199,7 +254,7 @@ export function openSessionDb(path: string): void {
      *  via Search instead. Single round trip per render. */
     listForSidebar: db.prepare(`
       SELECT * FROM sessions
-      WHERE archived_at IS NULL
+      WHERE archived_at IS NULL AND pair_id IS NULL
       ORDER BY
         CASE WHEN pinned_at IS NOT NULL THEN 0 ELSE 1 END,
         CASE WHEN pinned_at IS NOT NULL THEN pinned_at END DESC,
@@ -207,7 +262,7 @@ export function openSessionDb(path: string): void {
     `),
     list: db.prepare(`
       SELECT * FROM sessions
-      WHERE archived_at IS NULL
+      WHERE archived_at IS NULL AND pair_id IS NULL
       ORDER BY last_used_at DESC
       LIMIT ?
     `),
@@ -226,6 +281,24 @@ export function openSessionDb(path: string): void {
     ),
     loadHistory: db.prepare(
       `SELECT * FROM events WHERE session_id = ? ORDER BY seq ASC`,
+    ),
+    upsertPair: db.prepare(`
+      INSERT INTO pair_sessions (id, title, workspace_cwd, created_at, last_used_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        title         = CASE WHEN excluded.title != ''
+                             THEN excluded.title
+                             ELSE pair_sessions.title END,
+        workspace_cwd = excluded.workspace_cwd,
+        last_used_at  = excluded.last_used_at
+    `),
+    touchPair: db.prepare(`UPDATE pair_sessions SET last_used_at = ? WHERE id = ?`),
+    setPairTitleIfEmpty: db.prepare(
+      `UPDATE pair_sessions SET title = ? WHERE id = ? AND (title IS NULL OR title = '')`,
+    ),
+    getPair: db.prepare(`SELECT * FROM pair_sessions WHERE id = ?`),
+    listPairMembers: db.prepare(
+      `SELECT * FROM sessions WHERE pair_id = ? ORDER BY created_at ASC`,
     ),
   };
 
@@ -272,6 +345,9 @@ export function upsertSession(row: {
   acp_session_id?: string;
   title?: string;
   last_used_at?: number;
+  /** Set when this session is a sub-member of a pair-chat. Hidden from
+   *  sidebar; reached only via the parent pair's grid view. */
+  pair_id?: string | null;
 }): void {
   const now = Date.now();
   stmts().upsert.run(
@@ -282,6 +358,7 @@ export function upsertSession(row: {
     row.title ?? "",
     row.last_used_at ?? now,
     now,
+    row.pair_id ?? null,
   );
 }
 
@@ -342,6 +419,43 @@ export function listSessions(limit = 200): PersistedSession[] {
  *  then Chats by recency). */
 export function listSessionsForSidebar(): PersistedSession[] {
   return stmts().listForSidebar.all() as unknown as PersistedSession[];
+}
+
+// -------------------- pair sessions --------------------
+
+/** Create or rename a pair-chat wrapper row. The pair carries the
+ *  sidebar title + cwd policy; its members live on `sessions` with
+ *  `pair_id` pointing here. */
+export function upsertPairSession(row: {
+  id: string;
+  title?: string;
+  workspace_cwd?: string;
+}): void {
+  const now = Date.now();
+  stmts().upsertPair.run(row.id, row.title ?? "", row.workspace_cwd ?? "", now, now);
+}
+
+export function touchPairSession(id: string): void {
+  stmts().touchPair.run(Date.now(), id);
+}
+
+/** Seed the pair's sidebar title from the first user prompt — the same
+ *  ergonomic the single-chat sidebar gets via setSessionTitleIfEmpty.
+ *  Idempotent (no-op once a title is set). */
+export function setPairTitleIfEmpty(id: string, title: string): void {
+  if (!title) return;
+  stmts().setPairTitleIfEmpty.run(title, id);
+}
+
+export function getPairSession(id: string): PersistedPairSession | null {
+  return (stmts().getPair.get(id) as unknown as PersistedPairSession | undefined) ?? null;
+}
+
+/** Sub-sessions of a pair, in creation order — that's the display order
+ *  the grid uses (codex column then claude column, deterministic across
+ *  reload). */
+export function listPairMembers(pair_id: string): PersistedSession[] {
+  return stmts().listPairMembers.all(pair_id) as unknown as PersistedSession[];
 }
 
 // -------------------- events --------------------

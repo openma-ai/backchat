@@ -23,6 +23,7 @@ import {
   type Agent,
   type Client,
 } from "@agentclientprotocol/sdk";
+import type * as schema from "@agentclientprotocol/sdk";
 import type { AcpSession, ChildHandle, ClientCallbacks, SessionOptions } from "./types.js";
 
 interface ConstructDeps {
@@ -43,8 +44,11 @@ export class AcpSessionImpl implements AcpSession {
   #agent!: Agent;
   #sessionId!: string;
   #disposed = false;
+  #promptActive = false;
   #pendingEvents: unknown[] = [];
   #waiters: Array<(v: IteratorResult<unknown>) => void> = [];
+  #authMethods: readonly schema.AuthMethod[] = [];
+  #agentInfo: schema.Implementation | null = null;
 
   constructor(deps: ConstructDeps) {
     this.id = deps.id;
@@ -78,7 +82,11 @@ export class AcpSessionImpl implements AcpSession {
         } catch {
           /* dbg log must not throw */
         }
-        this.#pushEvent(inner !== undefined ? inner : params);
+        const update = inner !== undefined ? inner : params;
+        if (!this.#promptActive && !isIdleSessionUpdate(update)) {
+          return;
+        }
+        this.#pushEvent(update);
       },
       requestPermission: async (params) => {
         if (cb.requestPermission) {
@@ -117,6 +125,17 @@ export class AcpSessionImpl implements AcpSession {
       },
     });
 
+    // Stash the agent's advertised authMethods so the host can drive a
+    // user-initiated "sign in / switch account" flow via
+    // `authenticate()` below. We deliberately do NOT pre-emptively
+    // pick a method here — `authMethods` is the catalog of supported
+    // signin modes (gemini-cli returns all four unconditionally),
+    // not "you need to auth right now". newSession will fail with a
+    // real error if the agent actually needs credentials; the host
+    // surfaces that to the user and offers Settings → Re-sign-in.
+    this.#authMethods = initResult.authMethods ?? [];
+    this.#agentInfo = initResult.agentInfo ?? null;
+
     const wantsResume = this.options.resumeAcpSessionId;
     const supportsLoad = initResult.agentCapabilities?.loadSession === true;
 
@@ -142,6 +161,29 @@ export class AcpSessionImpl implements AcpSession {
       mcpServers: this.options.mcpServers ?? [],
     });
     this.#sessionId = newSession.sessionId;
+  }
+
+  /** The agent's advertised auth methods (from `initialize.authMethods`).
+   *  Empty when the agent doesn't ship any — usually means "no auth
+   *  needed". Settings UI reads this to render the per-agent sign-in
+   *  panel. */
+  get authMethods(): readonly schema.AuthMethod[] {
+    return this.#authMethods;
+  }
+
+  /** Display name / version reported by the agent on initialize. */
+  get agentInfo(): schema.Implementation | null {
+    return this.#agentInfo;
+  }
+
+  /** Drive a user-initiated signin step. Settings → "Sign in / switch
+   *  account" calls this with the method id picked by the user; the
+   *  agent does its own sub-flow (OAuth browser handoff, API-key
+   *  validation, …) and resolves once done. Throws the agent's error
+   *  raw on failure — caller surfaces it. */
+  async authenticate(methodId: string): Promise<void> {
+    if (!this.#agent) throw new Error("AcpSession not initialized");
+    await this.#agent.authenticate({ methodId });
   }
 
   /** Switch the agent session into a specific mode (e.g. codex's
@@ -200,12 +242,14 @@ export class AcpSessionImpl implements AcpSession {
     }
     turnAbort.signal.addEventListener("abort", onAbort, { once: true });
 
+    this.#promptActive = true;
     const promptDone = this.#agent
       .prompt({
         sessionId: this.#sessionId,
         prompt: [{ type: "text", text }],
       })
       .finally(() => {
+        this.#promptActive = false;
         if (turnTimer) clearTimeout(turnTimer);
         opts?.abortSignal?.removeEventListener("abort", onAbort);
       });
@@ -263,4 +307,16 @@ export class AcpSessionImpl implements AcpSession {
       this.#waiters.shift()!({ value: undefined, done: true });
     }
   }
+}
+
+const IDLE_SESSION_UPDATES = new Set([
+  "available_commands_update",
+  "current_mode_update",
+  "config_option_update",
+  "session_info_update",
+]);
+
+function isIdleSessionUpdate(update: unknown): boolean {
+  const tag = (update as { sessionUpdate?: unknown } | null)?.sessionUpdate;
+  return typeof tag === "string" && IDLE_SESSION_UPDATES.has(tag);
 }

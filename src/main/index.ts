@@ -42,8 +42,17 @@ const windows = new Set<BrowserWindow>();
  * Reference: microsoft/vscode#212471 "Fix traffic light centering on
  * macOS" — same calculation used by VSCode's window chrome.
  */
-const TOGGLE_TOP_PX = 13;        // CSS `top` on toggle
-const TOGGLE_SIZE_PX = 24;       // size-6 = 24px
+// Mirrors the CSS values in src/renderer/src/styles/index.css:
+//   --chrome-top:  12px
+//   --chrome-size: 28px   (the .size-6 override)
+// The main process can't import a CSS var, so we duplicate the
+// numbers here and rely on syncTrafficLight to keep the macOS
+// trafficLight dot center on the same y as the toggle center.
+// If you change the CSS, change these too — mismatch shows up
+// as a 1-2 px vertical offset between the trafficLight and the
+// sidebar's `□` collapse button.
+const TOGGLE_TOP_PX = 12;        // CSS `top` on toggle (var(--chrome-top))
+const TOGGLE_SIZE_PX = 28;       // size-6 = 28px (after the .size-6 override)
 const TRAFFIC_LIGHT_DOT_PX = 12; // macOS standard window button diameter
 
 // Privileged custom protocol for serving local filesystem assets to the

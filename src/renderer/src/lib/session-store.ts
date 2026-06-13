@@ -104,6 +104,28 @@ export type BrokerAsk =
   | { kind: "permission"; ask: import("@shared/api.js").PermissionAskInfo }
   | { kind: "fsWrite"; ask: import("@shared/api.js").FsWriteAskInfo };
 
+/** A pair-chat — fans a single user prompt out to N agents. Members
+ *  are stored separately in `#sessions` (one SessionRow per member);
+ *  this row holds pair-wide metadata only. */
+export interface PairRow {
+  id: string;
+  /** Sidebar label, derived from the first prompt the same way single
+   *  chats are. Empty until a prompt is sent. */
+  label: string;
+  /** Member session ids in column order. Indexes are stable across
+   *  reload (the order is persisted via member created_at). */
+  members: string[];
+  /** Wall-clock of last activity — sidebar sort. */
+  lastUsedAt: number;
+  /** A pair-wide active turn id locks all members' composers
+   *  simultaneously: a new prompt only enables once every member has
+   *  finished the current turn. Cleared when the LAST member completes. */
+  activeTurnId?: string;
+  /** Set of member session ids still running the active turn. Empty
+   *  set means turn complete. */
+  pendingMembers?: Set<string>;
+}
+
 /** Mirrors ACP `AvailableCommand`. `input` describes what the command
  *  expects after the name — `unstructured` means a free-text argument
  *  (e.g. `/commit <message>`), no input means a bare command. */
@@ -189,6 +211,11 @@ export interface WorkspaceArtifacts {
 class SessionStore {
   #sessions = new Map<string, SessionRow>();
   #turns = new Map<string, Turn>();
+  /** Pair-chats. Each pair owns N member session ids; the members
+   *  themselves live in `#sessions` like any other session — the pair
+   *  is just metadata. Routing is by id: navigating to /pair/<id>
+   *  renders PairChatView which reads the pair row + each member. */
+  #pairs = new Map<string, PairRow>();
   #activeId: string | null = null;
   /** Independent active pointer for the side-chat rail. Two surfaces
    *  share one record set but each renders its own active session via
@@ -1197,9 +1224,174 @@ class SessionStore {
     }
     this.#emit();
   }
+
+  // -------------------- pair-chat surface --------------------
+
+  /** All pairs in display order (most-recent first). */
+  pairList(): PairRow[] {
+    return [...this.#pairs.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+  }
+
+  pair(id: string): PairRow | null {
+    return this.#pairs.get(id) ?? null;
+  }
+
+  /** Mint a fresh draft pair from the renderer. Doesn't fire IPC yet —
+   *  on first submit the composer calls `pairStart` + `pairPrompt`.
+   *  Members each get a draft single-session row so the existing
+   *  reducer / TurnBlock machinery works unchanged on them. */
+  newDraftPair(agentIds: string[]): string {
+    const pair_id = `pair-${Math.random().toString(36).slice(2, 10)}`;
+    const members: string[] = [];
+    for (const agentId of agentIds) {
+      const sid = `sess-${Math.random().toString(36).slice(2, 10)}`;
+      this.#sessions.set(sid, {
+        id: sid,
+        agent_id: agentId,
+        cwd: "",
+        acp_session_id: "",
+        label: `${agentId} · ${sid.slice(0, 6)}`,
+        status: "draft",
+        // Pair members are NOT shown in sidebar — kind="side" reuses
+        // the existing filter on list(). Functionally identical to a
+        // hidden row.
+        kind: "side",
+        createdAt: Date.now(),
+      });
+      members.push(sid);
+    }
+    this.#pairs.set(pair_id, {
+      id: pair_id,
+      label: "",
+      members,
+      lastUsedAt: Date.now(),
+    });
+    this.#emit();
+    return pair_id;
+  }
+
+  /** Translate a PairEventOut into the session-event reducer + update
+   *  pair turn state. Subscribed in the bootstrap below. */
+  applyPair(ev: import("@shared/pair-events.js").PairEventOut): void {
+    switch (ev.type) {
+      case "pair.ready": {
+        // Each member's metadata maps onto a SessionRow (creating if
+        // the renderer hasn't seeded it — e.g. coming back after a
+        // reload before pairsList replayed).
+        for (const m of ev.members) {
+          this.apply({
+            type: "session.ready",
+            session_id: m.session_id,
+            acp_session_id: m.acp_session_id,
+            agent_id: m.agent_id,
+            cwd: m.cwd,
+          });
+          // Hide the just-materialized member from the sidebar.
+          this.#mutateSession(m.session_id, (s) => ({ ...s, kind: "side" }));
+        }
+        // Refresh pair members in case backend invented session ids
+        // we don't know (resume path).
+        const pair = this.#pairs.get(ev.pair_id);
+        if (pair) {
+          pair.members = ev.members.map((m) => m.session_id);
+        } else {
+          this.#pairs.set(ev.pair_id, {
+            id: ev.pair_id,
+            label: "",
+            members: ev.members.map((m) => m.session_id),
+            lastUsedAt: Date.now(),
+          });
+        }
+        this.#emit();
+        return;
+      }
+      case "pair.event": {
+        this.apply({
+          type: "session.event",
+          session_id: ev.member_session_id,
+          turn_id: ev.turn_id,
+          event: ev.event,
+        });
+        return;
+      }
+      case "pair.complete": {
+        this.apply({
+          type: "session.complete",
+          session_id: ev.member_session_id,
+          turn_id: ev.turn_id,
+        });
+        this.#dropPairPending(ev.pair_id, ev.member_session_id);
+        return;
+      }
+      case "pair.error": {
+        this.apply({
+          type: "session.error",
+          session_id: ev.member_session_id,
+          turn_id: ev.turn_id,
+          message: ev.message,
+        });
+        if (ev.member_session_id) {
+          this.#dropPairPending(ev.pair_id, ev.member_session_id);
+        }
+        return;
+      }
+      case "pair.disposed": {
+        this.#pairs.delete(ev.pair_id);
+        this.#emit();
+        return;
+      }
+    }
+  }
+
+  /** Mark a member done for the active pair turn. When all members
+   *  are done, clear the pair-wide activeTurnId so the composer
+   *  re-enables. */
+  #dropPairPending(pair_id: string, member_session_id: string): void {
+    const pair = this.#pairs.get(pair_id);
+    if (!pair || !pair.pendingMembers) return;
+    pair.pendingMembers.delete(member_session_id);
+    if (pair.pendingMembers.size === 0) {
+      pair.activeTurnId = undefined;
+      pair.pendingMembers = undefined;
+      pair.lastUsedAt = Date.now();
+      this.#emit();
+    }
+  }
+
+  /** Register a fan-out turn — paint user prompt under every member's
+   *  turn list immediately, lock the pair composer, then return the
+   *  shared turn_id for the caller to send via IPC. */
+  registerPairTurn(pair_id: string, text: string): string | null {
+    const pair = this.#pairs.get(pair_id);
+    if (!pair) return null;
+    const turn_id = `turn-${Math.random().toString(36).slice(2, 10)}`;
+    for (const sid of pair.members) {
+      this.registerTurn(turn_id, sid, text);
+    }
+    pair.activeTurnId = turn_id;
+    pair.pendingMembers = new Set(pair.members);
+    pair.lastUsedAt = Date.now();
+    if (!pair.label) pair.label = derivePairLabel(text);
+    this.#emit();
+    return turn_id;
+  }
 }
 
 export const sessionStore = new SessionStore();
+
+function derivePairLabel(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  const firstLine = trimmed.split(/\r?\n/)[0]!;
+  return firstLine.length <= 40 ? firstLine : firstLine.slice(0, 39).trimEnd() + "…";
+}
+
+// Bootstrap: subscribe to the main-process pair channel exactly once.
+// All pair events route through sessionStore.applyPair, which translates
+// them to single-session events for the existing reducer.
+if (typeof window !== "undefined" && window.backchat?.onPairEvent) {
+  window.backchat.onPairEvent((ev) => sessionStore.applyPair(ev));
+}
 
 /** Stable top-level selectors — pass these to `useSessionStore` instead of
  *  defining inline arrows. Inline arrows would create a fresh reference

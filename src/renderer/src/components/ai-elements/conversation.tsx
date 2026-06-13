@@ -33,7 +33,12 @@ export const ConversationContent = ({
   ...props
 }: ConversationContentProps) => (
   <StickToBottom.Content
+    // `className` lands on the OUTER container; `scrollClassName`
+    // is what `use-stick-to-bottom` puts on the inner element that
+    // actually scrolls. The chat-scrollbar rules in styles/index.css
+    // need to be on the scroller, not its parent.
     className={cn("flex flex-col gap-8 p-4", className)}
+    scrollClassName="chat-scrollbar"
     {...props}
   />
 );
