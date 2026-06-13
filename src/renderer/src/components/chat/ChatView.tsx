@@ -1,4 +1,4 @@
-import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BrainIcon,
   CheckIcon,
@@ -69,6 +69,90 @@ import { useSettings } from "@/lib/settings-store";
 import { AgentIcon } from "@/components/AgentIcon";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 
+type AgentOption = {
+  id: string;
+  label: string;
+  command: string;
+  detected: boolean;
+};
+
+type AcpHarnessFamily = "codex" | "claude" | "gemini" | "opencode" | "generic";
+
+type AcpModelProfile = {
+  id: string;
+  label: string;
+  hint: string;
+  harnessFamilies?: AcpHarnessFamily[];
+};
+
+const DEFAULT_ACP_MODEL_PROFILE_ID = "auto";
+
+const ACP_MODEL_PROFILE_CATALOG: AcpModelProfile[] = [
+  {
+    id: DEFAULT_ACP_MODEL_PROFILE_ID,
+    label: "Auto",
+    hint: "Use the selected harness default",
+  },
+  {
+    id: "codex:gpt-5.5",
+    label: "GPT-5.5",
+    hint: "Codex profile",
+    harnessFamilies: ["codex"],
+  },
+  {
+    id: "codex:gpt-5.4",
+    label: "GPT-5.4",
+    hint: "Codex compatibility profile",
+    harnessFamilies: ["codex"],
+  },
+  {
+    id: "claude:sonnet",
+    label: "Claude Sonnet",
+    hint: "Claude coding profile",
+    harnessFamilies: ["claude"],
+  },
+  {
+    id: "claude:opus",
+    label: "Claude Opus",
+    hint: "Claude high-reasoning profile",
+    harnessFamilies: ["claude"],
+  },
+  {
+    id: "gemini:pro",
+    label: "Gemini Pro",
+    hint: "Gemini pro profile",
+    harnessFamilies: ["gemini"],
+  },
+  {
+    id: "gemini:flash",
+    label: "Gemini Flash",
+    hint: "Gemini fast profile",
+    harnessFamilies: ["gemini"],
+  },
+  {
+    id: "opencode:default",
+    label: "OpenCode Default",
+    hint: "OpenCode profile",
+    harnessFamilies: ["opencode"],
+  },
+];
+
+function harnessFamilyForAgent(agentId: string): AcpHarnessFamily {
+  if (agentId.includes("codex")) return "codex";
+  if (agentId.includes("claude")) return "claude";
+  if (agentId.includes("gemini")) return "gemini";
+  if (agentId.includes("opencode")) return "opencode";
+  return "generic";
+}
+
+function modelProfilesForAgent(agentId: string): AcpModelProfile[] {
+  const family = harnessFamilyForAgent(agentId);
+  return ACP_MODEL_PROFILE_CATALOG.filter((profile) => {
+    if (profile.id === DEFAULT_ACP_MODEL_PROFILE_ID) return true;
+    return profile.harnessFamilies?.includes(family) ?? false;
+  });
+}
+
 /**
  * ChatView — the right pane.
  *
@@ -111,10 +195,16 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   // The lifetime is "from this composer mounting to the first submit",
   // which matches what the chip needs to remember.
   const [pickedCwd, setPickedCwd] = useState<string | null>(null);
+  const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
+  const [pickedModelProfileId, setPickedModelProfileId] = useState(
+    DEFAULT_ACP_MODEL_PROFILE_ID,
+  );
   // Re-baseline when the user navigates to a different session — picking
   // a workspace in session A shouldn't leak into draft B.
   useEffect(() => {
     setPickedCwd(null);
+    setPickedAgentId(null);
+    setPickedModelProfileId(DEFAULT_ACP_MODEL_PROFILE_ID);
   }, [active?.id]);
 
   const onSubmit = async (text: string) => {
@@ -140,7 +230,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       sessionStore.turnsFor(target.id).length);
 
     if (target.status === "draft") {
-      const agentId = settings?.default.agent_id || "";
+      const agentId = pickedAgentId || settings?.default.agent_id || "";
       const label = deriveLabel(text);
       sessionStore.promoteDraft(target.id, agentId, label);
       // Cwd precedence:
@@ -199,6 +289,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       running={active?.status === "running" || hasActiveTurn}
       availableCommands={active?.availableCommands}
       pendingAsk={active?.pendingAsks?.[0]}
+      lockedAgentId={active && active.status !== "draft" ? active.agent_id : null}
+      pickedAgentId={pickedAgentId}
+      onPickAgent={setPickedAgentId}
+      pickedModelProfileId={pickedModelProfileId}
+      onPickModelProfile={setPickedModelProfileId}
       onResolveAsk={async (optionId, approve) => {
         const ask = active?.pendingAsks?.[0];
         if (!ask) return;
@@ -1242,6 +1337,11 @@ function Composer({
   placeholder,
   availableCommands,
   pendingAsk,
+  lockedAgentId,
+  pickedAgentId,
+  pickedModelProfileId,
+  onPickAgent,
+  onPickModelProfile,
   onResolveAsk,
   onSubmit,
   onCancel,
@@ -1251,6 +1351,11 @@ function Composer({
   placeholder: string;
   availableCommands?: AcpAvailableCommand[];
   pendingAsk?: BrokerAsk;
+  lockedAgentId: string | null;
+  pickedAgentId: string | null;
+  pickedModelProfileId: string;
+  onPickAgent: (agentId: string) => void;
+  onPickModelProfile: (profileId: string) => void;
   onResolveAsk?: (optionId: string | null, approve?: boolean) => void | Promise<void>;
   onSubmit: (text: string) => void;
   onCancel: () => void;
@@ -1264,14 +1369,33 @@ function Composer({
     staleTime: 60_000,
   });
   const detectedAgents = agents.filter((a) => a.detected);
-  const currentAgentId = settings?.default.agent_id ?? "";
+  const currentAgentId =
+    lockedAgentId ||
+    pickedAgentId ||
+    settings?.default.agent_id ||
+    detectedAgents[0]?.id ||
+    "";
   const currentAgent = agents.find((a) => a.id === currentAgentId);
+  const modelProfiles = useMemo(
+    () => modelProfilesForAgent(currentAgentId),
+    [currentAgentId],
+  );
+  const currentModelProfile =
+    modelProfiles.find((profile) => profile.id === pickedModelProfileId) ??
+    modelProfiles[0] ??
+    ACP_MODEL_PROFILE_CATALOG[0]!;
 
-  const pickAgent = async (id: string) => {
-    if (!settings) return;
-    await window.backchat.settingsPatch({
-      default: { ...settings.default, agent_id: id },
-    });
+  useEffect(() => {
+    if (modelProfiles.some((profile) => profile.id === pickedModelProfileId)) return;
+    onPickModelProfile(DEFAULT_ACP_MODEL_PROFILE_ID);
+  }, [modelProfiles, onPickModelProfile, pickedModelProfileId]);
+
+  const pickAgent = (id: string) => {
+    onPickAgent(id);
+    const nextProfiles = modelProfilesForAgent(id);
+    if (!nextProfiles.some((profile) => profile.id === pickedModelProfileId)) {
+      onPickModelProfile(DEFAULT_ACP_MODEL_PROFILE_ID);
+    }
   };
 
   useEffect(() => {
@@ -1471,49 +1595,18 @@ function Composer({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Agent picker — Radix DropdownMenu so the popover matches
-              the app's chrome (not macOS-native blue-highlight system
-              menu). Trigger shows the current agent label + chevron;
-              menu lists detected agents with a check on the active one. */}
-          {detectedAgents.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                disabled={!!running}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-md px-2 text-xs text-fg-muted",
-                  "hover:bg-bg-surface/60 hover:text-fg",
-                  "focus:outline-none focus:bg-bg-surface/60",
-                  "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-                style={{ height: "32px" }}
-              >
-                <AgentIcon
-                  agentId={currentAgentId}
-                  className="size-3.5 text-fg-subtle"
-                />
-                <span>{currentAgent?.label ?? "Choose agent"}</span>
-                <ChevronDownIcon className="size-3.5 text-fg-subtle" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" sideOffset={6} className="min-w-[200px]">
-                {detectedAgents.map((a) => (
-                  <DropdownMenuItem
-                    key={a.id}
-                    onSelect={() => void pickAgent(a.id)}
-                    className={cn(
-                      "flex items-center gap-2 text-xs",
-                      a.id === currentAgentId && "text-fg",
-                    )}
-                  >
-                    <AgentIcon agentId={a.id} className="size-3.5 text-fg-muted" />
-                    <span className="flex-1">{a.label}</span>
-                    {a.id === currentAgentId && (
-                      <CheckIcon className="size-3.5 text-fg-muted" />
-                    )}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <SessionRunChip
+            disabled={!!running}
+            locked={!!lockedAgentId}
+            agents={detectedAgents}
+            currentAgentId={currentAgentId}
+            currentAgentLabel={currentAgent?.label}
+            modelProfiles={modelProfiles}
+            currentModelProfileId={currentModelProfile.id}
+            currentModelProfileLabel={currentModelProfile.label}
+            onPickAgent={pickAgent}
+            onPickModelProfile={onPickModelProfile}
+          />
 
           {running ? (
             <button
@@ -1554,6 +1647,178 @@ function Composer({
         </div>
       </div>
     </div>
+  );
+}
+
+function SessionRunChip({
+  disabled,
+  locked,
+  agents,
+  currentAgentId,
+  currentAgentLabel,
+  modelProfiles,
+  currentModelProfileId,
+  currentModelProfileLabel,
+  onPickAgent,
+  onPickModelProfile,
+}: {
+  disabled: boolean;
+  locked: boolean;
+  agents: AgentOption[];
+  currentAgentId: string;
+  currentAgentLabel?: string;
+  modelProfiles: AcpModelProfile[];
+  currentModelProfileId: string;
+  currentModelProfileLabel: string;
+  onPickAgent: (agentId: string) => void;
+  onPickModelProfile: (profileId: string) => void;
+}) {
+  const agentLabel = currentAgentLabel || (currentAgentId ? currentAgentId : "Choose agent");
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        className={cn(
+          "inline-flex max-w-[280px] items-center gap-1 rounded-md px-2 text-xs text-fg-muted",
+          "hover:bg-bg-surface/60 hover:text-fg",
+          "focus:outline-none focus:bg-bg-surface/60",
+          "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        )}
+        style={{ height: "32px" }}
+        aria-label={`Run on Local with ${agentLabel} using ${currentModelProfileLabel}`}
+      >
+        <MonitorIcon className="size-3.5 shrink-0 text-fg-subtle" />
+        <span className="shrink-0">Local</span>
+        <span className="text-fg-subtle">·</span>
+        <span className="truncate">{agentLabel}</span>
+        <span className="text-fg-subtle">·</span>
+        <span className="shrink-0">{currentModelProfileLabel}</span>
+        <ChevronDownIcon className="size-3.5 shrink-0 text-fg-subtle" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6} className="w-[280px]">
+        <SessionRunSection title="Runtime">
+          <SessionRunItem
+            icon={MonitorIcon}
+            label="Local"
+            hint="This machine"
+            active
+            onSelect={() => undefined}
+          />
+          <SessionRunItem
+            icon={CloudIcon}
+            label="Cloud"
+            hint="Coming later"
+            disabled
+            onSelect={() => undefined}
+          />
+          <SessionRunItem
+            icon={GlobeIcon}
+            label="Other machine"
+            hint="Not connected"
+            disabled
+            onSelect={() => undefined}
+          />
+        </SessionRunSection>
+
+        <SessionRunSection title="Harness">
+          {agents.length > 0 ? (
+            agents.map((agent) => (
+              <SessionRunItem
+                key={agent.id}
+                agentId={agent.id}
+                label={agent.label}
+                hint={agent.command}
+                active={agent.id === currentAgentId}
+                disabled={locked}
+                onSelect={() => onPickAgent(agent.id)}
+              />
+            ))
+          ) : (
+            <SessionRunItem
+              icon={TerminalIcon}
+              label="No harness detected"
+              hint="Install an ACP agent first"
+              disabled
+              onSelect={() => undefined}
+            />
+          )}
+        </SessionRunSection>
+
+        <SessionRunSection title="Model">
+          {modelProfiles.map((profile) => (
+            <SessionRunItem
+              key={profile.id}
+              icon={BrainIcon}
+              label={profile.label}
+              hint={profile.hint}
+              active={profile.id === currentModelProfileId}
+              disabled={locked}
+              onSelect={() => onPickModelProfile(profile.id)}
+            />
+          ))}
+        </SessionRunSection>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function SessionRunSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border-b border-border/50 py-1 last:border-b-0">
+      <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
+        {title}
+      </div>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+function SessionRunItem({
+  icon: Icon,
+  agentId,
+  label,
+  hint,
+  active,
+  disabled,
+  onSelect,
+}: {
+  icon?: typeof MonitorIcon;
+  agentId?: string;
+  label: string;
+  hint?: string;
+  active?: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <DropdownMenuItem
+      disabled={disabled}
+      onSelect={onSelect}
+      className={cn(
+        "flex items-start gap-2 px-2 py-1.5 text-xs",
+        active && "text-fg",
+      )}
+    >
+      {agentId ? (
+        <AgentIcon agentId={agentId} className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" />
+      ) : Icon ? (
+        <Icon className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" />
+      ) : null}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {hint && (
+          <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
+        )}
+      </span>
+      {active && <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-fg-muted" />}
+    </DropdownMenuItem>
   );
 }
 
