@@ -1,0 +1,281 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --brand: #f84f32;
+  --ink: #17191d;
+  --muted: #61666f;
+  --glass: rgb(255 255 255 / 0.76);
+  --line: rgb(255 255 255 / 0.64);
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+}
+
+.pet-stage {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  box-sizing: border-box;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.pet-card {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: transparent !important;
+  color: var(--ink);
+}
+
+.debug-boxes {
+  outline: 1px solid rgb(0 200 255 / 0.95);
+  outline-offset: -1px;
+}
+
+.debug-boxes::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: rgb(255 0 128 / 0.95);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.pet-shell-peek {
+  width: var(--pet-side-peek-width);
+  height: var(--pet-side-peek-height);
+  overflow: hidden;
+}
+
+.pet-shell-top {
+  width: var(--pet-top-peek-width);
+  height: var(--pet-top-peek-height);
+  overflow: hidden;
+}
+
+.pet-shell-bottom {
+  width: var(--pet-bottom-rest-width);
+  height: var(--pet-bottom-rest-height);
+  overflow: hidden;
+}
+
+.edge-right .pet-shell-peek {
+  transform: scaleX(-1);
+}
+
+.pet-shell {
+  position: relative;
+  display: grid;
+  width: var(--pet-atlas-cell-width);
+  height: var(--pet-atlas-cell-height);
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: grab;
+  outline: none;
+  transform-origin: 50% 76%;
+  touch-action: none;
+  user-select: none;
+}
+
+.debug-boxes .pet-shell {
+  outline: 1px solid rgb(255 214 0 / 0.95);
+  outline-offset: -1px;
+}
+
+.debug-boxes .pet-sprite,
+.debug-boxes .pet-peek,
+.debug-boxes .pet-bottom-rest {
+  box-shadow: inset 0 0 0 1px rgb(255 96 0 / 0.95);
+}
+
+.pet-shell:focus,
+.pet-shell:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.pet-shell.pet-shell-peek {
+  width: var(--pet-side-peek-width);
+  height: var(--pet-side-peek-height);
+}
+
+.pet-shell.pet-shell-top {
+  width: var(--pet-top-peek-width);
+  height: var(--pet-top-peek-height);
+}
+
+.pet-shell.pet-shell-bottom {
+  width: var(--pet-bottom-rest-width);
+  height: var(--pet-bottom-rest-height);
+}
+
+.pet-shell:active {
+  cursor: grabbing;
+}
+
+.pet-shell::before {
+  content: none;
+  position: absolute;
+  inset: 18px 10px 8px;
+  background: rgb(248 79 50 / 0.12);
+  border-radius: 999px;
+  filter: blur(18px);
+}
+
+.pet-shell-peek::before {
+  display: none;
+}
+
+.pet-shell-top::before {
+  display: none;
+}
+
+.pet-shell-bottom::before {
+  display: none;
+}
+
+.pet-sprite {
+  position: relative;
+  width: var(--pet-atlas-cell-width);
+  height: var(--pet-atlas-cell-height);
+  pointer-events: none;
+  image-rendering: auto;
+  background-image: var(--atlas-url);
+  background-repeat: no-repeat;
+  background-size: calc(var(--pet-atlas-cell-width) * 8) calc(var(--pet-atlas-cell-height) * 9);
+  background-position-x: 0;
+  background-position-y: calc(var(--atlas-row) * -104px);
+}
+
+.pet-sprite[data-animated="true"] {
+  animation: sprite-play var(--atlas-duration) steps(var(--atlas-frames)) infinite;
+}
+
+.motion-nudge .pet-sprite {
+  animation:
+    sprite-play var(--atlas-duration) steps(var(--atlas-frames)) infinite,
+    hover-nudge 760ms ease-in-out 2;
+}
+
+.pet-peek {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background-image: var(--peek-url);
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: calc(var(--pet-side-peek-width) * 4) var(--pet-side-peek-height);
+  animation: edge-peek-quiet 2200ms steps(2) infinite;
+}
+
+.pet-bottom-rest {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background-image: var(--bottom-rest-url);
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: calc(var(--pet-bottom-rest-frame-width) * 4) var(--pet-bottom-rest-frame-height);
+  animation: bottom-rest-peek 2600ms steps(4) infinite;
+}
+
+.surface-screen.pet-shell-bottom .pet-bottom-rest {
+  transform: translateY(var(--pet-bottom-rest-screen-overhang));
+}
+
+.pet-shell-top .pet-sprite {
+  transform: translate(var(--pet-top-atlas-offset-x), var(--pet-top-atlas-offset-y));
+}
+
+.edge-intensity-attention .pet-peek {
+  animation: edge-peek-attention 900ms steps(4) 2;
+}
+
+.edge-intensity-normal .pet-peek {
+  animation: edge-peek-quiet 1800ms steps(2) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-peek {
+    animation: none;
+  }
+
+  .pet-bottom-rest {
+    animation: none;
+  }
+}
+
+@keyframes edge-peek-quiet {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: calc(var(--pet-side-peek-width) * -2);
+  }
+}
+
+@keyframes edge-peek-attention {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: calc(var(--pet-side-peek-width) * -4);
+  }
+}
+
+@keyframes bottom-rest-peek {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: calc(var(--pet-bottom-rest-frame-width) * -4);
+  }
+}
+
+@keyframes sprite-play {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: calc(var(--atlas-frames) * var(--pet-atlas-cell-width) * -1);
+  }
+}
+
+@keyframes hover-nudge {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  45% {
+    transform: translateY(-4px) scale(1.035);
+  }
+}

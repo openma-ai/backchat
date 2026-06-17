@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "pet-extension.v1",
+  "targets": ["codex", "backchat"],
+  "basePet": {
+    "id": "mote",
+    "petJson": "pet.json",
+    "spritesheet": "spritesheet.webp"
+  },
+  "capabilities": [
+    "classic-atlas",
+    "pet-state",
+    "pet-actions",
+    "autonomy",
+    "sidecar-hooks",
+    "session-navigation",
+    "edge-presentation"
+  ],
+  "edgePresentation": {
+    "sidePeek": {
+      "attachment": ["left", "right"],
+      "windowSize": { "width": 48, "height": 128 },
+      "asset": "mote-edge-peek-strip.png",
+      "mirrorForLeft": true,
+      "anchor": {
+        "right": "right-center",
+        "left": "left-center"
+      },
+      "dynamicStates": {
+        "enter": {
+          "durationMs": 180,
+          "easing": "spring-out",
+          "motion": "slide-from-edge"
+        },
+        "hold": {
+          "loopMs": 1400,
+          "motion": "breathing-bob-blink"
+        },
+        "attention": {
+          "durationMs": 700,
+          "motion": "lean-forward-small-wave"
+        },
+        "exit": {
+          "durationMs": 150,
+          "motion": "duck-to-edge"
+        }
+      }
+    },
+    "bottomPeek": {
+      "attachment": ["bottom-screen", "bottom-dock"],
+      "windowSize": { "width": 160, "height": 96 },
+      "asset": "mote-bottom-peek-strip.png",
+      "anchor": {
+        "bottom-screen": "bottom-center",
+        "bottom-dock": "bottom-center"
+      },
+      "dynamicStates": {
+        "enter": {
+          "durationMs": 220,
+          "easing": "spring-out",
+          "motion": "pop-up-from-below"
+        },
+        "hold": {
+          "loopMs": 1600,
+          "motion": "resting-breath-blink"
+        },
+        "attention": {
+          "durationMs": 760,
+          "motion": "head-lift-small-hand"
+        },
+        "exit": {
+          "durationMs": 180,
+          "motion": "sink-below-edge"
+        }
+      }
+    }
+  },
+  "hooks": [
+    {
+      "source": "codex",
+      "event": "thread.started",
+      "action": "wake",
+      "priority": "normal",
+      "fallbackClassicAction": "idle"
+    },
+    {
+      "source": "codex",
+      "event": "approval.requested",
+      "action": "ask",
+      "priority": "urgent",
+      "fallbackClassicAction": "waiting"
+    },
+    {
+      "source": "codex",
+      "event": "task.completed",
+      "action": "proud",
+      "priority": "normal",
+      "fallbackClassicAction": "jumping"
+    }
+  ],
+  "navigation": {
+    "enabled": true,
+    "defaultClick": "highest-priority-target",
+    "codexUrlTemplate": "codex://threads/{threadId}",
+    "backchatUrlTemplate": "backchat://sessions/{sessionId}"
+  }
+}
