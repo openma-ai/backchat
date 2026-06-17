@@ -26,6 +26,7 @@ import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
 import { archiveSession, deleteSession, listArchivedSessions, listSessions, loadHistory, pinSession, searchMessages, unarchiveSession, unpinSession } from "./sql-store.js";
 import { removeSessionCwd } from "./session-cwd.js";
+import { forwardSessionEventToPet } from "./pet-hook-bridge.js";
 import {
   cancelPendingFor,
   createTerminal,
@@ -61,6 +62,7 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
   // ultimately broadcast to all browser windows, just on distinct
   // channels so the renderer can wire them to independent reducers.
   const singleSink = (msg: SessionEventOut) => {
+    forwardSessionEventToPet(msg);
     if (msg.type !== "session.event") {
       process.stdout.write(`[session] ${msg.type} sid=${msg.session_id.slice(0, 8)}\n`);
     }

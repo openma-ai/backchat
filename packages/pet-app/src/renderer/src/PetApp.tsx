@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStandalonePetController, type PetViewState } from "./pet-controller";
+import type { PetHarnessEvent } from "./pet-harness";
 import { dragMotionForDelta } from "./drag-motion";
 import { shouldAnimateSprite, shouldAutoSettleMotion } from "./motion-playback";
 import { isWorkMotion, presentationForState, runningFallbackAfterTransient } from "./pet-presentation";
@@ -19,6 +20,7 @@ const INITIAL_STATE: PetViewState = {
   updatedAt: Date.now(),
 };
 const TRANSIENT_MOTION_MS = 1_400;
+const HARNESS_EVENT_BADGE_MS = 7_000;
 const SHOW_DEBUG_BOXES = true;
 
 export function PetApp() {
@@ -30,6 +32,8 @@ export function PetApp() {
   const [edgeMode, setEdgeMode] = useState<PetEdgeMode>("none");
   const [edgeSurface, setEdgeSurface] = useState<PetEdgeSurface>("screen");
   const [dragMotion, setDragMotion] = useState<PetViewState["motion"] | null>(null);
+  const [lastHarnessEvent, setLastHarnessEvent] = useState<PetHarnessEvent | null>(null);
+  const [harnessEventCount, setHarnessEventCount] = useState(0);
   const dragRef = useRef<{
     pointerId: number;
     startScreenX: number;
@@ -122,9 +126,17 @@ export function PetApp() {
 
   useEffect(() => {
     return window.openmaPet?.onHarnessEvent((event) => {
+      setLastHarnessEvent(event);
+      setHarnessEventCount((count) => Math.min(count + 1, 99));
       applyStates(controller.dispatchHarnessEvent(event));
     });
   }, [applyStates, controller]);
+
+  useEffect(() => {
+    if (!lastHarnessEvent) return;
+    const timeout = window.setTimeout(() => setLastHarnessEvent(null), HARNESS_EVENT_BADGE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [lastHarnessEvent]);
 
   const finishPetDrag = useCallback(() => {
     const drag = dragRef.current;
@@ -227,6 +239,18 @@ export function PetApp() {
             ...sizeVars,
           } as React.CSSProperties}
         >
+          {harnessEventCount > 0 ? (
+            <span className="pet-event-count" aria-label={`${harnessEventCount} harness events`}>
+              {harnessEventCount}
+            </span>
+          ) : null}
+          {lastHarnessEvent ? (
+            <span className={`pet-event-badge priority-${state.priority}`}>
+              <span className="pet-event-source">{lastHarnessEvent.harness}</span>
+              <span className="pet-event-name">{lastHarnessEvent.label ?? lastHarnessEvent.event}</span>
+              {state.navigationUrl ? <span className="pet-event-link">go</span> : null}
+            </span>
+          ) : null}
           <span
             className={
               visualLayer === "side-peek-strip"

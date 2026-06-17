@@ -12,6 +12,7 @@ export type PetHarnessEvent = {
   turnId?: string;
   agentId?: string;
   label?: string;
+  payload?: unknown;
 };
 
 contextBridge.exposeInMainWorld("openmaPet", {

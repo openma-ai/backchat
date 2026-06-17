@@ -79,6 +79,7 @@ function createWindow(): BrowserWindow {
 }
 
 function openPetDeepLink(link: OpenmaPetDeepLink): void {
+  logPetHarnessEvent("deeplink", link);
   const win = mainWindow ?? createWindow();
   const send = (): void => {
     if (!win.isDestroyed()) {
@@ -104,6 +105,7 @@ function drainPendingPetLinks(): void {
 }
 
 function dispatchPetHookEvent(event: PetHookEvent): void {
+  logPetHarnessEvent("hook", event);
   const win = mainWindow ?? createWindow();
   const send = (): void => {
     if (!win.isDestroyed()) {
@@ -115,6 +117,19 @@ function dispatchPetHookEvent(event: PetHookEvent): void {
   } else {
     send();
   }
+}
+
+function logPetHarnessEvent(source: "deeplink" | "hook", event: PetHookEvent | OpenmaPetDeepLink): void {
+  if (!process.env["ELECTRON_RENDERER_URL"]) return;
+  console.info("[pet-harness-event]", {
+    source,
+    harness: event.harness,
+    event: event.event,
+    sessionId: event.sessionId,
+    threadId: event.threadId,
+    turnId: event.turnId,
+    label: event.label,
+  });
 }
 
 ipcMain.handle("pet:get-window-bounds", (event) => {
@@ -279,9 +294,19 @@ if (!gotLock) {
   });
   app.whenReady().then(() => {
     createWindow();
-    void startPetHookServer({ onEvent: dispatchPetHookEvent }).catch((error) => {
-      console.error("[pet-hook-server]", error);
-    });
+    void startPetHookServer({ onEvent: dispatchPetHookEvent })
+      .then((server) => {
+        if (process.env["ELECTRON_RENDERER_URL"]) {
+          console.info("[pet-hook-server]", {
+            port: server.port,
+            endpoint: `http://127.0.0.1:${server.port}/hook`,
+            deeplink: `${OPENMA_PET_PROTOCOL}://event/codex/task.completed?threadId=thread-1&label=Done`,
+          });
+        }
+      })
+      .catch((error) => {
+        console.error("[pet-hook-server]", error);
+      });
     drainPendingPetLinks();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

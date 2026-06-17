@@ -43,4 +43,24 @@ describe("pet hook server", () => {
   it("uses a stable localhost default port", () => {
     expect(PET_HOOK_PORT).toBe(47632);
   });
+
+  it("exposes a small health payload for manual hook discovery", async () => {
+    const server = await startPetHookServer({
+      port: 0,
+      onEvent: () => undefined,
+    });
+    servers.push(server);
+
+    const response = await fetch(`http://127.0.0.1:${server.port}/health`);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      endpoint: "/hook",
+      example: {
+        harness: "codex",
+        event: "task.completed",
+      },
+    });
+  });
 });

@@ -23,6 +23,19 @@ export async function startPetHookServer(options: {
   onEvent(event: PetHookEvent): void;
 }): Promise<PetHookServer> {
   const server = createServer(async (req, res) => {
+    if (req.method === "GET" && (req.url === "/health" || req.url === "/hook")) {
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+        ok: true,
+        endpoint: "/hook",
+        example: {
+          harness: "codex",
+          event: "task.completed",
+          threadId: "thread-1",
+          label: "Done",
+        },
+      }));
+      return;
+    }
     if (req.method !== "POST" || req.url !== "/hook") {
       res.writeHead(404).end();
       return;
