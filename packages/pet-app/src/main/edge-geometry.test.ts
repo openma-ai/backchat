@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BOTTOM_DOCK_SIZE,
+  BOTTOM_SCREEN_WINDOW_SIZE,
   SIDE_PEEK_SIZE,
   SIDE_TRIGGER_VISIBLE_WIDTH,
   TOP_PEEK_SIZE,
@@ -107,7 +108,7 @@ describe("pet edge geometry", () => {
   it("uses the Dock top from the bottom hot-zone side of a bottom Dock reserve", () => {
     const nearBottomDock = {
       x: 320,
-      y: workAreaWithBottomDock.y + workAreaWithBottomDock.height - normalSize.height - 8,
+      y: workAreaWithBottomDock.y + workAreaWithBottomDock.height - normalSize.height + 40,
       width: normalSize.width,
       height: normalSize.height,
     };
@@ -156,7 +157,7 @@ describe("pet edge geometry", () => {
         workAreaWithBottomDock,
         screenBounds,
       ).y,
-    ).toBe(screenBounds.y + screenBounds.height - BOTTOM_DOCK_SIZE.height);
+    ).toBe(screenBounds.y + screenBounds.height - BOTTOM_SCREEN_WINDOW_SIZE.height);
   });
 
   it("uses the Dock top inside the Dock box even when the pet center enters the bottom reserve", () => {
@@ -186,7 +187,7 @@ describe("pet edge geometry", () => {
     });
   });
 
-  it("uses the Dock top when only the pet feet cross the Dock reserve", () => {
+  it("does not use the Dock top when the pet barely crosses the Dock reserve", () => {
     const slightlyCrossingDockTop = {
       x: 320,
       y: workAreaWithBottomDock.y + workAreaWithBottomDock.height - normalSize.height + 8,
@@ -194,12 +195,25 @@ describe("pet edge geometry", () => {
       height: normalSize.height,
     };
     expect(computeEdgeAttachment(slightlyCrossingDockTop, workAreaWithBottomDock, screenBounds)).toEqual({
+      mode: "none",
+      surface: "screen",
+    });
+  });
+
+  it("uses the Dock top after the pet overlaps the Dock reserve by at least 30%", () => {
+    const crossingDockTop = {
+      x: 320,
+      y: workAreaWithBottomDock.y + workAreaWithBottomDock.height - normalSize.height + 40,
+      width: normalSize.width,
+      height: normalSize.height,
+    };
+    expect(computeEdgeAttachment(crossingDockTop, workAreaWithBottomDock, screenBounds)).toEqual({
       mode: "bottom",
       surface: "dock",
     });
     expect(
       computeAttachmentSnappedBounds(
-        slightlyCrossingDockTop,
+        crossingDockTop,
         { mode: "bottom", surface: "dock" },
         workAreaWithBottomDock,
         screenBounds,
@@ -224,7 +238,7 @@ describe("pet edge geometry", () => {
   it("uses the physical screen bottom outside the Dock x-axis range after reaching the screen-bottom hot-zone", () => {
     const outsideDockXAtScreenBottom = {
       x: 180,
-      y: screenBounds.y + screenBounds.height - normalSize.height + 8,
+      y: screenBounds.y + screenBounds.height - normalSize.height + 40,
       width: normalSize.width,
       height: normalSize.height,
     };
@@ -245,16 +259,32 @@ describe("pet edge geometry", () => {
       ),
     ).toEqual({
       x: centeredBottomX(outsideDockXAtScreenBottom),
-      y: screenBounds.y + screenBounds.height - BOTTOM_DOCK_SIZE.height,
-      width: BOTTOM_DOCK_SIZE.width,
-      height: BOTTOM_DOCK_SIZE.height,
+      y: screenBounds.y + screenBounds.height - BOTTOM_SCREEN_WINDOW_SIZE.height,
+      width: BOTTOM_SCREEN_WINDOW_SIZE.width,
+      height: BOTTOM_SCREEN_WINDOW_SIZE.height,
+    });
+  });
+
+  it("does not use the generic bottom fallback before the screen edge overlap threshold", () => {
+    const barelyNearScreenBottom = {
+      x: 180,
+      y: screenBounds.y + screenBounds.height - normalSize.height - 2,
+      width: normalSize.width,
+      height: normalSize.height,
+    };
+
+    expect(
+      computeEdgeAttachment(barelyNearScreenBottom, workAreaWithBottomDock, screenBounds, bottomDockBounds),
+    ).toEqual({
+      mode: "none",
+      surface: "screen",
     });
   });
 
   it("uses the screen bottom when the pet center is just outside the Dock x-axis range", () => {
     const justOutsideDockRight = {
       x: bottomDockBounds.x + bottomDockBounds.width - normalSize.width / 2 + 1,
-      y: screenBounds.y + screenBounds.height - normalSize.height + 8,
+      y: screenBounds.y + screenBounds.height - normalSize.height + 40,
       width: normalSize.width,
       height: normalSize.height,
     };
@@ -268,7 +298,7 @@ describe("pet edge geometry", () => {
   it("keeps screen-bottom snapping independent from any Dock box", () => {
     const nearScreenBottom = {
       x: 180,
-      y: screenBounds.y + screenBounds.height - normalSize.height + 8,
+      y: screenBounds.y + screenBounds.height - normalSize.height + 40,
       width: normalSize.width,
       height: normalSize.height,
     };
@@ -284,16 +314,16 @@ describe("pet edge geometry", () => {
       ),
     ).toEqual({
       x: centeredBottomX(nearScreenBottom),
-      y: screenBounds.y + screenBounds.height - BOTTOM_DOCK_SIZE.height,
-      width: BOTTOM_DOCK_SIZE.width,
-      height: BOTTOM_DOCK_SIZE.height,
+      y: screenBounds.y + screenBounds.height - BOTTOM_SCREEN_WINDOW_SIZE.height,
+      width: BOTTOM_SCREEN_WINDOW_SIZE.width,
+      height: BOTTOM_SCREEN_WINDOW_SIZE.height,
     });
   });
 
   it("triggers the bottom Dock when the pet is inside the Dock x-axis range", () => {
     const insideDockX = {
       x: 720,
-      y: workAreaWithBottomDock.y + workAreaWithBottomDock.height - normalSize.height + 8,
+      y: workAreaWithBottomDock.y + workAreaWithBottomDock.height - normalSize.height + 40,
       width: normalSize.width,
       height: normalSize.height,
     };
@@ -321,9 +351,9 @@ describe("pet edge geometry", () => {
   it("classifies a physical screen-bottom rest as screen without latch context", () => {
     const snappedToScreenBottom = {
       x: 320,
-      y: screenBounds.y + screenBounds.height - BOTTOM_DOCK_SIZE.height,
-      width: BOTTOM_DOCK_SIZE.width,
-      height: BOTTOM_DOCK_SIZE.height,
+      y: screenBounds.y + screenBounds.height - BOTTOM_SCREEN_WINDOW_SIZE.height,
+      width: BOTTOM_SCREEN_WINDOW_SIZE.width,
+      height: BOTTOM_SCREEN_WINDOW_SIZE.height,
     };
     expect(computeEdgeAttachment(snappedToScreenBottom, workAreaWithBottomDock, screenBounds)).toEqual({
       mode: "bottom",
@@ -383,7 +413,7 @@ describe("pet edge geometry", () => {
   it("snaps a physical bottom screen edge when that edge is not occupied by the Dock", () => {
     const nearPhysicalBottom = {
       x: 320,
-      y: screenBounds.y + screenBounds.height - normalSize.height - 8,
+      y: screenBounds.y + screenBounds.height - normalSize.height + 40,
       width: normalSize.width,
       height: normalSize.height,
     };
@@ -400,9 +430,9 @@ describe("pet edge geometry", () => {
       ),
     ).toEqual({
       x: centeredBottomX(nearPhysicalBottom),
-      y: screenBounds.y + screenBounds.height - BOTTOM_DOCK_SIZE.height,
-      width: BOTTOM_DOCK_SIZE.width,
-      height: BOTTOM_DOCK_SIZE.height,
+      y: screenBounds.y + screenBounds.height - BOTTOM_SCREEN_WINDOW_SIZE.height,
+      width: BOTTOM_SCREEN_WINDOW_SIZE.width,
+      height: BOTTOM_SCREEN_WINDOW_SIZE.height,
     });
   });
 

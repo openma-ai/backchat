@@ -26,6 +26,7 @@ export { BOTTOM_REST_SIZE, BOTTOM_SCREEN_WINDOW_SIZE, SIDE_PEEK_SIZE, TOP_PEEK_S
 export const BOTTOM_DOCK_SIZE = BOTTOM_REST_SIZE;
 export const TOP_TRIGGER_DISTANCE = 24;
 export const BOTTOM_TRIGGER_DISTANCE = 18;
+export const BOTTOM_ATTACHMENT_OVERLAP_RATIO = 0.3;
 export const SIDE_HIDDEN_DEPTH = 0;
 export const SIDE_TRIGGER_VISIBLE_WIDTH = 24;
 
@@ -62,7 +63,7 @@ export function computeEdgeAttachment(
     return { mode: dockMode, surface: surfaceForAttachment(bounds, dockMode, workArea, screenBounds) };
   }
   const screenMode = computeEdgeMode(bounds, screenBounds);
-  if (screenMode !== "none") return { mode: screenMode, surface: "screen" };
+  if (screenMode !== "none" && screenMode !== "bottom") return { mode: screenMode, surface: "screen" };
   return { mode: "none", surface: "screen" };
 }
 
@@ -261,18 +262,18 @@ function computeBottomAttachment(
   const boundsBottom = bounds.y + bounds.height;
   const boundsCenterX = bounds.x + bounds.width / 2;
   if (!hasBottomDockReserve(workArea, screenBounds)) {
-    return boundsBottom >= screenBottom - BOTTOM_TRIGGER_DISTANCE
+    return hasBottomAttachmentOverlap(boundsBottom, screenBottom)
       ? { mode: "bottom", surface: "screen" }
       : { mode: "none", surface: "screen" };
   }
 
   if (dockBounds) {
     if (isWithinDockHorizontalProjection(boundsCenterX, dockBounds)) {
-      return boundsBottom >= dockBounds.y - BOTTOM_TRIGGER_DISTANCE
+      return hasBottomAttachmentOverlap(boundsBottom, dockBounds.y)
         ? { mode: "bottom", surface: "dock" }
         : { mode: "none", surface: "screen" };
     }
-    return boundsBottom >= screenBottom - BOTTOM_TRIGGER_DISTANCE
+    return hasBottomAttachmentOverlap(boundsBottom, screenBottom)
       ? { mode: "bottom", surface: "screen" }
       : { mode: "none", surface: "screen" };
   }
@@ -281,10 +282,17 @@ function computeBottomAttachment(
   if (boundsCenterY >= workBottom) {
     return { mode: "bottom", surface: "screen" };
   }
-  if (boundsBottom >= workBottom - BOTTOM_TRIGGER_DISTANCE) {
+  if (hasBottomAttachmentOverlap(boundsBottom, workBottom)) {
     return { mode: "bottom", surface: "dock" };
   }
   return { mode: "none", surface: "screen" };
+}
+
+function hasBottomAttachmentOverlap(boundsBottom: number, edgeY: number): boolean {
+  const triggerStart = edgeY - NORMAL_SIZE.height;
+  const triggerEnd = edgeY - BOTTOM_DOCK_SIZE.height;
+  const threshold = triggerStart + (triggerEnd - triggerStart) * BOTTOM_ATTACHMENT_OVERLAP_RATIO;
+  return boundsBottom - NORMAL_SIZE.height >= threshold;
 }
 
 function isWithinDockHorizontalProjection(centerX: number, dockBounds: Rect): boolean {

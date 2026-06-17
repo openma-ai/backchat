@@ -176,12 +176,13 @@ function commandFromSnapshot(
   if (state.kind === "dragging") {
     return { state, attachment: NONE_ATTACHMENT, bounds: null };
   }
+  if (attachment.mode === "none") {
+    return { state, attachment, bounds: null };
+  }
   return {
     state,
     attachment,
-    bounds: reason === "sync" && attachment.mode === "none"
-      ? null
-      : computeAttachmentSnappedBounds(bounds, attachment, display.workArea, display.bounds, display.dockBounds),
+    bounds: computeAttachmentSnappedBounds(bounds, attachment, display.workArea, display.bounds, display.dockBounds),
   };
 }
 

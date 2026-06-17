@@ -15,11 +15,12 @@ const displayWithPartialBottomDock = {
 };
 const normal = { width: 112, height: 128 };
 const bottom = { width: 112, height: 72 };
+const bottomScreen = normal;
 
 describe("pet window state machine", () => {
   it("snaps Dock-surface bottom attachments to the Dock top", () => {
     const result = finishPetWindowDrag(
-      { x: 320, y: 689, width: normal.width, height: normal.height },
+      { x: 320, y: 737, width: normal.width, height: normal.height },
       display,
     );
 
@@ -72,13 +73,13 @@ describe("pet window state machine", () => {
 
   it("snaps to the physical screen bottom after dragging to the bottom edge outside the Dock box", () => {
     const result = finishPetWindowDrag(
-      { x: 180, y: 780, width: normal.width, height: normal.height },
+      { x: 180, y: 812, width: normal.width, height: normal.height },
       displayWithPartialBottomDock,
     );
 
     expect(result.state).toEqual({ kind: "attached", attachment: { mode: "bottom", surface: "screen" } });
     expect(result.attachment).toEqual({ mode: "bottom", surface: "screen" });
-    expect(result.bounds).toEqual({ x: 180, y: 828, width: bottom.width, height: bottom.height });
+    expect(result.bounds).toEqual({ x: 180, y: 772, width: bottomScreen.width, height: bottomScreen.height });
   });
 
   it("does not snap from the Dock-top hot-zone outside the Dock x-axis range", () => {
@@ -89,6 +90,6 @@ describe("pet window state machine", () => {
 
     expect(result.state).toEqual({ kind: "free" });
     expect(result.attachment).toEqual({ mode: "none", surface: "screen" });
-    expect(result.bounds).toEqual({ x: 180, y: 705, width: normal.width, height: normal.height });
+    expect(result.bounds).toBeNull();
   });
 });

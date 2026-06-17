@@ -46,6 +46,10 @@ button {
   color: var(--ink);
 }
 
+.pet-card.edge-bottom {
+  place-items: end center;
+}
+
 .debug-boxes {
   outline: 1px solid rgb(0 200 255 / 0.95);
   outline-offset: -1px;

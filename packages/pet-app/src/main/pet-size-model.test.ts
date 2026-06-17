@@ -3,6 +3,7 @@ import {
   ATLAS_CELL_SIZE,
   BOTTOM_REST_SCREEN_EDGE_OVERHANG,
   BOTTOM_REST_SIZE,
+  BOTTOM_SCREEN_WINDOW_SIZE,
   NORMAL_WINDOW_SIZE,
   SIDE_PEEK_SIZE,
   TOP_PEEK_SIZE,
@@ -26,6 +27,7 @@ describe("pet size model", () => {
 
   it("keeps the bottom rest compact enough to read as a ledge pose", () => {
     expect(BOTTOM_REST_SIZE).toEqual({ width: 112, height: 72 });
+    expect(BOTTOM_SCREEN_WINDOW_SIZE).toEqual(NORMAL_WINDOW_SIZE);
     expect(BOTTOM_REST_SCREEN_EDGE_OVERHANG).toBe(8);
   });
 
