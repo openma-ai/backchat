@@ -139,16 +139,39 @@ export function PetApp() {
   useEffect(() => {
     return window.openmaPet?.onHarnessEvent((event) => {
       setLastHarnessEvent(event);
-      setHarnessEventCount((count) => Math.min(count + 1, 99));
       const states = controller.dispatchHarnessEvent(event);
       applyStates(states);
       const nextState = states.at(-1);
-      setHarnessEvents((events) => [
-        harnessEventItemFromEvent(event, nextState),
-        ...events,
-      ].slice(0, MAX_HARNESS_EVENT_ITEMS));
+      setHarnessEvents((events) => {
+        const nextEvents = [
+          harnessEventItemFromEvent(event, nextState),
+          ...events,
+        ].slice(0, MAX_HARNESS_EVENT_ITEMS);
+        setHarnessEventCount(Math.min(nextEvents.length, 99));
+        return nextEvents;
+      });
     });
   }, [applyStates, controller]);
+
+  const ackHarnessEvent = useCallback((ack: PetAckEvent) => {
+    setHarnessEvents((events) => {
+      const nextEvents = events.filter((item) => !matchesAck(item.event, ack));
+      if (nextEvents.length === events.length) return events;
+      setHarnessEventCount(Math.min(nextEvents.length, 99));
+      setLastHarnessEvent((last) => last && matchesAck(last, ack) ? null : last);
+      if (nextEvents.length === 0) {
+        setEventPanelOpen(false);
+        window.openmaPet?.setEventPanelOpen(false);
+      }
+      return nextEvents;
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.openmaPet?.onAckEvent((event) => {
+      ackHarnessEvent(event);
+    });
+  }, [ackHarnessEvent]);
 
   useEffect(() => {
     if (!lastHarnessEvent) return;
@@ -187,7 +210,7 @@ export function PetApp() {
     dragRef.current = null;
     applyStates(controller.dispatchEvent("pet.clicked", { label: "hi" }));
     if (state.navigationUrl) {
-      window.open(state.navigationUrl, "_blank", "noopener,noreferrer");
+      void openNavigationUrl(state.navigationUrl);
     }
   };
 
@@ -215,14 +238,24 @@ export function PetApp() {
     event.stopPropagation();
     suppressNextClickRef.current = false;
     if (item.navigationUrl) {
-      window.open(item.navigationUrl, "_blank", "noopener,noreferrer");
+      void openNavigationUrl(item.navigationUrl).then((opened) => {
+        if (opened) {
+          window.openmaPet?.ackHarnessEvent(ackFromHarnessItem(item, "pet-card-opened"));
+        }
+      });
+      closeEventPanel();
     }
   };
 
   const dismissEventTarget = (itemId: string, event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    setHarnessEvents((events) => events.filter((item) => item.id !== itemId));
+    setHarnessEvents((events) => {
+      const nextEvents = events.filter((item) => item.id !== itemId);
+      setHarnessEventCount(Math.min(nextEvents.length, 99));
+      if (nextEvents.length === 0) setLastHarnessEvent(null);
+      return nextEvents;
+    });
   };
 
   const previewHover = () => {
@@ -385,6 +418,15 @@ export function PetApp() {
   );
 }
 
+async function openNavigationUrl(url: string): Promise<boolean> {
+  const result = await window.openmaPet?.openNavigationUrl(url);
+  if (result && !result.ok) {
+    console.warn("[pet-navigation]", { url, error: result.error });
+    return false;
+  }
+  return result?.ok !== false;
+}
+
 function harnessEventItemFromEvent(event: PetHarnessEvent, state?: PetViewState): HarnessEventItem {
   const sessionId = event.threadId ?? event.sessionId ?? "no-session";
   return {
@@ -395,6 +437,25 @@ function harnessEventItemFromEvent(event: PetHarnessEvent, state?: PetViewState)
     priority: state?.priority ?? "normal",
     createdAt: Date.now(),
   };
+}
+
+function ackFromHarnessItem(item: HarnessEventItem, reason: string): PetAckEvent {
+  return {
+    harness: item.event.harness,
+    sessionId: item.event.sessionId,
+    threadId: item.event.threadId,
+    turnId: item.event.turnId,
+    reason,
+  };
+}
+
+function matchesAck(event: PetHarnessEvent, ack: PetAckEvent): boolean {
+  if (event.harness !== ack.harness) return false;
+  if (ack.turnId && event.turnId !== ack.turnId) return false;
+  const ackIds = [ack.sessionId, ack.threadId].filter(Boolean);
+  const eventIds = [event.sessionId, event.threadId].filter(Boolean);
+  if (ackIds.length === 0 || eventIds.length === 0) return false;
+  return ackIds.some((ackId) => eventIds.includes(ackId));
 }
 
 function labelForHarnessEvent(event: PetHarnessEvent): string {

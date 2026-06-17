@@ -13,6 +13,14 @@ export type PetHookEvent = {
   payload?: unknown;
 };
 
+export type PetAckEvent = {
+  harness: string;
+  sessionId?: string;
+  threadId?: string;
+  turnId?: string;
+  reason?: string;
+};
+
 export type PetHookServer = {
   port: number;
   close(): Promise<void>;
@@ -21,37 +29,54 @@ export type PetHookServer = {
 export async function startPetHookServer(options: {
   port?: number;
   onEvent(event: PetHookEvent): void;
+  onAck?(event: PetAckEvent): void;
 }): Promise<PetHookServer> {
   const server = createServer(async (req, res) => {
     if (req.method === "GET" && (req.url === "/health" || req.url === "/hook")) {
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
         ok: true,
         endpoint: "/hook",
+        ackEndpoint: "/ack",
         example: {
           harness: "codex",
           event: "task.completed",
-          threadId: "thread-1",
+          threadId: "019ecf32-f48f-7371-96f9-c6802555aeea",
           label: "Done",
         },
       }));
       return;
     }
-    if (req.method !== "POST" || req.url !== "/hook") {
-      res.writeHead(404).end();
+    if (req.method === "POST" && req.url === "/hook") {
+      try {
+        const body = await readBody(req);
+        const event = JSON.parse(body) as unknown;
+        if (!isPetHookEvent(event)) {
+          res.writeHead(400).end("invalid pet hook event");
+          return;
+        }
+        options.onEvent(event);
+        res.writeHead(204).end();
+      } catch (error) {
+        res.writeHead(400).end(String(error));
+      }
       return;
     }
-    try {
-      const body = await readBody(req);
-      const event = JSON.parse(body) as unknown;
-      if (!isPetHookEvent(event)) {
-        res.writeHead(400).end("invalid pet hook event");
-        return;
+    if (req.method === "POST" && req.url === "/ack") {
+      try {
+        const body = await readBody(req);
+        const event = JSON.parse(body) as unknown;
+        if (!isPetAckEvent(event)) {
+          res.writeHead(400).end("invalid pet ack event");
+          return;
+        }
+        options.onAck?.(event);
+        res.writeHead(204).end();
+      } catch (error) {
+        res.writeHead(400).end(String(error));
       }
-      options.onEvent(event);
-      res.writeHead(204).end();
-    } catch (error) {
-      res.writeHead(400).end(String(error));
+      return;
     }
+    res.writeHead(404).end();
   });
 
   await listen(server, options.port ?? PET_HOOK_PORT);
@@ -67,6 +92,13 @@ function isPetHookEvent(value: unknown): value is PetHookEvent {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   return typeof record["harness"] === "string" && typeof record["event"] === "string";
+}
+
+function isPetAckEvent(value: unknown): value is PetAckEvent {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record["harness"] === "string" &&
+    (typeof record["sessionId"] === "string" || typeof record["threadId"] === "string");
 }
 
 function readBody(req: NodeJS.ReadableStream): Promise<string> {

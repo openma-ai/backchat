@@ -77,32 +77,33 @@ describe("standalone pet controller", () => {
       now: () => 1_000,
       harnessRegistry: createPetHarnessRegistry(),
     });
+    const threadId = "019ecf32-f48f-7371-96f9-c6802555aeea";
 
     expect(
       controller.dispatchHarnessEvent({
         harness: "codex",
         event: "approval.requested",
-        threadId: "thread-1",
+        threadId,
         label: "Approve shell command",
       }).at(-1),
     ).toMatchObject({
       motion: "ask",
       mood: "asking",
       label: "Approve shell command",
-      sessionId: "thread-1",
-      navigationUrl: "codex://threads/thread-1",
+      sessionId: threadId,
+      navigationUrl: `codex://threads/${threadId}`,
     });
 
     expect(
       controller.dispatchHarnessEvent({
         harness: "codex",
         event: "task.completed",
-        threadId: "thread-1",
+        threadId,
       }).at(-1),
     ).toMatchObject({
       motion: "celebrate",
       mood: "proud",
-      navigationUrl: "codex://threads/thread-1",
+      navigationUrl: `codex://threads/${threadId}`,
     });
   });
 });

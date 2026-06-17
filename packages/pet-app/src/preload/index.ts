@@ -14,6 +14,13 @@ export type PetHarnessEvent = {
   label?: string;
   payload?: unknown;
 };
+export type PetAckEvent = {
+  harness: string;
+  sessionId?: string;
+  threadId?: string;
+  turnId?: string;
+  reason?: string;
+};
 
 contextBridge.exposeInMainWorld("openmaPet", {
   onEdgeMode(handler: (mode: PetEdgeMode) => void) {
@@ -31,6 +38,11 @@ contextBridge.exposeInMainWorld("openmaPet", {
     ipcRenderer.on("pet:harness-event", listener);
     return () => ipcRenderer.removeListener("pet:harness-event", listener);
   },
+  onAckEvent(handler: (event: PetAckEvent) => void) {
+    const listener = (_event: IpcRendererEvent, petEvent: PetAckEvent) => handler(petEvent);
+    ipcRenderer.on("pet:ack-event", listener);
+    return () => ipcRenderer.removeListener("pet:ack-event", listener);
+  },
   getWindowBounds(): Promise<PetWindowBounds> {
     return ipcRenderer.invoke("pet:get-window-bounds");
   },
@@ -45,5 +57,11 @@ contextBridge.exposeInMainWorld("openmaPet", {
   },
   setEventPanelOpen(open: boolean) {
     ipcRenderer.send("pet:set-event-panel-open", open);
+  },
+  openNavigationUrl(url: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke("pet:open-navigation-url", url);
+  },
+  ackHarnessEvent(event: PetAckEvent) {
+    ipcRenderer.send("pet:ack-harness-event", event);
   },
 });

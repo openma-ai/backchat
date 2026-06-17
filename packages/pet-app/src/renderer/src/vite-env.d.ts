@@ -12,13 +12,24 @@ interface Window {
     onEdgeMode(handler: (mode: PetEdgeMode) => void): () => void;
     onEdgeAttachment(handler: (attachment: PetEdgeAttachment) => void): () => void;
     onHarnessEvent(handler: (event: import("./pet-harness").PetHarnessEvent) => void): () => void;
+    onAckEvent(handler: (event: PetAckEvent) => void): () => void;
     getWindowBounds(): Promise<PetWindowBounds>;
     startWindowDrag(): Promise<PetWindowBounds>;
     moveWindowTo(point: { x: number; y: number }): void;
     endWindowDrag(): void;
     setEventPanelOpen(open: boolean): void;
+    openNavigationUrl(url: string): Promise<{ ok: boolean; error?: string }>;
+    ackHarnessEvent(event: PetAckEvent): void;
   };
 }
+
+type PetAckEvent = {
+  harness: string;
+  sessionId?: string;
+  threadId?: string;
+  turnId?: string;
+  reason?: string;
+};
 
 type OpenmaPetStandaloneEvent = {
   name: import("./pet-controller").StandalonePetEventName;

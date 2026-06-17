@@ -12,7 +12,7 @@ import {
   type DisplayGeometry,
   type PetWindowCommand,
 } from "./pet-window-state-machine";
-import { startPetHookServer, type PetHookEvent } from "./pet-hook-server";
+import { startPetHookServer, type PetAckEvent, type PetHookEvent } from "./pet-hook-server";
 import { inferDockBoundsForDisplay } from "./dock-geometry";
 
 let mainWindow: BrowserWindow | null = null;
@@ -120,6 +120,21 @@ function dispatchPetHookEvent(event: PetHookEvent): void {
   }
 }
 
+function dispatchPetAckEvent(event: PetAckEvent): void {
+  logPetAckEvent("ack", event);
+  const win = mainWindow ?? createWindow();
+  const send = (): void => {
+    if (!win.isDestroyed()) {
+      win.webContents.send("pet:ack-event", event);
+    }
+  };
+  if (win.webContents.isLoading() || !win.webContents.getURL()) {
+    win.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
+}
+
 function logPetHarnessEvent(source: "deeplink" | "hook", event: PetHookEvent | OpenmaPetDeepLink): void {
   if (!process.env["ELECTRON_RENDERER_URL"]) return;
   console.info("[pet-harness-event]", {
@@ -130,6 +145,18 @@ function logPetHarnessEvent(source: "deeplink" | "hook", event: PetHookEvent | O
     threadId: event.threadId,
     turnId: event.turnId,
     label: event.label,
+  });
+}
+
+function logPetAckEvent(source: "ack" | "renderer", event: PetAckEvent): void {
+  if (!process.env["ELECTRON_RENDERER_URL"]) return;
+  console.info("[pet-ack-event]", {
+    source,
+    harness: event.harness,
+    sessionId: event.sessionId,
+    threadId: event.threadId,
+    turnId: event.turnId,
+    reason: event.reason,
   });
 }
 
@@ -161,6 +188,28 @@ ipcMain.on("pet:set-event-panel-open", (event, open: boolean) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return;
   setPetEventPanelOpen(win, open === true);
+});
+
+ipcMain.on("pet:ack-harness-event", (_event, ack: PetAckEvent) => {
+  if (!isPetAckEvent(ack)) return;
+  logPetAckEvent("renderer", ack);
+  dispatchPetAckEvent(ack);
+});
+
+ipcMain.handle("pet:open-navigation-url", async (_event, url: string) => {
+  if (typeof url !== "string" || !isAllowedNavigationUrl(url)) {
+    logPetNavigation(url, false, "unsupported navigation url");
+    return { ok: false, error: "unsupported navigation url" };
+  }
+  try {
+    await shell.openExternal(url);
+    logPetNavigation(url, true);
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logPetNavigation(url, false, message);
+    return { ok: false, error: message };
+  }
 });
 
 function notifyEdgeMode(win: BrowserWindow): void {
@@ -230,6 +279,28 @@ function setPetEventPanelOpen(win: BrowserWindow, open: boolean): void {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function isAllowedNavigationUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  return url.protocol === "codex:" || url.protocol === "backchat:" || url.protocol === "http:" || url.protocol === "https:";
+}
+
+function logPetNavigation(url: string, ok: boolean, error?: string): void {
+  if (!process.env["ELECTRON_RENDERER_URL"]) return;
+  console.info("[pet-navigation]", { url, ok, error });
+}
+
+function isPetAckEvent(value: unknown): value is PetAckEvent {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record["harness"] === "string" &&
+    (typeof record["sessionId"] === "string" || typeof record["threadId"] === "string");
 }
 
 function logPetBoundsStep(step: string, win: BrowserWindow): void {
@@ -322,13 +393,13 @@ if (!gotLock) {
   });
   app.whenReady().then(() => {
     createWindow();
-    void startPetHookServer({ onEvent: dispatchPetHookEvent })
+    void startPetHookServer({ onEvent: dispatchPetHookEvent, onAck: dispatchPetAckEvent })
       .then((server) => {
         if (process.env["ELECTRON_RENDERER_URL"]) {
           console.info("[pet-hook-server]", {
             port: server.port,
             endpoint: `http://127.0.0.1:${server.port}/hook`,
-            deeplink: `${OPENMA_PET_PROTOCOL}://event/codex/task.completed?threadId=thread-1&label=Done`,
+            deeplink: `${OPENMA_PET_PROTOCOL}://event/codex/task.completed?threadId=019ecf32-f48f-7371-96f9-c6802555aeea&label=Done`,
           });
         }
       })

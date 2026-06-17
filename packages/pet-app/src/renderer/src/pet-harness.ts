@@ -78,11 +78,13 @@ function codexHarnessAdapter(): PetHarnessAdapter {
   return {
     id: "codex",
     canHandle: (event) => event.harness === "codex",
-    normalize: (event) => genericNormalize(event, "codex", codexEventMap, event.threadId ?? event.sessionId),
+    normalize: (event) => genericNormalize(event, "codex", codexEventMap, codexThreadIdFromEvent(event)),
     navigationUrlForAction(action) {
       if (!hasSessionTarget(action)) return undefined;
       if (action.source !== "codex" || !action.sessionId) return undefined;
-      return `codex://threads/${encodeURIComponent(action.sessionId)}`;
+      const threadId = normalizeCodexThreadId(action.sessionId);
+      if (!threadId) return undefined;
+      return `codex://threads/${encodeURIComponent(threadId)}`;
     },
   };
 }
@@ -112,6 +114,21 @@ function hasSessionTarget(
   action: PetAction,
 ): action is Extract<PetAction, { type: "motion" | "speech" }> {
   return action.type === "motion" || action.type === "speech";
+}
+
+function codexThreadIdFromEvent(event: PetHarnessEvent): string | undefined {
+  return normalizeCodexThreadId(event.threadId) ?? normalizeCodexThreadId(event.sessionId);
+}
+
+function normalizeCodexThreadId(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const bare = trimmed.startsWith("codex:") ? trimmed.slice("codex:".length) : trimmed;
+  return isUuid(bare) ? bare : undefined;
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 function genericNormalize(
