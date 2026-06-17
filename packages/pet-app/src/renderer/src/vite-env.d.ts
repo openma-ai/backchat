@@ -16,6 +16,7 @@ interface Window {
     startWindowDrag(): Promise<PetWindowBounds>;
     moveWindowTo(point: { x: number; y: number }): void;
     endWindowDrag(): void;
+    setEventPanelOpen(open: boolean): void;
   };
 }
 

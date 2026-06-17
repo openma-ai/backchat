@@ -21,6 +21,7 @@ const windowMachine = createPetWindowStateMachine();
 const pendingPetLinks: OpenmaPetDeepLink[] = [];
 const mainDirname = fileURLToPath(new URL(".", import.meta.url));
 const loggedDockGeometry = new Set<string>();
+const EVENT_PANEL_SIZE = { width: 520, height: 300 };
 
 function registerPetProtocolClient(): void {
   if (process.defaultApp) {
@@ -156,6 +157,12 @@ ipcMain.on("pet:drag-end", (event) => {
   applyPetWindowCommand(win, windowMachine.finishDrag(win.getBounds(), getDisplayGeometryForWindow(win)));
 });
 
+ipcMain.on("pet:set-event-panel-open", (event, open: boolean) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return;
+  setPetEventPanelOpen(win, open === true);
+});
+
 function notifyEdgeMode(win: BrowserWindow): void {
   if (win.isDestroyed()) return;
   applyPetWindowCommand(win, windowMachine.sync(win.getBounds(), getDisplayGeometryForWindow(win)));
@@ -202,6 +209,27 @@ function applyWindowBounds(win: BrowserWindow, next: Rectangle): void {
     win.setSize(next.width, next.height, false);
     logPetBoundsStep("after-size", win);
   }
+}
+
+function setPetEventPanelOpen(win: BrowserWindow, open: boolean): void {
+  const current = win.getBounds();
+  const display = getDisplayForBounds(current).bounds;
+  const targetSize = open ? EVENT_PANEL_SIZE : NORMAL_SIZE;
+  const anchorRight = current.x + current.width;
+  const anchorBottom = current.y + current.height;
+  const next = {
+    width: targetSize.width,
+    height: targetSize.height,
+    x: clamp(Math.round(anchorRight - targetSize.width), display.x, display.x + display.width - targetSize.width),
+    y: clamp(Math.round(anchorBottom - targetSize.height), display.y, display.y + display.height - targetSize.height),
+  };
+  applyingSnap = true;
+  applyWindowBounds(win, next);
+  applyingSnap = false;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function logPetBoundsStep(step: string, win: BrowserWindow): void {

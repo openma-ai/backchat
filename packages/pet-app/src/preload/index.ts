@@ -43,4 +43,7 @@ contextBridge.exposeInMainWorld("openmaPet", {
   endWindowDrag() {
     ipcRenderer.send("pet:drag-end");
   },
+  setEventPanelOpen(open: boolean) {
+    ipcRenderer.send("pet:set-event-panel-open", open);
+  },
 });

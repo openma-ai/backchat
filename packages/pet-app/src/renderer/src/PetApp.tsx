@@ -21,7 +21,17 @@ const INITIAL_STATE: PetViewState = {
 };
 const TRANSIENT_MOTION_MS = 1_400;
 const HARNESS_EVENT_BADGE_MS = 7_000;
+const MAX_HARNESS_EVENT_ITEMS = 4;
 const SHOW_DEBUG_BOXES = true;
+
+type HarnessEventItem = {
+  id: string;
+  event: PetHarnessEvent;
+  label: string;
+  navigationUrl?: string;
+  priority: PetViewState["priority"];
+  createdAt: number;
+};
 
 export function PetApp() {
   const controller = useMemo(() => createStandalonePetController(), []);
@@ -34,6 +44,8 @@ export function PetApp() {
   const [dragMotion, setDragMotion] = useState<PetViewState["motion"] | null>(null);
   const [lastHarnessEvent, setLastHarnessEvent] = useState<PetHarnessEvent | null>(null);
   const [harnessEventCount, setHarnessEventCount] = useState(0);
+  const [harnessEvents, setHarnessEvents] = useState<HarnessEventItem[]>([]);
+  const [eventPanelOpen, setEventPanelOpen] = useState(false);
   const dragRef = useRef<{
     pointerId: number;
     startScreenX: number;
@@ -128,7 +140,13 @@ export function PetApp() {
     return window.openmaPet?.onHarnessEvent((event) => {
       setLastHarnessEvent(event);
       setHarnessEventCount((count) => Math.min(count + 1, 99));
-      applyStates(controller.dispatchHarnessEvent(event));
+      const states = controller.dispatchHarnessEvent(event);
+      applyStates(states);
+      const nextState = states.at(-1);
+      setHarnessEvents((events) => [
+        harnessEventItemFromEvent(event, nextState),
+        ...events,
+      ].slice(0, MAX_HARNESS_EVENT_ITEMS));
     });
   }, [applyStates, controller]);
 
@@ -173,13 +191,48 @@ export function PetApp() {
     }
   };
 
+  const toggleEventPanel = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressNextClickRef.current = false;
+    setEventPanelOpen((open) => {
+      const next = !open;
+      window.openmaPet?.setEventPanelOpen(next);
+      return next;
+    });
+  };
+
+  const closeEventPanel = () => {
+    setEventPanelOpen(false);
+    window.openmaPet?.setEventPanelOpen(false);
+  };
+
+  const openEventTarget = (
+    item: HarnessEventItem,
+    event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressNextClickRef.current = false;
+    if (item.navigationUrl) {
+      window.open(item.navigationUrl, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const dismissEventTarget = (itemId: string, event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setHarnessEvents((events) => events.filter((item) => item.id !== itemId));
+  };
+
   const previewHover = () => {
     if (dragRef.current) return;
     applyStates(controller.dispatchEvent("pet.hovered", { label: "hi" }));
   };
 
-  const startPetDrag = async (event: React.PointerEvent<HTMLButtonElement>) => {
+  const startPetDrag = async (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !window.openmaPet) return;
+    closeEventPanel();
     event.currentTarget.setPointerCapture(event.pointerId);
     const bounds = await window.openmaPet.startWindowDrag();
     setDragMotion(null);
@@ -193,7 +246,7 @@ export function PetApp() {
     };
   };
 
-  const movePetDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const movePetDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId || !window.openmaPet) return;
     const next = {
@@ -208,7 +261,7 @@ export function PetApp() {
     window.openmaPet.moveWindowTo(next);
   };
 
-  const endPetDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const endPetDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     finishPetDrag();
@@ -216,13 +269,67 @@ export function PetApp() {
 
   return (
     <main className={`pet-stage ${SHOW_DEBUG_BOXES ? "debug-boxes" : ""}`}>
-      <section className={`pet-card mood-${state.mood} edge-${edgeMode}`}>
-        <button
+      <section className={`pet-card mood-${state.mood} edge-${edgeMode} ${eventPanelOpen ? "has-event-panel" : ""}`}>
+        {eventPanelOpen ? (
+          <div className="pet-event-panel" role="dialog" aria-label="Harness events">
+            <button
+              className="pet-event-panel-close"
+              type="button"
+              aria-label="Close events"
+              onClick={(event) => {
+                event.stopPropagation();
+                closeEventPanel();
+              }}
+            >
+              ×
+            </button>
+            {harnessEvents.length > 0 ? (
+              harnessEvents.map((item) => (
+                <article
+                  key={item.id}
+                  className={`pet-event-card priority-${item.priority}`}
+                  role={item.navigationUrl ? "button" : "article"}
+                  tabIndex={item.navigationUrl ? 0 : undefined}
+                  onClick={(event) => openEventTarget(item, event)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      openEventTarget(item, event);
+                    }
+                  }}
+                >
+                  <button
+                    className="pet-event-card-dismiss"
+                    type="button"
+                    aria-label="Dismiss event"
+                    onClick={(event) => dismissEventTarget(item.id, event)}
+                  >
+                    ×
+                  </button>
+                  <span className="pet-event-card-source">{item.event.harness}</span>
+                  <strong className="pet-event-card-title">{item.label}</strong>
+                  <span className="pet-event-card-meta">
+                    {item.event.sessionId ?? item.event.threadId ?? item.event.event}
+                  </span>
+                </article>
+              ))
+            ) : (
+              <div className="pet-event-empty">No recent events</div>
+            )}
+          </div>
+        ) : null}
+        <div
           className={`pet-shell surface-${edgeSurface} motion-${state.motion} edge-intensity-${atlas.intensity} ${isSidePeek ? "pet-shell-peek" : ""} ${isTopPeek ? "pet-shell-top" : ""} ${isBottomRest ? "pet-shell-bottom" : ""}`}
-          type="button"
+          role="button"
+          tabIndex={0}
           aria-label="Mote pet"
           title={state.navigationUrl ? "Open related session" : "Mote"}
           onClick={openTarget}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              openTarget();
+            }
+          }}
           onPointerEnter={previewHover}
           onPointerDown={startPetDrag}
           onPointerMove={movePetDrag}
@@ -240,9 +347,20 @@ export function PetApp() {
           } as React.CSSProperties}
         >
           {harnessEventCount > 0 ? (
-            <span className="pet-event-count" aria-label={`${harnessEventCount} harness events`}>
+            <button
+              className="pet-event-count"
+              type="button"
+              aria-label={
+                state.navigationUrl
+                  ? `Open latest harness event, ${harnessEventCount} total`
+                  : `${harnessEventCount} harness events`
+              }
+              title={state.navigationUrl ? "Open latest event" : "Harness events"}
+              onClick={toggleEventPanel}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
               {harnessEventCount}
-            </span>
+            </button>
           ) : null}
           {lastHarnessEvent ? (
             <span className={`pet-event-badge priority-${state.priority}`}>
@@ -261,8 +379,44 @@ export function PetApp() {
             }
             data-animated={animateSprite || isTopPeek ? "true" : "false"}
           />
-        </button>
+        </div>
       </section>
     </main>
   );
+}
+
+function harnessEventItemFromEvent(event: PetHarnessEvent, state?: PetViewState): HarnessEventItem {
+  const sessionId = event.threadId ?? event.sessionId ?? "no-session";
+  return {
+    id: `${event.harness}:${sessionId}:${event.turnId ?? event.event}:${Date.now()}`,
+    event,
+    label: event.label ?? labelForHarnessEvent(event),
+    navigationUrl: state?.navigationUrl,
+    priority: state?.priority ?? "normal",
+    createdAt: Date.now(),
+  };
+}
+
+function labelForHarnessEvent(event: PetHarnessEvent): string {
+  switch (event.event) {
+    case "task.completed":
+    case "message.completed":
+    case "turn.completed":
+    case "Stop":
+      return "完成";
+    case "task.failed":
+    case "error":
+    case "StopFailure":
+      return "失败";
+    case "approval.requested":
+    case "permission.requested":
+    case "PermissionRequest":
+      return "需要审批";
+    case "waiting":
+    case "input.required":
+    case "Notification":
+      return "需要你";
+    default:
+      return event.event;
+  }
 }
