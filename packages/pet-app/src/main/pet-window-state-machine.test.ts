@@ -5,6 +5,8 @@ import {
   syncPetWindowState,
   type PetWindowState,
 } from "./pet-window-state-machine";
+import { computeClosedPetBounds, computeEventPanelLayout } from "./event-panel-layout";
+import { SIDE_PEEK_SIZE } from "./edge-geometry";
 
 const screenBounds = { x: 0, y: 0, width: 1440, height: 900 };
 const workAreaWithBottomDock = { x: 0, y: 25, width: 1440, height: 800 };
@@ -91,5 +93,24 @@ describe("pet window state machine", () => {
     expect(result.state).toEqual({ kind: "free" });
     expect(result.attachment).toEqual({ mode: "none", surface: "screen" });
     expect(result.bounds).toBeNull();
+  });
+
+  it("restores the exact pet bounds after an event panel is closed near an edge", () => {
+    const attached = finishPetWindowDrag(
+      { x: 1328, y: 420, width: normal.width, height: normal.height },
+      { bounds: screenBounds, workArea: screenBounds },
+    );
+    expect(attached.bounds).toEqual({ x: 1392, y: 420, width: SIDE_PEEK_SIZE.width, height: SIDE_PEEK_SIZE.height });
+
+    const panelLayout = computeEventPanelLayout(attached.bounds!, screenBounds);
+    expect(computeClosedPetBounds(panelLayout)).toEqual(attached.bounds);
+
+    const syncedAfterClose = syncPetWindowState(
+      attached.state,
+      computeClosedPetBounds(panelLayout),
+      { bounds: screenBounds, workArea: screenBounds },
+    );
+    expect(syncedAfterClose.bounds).toEqual(attached.bounds);
+    expect(syncedAfterClose.attachment).toEqual({ mode: "right", surface: "screen" });
   });
 });

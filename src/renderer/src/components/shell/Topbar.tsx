@@ -1,4 +1,5 @@
 import { CheckIcon, CloudIcon, FolderIcon, MonitorIcon } from "lucide-react";
+import { useMemo } from "react";
 import { useLocation } from "@tanstack/react-router";
 import {
   DropdownMenu,
@@ -7,6 +8,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { selectActive, useSessionStore } from "@/lib/session-store";
+import type { SessionRow } from "@/lib/session-store";
+import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
 
 /**
@@ -38,6 +41,57 @@ export function Topbar(_props: { onCancel: () => void }) {
         <RuntimeChip />
         <ModeChip modeId={active.currentModeId} />
       </div>
+    </div>
+  );
+}
+
+export function PairTopbar() {
+  const location = useLocation();
+  const pairId = location.pathname.startsWith("/pair/")
+    ? decodeURIComponent(location.pathname.slice("/pair/".length))
+    : "";
+  const members: SessionRow[] = useSessionStore(
+    useMemo(
+      () => (st: ReturnType<typeof useSessionStore<unknown>> extends never ? never : any) => {
+        if (!pairId) return [] as SessionRow[];
+        const pair = st.pair(pairId);
+        if (!pair) return [] as SessionRow[];
+        return pair.members
+          .map((id: string) => st.get(id))
+          .filter((m: SessionRow | null): m is SessionRow => !!m);
+      },
+      [pairId],
+    ),
+  );
+
+  if (members.length === 0) return null;
+
+  const gridClass =
+    members.length <= 2
+      ? "grid-cols-2"
+      : members.length <= 4
+        ? "grid-cols-2 grid-rows-2"
+        : "grid-cols-3";
+
+  return (
+    <div
+      className={cn(
+        "pointer-events-none grid h-full w-full min-w-0 text-fg-muted",
+        gridClass,
+      )}
+    >
+      {members.map((m, index) => (
+        <div
+          key={m.id}
+          aria-hidden="true"
+          className={cn(
+            "flex h-full items-center px-4",
+            index > 0 && "border-l border-border/60",
+          )}
+        >
+          <AgentIcon agentId={m.agent_id} className="size-4 shrink-0" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -132,4 +186,3 @@ function ModeChip({ modeId }: { modeId?: string }) {
     </span>
   );
 }
-

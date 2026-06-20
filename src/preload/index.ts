@@ -9,6 +9,7 @@ import type { AgentInfo, BackchatApi } from "../shared/api.js";
 import type {
   SessionEventOut,
   SessionPromptParams,
+  SessionSetConfigOptionParams,
   SessionStartParams,
 } from "../shared/session-events.js";
 import type { Settings } from "../shared/settings.js";
@@ -28,6 +29,8 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.SessionStart, p) as Promise<void>,
   sessionPrompt: (p: SessionPromptParams) =>
     ipcRenderer.invoke(InvokeChannel.SessionPrompt, p) as Promise<void>,
+  sessionSetConfigOption: (p: SessionSetConfigOptionParams) =>
+    ipcRenderer.invoke(InvokeChannel.SessionSetConfigOption, p) as Promise<void>,
   sessionCancel: (p) =>
     ipcRenderer.invoke(InvokeChannel.SessionCancel, p) as Promise<void>,
   sessionDispose: (p) =>
@@ -41,6 +44,11 @@ const api: BackchatApi = {
   pairDispose: (p) => ipcRenderer.invoke(InvokeChannel.PairDispose, p) as Promise<void>,
   pairReleaseMember: (p) =>
     ipcRenderer.invoke(InvokeChannel.PairReleaseMember, p) as Promise<void>,
+  pairsList: () =>
+    ipcRenderer.invoke(InvokeChannel.PairsList) as Promise<
+      import("../shared/api.js").PersistedPairInfo[]
+    >,
+  pairSave: (p) => ipcRenderer.invoke(InvokeChannel.PairSave, p) as Promise<void>,
   onPairEvent: (handler) => {
     const l = (_e: IpcRendererEvent, ev: import("../shared/pair-events.js").PairEventOut) =>
       handler(ev);
@@ -157,6 +165,10 @@ const api: BackchatApi = {
   uiFsHome: () => ipcRenderer.invoke(InvokeChannel.UiFsHome) as Promise<string>,
   uiFsPickDir: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsPickDir, p ?? {}) as Promise<string | null>,
+  uiFsPickFiles: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsPickFiles, p ?? {}) as Promise<
+      import("../shared/session-events.js").PromptAttachment[]
+    >,
   uiFsRecent: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsRecent, p) as Promise<
       { name: string; path: string; isDir: boolean; mtime: number }[]
@@ -196,5 +208,23 @@ if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
     }) => ipcRenderer.invoke(InvokeChannel.TestInjectSessionRow, p),
     injectSessionEvent: (msg: unknown) =>
       ipcRenderer.invoke(InvokeChannel.TestInjectSessionEvent, msg),
+    persistSessionFixture: (p: {
+      sessionId: string;
+      agentId?: string;
+      cwd?: string;
+      acpSessionId?: string;
+      title?: string;
+      events: Array<{ type: string; data: unknown; ts?: number }>;
+    }) => ipcRenderer.invoke(InvokeChannel.TestPersistSessionFixture, p),
+    exportSessionFiles: (p?: { overwrite?: boolean }) =>
+      ipcRenderer.invoke(InvokeChannel.TestExportSessionFiles, p ?? {}),
+    readSessionPrompts: () =>
+      ipcRenderer.invoke(InvokeChannel.TestReadSessionPrompts) as Promise<SessionPromptParams[]>,
+    readSessionConfigOptions: () =>
+      ipcRenderer.invoke(InvokeChannel.TestReadSessionConfigOptions) as Promise<
+        SessionSetConfigOptionParams[]
+      >,
+    setPickedFiles: (files: import("../shared/session-events.js").PromptAttachment[]) =>
+      ipcRenderer.invoke(InvokeChannel.TestSetPickedFiles, files),
   });
 }

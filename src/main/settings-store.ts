@@ -26,10 +26,10 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { parse as parseToml, stringify as toToml } from "smol-toml";
 import { z } from "zod";
+import { openmaRoot } from "./storage-root.js";
 
 // -------------------- Schema --------------------
 
@@ -119,7 +119,7 @@ const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({
 
 // -------------------- File location --------------------
 
-export const SETTINGS_DIR = join(homedir(), ".openma");
+export const SETTINGS_DIR = openmaRoot();
 export const SETTINGS_FILE = join(SETTINGS_DIR, "config.toml");
 
 // -------------------- Store --------------------

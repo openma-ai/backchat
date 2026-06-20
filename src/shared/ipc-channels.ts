@@ -20,6 +20,7 @@ export const InvokeChannel = {
   AcpAuthenticate: "acp:authenticate",
   SessionStart: "session:start",
   SessionPrompt: "session:prompt",
+  SessionSetConfigOption: "session:setConfigOption",
   SessionCancel: "session:cancel",
   SessionDispose: "session:dispose",
   SessionAnnounce: "session:announce",
@@ -28,6 +29,8 @@ export const InvokeChannel = {
   PairCancel: "pair:cancel",
   PairDispose: "pair:dispose",
   PairReleaseMember: "pair:releaseMember",
+  PairsList: "pairs:list",
+  PairSave: "pair:save",
   SessionsList: "sessions:list",
   SessionsLoadHistory: "sessions:loadHistory",
   SessionsSearch: "sessions:search",
@@ -59,6 +62,9 @@ export const InvokeChannel = {
   /** Native "Choose folder" picker. Returns the picked absolute
    *  path, or null if the user cancelled. */
   UiFsPickDir: "uiFs:pickDir",
+  /** Native file picker for prompt attachments. Returns selected
+   *  images/files with metadata and small image preview data. */
+  UiFsPickFiles: "uiFs:pickFiles",
   /** Recent entries in a directory — list children, sort by mtime
    *  (newest first), return the top N. Used by the side-panel empty
    *  state "推荐" feed to surface what the user is actually working
@@ -80,6 +86,11 @@ export const InvokeChannel = {
    *  channels reach ipcMain. */
   TestInjectSessionRow: "__test:injectSessionRow",
   TestInjectSessionEvent: "__test:injectSessionEvent",
+  TestPersistSessionFixture: "__test:persistSessionFixture",
+  TestExportSessionFiles: "__test:exportSessionFiles",
+  TestReadSessionPrompts: "__test:readSessionPrompts",
+  TestReadSessionConfigOptions: "__test:readSessionConfigOptions",
+  TestSetPickedFiles: "__test:setPickedFiles",
 } as const;
 
 export const PushChannel = {

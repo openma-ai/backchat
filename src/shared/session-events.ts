@@ -6,6 +6,11 @@
  * changes — tag with a comment explaining the migration when needed.
  */
 
+import type {
+  AgentMessageDelivery,
+  AgentMessageIntent,
+} from "./agent-interaction.js";
+
 export interface SessionStartParams {
   /** Stable id chosen by the renderer (uuid). Used as map key + spawn cwd
    *  basename. The renderer is free to fire `start` for the same id at the
@@ -46,12 +51,71 @@ export interface PairPromptParams {
   text: string;
 }
 
+/** A user-selected file/image attachment carried with a prompt.
+ *  `data` is base64 and only present for reasonably small images so
+ *  the renderer can preview them and image-capable ACP agents can
+ *  receive true image blocks. All attachments also carry a `uri`
+ *  so they can fall back to ACP's baseline `resource_link` content. */
+export interface PromptAttachment {
+  id: string;
+  name: string;
+  path: string;
+  uri: string;
+  kind: "image" | "file";
+  mimeType?: string | null;
+  size?: number | null;
+  data?: string;
+}
+
 export interface SessionPromptParams {
   session_id: string;
   /** Stable per-turn id. Used to route `session.event` and `session.complete`
    *  back to the right turn in the UI. */
   turn_id: string;
   text: string;
+  attachments?: PromptAttachment[];
+  /** Running-time submission semantics. ACP v1 only standardizes
+   *  turn-level prompts, so requested_* captures product intent while
+   *  effective_* captures what this transport can honestly deliver. */
+  prompt_intent?: AgentMessageIntent;
+  requested_delivery?: AgentMessageDelivery;
+  effective_delivery?: AgentMessageDelivery;
+  delivery_degraded?: boolean;
+}
+
+export type SessionConfigSelectValue = {
+  value: string;
+  name: string;
+  description?: string | null;
+};
+
+export type SessionConfigSelectGroup = {
+  group: string;
+  name: string;
+  options: SessionConfigSelectValue[];
+};
+
+export type SessionConfigOption = (
+  | {
+      type: "select";
+      currentValue: string;
+      options: Array<SessionConfigSelectValue | SessionConfigSelectGroup>;
+    }
+  | {
+      type: "boolean";
+      currentValue: boolean;
+    }
+) & {
+  id: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+};
+
+export interface SessionSetConfigOptionParams {
+  session_id: string;
+  config_id: string;
+  value: string | boolean;
 }
 
 /** Outbound (main → renderer) wire shapes. The renderer subscribes via

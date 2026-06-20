@@ -4,6 +4,12 @@ export type PetEdgeMode = "none" | "left" | "right" | "top" | "bottom";
 export type PetEdgeSurface = "screen" | "dock";
 export type PetEdgeAttachment = { mode: PetEdgeMode; surface: PetEdgeSurface };
 export type PetWindowBounds = { x: number; y: number; width: number; height: number };
+export type PetEventPanelLayout = {
+  bounds: PetWindowBounds;
+  pet: { left: number; top: number; width: number; height: number };
+  panel: { left: number; top: number; width: number; height: number };
+  side: "left" | "right";
+};
 export type PetHarnessEvent = {
   harness: string;
   event: string;
@@ -55,8 +61,8 @@ contextBridge.exposeInMainWorld("openmaPet", {
   endWindowDrag() {
     ipcRenderer.send("pet:drag-end");
   },
-  setEventPanelOpen(open: boolean) {
-    ipcRenderer.send("pet:set-event-panel-open", open);
+  setEventPanelOpen(open: boolean): Promise<PetEventPanelLayout | null> {
+    return ipcRenderer.invoke("pet:set-event-panel-open", open);
   },
   openNavigationUrl(url: string): Promise<{ ok: boolean; error?: string }> {
     return ipcRenderer.invoke("pet:open-navigation-url", url);

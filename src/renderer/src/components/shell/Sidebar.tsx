@@ -23,9 +23,11 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
   selectActiveId,
+  selectPairs,
   selectSessions,
   sessionStore,
   useSessionStore,
+  type PairRow,
   type SessionRow,
 } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
@@ -49,6 +51,7 @@ import { useSidebarCollapse } from "@/components/shell/AppShell";
  */
 export function Sidebar() {
   const sessions = useSessionStore(selectSessions);
+  const pairs = useSessionStore(selectPairs);
   const activeId = useSessionStore(selectActiveId);
   const navigate = useNavigate();
   const location = useLocation();
@@ -68,7 +71,15 @@ export function Sidebar() {
     void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
   };
 
+  const onSelectPair = (id: string) => {
+    sessionStore.setActive(null);
+    void navigate({ to: "/pair/$pairId", params: { pairId: id } });
+  };
+
   const settingsActive = location.pathname.startsWith("/settings");
+  const activePairId = location.pathname.startsWith("/pair/")
+    ? decodeURIComponent(location.pathname.slice("/pair/".length))
+    : null;
   const onHome = location.pathname === "/";
 
   // Single class for every collapsible text label in the sidebar — fades
@@ -113,7 +124,7 @@ export function Sidebar() {
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [sessions.length]);
+  }, [sessions.length, pairs.length]);
 
   return (
     <div ref={sidebarRef} className="flex h-full min-h-0 flex-col">
@@ -208,7 +219,7 @@ export function Sidebar() {
           scrollbarGutter: "stable",
         }}
       >
-        {sessions.length === 0 ? (
+        {sessions.length === 0 && pairs.length === 0 ? (
           <div>
             <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
               Chats
@@ -235,6 +246,25 @@ export function Sidebar() {
             }
             return (
               <>
+                {pairs.length > 0 && (
+                  <div className="mb-3">
+                    <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
+                      Pairs
+                    </div>
+                    <ul className="m-0 list-none space-y-0.5 p-0">
+                      {pairs.map((p) => (
+                        <li key={p.id}>
+                          <PairSidebarRow
+                            row={p}
+                            active={p.id === activePairId}
+                            labelCls={labelCls}
+                            onSelect={() => onSelectPair(p.id)}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {pinned.length > 0 && (
                   <div className="mb-3">
                     <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
@@ -314,6 +344,42 @@ export function Sidebar() {
         </Link>
       </div>
     </div>
+  );
+}
+
+function PairSidebarRow({
+  row,
+  active,
+  labelCls,
+  onSelect,
+}: {
+  row: PairRow;
+  active: boolean;
+  labelCls: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-label={row.label || "Pair chat"}
+      className={cn(
+        "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+        active
+          ? "liquid-glass-selected text-fg"
+          : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+        "transition-colors",
+      )}
+      style={{ height: "var(--row-h)" }}
+    >
+      <LayoutGridIcon className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" />
+      <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
+        {row.label || "Pair chat"}
+      </span>
+      {row.activeTurnId && (
+        <Loader2Icon className="size-3 shrink-0 animate-spin text-fg-subtle" />
+      )}
+    </button>
   );
 }
 

@@ -6,8 +6,10 @@
  */
 
 import type {
+  PromptAttachment,
   SessionEventOut,
   SessionPromptParams,
+  SessionSetConfigOptionParams,
   SessionStartParams,
 } from "./session-events.js";
 import type { Settings } from "./settings.js";
@@ -48,6 +50,30 @@ export interface PersistedEventInfo {
   type: string;
   data: string;
   ts: number;
+}
+
+/** UI metadata for a pair-chat group. The members are still ordinary
+ *  sessions; this row only tells the renderer to show them together. */
+export interface PersistedPairInfo {
+  id: string;
+  title: string;
+  workspace_cwd: string;
+  last_used_at: number;
+  created_at: number;
+  archived_at: number | null;
+  pinned_at: number | null;
+  members: PersistedSessionInfo[];
+}
+
+export interface PairSaveParams {
+  pair_id: string;
+  title?: string;
+  workspace_cwd?: string;
+  members: Array<{
+    session_id: string;
+    agent_id: string;
+    cwd?: string;
+  }>;
 }
 
 /** Permission ask pushed from the agent. Renderer surfaces a modal with
@@ -143,6 +169,7 @@ export interface BackchatApi {
 
   sessionStart(p: SessionStartParams): Promise<void>;
   sessionPrompt(p: SessionPromptParams): Promise<void>;
+  sessionSetConfigOption(p: SessionSetConfigOptionParams): Promise<void>;
   sessionCancel(p: { session_id: string; turn_id: string }): Promise<void>;
   sessionDispose(p: { session_id: string; remove_cwd?: boolean }): Promise<void>;
 
@@ -150,10 +177,9 @@ export interface BackchatApi {
    *  on mount after a reload. */
   sessionAnnounce(): Promise<void>;
 
-  /** Pair-chat API — fans out to N agents under one session id. The
-   *  renderer mints `pair_id` and a `session_id` per member; backend
-   *  spawns each member as a normal ACP session whose events stream
-   *  via PushChannel.PairEvent. */
+  /** Pair-chat runtime API kept for old pair sessions. The current UI
+   *  path stores only pair metadata and prompts each member through the
+   *  normal session API. */
   pairStart(p: import("./pair-events.js").PairStartParams): Promise<void>;
   pairPrompt(p: import("./pair-events.js").PairPromptParams): Promise<void>;
   pairCancel(p: { pair_id: string; turn_id: string }): Promise<void>;
@@ -165,6 +191,10 @@ export interface BackchatApi {
   onPairEvent(
     handler: (ev: import("./pair-events.js").PairEventOut) => void,
   ): () => void;
+  /** SQLite-backed pair UI metadata. The pair row groups otherwise
+   *  ordinary sessions for renderer layout/sidebar purposes. */
+  pairsList(): Promise<PersistedPairInfo[]>;
+  pairSave(p: PairSaveParams): Promise<void>;
 
   /** List persisted sessions (most-recent first, archived hidden). Used by
    *  the renderer on boot to rebuild the sidebar from disk before any
@@ -274,6 +304,11 @@ export interface BackchatApi {
   /** Open the native "Choose folder" dialog. Returns the picked
    *  absolute path, or null if the user cancelled. */
   uiFsPickDir(p?: { defaultPath?: string }): Promise<string | null>;
+
+  /** Open the native file picker for prompt attachments. Returns an
+   *  empty array when cancelled. Image entries include base64 `data`
+   *  when small enough for preview / ACP image blocks. */
+  uiFsPickFiles(p?: { defaultPath?: string }): Promise<PromptAttachment[]>;
 
   /** Recent entries in a directory — sorted by mtime (newest first),
    *  hidden / noise (.dotfiles, node_modules) filtered out. Top N

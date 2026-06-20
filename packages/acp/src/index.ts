@@ -8,6 +8,7 @@ export type {
   SessionOptions,
   ClientCallbacks,
 } from "./types.js";
+export type { ContentBlock, PromptCapabilities } from "@agentclientprotocol/sdk";
 
 export { AcpRuntimeImpl } from "./runtime.js";
 export { AcpSessionImpl } from "./session.js";

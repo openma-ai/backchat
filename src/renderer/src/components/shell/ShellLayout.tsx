@@ -8,7 +8,7 @@ import {
 } from "@/components/shell/AppShell";
 import { bindRightRailSetter } from "@/lib/right-rail";
 import { Sidebar } from "@/components/shell/Sidebar";
-import { Topbar } from "@/components/shell/Topbar";
+import { PairTopbar, Topbar } from "@/components/shell/Topbar";
 import { SideChatPanel } from "@/components/shell/SideChatPanel";
 import { BottomPanel } from "@/components/shell/BottomPanel";
 import { BrokerModal } from "@/components/shell/BrokerModal";
@@ -84,12 +84,12 @@ function usePersistedCollapse(key: string, initial = false) {
 export function ShellLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
-  // The right side-chat rail and the chat-specific topbar chips are
-  // chat-surface chrome — they read as noise on `/settings/*` and
-  // home (`/`), so we only attach them inside `/chat/*`. Without
-  // this gate, the Settings view shows a "hi · sessions/sess-…"
-  // chip in the topbar plus the empty BrowserTab rail (image #96).
+  // The right side-chat rail and chat-specific chips are chat-surface
+  // chrome — they read as noise on `/settings/*` and home (`/`), so
+  // they only attach inside chat surfaces. Pair chat uses the same
+  // AppShell header slot as normal chat, but renders only logo marks.
   const isChat = location.pathname.startsWith("/chat/");
+  const isPair = location.pathname.startsWith("/pair/");
   const sidebarCollapse = usePersistedCollapse(COLLAPSE_KEY);
   // Side chat starts collapsed — users opt in via the rail toggle so
   // a first-launch window doesn't show two empty chat surfaces.
@@ -100,9 +100,13 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const off = window.backchat.onSessionEvent((e) => sessionStore.apply(e));
     void window.backchat.sessionAnnounce();
-    void window.backchat
-      .sessionsList(200)
-      .then((rows) => sessionStore.seedPersisted(rows));
+    void Promise.all([
+      window.backchat.sessionsList(200),
+      window.backchat.pairsList(),
+    ]).then(([sessions, pairs]) => {
+      sessionStore.seedPersisted(sessions);
+      sessionStore.seedPersistedPairGroups(pairs);
+    });
     return off;
   }, []);
 
@@ -154,7 +158,13 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
         <BottomBarCollapseContext.Provider value={bottomCollapse}>
           <AppShell
             sidebar={<Sidebar />}
-            topbar={isChat ? <Topbar onCancel={cancelActive} /> : null}
+            topbar={
+              isChat ? (
+                <Topbar onCancel={cancelActive} />
+              ) : isPair ? (
+                <PairTopbar />
+              ) : null
+            }
             rightPanel={isChat ? <SideChatPanel /> : undefined}
             bottomPanel={<BottomPanel />}
           >

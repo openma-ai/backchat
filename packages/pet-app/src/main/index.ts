@@ -14,6 +14,7 @@ import {
 } from "./pet-window-state-machine";
 import { startPetHookServer, type PetAckEvent, type PetHookEvent } from "./pet-hook-server";
 import { inferDockBoundsForDisplay } from "./dock-geometry";
+import { computeClosedPetBounds, computeEventPanelLayout, type EventPanelLayout } from "./event-panel-layout";
 
 let mainWindow: BrowserWindow | null = null;
 let applyingSnap = false;
@@ -21,7 +22,7 @@ const windowMachine = createPetWindowStateMachine();
 const pendingPetLinks: OpenmaPetDeepLink[] = [];
 const mainDirname = fileURLToPath(new URL(".", import.meta.url));
 const loggedDockGeometry = new Set<string>();
-const EVENT_PANEL_SIZE = { width: 520, height: 300 };
+const eventPanelLayouts = new WeakMap<BrowserWindow, EventPanelLayout>();
 
 function registerPetProtocolClient(): void {
   if (process.defaultApp) {
@@ -184,10 +185,10 @@ ipcMain.on("pet:drag-end", (event) => {
   applyPetWindowCommand(win, windowMachine.finishDrag(win.getBounds(), getDisplayGeometryForWindow(win)));
 });
 
-ipcMain.on("pet:set-event-panel-open", (event, open: boolean) => {
+ipcMain.handle("pet:set-event-panel-open", (event, open: boolean) => {
   const win = BrowserWindow.fromWebContents(event.sender);
-  if (!win || win.isDestroyed()) return;
-  setPetEventPanelOpen(win, open === true);
+  if (!win || win.isDestroyed()) return null;
+  return setPetEventPanelOpen(win, open === true);
 });
 
 ipcMain.on("pet:ack-harness-event", (_event, ack: PetAckEvent) => {
@@ -214,12 +215,14 @@ ipcMain.handle("pet:open-navigation-url", async (_event, url: string) => {
 
 function notifyEdgeMode(win: BrowserWindow): void {
   if (win.isDestroyed()) return;
+  if (eventPanelLayouts.has(win)) return;
   applyPetWindowCommand(win, windowMachine.sync(win.getBounds(), getDisplayGeometryForWindow(win)));
 }
 
 function syncEdgeMode(win: BrowserWindow): void {
   if (win.isDestroyed()) return;
   if (applyingSnap) return;
+  if (eventPanelLayouts.has(win)) return;
   applyPetWindowCommand(win, windowMachine.sync(win.getBounds(), getDisplayGeometryForWindow(win)));
 }
 
@@ -260,21 +263,25 @@ function applyWindowBounds(win: BrowserWindow, next: Rectangle): void {
   }
 }
 
-function setPetEventPanelOpen(win: BrowserWindow, open: boolean): void {
-  const current = win.getBounds();
-  const display = getDisplayForBounds(current).bounds;
-  const targetSize = open ? EVENT_PANEL_SIZE : NORMAL_SIZE;
-  const anchorRight = current.x + current.width;
-  const anchorBottom = current.y + current.height;
-  const next = {
-    width: targetSize.width,
-    height: targetSize.height,
-    x: clamp(Math.round(anchorRight - targetSize.width), display.x, display.x + display.width - targetSize.width),
-    y: clamp(Math.round(anchorBottom - targetSize.height), display.y, display.y + display.height - targetSize.height),
-  };
+function setPetEventPanelOpen(win: BrowserWindow, open: boolean): EventPanelLayout | null {
+  const existing = eventPanelLayouts.get(win);
+  if (!open) {
+    if (!existing) return null;
+    eventPanelLayouts.delete(win);
+    applyingSnap = true;
+    applyWindowBounds(win, computeClosedPetBounds(existing));
+    applyingSnap = false;
+    notifyEdgeMode(win);
+    return null;
+  }
+
+  const petBounds = existing ? computeClosedPetBounds(existing) : win.getBounds();
+  const layout = computeEventPanelLayout(petBounds, getDisplayForBounds(petBounds).bounds);
+  eventPanelLayouts.set(win, layout);
   applyingSnap = true;
-  applyWindowBounds(win, next);
+  applyWindowBounds(win, layout.bounds);
   applyingSnap = false;
+  return layout;
 }
 
 function clamp(value: number, min: number, max: number): number {

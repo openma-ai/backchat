@@ -107,7 +107,21 @@ export interface AcpSession {
   readonly authMethods: readonly schema.AuthMethod[];
   /** Agent identification (name + version) reported on initialize. */
   readonly agentInfo: schema.Implementation | null;
-  prompt(text: string, opts?: { abortSignal?: AbortSignal }): AsyncIterable<unknown>;
+  /** Current ACP session configuration options, including model selectors. */
+  readonly configOptions: readonly schema.SessionConfigOption[];
+  /** Prompt capabilities advertised by initialize.promptCapabilities.
+   *  Text and resource_link are baseline; optional media/content
+   *  blocks are gated by this object. */
+  readonly promptCapabilities: schema.PromptCapabilities;
+  prompt(
+    input: string | readonly schema.ContentBlock[],
+    opts?: { abortSignal?: AbortSignal },
+  ): AsyncIterable<unknown>;
+  /** Set one ACP session configuration option and return the full updated state. */
+  setConfigOption(
+    configId: string,
+    value: string | boolean,
+  ): Promise<readonly schema.SessionConfigOption[]>;
   /** Drive a user-initiated signin. The agent's sub-flow (OAuth
    *  browser handoff, API-key validation, …) blocks until done; on
    *  failure the agent's error propagates unchanged. */

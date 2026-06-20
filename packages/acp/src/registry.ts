@@ -54,8 +54,6 @@ export async function loadRegistry(opts?: {
     officialMapped = [];
   }
   _mergedCache = mergeOverlay(officialMapped, OVERLAY_AGENTS);
-  _npmGlobalCache = snapshotNpmGlobal();
-  _uvToolCache = snapshotUvTool();
   return _mergedCache;
 }
 
@@ -81,14 +79,13 @@ function mergeOverlay(
     if (ov) {
       seenOverlay.add(o.id);
       merged.push({
-        id: o.id,
+        ...o,
         label: ov.label || o.label,
-        spec: ov.spec,
-        installHint: ov.installHint || o.installHint,
-        homepage: ov.homepage || o.homepage,
+        installHint: o.installHint || ov.installHint,
+        homepage: o.homepage || ov.homepage,
         featured: ov.featured,
         wraps: ov.wraps,
-        install: ov.install ?? o.install,
+        install: o.install ?? ov.install,
       });
     } else {
       merged.push(o);
@@ -110,9 +107,17 @@ export async function detect(id: string): Promise<KnownAgentEntry | null> {
   const entry = resolveKnownAgent(id);
   if (!entry) return null;
   if (!(await isOnPath(entry.spec.command))) return null;
-  if (entry.spec.command === "npx" && !isNpxPackageInstalled(entry)) return null;
+  if (
+    entry.spec.command === "npx" &&
+    !isNpxAutoInstallSpec(entry) &&
+    !isNpxPackageInstalled(entry)
+  ) return null;
   if (entry.spec.command === "uvx" && !isUvxPackageInstalled(entry)) return null;
   return entry;
+}
+
+function isNpxAutoInstallSpec(entry: KnownAgentEntry): boolean {
+  return entry.spec.args?.[0] === "-y" && typeof entry.spec.args?.[1] === "string";
 }
 
 function isNpxPackageInstalled(entry: KnownAgentEntry): boolean {

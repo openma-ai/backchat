@@ -19,7 +19,7 @@
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/shared/**/*.ts",
-    "packages/acp/src/**/*.ts",
+    "packages/*/src/**/*.ts",
     "electron.vite.config.ts"
   ]
 }

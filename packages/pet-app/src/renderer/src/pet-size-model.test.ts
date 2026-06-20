@@ -9,7 +9,7 @@ describe("renderer pet size model", () => {
       "--pet-atlas-cell-width": "96px",
       "--pet-atlas-cell-height": "104px",
       "--pet-side-peek-width": "48px",
-      "--pet-side-peek-height": "112px",
+      "--pet-side-peek-height": "128px",
       "--pet-top-peek-width": "112px",
       "--pet-top-peek-height": "72px",
       "--pet-bottom-rest-width": "112px",

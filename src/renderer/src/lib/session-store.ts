@@ -18,7 +18,14 @@
  */
 
 import { useSyncExternalStore } from "react";
-import type { SessionEventOut } from "@shared/session-events.js";
+import type {
+  SessionConfigOption,
+  SessionEventOut,
+} from "@shared/session-events.js";
+import type {
+  AgentMessageDelivery,
+  AgentMessageIntent,
+} from "@shared/agent-interaction.js";
 import { setRightRailCollapsed } from "@/lib/right-rail";
 
 export interface SessionRow {
@@ -35,8 +42,11 @@ export interface SessionRow {
    *             sidebar `list()`. Not persisted to SQLite (renderer-only
    *             scratch session — quitting and reopening loses it, matching
    *             Codex's side-conversation lifetime).
+   *    "pair" → ordinary persisted session that is grouped by a pair-chat
+   *             UI row. Hidden from the single-chat sidebar because the
+   *             pair row is the user-facing entry point.
    */
-  kind?: "main" | "side";
+  kind?: "main" | "side" | "pair";
   /** Lifecycle:
    *    "draft"     → empty session, no IPC fired yet.
    *    "persisted" → loaded from disk; ACP child NOT spawned (spawns
@@ -52,6 +62,11 @@ export interface SessionRow {
   createdAt: number;
   /** turn_id of the in-flight prompt, if any. */
   activeTurnId?: string;
+  /** FIFO prompts submitted while `activeTurnId` is still running.
+   *  The main process serializes them against the ACP session; the
+   *  renderer keeps this list so completion of the current turn can
+   *  promote the next optimistic turn from queued → running. */
+  queuedTurnIds?: string[];
   /** User-picked workspace for a draft session. Only set when the user
    *  explicitly chose a directory via the composer's workspace chip;
    *  drafts without it fall back to settings.default.workspace_path on
@@ -72,6 +87,10 @@ export interface SessionRow {
    *  Surfaced in the topbar next to the agent label. The agent owns
    *  the available mode set; we just echo whatever it said. */
   currentModeId?: string;
+  /** ACP session-level configuration options. The harness/agent stays
+   *  fixed for a session, while options like model can change at any
+   *  time via `session/set_config_option`. */
+  configOptions?: SessionConfigOption[];
   /** Set when a turn completes (or errors) while this session is NOT
    *  the active one — gives the sidebar an "unread" affordance so the
    *  user can scan which background chats have new results. Cleared
@@ -117,13 +136,23 @@ export interface PairRow {
   members: string[];
   /** Wall-clock of last activity — sidebar sort. */
   lastUsedAt: number;
+  createdAt: number;
   /** A pair-wide active turn id locks all members' composers
    *  simultaneously: a new prompt only enables once every member has
    *  finished the current turn. Cleared when the LAST member completes. */
   activeTurnId?: string;
+  /** Per-member normal session turn ids for the active pair prompt.
+   *  The pair's UI has one prompt, but each underlying session gets a
+   *  distinct turn id because the turn store is keyed by turn id. */
+  memberTurnIds?: Record<string, string>;
   /** Set of member session ids still running the active turn. Empty
    *  set means turn complete. */
   pendingMembers?: Set<string>;
+}
+
+export interface PairTurnTarget {
+  session_id: string;
+  turn_id: string;
 }
 
 /** Mirrors ACP `AvailableCommand`. `input` describes what the command
@@ -133,6 +162,14 @@ export interface AcpAvailableCommand {
   name: string;
   description?: string;
   input?: { hint?: string } | null;
+  /** Non-standard metadata some agents may attach. ACP v1 only
+   *  defines name/description/input, but clients may receive extra
+   *  fields and use them for display-only affordances. */
+  kind?: string;
+  type?: string;
+  category?: string;
+  source?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TurnEvent {
@@ -170,10 +207,21 @@ export interface Turn {
    *  can pick up the current state without re-running every event. */
   assistantText: string;
   thoughtText: string;
-  status: "running" | "complete" | "error" | "cancelled";
+  status: "queued" | "running" | "complete" | "error" | "cancelled";
+  promptIntent?: AgentMessageIntent;
+  requestedDelivery?: AgentMessageDelivery;
+  effectiveDelivery?: AgentMessageDelivery;
+  deliveryDegraded?: boolean;
   errorMessage?: string;
   startedAt: number;
   endedAt?: number;
+}
+
+export interface TurnDeliveryMeta {
+  intent: AgentMessageIntent;
+  requestedDelivery: AgentMessageDelivery;
+  effectiveDelivery: AgentMessageDelivery;
+  degraded: boolean;
 }
 
 export type SideTabType = "chat" | "file" | "browser" | "terminal";
@@ -339,6 +387,10 @@ class SessionStore {
     // Side-chat sessions (kind === "side") never enter the sidebar —
     // they live in the right rail and are intentionally ephemeral.
     //
+    // Pair members (kind === "pair") are normal persisted sessions,
+    // but the pair UI row is the sidebar entry point; listing each
+    // member as a separate chat would duplicate the conversation.
+    //
     // Archived sessions (archivedAt set) are also filtered out — the
     // sidebar shows only "active" chats. The row still lives in the
     // Map and is reachable via Search, unarchive, or when the
@@ -349,6 +401,7 @@ class SessionStore {
         (s) =>
           s.status !== "draft" &&
           s.kind !== "side" &&
+          s.kind !== "pair" &&
           s.archivedAt == null,
       )
       .sort((a, b) => b.createdAt - a.createdAt);
@@ -828,7 +881,14 @@ class SessionStore {
 
   /** Begin a new turn — store the prompt text so the chat view can render the
    *  user bubble before any agent event arrives. */
-  registerTurn(turnId: string, sessionId: string, promptText: string): void {
+  registerTurn(
+    turnId: string,
+    sessionId: string,
+    promptText: string,
+    delivery?: TurnDeliveryMeta,
+  ): void {
+    const row = this.#sessions.get(sessionId);
+    const isQueued = !!row?.activeTurnId;
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
@@ -836,15 +896,54 @@ class SessionStore {
       events: [],
       assistantText: "",
       thoughtText: "",
-      status: "running",
+      status: isQueued ? "queued" : "running",
+      promptIntent: delivery?.intent,
+      requestedDelivery: delivery?.requestedDelivery,
+      effectiveDelivery: delivery?.effectiveDelivery,
+      deliveryDegraded: delivery?.degraded,
       startedAt: Date.now(),
     });
     this.#mutateSession(sessionId, (s) => ({
       ...s,
-      activeTurnId: turnId,
+      activeTurnId: s.activeTurnId ?? turnId,
+      queuedTurnIds: s.activeTurnId
+        ? [...(s.queuedTurnIds ?? []), turnId]
+        : s.queuedTurnIds,
       status: "running",
     }));
     this.#emit();
+  }
+
+  #markTurnRunning(turnId: string | undefined): void {
+    if (!turnId) return;
+    const turn = this.#turns.get(turnId);
+    if (turn?.status === "queued") {
+      this.#turns.set(turnId, { ...turn, status: "running" });
+    }
+  }
+
+  #advanceAfterTurn(sessionId: string, turnId: string, opts?: { unread?: boolean }): void {
+    this.#mutateSession(sessionId, (s) => {
+      const queued = s.queuedTurnIds ?? [];
+      if (s.activeTurnId === turnId) {
+        const [nextTurnId, ...rest] = queued;
+        this.#markTurnRunning(nextTurnId);
+        return {
+          ...s,
+          activeTurnId: nextTurnId,
+          queuedTurnIds: rest.length ? rest : undefined,
+          status: nextTurnId ? "running" : "ready",
+          unread: opts?.unread ? true : s.unread,
+        };
+      }
+
+      const rest = queued.filter((id) => id !== turnId);
+      return {
+        ...s,
+        queuedTurnIds: rest.length ? rest : undefined,
+        unread: opts?.unread ? true : s.unread,
+      };
+    });
   }
 
   /** Replace one row with a new object (immutable update). Keeps React happy
@@ -854,6 +953,78 @@ class SessionStore {
     const prev = this.#sessions.get(id);
     if (!prev) return;
     this.#sessions.set(id, update(prev));
+  }
+
+  #isPairMember(sessionId: string): boolean {
+    for (const pair of this.#pairs.values()) {
+      if (pair.members.includes(sessionId)) return true;
+    }
+    return false;
+  }
+
+  #persistPair(pair: PairRow): void {
+    if (typeof window === "undefined" || !window.backchat?.pairSave) return;
+    void window.backchat.pairSave({
+      pair_id: pair.id,
+      title: pair.label,
+      members: pair.members
+        .map((sid) => this.#sessions.get(sid))
+        .filter((s): s is SessionRow => !!s)
+        .map((s) => ({
+          session_id: s.id,
+          agent_id: s.agent_id,
+          cwd: s.cwd,
+        })),
+    });
+  }
+
+  seedPersistedPairGroups(
+    rows: import("@shared/api.js").PersistedPairInfo[],
+  ): void {
+    let changed = false;
+    for (const r of rows) {
+      if (!r.id || r.members.length < 2) continue;
+      const prev = this.#pairs.get(r.id);
+      this.#pairs.set(r.id, {
+        id: r.id,
+        label: r.title || prev?.label || "",
+        members: r.members.map((m) => m.id),
+        lastUsedAt: r.last_used_at || prev?.lastUsedAt || Date.now(),
+        createdAt: r.created_at || prev?.createdAt || Date.now(),
+        activeTurnId: prev?.activeTurnId,
+        memberTurnIds: prev?.memberTurnIds,
+        pendingMembers: prev?.pendingMembers,
+      });
+      for (const member of r.members) {
+        if (this.#sessions.has(member.id)) {
+          this.#mutateSession(member.id, (s) => ({
+            ...s,
+            agent_id: member.agent_id,
+            cwd: member.cwd,
+            acp_session_id: member.acp_session_id || s.acp_session_id,
+            label: member.title || s.label,
+            kind: "pair",
+            pinnedAt: member.pinned_at ?? undefined,
+            archivedAt: member.archived_at ?? undefined,
+          }));
+        } else {
+          this.#sessions.set(member.id, {
+            id: member.id,
+            agent_id: member.agent_id,
+            cwd: member.cwd,
+            acp_session_id: member.acp_session_id,
+            label: member.title || `${member.agent_id} · ${member.id.slice(0, 6)}`,
+            kind: "pair",
+            status: "ready",
+            createdAt: member.created_at,
+            pinnedAt: member.pinned_at ?? undefined,
+            archivedAt: member.archived_at ?? undefined,
+          });
+        }
+      }
+      changed = true;
+    }
+    if (changed) this.#emit();
   }
 
   /** Seed the in-memory store with persisted rows fetched from the SQLite
@@ -887,6 +1058,7 @@ class SessionStore {
           cwd: r.cwd,
           acp_session_id: r.acp_session_id || s.acp_session_id,
           label: r.title || s.label,
+          kind: this.#isPairMember(r.id) ? "pair" : s.kind,
           pinnedAt: r.pinned_at ?? undefined,
           archivedAt: r.archived_at ?? undefined,
         }));
@@ -898,6 +1070,7 @@ class SessionStore {
         cwd: r.cwd,
         acp_session_id: r.acp_session_id,
         label: r.title || "New chat",
+        kind: this.#isPairMember(r.id) ? "pair" : undefined,
         status: "ready",
         createdAt: r.created_at,
         pinnedAt: r.pinned_at ?? undefined,
@@ -949,8 +1122,8 @@ class SessionStore {
         // verbatim. reduceTurn handles agent_message_chunk +
         // agent_thought_chunk + structural alike, building the
         // timeline in the same order they were persisted (which now
-        // matches the live arrival order — see session-manager.ts's
-        // structuralEvents flush). For back-compat, also accept
+        // matches the live arrival order because SessionManager appends
+        // streamed events as they arrive). For back-compat, also accept
         // legacy coalesced `agent_message` / `agent_thought` rows
         // and feed them in as a single chunk.
         if (r.type === "agent_message") {
@@ -1042,6 +1215,7 @@ class SessionStore {
               sessionUpdate?: string;
               availableCommands?: AcpAvailableCommand[];
               currentModeId?: string;
+              configOptions?: SessionConfigOption[];
             }
           | null;
         if (sev?.sessionUpdate === "available_commands_update") {
@@ -1055,6 +1229,13 @@ class SessionStore {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
             currentModeId: sev.currentModeId,
+          }));
+          break;
+        }
+        if (sev?.sessionUpdate === "config_option_update") {
+          this.#mutateSession(ev.session_id, (s) => ({
+            ...s,
+            configOptions: sev.configOptions ?? [],
           }));
           break;
         }
@@ -1167,12 +1348,10 @@ class SessionStore {
         // a chat you're actively reading. The dot clears as soon as
         // they navigate to this session (setActive).
         const isBackgroundChat = this.#activeId !== ev.session_id;
-        this.#mutateSession(ev.session_id, (s) => ({
-          ...s,
-          activeTurnId: undefined,
-          status: "ready",
-          unread: isBackgroundChat ? true : s.unread,
-        }));
+        this.#advanceAfterTurn(ev.session_id, ev.turn_id, {
+          unread: isBackgroundChat,
+        });
+        this.#dropPairPendingForSession(ev.session_id, ev.turn_id);
         break;
       }
       case "session.error": {
@@ -1186,7 +1365,8 @@ class SessionStore {
               endedAt: Date.now(),
             });
           }
-          this.#mutateSession(ev.session_id, (s) => ({ ...s, activeTurnId: undefined }));
+          this.#advanceAfterTurn(ev.session_id, ev.turn_id);
+          this.#dropPairPendingForSession(ev.session_id, ev.turn_id);
         }
         this.#mutateSession(ev.session_id, (s) => ({
           ...s,
@@ -1237,12 +1417,13 @@ class SessionStore {
   }
 
   /** Mint a fresh draft pair from the renderer. Doesn't fire IPC yet —
-   *  on first submit the composer calls `pairStart` + `pairPrompt`.
-   *  Members each get a draft single-session row so the existing
-   *  reducer / TurnBlock machinery works unchanged on them. */
+   *  on first submit the composer starts and prompts each member via
+   *  the ordinary session API. Members each get a draft single-session
+   *  row so the existing reducer / TurnBlock machinery works unchanged. */
   newDraftPair(agentIds: string[]): string {
     const pair_id = `pair-${Math.random().toString(36).slice(2, 10)}`;
     const members: string[] = [];
+    const now = Date.now();
     for (const agentId of agentIds) {
       const sid = `sess-${Math.random().toString(36).slice(2, 10)}`;
       this.#sessions.set(sid, {
@@ -1252,11 +1433,8 @@ class SessionStore {
         acp_session_id: "",
         label: `${agentId} · ${sid.slice(0, 6)}`,
         status: "draft",
-        // Pair members are NOT shown in sidebar — kind="side" reuses
-        // the existing filter on list(). Functionally identical to a
-        // hidden row.
-        kind: "side",
-        createdAt: Date.now(),
+        kind: "pair",
+        createdAt: now,
       });
       members.push(sid);
     }
@@ -1264,8 +1442,10 @@ class SessionStore {
       id: pair_id,
       label: "",
       members,
-      lastUsedAt: Date.now(),
+      lastUsedAt: now,
+      createdAt: now,
     });
+    this.#persistPair(this.#pairs.get(pair_id)!);
     this.#emit();
     return pair_id;
   }
@@ -1286,22 +1466,26 @@ class SessionStore {
             agent_id: m.agent_id,
             cwd: m.cwd,
           });
-          // Hide the just-materialized member from the sidebar.
-          this.#mutateSession(m.session_id, (s) => ({ ...s, kind: "side" }));
+          // Hide the just-materialized member behind the pair sidebar row.
+          this.#mutateSession(m.session_id, (s) => ({ ...s, kind: "pair" }));
         }
         // Refresh pair members in case backend invented session ids
         // we don't know (resume path).
         const pair = this.#pairs.get(ev.pair_id);
         if (pair) {
           pair.members = ev.members.map((m) => m.session_id);
+          pair.lastUsedAt = Date.now();
         } else {
+          const now = Date.now();
           this.#pairs.set(ev.pair_id, {
             id: ev.pair_id,
             label: "",
             members: ev.members.map((m) => m.session_id),
-            lastUsedAt: Date.now(),
+            lastUsedAt: now,
+            createdAt: now,
           });
         }
+        this.#persistPair(this.#pairs.get(ev.pair_id)!);
         this.#emit();
         return;
       }
@@ -1346,34 +1530,58 @@ class SessionStore {
   /** Mark a member done for the active pair turn. When all members
    *  are done, clear the pair-wide activeTurnId so the composer
    *  re-enables. */
-  #dropPairPending(pair_id: string, member_session_id: string): void {
+  #dropPairPending(
+    pair_id: string,
+    member_session_id: string,
+    turn_id?: string,
+  ): void {
     const pair = this.#pairs.get(pair_id);
     if (!pair || !pair.pendingMembers) return;
+    if (turn_id && pair.memberTurnIds?.[member_session_id] !== turn_id) return;
     pair.pendingMembers.delete(member_session_id);
     if (pair.pendingMembers.size === 0) {
       pair.activeTurnId = undefined;
       pair.pendingMembers = undefined;
+      pair.memberTurnIds = undefined;
       pair.lastUsedAt = Date.now();
+      this.#persistPair(pair);
       this.#emit();
     }
   }
 
-  /** Register a fan-out turn — paint user prompt under every member's
-   *  turn list immediately, lock the pair composer, then return the
-   *  shared turn_id for the caller to send via IPC. */
-  registerPairTurn(pair_id: string, text: string): string | null {
+  #dropPairPendingForSession(session_id: string, turn_id: string): void {
+    for (const pair of this.#pairs.values()) {
+      if (!pair.pendingMembers?.has(session_id)) continue;
+      this.#dropPairPending(pair.id, session_id, turn_id);
+      return;
+    }
+  }
+
+  /** Register a fan-out turn — paint the same user prompt under every
+   *  member immediately, lock the pair composer, then return one
+   *  ordinary session turn id per member. */
+  registerPairTurn(pair_id: string, text: string): PairTurnTarget[] | null {
     const pair = this.#pairs.get(pair_id);
     if (!pair) return null;
-    const turn_id = `turn-${Math.random().toString(36).slice(2, 10)}`;
+    const groupTurnId = `pairturn-${Math.random().toString(36).slice(2, 10)}`;
+    const targets: PairTurnTarget[] = pair.members.map((sid) => ({
+      session_id: sid,
+      turn_id: `turn-${Math.random().toString(36).slice(2, 10)}`,
+    }));
     for (const sid of pair.members) {
-      this.registerTurn(turn_id, sid, text);
+      const target = targets.find((t) => t.session_id === sid);
+      if (target) this.registerTurn(target.turn_id, sid, text);
     }
-    pair.activeTurnId = turn_id;
+    pair.activeTurnId = groupTurnId;
     pair.pendingMembers = new Set(pair.members);
+    pair.memberTurnIds = Object.fromEntries(
+      targets.map((t) => [t.session_id, t.turn_id]),
+    );
     pair.lastUsedAt = Date.now();
     if (!pair.label) pair.label = derivePairLabel(text);
+    this.#persistPair(pair);
     this.#emit();
-    return turn_id;
+    return targets;
   }
 }
 
@@ -1397,6 +1605,7 @@ if (typeof window !== "undefined" && window.backchat?.onPairEvent) {
  *  defining inline arrows. Inline arrows would create a fresh reference
  *  per render and miss the store's snapshot cache. */
 export const selectSessions = (s: SessionStore) => s.list();
+export const selectPairs = (s: SessionStore) => s.pairList();
 export const selectActiveId = (s: SessionStore) => s.activeId();
 export const selectActive = (s: SessionStore) => s.active();
 export const selectSideActive = (s: SessionStore) => s.sideActive();

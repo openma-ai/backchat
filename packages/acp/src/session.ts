@@ -49,6 +49,8 @@ export class AcpSessionImpl implements AcpSession {
   #waiters: Array<(v: IteratorResult<unknown>) => void> = [];
   #authMethods: readonly schema.AuthMethod[] = [];
   #agentInfo: schema.Implementation | null = null;
+  #configOptions: readonly schema.SessionConfigOption[] = [];
+  #promptCapabilities: schema.PromptCapabilities = {};
 
   constructor(deps: ConstructDeps) {
     this.id = deps.id;
@@ -68,20 +70,6 @@ export class AcpSessionImpl implements AcpSession {
         // already known from the AcpSession instance, so the wrapper just
         // forces every consumer to do a redundant `.update.foo` indirection.
         const inner = (params as { update?: unknown })?.update;
-        // [debug] Dump every raw sessionUpdate notification at the
-        // adapter boundary. If a tool_call / image content arrives here
-        // but doesn't make it to session-manager's downstream tap, the
-        // bug is between this push and the for-await consumer (queue,
-        // backpressure, abort). Useful for diagnosing "renderer 丢东西".
-        try {
-          // eslint-disable-next-line no-console
-          console.log(
-            "[acp-session-rx]",
-            JSON.stringify(inner !== undefined ? inner : params).slice(0, 600),
-          );
-        } catch {
-          /* dbg log must not throw */
-        }
         const update = inner !== undefined ? inner : params;
         if (!this.#promptActive && !isIdleSessionUpdate(update)) {
           return;
@@ -102,13 +90,27 @@ export class AcpSessionImpl implements AcpSession {
         this.#pushEvent({ type: "requestPermission", params, autoDenied: true });
         return { outcome: { outcome: "cancelled" } };
       },
-      readTextFile: cb.readTextFile,
-      writeTextFile: cb.writeTextFile,
-      createTerminal: cb.createTerminal,
-      terminalOutput: cb.terminalOutput,
-      releaseTerminal: cb.releaseTerminal,
-      waitForTerminalExit: cb.waitForTerminalExit,
-      killTerminal: cb.killTerminal,
+      readTextFile: cb.readTextFile
+        ? async (params) => cb.readTextFile!(params)
+        : undefined,
+      writeTextFile: cb.writeTextFile
+        ? async (params) => cb.writeTextFile!(params)
+        : undefined,
+      createTerminal: cb.createTerminal
+        ? async (params) => cb.createTerminal!(params)
+        : undefined,
+      terminalOutput: cb.terminalOutput
+        ? async (params) => cb.terminalOutput!(params)
+        : undefined,
+      releaseTerminal: cb.releaseTerminal
+        ? async (params) => cb.releaseTerminal!(params)
+        : undefined,
+      waitForTerminalExit: cb.waitForTerminalExit
+        ? async (params) => cb.waitForTerminalExit!(params)
+        : undefined,
+      killTerminal: cb.killTerminal
+        ? async (params) => cb.killTerminal!(params)
+        : undefined,
     };
 
     const conn = new ClientSideConnection(() => client, stream);
@@ -135,17 +137,19 @@ export class AcpSessionImpl implements AcpSession {
     // surfaces that to the user and offers Settings → Re-sign-in.
     this.#authMethods = initResult.authMethods ?? [];
     this.#agentInfo = initResult.agentInfo ?? null;
+    this.#promptCapabilities = initResult.agentCapabilities?.promptCapabilities ?? {};
 
     const wantsResume = this.options.resumeAcpSessionId;
     const supportsLoad = initResult.agentCapabilities?.loadSession === true;
 
     if (wantsResume && supportsLoad && this.#agent.loadSession) {
       try {
-        await this.#agent.loadSession({
+        const loaded = await this.#agent.loadSession({
           sessionId: wantsResume,
           cwd: this.options.agent.cwd ?? process.cwd(),
           mcpServers: this.options.mcpServers ?? [],
         });
+        this.#configOptions = loaded.configOptions ?? [];
         this.#sessionId = wantsResume;
         return;
       } catch (e) {
@@ -160,6 +164,7 @@ export class AcpSessionImpl implements AcpSession {
       cwd: this.options.agent.cwd ?? process.cwd(),
       mcpServers: this.options.mcpServers ?? [],
     });
+    this.#configOptions = newSession.configOptions ?? [];
     this.#sessionId = newSession.sessionId;
   }
 
@@ -174,6 +179,14 @@ export class AcpSessionImpl implements AcpSession {
   /** Display name / version reported by the agent on initialize. */
   get agentInfo(): schema.Implementation | null {
     return this.#agentInfo;
+  }
+
+  get configOptions(): readonly schema.SessionConfigOption[] {
+    return this.#configOptions;
+  }
+
+  get promptCapabilities(): schema.PromptCapabilities {
+    return this.#promptCapabilities;
   }
 
   /** Drive a user-initiated signin step. Settings → "Sign in / switch
@@ -218,14 +231,40 @@ export class AcpSessionImpl implements AcpSession {
     }
   }
 
-  prompt(text: string, opts?: { abortSignal?: AbortSignal }): AsyncIterable<unknown> {
+  async setConfigOption(
+    configId: string,
+    value: string | boolean,
+  ): Promise<readonly schema.SessionConfigOption[]> {
+    if (!this.#agent || !this.#sessionId) {
+      throw new Error("AcpSession not initialized");
+    }
+    const setSessionConfigOption = this.#agent.setSessionConfigOption;
+    if (typeof setSessionConfigOption !== "function") {
+      throw new Error("ACP agent does not support session config options");
+    }
+    const params: schema.SetSessionConfigOptionRequest =
+      typeof value === "boolean"
+        ? { sessionId: this.#sessionId, configId, type: "boolean" as const, value }
+        : { sessionId: this.#sessionId, configId, value };
+    const next = await setSessionConfigOption.call(this.#agent, params);
+    this.#configOptions = next.configOptions ?? [];
+    return this.#configOptions;
+  }
+
+  prompt(
+    input: string | readonly schema.ContentBlock[],
+    opts?: { abortSignal?: AbortSignal },
+  ): AsyncIterable<unknown> {
     if (this.#disposed) {
       throw new Error(`AcpSession ${this.id} is disposed`);
     }
-    return this.#promptIter(text, opts);
+    return this.#promptIter(input, opts);
   }
 
-  async *#promptIter(text: string, opts?: { abortSignal?: AbortSignal }): AsyncIterable<unknown> {
+  async *#promptIter(
+    input: string | readonly schema.ContentBlock[],
+    opts?: { abortSignal?: AbortSignal },
+  ): AsyncIterable<unknown> {
     const onAbort = () => {
       this.#agent
         .cancel({ sessionId: this.#sessionId })
@@ -243,10 +282,14 @@ export class AcpSessionImpl implements AcpSession {
     turnAbort.signal.addEventListener("abort", onAbort, { once: true });
 
     this.#promptActive = true;
+    const prompt =
+      typeof input === "string"
+        ? [{ type: "text" as const, text: input }]
+        : [...input];
     const promptDone = this.#agent
       .prompt({
         sessionId: this.#sessionId,
-        prompt: [{ type: "text", text }],
+        prompt,
       })
       .finally(() => {
         this.#promptActive = false;

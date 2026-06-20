@@ -6,6 +6,12 @@ type PetEdgeMode = "none" | "left" | "right" | "top" | "bottom";
 type PetEdgeSurface = "screen" | "dock";
 type PetEdgeAttachment = { mode: PetEdgeMode; surface: PetEdgeSurface };
 type PetWindowBounds = { x: number; y: number; width: number; height: number };
+type PetEventPanelLayout = {
+  bounds: PetWindowBounds;
+  pet: { left: number; top: number; width: number; height: number };
+  panel: { left: number; top: number; width: number; height: number };
+  side: "left" | "right";
+};
 
 interface Window {
   openmaPet?: {
@@ -17,7 +23,7 @@ interface Window {
     startWindowDrag(): Promise<PetWindowBounds>;
     moveWindowTo(point: { x: number; y: number }): void;
     endWindowDrag(): void;
-    setEventPanelOpen(open: boolean): void;
+    setEventPanelOpen(open: boolean): Promise<PetEventPanelLayout | null>;
     openNavigationUrl(url: string): Promise<{ ok: boolean; error?: string }>;
     ackHarnessEvent(event: PetAckEvent): void;
   };

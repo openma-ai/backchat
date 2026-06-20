@@ -1,5 +1,6 @@
-import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BoxIcon,
   BrainIcon,
   CheckIcon,
   CheckSquareIcon,
@@ -32,6 +33,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
+import type { PromptAttachment, SessionConfigOption } from "@shared/session-events.js";
+import type {
+  AgentMessageDelivery,
+  AgentMessageIntent,
+} from "@shared/agent-interaction.js";
+import { GENERIC_ACP_DELIVERY_CAPABILITIES } from "@shared/agent-interaction.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,6 +71,7 @@ import {
   type AcpAvailableCommand,
   type BrokerAsk,
   type Turn,
+  type TurnDeliveryMeta,
 } from "@/lib/session-store";
 import { reduceTurn, type ToolContentBlock, type TurnRender } from "@/lib/reduce-turn";
 import { useSettings } from "@/lib/settings-store";
@@ -76,90 +84,15 @@ import {
   CHAT_GENERATED_IMAGE_CLASS,
   CHAT_TURN_FRAME_CLASS,
 } from "@/lib/chat-layout";
-
-type AgentOption = {
-  id: string;
-  label: string;
-  command: string;
-  detected: boolean;
-};
-
-type AcpHarnessFamily = "codex" | "claude" | "gemini" | "opencode" | "generic";
-
-type AcpModelProfile = {
-  id: string;
-  label: string;
-  hint: string;
-  harnessFamilies?: AcpHarnessFamily[];
-};
-
-const DEFAULT_ACP_MODEL_PROFILE_ID = "auto";
-
-const ACP_MODEL_PROFILE_CATALOG: AcpModelProfile[] = [
-  {
-    id: DEFAULT_ACP_MODEL_PROFILE_ID,
-    label: "Auto",
-    hint: "Use the selected harness default",
-  },
-  {
-    id: "codex:gpt-5.5",
-    label: "GPT-5.5",
-    hint: "Codex profile",
-    harnessFamilies: ["codex"],
-  },
-  {
-    id: "codex:gpt-5.4",
-    label: "GPT-5.4",
-    hint: "Codex compatibility profile",
-    harnessFamilies: ["codex"],
-  },
-  {
-    id: "claude:sonnet",
-    label: "Claude Sonnet",
-    hint: "Claude coding profile",
-    harnessFamilies: ["claude"],
-  },
-  {
-    id: "claude:opus",
-    label: "Claude Opus",
-    hint: "Claude high-reasoning profile",
-    harnessFamilies: ["claude"],
-  },
-  {
-    id: "gemini:pro",
-    label: "Gemini Pro",
-    hint: "Gemini pro profile",
-    harnessFamilies: ["gemini"],
-  },
-  {
-    id: "gemini:flash",
-    label: "Gemini Flash",
-    hint: "Gemini fast profile",
-    harnessFamilies: ["gemini"],
-  },
-  {
-    id: "opencode:default",
-    label: "OpenCode Default",
-    hint: "OpenCode profile",
-    harnessFamilies: ["opencode"],
-  },
-];
-
-function harnessFamilyForAgent(agentId: string): AcpHarnessFamily {
-  if (agentId.includes("codex")) return "codex";
-  if (agentId.includes("claude")) return "claude";
-  if (agentId.includes("gemini")) return "gemini";
-  if (agentId.includes("opencode")) return "opencode";
-  return "generic";
-}
-
-function modelProfilesForAgent(agentId: string): AcpModelProfile[] {
-  const family = harnessFamilyForAgent(agentId);
-  return ACP_MODEL_PROFILE_CATALOG.filter((profile) => {
-    if (profile.id === DEFAULT_ACP_MODEL_PROFILE_ID) return true;
-    return profile.harnessFamilies?.includes(family) ?? false;
-  });
-}
+import {
+  configOptionCurrentLabel,
+  findModelConfigOption,
+  flattenConfigSelectOptions,
+} from "@/lib/session-config";
+import {
+  describeRunningMessageAction,
+  shouldOfferExplicitSteer,
+} from "@/lib/composer-delivery";
 
 /**
  * ChatView — the right pane.
@@ -215,7 +148,34 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     setPickedModelProfileId(DEFAULT_ACP_MODEL_PROFILE_ID);
   }, [active?.id]);
 
-  const onSubmit = async (text: string) => {
+  const resolveRunningDeliveryMeta = (
+    agentId: string | undefined,
+    intent: AgentMessageIntent,
+  ): TurnDeliveryMeta | null => {
+    const action = describeRunningMessageAction({
+      agentId: agentId || settings?.default.agent_id,
+      intent,
+      transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+    });
+    if (action.disabled) {
+      toast.error(`${action.label} is not available`, {
+        description: action.title,
+      });
+      return null;
+    }
+    return {
+      intent,
+      requestedDelivery: action.decision.requestedDelivery,
+      effectiveDelivery: action.decision.effectiveDelivery,
+      degraded: action.decision.degraded,
+    };
+  };
+
+  const onSubmit = async (
+    text: string,
+    attachments: PromptAttachment[] = [],
+    intent: AgentMessageIntent = "submit",
+  ) => {
     let target = active;
     if (!target) {
       const sid = isSide ? newSideDraftSession() : newDraftSession();
@@ -227,19 +187,26 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         void navigate({ to: "/chat/$sessionId", params: { sessionId: sid } });
       }
     }
+    const isRunningTarget = target.status === "running" || !!target.activeTurnId;
+    const delivery = isRunningTarget
+      ? resolveRunningDeliveryMeta(target.agent_id, intent)
+      : idleDeliveryMeta(intent);
+    if (!delivery) return;
+
     // Register the turn FIRST — this paints the user bubble immediately,
     // before any awaits. ACP events arrive via session.event push later
     // and get reduced into the same turn id. If session.start ends up
     // failing the turn gets marked errored, not vanished.
     const turn_id = `turn-${Math.random().toString(36).slice(2, 10)}`;
     console.log("[onSubmit] target", target?.id, target?.status, "text", text.slice(0, 30));
-    sessionStore.registerTurn(turn_id, target.id, text);
+    const displayText = derivePromptDisplayText(text, attachments);
+    sessionStore.registerTurn(turn_id, target.id, displayText, delivery);
     console.log("[onSubmit] after registerTurn, store turns for session:",
       sessionStore.turnsFor(target.id).length);
 
     if (target.status === "draft") {
       const agentId = pickedAgentId || settings?.default.agent_id || "";
-      const label = deriveLabel(text);
+      const label = deriveLabel(displayText);
       sessionStore.promoteDraft(target.id, agentId, label);
       // Cwd precedence:
       //   1. composer's just-picked workspace (this turn's chip)
@@ -278,7 +245,16 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       const r = await readyPromise;
       if (r !== "ready") return;
     }
-    await window.backchat.sessionPrompt({ session_id: target.id, turn_id, text });
+    await window.backchat.sessionPrompt({
+      session_id: target.id,
+      turn_id,
+      text,
+      ...(attachments.length > 0 ? { attachments } : {}),
+      prompt_intent: delivery.intent,
+      requested_delivery: delivery.requestedDelivery,
+      effective_delivery: delivery.effectiveDelivery,
+      delivery_degraded: delivery.degraded,
+    });
   };
 
   const isEmpty = !active || active.status === "draft" || turns.length === 0;
@@ -288,6 +264,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   // session.event arriving lets the user fire a second prompt and
   // collapse the conversation order.
   const hasActiveTurn = !!active?.activeTurnId;
+  const queuedTurnCount = active?.queuedTurnIds?.length ?? 0;
   const boundComposerAgentId =
     active && active.status !== "draft" ? active.agent_id : undefined;
   const composer = (
@@ -299,12 +276,30 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       }
       running={active?.status === "running" || hasActiveTurn}
       availableCommands={active?.availableCommands}
+      sessionConfigOptions={active?.configOptions}
+      attachmentDefaultPath={
+        active?.cwd || pickedCwd || settings?.default.workspace_path || undefined
+      }
       pendingAsk={active?.pendingAsks?.[0]}
       lockedAgentId={active && active.status !== "draft" ? active.agent_id : null}
       pickedAgentId={pickedAgentId}
-      onPickAgent={setPickedAgentId}
       pickedModelProfileId={pickedModelProfileId}
+      onPickAgent={setPickedAgentId}
       onPickModelProfile={setPickedModelProfileId}
+      onSetConfigOption={async (configId, value) => {
+        if (!active || active.status === "draft") return;
+        try {
+          await window.backchat.sessionSetConfigOption({
+            session_id: active.id,
+            config_id: configId,
+            value,
+          });
+        } catch (e) {
+          toast.error("Couldn't switch model", {
+            description: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }}
       onResolveAsk={async (optionId, approve) => {
         const ask = active?.pendingAsks?.[0];
         if (!ask) return;
@@ -322,8 +317,10 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             ? "Starting…"
             : active.status === "errored"
               ? "Session errored. Start a new chat."
-              : active.status === "running"
-                ? "Working…"
+              : active.status === "running" || hasActiveTurn
+                ? queuedTurnCount > 0
+                  ? `${queuedTurnCount} queued…`
+                  : "Add to queue…"
                 : "Reply…"
       }
       onSubmit={onSubmit}
@@ -495,6 +492,16 @@ function waitForReady(
   });
 }
 
+function idleDeliveryMeta(intent: AgentMessageIntent): TurnDeliveryMeta {
+  const turnEnd: AgentMessageDelivery = "turn_end";
+  return {
+    intent,
+    requestedDelivery: turnEnd,
+    effectiveDelivery: turnEnd,
+    degraded: false,
+  };
+}
+
 function EmptyStateIntro({ hasDefaultAgent }: { hasDefaultAgent: boolean }) {
   return (
     <div className="reveal-in flex flex-col items-center text-center">
@@ -525,6 +532,7 @@ export function TurnBlock({ turn }: { turn: Turn }) {
   const cwd = useContext(MarkdownCwdContext);
 
   const isStreaming = turn.status === "running";
+  const isQueued = turn.status === "queued";
   const hasAnything =
     turn.assistantText.length > 0 ||
     turn.thoughtText.length > 0 ||
@@ -722,6 +730,10 @@ export function TurnBlock({ turn }: { turn: Turn }) {
               ·
             </span>
           </p>
+        )}
+
+        {!hasAnything && isQueued && (
+          <p className="text-xs italic text-fg-subtle">queued</p>
         )}
 
         {turn.status === "error" && (
@@ -1350,38 +1362,56 @@ function shortPath(p: string): string {
   return `…/${parts.slice(-2).join("/")}`;
 }
 
-function Composer({
+export function Composer({
   sessionAgentId,
+  agentPickerLabel,
+  agentPickerAgentIds,
   disabled,
   running,
   placeholder,
   availableCommands,
+  sessionConfigOptions,
+  attachmentDefaultPath,
   pendingAsk,
   lockedAgentId,
   pickedAgentId,
   pickedModelProfileId,
   onPickAgent,
   onPickModelProfile,
+  onSetConfigOption,
   onResolveAsk,
   onSubmit,
   onCancel,
 }: {
   sessionAgentId?: string;
+  agentPickerLabel?: string;
+  agentPickerAgentIds?: string[];
   disabled: boolean;
   running: boolean | undefined;
   placeholder: string;
   availableCommands?: AcpAvailableCommand[];
+  sessionConfigOptions?: SessionConfigOption[];
+  attachmentDefaultPath?: string;
   pendingAsk?: BrokerAsk;
   lockedAgentId: string | null;
   pickedAgentId: string | null;
   pickedModelProfileId: string;
   onPickAgent: (agentId: string) => void;
   onPickModelProfile: (profileId: string) => void;
+  onSetConfigOption?: (configId: string, value: string | boolean) => void | Promise<void>;
   onResolveAsk?: (optionId: string | null, approve?: boolean) => void | Promise<void>;
-  onSubmit: (text: string) => void;
+  onSubmit: (
+    text: string,
+    attachments?: PromptAttachment[],
+    intent?: AgentMessageIntent,
+  ) => void;
   onCancel: () => void;
 }) {
   const [text, setText] = useState("");
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
+  const [dismissedSlashText, setDismissedSlashText] = useState<string | null>(null);
+  const [selectedSkillCommand, setSelectedSkillCommand] =
+    useState<AcpAvailableCommand | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const settings = useSettings();
   const { data: agents = [] } = useQuery({
@@ -1410,6 +1440,40 @@ function Composer({
     modelProfiles.find((profile) => profile.id === pickedModelProfileId) ??
     modelProfiles[0] ??
     ACP_MODEL_PROFILE_CATALOG[0]!;
+  const staticAgentIds = agentPickerAgentIds?.filter(Boolean) ?? [];
+  const visibleStaticAgentIds = staticAgentIds.slice(0, 3);
+  const modelConfig = useMemo(
+    () => findModelConfigOption(sessionConfigOptions),
+    [sessionConfigOptions],
+  );
+  const defaultRunningAction = running
+    ? describeRunningMessageAction({
+        agentId: currentAgentId,
+        intent: "submit",
+        transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+      })
+    : null;
+  const primaryIntent: AgentMessageIntent =
+    running && defaultRunningAction?.disabled ? "queue" : "submit";
+  const primaryRunningAction = running
+    ? describeRunningMessageAction({
+        agentId: currentAgentId,
+        intent: primaryIntent,
+        transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+      })
+    : null;
+  const offerExplicitSteer =
+    running &&
+    shouldOfferExplicitSteer(currentAgentId) &&
+    defaultRunningAction?.decision.requestedDelivery !== "llm_boundary";
+  const steerRunningAction =
+    offerExplicitSteer
+      ? describeRunningMessageAction({
+          agentId: currentAgentId,
+          intent: "steer",
+          transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+        })
+      : null;
 
   useEffect(() => {
     if (modelProfiles.some((profile) => profile.id === pickedModelProfileId)) return;
@@ -1424,20 +1488,46 @@ function Composer({
     }
   };
 
+  const pickAttachments = async () => {
+    if (disabled) return;
+    try {
+      const files = await window.backchat.uiFsPickFiles({
+        defaultPath: attachmentDefaultPath,
+      });
+      if (files.length === 0) return;
+      setAttachments((prev) => mergeAttachments(prev, files));
+      requestAnimationFrame(() => taRef.current?.focus());
+    } catch (e) {
+      toast.error("Couldn't attach files", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
   useEffect(() => {
-    if (!disabled && !running) taRef.current?.focus();
-  }, [disabled, running]);
+    if (!disabled) taRef.current?.focus();
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!selectedSkillCommand || !availableCommands) return;
+    if (!availableCommands.some((cmd) => cmd.name === selectedSkillCommand.name)) {
+      setSelectedSkillCommand(null);
+    }
+  }, [availableCommands, selectedSkillCommand]);
 
   // Slash command picker. Active when the textarea contents are a
   // single `/foo`-shaped token with no whitespace yet — once the user
   // types a space, they're providing the command's argument and the
-  // picker steps out of the way. Filtering is case-insensitive prefix
-  // match against `command.name`.
-  const slashQuery = useSlashQuery(text);
+  // picker steps out of the way. Filtering is case-insensitive and
+  // accepts prefixes, substrings, and compact abbreviations.
+  const rawSlashQuery = useSlashQuery(text);
+  const slashQuery = rawSlashQuery != null && dismissedSlashText !== text
+    ? rawSlashQuery
+    : null;
   const filteredCommands = useMemo(() => {
     if (slashQuery == null || !availableCommands?.length) return null;
     const q = slashQuery.toLowerCase();
-    return availableCommands.filter((c) => c.name.toLowerCase().startsWith(q));
+    return availableCommands.filter((c) => matchesSlashCommand(c.name, q));
   }, [slashQuery, availableCommands]);
   const showPicker = !!filteredCommands && filteredCommands.length > 0;
   const [pickerIndex, setPickerIndex] = useState(0);
@@ -1448,14 +1538,84 @@ function Composer({
     setPickerIndex(0);
   }, [slashQuery, filteredCommands?.length]);
 
-  const applyCommand = (cmd: AcpAvailableCommand) => {
+  const insertCommand = (cmd: AcpAvailableCommand) => {
     // Replace whatever `/foo` token the user was typing with `/name `
     // (trailing space) so the next keystroke goes into the argument.
     // If the command takes no argument, the trailing space is harmless
     // — agents trim it.
     setText(`/${cmd.name} `);
+    setDismissedSlashText(null);
     requestAnimationFrame(() => taRef.current?.focus());
   };
+
+  const pickCommand = (cmd: AcpAvailableCommand) => {
+    if (isSkillSlashCommand(cmd)) {
+      setSelectedSkillCommand(cmd);
+      setText("");
+      setDismissedSlashText(null);
+      requestAnimationFrame(() => taRef.current?.focus());
+      return;
+    }
+    if (cmd.input) {
+      insertCommand(cmd);
+      return;
+    }
+    const commandText = `/${cmd.name}`;
+    if (!canSubmitComposer({
+      text: commandText,
+      disabled,
+      running,
+      actionDisabled: primaryRunningAction?.disabled,
+    })) return;
+    onSubmit(commandText, undefined, primaryIntent);
+    setText("");
+    setDismissedSlashText(null);
+  };
+
+  const buildSubmitText = () => {
+    const body = text.trim();
+    if (!selectedSkillCommand) return body;
+    const commandText = `/${selectedSkillCommand.name}`;
+    return body ? `${commandText} ${body}` : commandText;
+  };
+
+  const submitComposer = (intent: AgentMessageIntent = primaryIntent) => {
+    const t = buildSubmitText();
+    const action = running
+      ? describeRunningMessageAction({
+          agentId: currentAgentId,
+          intent,
+          transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+        })
+      : null;
+    if (!canSubmitComposer({
+      text: t,
+      attachments,
+      disabled,
+      running,
+      actionDisabled: action?.disabled,
+    })) return;
+    onSubmit(t, attachments, intent);
+    setText("");
+    setAttachments([]);
+    setSelectedSkillCommand(null);
+    setDismissedSlashText(null);
+  };
+
+  const canSubmitNow = canSubmitComposer({
+    text: buildSubmitText(),
+    attachments,
+    disabled,
+    running,
+    actionDisabled: primaryRunningAction?.disabled,
+  });
+  const canSteerNow = canSubmitComposer({
+    text: buildSubmitText(),
+    attachments,
+    disabled,
+    running,
+    actionDisabled: steerRunningAction?.disabled,
+  });
 
   return (
     <div
@@ -1477,71 +1637,100 @@ function Composer({
         "transition-shadow",
       )}
     >
-      <textarea
-        ref={taRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          // Slash picker has first dibs on arrow / enter / escape. Only
-          // when the picker is open AND has at least one match — a stale
-          // "/" with no candidates falls through so the user can still
-          // submit it as literal text if they want.
-          if (showPicker && filteredCommands) {
-            if (e.key === "ArrowDown") {
+      <div className="flex min-h-[60px] w-full flex-col items-start gap-2 px-1">
+        {selectedSkillCommand && (
+          <SkillCommandChip
+            command={selectedSkillCommand}
+            onRemove={() => {
+              setSelectedSkillCommand(null);
+              requestAnimationFrame(() => taRef.current?.focus());
+            }}
+          />
+        )}
+        {attachments.length > 0 && (
+          <AttachmentPreviewStrip
+            attachments={attachments}
+            onRemove={(id) => {
+              setAttachments((prev) => prev.filter((a) => a.id !== id));
+              requestAnimationFrame(() => taRef.current?.focus());
+            }}
+          />
+        )}
+        <textarea
+          ref={taRef}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setDismissedSlashText(null);
+          }}
+          onKeyDown={(e) => {
+            if (selectedSkillCommand && e.key === "Backspace" && text.length === 0) {
               e.preventDefault();
-              setPickerIndex((i) => (i + 1) % filteredCommands.length);
+              setSelectedSkillCommand(null);
               return;
             }
-            if (e.key === "ArrowUp") {
+            if (attachments.length > 0 && e.key === "Backspace" && text.length === 0) {
               e.preventDefault();
-              setPickerIndex(
-                (i) => (i - 1 + filteredCommands.length) % filteredCommands.length,
-              );
+              setAttachments((prev) => prev.slice(0, -1));
               return;
+            }
+            // Slash picker has first dibs on arrow / enter / escape. Only
+            // when the picker is open AND has at least one match — a stale
+            // "/" with no candidates falls through so the user can still
+            // submit it as literal text if they want.
+            if (showPicker && filteredCommands) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setPickerIndex((i) => (i + 1) % filteredCommands.length);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setPickerIndex(
+                  (i) => (i - 1 + filteredCommands.length) % filteredCommands.length,
+                );
+                return;
+              }
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                const cmd = filteredCommands[pickerIndex];
+                if (cmd) {
+                  e.preventDefault();
+                  pickCommand(cmd);
+                  return;
+                }
+              }
+              if (e.key === "Tab") {
+                const cmd = filteredCommands[pickerIndex];
+                if (cmd) {
+                  e.preventDefault();
+                  pickCommand(cmd);
+                  return;
+                }
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setDismissedSlashText(text);
+                return;
+              }
             }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              const cmd = filteredCommands[pickerIndex];
-              if (cmd) {
-                e.preventDefault();
-                applyCommand(cmd);
-                return;
-              }
-            }
-            if (e.key === "Tab") {
-              const cmd = filteredCommands[pickerIndex];
-              if (cmd) {
-                e.preventDefault();
-                applyCommand(cmd);
-                return;
-              }
-            }
-            if (e.key === "Escape") {
               e.preventDefault();
-              // Cheapest dismiss — append a space so slashQuery() returns
-              // null next render. Caret stays at end.
-              setText((t) => `${t} `);
-              return;
+              submitComposer();
             }
-          }
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            const t = text.trim();
-            if (!t || disabled || running) return;
-            onSubmit(t);
-            setText("");
-          }
-        }}
-        placeholder={placeholder}
-        disabled={disabled || !!running}
-        rows={1}
-        className={cn(
-          // Bigger min-h so the empty composer has presence (Codex / Claude
-          // Desktop both run ~3 lines of breathing in the textarea row).
-          "min-h-[60px] max-h-[240px] w-full resize-none bg-transparent px-1 text-sm leading-7 text-fg outline-none",
-          "placeholder:text-fg-subtle",
-          "[field-sizing:content]",
-        )}
-      />
+          }}
+          placeholder={selectedSkillCommand ? "Add instructions…" : placeholder}
+          disabled={disabled}
+          rows={1}
+          className={cn(
+            // Bigger min-h so the empty composer has presence (Codex / Claude
+            // Desktop both run ~3 lines of breathing in the textarea row).
+            selectedSkillCommand ? "min-h-[28px]" : "min-h-[60px]",
+            "max-h-[240px] w-full resize-none bg-transparent text-sm leading-7 text-fg outline-none",
+            "placeholder:text-fg-subtle",
+            "[field-sizing:content]",
+          )}
+        />
+      </div>
 
       {/* Pending permission / fs-write ask — floats above the composer's
           top edge, exact same anchor as the slash picker. The two are
@@ -1575,7 +1764,7 @@ function Composer({
               role="option"
               aria-selected={i === pickerIndex}
               onMouseEnter={() => setPickerIndex(i)}
-              onClick={() => applyCommand(cmd)}
+              onClick={() => pickCommand(cmd)}
               className={cn(
                 "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs",
                 i === pickerIndex
@@ -1608,33 +1797,81 @@ function Composer({
         <div className="flex items-center gap-1">
           <button
             type="button"
-            aria-label="Attach (coming soon)"
-            disabled
+            aria-label="Attach files"
+            title="Attach files"
+            onClick={() => void pickAttachments()}
+            disabled={disabled}
             className={cn(
               "inline-flex size-8 shrink-0 items-center justify-center rounded-md",
-              "text-fg-muted opacity-60 cursor-not-allowed",
+              "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+              "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+              "transition-colors",
             )}
           >
             <PlusIcon className="size-4" />
           </button>
           <PermissionModeChip disabled={!!running} />
+          <ModelConfigChip
+            option={modelConfig}
+            onChange={(configId, value) => onSetConfigOption?.(configId, value)}
+          />
         </div>
 
         <div className="flex items-center gap-2">
-          <SessionRunChip
-            disabled={!!running}
-            locked={!!lockedAgentId || agentLocked}
-            agents={detectedAgents}
-            currentAgentId={currentAgentId}
-            currentAgentLabel={currentAgent?.label}
-            modelProfiles={modelProfiles}
-            currentModelProfileId={currentModelProfile.id}
-            currentModelProfileLabel={currentModelProfile.label}
-            onPickAgent={pickAgent}
-            onPickModelProfile={onPickModelProfile}
-          />
+          {/* Agent picker — Radix DropdownMenu so the popover matches
+              the app's chrome (not macOS-native blue-highlight system
+              menu). Trigger shows the current agent label + chevron;
+              menu lists detected agents with a check on the active one. */}
+          {agentPickerLabel ? (
+            <span
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-fg-muted",
+                "cursor-default select-none",
+              )}
+              aria-label={agentPickerLabel}
+              title={agentPickerLabel}
+            >
+              {visibleStaticAgentIds.length > 0 && (
+                <span className="flex items-center -space-x-1">
+                  {visibleStaticAgentIds.map((agentId, index) => (
+                    <span
+                      key={`${agentId}-${index}`}
+                      className={cn(
+                        "inline-flex size-5 items-center justify-center rounded-full bg-bg text-fg-muted ring-1 ring-border/80",
+                        "shadow-[0_1px_1px_rgb(0_0_0/0.04)]",
+                      )}
+                    >
+                      <AgentIcon
+                        agentId={agentId}
+                        className="size-3.5 text-fg-muted"
+                      />
+                    </span>
+                  ))}
+                  {staticAgentIds.length > visibleStaticAgentIds.length && (
+                    <span className="inline-flex size-5 items-center justify-center rounded-full bg-bg text-[10px] font-medium text-fg-muted ring-1 ring-border/80">
+                      +{staticAgentIds.length - visibleStaticAgentIds.length}
+                    </span>
+                  )}
+                </span>
+              )}
+              <span>{agentPickerLabel}</span>
+            </span>
+          ) : (
+            <SessionRunChip
+              disabled={!!running}
+              locked={!!lockedAgentId || agentLocked}
+              agents={detectedAgents}
+              currentAgentId={currentAgentId}
+              currentAgentLabel={currentAgent?.label}
+              modelProfiles={modelProfiles}
+              currentModelProfileId={currentModelProfile.id}
+              currentModelProfileLabel={currentModelProfile.label}
+              onPickAgent={pickAgent}
+              onPickModelProfile={onPickModelProfile}
+            />
+          )}
 
-          {running ? (
+          {running && (
             <button
               type="button"
               onClick={onCancel}
@@ -1648,18 +1885,16 @@ function Composer({
             >
               <SquareIcon className="size-3.5" />
             </button>
-          ) : (
+          )}
+          {running && steerRunningAction && (
             <button
               type="button"
               onClick={() => {
-                const t = text.trim();
-                if (!t) return;
-                onSubmit(t);
-                setText("");
+                submitComposer("steer");
               }}
-              disabled={disabled || !text.trim()}
-              aria-label="Send (Enter)"
-              title="Send (↵)"
+              disabled={!canSteerNow}
+              aria-label={`${steerRunningAction.label} (Steer)`}
+              title={steerRunningAction.title}
               className={cn(
                 "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2",
                 "text-fg-subtle hover:text-fg hover:bg-bg-surface",
@@ -1667,9 +1902,26 @@ function Composer({
                 "transition-colors",
               )}
             >
-              <CornerDownLeftIcon className="size-4" />
+              <ZapIcon className="size-4" />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              submitComposer(primaryIntent);
+            }}
+            disabled={!canSubmitNow}
+            aria-label={running ? primaryRunningAction?.ariaLabel : "Send (Enter)"}
+            title={running ? primaryRunningAction?.title : "Send (↵)"}
+            className={cn(
+              "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2",
+              "text-fg-subtle hover:text-fg hover:bg-bg-surface",
+              "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+              "transition-colors",
+            )}
+          >
+            <CornerDownLeftIcon className="size-4" />
+          </button>
         </div>
       </div>
     </div>
@@ -1845,6 +2097,191 @@ function SessionRunItem({
       </span>
       {active && <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-fg-muted" />}
     </DropdownMenuItem>
+  );
+}
+
+export function canSubmitComposer({
+  text,
+  attachments,
+  disabled,
+  actionDisabled,
+}: {
+  text: string;
+  attachments?: PromptAttachment[];
+  disabled: boolean;
+  running?: boolean;
+  actionDisabled?: boolean;
+}): boolean {
+  return (
+    !disabled &&
+    !actionDisabled &&
+    (text.trim().length > 0 || (attachments?.length ?? 0) > 0)
+  );
+}
+
+function AttachmentPreviewStrip({
+  attachments,
+  onRemove,
+}: {
+  attachments: PromptAttachment[];
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div
+      className="flex w-full flex-wrap items-center gap-2"
+      aria-label="Attachments"
+    >
+      {attachments.map((a) => {
+        const isPreviewableImage = a.kind === "image" && a.data && a.mimeType;
+        if (isPreviewableImage) {
+          return (
+            <div
+              key={a.id}
+              className="group/attachment relative size-11 overflow-hidden rounded-md border border-border/50 bg-bg/50"
+              title={a.name}
+            >
+              <img
+                src={`data:${a.mimeType};base64,${a.data}`}
+                alt={a.name}
+                className="size-full object-cover"
+              />
+              <button
+                type="button"
+                aria-label={`Remove ${a.name}`}
+                onClick={() => onRemove(a.id)}
+                className={cn(
+                  "absolute right-0.5 top-0.5 inline-flex size-5 items-center justify-center rounded",
+                  "bg-bg/90 text-fg-muted opacity-0 shadow-sm",
+                  "group-hover/attachment:opacity-100 focus:opacity-100 hover:text-fg",
+                  "transition-opacity",
+                )}
+              >
+                <XIcon className="size-3" />
+              </button>
+            </div>
+          );
+        }
+        return (
+          <div
+            key={a.id}
+            aria-label={a.name}
+            title={a.path}
+            className={cn(
+              "group/attachment relative size-11 overflow-hidden rounded-md border border-border/50",
+              "bg-bg/45 text-fg-muted",
+            )}
+          >
+            <div className="flex size-full flex-col items-center justify-center gap-0.5">
+              <FileTextIcon className="size-4 text-fg-subtle" />
+              <span className="max-w-full px-1 text-[9px] font-medium uppercase leading-none text-fg-subtle">
+                {attachmentExtensionLabel(a.name)}
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-label={`Remove ${a.name}`}
+              onClick={() => onRemove(a.id)}
+              className={cn(
+                "absolute right-0.5 top-0.5 inline-flex size-5 items-center justify-center rounded",
+                "bg-bg/90 text-fg-muted opacity-0 shadow-sm",
+                "group-hover/attachment:opacity-100 focus:opacity-100 hover:text-fg",
+                "transition-opacity",
+              )}
+            >
+              <XIcon className="size-3" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function attachmentExtensionLabel(name: string): string {
+  const ext = name.split(".").pop();
+  if (!ext || ext === name) return "FILE";
+  return ext.slice(0, 4);
+}
+
+function SkillCommandChip({
+  command,
+  onRemove,
+}: {
+  command: AcpAvailableCommand;
+  onRemove: () => void;
+}) {
+  const label = skillCommandLabel(command);
+  return (
+    <button
+      type="button"
+      aria-label={`Skill ${label}`}
+      title="Remove skill"
+      onClick={onRemove}
+      className={cn(
+        "inline-flex max-w-full items-center gap-2 rounded-md px-0 py-1",
+        "bg-transparent text-info",
+        "hover:text-info/85 focus:outline-none focus:ring-2 focus:ring-ring/40",
+        "transition-colors",
+      )}
+    >
+      <BoxIcon className="size-4 shrink-0" />
+      <span className="min-w-0 truncate text-sm font-medium">{label}</span>
+    </button>
+  );
+}
+
+function mergeAttachments(
+  prev: PromptAttachment[],
+  picked: PromptAttachment[],
+): PromptAttachment[] {
+  const byPathOrId = new Map<string, PromptAttachment>();
+  for (const a of prev) byPathOrId.set(a.path || a.id, a);
+  for (const a of picked) byPathOrId.set(a.path || a.id, a);
+  return [...byPathOrId.values()].slice(0, 10);
+}
+
+function ModelConfigChip({
+  option,
+  onChange,
+}: {
+  option?: SessionConfigOption & { type: "select" };
+  onChange: (configId: string, value: string) => void | Promise<void>;
+}) {
+  if (!option) return null;
+
+  const values = flattenConfigSelectOptions(option);
+  const label = configOptionCurrentLabel(option);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={cn(
+          "inline-flex h-8 max-w-[170px] items-center gap-1 rounded-md px-2 text-xs text-fg-muted",
+          "hover:bg-bg-surface/60 hover:text-fg",
+          "focus:outline-none focus:bg-bg-surface/60",
+          "transition-colors",
+        )}
+        title={option.name}
+      >
+        <BrainIcon className="size-3.5 shrink-0 text-fg-subtle" />
+        <span className="min-w-0 truncate">{label}</span>
+        <ChevronDownIcon className="size-3.5 shrink-0 text-fg-subtle" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={6} className="min-w-[220px]">
+        {values.map((value) => (
+          <DropdownMenuItem
+            key={value.value}
+            onSelect={() => void onChange(option.id, value.value)}
+            className="flex items-center gap-2 text-xs"
+          >
+            <span className="min-w-0 flex-1 truncate">{value.name}</span>
+            {value.value === option.currentValue && (
+              <CheckIcon className="size-3.5 text-fg-muted" />
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -2310,6 +2747,20 @@ const MODE_META: Record<
   },
 };
 
+function derivePromptDisplayText(
+  text: string,
+  attachments: PromptAttachment[],
+): string {
+  if (attachments.length === 0) return text;
+  if (text.trim().length > 0) return text;
+  if (attachments.length === 1) {
+    const a = attachments[0]!;
+    return `[Attached ${a.kind}: ${a.name}]`;
+  }
+  const names = attachments.map((a) => a.name).join(", ");
+  return `[Attached ${attachments.length} files: ${names}]`;
+}
+
 /** Derive a sidebar label from the first prompt. Truncate at the first
  *  newline if any, then hard-cap at 40 chars + ellipsis. Empty prompts
  *  fall back to a short timestamp so the row at least has SOME identity
@@ -2340,6 +2791,52 @@ function useSlashQuery(text: string): string | null {
     const m = /^\/([^\s]*)$/.exec(text);
     return m ? (m[1] ?? "") : null;
   }, [text]);
+}
+
+function matchesSlashCommand(commandName: string, query: string): boolean {
+  if (!query) return true;
+  const name = commandName.toLowerCase();
+  const q = query.toLowerCase();
+  if (name.startsWith(q) || name.includes(q)) return true;
+
+  let cursor = 0;
+  for (const ch of q) {
+    cursor = name.indexOf(ch, cursor);
+    if (cursor === -1) return false;
+    cursor += 1;
+  }
+  return true;
+}
+
+function isSkillSlashCommand(command: AcpAvailableCommand): boolean {
+  const metadata = command.metadata ?? {};
+  const markers = [
+    command.kind,
+    command.type,
+    command.category,
+    command.source,
+    metadata["kind"],
+    metadata["type"],
+    metadata["category"],
+    metadata["source"],
+  ];
+  if (
+    markers.some((value) => {
+      if (typeof value !== "string") return false;
+      const normalized = value.toLowerCase();
+      return normalized === "skill" || normalized === "skills";
+    })
+  ) {
+    return true;
+  }
+
+  const description = command.description?.trim().toLowerCase() ?? "";
+  return /^\[?skill[:\]\s-]/.test(description);
+}
+
+function skillCommandLabel(command: AcpAvailableCommand): string {
+  const name = command.name.replace(/^skill[:/]/i, "");
+  return capitalize(name);
 }
 
 /** React context that supplies a base directory for resolving

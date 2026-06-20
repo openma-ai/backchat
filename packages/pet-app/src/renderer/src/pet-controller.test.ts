@@ -47,6 +47,12 @@ describe("standalone pet controller", () => {
       mood: "awake",
       label: "hi",
     });
+    expect(controller.dispatchEvent("pet.edge.peek").at(-1)).toMatchObject({
+      motion: "review",
+      mood: "focused",
+      priority: "low",
+      label: "peek",
+    });
     expect(controller.dispatchEvent("session.failed", { label: "Build failed" }).at(-1)).toMatchObject({
       motion: "warn",
       mood: "worried",

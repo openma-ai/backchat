@@ -2,8 +2,8 @@
  * PairChatView — multi-agent grid chat.
  *
  * Each pair member is rendered as a column. The user types ONCE in
- * the bottom composer; the prompt fans out to every member via
- * pairPrompt. Each column reuses the existing TurnBlock renderer to
+ * the bottom composer; the prompt fans out to every member via the
+ * normal sessionPrompt API. Each column reuses the existing TurnBlock renderer to
  * stream that member's events independently.
  *
  * The grid scales:
@@ -15,14 +15,16 @@
  * every member completes.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams } from "@tanstack/react-router";
-import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
-import { SendIcon } from "lucide-react";
-import { TurnBlock, MarkdownCwdProvider } from "./ChatView";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import type { PromptAttachment } from "@shared/session-events.js";
+import { Composer, TurnBlock, MarkdownCwdProvider } from "./ChatView";
 import { cn } from "@/lib/utils";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
 import {
   sessionStore,
   useSessionStore,
@@ -30,6 +32,13 @@ import {
   type SessionRow,
   type PairRow,
 } from "@/lib/session-store";
+import {
+  CHAT_COMPOSER_FRAME_CLASS,
+  CHAT_TURN_FRAME_CLASS,
+} from "@/lib/chat-layout";
+
+const PAIR_HISTORY_LOADED = new Set<string>();
+const PAIR_PREWARMED = new Set<string>();
 
 export function PairChatView() {
   const params = useParams({ strict: false }) as { pairId?: string };
@@ -45,6 +54,35 @@ export function PairChatView() {
       [pair?.id, pair?.members.join("|")],
     ),
   );
+  const memberLifecycleKey = members
+    .map((m) => `${m.id}:${m.status}:${m.acp_session_id}:${m.activeTurnId ?? ""}`)
+    .join("|");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    for (const m of members) {
+      if (!PAIR_HISTORY_LOADED.has(m.id)) {
+        PAIR_HISTORY_LOADED.add(m.id);
+        void window.backchat
+          .sessionsLoadHistory(m.id)
+          .then((rows) => sessionStore.replayHistory(m.id, rows));
+      }
+      if (
+        !PAIR_PREWARMED.has(m.id) &&
+        m.status === "ready" &&
+        !m.activeTurnId &&
+        m.acp_session_id
+      ) {
+        PAIR_PREWARMED.add(m.id);
+        void window.backchat.sessionStart({
+          session_id: m.id,
+          agent_id: m.agent_id,
+          cwd: m.cwd || undefined,
+          resume: { acp_session_id: m.acp_session_id },
+        });
+      }
+    }
+  }, [memberLifecycleKey, members]);
 
   if (!pair) {
     return (
@@ -55,9 +93,6 @@ export function PairChatView() {
   }
 
   const columnCount = pair.members.length;
-  // 2 → two cols. 3-4 → 2x2 grid. Above 4 isn't supported by the
-  // picker, but if a pair somehow has more, falls through to a wider
-  // grid that wraps.
   const gridClass =
     columnCount <= 2
       ? "grid-cols-2"
@@ -66,10 +101,14 @@ export function PairChatView() {
         : "grid-cols-3";
 
   return (
-    <div className="flex h-full flex-col">
-      <div className={cn("grid flex-1 min-h-0 gap-2 p-2", gridClass)}>
-        {members.map((m) => (
-          <PairColumn key={m.id} session={m} />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className={cn("grid min-h-0 flex-1", gridClass)}>
+        {members.map((m, index) => (
+          <PairColumn
+            key={m.id}
+            session={m}
+            showLeftDivider={index > 0}
+          />
         ))}
         {members.length === 0 && (
           <div className="col-span-full flex items-center justify-center text-sm text-fg-muted">
@@ -82,117 +121,167 @@ export function PairChatView() {
   );
 }
 
-/** One column of the pair grid — heading + scrollable transcript for
- *  a single member session. Reuses TurnBlock so streaming, tool rows,
- *  image hoist, etc. all work identically to single-chat. */
-function PairColumn({ session }: { session: SessionRow }) {
+/** One column of the pair grid. Reuses the ordinary chat transcript
+ *  surface; the AppShell topbar owns the pane logo marks. */
+function PairColumn({
+  session,
+  showLeftDivider,
+}: {
+  session: SessionRow;
+  showLeftDivider: boolean;
+}) {
   const turns = useSessionStore(
     useMemo(() => selectTurnsFor(session.id), [session.id]),
   );
 
   return (
-    <div className="flex min-h-0 flex-col rounded-lg border border-border/60 bg-bg/40">
-      <div className="flex items-center gap-2 border-b border-border/40 px-3 py-1.5 text-xs">
-        <span className="font-medium text-fg">{session.agent_id}</span>
-        <span className="text-fg-subtle">·</span>
-        <span className={cn(
-          "text-fg-subtle",
-          session.status === "running" && "text-fg-muted",
-          session.status === "errored" && "text-danger",
-        )}>
-          {session.status}
-        </span>
-      </div>
-      <MarkdownCwdProvider cwd={session.cwd}>
-        <StickToBottom className="min-h-0 flex-1 px-3 py-2" initial="smooth">
-          <StickToBottom.Content className="space-y-3">
-            {turns.length === 0 && session.status !== "running" && (
-              <p className="text-[12px] text-fg-subtle">尚无消息</p>
-            )}
-            {turns.map((t) => (
-              <TurnBlock key={t.id} turn={t} />
-            ))}
-          </StickToBottom.Content>
-        </StickToBottom>
-      </MarkdownCwdProvider>
-    </div>
+    <section
+      className={cn(
+        "flex min-h-0 min-w-0 flex-col",
+        showLeftDivider && "border-l border-border/60",
+      )}
+      aria-label="Pair chat pane"
+    >
+      <Conversation key={session.id} className="min-h-0 flex-1">
+        <ConversationContent
+          className={cn(
+            "w-full px-0 py-6",
+            "flex min-h-full flex-col",
+          )}
+        >
+          <MarkdownCwdProvider cwd={session.cwd}>
+            <div className={CHAT_TURN_FRAME_CLASS} data-chat-column="turns">
+              {turns.length === 0 && session.status !== "running" && (
+                <div className="flex min-h-[160px] items-center justify-center text-[12px] text-fg-subtle">
+                  尚无消息
+                </div>
+              )}
+              {turns.map((t) => (
+                <TurnBlock key={t.id} turn={t} />
+              ))}
+            </div>
+          </MarkdownCwdProvider>
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+    </section>
   );
 }
 
 /** Shared composer that fans out a prompt to every member of a pair.
  *  Locked while any member is still streaming the current turn. */
 function PairComposer({ pair }: { pair: PairRow }) {
-  const [text, setText] = useState("");
-  const ref = useRef<HTMLTextAreaElement | null>(null);
   const locked = !!pair.activeTurnId;
+  const members = pair.members
+    .map((sid) => sessionStore.get(sid))
+    .filter((s): s is SessionRow => !!s);
+  const memberCount = members.length || pair.members.length;
+  const disabled = members.some(
+    (m) => m.status === "starting" || m.status === "errored",
+  );
 
-  const submit = async () => {
-    const t = text.trim();
-    if (!t || locked) return;
-    setText("");
-    // Members that are still draft need to spawn first. Fire startPair
-    // (idempotent — backend no-ops if pair is already alive) before
-    // promptPair so the first user prompt always lands on running
-    // ACP children.
-    const members = pair.members
-      .map((sid) => sessionStore.get(sid))
-      .filter((s): s is SessionRow => !!s);
-    const anyDraft = members.some((m) => m.status === "draft");
-    if (anyDraft) {
-      // Promote draft members so their status flips to "starting"
-      // (matches single-chat path).
-      for (const m of members) {
-        if (m.status === "draft") {
-          sessionStore.promoteDraft(m.id, m.agent_id, m.label);
-        }
+  const submit = async (
+    text: string,
+    attachments: PromptAttachment[] = [],
+  ) => {
+    const displayText = derivePairPromptDisplayText(text, attachments);
+    if (!displayText || locked) return;
+    // Pair chat is a renderer grouping over ordinary sessions. Start
+    // each member through the normal session API, then prompt each
+    // member with its own turn id so the shared turn store does not
+    // collide.
+    for (const m of members) {
+      if (m.status === "draft") {
+        sessionStore.promoteDraft(m.id, m.agent_id, m.label);
       }
-      await window.backchat.pairStart({
-        pair_id: pair.id,
-        members: members.map((m) => ({
+      if (m.status === "draft" || (m.status === "ready" && !m.activeTurnId)) {
+        const readyPromise = waitForReady(m.id, 10_000);
+        void window.backchat.sessionStart({
           session_id: m.id,
           agent_id: m.agent_id,
-        })),
-      });
+          cwd: m.cwd || undefined,
+          resume: m.acp_session_id
+            ? { acp_session_id: m.acp_session_id }
+            : undefined,
+        });
+        const ready = await readyPromise;
+        if (ready !== "ready") return;
+      }
     }
-    const turn_id = sessionStore.registerPairTurn(pair.id, t);
-    if (!turn_id) return;
-    await window.backchat.pairPrompt({ pair_id: pair.id, turn_id, text: t });
+    const targets = sessionStore.registerPairTurn(pair.id, displayText);
+    if (!targets) return;
+    await Promise.allSettled(
+      targets.map((target) =>
+        window.backchat.sessionPrompt({
+          session_id: target.session_id,
+          turn_id: target.turn_id,
+          text,
+          ...(attachments.length > 0 ? { attachments } : {}),
+        }),
+      ),
+    );
   };
 
   return (
-    <div className="border-t border-border/40 bg-bg-surface/40 p-3">
-      <div className="flex items-end gap-2">
-        <Textarea
-          ref={ref}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void submit();
-            }
-          }}
-          placeholder={
-            locked ? "等所有 agent 完成…" : `同时发送给 ${pair.members.length} 个 agent…`
+    <div
+      data-chat-column="composer"
+      className={cn(CHAT_COMPOSER_FRAME_CLASS, "space-y-2 pb-4")}
+    >
+      <Composer
+        agentPickerLabel={`${memberCount} agents`}
+        agentPickerAgentIds={members.map((m) => m.agent_id)}
+        disabled={disabled}
+        running={locked}
+        placeholder={
+          locked ? "等所有 agent 完成…" : `同时发送给 ${memberCount} 个 agent…`
+        }
+        attachmentDefaultPath={members.find((m) => m.cwd)?.cwd}
+        onSubmit={(text, attachments) => void submit(text, attachments)}
+        onCancel={() => {
+          if (!pair.memberTurnIds) return;
+          for (const [session_id, turn_id] of Object.entries(pair.memberTurnIds)) {
+            void window.backchat.sessionCancel({ session_id, turn_id });
           }
-          disabled={locked}
-          rows={2}
-          className="flex-1 resize-none"
-        />
-        <Button
-          type="button"
-          size="icon"
-          onClick={() => void submit()}
-          disabled={locked || !text.trim()}
-        >
-          <SendIcon className="size-4" />
-        </Button>
-      </div>
+        }}
+      />
     </div>
   );
 }
 
-// Wire useStickToBottomContext to avoid the unused import warning —
-// the StickToBottom component owns its own context internally, we
-// don't need to read it at this level.
-void useStickToBottomContext;
+function derivePairPromptDisplayText(
+  text: string,
+  attachments: PromptAttachment[],
+): string {
+  if (attachments.length === 0) return text.trim();
+  if (text.trim().length > 0) return text;
+  if (attachments.length === 1) {
+    const a = attachments[0]!;
+    return `[Attached ${a.kind}: ${a.name}]`;
+  }
+  const names = attachments.map((a) => a.name).join(", ");
+  return `[Attached ${attachments.length} files: ${names}]`;
+}
+
+function waitForReady(
+  sessionId: string,
+  ms: number,
+): Promise<"ready" | "error" | "timeout"> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      off();
+      resolve("timeout");
+    }, ms);
+    const off = window.backchat.onSessionEvent((e) => {
+      if (e.session_id !== sessionId) return;
+      if (e.type === "session.ready") {
+        clearTimeout(timer);
+        off();
+        resolve("ready");
+      } else if (e.type === "session.error") {
+        clearTimeout(timer);
+        off();
+        resolve("error");
+      }
+    });
+  });
+}

@@ -27,15 +27,28 @@
  */
 
 import { spawn as childSpawn } from "node:child_process";
-import { AcpRuntimeImpl, type AcpSession, type ClientCallbacks } from "@open-managed-agents-desktop/acp";
+import { pathToFileURL } from "node:url";
+import {
+  AcpRuntimeImpl,
+  type AcpSession,
+  type ClientCallbacks,
+  type ContentBlock,
+  type PromptCapabilities,
+} from "@open-managed-agents-desktop/acp";
 import { NodeSpawner } from "@open-managed-agents-desktop/acp/node-spawner";
 import { resolveKnownAgent } from "@open-managed-agents-desktop/acp/registry";
 import { ensureLatestAcpBinary } from "@open-managed-agents-desktop/acp/binary-update";
-import type { SessionEventOut, SessionStartParams, SessionPromptParams } from "../shared/session-events.js";
+import type {
+  PromptAttachment,
+  SessionConfigOption,
+  SessionEventOut,
+  SessionPromptParams,
+  SessionSetConfigOptionParams,
+  SessionStartParams,
+} from "../shared/session-events.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
 import {
   appendEvent,
-  appendEventsTx,
   archiveSession,
   setSessionTitleIfEmpty,
   touchSession,
@@ -52,6 +65,14 @@ interface ActiveSession {
   /** Live turns keyed by turn_id. abort() cancels the ACP request and unwinds
    *  the prompt() async iterator. */
   turns: Map<string, AbortController>;
+  promptQueue: QueuedPrompt[];
+  promptQueueActive: boolean;
+}
+
+interface QueuedPrompt {
+  params: SessionPromptParams;
+  resolve: () => void;
+  reject: (err: unknown) => void;
 }
 
 export interface SessionManagerDeps {
@@ -311,6 +332,8 @@ export class SessionManager {
         agentId: agent.id,
         cwd: sessionCwd,
         turns: new Map(),
+        promptQueue: [],
+        promptQueueActive: false,
       });
       // Persist the session shell — title stays empty for now, the renderer
       // can later derive it from the first user prompt or let the user
@@ -330,6 +353,7 @@ export class SessionManager {
         agent_id: agent.id,
         cwd: sessionCwd,
       });
+      this.#sendConfigOptions(p.session_id, acpSession.configOptions);
     } catch (e) {
       this.#send({
         type: "session.error",
@@ -337,6 +361,15 @@ export class SessionManager {
         message: e instanceof Error ? e.message : String(e),
       });
     }
+  }
+
+  async setConfigOption(p: SessionSetConfigOptionParams): Promise<void> {
+    const sess = this.#sessions.get(p.session_id);
+    if (!sess) {
+      throw new Error("no such session");
+    }
+    const configOptions = await sess.acp.setConfigOption(p.config_id, p.value);
+    this.#sendConfigOptions(p.session_id, configOptions);
   }
 
   async prompt(p: SessionPromptParams): Promise<void> {
@@ -350,6 +383,45 @@ export class SessionManager {
       });
       return;
     }
+    const effectiveDelivery = p.effective_delivery ?? "turn_end";
+    if (effectiveDelivery !== "turn_end") {
+      this.#send({
+        type: "session.error",
+        session_id: p.session_id,
+        turn_id: p.turn_id,
+        message: `delivery ${effectiveDelivery} is not supported by this ACP transport`,
+      });
+      return;
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      sess.promptQueue.push({ params: p, resolve, reject });
+      void this.#drainPromptQueue(p.session_id, sess);
+    });
+  }
+
+  async #drainPromptQueue(session_id: string, sess: ActiveSession): Promise<void> {
+    if (sess.promptQueueActive) return;
+    sess.promptQueueActive = true;
+    try {
+      while (sess.promptQueue.length > 0 && this.#sessions.get(session_id) === sess) {
+        const item = sess.promptQueue.shift()!;
+        try {
+          await this.#runPromptNow(item.params, sess);
+          item.resolve();
+        } catch (e) {
+          item.reject(e);
+        }
+      }
+    } finally {
+      sess.promptQueueActive = false;
+      if (sess.promptQueue.length > 0 && this.#sessions.get(session_id) === sess) {
+        void this.#drainPromptQueue(session_id, sess);
+      }
+    }
+  }
+
+  async #runPromptNow(p: SessionPromptParams, sess: ActiveSession): Promise<void> {
     const ctrl = new AbortController();
     sess.turns.set(p.turn_id, ctrl);
     let promptErr: string | null = null;
@@ -369,19 +441,23 @@ export class SessionManager {
     // single-string view.
     let assistantText = "";
     let thoughtText = "";
-    const structuralEvents: Array<{ type: string; data: unknown }> = [];
     // Persist the user prompt up front — even if the turn errors halfway,
     // we want the user's message in the log for replay.
-    appendEvent(p.session_id, "user_prompt", { text: p.text });
+    const displayText = derivePromptDisplayText(p.text, p.attachments);
+    appendEvent(p.session_id, "user_prompt", {
+      text: displayText,
+      attachments: stripAttachmentData(p.attachments),
+    });
     // First prompt seeds the session title — without this, sidebar rows
     // for reload-restored sessions fall back to "agent · slug" and look
     // identical to each other. derivePromptLabel matches the renderer's
     // logic in ChatView.deriveLabel.
-    setSessionTitleIfEmpty(p.session_id, derivePromptLabel(p.text));
+    setSessionTitleIfEmpty(p.session_id, derivePromptLabel(displayText));
     touchSession(p.session_id);
 
     try {
-      for await (const ev of sess.acp.prompt(p.text, { abortSignal: ctrl.signal })) {
+      const promptBlocks = buildAcpPromptBlocks(p, sess.acp.promptCapabilities);
+      for await (const ev of sess.acp.prompt(promptBlocks, { abortSignal: ctrl.signal })) {
         if (ctrl.signal.aborted) break;
         const t = (ev as { type?: string } | null | undefined)?.type;
         if (t === "promptComplete") continue;
@@ -397,11 +473,11 @@ export class SessionManager {
             if (tag === "agent_message_chunk") assistantText += c.text;
             else thoughtText += c.text;
           }
-          // Persist the chunk verbatim — order with structural events
-          // is preserved by insertion into `structuralEvents` here.
-          structuralEvents.push({ type: tag, data: ev });
+          // Persist the chunk immediately. If the app exits mid-turn, replay
+          // still has every chunk that reached the main process.
+          appendEvent(p.session_id, tag, ev);
         } else if (tag) {
-          structuralEvents.push({ type: tag, data: ev });
+          appendEvent(p.session_id, tag, ev);
         }
         this.#send({
           type: "session.event",
@@ -429,14 +505,6 @@ export class SessionManager {
       });
     } finally {
       sess.turns.delete(p.turn_id);
-      // Single-shot end-of-turn persist. Chunks already encode their
-      // chronological place in `structuralEvents`, so we just flush
-      // them in arrival order. No more end-of-turn `agent_message`
-      // coalesced row — that was the source of the replay-order bug
-      // (tools first, big message blob last).
-      if (structuralEvents.length > 0) {
-        appendEventsTx(p.session_id, structuralEvents);
-      }
       // thoughtText/assistantText accumulators are still maintained for
       // any in-process consumer; nothing reads them right now but we
       // keep the strings so the variable surface stays meaningful.
@@ -488,6 +556,22 @@ export class SessionManager {
     this.#onSessionGone = handler;
   }
   #onSessionGone?: (sessionId: string) => void;
+
+  #sendConfigOptions(
+    session_id: string,
+    configOptions: readonly SessionConfigOption[],
+  ): void {
+    if (configOptions.length === 0) return;
+    this.#send({
+      type: "session.event",
+      session_id,
+      turn_id: "",
+      event: {
+        sessionUpdate: "config_option_update",
+        configOptions,
+      },
+    });
+  }
 }
 
 /**
@@ -512,6 +596,62 @@ function scrubAcpSpawnEnv(
   };
 }
 
+function buildAcpPromptBlocks(
+  p: SessionPromptParams,
+  capabilities: PromptCapabilities,
+): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  if (p.text.trim().length > 0) {
+    blocks.push({ type: "text", text: p.text });
+  }
+  for (const a of p.attachments ?? []) {
+    const uri = a.uri || pathToFileURL(a.path).href;
+    if (
+      a.kind === "image" &&
+      a.data &&
+      a.mimeType?.startsWith("image/") &&
+      capabilities.image === true
+    ) {
+      blocks.push({
+        type: "image",
+        data: a.data,
+        mimeType: a.mimeType,
+        uri,
+      });
+      continue;
+    }
+    blocks.push({
+      type: "resource_link",
+      uri,
+      name: a.name,
+      mimeType: a.mimeType ?? undefined,
+      size: a.size ?? undefined,
+    });
+  }
+  return blocks.length > 0 ? blocks : [{ type: "text", text: p.text }];
+}
+
+function stripAttachmentData(
+  attachments: PromptAttachment[] | undefined,
+): Array<Omit<PromptAttachment, "data">> | undefined {
+  if (!attachments?.length) return undefined;
+  return attachments.map(({ data: _data, ...rest }) => rest);
+}
+
+function derivePromptDisplayText(
+  text: string,
+  attachments: PromptAttachment[] | undefined,
+): string {
+  if (!attachments?.length) return text;
+  if (text.trim().length > 0) return text;
+  if (attachments.length === 1) {
+    const a = attachments[0]!;
+    return `[Attached ${a.kind}: ${a.name}]`;
+  }
+  const names = attachments.map((a) => a.name).join(", ");
+  return `[Attached ${attachments.length} files: ${names}]`;
+}
+
 /** Derive a sidebar label from the first prompt. Mirrors
  *  ChatView.deriveLabel in the renderer — keep in sync if you change
  *  the truncation length. */
@@ -522,4 +662,3 @@ function derivePromptLabel(text: string): string {
   if (firstLine.length <= 40) return firstLine;
   return firstLine.slice(0, 39).trimEnd() + "…";
 }
-

@@ -11,7 +11,7 @@
     "./binary-update": "./src/acp-binary-update.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.23.0",
+    "@agentclientprotocol/sdk": "^0.25.1",
     "tar": "^7.5.16",
     "zod": "^4.4.3"
   },

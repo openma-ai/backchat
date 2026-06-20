@@ -11,10 +11,13 @@
  */
 
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { userInfo } from "node:os";
-import { join } from "node:path";
+import { basename, extname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { InvokeChannel } from "../shared/ipc-channels.js";
+import type { PromptAttachment } from "../shared/session-events.js";
 
 interface DirEntry {
   name: string;
@@ -37,6 +40,80 @@ function trueHome(): string {
   return userInfo().homedir;
 }
 
+const MAX_INLINE_IMAGE_BYTES = 12 * 1024 * 1024;
+let testPickedFiles: PromptAttachment[] | null = null;
+
+function cloneAttachment(a: PromptAttachment): PromptAttachment {
+  return { ...a };
+}
+
+function guessMimeType(filePath: string): string {
+  switch (extname(filePath).toLowerCase()) {
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".svg":
+      return "image/svg+xml";
+    case ".avif":
+      return "image/avif";
+    case ".pdf":
+      return "application/pdf";
+    case ".md":
+    case ".markdown":
+      return "text/markdown";
+    case ".txt":
+      return "text/plain";
+    case ".json":
+      return "application/json";
+    case ".csv":
+      return "text/csv";
+    case ".html":
+    case ".htm":
+      return "text/html";
+    case ".css":
+      return "text/css";
+    case ".js":
+    case ".mjs":
+    case ".cjs":
+      return "text/javascript";
+    case ".ts":
+    case ".tsx":
+      return "text/typescript";
+    case ".py":
+      return "text/x-python";
+    case ".zip":
+      return "application/zip";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+async function toPromptAttachment(filePath: string): Promise<PromptAttachment | null> {
+  const s = await stat(filePath).catch(() => null);
+  if (!s?.isFile()) return null;
+  const mimeType = guessMimeType(filePath);
+  const isImage = mimeType.startsWith("image/");
+  const attachment: PromptAttachment = {
+    id: randomUUID(),
+    name: basename(filePath),
+    path: filePath,
+    uri: pathToFileURL(filePath).href,
+    kind: isImage ? "image" : "file",
+    mimeType,
+    size: s.size,
+  };
+  if (isImage && s.size <= MAX_INLINE_IMAGE_BYTES) {
+    attachment.data = (await readFile(filePath)).toString("base64");
+  }
+  return attachment;
+}
+
 ipcMain.handle(InvokeChannel.UiFsHome, (): string => trueHome());
 
 ipcMain.handle(
@@ -55,6 +132,41 @@ ipcMain.handle(
     return result.filePaths[0] ?? null;
   },
 );
+
+ipcMain.handle(
+  InvokeChannel.UiFsPickFiles,
+  async (e, p: { defaultPath?: string } = {}): Promise<PromptAttachment[]> => {
+    if (process.env["BACKCHAT_TEST_HOOKS"] === "1" && testPickedFiles) {
+      const files = testPickedFiles.map(cloneAttachment);
+      testPickedFiles = null;
+      return files;
+    }
+
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const result = await dialog.showOpenDialog(win ?? undefined!, {
+      properties: ["openFile", "multiSelections"],
+      defaultPath: p.defaultPath || trueHome(),
+      buttonLabel: "Attach",
+      filters: [
+        { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"] },
+        { name: "Documents", extensions: ["md", "txt", "pdf", "json", "csv", "html", "css", "js", "ts", "tsx", "py"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return [];
+    const rows = await Promise.all(result.filePaths.slice(0, 10).map(toPromptAttachment));
+    return rows.filter((row): row is PromptAttachment => row !== null);
+  },
+);
+
+if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
+  ipcMain.handle(
+    InvokeChannel.TestSetPickedFiles,
+    (_e, files: PromptAttachment[]): void => {
+      testPickedFiles = files.map(cloneAttachment);
+    },
+  );
+}
 
 ipcMain.handle(
   InvokeChannel.UiFsListDir,

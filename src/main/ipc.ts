@@ -8,10 +8,17 @@
 
 import { BrowserWindow, ipcMain } from "electron";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
-import type { AgentInfo, PersistedEventInfo, PersistedSessionInfo } from "../shared/api.js";
+import type {
+  AgentInfo,
+  PairSaveParams,
+  PersistedEventInfo,
+  PersistedPairInfo,
+  PersistedSessionInfo,
+} from "../shared/api.js";
 import type {
   SessionEventOut,
   SessionPromptParams,
+  SessionSetConfigOptionParams,
   SessionStartParams,
 } from "../shared/session-events.js";
 import type {
@@ -24,9 +31,12 @@ import { detectAll, getKnownAgents, loadRegistry } from "@open-managed-agents-de
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { archiveSession, deleteSession, listArchivedSessions, listSessions, loadHistory, pinSession, searchMessages, unarchiveSession, unpinSession } from "./sql-store.js";
+import { appendEventsTx, archiveSession, deleteSession, listArchivedSessions, listPairGroups, listSessions, loadHistory, pinSession, savePairGroup, searchMessages, setSessionTitleIfEmpty, unarchiveSession, unpinSession, upsertSession } from "./sql-store.js";
 import { removeSessionCwd } from "./session-cwd.js";
+import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
+import { openmaRoot } from "./storage-root.js";
 import { forwardSessionEventToPet } from "./pet-hook-bridge.js";
+import { join } from "node:path";
 import {
   cancelPendingFor,
   createTerminal,
@@ -58,6 +68,12 @@ interface RegisterDeps {
  * picks up via `sessionAnnounce`).
  */
 export function registerIpc(deps: RegisterDeps): SessionManager {
+  const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
+  const testPromptCalls: SessionPromptParams[] = [];
+  const testConfigOptionCalls: SessionSetConfigOptionParams[] = [];
+  const isSyntheticTestSession = (sessionId: string) =>
+    sessionId.startsWith("e2e-") || sessionId.startsWith("sess-test-");
+
   // Two outbound sinks: single-session events and pair events. Both
   // ultimately broadcast to all browser windows, just on distinct
   // channels so the renderer can wire them to independent reducers.
@@ -182,11 +198,61 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
       sessionManager.authenticateAgent(p.agentId, p.methodId),
   );
 
-  ipcMain.handle(InvokeChannel.SessionStart, (_e, p: SessionStartParams) =>
-    sessionManager.start(p),
-  );
-  ipcMain.handle(InvokeChannel.SessionPrompt, (_e, p: SessionPromptParams) =>
-    sessionManager.prompt(p),
+  ipcMain.handle(InvokeChannel.SessionStart, (_e, p: SessionStartParams) => {
+    if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
+      send({
+        type: "session.ready",
+        session_id: p.session_id,
+        acp_session_id: p.resume?.acp_session_id ?? `acp-${p.session_id}`,
+        agent_id: p.agent_id,
+        cwd: p.cwd ?? "/tmp/backchat-test",
+      });
+      return;
+    }
+    return sessionManager.start(p);
+  });
+  ipcMain.handle(InvokeChannel.SessionPrompt, (_e, p: SessionPromptParams) => {
+    if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
+      testPromptCalls.push(p);
+      send({
+        type: "session.complete",
+        session_id: p.session_id,
+        turn_id: p.turn_id,
+      });
+      return;
+    }
+    return sessionManager.prompt(p);
+  });
+  ipcMain.handle(
+    InvokeChannel.SessionSetConfigOption,
+    (_e, p: SessionSetConfigOptionParams) => {
+      if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
+        testConfigOptionCalls.push(p);
+        send({
+          type: "session.event",
+          session_id: p.session_id,
+          turn_id: "dummy",
+          event: {
+            sessionUpdate: "config_option_update",
+            configOptions: [
+              {
+                id: p.config_id,
+                name: "Model",
+                category: "model",
+                type: "select",
+                currentValue: String(p.value),
+                options: [
+                  { value: "gpt-5-mini", name: "GPT-5 mini" },
+                  { value: "gpt-5", name: "GPT-5" },
+                ],
+              },
+            ],
+          },
+        });
+        return;
+      }
+      return sessionManager.setConfigOption(p);
+    },
   );
   ipcMain.handle(
     InvokeChannel.SessionCancel,
@@ -221,6 +287,40 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     InvokeChannel.PairReleaseMember,
     (_e, p: { pair_id: string; session_id: string }) =>
       pairManager!.releaseMember(p.pair_id, p.session_id),
+  );
+  ipcMain.handle(InvokeChannel.PairsList, (): PersistedPairInfo[] =>
+    listPairGroups().map((pair) => ({
+      id: pair.id,
+      title: pair.title,
+      workspace_cwd: pair.workspace_cwd,
+      last_used_at: pair.last_used_at,
+      created_at: pair.created_at,
+      archived_at: pair.archived_at,
+      pinned_at: pair.pinned_at,
+      members: pair.members.map((member) => ({
+        id: member.id,
+        agent_id: member.agent_id,
+        cwd: member.cwd,
+        acp_session_id: member.acp_session_id,
+        title: member.title,
+        last_used_at: member.last_used_at,
+        created_at: member.created_at,
+        archived_at: member.archived_at,
+        pinned_at: member.pinned_at,
+      })),
+    })),
+  );
+  ipcMain.handle(InvokeChannel.PairSave, (_e, p: PairSaveParams) =>
+    savePairGroup({
+      id: p.pair_id,
+      title: p.title,
+      workspace_cwd: p.workspace_cwd,
+      members: p.members.map((member) => ({
+        id: member.session_id,
+        agent_id: member.agent_id,
+        cwd: member.cwd,
+      })),
+    }),
   );
 
   ipcMain.handle(InvokeChannel.SessionsList, (_e, limit?: number):
@@ -292,7 +392,7 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
   // push channel without spawning a real ACP child. Guarded by an env
   // var so production builds never expose these. Tests set
   // BACKCHAT_TEST_HOOKS=1 when launching electron.
-  if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
+  if (testHooksEnabled) {
     process.stdout.write("[ipc] test hooks enabled\n");
     ipcMain.handle(
       InvokeChannel.TestInjectSessionRow,
@@ -315,6 +415,52 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
         // Pass-through — test fully controls what shape it pushes.
         send(msg);
       },
+    );
+    ipcMain.handle(
+      InvokeChannel.TestPersistSessionFixture,
+      (
+        _e,
+        p: {
+          sessionId: string;
+          agentId?: string;
+          cwd?: string;
+          acpSessionId?: string;
+          title?: string;
+          events: Array<{ type: string; data: unknown; ts?: number }>;
+        },
+      ) => {
+        const now = Date.now();
+        upsertSession({
+          id: p.sessionId,
+          agent_id: p.agentId ?? "codex-acp",
+          cwd: p.cwd ?? `/tmp/backchat-e2e/${p.sessionId}`,
+          acp_session_id: p.acpSessionId ?? `acp-${p.sessionId}`,
+          title: p.title ?? "",
+          last_used_at: p.events.at(-1)?.ts ?? now,
+        });
+        if (p.title) setSessionTitleIfEmpty(p.sessionId, p.title);
+        appendEventsTx(
+          p.sessionId,
+          p.events.map((event) => ({ type: event.type, data: event.data })),
+        );
+      },
+    );
+    ipcMain.handle(
+      InvokeChannel.TestExportSessionFiles,
+      (_e, opts: { overwrite?: boolean } = {}) => {
+        const root = openmaRoot();
+        return exportSessionFilesToDisk({
+          dbPath: join(root, "sessions.db"),
+          outputRoot: root,
+          overwrite: opts.overwrite,
+        });
+      },
+    );
+    ipcMain.handle(InvokeChannel.TestReadSessionPrompts, () =>
+      testPromptCalls.map((p) => ({ ...p })),
+    );
+    ipcMain.handle(InvokeChannel.TestReadSessionConfigOptions, () =>
+      testConfigOptionCalls.map((p) => ({ ...p })),
     );
   }
 

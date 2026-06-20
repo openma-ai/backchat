@@ -20,22 +20,18 @@
  * in the OSS repo).
  *
  * Persistence model:
- *   - text chunks: NOT stored individually (tens of thousands per long
- *     turn). On turn complete we write a single `agent_message` event
- *     with the full assistantText and a single `agent_thought` for the
- *     full thoughtText.
- *   - tool_call / tool_call_update: stored as-arrived. Low-frequency and
- *     patch semantics need them preserved.
- *   - user prompts: stored as `user_prompt` events.
- *
- * We never write while the ACP child is mid-stream — that would compete
- * with the renderer's hot path. Writes happen on turn complete / error /
- * cancel, in a single transaction.
+ *   - SQLite remains the hot UI index for sidebar, replay, and FTS.
+ *   - appendEvent also writes a transcript JSONL line under transcripts/
+ *     so live session events are inspectable as ordinary files.
+ *   - appendEventsTx still exists for legacy/import test fixtures; the
+ *     migration path is to phase bulk callers toward file-primary writes.
  */
 
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { stringify as toToml } from "smol-toml";
+import { rebuildSessionIndexFromTranscriptFiles } from "./file-first-rebuild.js";
 
 export interface PersistedSession {
   id: string;
@@ -76,10 +72,12 @@ export interface PersistedEvent {
 }
 
 let _db: DatabaseSync | null = null;
+let _storageRoot: string | null = null;
 // Prepared statement cache — node:sqlite recommends preparing once and
 // reusing. The cache also keeps the underlying StatementSync handles
 // alive for the process lifetime; we never need to finalize them.
 let _stmts: {
+  getSession: StatementSync;
   upsert: StatementSync;
   touch: StatementSync;
   setTitle: StatementSync;
@@ -92,12 +90,14 @@ let _stmts: {
   listForSidebar: StatementSync;
   deleteRow: StatementSync;
   appendEvent: StatementSync;
+  sessionEventCount: StatementSync;
   loadHistory: StatementSync;
   // Pair-chat helpers — see PersistedPairSession + pair_sessions schema.
   upsertPair: StatementSync;
   touchPair: StatementSync;
   setPairTitleIfEmpty: StatementSync;
   getPair: StatementSync;
+  listPairs: StatementSync;
   listPairMembers: StatementSync;
 } | null = null;
 
@@ -226,7 +226,9 @@ export function openSessionDb(path: string): void {
   `);
 
   _db = db;
+  _storageRoot = deriveStorageRoot(path);
   _stmts = {
+    getSession: db.prepare(`SELECT * FROM sessions WHERE id = ?`),
     upsert: db.prepare(`
       INSERT INTO sessions (id, agent_id, cwd, acp_session_id, title, last_used_at, created_at, pair_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -279,6 +281,9 @@ export function openSessionDb(path: string): void {
     appendEvent: db.prepare(
       `INSERT INTO events (session_id, type, data, ts) VALUES (?, ?, ?, ?)`,
     ),
+    sessionEventCount: db.prepare(
+      `SELECT COUNT(*) AS count FROM events WHERE session_id = ?`,
+    ),
     loadHistory: db.prepare(
       `SELECT * FROM events WHERE session_id = ? ORDER BY seq ASC`,
     ),
@@ -297,10 +302,17 @@ export function openSessionDb(path: string): void {
       `UPDATE pair_sessions SET title = ? WHERE id = ? AND (title IS NULL OR title = '')`,
     ),
     getPair: db.prepare(`SELECT * FROM pair_sessions WHERE id = ?`),
+    listPairs: db.prepare(`
+      SELECT * FROM pair_sessions
+      WHERE archived_at IS NULL
+      ORDER BY last_used_at DESC
+    `),
     listPairMembers: db.prepare(
       `SELECT * FROM sessions WHERE pair_id = ? ORDER BY created_at ASC`,
     ),
   };
+
+  rebuildSessionIndexFromTranscriptFiles(db, _storageRoot);
 
   // One-time backfill: any session row that ended up with an empty title
   // (sessions created before setSessionTitleIfEmpty shipped) gets seeded
@@ -360,32 +372,37 @@ export function upsertSession(row: {
     now,
     row.pair_id ?? null,
   );
+  writeSessionMetadata(row.id);
 }
 
 export function touchSession(id: string): void {
   stmts().touch.run(Date.now(), id);
+  writeSessionMetadata(id);
 }
 
 export function setSessionTitle(id: string, title: string): void {
   stmts().setTitle.run(title, id);
+  writeSessionMetadata(id);
 }
 
 /** Conditional version — only writes the title if the row's current
  *  title is empty. Lets the first user prompt seed a sensible label
  *  without overwriting whatever the user may have later renamed it to. */
 export function setSessionTitleIfEmpty(id: string, title: string): void {
-  const rows = stmts().list.all(2000) as unknown as PersistedSession[];
-  const row = rows.find((r) => r.id === id);
+  const row = stmts().getSession.get(id) as PersistedSession | undefined;
   if (!row || row.title) return;
   stmts().setTitle.run(title, id);
+  writeSessionMetadata(id);
 }
 
 export function archiveSession(id: string): void {
   stmts().archive.run(Date.now(), id);
+  writeSessionMetadata(id);
 }
 
 export function unarchiveSession(id: string): void {
   stmts().unarchive.run(id);
+  writeSessionMetadata(id);
 }
 
 /** List every archived session, newest archive first. Used by the
@@ -400,15 +417,18 @@ export function listArchivedSessions(): PersistedSession[] {
  *  on-disk session directory (the SessionManager owns that path
  *  layout, not the SQL store). */
 export function deleteSession(id: string): void {
+  deleteSessionSourceFiles(id);
   stmts().deleteRow.run(id);
 }
 
 export function pinSession(id: string, at: number = Date.now()): void {
   stmts().pin.run(at, id);
+  writeSessionMetadata(id);
 }
 
 export function unpinSession(id: string): void {
   stmts().unpin.run(id);
+  writeSessionMetadata(id);
 }
 
 export function listSessions(limit = 200): PersistedSession[] {
@@ -433,10 +453,12 @@ export function upsertPairSession(row: {
 }): void {
   const now = Date.now();
   stmts().upsertPair.run(row.id, row.title ?? "", row.workspace_cwd ?? "", now, now);
+  writePairSessionMetadata(row.id);
 }
 
 export function touchPairSession(id: string): void {
   stmts().touchPair.run(Date.now(), id);
+  writePairSessionMetadata(id);
 }
 
 /** Seed the pair's sidebar title from the first user prompt — the same
@@ -445,6 +467,7 @@ export function touchPairSession(id: string): void {
 export function setPairTitleIfEmpty(id: string, title: string): void {
   if (!title) return;
   stmts().setPairTitleIfEmpty.run(title, id);
+  writePairSessionMetadata(id);
 }
 
 export function getPairSession(id: string): PersistedPairSession | null {
@@ -458,6 +481,42 @@ export function listPairMembers(pair_id: string): PersistedSession[] {
   return stmts().listPairMembers.all(pair_id) as unknown as PersistedSession[];
 }
 
+export interface PersistedPairGroup extends PersistedPairSession {
+  members: PersistedSession[];
+}
+
+export function listPairGroups(): PersistedPairGroup[] {
+  const pairs = stmts().listPairs.all() as unknown as PersistedPairSession[];
+  return pairs.map((pair) => ({
+    ...pair,
+    members: listPairMembers(pair.id),
+  }));
+}
+
+/** Persist renderer-owned pair grouping metadata. The member rows remain
+ *  ordinary sessions; `pair_id` only hides them from the single-chat
+ *  sidebar and lets pairsList rebuild the grid after restart. */
+export function savePairGroup(row: {
+  id: string;
+  title?: string;
+  workspace_cwd?: string;
+  members: Array<{ id: string; agent_id: string; cwd?: string }>;
+}): void {
+  upsertPairSession({
+    id: row.id,
+    title: row.title,
+    workspace_cwd: row.workspace_cwd,
+  });
+  for (const member of row.members) {
+    upsertSession({
+      id: member.id,
+      agent_id: member.agent_id,
+      cwd: member.cwd ?? row.workspace_cwd ?? "",
+      pair_id: row.id,
+    });
+  }
+}
+
 // -------------------- events --------------------
 
 export function appendEvent(
@@ -465,7 +524,16 @@ export function appendEvent(
   type: string,
   data: unknown,
 ): void {
-  stmts().appendEvent.run(session_id, type, JSON.stringify(data), Date.now());
+  const s = stmts();
+  const ts = Date.now();
+  s.appendEvent.run(session_id, type, JSON.stringify(data), ts);
+  const row = s.sessionEventCount.get(session_id) as { count: number | bigint };
+  writeTranscriptEvent(session_id, {
+    seq: Number(row.count),
+    type,
+    ts,
+    data,
+  });
 }
 
 /** Batch-append in a single transaction. node:sqlite doesn't ship a
@@ -538,9 +606,106 @@ export function searchMessages(query: string, limit = 20): SearchHit[] {
       snippet(messages_fts, 4, '⁨', '⁩', '…', 12) AS snippet
     FROM messages_fts f
     JOIN sessions s ON s.id = f.session_id
-    WHERE messages_fts MATCH ? AND s.archived_at IS NULL
+    WHERE messages_fts MATCH ?
     ORDER BY bm25(messages_fts), f.ts DESC
     LIMIT ?
   `);
   return stmt.all(ftsQuery, limit) as unknown as SearchHit[];
+}
+
+function writeTranscriptEvent(
+  sessionId: string,
+  event: { seq: number; type: string; ts: number; data: unknown },
+): void {
+  const root = _storageRoot;
+  if (!root) throw new Error("session-store: storage root unavailable");
+  const session = stmts().getSession.get(sessionId) as PersistedSession | undefined;
+  if (!session) throw new Error(`session-store: missing session ${sessionId}`);
+
+  const dir = join(root, "transcripts", ...dateParts(session.created_at));
+  mkdirSync(dir, { recursive: true });
+  appendFileSync(
+    join(dir, `${sessionId}.jsonl`),
+    JSON.stringify({
+      schema_version: "backchat.session_event.v1",
+      seq: event.seq,
+      type: event.type,
+      ts: event.ts,
+      data: event.data,
+      source: "desktop",
+    }) + "\n",
+    "utf-8",
+  );
+}
+
+function writeSessionMetadata(sessionId: string): void {
+  const root = _storageRoot;
+  if (!root) throw new Error("session-store: storage root unavailable");
+  const session = stmts().getSession.get(sessionId) as PersistedSession | undefined;
+  if (!session) return;
+
+  const dir = join(root, "transcripts", ...dateParts(session.created_at));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${sessionId}.meta.toml`),
+    toToml({
+      schema_version: "backchat.session_meta.v1",
+      session_id: session.id,
+      agent_id: session.agent_id,
+      acp_session_id: session.acp_session_id,
+      title: session.title,
+      created_at: session.created_at,
+      last_used_at: session.last_used_at,
+      pair_id: session.pair_id ?? "",
+      workdir: session.cwd,
+    }) + "\n",
+    "utf-8",
+  );
+}
+
+function deleteSessionSourceFiles(sessionId: string): void {
+  const root = _storageRoot;
+  if (!root) throw new Error("session-store: storage root unavailable");
+  const session = stmts().getSession.get(sessionId) as PersistedSession | undefined;
+  if (!session) return;
+
+  const dir = join(root, "transcripts", ...dateParts(session.created_at));
+  rmSync(join(dir, `${sessionId}.jsonl`), { force: true });
+  rmSync(join(dir, `${sessionId}.meta.toml`), { force: true });
+}
+
+function writePairSessionMetadata(pairId: string): void {
+  const root = _storageRoot;
+  if (!root) throw new Error("session-store: storage root unavailable");
+  const pair = stmts().getPair.get(pairId) as PersistedPairSession | undefined;
+  if (!pair) return;
+
+  const dir = join(root, "transcripts", ...dateParts(pair.created_at));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${pairId}.pair.meta.toml`),
+    toToml({
+      schema_version: "backchat.pair_session_meta.v1",
+      pair_id: pair.id,
+      title: pair.title,
+      workspace_cwd: pair.workspace_cwd,
+      created_at: pair.created_at,
+      last_used_at: pair.last_used_at,
+    }) + "\n",
+    "utf-8",
+  );
+}
+
+function dateParts(ms: number): [string, string, string] {
+  const d = new Date(ms);
+  return [
+    String(d.getUTCFullYear()),
+    String(d.getUTCMonth() + 1).padStart(2, "0"),
+    String(d.getUTCDate()).padStart(2, "0"),
+  ];
+}
+
+function deriveStorageRoot(dbPath: string): string {
+  const dir = dirname(dbPath);
+  return basename(dir) === "indexes" ? dirname(dir) : dir;
 }

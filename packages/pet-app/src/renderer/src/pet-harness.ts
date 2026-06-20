@@ -24,6 +24,12 @@ export interface PetHarnessRegistry {
 }
 
 const codexEventMap: Record<string, string> = {
+  "SessionStart": "session.started",
+  "Stop": "session.completed",
+  "Notification": "handoff.waiting",
+  "PermissionRequest": "permission.requested",
+  "PreToolUse": "tool.run",
+  "PostToolUse": "tool.run",
   "thread.started": "session.started",
   "task.started": "session.started",
   "task.completed": "session.completed",
@@ -78,7 +84,7 @@ function codexHarnessAdapter(): PetHarnessAdapter {
   return {
     id: "codex",
     canHandle: (event) => event.harness === "codex",
-    normalize: (event) => genericNormalize(event, "codex", codexEventMap, codexThreadIdFromEvent(event)),
+    normalize: (event) => genericNormalize(normalizeCodexEvent(event), "codex", codexEventMap, codexThreadIdFromEvent(event)),
     navigationUrlForAction(action) {
       if (!hasSessionTarget(action)) return undefined;
       if (action.source !== "codex" || !action.sessionId) return undefined;
@@ -117,7 +123,17 @@ function hasSessionTarget(
 }
 
 function codexThreadIdFromEvent(event: PetHarnessEvent): string | undefined {
-  return normalizeCodexThreadId(event.threadId) ?? normalizeCodexThreadId(event.sessionId);
+  const payload = recordPayload(event);
+  return normalizeCodexThreadId(event.threadId) ??
+    normalizeCodexThreadId(event.sessionId) ??
+    normalizeCodexThreadId(stringField(payload, "threadId")) ??
+    normalizeCodexThreadId(stringField(payload, "thread_id")) ??
+    normalizeCodexThreadId(stringField(payload, "sessionId")) ??
+    normalizeCodexThreadId(stringField(payload, "session_id")) ??
+    normalizeCodexThreadId(stringField(payload, "conversationId")) ??
+    normalizeCodexThreadId(stringField(payload, "conversation_id")) ??
+    codexThreadIdFromPath(stringField(payload, "transcript_path")) ??
+    codexThreadIdFromPath(stringField(payload, "transcriptPath"));
 }
 
 function normalizeCodexThreadId(value: string | undefined): string | undefined {
@@ -129,6 +145,40 @@ function normalizeCodexThreadId(value: string | undefined): string | undefined {
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function codexThreadIdFromPath(value: string | undefined): string | undefined {
+  const match = value?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  return normalizeCodexThreadId(match?.[0]);
+}
+
+function normalizeCodexEvent(event: PetHarnessEvent): PetHarnessEvent {
+  const payload = recordPayload(event);
+  return {
+    ...event,
+    threadId: event.threadId ?? codexThreadIdFromEvent(event),
+    sessionId: event.sessionId ?? codexThreadIdFromEvent(event),
+    turnId: event.turnId ?? stringField(payload, "turnId") ?? stringField(payload, "turn_id"),
+    label: event.label ?? codexLabelFromPayload(payload),
+  };
+}
+
+function codexLabelFromPayload(payload: Record<string, unknown> | undefined): string | undefined {
+  return stringField(payload, "label") ??
+    stringField(payload, "title") ??
+    stringField(payload, "summary") ??
+    stringField(payload, "message");
+}
+
+function recordPayload(event: PetHarnessEvent): Record<string, unknown> | undefined {
+  return typeof event.payload === "object" && event.payload !== null
+    ? event.payload as Record<string, unknown>
+    : undefined;
+}
+
+function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 function genericNormalize(

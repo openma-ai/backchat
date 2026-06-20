@@ -7,6 +7,9 @@ import { settingsStore } from "./settings-store.js";
 import { openSessionDb } from "./sql-store.js";
 import { installAppMenu, sendToFocused } from "./menu.js";
 import { disposeAllUiTerminals } from "./ui-terminal-broker.js";
+import { openmaRoot } from "./storage-root.js";
+import { BACKCHAT_PROTOCOL, findBackchatDeepLink, parseBackchatDeepLink, type BackchatDeepLink } from "./deep-link.js";
+import { PushChannel } from "../shared/ipc-channels.js";
 
 // Dev-only: enable CDP on port 9222 so agent-browser can drive the
 // renderer for end-to-end UI tests. No-op in production. Also skip
@@ -24,6 +27,57 @@ if (
 }
 
 const windows = new Set<BrowserWindow>();
+const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
+const showE2eWindow = process.env["BACKCHAT_E2E_VISIBLE"] === "1";
+const pendingDeepLinks: BackchatDeepLink[] = [];
+
+function registerBackchatProtocolClient(): void {
+  if (testHooksEnabled) return;
+  if (process.defaultApp) {
+    const appEntry = process.argv[1];
+    if (appEntry) {
+      app.setAsDefaultProtocolClient(BACKCHAT_PROTOCOL, process.execPath, [appEntry]);
+      return;
+    }
+  }
+  app.setAsDefaultProtocolClient(BACKCHAT_PROTOCOL);
+}
+
+function chooseDeepLinkWindow(): BrowserWindow {
+  const existing =
+    BrowserWindow.getFocusedWindow() ??
+    BrowserWindow.getAllWindows().find((win) => !win.isDestroyed());
+  return existing ?? createWindow();
+}
+
+function sendDeepLinkToWindow(win: BrowserWindow, link: BackchatDeepLink): void {
+  const send = (): void => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(PushChannel.MenuNavigate, link.path);
+    }
+  };
+
+  if (win.webContents.isLoading() || !win.webContents.getURL()) {
+    win.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
+
+  if (win.isMinimized()) win.restore();
+  win.focus();
+}
+
+function openDeepLink(link: BackchatDeepLink): void {
+  sendDeepLinkToWindow(chooseDeepLinkWindow(), link);
+}
+
+function drainPendingDeepLinks(): void {
+  let link = pendingDeepLinks.shift();
+  while (link) {
+    openDeepLink(link);
+    link = pendingDeepLinks.shift();
+  }
+}
 
 /**
  * Re-position the macOS trafficLight to track current zoom AND match the
@@ -148,7 +202,9 @@ function createWindow(): BrowserWindow {
   win.webContents.on("did-finish-load", () => syncTrafficLight(win));
   win.on("focus", () => syncTrafficLight(win));
 
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    if (!testHooksEnabled || showE2eWindow) win.show();
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -210,7 +266,27 @@ const gotLock =
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => createWindow());
+  registerBackchatProtocolClient();
+
+  app.on("second-instance", (_event, argv) => {
+    const link = findBackchatDeepLink(argv);
+    if (link) {
+      openDeepLink(link);
+      return;
+    }
+    createWindow();
+  });
+
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    const link = parseBackchatDeepLink(url);
+    if (!link) return;
+    if (app.isReady()) {
+      openDeepLink(link);
+    } else {
+      pendingDeepLinks.push(link);
+    }
+  });
 
   app.whenReady().then(async () => {
     // Wire the oma-file:// handler. Whitelist enforced here so a
@@ -283,7 +359,7 @@ if (!gotLock) {
     // sitting on a Backchat-private userData island. mkdir is implicit
     // via SettingsStore.ensureDir() on first write; the SQL store /
     // session cwd helpers create their own subpaths on demand.
-    const root = join(homedir(), ".openma");
+    const root = openmaRoot();
     setSessionRoot(join(root, "sessions"));
     openSessionDb(join(root, "sessions.db"));
     registerIpc({ registryCachePath: join(root, "registry-cache.json") });
@@ -294,6 +370,9 @@ if (!gotLock) {
     });
 
     createWindow();
+    const initialDeepLink = findBackchatDeepLink(process.argv);
+    if (initialDeepLink) pendingDeepLinks.push(initialDeepLink);
+    drainPendingDeepLinks();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

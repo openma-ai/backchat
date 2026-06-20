@@ -5,7 +5,7 @@ export type PetSize = {
 
 export const ATLAS_CELL_SIZE = { width: 96, height: 104 } as const satisfies PetSize;
 export const NORMAL_WINDOW_SIZE = { width: 112, height: 128 } as const satisfies PetSize;
-export const SIDE_PEEK_SIZE = { width: 48, height: 112 } as const satisfies PetSize;
+export const SIDE_PEEK_SIZE = { width: 48, height: 128 } as const satisfies PetSize;
 export const TOP_PEEK_SIZE = { width: 112, height: 72 } as const satisfies PetSize;
 export const BOTTOM_REST_SIZE = { width: 112, height: 72 } as const satisfies PetSize;
 export const BOTTOM_SCREEN_WINDOW_SIZE = NORMAL_WINDOW_SIZE;
