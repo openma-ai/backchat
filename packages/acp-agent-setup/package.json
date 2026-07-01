@@ -1,0 +1,26 @@
+{
+  "name": "@open-managed-agents-desktop/acp-agent-setup",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Headless ACP agent setup lifecycle SDK for desktop hosts",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run src",
+    "typecheck": "tsc -p ../../tsconfig.node.json --noEmit"
+  },
+  "files": [
+    "README.md",
+    "src/index.ts"
+  ],
+  "dependencies": {
+    "@open-managed-agents-desktop/acp": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

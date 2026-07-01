@@ -10,6 +10,7 @@ import { BrowserWindow, ipcMain } from "electron";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
 import type {
   AgentInfo,
+  AgentListOptions,
   PairSaveParams,
   PersistedEventInfo,
   PersistedPairInfo,
@@ -228,7 +229,7 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
 
   ipcMain.handle(
     InvokeChannel.AgentsList,
-    (_e, options?: { probeAuth?: boolean; refresh?: boolean }): Promise<AgentInfo[]> | AgentInfo[] => {
+    (_e, options?: AgentListOptions): Promise<AgentInfo[]> | AgentInfo[] => {
       if (testAgentSetupFixture) {
         recordTestAgentSetupCall({ type: "list" });
         return testAgentSetupFixture.agents;

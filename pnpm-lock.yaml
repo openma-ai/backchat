@@ -20,6 +20,9 @@ importers:
       '@open-managed-agents-desktop/acp':
         specifier: workspace:*
         version: link:packages/acp
+      '@open-managed-agents-desktop/acp-agent-setup':
+        specifier: workspace:*
+        version: link:packages/acp-agent-setup
       '@radix-ui/react-collapsible':
         specifier: ^1.1.12
         version: 1.1.12(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -193,6 +196,22 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+
+  packages/acp-agent-setup:
+    dependencies:
+      '@open-managed-agents-desktop/acp':
+        specifier: workspace:*
+        version: link:../acp
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.19
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(vite@8.0.16(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4))
 
   packages/pet-app:
     dependencies:

@@ -55,6 +55,14 @@ export interface AgentInfo {
   config_options?: unknown[];
 }
 
+export interface AgentListOptions {
+  probeAuth?: boolean;
+  probeConfigOptions?: boolean;
+  refresh?: boolean;
+  probeAgentId?: string;
+  probeConfigAgentId?: string;
+}
+
 /** Public shape of a persisted session row. Mirrors PersistedSession in
  *  src/main/sql-store.ts. */
 export interface PersistedSessionInfo {
@@ -184,7 +192,7 @@ export interface BackchatApi {
 
   /** All known ACP agents merged from the official registry + overlay,
    *  flagged by detection. Renderer uses this to power the agent picker. */
-  agentsList(options?: { probeAuth?: boolean; refresh?: boolean }): Promise<AgentInfo[]>;
+  agentsList(options?: AgentListOptions): Promise<AgentInfo[]>;
   agentProbe(id: string): Promise<AgentInfo[]>;
   agentInstall(id: string): Promise<AgentInfo[]>;
   agentUpgrade(id: string): Promise<AgentInfo[]>;
