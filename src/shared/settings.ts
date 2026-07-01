@@ -18,6 +18,8 @@ export interface SettingsDefault {
    *  semantics; "ask" pops the existing broker modal, "auto" silently
    *  picks allow_once, "read_only" silently picks reject_once. */
   permission_mode: "ask" | "auto" | "read_only";
+  /** When true, follow-up prompts wait behind the current agent loop. */
+  prompt_queue_enabled: boolean;
 }
 
 export interface SettingsAppearance {

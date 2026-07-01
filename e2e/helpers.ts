@@ -48,23 +48,61 @@ export async function launchAppWithHome(home: string): Promise<{
     },
   });
   const page = await app.firstWindow();
-  // Wait for the React tree to mount — the composer textarea is the
-  // universal shell anchor, but its placeholder depends on whether the
-  // app restored an existing chat or opened to the empty state.
-  await page.waitForSelector("textarea", {
-    timeout: 10_000,
-  });
+  try {
+    // Wait for the React tree to mount. New chat is stable across empty,
+    // restored, and archived-search surfaces; individual specs can then wait
+    // for the composer or transcript state they actually need.
+    await page.getByRole("button", { name: "New chat", exact: true }).waitFor({
+      timeout: 30_000,
+    });
+  } catch (e) {
+    await closeApp(app).catch(() => undefined);
+    throw e;
+  }
   return {
     app,
     page,
     home,
     cleanup: async () => {
-      await app.close().catch(() => undefined);
+      await closeApp(app).catch(() => undefined);
       if (process.env["BACKCHAT_KEEP_E2E_HOME"] !== "1") {
         await rm(home, { recursive: true, force: true });
       }
     },
   };
+}
+
+export async function closeApp(app: ElectronApplication): Promise<void> {
+  const proc = app.process();
+  const exited = new Promise<void>((resolve) => {
+    proc.once("exit", () => resolve());
+  });
+  await Promise.race([
+    app.evaluate(({ app: electronApp }) => {
+      electronApp.quit();
+    }),
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 500);
+      timer.unref?.();
+    }),
+  ]).catch(() => undefined);
+  const didExit = await Promise.race([
+    exited.then(() => true),
+    new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 2_000);
+      timer.unref?.();
+    }),
+  ]);
+  if (!didExit) {
+    proc.kill("SIGKILL");
+    await Promise.race([
+      exited,
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 2_000);
+        timer.unref?.();
+      }),
+    ]);
+  }
 }
 
 /** Push a `session.ready` event via the test IPC bridge so a fresh

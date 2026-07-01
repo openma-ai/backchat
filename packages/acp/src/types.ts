@@ -22,6 +22,8 @@ export interface AgentSpec {
    *  to start. */
   env?: Record<string, string | undefined>;
   cwd?: string;
+  /** Structured diagnostic tap for host UIs. Never participates in ACP JSON-RPC. */
+  onDiagnosticLine?: (line: string) => void;
 }
 
 export interface ChildHandle {

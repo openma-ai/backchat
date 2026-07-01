@@ -1,4 +1,4 @@
-import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BoxIcon,
   BrainIcon,
@@ -28,12 +28,13 @@ import {
   WrenchIcon,
   XIcon,
   ZapIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
-import type { PromptAttachment, SessionConfigOption } from "@shared/session-events.js";
+import type { PromptAttachment } from "@shared/session-events.js";
 import type {
   AgentMessageDelivery,
   AgentMessageIntent,
@@ -61,6 +62,12 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { safeJson } from "@/lib/format";
 import {
+  buildConfigOptionSections,
+  flattenSelectOptions,
+  selectedConfigOptionLabel,
+  type AcpSessionConfigOption,
+} from "@/lib/session-config-options";
+import {
   newDraftSession,
   newSideDraftSession,
   selectActive,
@@ -85,14 +92,16 @@ import {
   CHAT_TURN_FRAME_CLASS,
 } from "@/lib/chat-layout";
 import {
-  configOptionCurrentLabel,
-  findModelConfigOption,
-  flattenConfigSelectOptions,
-} from "@/lib/session-config";
-import {
   describeRunningMessageAction,
   shouldOfferExplicitSteer,
 } from "@/lib/composer-delivery";
+
+type AgentOption = {
+  id: string;
+  label: string;
+  command: string;
+  detected: boolean;
+};
 
 /**
  * ChatView — the right pane.
@@ -137,15 +146,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   // which matches what the chip needs to remember.
   const [pickedCwd, setPickedCwd] = useState<string | null>(null);
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
-  const [pickedModelProfileId, setPickedModelProfileId] = useState(
-    DEFAULT_ACP_MODEL_PROFILE_ID,
-  );
   // Re-baseline when the user navigates to a different session — picking
   // a workspace in session A shouldn't leak into draft B.
   useEffect(() => {
     setPickedCwd(null);
     setPickedAgentId(null);
-    setPickedModelProfileId(DEFAULT_ACP_MODEL_PROFILE_ID);
   }, [active?.id]);
 
   const resolveRunningDeliveryMeta = (
@@ -198,11 +203,8 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     // and get reduced into the same turn id. If session.start ends up
     // failing the turn gets marked errored, not vanished.
     const turn_id = `turn-${Math.random().toString(36).slice(2, 10)}`;
-    console.log("[onSubmit] target", target?.id, target?.status, "text", text.slice(0, 30));
     const displayText = derivePromptDisplayText(text, attachments);
     sessionStore.registerTurn(turn_id, target.id, displayText, delivery);
-    console.log("[onSubmit] after registerTurn, store turns for session:",
-      sessionStore.turnsFor(target.id).length);
 
     if (target.status === "draft") {
       const agentId = pickedAgentId || settings?.default.agent_id || "";
@@ -276,16 +278,14 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       }
       running={active?.status === "running" || hasActiveTurn}
       availableCommands={active?.availableCommands}
-      sessionConfigOptions={active?.configOptions}
       attachmentDefaultPath={
         active?.cwd || pickedCwd || settings?.default.workspace_path || undefined
       }
       pendingAsk={active?.pendingAsks?.[0]}
       lockedAgentId={active && active.status !== "draft" ? active.agent_id : null}
       pickedAgentId={pickedAgentId}
-      pickedModelProfileId={pickedModelProfileId}
       onPickAgent={setPickedAgentId}
-      onPickModelProfile={setPickedModelProfileId}
+      configOptions={active?.configOptions}
       onSetConfigOption={async (configId, value) => {
         if (!active || active.status === "draft") return;
         try {
@@ -1370,14 +1370,12 @@ export function Composer({
   running,
   placeholder,
   availableCommands,
-  sessionConfigOptions,
   attachmentDefaultPath,
   pendingAsk,
   lockedAgentId,
   pickedAgentId,
-  pickedModelProfileId,
+  configOptions,
   onPickAgent,
-  onPickModelProfile,
   onSetConfigOption,
   onResolveAsk,
   onSubmit,
@@ -1390,14 +1388,12 @@ export function Composer({
   running: boolean | undefined;
   placeholder: string;
   availableCommands?: AcpAvailableCommand[];
-  sessionConfigOptions?: SessionConfigOption[];
   attachmentDefaultPath?: string;
   pendingAsk?: BrokerAsk;
   lockedAgentId: string | null;
   pickedAgentId: string | null;
-  pickedModelProfileId: string;
+  configOptions?: AcpSessionConfigOption[];
   onPickAgent: (agentId: string) => void;
-  onPickModelProfile: (profileId: string) => void;
   onSetConfigOption?: (configId: string, value: string | boolean) => void | Promise<void>;
   onResolveAsk?: (optionId: string | null, approve?: boolean) => void | Promise<void>;
   onSubmit: (
@@ -1432,20 +1428,8 @@ export function Composer({
     detectedAgents[0]?.id ||
     "";
   const currentAgent = agents.find((a) => a.id === currentAgentId);
-  const modelProfiles = useMemo(
-    () => modelProfilesForAgent(currentAgentId),
-    [currentAgentId],
-  );
-  const currentModelProfile =
-    modelProfiles.find((profile) => profile.id === pickedModelProfileId) ??
-    modelProfiles[0] ??
-    ACP_MODEL_PROFILE_CATALOG[0]!;
   const staticAgentIds = agentPickerAgentIds?.filter(Boolean) ?? [];
   const visibleStaticAgentIds = staticAgentIds.slice(0, 3);
-  const modelConfig = useMemo(
-    () => findModelConfigOption(sessionConfigOptions),
-    [sessionConfigOptions],
-  );
   const defaultRunningAction = running
     ? describeRunningMessageAction({
         agentId: currentAgentId,
@@ -1475,17 +1459,8 @@ export function Composer({
         })
       : null;
 
-  useEffect(() => {
-    if (modelProfiles.some((profile) => profile.id === pickedModelProfileId)) return;
-    onPickModelProfile(DEFAULT_ACP_MODEL_PROFILE_ID);
-  }, [modelProfiles, onPickModelProfile, pickedModelProfileId]);
-
   const pickAgent = (id: string) => {
     onPickAgent(id);
-    const nextProfiles = modelProfilesForAgent(id);
-    if (!nextProfiles.some((profile) => profile.id === pickedModelProfileId)) {
-      onPickModelProfile(DEFAULT_ACP_MODEL_PROFILE_ID);
-    }
   };
 
   const pickAttachments = async () => {
@@ -1811,10 +1786,6 @@ export function Composer({
             <PlusIcon className="size-4" />
           </button>
           <PermissionModeChip disabled={!!running} />
-          <ModelConfigChip
-            option={modelConfig}
-            onChange={(configId, value) => onSetConfigOption?.(configId, value)}
-          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -1863,11 +1834,9 @@ export function Composer({
               agents={detectedAgents}
               currentAgentId={currentAgentId}
               currentAgentLabel={currentAgent?.label}
-              modelProfiles={modelProfiles}
-              currentModelProfileId={currentModelProfile.id}
-              currentModelProfileLabel={currentModelProfile.label}
+              configOptions={configOptions}
               onPickAgent={pickAgent}
-              onPickModelProfile={onPickModelProfile}
+              onSetConfigOption={(configId, value) => onSetConfigOption?.(configId, value)}
             />
           )}
 
@@ -1934,24 +1903,31 @@ function SessionRunChip({
   agents,
   currentAgentId,
   currentAgentLabel,
-  modelProfiles,
-  currentModelProfileId,
-  currentModelProfileLabel,
+  configOptions,
   onPickAgent,
-  onPickModelProfile,
+  onSetConfigOption,
 }: {
   disabled: boolean;
   locked: boolean;
   agents: AgentOption[];
   currentAgentId: string;
   currentAgentLabel?: string;
-  modelProfiles: AcpModelProfile[];
-  currentModelProfileId: string;
-  currentModelProfileLabel: string;
   onPickAgent: (agentId: string) => void;
-  onPickModelProfile: (profileId: string) => void;
+  configOptions?: AcpSessionConfigOption[];
+  onSetConfigOption: (configId: string, value: string | boolean) => void;
 }) {
   const agentLabel = currentAgentLabel || (currentAgentId ? currentAgentId : "Choose agent");
+  const configSections = useMemo(
+    () => buildConfigOptionSections(configOptions),
+    [configOptions],
+  );
+  const configSummary =
+    configOptions?.find((option) => option.category === "model") ??
+    configOptions?.find((option) => option.category === "mode") ??
+    configOptions?.find((option) => option.category === "thought_level");
+  const configLabel = configSummary
+    ? selectedConfigOptionLabel(configSummary)
+    : "Defaults";
 
   return (
     <DropdownMenu>
@@ -1964,14 +1940,14 @@ function SessionRunChip({
           "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         )}
         style={{ height: "32px" }}
-        aria-label={`Run on Local with ${agentLabel} using ${currentModelProfileLabel}`}
+        aria-label={`Run on Local with ${agentLabel} using ${configLabel}`}
       >
         <MonitorIcon className="size-3.5 shrink-0 text-fg-subtle" />
         <span className="shrink-0">Local</span>
         <span className="text-fg-subtle">·</span>
         <span className="truncate">{agentLabel}</span>
         <span className="text-fg-subtle">·</span>
-        <span className="shrink-0">{currentModelProfileLabel}</span>
+        <span className="shrink-0">{configLabel}</span>
         <ChevronDownIcon className="size-3.5 shrink-0 text-fg-subtle" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6} className="w-[280px]">
@@ -2023,19 +1999,33 @@ function SessionRunChip({
           )}
         </SessionRunSection>
 
-        <SessionRunSection title="Model">
-          {modelProfiles.map((profile) => (
-            <SessionRunItem
-              key={profile.id}
-              icon={BrainIcon}
-              label={profile.label}
-              hint={profile.hint}
-              active={profile.id === currentModelProfileId}
-              disabled={locked}
-              onSelect={() => onPickModelProfile(profile.id)}
-            />
-          ))}
-        </SessionRunSection>
+        {configSections.map((section) => (
+          <SessionRunSection key={section.category} title={section.label}>
+            {section.options.flatMap((option) =>
+              option.type === "select"
+                ? flattenSelectOptions(option).map((item) => (
+                    <SessionRunItem
+                      key={`${option.id}:${item.value}`}
+                      icon={configOptionIcon(option)}
+                      label={item.name}
+                      hint={item.groupName ?? item.description ?? option.name}
+                      active={item.value === option.currentValue}
+                      onSelect={() => onSetConfigOption(option.id, item.value)}
+                    />
+                  ))
+                : [
+                    <SessionRunItem
+                      key={option.id}
+                      icon={configOptionIcon(option)}
+                      label={option.name}
+                      hint={option.description ?? (option.currentValue ? "On" : "Off")}
+                      active={option.currentValue}
+                      onSelect={() => onSetConfigOption(option.id, !option.currentValue)}
+                    />,
+                  ],
+            )}
+          </SessionRunSection>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -2058,6 +2048,19 @@ function SessionRunSection({
   );
 }
 
+function configOptionIcon(option: AcpSessionConfigOption): LucideIcon {
+  switch (option.category) {
+    case "model":
+      return BrainIcon;
+    case "mode":
+      return WrenchIcon;
+    case "thought_level":
+      return EyeIcon;
+    default:
+      return ZapIcon;
+  }
+}
+
 function SessionRunItem({
   icon: Icon,
   agentId,
@@ -2067,7 +2070,7 @@ function SessionRunItem({
   disabled,
   onSelect,
 }: {
-  icon?: typeof MonitorIcon;
+  icon?: LucideIcon;
   agentId?: string;
   label: string;
   hint?: string;
@@ -2238,51 +2241,6 @@ function mergeAttachments(
   for (const a of prev) byPathOrId.set(a.path || a.id, a);
   for (const a of picked) byPathOrId.set(a.path || a.id, a);
   return [...byPathOrId.values()].slice(0, 10);
-}
-
-function ModelConfigChip({
-  option,
-  onChange,
-}: {
-  option?: SessionConfigOption & { type: "select" };
-  onChange: (configId: string, value: string) => void | Promise<void>;
-}) {
-  if (!option) return null;
-
-  const values = flattenConfigSelectOptions(option);
-  const label = configOptionCurrentLabel(option);
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className={cn(
-          "inline-flex h-8 max-w-[170px] items-center gap-1 rounded-md px-2 text-xs text-fg-muted",
-          "hover:bg-bg-surface/60 hover:text-fg",
-          "focus:outline-none focus:bg-bg-surface/60",
-          "transition-colors",
-        )}
-        title={option.name}
-      >
-        <BrainIcon className="size-3.5 shrink-0 text-fg-subtle" />
-        <span className="min-w-0 truncate">{label}</span>
-        <ChevronDownIcon className="size-3.5 shrink-0 text-fg-subtle" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} className="min-w-[220px]">
-        {values.map((value) => (
-          <DropdownMenuItem
-            key={value.value}
-            onSelect={() => void onChange(option.id, value.value)}
-            className="flex items-center gap-2 text-xs"
-          >
-            <span className="min-w-0 flex-1 truncate">{value.name}</span>
-            {value.value === option.currentValue && (
-              <CheckIcon className="size-3.5 text-fg-muted" />
-            )}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 }
 
 /** Project / runtime / branch chip row — codex-style strip BELOW the

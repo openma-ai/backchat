@@ -149,8 +149,8 @@ export class AcpSessionImpl implements AcpSession {
           cwd: this.options.agent.cwd ?? process.cwd(),
           mcpServers: this.options.mcpServers ?? [],
         });
-        this.#configOptions = loaded.configOptions ?? [];
         this.#sessionId = wantsResume;
+        this.#configOptions = loaded.configOptions ?? [];
         return;
       } catch (e) {
         // Resume failed — fall through to fresh session. Caller surfaces
@@ -164,8 +164,8 @@ export class AcpSessionImpl implements AcpSession {
       cwd: this.options.agent.cwd ?? process.cwd(),
       mcpServers: this.options.mcpServers ?? [],
     });
-    this.#configOptions = newSession.configOptions ?? [];
     this.#sessionId = newSession.sessionId;
+    this.#configOptions = newSession.configOptions ?? [];
   }
 
   /** The agent's advertised auth methods (from `initialize.authMethods`).
@@ -238,16 +238,21 @@ export class AcpSessionImpl implements AcpSession {
     if (!this.#agent || !this.#sessionId) {
       throw new Error("AcpSession not initialized");
     }
-    const setSessionConfigOption = this.#agent.setSessionConfigOption;
+    const setSessionConfigOption = (
+      this.#agent as {
+        setSessionConfigOption?: (p: schema.SetSessionConfigOptionRequest) =>
+          Promise<schema.SetSessionConfigOptionResponse>;
+      }
+    ).setSessionConfigOption;
     if (typeof setSessionConfigOption !== "function") {
       throw new Error("ACP agent does not support session config options");
     }
-    const params: schema.SetSessionConfigOptionRequest =
-      typeof value === "boolean"
-        ? { sessionId: this.#sessionId, configId, type: "boolean" as const, value }
-        : { sessionId: this.#sessionId, configId, value };
-    const next = await setSessionConfigOption.call(this.#agent, params);
-    this.#configOptions = next.configOptions ?? [];
+    const response = await setSessionConfigOption.call(this.#agent, {
+      sessionId: this.#sessionId,
+      configId,
+      ...(typeof value === "boolean" ? { type: "boolean" as const, value } : { value }),
+    });
+    this.#configOptions = response.configOptions ?? [];
     return this.#configOptions;
   }
 

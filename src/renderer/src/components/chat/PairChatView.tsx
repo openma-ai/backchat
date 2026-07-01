@@ -232,6 +232,9 @@ function PairComposer({ pair }: { pair: PairRow }) {
         agentPickerAgentIds={members.map((m) => m.agent_id)}
         disabled={disabled}
         running={locked}
+        lockedAgentId={null}
+        pickedAgentId={null}
+        onPickAgent={() => {}}
         placeholder={
           locked ? "等所有 agent 完成…" : `同时发送给 ${memberCount} 个 agent…`
         }

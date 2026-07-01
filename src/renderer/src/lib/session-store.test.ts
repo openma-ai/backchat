@@ -1,15 +1,35 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { sessionStore } from "./session-store";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { SessionStore, type AcpSessionConfigOption } from "./session-store";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("sessionStore.replayHistory", () => {
-  it("replays persisted assistant chunks exactly once", () => {
+const initialConfig: AcpSessionConfigOption[] = [
+  {
+    id: "model",
+    name: "Model",
+    category: "model",
+    type: "select",
+    currentValue: "sonnet",
+    options: [{ value: "sonnet", name: "Claude Sonnet" }],
+  },
+  {
+    id: "mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue: "code",
+    options: [{ value: "code", name: "Code" }],
+  },
+];
+
+describe("SessionStore replay", () => {
+  test("replays persisted assistant chunks exactly once", () => {
+    const store = new SessionStore();
     const sessionId = "sess-replay-history-dedupe";
 
-    sessionStore.replayHistory(sessionId, [
+    store.replayHistory(sessionId, [
       {
         seq: 1,
         type: "user_prompt",
@@ -36,17 +56,103 @@ describe("sessionStore.replayHistory", () => {
       },
     ]);
 
-    expect(sessionStore.turnsFor(sessionId)).toHaveLength(1);
-    expect(sessionStore.turnsFor(sessionId)[0]?.assistantText).toBe("Rendered once.");
+    expect(store.turnsFor(sessionId)).toHaveLength(1);
+    expect(store.turnsFor(sessionId)[0]?.assistantText).toBe("Rendered once.");
   });
 });
 
-describe("sessionStore session config", () => {
-  it("stores session-scoped config option updates without a turn", () => {
-    const sessionId = "sess-config-option-update";
-    sessionStore.registerStarting(sessionId, "codex-acp", "Config test");
+describe("SessionStore config options", () => {
+  test("stores initial ACP config options from session.ready", () => {
+    const store = new SessionStore();
 
-    sessionStore.apply({
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-1",
+      acp_session_id: "acp-1",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+      config_options: initialConfig,
+    });
+
+    expect(store.get("sess-1")?.configOptions).toEqual(initialConfig);
+    expect(store.get("sess-1")?.currentModeId).toBe("code");
+  });
+
+  test("replaces config options from config_option_update", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-1",
+      acp_session_id: "acp-1",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+      config_options: initialConfig,
+    });
+
+    const updated: AcpSessionConfigOption[] = [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "opus",
+        options: [
+          { value: "sonnet", name: "Claude Sonnet" },
+          { value: "opus", name: "Claude Opus" },
+        ],
+      },
+      {
+        id: "mode",
+        name: "Mode",
+        category: "mode",
+        type: "select",
+        currentValue: "review",
+        options: [
+          { value: "code", name: "Code" },
+          { value: "review", name: "Review" },
+        ],
+      },
+    ];
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "",
+      event: {
+        sessionUpdate: "config_option_update",
+        configOptions: updated,
+      },
+    });
+
+    expect(store.get("sess-1")?.configOptions).toEqual(updated);
+    expect(store.get("sess-1")?.currentModeId).toBe("review");
+  });
+
+  test("patches existing rows with persisted creation time", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-1", "claude-acp", "Draft label");
+
+    store.seedPersisted([
+      {
+        id: "sess-1",
+        agent_id: "claude-acp",
+        cwd: "/tmp/project",
+        acp_session_id: "acp-1",
+        title: "Persisted label",
+        last_used_at: 456,
+        created_at: 123,
+      },
+    ]);
+
+    expect(store.get("sess-1")?.createdAt).toBe(123);
+  });
+
+  test("stores session-scoped config option updates without a turn", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-config-option-update";
+    store.registerStarting(sessionId, "codex-acp", "Config test");
+
+    store.apply({
       type: "session.event",
       session_id: sessionId,
       turn_id: "",
@@ -65,17 +171,120 @@ describe("sessionStore session config", () => {
       },
     });
 
-    expect(sessionStore.get(sessionId)?.configOptions?.[0]?.currentValue).toBe(
-      "gpt-5",
-    );
+    expect(store.get(sessionId)?.configOptions?.[0]?.currentValue).toBe("gpt-5");
   });
 });
 
-describe("sessionStore prompt queue state", () => {
-  it("keeps the active turn running and marks later turns queued", () => {
+describe("SessionStore event reducers", () => {
+  test("accepts wrapped ACP chunk events on the streaming accumulators", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-1",
+      acp_session_id: "acp-1",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+      config_options: initialConfig,
+    });
+    store.registerTurn("turn-1", "sess-1", "hello");
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      event: {
+        sessionId: "acp-1",
+        update: {
+          sessionUpdate: "agent_thought_chunk",
+          content: { type: "text", text: "Thinking" },
+        },
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      event: {
+        sessionId: "acp-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "PONG" },
+        },
+      },
+    });
+
+    const turn = store.turnsFor("sess-1")[0];
+    expect(turn?.thoughtText).toBe("Thinking");
+    expect(turn?.assistantText).toBe("PONG");
+  });
+
+  test("accepts bare OpenMA chunk events on the streaming accumulators", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-1",
+      acp_session_id: "acp-1",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+      config_options: initialConfig,
+    });
+    store.registerTurn("turn-1", "sess-1", "hello");
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      event: { type: "agent.thinking_chunk", delta: "Checking" },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      event: { type: "agent.message_chunk", delta: "Done" },
+    });
+
+    const turn = store.turnsFor("sess-1")[0];
+    expect(turn?.thoughtText).toBe("Checking");
+    expect(turn?.assistantText).toBe("Done");
+  });
+
+  test("accepts snake_case available command updates", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-1",
+      acp_session_id: "acp-1",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+      config_options: initialConfig,
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "",
+      event: {
+        sessionUpdate: "available_commands_update",
+        available_commands: [
+          { name: "review", description: "Review the current workspace" },
+          { name: "render", input: { hint: "scene id" } },
+        ],
+      },
+    });
+
+    expect(store.get("sess-1")?.availableCommands).toEqual([
+      { name: "review", description: "Review the current workspace" },
+      { name: "render", input: { hint: "scene id" } },
+    ]);
+  });
+});
+
+describe("SessionStore prompt queue state", () => {
+  test("keeps the active turn running and marks later turns queued", () => {
+    const store = new SessionStore();
     const sessionId = "sess-queue-state";
-    sessionStore.registerStarting(sessionId, "codex-acp", "Queue test");
-    sessionStore.apply({
+    store.registerStarting(sessionId, "codex-acp", "Queue test");
+    store.apply({
       type: "session.ready",
       session_id: sessionId,
       acp_session_id: "acp-queue-state",
@@ -83,46 +292,44 @@ describe("sessionStore prompt queue state", () => {
       cwd: "/repo",
     });
 
-    sessionStore.registerTurn("turn-active", sessionId, "first");
-    sessionStore.registerTurn("turn-queued", sessionId, "second");
+    store.registerTurn("turn-active", sessionId, "first");
+    store.registerTurn("turn-queued", sessionId, "second");
 
-    expect(sessionStore.get(sessionId)?.activeTurnId).toBe("turn-active");
-    expect(
-      (sessionStore.get(sessionId) as { queuedTurnIds?: string[] } | undefined)
-        ?.queuedTurnIds,
-    ).toEqual(["turn-queued"]);
-    expect(sessionStore.turnsFor(sessionId).map((turn) => turn.status)).toEqual([
+    expect(store.get(sessionId)?.activeTurnId).toBe("turn-active");
+    expect(store.get(sessionId)?.queuedTurnIds).toEqual(["turn-queued"]);
+    expect(store.turnsFor(sessionId).map((turn) => turn.status)).toEqual([
       "running",
       "queued",
     ]);
 
-    sessionStore.apply({
+    store.apply({
       type: "session.complete",
       session_id: sessionId,
       turn_id: "turn-active",
     });
 
-    expect(sessionStore.get(sessionId)?.activeTurnId).toBe("turn-queued");
-    expect(sessionStore.get(sessionId)?.status).toBe("running");
-    expect(sessionStore.turnsFor(sessionId).map((turn) => turn.status)).toEqual([
+    expect(store.get(sessionId)?.activeTurnId).toBe("turn-queued");
+    expect(store.get(sessionId)?.status).toBe("running");
+    expect(store.turnsFor(sessionId).map((turn) => turn.status)).toEqual([
       "complete",
       "running",
     ]);
 
-    sessionStore.apply({
+    store.apply({
       type: "session.complete",
       session_id: sessionId,
       turn_id: "turn-queued",
     });
 
-    expect(sessionStore.get(sessionId)?.activeTurnId).toBeUndefined();
-    expect(sessionStore.get(sessionId)?.status).toBe("ready");
+    expect(store.get(sessionId)?.activeTurnId).toBeUndefined();
+    expect(store.get(sessionId)?.status).toBe("ready");
   });
 
-  it("records requested and effective delivery for queued prompts", () => {
+  test("records requested and effective delivery for queued prompts", () => {
+    const store = new SessionStore();
     const sessionId = "sess-queue-delivery";
-    sessionStore.registerStarting(sessionId, "codex-acp", "Queue delivery test");
-    sessionStore.apply({
+    store.registerStarting(sessionId, "codex-acp", "Queue delivery test");
+    store.apply({
       type: "session.ready",
       session_id: sessionId,
       acp_session_id: "acp-queue-delivery",
@@ -130,20 +337,20 @@ describe("sessionStore prompt queue state", () => {
       cwd: "/repo",
     });
 
-    sessionStore.registerTurn("turn-active-delivery", sessionId, "first", {
+    store.registerTurn("turn-active-delivery", sessionId, "first", {
       intent: "submit",
       requestedDelivery: "turn_end",
       effectiveDelivery: "turn_end",
       degraded: false,
     });
-    sessionStore.registerTurn("turn-steer-degraded", sessionId, "steer me", {
+    store.registerTurn("turn-steer-degraded", sessionId, "steer me", {
       intent: "steer",
       requestedDelivery: "llm_boundary",
       effectiveDelivery: "turn_end",
       degraded: true,
     });
 
-    const degraded = sessionStore
+    const degraded = store
       .turnsFor(sessionId)
       .find((turn) => turn.id === "turn-steer-degraded");
 
@@ -153,25 +360,52 @@ describe("sessionStore prompt queue state", () => {
     expect(degraded?.effectiveDelivery).toBe("turn_end");
     expect(degraded?.deliveryDegraded).toBe(true);
   });
+
+  test("applies main-process queue snapshots", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-main-queue";
+    store.registerStarting(sessionId, "codex-acp", "Queue snapshot test");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-main-queue",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    store.apply({
+      type: "session.queue_update",
+      session_id: sessionId,
+      mode: "single",
+      active_turn_id: "turn-active",
+      queued: [{ turn_id: "turn-next", text: "next", created_at: 123 }],
+    });
+
+    expect(store.get(sessionId)?.activeTurnId).toBe("turn-active");
+    expect(store.get(sessionId)?.queuedPrompts).toEqual([
+      { turn_id: "turn-next", text: "next", created_at: 123 },
+    ]);
+  });
 });
 
-describe("sessionStore pair chat grouping", () => {
-  it("creates one normal turn per pair member for a shared prompt", () => {
-    const pairId = sessionStore.newDraftPair([
+describe("SessionStore pair chat grouping", () => {
+  test("creates one normal turn per pair member for a shared prompt", () => {
+    const store = new SessionStore();
+    const pairId = store.newDraftPair([
       "pair-test-codex",
       "pair-test-claude",
     ]);
-    const pair = sessionStore.pair(pairId);
+    const pair = store.pair(pairId);
 
     expect(pair?.members).toHaveLength(2);
 
-    const targets = sessionStore.registerPairTurn(pairId, "Compare approaches");
+    const targets = store.registerPairTurn(pairId, "Compare approaches");
 
     expect(targets).toHaveLength(2);
-    expect(new Set(targets?.map((t) => t.turn_id)).size).toBe(2);
+    expect(new Set(targets?.map((target) => target.turn_id)).size).toBe(2);
 
     for (const target of targets ?? []) {
-      expect(sessionStore.turnsFor(target.session_id)).toMatchObject([
+      expect(store.turnsFor(target.session_id)).toMatchObject([
         {
           id: target.turn_id,
           promptText: "Compare approaches",
@@ -180,32 +414,33 @@ describe("sessionStore pair chat grouping", () => {
       ]);
     }
 
-    expect(sessionStore.pair(pairId)?.activeTurnId).toBeTruthy();
+    expect(store.pair(pairId)?.activeTurnId).toBeTruthy();
 
-    sessionStore.apply({
+    store.apply({
       type: "session.complete",
       session_id: targets?.[0]?.session_id ?? "",
       turn_id: targets?.[0]?.turn_id ?? "",
     });
 
-    expect(sessionStore.pair(pairId)?.activeTurnId).toBeTruthy();
+    expect(store.pair(pairId)?.activeTurnId).toBeTruthy();
 
-    sessionStore.apply({
+    store.apply({
       type: "session.complete",
       session_id: targets?.[1]?.session_id ?? "",
       turn_id: targets?.[1]?.turn_id ?? "",
     });
 
-    expect(sessionStore.pair(pairId)?.activeTurnId).toBeUndefined();
+    expect(store.pair(pairId)?.activeTurnId).toBeUndefined();
   });
 
-  it("persists pair grouping metadata through the app API", () => {
+  test("persists pair grouping metadata through the app API", () => {
+    const store = new SessionStore();
     const pairSave = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("window", {
       backchat: { pairSave },
     });
 
-    const pairId = sessionStore.newDraftPair([
+    const pairId = store.newDraftPair([
       "pair-persist-codex",
       "pair-persist-claude",
     ]);
@@ -213,7 +448,7 @@ describe("sessionStore pair chat grouping", () => {
     expect(pairSave).toHaveBeenCalledWith(
       expect.objectContaining({
         pair_id: pairId,
-        members: sessionStore.pair(pairId)?.members.map((session_id) =>
+        members: store.pair(pairId)?.members.map((session_id) =>
           expect.objectContaining({ session_id }),
         ),
       }),

@@ -22,10 +22,10 @@ test.describe("backchat smoke", () => {
     try {
       // Sidebar chrome — New chat + Search rows.
       await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
-      await expect(page.locator("button", { hasText: "Search" })).toBeVisible();
+      await expect(page.locator("button", { hasText: "Search" }).first()).toBeVisible();
 
-      // Empty-state title — only renders when no active session.
-      await expect(page.getByText(/What can I help with\?|Pick a default agent/)).toBeVisible();
+      // Empty-state title when no default agent has been selected.
+      await expect(page.getByText("Pick a default agent")).toBeVisible();
     } finally {
       await cleanup();
     }
@@ -109,11 +109,13 @@ test.describe("backchat smoke", () => {
         },
       });
 
-      const modelPicker = page.getByTitle("Model");
+      const modelPicker = page.getByRole("button", {
+        name: /Run on Local with .* using/,
+      });
       await expect(modelPicker).toContainText("GPT-5 mini");
 
       await modelPicker.click();
-      await page.getByRole("menuitem", { name: /^GPT-5$/ }).click();
+      await page.getByRole("menuitem", { name: "GPT-5 Model" }).click();
 
       await expect
         .poll(async () =>

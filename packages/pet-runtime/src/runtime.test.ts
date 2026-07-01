@@ -127,6 +127,7 @@ describe("createPetRuntime", () => {
         reason: "tool_call:edit",
         sessionId: "sess-1",
         turnId: "turn-1",
+        source: "backchat.acp",
         label: "Editing package.json",
       },
     ]);

@@ -18,6 +18,12 @@ export const InvokeChannel = {
    *  (OAuth browser handoff, API-key validation, ...). Resolves
    *  on success; rejects with the agent's raw error on failure. */
   AcpAuthenticate: "acp:authenticate",
+  AgentProbe: "agent:probe",
+  AgentInstall: "agent:install",
+  AgentUpgrade: "agent:upgrade",
+  AgentUninstall: "agent:uninstall",
+  AgentAuthenticate: "agent:authenticate",
+  AgentSetDefault: "agent:setDefault",
   SessionStart: "session:start",
   SessionPrompt: "session:prompt",
   SessionSetConfigOption: "session:setConfigOption",
@@ -91,6 +97,8 @@ export const InvokeChannel = {
   TestReadSessionPrompts: "__test:readSessionPrompts",
   TestReadSessionConfigOptions: "__test:readSessionConfigOptions",
   TestSetPickedFiles: "__test:setPickedFiles",
+  TestSetAgentSetupFixture: "__test:setAgentSetupFixture",
+  TestAgentSetupCalls: "__test:agentSetupCalls",
 } as const;
 
 export const PushChannel = {

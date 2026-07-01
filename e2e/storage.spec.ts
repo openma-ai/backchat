@@ -4,7 +4,12 @@ import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
-import { launchAppWithHome, persistSessionFixture } from "./helpers";
+import {
+  closeApp,
+  exportSessionFiles,
+  launchAppWithHome,
+  persistSessionFixture,
+} from "./helpers";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fakeAcpAgentPath = join(here, "fixtures", "fake-acp-agent.mjs");
@@ -54,7 +59,7 @@ test.describe("user-visible storage persistence", () => {
         ],
       });
     } finally {
-      await first.app.close();
+      await closeApp(first.app);
     }
 
     const second = await launchAppWithHome(home);
@@ -112,7 +117,7 @@ test.describe("user-visible storage persistence", () => {
       await expect(liveTranscript.getByText(prompt, { exact: true })).toBeVisible();
       await expect(liveTranscript.getByText(response)).toBeVisible();
     } finally {
-      await first.app.close();
+      await closeApp(first.app);
     }
 
     const transcriptFiles = await findFiles(join(home, "transcripts"), ".jsonl");
@@ -181,50 +186,47 @@ test.describe("user-visible storage persistence", () => {
 
     const first = await launchAppWithHome(home);
     try {
-      await first.page.evaluate(
-        async ({ nodePath, fakeAcpAgentPath, workspace }) => {
-          // @ts-expect-error — test bridge uses the public settings IPC.
-          await window.backchat.settingsPatch({
-            default: {
-              agent_id: "codex-acp",
-              workspace_path: workspace,
-              permission_mode: "ask",
-            },
-            agents: [
-              {
-                id: "codex-acp",
-                command_override: nodePath,
-                args_override: [fakeAcpAgentPath],
-                env: [],
+      await persistSessionFixture(first.page, {
+        sessionId: "e2e-rebuild-first",
+        agentId: "codex-acp",
+        cwd: workspace,
+        title: firstPrompt,
+        events: [
+          { type: "user_prompt", data: { text: firstPrompt } },
+          {
+            type: "agent_message_chunk",
+            data: {
+              sessionUpdate: "agent_message_chunk",
+              content: {
+                type: "text",
+                text: `Fake response saved for ${firstPrompt}.`,
               },
-            ],
-          });
-        },
-        { nodePath: process.execPath, fakeAcpAgentPath, workspace },
-      );
-
-      const composer = first.page.locator("textarea").first();
-      await composer.fill(firstPrompt);
-      await composer.press("Enter");
-
-      const liveTranscript = first.page.getByRole("log");
-      await expect(liveTranscript.getByText(firstPrompt, { exact: true })).toBeVisible();
-      await expect(
-        liveTranscript.getByText(`Fake response saved for ${firstPrompt}.`),
-      ).toBeVisible();
-
-      await first.page.getByRole("button", { name: "New chat", exact: true }).click();
-      const secondComposer = first.page.locator("textarea").first();
-      await secondComposer.fill(secondPrompt);
-      await secondComposer.press("Enter");
-
-      const secondTranscript = first.page.getByRole("log");
-      await expect(secondTranscript.getByText(secondPrompt, { exact: true })).toBeVisible();
-      await expect(
-        secondTranscript.getByText(`Fake response saved for ${secondPrompt}.`),
-      ).toBeVisible();
+            },
+          },
+        ],
+      });
+      await persistSessionFixture(first.page, {
+        sessionId: "e2e-rebuild-second",
+        agentId: "codex-acp",
+        cwd: workspace,
+        title: secondPrompt,
+        events: [
+          { type: "user_prompt", data: { text: secondPrompt } },
+          {
+            type: "agent_message_chunk",
+            data: {
+              sessionUpdate: "agent_message_chunk",
+              content: {
+                type: "text",
+                text: `Fake response saved for ${secondPrompt}.`,
+              },
+            },
+          },
+        ],
+      });
+      await exportSessionFiles(first.page, { overwrite: true });
     } finally {
-      await first.app.close();
+      await closeApp(first.app);
     }
 
     const transcriptFiles = await findFiles(join(home, "transcripts"), ".jsonl");
@@ -325,7 +327,7 @@ test.describe("user-visible storage persistence", () => {
       }, prompt);
       expect(sessionId).toBeTruthy();
     } finally {
-      await first.app.close();
+      await closeApp(first.app);
     }
 
     expect(await findFiles(join(home, "transcripts"), ".jsonl")).toHaveLength(0);
@@ -390,7 +392,7 @@ test.describe("user-visible storage persistence", () => {
       await expect(liveTranscript.getByText(prompt, { exact: true })).toBeVisible();
       await expect(liveTranscript.getByText("Internal error")).toBeVisible();
     } finally {
-      await first.app.close();
+      await closeApp(first.app);
     }
 
     const second = await launchAppWithHome(home);
@@ -417,7 +419,7 @@ test.describe("user-visible storage persistence", () => {
         first.page.getByText(/What can I help with\?|Pick a default agent/),
       ).toBeVisible();
     } finally {
-      await first.app.close();
+      await closeApp(first.app);
     }
 
     const second = await launchAppWithHome(home);
@@ -459,7 +461,7 @@ test.describe("user-visible storage persistence", () => {
         ],
       });
     } finally {
-      await first.app.close();
+      await closeApp(first.app);
     }
 
     const second = await launchAppWithHome(home);
@@ -515,7 +517,7 @@ test.describe("user-visible storage persistence", () => {
         await window.backchat.sessionsArchive({ session_id });
       }, sessionId);
     } finally {
-      await first.app.close();
+      await closeApp(first.app);
     }
 
     const metadataFiles = await findFiles(join(home, "transcripts"), ".meta.toml");
@@ -543,7 +545,7 @@ test.describe("user-visible storage persistence", () => {
       await expect(palette.getByText(title).first()).toBeVisible();
       await expect(palette.getByText(token).first()).toBeVisible();
     } finally {
-      await second.app.close();
+      await closeApp(second.app);
     }
 
     await removeSqliteIndex(home);

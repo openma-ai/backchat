@@ -5,6 +5,7 @@ import { appendEvent, appendEventsTx } from "./sql-store.js";
 
 const mocks = vi.hoisted(() => ({
   runtimeStart: vi.fn(),
+  probeAgentAuthStatus: vi.fn(async () => ({ status: "configured" })),
 }));
 
 vi.mock("node:child_process", () => ({
@@ -38,6 +39,10 @@ vi.mock("@open-managed-agents-desktop/acp/registry", () => ({
 
 vi.mock("@open-managed-agents-desktop/acp/binary-update", () => ({
   ensureLatestAcpBinary: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@open-managed-agents-desktop/acp/probe", () => ({
+  probeAgentAuthStatus: mocks.probeAgentAuthStatus,
 }));
 
 vi.mock("./sql-store.js", () => ({
@@ -84,6 +89,7 @@ describe("SessionManager prompt queue", () => {
       text: "two",
     });
 
+    await vi.waitUntil(() => fake.prompts.length === 1);
     expect(fake.prompts).toEqual([[{ type: "text", text: "one" }]]);
 
     fake.releaseNext();
@@ -155,6 +161,7 @@ describe("SessionManager prompt queue", () => {
       ],
     });
 
+    await vi.waitUntil(() => fake.prompts.length === 1);
     expect(fake.prompts).toEqual([
       [
         { type: "text", text: "review this" },

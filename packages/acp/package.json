@@ -8,6 +8,8 @@
     "./node-spawner": "./src/spawners/node.ts",
     "./registry": "./src/registry.ts",
     "./known-agents": "./src/known-agents.ts",
+    "./installer": "./src/installer.ts",
+    "./probe": "./src/probe.ts",
     "./binary-update": "./src/acp-binary-update.ts"
   },
   "dependencies": {

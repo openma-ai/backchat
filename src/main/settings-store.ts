@@ -93,6 +93,10 @@ const SettingsSchema = z.object({
      *                  so the agent can react instead of hanging.
      */
     permission_mode: z.enum(["ask", "auto", "read_only"]).default("ask"),
+    /** Follow-up prompt behavior. Enabled mirrors Clash's single prompt
+     *  queue: a second prompt waits for the active agent loop to finish.
+     *  Disabled preserves immediate concurrent prompt dispatch. */
+    prompt_queue_enabled: z.boolean().default(true),
   }),
   appearance: z.object({
     theme: z.enum(["system", "light", "dark"]).default("system"),

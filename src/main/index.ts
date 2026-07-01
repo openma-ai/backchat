@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, nativeImage, net, protocol, shell } from "electron";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { registerIpc } from "./ipc.js";
 import { setSessionRoot } from "./session-cwd.js";
 import { settingsStore } from "./settings-store.js";
@@ -360,9 +360,17 @@ if (!gotLock) {
     // via SettingsStore.ensureDir() on first write; the SQL store /
     // session cwd helpers create their own subpaths on demand.
     const root = openmaRoot();
+    const acpRoot = join(root, "acp");
+    const acpBinDir = join(acpRoot, "bin");
+    process.env.OPENMA_ACP_BIN_DIR = acpBinDir;
+    process.env.PATH = [acpBinDir, process.env.PATH].filter(Boolean).join(delimiter);
     setSessionRoot(join(root, "sessions"));
     openSessionDb(join(root, "sessions.db"));
-    registerIpc({ registryCachePath: join(root, "registry-cache.json") });
+    registerIpc({
+      registryCachePath: join(root, "registry-cache.json"),
+      acpBinDir,
+      acpInstallRoot: acpRoot,
+    });
 
     installAppMenu({
       openNewWindow: () => createWindow(),
@@ -381,7 +389,7 @@ if (!gotLock) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.env["BACKCHAT_TEST_HOOKS"] === "1" || process.platform !== "darwin") app.quit();
 });
 
 // Kill any live pty children before electron tears down. Without this,

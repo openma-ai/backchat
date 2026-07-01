@@ -1,7 +1,11 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { _resetRegistryCache, loadRegistry } from "./registry";
 
-describe("loadRegistry", () => {
+import { _resetRegistryCache, detect, getKnownAgents, loadRegistry } from "./registry.js";
+
+describe("ACP agent setup registry", () => {
   beforeEach(() => {
     _resetRegistryCache();
   });
@@ -11,7 +15,7 @@ describe("loadRegistry", () => {
     _resetRegistryCache();
   });
 
-  it("keeps official adapter launch specs when overlay metadata exists", async () => {
+  it("keeps official registry metadata while preserving Backchat launch specs", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -39,13 +43,9 @@ describe("loadRegistry", () => {
     );
 
     const agents = await loadRegistry({ forceRefresh: true });
-    const claude = agents.find((a) => a.id === "claude-acp");
+    const claude = agents.find((agent) => agent.id === "claude-acp");
 
-    expect(claude?.spec.command).toBe("npx");
-    expect(claude?.spec.args).toEqual([
-      "-y",
-      "@agentclientprotocol/claude-agent-acp@0.45.0",
-    ]);
+    expect(claude?.spec.command).toBe("claude-agent-acp");
     expect(claude?.version).toBe("0.45.0");
     expect(claude?.install).toEqual({
       kind: "npm",
@@ -53,5 +53,53 @@ describe("loadRegistry", () => {
     });
     expect(claude?.featured).toBe(true);
     expect(claude?.wraps).toBe("claude");
+  });
+
+  it("keeps common registry agents available offline", async () => {
+    await loadRegistry({
+      cachePath: join(tmpdir(), `backchat-missing-registry-${process.pid}-${Date.now()}.json`),
+      ttlMs: 0,
+      cacheOnly: true,
+    }).catch(() => undefined);
+
+    const ids = getKnownAgents().map((agent) => agent.id);
+
+    expect(ids).toEqual(expect.arrayContaining([
+      "codex-acp",
+      "claude-acp",
+      "gemini",
+      "opencode",
+      "cursor",
+      "qwen-code",
+      "github-copilot-cli",
+      "kilo",
+      "grok-build",
+      "amp-acp",
+      "goose",
+      "cline",
+      "auggie",
+      "hermes",
+      "openclaw",
+    ]));
+  });
+
+  it("resolves registry agents from Backchat's managed ACP bin directory before PATH", async () => {
+    const binDir = join(tmpdir(), `backchat-acp-bin-${process.pid}-${Date.now()}`);
+    await mkdir(binDir, { recursive: true });
+    const geminiShim = join(binDir, "openma-acp-gemini");
+    await writeFile(geminiShim, "#!/usr/bin/env node\n", { mode: 0o755 });
+
+    const detected = await detect("gemini", {
+      env: {
+        PATH: "/usr/bin:/bin",
+        OPENMA_ACP_BIN_DIR: binDir,
+      },
+      systemPathFallbackDirs: [],
+    });
+
+    expect(detected).toMatchObject({
+      id: "gemini",
+      spec: { command: geminiShim, args: ["--acp"] },
+    });
   });
 });

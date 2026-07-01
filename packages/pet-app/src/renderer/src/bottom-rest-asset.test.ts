@@ -67,7 +67,7 @@ function readRgbaPng(path: string): DecodedPng {
   const rgba = Buffer.alloc(stride * height);
   for (let y = 0; y < height; y += 1) {
     const src = y * (stride + 1);
-    const filter = inflated[src];
+    const filter = inflated[src] ?? 0;
     const row = Buffer.from(inflated.subarray(src + 1, src + 1 + stride));
     const previous = y === 0 ? null : rgba.subarray((y - 1) * stride, y * stride);
     unfilterRow(row, previous, filter, 4);
@@ -78,13 +78,14 @@ function readRgbaPng(path: string): DecodedPng {
 
 function unfilterRow(row: Buffer, previous: Buffer | null, filter: number, bytesPerPixel: number): void {
   for (let i = 0; i < row.length; i += 1) {
-    const left = i >= bytesPerPixel ? row[i - bytesPerPixel] : 0;
-    const up = previous ? previous[i] : 0;
-    const upperLeft = previous && i >= bytesPerPixel ? previous[i - bytesPerPixel] : 0;
-    if (filter === 1) row[i] = (row[i] + left) & 0xff;
-    else if (filter === 2) row[i] = (row[i] + up) & 0xff;
-    else if (filter === 3) row[i] = (row[i] + Math.floor((left + up) / 2)) & 0xff;
-    else if (filter === 4) row[i] = (row[i] + paeth(left, up, upperLeft)) & 0xff;
+    const value = row[i] ?? 0;
+    const left = i >= bytesPerPixel ? row[i - bytesPerPixel] ?? 0 : 0;
+    const up = previous ? previous[i] ?? 0 : 0;
+    const upperLeft = previous && i >= bytesPerPixel ? previous[i - bytesPerPixel] ?? 0 : 0;
+    if (filter === 1) row[i] = (value + left) & 0xff;
+    else if (filter === 2) row[i] = (value + up) & 0xff;
+    else if (filter === 3) row[i] = (value + Math.floor((left + up) / 2)) & 0xff;
+    else if (filter === 4) row[i] = (value + paeth(left, up, upperLeft)) & 0xff;
     else expect(filter).toBe(0);
   }
 }

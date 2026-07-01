@@ -27,7 +27,7 @@ import type {
   PairStartParams,
 } from "../shared/pair-events.js";
 import type { Settings } from "../shared/settings.js";
-import { detectAll, getKnownAgents, loadRegistry } from "@open-managed-agents-desktop/acp/registry";
+import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
@@ -59,6 +59,25 @@ interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
    *  overlay-only set; later phases pass `app.getPath('userData')/...` */
   registryCachePath: string;
+  acpBinDir: string;
+  acpInstallRoot: string;
+}
+
+interface TestAgentSetupCall {
+  type: "list" | "probe" | "install" | "upgrade" | "uninstall" | "auth" | "default";
+  id?: string;
+  methodId?: string;
+}
+
+interface TestAgentSetupFixture {
+  agents: AgentInfo[];
+  probeResults?: Record<string, AgentInfo[]>;
+  authenticateResults?: Record<string, AgentInfo[]>;
+  installResults?: Record<string, AgentInfo[]>;
+  upgradeResults?: Record<string, AgentInfo[]>;
+  uninstallResults?: Record<string, AgentInfo[]>;
+  defaultResults?: Record<string, AgentInfo[]>;
+  calls?: TestAgentSetupCall[];
 }
 
 /**
@@ -71,8 +90,41 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
   const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
   const testPromptCalls: SessionPromptParams[] = [];
   const testConfigOptionCalls: SessionSetConfigOptionParams[] = [];
+  let testAgentSetupFixture: TestAgentSetupFixture | null = null;
   const isSyntheticTestSession = (sessionId: string) =>
     sessionId.startsWith("e2e-") || sessionId.startsWith("sess-test-");
+  const agentSetup = createAgentSetupService({
+    registryCachePath: deps.registryCachePath,
+    acpBinDir: deps.acpBinDir,
+    acpInstallRoot: deps.acpInstallRoot,
+    launchInteractiveAuth: launchTerminalAuth,
+    agentOverrides: () => settingsStore.get().agents,
+    getDefaultAgentId: () => settingsStore.get().default.agent_id,
+    saveDefaultAgentId: async (id) => {
+      const s = settingsStore.get();
+      await settingsStore.patch({
+        default: { ...s.default, agent_id: id },
+      });
+    },
+  });
+  void agentSetup.warmup().catch((error) => {
+    process.stderr.write(`! ACP agent warmup failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  });
+  const recordTestAgentSetupCall = (call: TestAgentSetupCall): void => {
+    testAgentSetupFixture?.calls?.push(call);
+  };
+  const testAgentSetupResult = (
+    bucket: keyof Pick<
+      TestAgentSetupFixture,
+      "probeResults" | "authenticateResults" | "installResults" | "upgradeResults" | "uninstallResults" | "defaultResults"
+    >,
+    id: string,
+  ): AgentInfo[] => {
+    if (!testAgentSetupFixture) return [];
+    const next = testAgentSetupFixture[bucket]?.[id] ?? testAgentSetupFixture.agents;
+    testAgentSetupFixture.agents = next;
+    return next;
+  };
 
   // Two outbound sinks: single-session events and pair events. Both
   // ultimately broadcast to all browser windows, just on distinct
@@ -119,6 +171,7 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
         agentId: s.default.agent_id || undefined,
         cwd: s.default.workspace_path || undefined,
         permissionMode: s.default.permission_mode,
+        promptQueueEnabled: s.default.prompt_queue_enabled,
       };
     },
     resolveAgentOverride: (agentId) => {
@@ -130,6 +183,7 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
       const envOverride: Record<string, string> = {};
       for (const e of o.env) envOverride[e.name] = e.value;
       return {
+        labelOverride: o.label_override,
         commandOverride: o.command_override,
         argsOverride: o.args_override,
         envOverride,
@@ -172,20 +226,60 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     return reply;
   });
 
-  ipcMain.handle(InvokeChannel.AgentsList, async (): Promise<AgentInfo[]> => {
-    // Best-effort: refresh the live registry once per call (cheap — 1h TTL
-    // cache means the second call within an hour is a noop disk read).
-    await loadRegistry({ cachePath: deps.registryCachePath }).catch(() => undefined);
-    const detected = new Set((await detectAll()).map((a) => a.id));
-    return getKnownAgents().map((a) => ({
-      id: a.id,
-      label: a.label,
-      command: a.spec.command,
-      installHint: a.installHint,
-      homepage: a.homepage,
-      featured: a.featured,
-      detected: detected.has(a.id),
-    }));
+  ipcMain.handle(
+    InvokeChannel.AgentsList,
+    (_e, options?: { probeAuth?: boolean; refresh?: boolean }): Promise<AgentInfo[]> | AgentInfo[] => {
+      if (testAgentSetupFixture) {
+        recordTestAgentSetupCall({ type: "list" });
+        return testAgentSetupFixture.agents;
+      }
+      return agentSetup.listAgents(options);
+    },
+  );
+  ipcMain.handle(InvokeChannel.AgentProbe, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
+    if (testAgentSetupFixture) {
+      recordTestAgentSetupCall({ type: "probe", id });
+      return testAgentSetupResult("probeResults", id);
+    }
+    return agentSetup.probeAgent(id);
+  });
+  ipcMain.handle(InvokeChannel.AgentInstall, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
+    if (testAgentSetupFixture) {
+      recordTestAgentSetupCall({ type: "install", id });
+      return testAgentSetupResult("installResults", id);
+    }
+    return agentSetup.installAgent(id);
+  });
+  ipcMain.handle(InvokeChannel.AgentUpgrade, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
+    if (testAgentSetupFixture) {
+      recordTestAgentSetupCall({ type: "upgrade", id });
+      return testAgentSetupResult("upgradeResults", id);
+    }
+    return agentSetup.upgradeAgent(id);
+  });
+  ipcMain.handle(InvokeChannel.AgentUninstall, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
+    if (testAgentSetupFixture) {
+      recordTestAgentSetupCall({ type: "uninstall", id });
+      return testAgentSetupResult("uninstallResults", id);
+    }
+    return agentSetup.uninstallAgent(id);
+  });
+  ipcMain.handle(
+    InvokeChannel.AgentAuthenticate,
+    (_e, p: { id: string; methodId?: string }): Promise<AgentInfo[]> | AgentInfo[] => {
+      if (testAgentSetupFixture) {
+        recordTestAgentSetupCall({ type: "auth", id: p.id, methodId: p.methodId });
+        return testAgentSetupResult("authenticateResults", p.id);
+      }
+      return agentSetup.authenticateAgent(p.id, { methodId: p.methodId });
+    },
+  );
+  ipcMain.handle(InvokeChannel.AgentSetDefault, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
+    if (testAgentSetupFixture) {
+      recordTestAgentSetupCall({ type: "default", id });
+      return testAgentSetupResult("defaultResults", id);
+    }
+    return agentSetup.setDefaultAgent(id);
   });
 
   ipcMain.handle(
@@ -461,6 +555,19 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     );
     ipcMain.handle(InvokeChannel.TestReadSessionConfigOptions, () =>
       testConfigOptionCalls.map((p) => ({ ...p })),
+    );
+    ipcMain.handle(
+      InvokeChannel.TestSetAgentSetupFixture,
+      (_e, fixture: TestAgentSetupFixture) => {
+        testAgentSetupFixture = {
+          ...fixture,
+          calls: [],
+        };
+      },
+    );
+    ipcMain.handle(
+      InvokeChannel.TestAgentSetupCalls,
+      () => testAgentSetupFixture?.calls ?? [],
     );
   }
 

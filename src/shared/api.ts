@@ -24,6 +24,35 @@ export interface AgentInfo {
   featured?: boolean;
   /** Whether the binary is actually on PATH right now. detectAll-derived. */
   detected: boolean;
+  /** Alias for detected, kept explicit for setup UI copy. */
+  available?: boolean;
+  installed?: boolean;
+  installedVersion?: string;
+  latestVersion?: string;
+  updateAvailable?: boolean;
+  installable?: boolean;
+  installSource?: "registry" | "adapter";
+  custom?: boolean;
+  auth?: {
+    status: "configured" | "needs-auth" | "unknown";
+    message: string;
+    methodId?: string;
+    methodName?: string;
+    methods?: Array<{
+      id: string;
+      name?: string;
+      description?: string;
+      type?: string;
+      vars?: Array<{
+        name: string;
+        label?: string;
+        secret?: boolean;
+        optional?: boolean;
+      }>;
+      link?: string;
+    }>;
+  };
+  config_options?: unknown[];
 }
 
 /** Public shape of a persisted session row. Mirrors PersistedSession in
@@ -155,7 +184,13 @@ export interface BackchatApi {
 
   /** All known ACP agents merged from the official registry + overlay,
    *  flagged by detection. Renderer uses this to power the agent picker. */
-  agentsList(): Promise<AgentInfo[]>;
+  agentsList(options?: { probeAuth?: boolean; refresh?: boolean }): Promise<AgentInfo[]>;
+  agentProbe(id: string): Promise<AgentInfo[]>;
+  agentInstall(id: string): Promise<AgentInfo[]>;
+  agentUpgrade(id: string): Promise<AgentInfo[]>;
+  agentUninstall(id: string): Promise<AgentInfo[]>;
+  agentAuthenticate(p: { id: string; methodId?: string }): Promise<AgentInfo[]>;
+  agentSetDefault(id: string): Promise<AgentInfo[]>;
 
   /** Probe an ACP agent for the auth methods it advertises on
    *  initialize. Settings → Agents calls this to render a sign-in

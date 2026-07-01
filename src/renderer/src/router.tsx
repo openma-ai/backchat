@@ -21,6 +21,7 @@ import {
   createRouter,
   Outlet,
   redirect,
+  useLocation,
 } from "@tanstack/react-router";
 import { ChatPage } from "@/pages/ChatPage";
 import { PairChatPage } from "@/pages/PairChatPage";
@@ -32,12 +33,15 @@ import { SettingsMcpServers } from "@/pages/settings/McpServers";
 import { Archive as SettingsArchive } from "@/pages/settings/Archive";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
 
+function RootRoute() {
+  const location = useLocation();
+  const outlet = <Outlet />;
+  if (location.pathname.startsWith("/settings")) return outlet;
+  return <ShellLayout>{outlet}</ShellLayout>;
+}
+
 const rootRoute = createRootRoute({
-  component: () => (
-    <ShellLayout>
-      <Outlet />
-    </ShellLayout>
-  ),
+  component: RootRoute,
 });
 
 const homeRoute = createRoute({

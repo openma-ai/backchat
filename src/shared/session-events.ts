@@ -127,6 +127,11 @@ export type SessionEventOut =
       acp_session_id: string;
       agent_id: string;
       cwd: string;
+      /** ACP `NewSessionResponse.configOptions` /
+       *  `LoadSessionResponse.configOptions`, if the agent supports
+       *  runtime session configuration. Kept as unknown at the shared
+       *  IPC boundary; the renderer narrows to its display shape. */
+      config_options?: readonly unknown[];
     }
   | {
       type: "session.event";
@@ -138,5 +143,42 @@ export type SessionEventOut =
       event: unknown;
     }
   | { type: "session.complete"; session_id: string; turn_id: string }
-  | { type: "session.error"; session_id: string; turn_id?: string; message: string }
+  | {
+      type: "session.queue_update";
+      session_id: string;
+      mode: "single";
+      active_turn_id: string | null;
+      queued: Array<{
+        turn_id: string;
+        text: string;
+        created_at: number;
+      }>;
+    }
+  | {
+      type: "session.error";
+      session_id: string;
+      turn_id?: string;
+      message: string;
+      code?: "auth_required";
+      agent_id?: string;
+      auth?: {
+        status: "configured" | "needs-auth" | "unknown";
+        message: string;
+        methodId?: string;
+        methodName?: string;
+        methods?: Array<{
+          id: string;
+          name?: string;
+          description?: string;
+          type?: string;
+          vars?: Array<{
+            name: string;
+            label?: string;
+            secret?: boolean;
+            optional?: boolean;
+          }>;
+          link?: string;
+        }>;
+      };
+    }
   | { type: "session.disposed"; session_id: string };

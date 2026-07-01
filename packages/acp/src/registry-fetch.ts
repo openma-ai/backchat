@@ -19,7 +19,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AgentSpec } from "./types.js";
-import type { KnownAgentEntry } from "./known-agents.js";
+import { registryShimName, type KnownAgentEntry } from "./known-agents.js";
 
 const REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
@@ -34,7 +34,7 @@ export interface OfficialRegistryAgent {
   license?: string;
   distribution: {
     npx?: { package: string; args?: string[]; env?: Record<string, string> };
-    binary?: Record<string, { archive: string; cmd: string; args?: string[] }>;
+    binary?: Record<string, { archive: string; cmd: string; args?: string[]; env?: Record<string, string> }>;
     uvx?: { package: string; args?: string[]; env?: Record<string, string> };
   };
 }
@@ -115,10 +115,15 @@ export function mapOfficialAgent(o: OfficialRegistryAgent): KnownAgentEntry | nu
   let installHint: string | undefined;
   let install: KnownAgentEntry["install"] | undefined;
 
+  let registryArgs: string[] | undefined;
+  let registryEnv: Record<string, string> | undefined;
+
   if (o.distribution.binary?.[platformKey]) {
     const b = o.distribution.binary[platformKey];
     const command = b.cmd.replace(/^\.\//, "").replace(/\.exe$/, "");
-    spec = { command, args: b.args };
+    registryArgs = b.args;
+    registryEnv = b.env;
+    spec = { command: registryShimName(o.id), args: registryArgs, env: registryEnv };
     installHint = `download ${b.archive} and place \`${command}\` on PATH`;
     const archives: Record<string, { url: string; cmd: string }> = {};
     for (const [k, v] of Object.entries(o.distribution.binary)) {
@@ -127,14 +132,18 @@ export function mapOfficialAgent(o: OfficialRegistryAgent): KnownAgentEntry | nu
     install = { kind: "binary", archives, downloadUrl: o.repository };
   } else if (o.distribution.npx) {
     const n = o.distribution.npx;
-    spec = { command: "npx", args: ["-y", n.package, ...(n.args ?? [])], env: n.env };
+    registryArgs = n.args;
+    registryEnv = n.env;
+    spec = { command: registryShimName(o.id), args: registryArgs, env: registryEnv };
     installHint = `npx -y ${n.package}` + (n.args ? " " + n.args.join(" ") : "");
     const lastAt = n.package.lastIndexOf("@");
     const pkgName = lastAt > 0 ? n.package.slice(0, lastAt) : n.package;
     install = { kind: "npm", package: pkgName };
   } else if (o.distribution.uvx) {
     const u = o.distribution.uvx;
-    spec = { command: "uvx", args: [u.package, ...(u.args ?? [])], env: u.env };
+    registryArgs = u.args;
+    registryEnv = u.env;
+    spec = { command: registryShimName(o.id), args: registryArgs, env: registryEnv };
     installHint = `uvx ${u.package}` + (u.args ? " " + u.args.join(" ") : "");
   }
 
@@ -147,6 +156,8 @@ export function mapOfficialAgent(o: OfficialRegistryAgent): KnownAgentEntry | nu
     version: o.version,
     installHint,
     install,
+    registryId: o.id,
+    installSource: "registry",
     homepage: o.website ?? o.repository,
   };
 }

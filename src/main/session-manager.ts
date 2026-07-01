@@ -27,6 +27,8 @@
  */
 
 import { spawn as childSpawn } from "node:child_process";
+import { access } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   AcpRuntimeImpl,
@@ -36,8 +38,12 @@ import {
   type PromptCapabilities,
 } from "@open-managed-agents-desktop/acp";
 import { NodeSpawner } from "@open-managed-agents-desktop/acp/node-spawner";
-import { resolveKnownAgent } from "@open-managed-agents-desktop/acp/registry";
+import { resolveKnownAgent, type KnownAgentEntry } from "@open-managed-agents-desktop/acp/registry";
 import { ensureLatestAcpBinary } from "@open-managed-agents-desktop/acp/binary-update";
+import {
+  probeAgentAuthStatus,
+  type ProbeAgentAuthStatus,
+} from "@open-managed-agents-desktop/acp/probe";
 import type {
   PromptAttachment,
   SessionConfigOption,
@@ -58,6 +64,7 @@ import {
 export type Sender = (msg: SessionEventOut) => void;
 
 interface ActiveSession {
+  id: string;
   acp: AcpSession;
   acpSessionId: string;
   agentId: string;
@@ -65,14 +72,16 @@ interface ActiveSession {
   /** Live turns keyed by turn_id. abort() cancels the ACP request and unwinds
    *  the prompt() async iterator. */
   turns: Map<string, AbortController>;
-  promptQueue: QueuedPrompt[];
-  promptQueueActive: boolean;
+  promptQueue: Promise<void>;
+  activePromptTurnId: string | null;
+  queuedPrompts: QueuedPrompt[];
+  promptQueueEnabled: boolean;
 }
 
 interface QueuedPrompt {
-  params: SessionPromptParams;
-  resolve: () => void;
-  reject: (err: unknown) => void;
+  turnId: string;
+  text: string;
+  createdAt: number;
 }
 
 export interface SessionManagerDeps {
@@ -98,11 +107,13 @@ export interface SessionManagerDeps {
     agentId?: string;
     cwd?: string;
     permissionMode?: "ask" | "auto" | "read_only";
+    promptQueueEnabled?: boolean;
   };
   resolveAgentOverride: (
     agentId: string,
   ) =>
     | {
+        labelOverride?: string;
         commandOverride?: string;
         argsOverride?: string[];
         envOverride?: Record<string, string>;
@@ -217,6 +228,7 @@ export class SessionManager {
         acp_session_id: sess.acpSessionId,
         agent_id: sess.agentId,
         cwd: sess.cwd,
+        config_options: sess.acp.configOptions,
       });
     }
   }
@@ -231,6 +243,7 @@ export class SessionManager {
         acp_session_id: existing.acpSessionId,
         agent_id: existing.agentId,
         cwd: existing.cwd,
+        config_options: existing.acp.configOptions,
       });
       return;
     }
@@ -250,7 +263,9 @@ export class SessionManager {
       });
       return;
     }
-    const agent = resolveKnownAgent(requestedAgentId);
+    const knownAgent = resolveKnownAgent(requestedAgentId);
+    const override = this.#resolveAgentOverride(requestedAgentId) ?? {};
+    const agent = knownAgent ?? customAgentFromOverride(requestedAgentId, override);
     if (!agent) {
       this.#send({
         type: "session.error",
@@ -263,20 +278,18 @@ export class SessionManager {
     // Apply per-agent overrides from settings — lets the user point at a
     // custom binary path or inject env vars (ANTHROPIC_API_KEY etc.) per
     // agent without touching the registry.
-    const override = this.#resolveAgentOverride(agent.id) ?? {};
     const command = override.commandOverride || agent.spec.command;
     const args = override.argsOverride ?? agent.spec.args;
+    const agentEnv = scrubAcpSpawnEnv({
+      ...(agent.spec.env ?? {}),
+      ...(override.envOverride ?? {}),
+    });
 
     // Verify binary is on PATH. Defense in depth: detectAll() should have
     // gated the picker, but the user could uninstall between picker and
     // start. Surface a clean error with the install hint instead of letting
     // child_process throw an unhelpful ENOENT.
-    const onPath = await new Promise<boolean>((resolve) => {
-      const probe = process.platform === "win32" ? "where" : "which";
-      const proc = childSpawn(probe, [command], { stdio: "ignore" });
-      proc.once("error", () => resolve(false));
-      proc.once("exit", (code) => resolve(code === 0));
-    });
+    const onPath = await commandExists(command);
     if (!onPath) {
       this.#send({
         type: "session.error",
@@ -294,6 +307,27 @@ export class SessionManager {
     const sessionCwd =
       p.cwd ?? defaults.cwd ?? (await ensureSessionCwd(p.session_id));
 
+    const auth = await this.#probeAuthBeforeStart({
+      ...agent,
+      spec: {
+        ...agent.spec,
+        command,
+        args,
+        env: agentEnv,
+      },
+    }, sessionCwd);
+    if (auth && authBlocksSessionStart(auth)) {
+      this.#send({
+        type: "session.error",
+        session_id: p.session_id,
+        code: "auth_required",
+        agent_id: agent.id,
+        auth: publicAuthForSessionError(auth),
+        message: agentAuthRequiredMessage(agent, auth),
+      });
+      return;
+    }
+
     // Best-effort: pull the latest binary for this agent before we spawn,
     // so a user who hasn't manually upgraded a binary still gets fixes
     // shipped by the upstream adapter (e.g. codex-acp 0.14.0 added image
@@ -301,7 +335,7 @@ export class SessionManager {
     // stuck on whatever they first installed). Runs at most once per
     // hour per agent_id; failures (network, permission, arch mismatch)
     // are swallowed and we fall through to spawning whatever is on disk.
-    if (agent.spec.command === command) {
+    if (knownAgent && agent.spec.command === command) {
       await ensureLatestAcpBinary(agent.id, {
         registryVersion: agent.version,
         install: agent.install,
@@ -317,23 +351,23 @@ export class SessionManager {
           command,
           args,
           cwd: sessionCwd,
-          env: scrubAcpSpawnEnv({
-            ...(agent.spec.env ?? {}),
-            ...(override.envOverride ?? {}),
-          }),
+          env: agentEnv,
         },
         mcpServers: this.#resolveMcpServers(agent.id) as never,
         resumeAcpSessionId: p.resume?.acp_session_id,
         clientCallbacks: this.#buildCallbacks(p.session_id, sessionCwd),
       });
       this.#sessions.set(p.session_id, {
+        id: p.session_id,
         acp: acpSession,
         acpSessionId: acpSession.acpSessionId,
         agentId: agent.id,
         cwd: sessionCwd,
         turns: new Map(),
-        promptQueue: [],
-        promptQueueActive: false,
+        promptQueue: Promise.resolve(),
+        activePromptTurnId: null,
+        queuedPrompts: [],
+        promptQueueEnabled: defaults.promptQueueEnabled !== false,
       });
       // Persist the session shell — title stays empty for now, the renderer
       // can later derive it from the first user prompt or let the user
@@ -352,6 +386,7 @@ export class SessionManager {
         acp_session_id: acpSession.acpSessionId,
         agent_id: agent.id,
         cwd: sessionCwd,
+        config_options: acpSession.configOptions,
       });
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
     } catch (e) {
@@ -361,15 +396,6 @@ export class SessionManager {
         message: e instanceof Error ? e.message : String(e),
       });
     }
-  }
-
-  async setConfigOption(p: SessionSetConfigOptionParams): Promise<void> {
-    const sess = this.#sessions.get(p.session_id);
-    if (!sess) {
-      throw new Error("no such session");
-    }
-    const configOptions = await sess.acp.setConfigOption(p.config_id, p.value);
-    this.#sendConfigOptions(p.session_id, configOptions);
   }
 
   async prompt(p: SessionPromptParams): Promise<void> {
@@ -394,34 +420,91 @@ export class SessionManager {
       return;
     }
 
-    return new Promise<void>((resolve, reject) => {
-      sess.promptQueue.push({ params: p, resolve, reject });
-      void this.#drainPromptQueue(p.session_id, sess);
+    return this.#dispatchPrompt(sess, p);
+  }
+
+  #dispatchPrompt(sess: ActiveSession, p: SessionPromptParams): Promise<void> {
+    if (!sess.promptQueueEnabled) {
+      return this.#runPrompt(sess, p);
+    }
+    const wasBusy = this.#promptBusy(sess);
+    if (wasBusy) {
+      this.#queuePrompt(sess, p);
+    } else {
+      sess.activePromptTurnId = p.turn_id;
+      this.#sendPromptQueueUpdate(sess);
+    }
+    const run = async () => {
+      if (wasBusy) {
+        sess.queuedPrompts = sess.queuedPrompts.filter((prompt) => prompt.turnId !== p.turn_id);
+        sess.activePromptTurnId = p.turn_id;
+        this.#sendPromptQueueUpdate(sess);
+      }
+      try {
+        await this.#runPrompt(sess, p);
+      } finally {
+        if (sess.activePromptTurnId === p.turn_id) {
+          sess.activePromptTurnId = null;
+        }
+        this.#sendPromptQueueUpdate(sess);
+      }
+    };
+    sess.promptQueue = sess.promptQueue.then(run, run);
+    return sess.promptQueue;
+  }
+
+  #promptBusy(sess: ActiveSession): boolean {
+    return sess.activePromptTurnId !== null || sess.queuedPrompts.length > 0;
+  }
+
+  #queuePrompt(sess: ActiveSession, p: SessionPromptParams): void {
+    const existing = sess.queuedPrompts.find((prompt) => prompt.turnId === p.turn_id);
+    if (existing) {
+      existing.text = p.text;
+    } else {
+      sess.queuedPrompts.push({
+        turnId: p.turn_id,
+        text: p.text,
+        createdAt: Date.now(),
+      });
+    }
+    this.#sendPromptQueueUpdate(sess);
+  }
+
+  #sendPromptQueueUpdate(sess: ActiveSession): void {
+    this.#send({
+      type: "session.queue_update",
+      session_id: sess.id,
+      mode: "single",
+      active_turn_id: sess.activePromptTurnId,
+      queued: sess.queuedPrompts.map((prompt) => ({
+        turn_id: prompt.turnId,
+        text: prompt.text,
+        created_at: prompt.createdAt,
+      })),
     });
   }
 
-  async #drainPromptQueue(session_id: string, sess: ActiveSession): Promise<void> {
-    if (sess.promptQueueActive) return;
-    sess.promptQueueActive = true;
+  async #probeAuthBeforeStart(
+    agent: KnownAgentEntry,
+    cwd: string,
+  ): Promise<ProbeAgentAuthStatus | null> {
     try {
-      while (sess.promptQueue.length > 0 && this.#sessions.get(session_id) === sess) {
-        const item = sess.promptQueue.shift()!;
-        try {
-          await this.#runPromptNow(item.params, sess);
-          item.resolve();
-        } catch (e) {
-          item.reject(e);
-        }
-      }
-    } finally {
-      sess.promptQueueActive = false;
-      if (sess.promptQueue.length > 0 && this.#sessions.get(session_id) === sess) {
-        void this.#drainPromptQueue(session_id, sess);
-      }
+      const auth = await probeAgentAuthStatus({
+        agent: agent.spec,
+        cwd,
+        timeoutMs: 15_000,
+      });
+      return auth.status === "none" ? null : auth;
+    } catch {
+      return {
+        status: "unknown",
+        message: "Could not verify agent authentication before starting.",
+      };
     }
   }
 
-  async #runPromptNow(p: SessionPromptParams, sess: ActiveSession): Promise<void> {
+  async #runPrompt(sess: ActiveSession, p: SessionPromptParams): Promise<void> {
     const ctrl = new AbortController();
     sess.turns.set(p.turn_id, ctrl);
     let promptErr: string | null = null;
@@ -512,6 +595,36 @@ export class SessionManager {
       void assistantText;
       // Bump last_used_at so the sidebar reorders.
       touchSession(p.session_id);
+    }
+  }
+
+  async setConfigOption(p: SessionSetConfigOptionParams): Promise<void> {
+    const sess = this.#sessions.get(p.session_id);
+    if (!sess) {
+      this.#send({
+        type: "session.error",
+        session_id: p.session_id,
+        message: "no such session",
+      });
+      return;
+    }
+    try {
+      const configOptions = await sess.acp.setConfigOption(p.config_id, p.value);
+      this.#send({
+        type: "session.event",
+        session_id: p.session_id,
+        turn_id: "",
+        event: {
+          sessionUpdate: "config_option_update",
+          configOptions,
+        },
+      });
+    } catch (e) {
+      this.#send({
+        type: "session.error",
+        session_id: p.session_id,
+        message: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -650,6 +763,71 @@ function derivePromptDisplayText(
   }
   const names = attachments.map((a) => a.name).join(", ");
   return `[Attached ${attachments.length} files: ${names}]`;
+}
+
+function customAgentFromOverride(
+  id: string,
+  override: NonNullable<ReturnType<SessionManagerDeps["resolveAgentOverride"]>>,
+): KnownAgentEntry | null {
+  const command = override.commandOverride?.trim();
+  if (!command) return null;
+  return {
+    id,
+    label: override.labelOverride?.trim() || id,
+    spec: {
+      command,
+      ...(override.argsOverride ? { args: override.argsOverride } : {}),
+    },
+  };
+}
+
+async function commandExists(command: string): Promise<boolean> {
+  if (isAbsolute(command)) {
+    return access(command).then(() => true, () => false);
+  }
+  return new Promise<boolean>((resolve) => {
+    const probe = process.platform === "win32" ? "where" : "which";
+    const proc = childSpawn(probe, [command], { stdio: "ignore" });
+    proc.once("error", () => resolve(false));
+    proc.once("exit", (code) => resolve(code === 0));
+  });
+}
+
+function authBlocksSessionStart(auth: ProbeAgentAuthStatus): boolean {
+  return auth.status === "needs-auth" || auth.status === "unknown";
+}
+
+function agentAuthRequiredMessage(
+  agent: KnownAgentEntry,
+  auth: ProbeAgentAuthStatus,
+): string {
+  const suffix = auth.message ? ` ${auth.message}` : "";
+  return `Authenticate ${agent.label} before starting.${suffix}`;
+}
+
+function publicAuthForSessionError(
+  auth: ProbeAgentAuthStatus,
+): NonNullable<Extract<SessionEventOut, { type: "session.error" }>["auth"]> {
+  const method = auth.methodName ?? auth.methodId;
+  const prefix = auth.status === "configured"
+    ? method ? `ACP auth is configured (${method}).` : "ACP auth is configured."
+    : auth.status === "needs-auth"
+      ? method ? `Authentication required (${method}).` : "Authentication required."
+      : "Could not verify auth.";
+  return {
+    status: auth.status === "none" ? "unknown" : auth.status,
+    message: auth.message ? `${prefix} ${auth.message}` : prefix,
+    ...(auth.methodId ? { methodId: auth.methodId } : {}),
+    ...(auth.methodName ? { methodName: auth.methodName } : {}),
+      ...(auth.methods ? { methods: auth.methods.map((method) => ({
+      id: method.id,
+      ...(method.name ? { name: method.name } : {}),
+      ...(method.description ? { description: method.description } : {}),
+      ...(method.type ? { type: method.type } : {}),
+      ...(method.vars ? { vars: method.vars } : {}),
+      ...(method.link ? { link: method.link } : {}),
+    })) } : {}),
+  };
 }
 
 /** Derive a sidebar label from the first prompt. Mirrors

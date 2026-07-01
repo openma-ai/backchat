@@ -18,15 +18,24 @@
  */
 
 import { useSyncExternalStore } from "react";
-import type {
-  SessionConfigOption,
-  SessionEventOut,
-} from "@shared/session-events.js";
+import type { SessionEventOut } from "@shared/session-events.js";
 import type {
   AgentMessageDelivery,
   AgentMessageIntent,
 } from "@shared/agent-interaction.js";
 import { setRightRailCollapsed } from "@/lib/right-rail";
+import {
+  selectedModeIdFromConfigOptions,
+  type AcpSessionConfigOption,
+} from "./session-config-options";
+import {
+  mergeStreamingText,
+  parseAcpEvent,
+  sessionUpdateInner,
+  sessionUpdateType,
+} from "./reduce-turn";
+
+export type { AcpSessionConfigOption } from "./session-config-options";
 
 export interface SessionRow {
   id: string;
@@ -67,6 +76,9 @@ export interface SessionRow {
    *  renderer keeps this list so completion of the current turn can
    *  promote the next optimistic turn from queued → running. */
   queuedTurnIds?: string[];
+  /** Main-process prompt queue snapshot. This mirrors the runtime contract
+   *  even when the current composer prevents normal users from double-send. */
+  queuedPrompts?: Array<{ turn_id: string; text: string; created_at: number }>;
   /** User-picked workspace for a draft session. Only set when the user
    *  explicitly chose a directory via the composer's workspace chip;
    *  drafts without it fall back to settings.default.workspace_path on
@@ -83,14 +95,14 @@ export interface SessionRow {
    *  if the agent never sent one — composer then hides the slash
    *  picker entirely. */
   availableCommands?: AcpAvailableCommand[];
+  /** Agent-declared ACP session configuration options from
+   *  `session/new`, `session/load`, and `config_option_update`.
+   *  These drive model / mode / thought-level controls in the run menu. */
+  configOptions?: AcpSessionConfigOption[];
   /** Current mode id the agent has declared via `current_mode_update`.
    *  Surfaced in the topbar next to the agent label. The agent owns
    *  the available mode set; we just echo whatever it said. */
   currentModeId?: string;
-  /** ACP session-level configuration options. The harness/agent stays
-   *  fixed for a session, while options like model can change at any
-   *  time via `session/set_config_option`. */
-  configOptions?: SessionConfigOption[];
   /** Set when a turn completes (or errors) while this session is NOT
    *  the active one — gives the sidebar an "unread" affordance so the
    *  user can scan which background chats have new results. Cleared
@@ -256,7 +268,7 @@ export interface WorkspaceArtifacts {
   services: string[];
 }
 
-class SessionStore {
+export class SessionStore {
   #sessions = new Map<string, SessionRow>();
   #turns = new Map<string, Turn>();
   /** Pair-chats. Each pair owns N member session ids; the members
@@ -1059,6 +1071,7 @@ class SessionStore {
           acp_session_id: r.acp_session_id || s.acp_session_id,
           label: r.title || s.label,
           kind: this.#isPairMember(r.id) ? "pair" : s.kind,
+          createdAt: r.created_at || s.createdAt,
           pinnedAt: r.pinned_at ?? undefined,
           archivedAt: r.archived_at ?? undefined,
         }));
@@ -1144,19 +1157,11 @@ class SessionStore {
           // New persisted chunks are stored as the raw ACP event under
           // each row's `data`. They already have sessionUpdate /
           // content fields, so reduceTurn consumes them directly.
-          const payload = data as
-            | { sessionUpdate?: string; content?: { type?: string; text?: string } }
-            | null;
-          if (payload?.sessionUpdate === "agent_message_chunk") {
-            const c = payload.content;
-            if (c?.type === "text" && typeof c.text === "string") {
-              current.assistantText += c.text;
-            }
-          } else if (payload?.sessionUpdate === "agent_thought_chunk") {
-            const c = payload.content;
-            if (c?.type === "text" && typeof c.text === "string") {
-              current.thoughtText += c.text;
-            }
+          const parsed = parseAcpEvent(data);
+          if (parsed.kind === "text") {
+            current.assistantText = mergeStreamingText(current.assistantText, parsed.text);
+          } else if (parsed.kind === "thought") {
+            current.thoughtText = mergeStreamingText(current.thoughtText, parsed.text);
           }
           current.events.push({ payload: data, receivedAt: r.ts });
         }
@@ -1178,12 +1183,16 @@ class SessionStore {
     switch (ev.type) {
       case "session.ready": {
         const existing = this.#sessions.get(ev.session_id);
+        const configOptions = normalizeConfigOptions(ev.config_options);
         if (existing) {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
             acp_session_id: ev.acp_session_id,
             agent_id: ev.agent_id,
             cwd: ev.cwd,
+            configOptions: configOptions ?? s.configOptions,
+            currentModeId:
+              selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
             status: s.activeTurnId ? "running" : "ready",
             lastError: undefined,
           }));
@@ -1196,6 +1205,8 @@ class SessionStore {
             label: `${ev.agent_id} · ${ev.session_id.slice(0, 6)}`,
             status: "ready",
             createdAt: Date.now(),
+            configOptions,
+            currentModeId: selectedModeIdFromConfigOptions(configOptions),
           });
         }
         if (!this.#activeId) this.#activeId = ev.session_id;
@@ -1210,36 +1221,44 @@ class SessionStore {
         // session.new). Branch on these before the turn-lookup path so
         // we don't synthesize an empty turn just to hold a session-level
         // payload.
-        const sev = ev.event as
-          | {
-              sessionUpdate?: string;
-              availableCommands?: AcpAvailableCommand[];
-              currentModeId?: string;
-              configOptions?: SessionConfigOption[];
-            }
-          | null;
-        if (sev?.sessionUpdate === "available_commands_update") {
+        const inner = sessionUpdateInner(ev.event);
+        const updateType = sessionUpdateType(ev.event);
+        const parsed = parseAcpEvent(ev.event);
+        if (parsed.kind === "commands") {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
-            availableCommands: sev.availableCommands ?? [],
+            availableCommands: parsed.commands,
           }));
           break;
         }
-        if (sev?.sessionUpdate === "current_mode_update") {
+        if (updateType === "current_mode_update") {
+          const currentModeId =
+            typeof inner.currentModeId === "string"
+              ? inner.currentModeId
+              : typeof inner.current_mode_id === "string"
+                ? inner.current_mode_id
+                : undefined;
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
-            currentModeId: sev.currentModeId,
+            currentModeId,
           }));
           break;
         }
-        if (sev?.sessionUpdate === "config_option_update") {
+        if (updateType === "config_option_update") {
+          const rawConfigOptions = Array.isArray(inner.configOptions)
+            ? inner.configOptions
+            : Array.isArray(inner.config_options)
+              ? inner.config_options
+              : undefined;
+          const configOptions = normalizeConfigOptions(rawConfigOptions) ?? [];
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
-            configOptions: sev.configOptions ?? [],
+            configOptions,
+            currentModeId:
+              selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
           }));
           break;
         }
-
         const turn = this.#turns.get(ev.turn_id);
         if (!turn) {
           this.#turns.set(ev.turn_id, {
@@ -1263,21 +1282,27 @@ class SessionStore {
         // which the DOM-mutating <StreamingMarkdown> consumes directly.
         // Crucially this branch DOES NOT call `this.#emit()` — React stays
         // asleep during the stream.
-        const ev2 = ev.event as { sessionUpdate?: string; content?: { type?: string; text?: string } } | null;
-        const tag = ev2?.sessionUpdate;
-        if (tag === "agent_message_chunk" || tag === "agent_thought_chunk") {
-          const c = ev2?.content;
-          if (c?.type === "text" && typeof c.text === "string" && c.text.length > 0) {
+        if (parsed.kind === "text" || parsed.kind === "thought") {
+          const text = parsed.text;
+          if (text.length > 0) {
             // In-place mutate (intentional). React doesn't read this field
             // during the stream — only on turn-complete unmount-and-replace
             // — so identity stability is irrelevant here. The savings:
             // tens of thousands of avoided reconciliations per long turn.
-            if (tag === "agent_message_chunk") {
-              turn.assistantText += c.text;
-              this.#emitStream(ev.turn_id, { kind: "assistant", text: c.text });
+            if (parsed.kind === "text") {
+              const next = mergeStreamingText(turn.assistantText, text);
+              const delta = next.startsWith(turn.assistantText)
+                ? next.slice(turn.assistantText.length)
+                : "";
+              turn.assistantText = next;
+              if (delta) this.#emitStream(ev.turn_id, { kind: "assistant", text: delta });
             } else {
-              turn.thoughtText += c.text;
-              this.#emitStream(ev.turn_id, { kind: "thought", text: c.text });
+              const next = mergeStreamingText(turn.thoughtText, text);
+              const delta = next.startsWith(turn.thoughtText)
+                ? next.slice(turn.thoughtText.length)
+                : "";
+              turn.thoughtText = next;
+              if (delta) this.#emitStream(ev.turn_id, { kind: "thought", text: delta });
             }
             // Append to events log too — used by tools-only fallback
             // renderers and debug inspection. We DO replace the array (not
@@ -1301,12 +1326,10 @@ class SessionStore {
         // from rawInput, localhost service URLs from rawOutput. These
         // feed the side panel's 推荐 tile so the user can jump to
         // whatever the agent just touched.
-        if (tag === "tool_call" || tag === "tool_call_update") {
-          const p = ev.event as
-            | { rawInput?: unknown; rawOutput?: unknown; status?: string; kind?: string }
-            | null;
-          const files = p ? extractFilePaths(p.rawInput) : [];
-          const services = p ? extractServiceUrls(p.rawOutput) : [];
+        if (parsed.kind === "tool_call") {
+          const tool = parsed.tool;
+          const files = extractFilePaths(tool.rawInput);
+          const services = extractServiceUrls(tool.rawOutput);
           this.#ingestArtifacts(ev.session_id, files, services);
           // Auto-open HTML produced/opened by the agent in the side
           // BrowserTab. Two trigger shapes:
@@ -1315,8 +1338,8 @@ class SessionStore {
           //     references an absolute file we can serve via file://
           // We only fire on completed events so we don't repeatedly
           // open the same tab on tool_call → tool_call_update flips.
-          if (p?.status === "completed") {
-            const fromExec = extractHtmlPathsFromExecute(p.rawInput);
+          if (tool.status === "completed") {
+            const fromExec = extractHtmlPathsFromExecute(tool.rawInput);
             // For file-shaped tools (write/edit) the path can be
             // absolute or cwd-relative. Resolve relatives against the
             // session's cwd so an agent that emitted `index.html` as
@@ -1352,6 +1375,15 @@ class SessionStore {
           unread: isBackgroundChat,
         });
         this.#dropPairPendingForSession(ev.session_id, ev.turn_id);
+        break;
+      }
+      case "session.queue_update": {
+        this.#mutateSession(ev.session_id, (s) => ({
+          ...s,
+          activeTurnId: ev.active_turn_id ?? undefined,
+          queuedPrompts: ev.queued,
+          status: ev.active_turn_id ? "running" : s.status === "running" ? "ready" : s.status,
+        }));
         break;
       }
       case "session.error": {
@@ -1661,6 +1693,24 @@ function safeParse(s: string): unknown {
   } catch {
     return null;
   }
+}
+
+function normalizeConfigOptions(
+  value: readonly unknown[] | undefined,
+): AcpSessionConfigOption[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out = value.filter(isConfigOption);
+  return out.length > 0 ? out : [];
+}
+
+function isConfigOption(value: unknown): value is AcpSessionConfigOption {
+  if (!value || typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== "string" || typeof obj.name !== "string") return false;
+  if (obj.category != null && typeof obj.category !== "string") return false;
+  if (obj.type === "boolean") return typeof obj.currentValue === "boolean";
+  if (obj.type !== "select") return false;
+  return typeof obj.currentValue === "string" && Array.isArray(obj.options);
 }
 
 /** Merge `incoming` into `existing` newest-first, dropping duplicates

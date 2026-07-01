@@ -17,13 +17,26 @@ import type { Settings } from "../shared/settings.js";
 const api: BackchatApi = {
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
 
-  agentsList: () => ipcRenderer.invoke(InvokeChannel.AgentsList) as Promise<AgentInfo[]>,
+  agentsList: (options) =>
+    ipcRenderer.invoke(InvokeChannel.AgentsList, options) as Promise<AgentInfo[]>,
   acpAuthMethods: (agentId) =>
     ipcRenderer.invoke(InvokeChannel.AcpAuthMethods, agentId) as Promise<
       import("../shared/api.js").AcpAuthMethodsResult
     >,
   acpAuthenticate: (agentId, methodId) =>
     ipcRenderer.invoke(InvokeChannel.AcpAuthenticate, { agentId, methodId }) as Promise<void>,
+  agentProbe: (id) =>
+    ipcRenderer.invoke(InvokeChannel.AgentProbe, id) as Promise<AgentInfo[]>,
+  agentInstall: (id) =>
+    ipcRenderer.invoke(InvokeChannel.AgentInstall, id) as Promise<AgentInfo[]>,
+  agentUpgrade: (id) =>
+    ipcRenderer.invoke(InvokeChannel.AgentUpgrade, id) as Promise<AgentInfo[]>,
+  agentUninstall: (id) =>
+    ipcRenderer.invoke(InvokeChannel.AgentUninstall, id) as Promise<AgentInfo[]>,
+  agentAuthenticate: (p) =>
+    ipcRenderer.invoke(InvokeChannel.AgentAuthenticate, p) as Promise<AgentInfo[]>,
+  agentSetDefault: (id) =>
+    ipcRenderer.invoke(InvokeChannel.AgentSetDefault, id) as Promise<AgentInfo[]>,
 
   sessionStart: (p: SessionStartParams) =>
     ipcRenderer.invoke(InvokeChannel.SessionStart, p) as Promise<void>,
@@ -226,5 +239,9 @@ if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
       >,
     setPickedFiles: (files: import("../shared/session-events.js").PromptAttachment[]) =>
       ipcRenderer.invoke(InvokeChannel.TestSetPickedFiles, files),
+    setAgentSetupFixture: (fixture: unknown) =>
+      ipcRenderer.invoke(InvokeChannel.TestSetAgentSetupFixture, fixture),
+    agentSetupCalls: () =>
+      ipcRenderer.invoke(InvokeChannel.TestAgentSetupCalls),
   });
 }

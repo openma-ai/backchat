@@ -22,6 +22,19 @@ export class NodeSpawner implements Spawner {
       cwd: spec.cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    if (spec.onDiagnosticLine) {
+      let stderrBuffer = "";
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        stderrBuffer += chunk;
+        const lines = stderrBuffer.split(/\r?\n/);
+        stderrBuffer = lines.pop() ?? "";
+        for (const line of lines) spec.onDiagnosticLine?.(line);
+      });
+      child.stderr.on("end", () => {
+        if (stderrBuffer) spec.onDiagnosticLine?.(stderrBuffer);
+      });
+    }
 
     const stdin = (Writable as unknown as {
       toWeb(s: NodeJS.WritableStream): WritableStream<Uint8Array>;
