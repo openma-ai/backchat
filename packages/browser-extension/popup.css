@@ -1,0 +1,142 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f4f1;
+  --surface: #fffaf6;
+  --text: #241d19;
+  --muted: #756a63;
+  --border: #ded4cc;
+  --accent: #9b6757;
+  --accent-text: #fff8f3;
+  --danger: #a0443e;
+  font: 12px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171412;
+    --surface: #211c19;
+    --text: #f0e9e3;
+    --muted: #b4a79e;
+    --border: #39302b;
+    --accent: #b88472;
+    --accent-text: #23130e;
+    --danger: #e28a7f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.popup-shell {
+  width: 340px;
+  padding: 14px;
+}
+
+.header,
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+p,
+small {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+
+.section {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.toggle-row strong,
+.field span {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field input,
+textarea {
+  width: 100%;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 8px;
+}
+
+textarea {
+  min-height: 92px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.button,
+.text-button {
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.button {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 80%, black);
+}
+
+.text-button {
+  padding: 4px 0;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+}
+
+button:hover {
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

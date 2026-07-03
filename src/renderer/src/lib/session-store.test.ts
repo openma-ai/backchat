@@ -455,3 +455,121 @@ describe("SessionStore pair chat grouping", () => {
     );
   });
 });
+
+describe("SessionStore Browser plugin rail sync", () => {
+  test("opens, updates, and removes controlled IAB tabs from browser state events", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-main", "codex-acp", "Main chat");
+    store.setActive("sess-main");
+
+    store.syncBrowserPluginState({
+      type: "browser.state",
+      browser: {
+        id: "backchat-iab",
+        type: "iab",
+        name: "Backchat In-app Browser",
+        capabilities: { browser: [], tab: [] },
+      },
+      visible: true,
+      activeTabId: "1",
+      tabs: [
+        {
+          id: "1",
+          title: "Probe",
+          url: "http://127.0.0.1:5173/",
+        },
+      ],
+    });
+
+    expect(store.sideTabs()).toEqual([
+      expect.objectContaining({
+        type: "browser",
+        label: "127.0.0.1",
+        payload: "http://127.0.0.1:5173/",
+        source: {
+          kind: "browser-plugin",
+          browserId: "backchat-iab",
+          tabId: "1",
+        },
+      }),
+    ]);
+    const tabId = store.sideTabs()[0]?.id;
+    expect(store.activeSideTabId()).toBe(tabId);
+
+    store.syncBrowserPluginState({
+      type: "browser.state",
+      browser: {
+        id: "backchat-iab",
+        type: "iab",
+        name: "Backchat In-app Browser",
+        capabilities: { browser: [], tab: [] },
+      },
+      visible: true,
+      activeTabId: "1",
+      tabs: [
+        {
+          id: "1",
+          title: "Next",
+          url: "https://example.com/next",
+        },
+      ],
+    });
+
+    expect(store.sideTabs()).toHaveLength(1);
+    expect(store.sideTabs()[0]).toEqual(
+      expect.objectContaining({
+        id: tabId,
+        label: "example.com",
+        payload: "https://example.com/next",
+      }),
+    );
+
+    store.syncBrowserPluginState({
+      type: "browser.state",
+      browser: {
+        id: "backchat-iab",
+        type: "iab",
+        name: "Backchat In-app Browser",
+        capabilities: { browser: [], tab: [] },
+      },
+      visible: false,
+      activeTabId: "1",
+      tabs: [
+        {
+          id: "1",
+          title: "Next",
+          url: "https://example.com/next",
+        },
+      ],
+    });
+
+    expect(store.sideTabs()).toEqual([]);
+  });
+
+  test("ignores Chrome extension browser state for the in-app right rail", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-main", "codex-acp", "Main chat");
+    store.setActive("sess-main");
+
+    store.syncBrowserPluginState({
+      type: "browser.state",
+      browser: {
+        id: "chrome-extension",
+        type: "extension",
+        name: "Chrome Extension",
+        capabilities: { browser: [], tab: [] },
+      },
+      visible: true,
+      activeTabId: "7",
+      tabs: [
+        {
+          id: "7",
+          title: "Chrome",
+          url: "https://example.com/",
+        },
+      ],
+    });
+
+    expect(store.sideTabs()).toEqual([]);
+  });
+});

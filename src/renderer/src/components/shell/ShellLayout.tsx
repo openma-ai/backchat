@@ -99,6 +99,9 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const off = window.backchat.onSessionEvent((e) => sessionStore.apply(e));
+    const offBrowser = window.backchat.onBrowserPluginState((event) =>
+      sessionStore.syncBrowserPluginState(event)
+    );
     void window.backchat.sessionAnnounce();
     void Promise.all([
       window.backchat.sessionsList(200),
@@ -107,7 +110,10 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
       sessionStore.seedPersisted(sessions);
       sessionStore.seedPersistedPairGroups(pairs);
     });
-    return off;
+    return () => {
+      off();
+      offBrowser();
+    };
   }, []);
 
   useEffect(() => {

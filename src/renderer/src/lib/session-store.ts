@@ -19,6 +19,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { SessionEventOut } from "@shared/session-events.js";
+import type { BrowserPluginStateEvent } from "@shared/browser-plugin.js";
 import type {
   AgentMessageDelivery,
   AgentMessageIntent,
@@ -238,6 +239,12 @@ export interface TurnDeliveryMeta {
 
 export type SideTabType = "chat" | "file" | "browser" | "terminal";
 
+export interface SideTabSource {
+  kind: "browser-plugin";
+  browserId: string;
+  tabId: string;
+}
+
 /** UI tab in the right rail. The `payload` field is type-specific — for
  *  chat it's a sessionId (matches SessionRow.id), for file it's a cwd
  *  path, for browser it's the current URL, for terminal it's a
@@ -252,6 +259,8 @@ export interface SideTab {
    *    terminal   → cwd's last segment (matches BottomPanel) */
   label: string;
   payload: string;
+  /** Optional origin marker for projected tabs that mirror main-process state. */
+  source?: SideTabSource;
   createdAt: number;
 }
 
@@ -649,13 +658,19 @@ export class SessionStore {
    *  pre-create the SessionRow via newSideDraft() and pass the new id
    *  as `payload`. For non-chat tabs, payload is the type-specific
    *  scratch state. Returns the new tab's id. */
-  openSideTab(type: SideTabType, payload: string, label?: string): string {
+  openSideTab(
+    type: SideTabType,
+    payload: string,
+    label?: string,
+    source?: SideTabSource,
+  ): string {
     const id = `tab-${Math.random().toString(36).slice(2, 8)}`;
     const tab: SideTab = {
       id,
       type,
       label: label || defaultSideTabLabel(type, payload),
       payload,
+      ...(source ? { source } : {}),
       createdAt: Date.now(),
     };
     this.#setTabsBucket([...this.#tabsBucket(), tab]);
@@ -670,6 +685,71 @@ export class SessionStore {
     if (type === "chat") this.#sideActiveId = payload;
     this.#emit();
     return id;
+  }
+
+  /** Mirror visible in-app Browser plugin state into the right rail.
+   *  This is a UI projection, not the automation source of truth: the
+   *  main-process Browser service still owns tabs and navigation. */
+  syncBrowserPluginState(event: BrowserPluginStateEvent): void {
+    if (event.browser.type !== "iab") return;
+
+    const tabs = this.#tabsBucket();
+    const isControlledForBrowser = (tab: SideTab) =>
+      tab.source?.kind === "browser-plugin" &&
+      tab.source.browserId === event.browser.id;
+
+    if (!event.visible) {
+      const nextTabs = tabs.filter((tab) => !isControlledForBrowser(tab));
+      if (nextTabs.length === tabs.length) return;
+      this.#setTabsBucket(nextTabs);
+      if (!nextTabs.some((tab) => tab.id === this.#activeBucket())) {
+        const next = nextTabs[nextTabs.length - 1] ?? null;
+        this.#setActiveBucket(next?.id ?? null);
+        this.#sideActiveId = next && next.type === "chat" ? next.payload : null;
+      }
+      this.#emit();
+      return;
+    }
+
+    const projected = event.tabs.map((browserTab) => {
+      const url = browserTab.url || "about:blank";
+      const existing = tabs.find(
+        (tab) =>
+          tab.source?.kind === "browser-plugin" &&
+          tab.source.browserId === event.browser.id &&
+          tab.source.tabId === browserTab.id,
+      );
+      return {
+        id: existing?.id ?? `tab-browser-${event.browser.id}-${browserTab.id}`,
+        type: "browser" as const,
+        label: defaultSideTabLabel("browser", url),
+        payload: url,
+        source: {
+          kind: "browser-plugin" as const,
+          browserId: event.browser.id,
+          tabId: browserTab.id,
+        },
+        createdAt: existing?.createdAt ?? Date.now(),
+      };
+    });
+
+    const nextTabs = [
+      ...tabs.filter((tab) => !isControlledForBrowser(tab)),
+      ...projected,
+    ];
+    this.#setTabsBucket(nextTabs);
+
+    const activeProjection =
+      (event.activeTabId
+        ? projected.find((tab) => tab.source.tabId === event.activeTabId)
+        : undefined) ?? projected[projected.length - 1];
+    if (activeProjection) {
+      this.#setActiveBucket(activeProjection.id);
+      this.#sideActiveId = null;
+      setRightRailCollapsed(false);
+    }
+
+    this.#emit();
   }
 
   /** Update a tab's mutable fields (label rename, URL change for a

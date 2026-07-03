@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
   ArrowUpFromLineIcon,
   FileIcon,
   FolderIcon,
   GlobeIcon,
   MessageSquareIcon,
   PlusIcon,
+  RotateCwIcon,
   SquareTerminalIcon,
   XIcon,
 } from "lucide-react";
@@ -113,6 +116,15 @@ export function SideChatPanel() {
       void window.backchat.sessionDispose({ session_id: tab.payload });
     } else if (tab.type === "terminal") {
       void window.backchat.uiTermDispose({ terminalId: tab.payload });
+    } else if (tab.source?.kind === "browser-plugin") {
+      void window.backchat.browserDetachView({
+        browser: tab.source.browserId,
+        tabId: tab.source.tabId,
+      });
+      void window.backchat.browserSetVisibility({
+        browser: tab.source.browserId,
+        visible: false,
+      });
     }
     sessionStore.closeSideTab(tab.id);
   }, []);
@@ -228,6 +240,9 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
     );
   }
   if (tab.type === "browser") {
+    if (tab.source?.kind === "browser-plugin") {
+      return <PluginBrowserTab key={tab.id} tab={tab} />;
+    }
     return (
       <BrowserTab
         key={tab.id}
@@ -249,6 +264,138 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
     );
   }
   return null;
+}
+
+function PluginBrowserTab({ tab }: { tab: SideTab }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const { collapsed } = useRightRailCollapse();
+  const source = tab.source?.kind === "browser-plugin" ? tab.source : null;
+
+  const detach = useCallback(() => {
+    if (!source) return;
+    void window.backchat.browserDetachView({
+      browser: source.browserId,
+      tabId: source.tabId,
+    });
+  }, [source]);
+
+  const syncBounds = useCallback(() => {
+    if (!source || collapsed) {
+      detach();
+      return;
+    }
+    const node = hostRef.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const bounds = {
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.max(1, Math.round(rect.width)),
+      height: Math.max(1, Math.round(rect.height)),
+    };
+    void window.backchat.browserAttachView({
+      browser: source.browserId,
+      tabId: source.tabId,
+      bounds,
+      visible: bounds.width > 1 && bounds.height > 1,
+    });
+  }, [collapsed, detach, source]);
+
+  useLayoutEffect(() => {
+    syncBounds();
+    const raf = window.requestAnimationFrame(() => syncBounds());
+    const settle = window.setTimeout(syncBounds, 320);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(settle);
+    };
+  }, [syncBounds]);
+
+  useEffect(() => {
+    if (!hostRef.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => syncBounds());
+    observer.observe(hostRef.current);
+    return () => observer.disconnect();
+  }, [syncBounds]);
+
+  useEffect(() => detach, [detach]);
+
+  if (!source) return null;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 flex items-center gap-1 px-3 pt-3 pb-2">
+        <PluginNavButton
+          onClick={() =>
+            window.backchat.browserBack({
+              browser: source.browserId,
+              tabId: source.tabId,
+            })
+          }
+          label="Back"
+        >
+          <ArrowLeftIcon className="size-3.5" />
+        </PluginNavButton>
+        <PluginNavButton
+          onClick={() =>
+            window.backchat.browserForward({
+              browser: source.browserId,
+              tabId: source.tabId,
+            })
+          }
+          label="Forward"
+        >
+          <ArrowRightIcon className="size-3.5" />
+        </PluginNavButton>
+        <PluginNavButton
+          onClick={() =>
+            window.backchat.browserReload({
+              browser: source.browserId,
+              tabId: source.tabId,
+            })
+          }
+          label="Reload"
+        >
+          <RotateCwIcon className="size-3.5" />
+        </PluginNavButton>
+        <div className="min-w-0 flex-1 truncate rounded-md bg-bg-surface/60 px-2 py-1 text-xs text-fg-muted">
+          {tab.payload}
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 px-3 pb-3">
+        <div
+          ref={hostRef}
+          className="h-full w-full overflow-hidden rounded-md bg-bg"
+        />
+      </div>
+    </div>
+  );
+}
+
+function PluginNavButton({
+  onClick,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
+        "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+        "transition-colors",
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 function EmptyState({ onPick }: { onPick: (type: SideTabType) => void }) {

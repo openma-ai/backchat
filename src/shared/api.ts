@@ -6,6 +6,39 @@
  */
 
 import type {
+  BrowserAssetBundleResult,
+  BrowserAttachViewParams,
+  BrowserClickParams,
+  BrowserCuaClickParams,
+  BrowserDevLogEntry,
+  BrowserDevLogsParams,
+  BrowserDialogAcceptParams,
+  BrowserDialogInfo,
+  BrowserDescriptor,
+  BrowserDomCuaClickParams,
+  BrowserEvaluateParams,
+  BrowserGotoParams,
+  BrowserLocatorAttributeParams,
+  BrowserLocatorFillParams,
+  BrowserLocatorParams,
+  BrowserLocatorPressParams,
+  BrowserLocatorSelectOptionParams,
+  BrowserLocatorSetCheckedParams,
+  BrowserNameSessionParams,
+  BrowserPageAssetEntry,
+  BrowserPressParams,
+  BrowserPluginStateEvent,
+  BrowserScreenshotParams,
+  BrowserScreenshotResult,
+  BrowserSetViewportParams,
+  BrowserTabInfo,
+  BrowserTabParams,
+  BrowserTypeParams,
+  BrowserVisibilityParams,
+  BrowserWaitForLoadStateParams,
+  BrowserWaitForURLParams,
+} from "./browser-plugin.js";
+import type {
   PromptAttachment,
   SessionEventOut,
   SessionPromptParams,
@@ -368,6 +401,60 @@ export interface BackchatApi {
    *  branch name (e.g. "main"), or null if the path isn't a git repo,
    *  the read failed, or HEAD is detached (40-char SHA). */
   uiFsGitBranch(p: { path: string }): Promise<string | null>;
+
+  // ----- Browser plugin bridge -----
+
+  browserList(): Promise<BrowserDescriptor[]>;
+  browserGet(p: { browser: string }): Promise<BrowserDescriptor>;
+  browserTabs(p: { browser: string }): Promise<BrowserTabInfo[]>;
+  browserGetTab(p: BrowserTabParams): Promise<BrowserTabInfo>;
+  browserSelectedTab(p: { browser: string }): Promise<BrowserTabInfo | null>;
+  browserUserOpenTabs(p: { browser: string }): Promise<BrowserTabInfo[]>;
+  browserSelectTab(p: BrowserTabParams): Promise<BrowserTabInfo>;
+  browserNameSession(p: BrowserNameSessionParams): Promise<{ browser: string; name: string }>;
+  browserSessionName(p: { browser: string }): Promise<string | null>;
+  browserNewTab(p: { browser: string }): Promise<BrowserTabInfo>;
+  browserGoto(p: BrowserGotoParams): Promise<BrowserTabInfo>;
+  browserSetVisibility(p: BrowserVisibilityParams): Promise<void>;
+  browserGetVisibility(p: { browser: string }): Promise<boolean>;
+  browserSetViewport(p: BrowserSetViewportParams): Promise<void>;
+  browserResetViewport(p: { browser: string }): Promise<void>;
+  browserAttachView(p: BrowserAttachViewParams): Promise<void>;
+  browserDetachView(p: BrowserTabParams): Promise<void>;
+  browserReload(p: BrowserTabParams): Promise<BrowserTabInfo>;
+  browserBack(p: BrowserTabParams): Promise<BrowserTabInfo>;
+  browserForward(p: BrowserTabParams): Promise<BrowserTabInfo>;
+  browserWaitForURL(p: BrowserWaitForURLParams): Promise<BrowserTabInfo>;
+  browserWaitForLoadState(p: BrowserWaitForLoadStateParams): Promise<BrowserTabInfo>;
+  browserTitle(p: BrowserTabParams): Promise<string | null>;
+  browserUrl(p: BrowserTabParams): Promise<string | null>;
+  browserCloseTab(p: BrowserTabParams): Promise<void>;
+  browserScreenshot(p: BrowserScreenshotParams): Promise<BrowserScreenshotResult>;
+  browserPageAssets(p: BrowserTabParams): Promise<BrowserPageAssetEntry[]>;
+  browserBundleAssets(p: BrowserTabParams): Promise<BrowserAssetBundleResult>;
+  browserDomSnapshot(p: BrowserTabParams): Promise<string>;
+  browserEvaluate(p: BrowserEvaluateParams): Promise<unknown>;
+  browserClick(p: BrowserClickParams): Promise<void>;
+  browserType(p: BrowserTypeParams): Promise<void>;
+  browserPress(p: BrowserPressParams): Promise<void>;
+  browserCuaClick(p: BrowserCuaClickParams): Promise<void>;
+  browserDomCuaSnapshot(p: BrowserTabParams): Promise<string>;
+  browserDomCuaClick(p: BrowserDomCuaClickParams): Promise<void>;
+  browserLocatorCount(p: BrowserLocatorParams): Promise<number>;
+  browserLocatorClick(p: BrowserLocatorParams): Promise<void>;
+  browserLocatorFill(p: BrowserLocatorFillParams): Promise<void>;
+  browserLocatorPress(p: BrowserLocatorPressParams): Promise<void>;
+  browserLocatorSetChecked(p: BrowserLocatorSetCheckedParams): Promise<void>;
+  browserLocatorSelectOption(p: BrowserLocatorSelectOptionParams): Promise<void>;
+  browserLocatorInnerText(p: BrowserLocatorParams): Promise<string>;
+  browserLocatorAttribute(p: BrowserLocatorAttributeParams): Promise<string | null>;
+  browserDialog(p: BrowserTabParams): Promise<BrowserDialogInfo | null>;
+  browserAcceptDialog(p: BrowserDialogAcceptParams): Promise<void>;
+  browserDismissDialog(p: BrowserTabParams): Promise<void>;
+  browserClipboardReadText(): Promise<string>;
+  browserClipboardWriteText(p: { text: string }): Promise<void>;
+  browserDevLogs(p: BrowserDevLogsParams): Promise<BrowserDevLogEntry[]>;
+  onBrowserPluginState(handler: (event: BrowserPluginStateEvent) => void): () => void;
 
   /** Native menu fired a navigate request — payload is the route path. */
   onMenuNavigate(handler: (path: string) => void): () => void;

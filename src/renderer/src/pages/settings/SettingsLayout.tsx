@@ -5,6 +5,7 @@ import {
   ArrowLeftIcon,
   BotIcon,
   CpuIcon,
+  Globe2Icon,
   InfoIcon,
   PaletteIcon,
   SearchIcon,
@@ -22,6 +23,7 @@ type SettingsTab = {
 const TABS: SettingsTab[] = [
   { to: "/settings/agents", label: "Agents", icon: CpuIcon, section: "Personal" },
   { to: "/settings/appearance", label: "Appearance", icon: PaletteIcon, section: "Personal" },
+  { to: "/settings/browser", label: "Browser", icon: Globe2Icon, section: "Integrations" },
   { to: "/settings/mcp-servers", label: "MCP Servers", icon: ServerIcon, section: "Integrations" },
   { to: "/settings/archive", label: "Archived chats", icon: ArchiveIcon, section: "Archived" },
   { to: "/settings/about", label: "About", icon: InfoIcon, section: "Archived" },

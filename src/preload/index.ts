@@ -191,6 +191,156 @@ const api: BackchatApi = {
   uiFsGitBranch: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsGitBranch, p) as Promise<string | null>,
 
+  browserList: () =>
+    ipcRenderer.invoke(InvokeChannel.BrowserList) as Promise<
+      import("../shared/browser-plugin.js").BrowserDescriptor[]
+    >,
+  browserGet: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserGet, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserDescriptor
+    >,
+  browserTabs: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserTabs, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo[]
+    >,
+  browserGetTab: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserGetTab, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserSelectedTab: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserSelectedTab, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo | null
+    >,
+  browserUserOpenTabs: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserUserOpenTabs, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo[]
+    >,
+  browserSelectTab: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserSelectTab, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserNameSession: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserNameSession, p) as Promise<{
+      browser: string;
+      name: string;
+    }>,
+  browserSessionName: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserSessionName, p) as Promise<string | null>,
+  browserNewTab: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserNewTab, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserGoto: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserGoto, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserSetVisibility: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserSetVisibility, p) as Promise<void>,
+  browserGetVisibility: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserGetVisibility, p) as Promise<boolean>,
+  browserSetViewport: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserSetViewport, p) as Promise<void>,
+  browserResetViewport: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserResetViewport, p) as Promise<void>,
+  browserAttachView: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserAttachView, p) as Promise<void>,
+  browserDetachView: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDetachView, p) as Promise<void>,
+  browserReload: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserReload, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserBack: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserBack, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserForward: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserForward, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserWaitForURL: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserWaitForURL, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserWaitForLoadState: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserWaitForLoadState, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserTabInfo
+    >,
+  browserTitle: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserTitle, p) as Promise<string | null>,
+  browserUrl: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserUrl, p) as Promise<string | null>,
+  browserCloseTab: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserCloseTab, p) as Promise<void>,
+  browserScreenshot: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserScreenshot, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserScreenshotResult
+    >,
+  browserPageAssets: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserPageAssets, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserPageAssetEntry[]
+    >,
+  browserBundleAssets: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserBundleAssets, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserAssetBundleResult
+    >,
+  browserDomSnapshot: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDomSnapshot, p) as Promise<string>,
+  browserEvaluate: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserEvaluate, p) as Promise<unknown>,
+  browserClick: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserClick, p) as Promise<void>,
+  browserType: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserType, p) as Promise<void>,
+  browserPress: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserPress, p) as Promise<void>,
+  browserCuaClick: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserCuaClick, p) as Promise<void>,
+  browserDomCuaSnapshot: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDomCuaSnapshot, p) as Promise<string>,
+  browserDomCuaClick: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDomCuaClick, p) as Promise<void>,
+  browserLocatorCount: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserLocatorCount, p) as Promise<number>,
+  browserLocatorClick: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserLocatorClick, p) as Promise<void>,
+  browserLocatorFill: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserLocatorFill, p) as Promise<void>,
+  browserLocatorPress: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserLocatorPress, p) as Promise<void>,
+  browserLocatorSetChecked: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserLocatorSetChecked, p) as Promise<void>,
+  browserLocatorSelectOption: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserLocatorSelectOption, p) as Promise<void>,
+  browserLocatorInnerText: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserLocatorInnerText, p) as Promise<string>,
+  browserLocatorAttribute: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserLocatorAttribute, p) as Promise<string | null>,
+  browserDialog: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDialog, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserDialogInfo | null
+    >,
+  browserAcceptDialog: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserAcceptDialog, p) as Promise<void>,
+  browserDismissDialog: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDismissDialog, p) as Promise<void>,
+  browserClipboardReadText: () =>
+    ipcRenderer.invoke(InvokeChannel.BrowserClipboardReadText) as Promise<string>,
+  browserClipboardWriteText: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserClipboardWriteText, p) as Promise<void>,
+  browserDevLogs: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDevLogs, p) as Promise<
+      import("../shared/browser-plugin.js").BrowserDevLogEntry[]
+    >,
+  onBrowserPluginState: (handler) => {
+    const l = (
+      _e: IpcRendererEvent,
+      event: import("../shared/browser-plugin.js").BrowserPluginStateEvent,
+    ) => handler(event);
+    ipcRenderer.on(PushChannel.BrowserState, l);
+    return () => ipcRenderer.removeListener(PushChannel.BrowserState, l);
+  },
+
   onMenuNavigate: (handler) => {
     const l = (_e: IpcRendererEvent, path: string) => handler(path);
     ipcRenderer.on(PushChannel.MenuNavigate, l);

@@ -55,6 +55,18 @@ import {
 import "./ui-terminal-broker.js";
 // Side-effect import: directory listing for the side-panel file tree.
 import "./ui-fs-broker.js";
+import { createBrowserPluginService } from "./browser-plugin-service.js";
+import { createElectronInAppBrowserAdapter } from "./browser-plugin-inapp-adapter.js";
+import {
+  createChromeExtensionBrowserAdapter,
+  type ChromeExtensionBridgeHealth,
+} from "./browser-plugin-extension-adapter.js";
+import { createChromeExtensionHttpBridge } from "./browser-extension-http-bridge.js";
+import { registerBrowserPluginIpc } from "./browser-plugin-ipc.js";
+import {
+  createBrowserMcpHttpServer,
+  createBrowserMcpServerConfig,
+} from "./browser-plugin-mcp.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -111,6 +123,75 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
   void agentSetup.warmup().catch((error) => {
     process.stderr.write(`! ACP agent warmup failed: ${error instanceof Error ? error.message : String(error)}\n`);
   });
+  const chromeExtensionBridgePort = Number(
+    process.env["BACKCHAT_BROWSER_EXTENSION_PORT"] ?? "29174",
+  );
+  let chromeExtensionBridgeMetadataPort = String(
+    Number.isFinite(chromeExtensionBridgePort)
+      ? chromeExtensionBridgePort
+      : 29174,
+  );
+  let chromeExtensionBridge: Awaited<ReturnType<typeof createChromeExtensionHttpBridge>> | null = null;
+  const chromeExtensionBridgeServer = createChromeExtensionHttpBridge({
+    preferredPort: Number.isFinite(chromeExtensionBridgePort)
+      ? chromeExtensionBridgePort
+      : 29174,
+  }).then((server) => {
+    chromeExtensionBridge = server;
+    chromeExtensionBridgeMetadataPort = new URL(server.url).port;
+    return server;
+  }).catch((error) => {
+    process.stderr.write(
+      `! Chrome extension bridge failed to start: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`,
+    );
+    return null;
+  });
+  const browserPluginService = createBrowserPluginService({
+    adapters: [
+      createElectronInAppBrowserAdapter(),
+      createChromeExtensionBrowserAdapter({
+        metadata: () => chromeExtensionBridgeMetadata(
+          chromeExtensionBridgeMetadataPort,
+          chromeExtensionBridge?.bridge.health,
+        ),
+        bridge: {
+          get registration() {
+            return chromeExtensionBridge?.bridge.registration ?? null;
+          },
+          async sendCommand(command) {
+            const server = await chromeExtensionBridgeServer;
+            if (!server) {
+              throw new Error("Chrome extension bridge is not available");
+            }
+            return server.bridge.sendCommand(command);
+          },
+        },
+      }),
+    ],
+  });
+  registerBrowserPluginIpc(ipcMain, browserPluginService);
+  browserPluginService.onEvent((event) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send(PushChannel.BrowserState, event);
+    }
+  });
+  const browserMcpServerConfig = createBrowserMcpHttpServer({
+    service: browserPluginService,
+  })
+    .then((server) => createBrowserMcpServerConfig({
+      url: server.url,
+      token: server.token,
+    }))
+    .catch((error) => {
+      process.stderr.write(
+        `! Browser MCP server failed to start: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`,
+      );
+      return null;
+    });
   const recordTestAgentSetupCall = (call: TestAgentSetupCall): void => {
     testAgentSetupFixture?.calls?.push(call);
   };
@@ -165,7 +246,12 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     // MCP servers come from settings now — Phase 8 finishes the per-agent
     // override matrix; for now we pass every configured server through to
     // every spawn. ACP McpServer shape matches our SettingsMcpServer.
-    resolveMcpServers: () => settingsStore.get().mcp_servers as unknown[],
+    resolveMcpServers: async () => {
+      const configuredServers = settingsStore.get().mcp_servers as unknown[];
+      const builtinBrowserServer = await browserMcpServerConfig;
+      if (!builtinBrowserServer) return configuredServers;
+      return [...configuredServers, builtinBrowserServer];
+    },
     resolveDefaults: () => {
       const s = settingsStore.get();
       return {
@@ -573,4 +659,23 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
   }
 
   return sessionManager;
+}
+
+function chromeExtensionBridgeMetadata(
+  bridgePort: string,
+  health?: ChromeExtensionBridgeHealth,
+): Record<string, string> {
+  const metadata: Record<string, string> = {
+    bridgePort,
+    bridgeStatus: health?.status ?? "starting",
+  };
+  if (!health) return metadata;
+
+  metadata.bridgePendingCommands = String(health.pendingCommandCount);
+  metadata.bridgeQueuedCommands = String(health.queuedCommandCount);
+  if (health.lastConnectedAt) metadata.bridgeLastConnectedAt = health.lastConnectedAt;
+  if (health.lastCommandAt) metadata.bridgeLastCommandAt = health.lastCommandAt;
+  if (health.lastCommandType) metadata.bridgeLastCommandType = health.lastCommandType;
+  if (health.lastError) metadata.bridgeLastError = health.lastError;
+  return metadata;
 }

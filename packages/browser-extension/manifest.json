@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Backchat Browser Bridge",
+  "version": "0.1.0",
+  "description": "Connects Chrome tabs to Backchat browser automation when enabled.",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "debugger",
+    "scripting",
+    "storage",
+    "tabs",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "Backchat Browser Bridge",
+    "default_popup": "popup.html"
+  }
+}

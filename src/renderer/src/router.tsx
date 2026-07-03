@@ -5,6 +5,7 @@
  *   /chat/$sessionId               single session view
  *   /settings                      → redirect /settings/agents
  *   /settings/agents               default-agent picker + per-agent overrides
+ *   /settings/browser              Browser plugin backend status
  *   /settings/mcp-servers          MCP server CRUD
  *   /settings/appearance           theme / font / density
  *   /settings/about                version + diagnostics
@@ -29,6 +30,7 @@ import { ShellLayout } from "@/components/shell/ShellLayout";
 import { SettingsAgents } from "@/pages/settings/Agents";
 import { SettingsAppearance } from "@/pages/settings/Appearance";
 import { SettingsAbout } from "@/pages/settings/About";
+import { SettingsBrowser } from "@/pages/settings/Browser";
 import { SettingsMcpServers } from "@/pages/settings/McpServers";
 import { Archive as SettingsArchive } from "@/pages/settings/Archive";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
@@ -85,6 +87,11 @@ const settingsMcp = createRoute({
   path: "/mcp-servers",
   component: SettingsMcpServers,
 });
+const settingsBrowser = createRoute({
+  getParentRoute: () => settingsRoot,
+  path: "/browser",
+  component: SettingsBrowser,
+});
 const settingsAppearance = createRoute({
   getParentRoute: () => settingsRoot,
   path: "/appearance",
@@ -107,6 +114,7 @@ const routeTree = rootRoute.addChildren([
   pairRoute,
   settingsRoot.addChildren([
     settingsAgents,
+    settingsBrowser,
     settingsMcp,
     settingsAppearance,
     settingsArchive,
