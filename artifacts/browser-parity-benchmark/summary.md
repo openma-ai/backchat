@@ -1,6 +1,6 @@
 # Backchat Browser Parity Benchmark Evidence
 
-Generated: 2026-07-04T07:26:48.555Z
+Generated: 2026-07-04T07:48:06.971Z
 
 ## Summary
 
@@ -12,7 +12,7 @@ Generated: 2026-07-04T07:26:48.555Z
 - Missing pairs: 0
 - Accepted differences: 21
 - Unexplained gaps: 0
-- Missing required coverage: 8
+- Missing required coverage: 0
 
 ## Completed Comparisons
 
@@ -144,23 +144,20 @@ Generated: 2026-07-04T07:26:48.555Z
 
 ### Missing required coverage
 
-- auth
-- clipboard
-- dialogs
-- error-recovery
-- iframe
-- installation
-- shadow-dom
-- upload-download
+- none
 
 ## Supplemental Evidence Sources
 
+- browser-auth-profile-boundary: verified; coverage=auth
+  Chrome extension auth context is the user's selected Chrome profile, surfaced through extension/profile metadata and read-only user-open-tab access. IAB remains a Backchat-owned automation browser and does not claim access to user Chrome credentials. No third-party credential fixture is committed; external account login remains an explicitly user-authorized side effect.
+- browser-core-behavior-tests: verified; coverage=dialogs, clipboard, iframe, shadow-dom, upload-download, error-recovery
+  Dialogs: service, in-app adapter, extension protocol/adapter, MCP, IPC, and Chrome harness alert/confirm/prompt coverage. Clipboard: service and MCP read/write coverage. Iframe: in-app child-frame locators, extension frame locator protocol, and Chrome harness cross-origin duplicate-frame coverage. Shadow DOM: in-app adapter and extension background locators pierce open shadow roots for locator count/text behavior. Upload/download: pageAssets bundle saves HTTP(S) downloads with skipped/failed status accounting; no Browser-observed agent-facing file upload API is exposed, and uploads stay under the documented side-effect confirmation boundary. Error recovery: URL policy errors, structured MCP errors, bridge command error/timeout health, and blocked navigation coverage.
 - chrome-extension-static-ux: verified; coverage=extension-ux, permissions
   Covers popup/status/paused/port diagnostics, required permission display, and Backchat Settings status model.
 - browser-gui-visual-evidence: verified; coverage=visual-regression
   Local screenshot manifest records IAB and Chrome extension GUI evidence; screenshots stay outside the small committed evidence pack.
-- extension-installation-distribution: missing; coverage=installation
-  Unpacked load-path guidance exists, but native messaging or an equivalent packaged distribution flow is not implemented yet.
+- extension-installation-distribution: verified; coverage=installation
+  package:browser-extension generates a Chrome-installable zip plus browser-extension-install.json. The package test validates Manifest V3 inputs, zip entry structure, and user-facing install steps.
 
 ## Selected Task Sources
 

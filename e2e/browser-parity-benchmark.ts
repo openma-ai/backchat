@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN,
+  DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE,
+  DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE,
+  DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE,
   buildBrowserParityEvidencePack,
   compareBrowserParityTracePair,
   selectStableBrowserParityTasks,
@@ -146,6 +149,8 @@ function browserParityEvidenceSources(): ReturnType<typeof buildBrowserParityEvi
   ];
 
   return [
+    DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE,
+    DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE,
     {
       id: "chrome-extension-static-ux",
       title: "Chrome extension popup, permission, and Settings Browser UX contract",
@@ -162,14 +167,7 @@ function browserParityEvidenceSources(): ReturnType<typeof buildBrowserParityEvi
       evidence: visualEvidence,
       notes: "Local screenshot manifest records IAB and Chrome extension GUI evidence; screenshots stay outside the small committed evidence pack.",
     },
-    {
-      id: "extension-installation-distribution",
-      title: "Chrome extension installation and packaged distribution",
-      status: "missing",
-      coverage: ["installation"],
-      evidence: [],
-      notes: "Unpacked load-path guidance exists, but native messaging or an equivalent packaged distribution flow is not implemented yet.",
-    },
+    DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE,
   ];
 }
 

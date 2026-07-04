@@ -140,6 +140,24 @@ After a failed stale-tab event, reselecting IAB returned no listed tabs but
 treat tab handles as session-bound and recover by re-listing/reselecting after
 runtime errors.
 
+## Auth And Profile Boundary
+
+The Browser surface does not expose a generic credential API. Authenticated
+website state is inherited only from the selected browser backend:
+
+- Chrome extension automation runs in the user's selected Chrome profile. The
+  bridge registration surfaces `extensionId`, `extensionVersion`, `instanceId`,
+  and `profileName` metadata so Backchat Settings can show which profile is
+  connected.
+- `browser.user_open_tabs` is read-only and can reveal tabs from that Chrome
+  profile, but it must not be treated as permission to submit forms, save
+  credentials, or change account state.
+- IAB automation runs in a Backchat-owned browser context. It does not claim to
+  share the user's Chrome cookies or saved credentials.
+- Real third-party login tests are intentionally not committed. Any task that
+  uses account credentials remains side-effectful and requires explicit user
+  authorization for the exact target account/action.
+
 ## URL Policy
 
 Observed against IAB:
@@ -516,6 +534,13 @@ Known parity caveats:
 `failed`; non-HTTP(S) URLs are skipped, HTTP failures are recorded, and
 successful responses are saved with MIME type and byte size.
 
+File upload parity contract: no `setInputFiles` or equivalent agent-facing
+file-upload API was observed in the active Browser plugin surface documented
+above. Backchat therefore does not expose an implicit upload tool. Uploading
+local files remains a side-effectful action under the safety contract and must
+be introduced only as an explicit, confirmed product feature if the upstream
+Browser surface adds one.
+
 ## Implementation Plan
 
 ### Core service
@@ -640,6 +665,16 @@ Extension popup requirements:
 - The popup explains the local bridge endpoint and allows copying diagnostics.
 - The toolbar badge shows `ON`, `OFF`, or `PAUSE` so paused/disconnected state
   is visible before opening the popup.
+
+Extension installation/distribution requirements:
+
+- `pnpm package:browser-extension` creates `dist/browser-extension/`.
+- The output includes `backchat-browser-extension-<version>.zip` with the MV3
+  extension root files and `browser-extension-install.json` with version,
+  source directory, package filename, packaged file list, and install steps.
+- The package test verifies the generated zip structure and audited install
+  manifest so extension installation is a repeatable release artifact, not only
+  an unpacked development path.
 
 Backchat settings requirements:
 

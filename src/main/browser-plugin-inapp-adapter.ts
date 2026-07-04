@@ -1517,7 +1517,35 @@ const LOCATOR_RUNTIME_SCRIPT = `
       !matched.some((candidate) => candidate !== element && element.contains(candidate))
     );
   };
-  const allLocatorElements = (rootDocument) => Array.from(rootDocument.querySelectorAll("body *"));
+  const allLocatorElements = (rootDocument) => {
+    const seen = new Set();
+    const elements = [];
+    const visit = (element) => {
+      if (!isLocatorElement(element) || seen.has(element)) return;
+      seen.add(element);
+      elements.push(element);
+      const shadowRoot = element.shadowRoot;
+      if (shadowRoot && typeof shadowRoot.querySelectorAll === "function") {
+        for (const shadowElement of Array.from(shadowRoot.querySelectorAll("*"))) {
+          visit(shadowElement);
+        }
+      }
+    };
+    for (const element of Array.from(rootDocument.querySelectorAll("body *"))) {
+      visit(element);
+    }
+    return elements;
+  };
+  const queryLocatorElements = (rootDocument, selector) =>
+    allLocatorElements(rootDocument).filter((element) => {
+      try {
+        return typeof element.matches === "function" && element.matches(selector);
+      } catch {
+        return false;
+      }
+    });
+  const locatorElementById = (rootDocument, id) =>
+    allLocatorElements(rootDocument).find((candidate) => candidate.getAttribute("id") === id);
   const implicitRole = (element) => {
     const role = element.getAttribute("role");
     if (role) return role;
@@ -1544,7 +1572,10 @@ const LOCATOR_RUNTIME_SCRIPT = `
     if (labelledBy) {
       return labelledBy
         .split(/\\s+/)
-        .map((id) => rootDocument.getElementById(id)?.innerText || rootDocument.getElementById(id)?.textContent || "")
+        .map((id) => {
+          const label = locatorElementById(rootDocument, id);
+          return label?.innerText || label?.textContent || "";
+        })
         .join(" ");
     }
     if ("value" in element && element.value) return element.value;
@@ -1555,7 +1586,7 @@ const LOCATOR_RUNTIME_SCRIPT = `
   const controlForLabel = (label, rootDocument) => {
     if (label.control) return label.control;
     const id = label.getAttribute("for");
-    if (id) return rootDocument.getElementById(id);
+    if (id) return locatorElementById(rootDocument, id);
     return label.querySelector("input, textarea, select, button, [contenteditable=true]");
   };
   function resolveBackchatLocator(locator, rootDocument = document) {
@@ -1563,10 +1594,10 @@ const LOCATOR_RUNTIME_SCRIPT = `
       throw new Error("Locator must be an object");
     }
     if (locator.kind === "css") {
-      return Array.from(rootDocument.querySelectorAll(locator.selector));
+      return queryLocatorElements(rootDocument, locator.selector);
     }
     if (locator.kind === "testId") {
-      return Array.from(rootDocument.querySelectorAll("[data-testid], [data-test-id], [data-test]"))
+      return queryLocatorElements(rootDocument, "[data-testid], [data-test-id], [data-test]")
         .filter((element) =>
           element.getAttribute("data-testid") === locator.value ||
           element.getAttribute("data-test-id") === locator.value ||
@@ -1579,13 +1610,13 @@ const LOCATOR_RUNTIME_SCRIPT = `
       );
     }
     if (locator.kind === "label") {
-      const controls = Array.from(rootDocument.querySelectorAll("label"))
+      const controls = queryLocatorElements(rootDocument, "label")
         .filter((label) =>
           locatorTextMatches(locatorElementText(label), locator.value, locator.exact === true)
         )
         .map((label) => controlForLabel(label, rootDocument))
         .filter(Boolean);
-      const ariaControls = Array.from(rootDocument.querySelectorAll("input, textarea, select, button, [contenteditable=true]"))
+      const ariaControls = queryLocatorElements(rootDocument, "input, textarea, select, button, [contenteditable=true]")
         .filter((element) => {
           const label = element.getAttribute("aria-label") || element.getAttribute("placeholder") || "";
           return locatorTextMatches(label, locator.value, locator.exact === true);

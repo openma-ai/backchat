@@ -16,6 +16,7 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test:e2e": "electron-vite build && playwright test",
     "package": "electron-vite build && electron-builder",
+    "package:browser-extension": "tsx scripts/package-browser-extension.ts",
     "package:dir": "electron-vite build && electron-builder --dir",
     "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty"
   },

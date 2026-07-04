@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -469,6 +470,26 @@ describe("createElectronInAppBrowserAdapter", () => {
     ]);
   });
 
+  it("resolves locators inside open shadow roots", async () => {
+    const fake = createFakeElectron();
+    const adapter = createElectronInAppBrowserAdapter({
+      createWindow: fake.createWindow,
+    });
+    const tab = await adapter.createTab();
+    const win = fake.windows[0]!;
+    const document = createShadowLocatorDocument();
+    win.webContents.scriptRunner = (script) => runLocatorScript(script, document);
+
+    await expect(adapter.locatorCount?.(tab.id, {
+      kind: "testId",
+      value: "shadow-button",
+    })).resolves.toBe(1);
+    await expect(adapter.locatorInnerText?.(tab.id, {
+      kind: "testId",
+      value: "shadow-button",
+    })).resolves.toBe("Shadow Submit");
+  });
+
   it("clicks locator targets through browser input events", async () => {
     const fake = createFakeElectron();
     const adapter = createElectronInAppBrowserAdapter({
@@ -745,6 +766,7 @@ class FakeWebContents extends EventEmitter {
   mainFrame = new FakeWebFrame();
   scripts: string[] = [];
   scriptResults: unknown[] = [];
+  scriptRunner: ((script: string) => unknown) | null = null;
   inputEvents: unknown[] = [];
 
   getURL() {
@@ -761,6 +783,9 @@ class FakeWebContents extends EventEmitter {
 
   async executeJavaScript(script: string) {
     this.scripts.push(script);
+    if (this.scriptRunner) {
+      return this.scriptRunner(script);
+    }
     const result = this.scriptResults.length > 0 ? this.scriptResults.shift() : undefined;
     if (result instanceof Error) throw result;
     return result;
@@ -769,6 +794,159 @@ class FakeWebContents extends EventEmitter {
   sendInputEvent(event: unknown) {
     this.inputEvents.push(event);
   }
+}
+
+function runLocatorScript(script: string, document: FakeLocatorDocument) {
+  const window = {
+    getComputedStyle: () => ({ display: "block", visibility: "visible" }),
+  };
+  document.defaultView = window;
+  return vm.runInNewContext(script, {
+    document,
+    window,
+    Event: class FakeEvent {},
+    InputEvent: class FakeInputEvent {},
+    KeyboardEvent: class FakeKeyboardEvent {},
+  });
+}
+
+function createShadowLocatorDocument() {
+  const document = new FakeLocatorDocument();
+  const host = document.createElement("shadow-card", {}, "");
+  const shadowRoot = host.attachShadow();
+  shadowRoot.appendChild(document.createElement("button", {
+    "data-testid": "shadow-button",
+  }, "Shadow Submit"));
+  document.body.appendChild(host);
+  return document;
+}
+
+class FakeLocatorDocument {
+  defaultView: unknown = null;
+  readonly body = new FakeLocatorElement(this, "body", {}, "");
+
+  createElement(
+    tagName: string,
+    attributes: Record<string, string> = {},
+    textContent = "",
+  ): FakeLocatorElement {
+    return new FakeLocatorElement(this, tagName, attributes, textContent);
+  }
+
+  querySelectorAll(selector: string): FakeLocatorElement[] {
+    return queryLocatorElements(this.body.children, selector);
+  }
+
+  getElementById(id: string): FakeLocatorElement | null {
+    return queryLocatorElements(this.body.children, "*")
+      .find((element) => element.getAttribute("id") === id) ?? null;
+  }
+}
+
+class FakeLocatorShadowRoot {
+  readonly children: FakeLocatorElement[] = [];
+
+  constructor(readonly ownerDocument: FakeLocatorDocument) {}
+
+  appendChild(element: FakeLocatorElement): void {
+    element.parentElement = null;
+    this.children.push(element);
+  }
+
+  querySelectorAll(selector: string): FakeLocatorElement[] {
+    return queryLocatorElements(this.children, selector);
+  }
+
+  getElementById(id: string): FakeLocatorElement | null {
+    return queryLocatorElements(this.children, "*")
+      .find((element) => element.getAttribute("id") === id) ?? null;
+  }
+}
+
+class FakeLocatorElement {
+  readonly nodeType = 1;
+  readonly children: FakeLocatorElement[] = [];
+  parentElement: FakeLocatorElement | null = null;
+  shadowRoot: FakeLocatorShadowRoot | null = null;
+
+  constructor(
+    readonly ownerDocument: FakeLocatorDocument,
+    readonly tagName: string,
+    private readonly attributes: Record<string, string>,
+    readonly textContent: string,
+  ) {}
+
+  get innerText(): string {
+    return this.textContent;
+  }
+
+  appendChild(element: FakeLocatorElement): void {
+    element.parentElement = this;
+    this.children.push(element);
+  }
+
+  attachShadow(): FakeLocatorShadowRoot {
+    this.shadowRoot = new FakeLocatorShadowRoot(this.ownerDocument);
+    return this.shadowRoot;
+  }
+
+  querySelectorAll(selector: string): FakeLocatorElement[] {
+    return queryLocatorElements(this.children, selector);
+  }
+
+  contains(candidate: FakeLocatorElement): boolean {
+    return candidate === this || this.children.some((child) => child.contains(candidate));
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes[name] ?? null;
+  }
+
+  hasAttribute(name: string): boolean {
+    return this.getAttribute(name) !== null;
+  }
+
+  matches(selector: string): boolean {
+    return selector.split(",").some((part) =>
+      locatorElementMatchesSelector(this, part.trim())
+    );
+  }
+
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 80, height: 24 };
+  }
+
+  scrollIntoView(): void {}
+
+  focus(): void {}
+
+  click(): void {}
+}
+
+function queryLocatorElements(elements: FakeLocatorElement[], selector: string): FakeLocatorElement[] {
+  const candidates: FakeLocatorElement[] = [];
+  for (const element of elements) {
+    candidates.push(element, ...queryLocatorElements(element.children, "*"));
+  }
+  if (selector === "*" || selector === "body *") return candidates;
+  const selectors = selector.split(",").map((part) => part.trim());
+  return candidates.filter((element) =>
+    selectors.some((part) => locatorElementMatchesSelector(element, part))
+  );
+}
+
+function locatorElementMatchesSelector(element: FakeLocatorElement, selector: string): boolean {
+  if (selector === "*") return true;
+  if (selector === "[data-testid]" || selector === "[data-test-id]" || selector === "[data-test]") {
+    return element.hasAttribute(selector.slice(1, -1));
+  }
+  if (selector.startsWith("[") && selector.endsWith("]")) {
+    const [name, rawValue] = selector.slice(1, -1).split("=");
+    if (!name) return false;
+    if (!rawValue) return element.hasAttribute(name);
+    return element.getAttribute(name) === rawValue.replace(/^"|"$/g, "");
+  }
+  return element.tagName.toLowerCase() === selector.toLowerCase();
 }
 
 class FakeWebFrame {

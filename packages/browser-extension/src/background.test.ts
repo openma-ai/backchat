@@ -145,10 +145,29 @@ describe("Chrome extension background worker", () => {
       "Emulation.clearDeviceMetricsOverride",
     );
   });
+
+  it("resolves locator commands inside open shadow roots", async () => {
+    const document = createShadowLocatorDocument();
+    const worker = loadBackgroundWorker({ scriptDocument: document });
+
+    await expect(worker.sendCommand({
+      id: "cmd-shadow-count",
+      type: "tab.locatorCount",
+      tabId: "7",
+      locator: { kind: "testId", value: "shadow-button" },
+    })).resolves.toEqual({ ok: true, result: 1 });
+    await expect(worker.sendCommand({
+      id: "cmd-shadow-text",
+      type: "tab.locatorInnerText",
+      tabId: "7",
+      locator: { kind: "testId", value: "shadow-button" },
+    })).resolves.toEqual({ ok: true, result: "Shadow Submit" });
+  });
 });
 
 function loadBackgroundWorker(options: {
   storage?: Record<string, unknown>;
+  scriptDocument?: FakeLocatorDocument;
 } = {}) {
   let messageListener: ((message: unknown, sender: unknown, sendResponse: (response: BridgeResponse) => void) => true) | null = null;
   const storageData: Record<string, unknown> = {
@@ -186,6 +205,30 @@ function loadBackgroundWorker(options: {
     }
     return {};
   });
+  const executeInjectedScript = vi.fn(async (details: {
+    func?: (...args: unknown[]) => unknown;
+    args?: unknown[];
+  } = {}) => {
+    if (options.scriptDocument && typeof details.func === "function") {
+      return [{ result: details.func(...(details.args ?? [])) }];
+    }
+    return [{
+      result: {
+        scrollX: 12,
+        scrollY: 34,
+        viewportWidth: 1265,
+        viewportHeight: 720,
+        documentWidth: 1265,
+        documentHeight: 9000,
+      },
+    }];
+  });
+  const window = {
+    getComputedStyle: () => ({ display: "block", visibility: "visible" }),
+  };
+  if (options.scriptDocument) {
+    options.scriptDocument.defaultView = window;
+  }
   const chrome = {
     runtime: {
       id: "ext-1",
@@ -255,16 +298,7 @@ function loadBackgroundWorker(options: {
       },
     },
     scripting: {
-      executeScript: vi.fn(async () => [{
-        result: {
-          scrollX: 12,
-          scrollY: 34,
-          viewportWidth: 1265,
-          viewportHeight: 720,
-          documentWidth: 1265,
-          documentHeight: 9000,
-        },
-      }]),
+      executeScript: executeInjectedScript,
     },
     webNavigation: {
       getAllFrames: vi.fn(async () => []),
@@ -278,6 +312,11 @@ function loadBackgroundWorker(options: {
     clearTimeout: vi.fn(),
     AbortController,
     console,
+    document: options.scriptDocument,
+    window,
+    Event: class FakeEvent {},
+    InputEvent: class FakeInputEvent {},
+    KeyboardEvent: class FakeKeyboardEvent {},
   };
 
   vm.runInNewContext(
@@ -308,4 +347,143 @@ function loadBackgroundWorker(options: {
       });
     },
   };
+}
+
+function createShadowLocatorDocument() {
+  const document = new FakeLocatorDocument();
+  const host = document.createElement("shadow-card", {}, "");
+  const shadowRoot = host.attachShadow();
+  shadowRoot.appendChild(document.createElement("button", {
+    "data-testid": "shadow-button",
+  }, "Shadow Submit"));
+  document.body.appendChild(host);
+  return document;
+}
+
+class FakeLocatorDocument {
+  defaultView: unknown = null;
+  readonly body = new FakeLocatorElement(this, "body", {}, "");
+
+  createElement(
+    tagName: string,
+    attributes: Record<string, string> = {},
+    textContent = "",
+  ): FakeLocatorElement {
+    return new FakeLocatorElement(this, tagName, attributes, textContent);
+  }
+
+  querySelectorAll(selector: string): FakeLocatorElement[] {
+    return queryLocatorElements(this.body.children, selector);
+  }
+
+  getElementById(id: string): FakeLocatorElement | null {
+    return queryLocatorElements(this.body.children, "*")
+      .find((element) => element.getAttribute("id") === id) ?? null;
+  }
+}
+
+class FakeLocatorShadowRoot {
+  readonly children: FakeLocatorElement[] = [];
+
+  constructor(readonly ownerDocument: FakeLocatorDocument) {}
+
+  appendChild(element: FakeLocatorElement): void {
+    element.parentElement = null;
+    this.children.push(element);
+  }
+
+  querySelectorAll(selector: string): FakeLocatorElement[] {
+    return queryLocatorElements(this.children, selector);
+  }
+
+  getElementById(id: string): FakeLocatorElement | null {
+    return queryLocatorElements(this.children, "*")
+      .find((element) => element.getAttribute("id") === id) ?? null;
+  }
+}
+
+class FakeLocatorElement {
+  readonly nodeType = 1;
+  readonly children: FakeLocatorElement[] = [];
+  parentElement: FakeLocatorElement | null = null;
+  shadowRoot: FakeLocatorShadowRoot | null = null;
+
+  constructor(
+    readonly ownerDocument: FakeLocatorDocument,
+    readonly tagName: string,
+    private readonly attributes: Record<string, string>,
+    readonly textContent: string,
+  ) {}
+
+  get innerText(): string {
+    return this.textContent;
+  }
+
+  appendChild(element: FakeLocatorElement): void {
+    element.parentElement = this;
+    this.children.push(element);
+  }
+
+  attachShadow(): FakeLocatorShadowRoot {
+    this.shadowRoot = new FakeLocatorShadowRoot(this.ownerDocument);
+    return this.shadowRoot;
+  }
+
+  querySelectorAll(selector: string): FakeLocatorElement[] {
+    return queryLocatorElements(this.children, selector);
+  }
+
+  contains(candidate: FakeLocatorElement): boolean {
+    return candidate === this || this.children.some((child) => child.contains(candidate));
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes[name] ?? null;
+  }
+
+  hasAttribute(name: string): boolean {
+    return this.getAttribute(name) !== null;
+  }
+
+  matches(selector: string): boolean {
+    return selector.split(",").some((part) =>
+      locatorElementMatchesSelector(this, part.trim())
+    );
+  }
+
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 80, height: 24 };
+  }
+
+  scrollIntoView(): void {}
+
+  focus(): void {}
+
+  click(): void {}
+}
+
+function queryLocatorElements(elements: FakeLocatorElement[], selector: string): FakeLocatorElement[] {
+  const candidates: FakeLocatorElement[] = [];
+  for (const element of elements) {
+    candidates.push(element, ...queryLocatorElements(element.children, "*"));
+  }
+  if (selector === "*" || selector === "body *") return candidates;
+  const selectors = selector.split(",").map((part) => part.trim());
+  return candidates.filter((element) =>
+    selectors.some((part) => locatorElementMatchesSelector(element, part))
+  );
+}
+
+function locatorElementMatchesSelector(element: FakeLocatorElement, selector: string): boolean {
+  if (selector === "*") return true;
+  if (selector === "[data-testid]" || selector === "[data-test-id]" || selector === "[data-test]") {
+    return element.hasAttribute(selector.slice(1, -1));
+  }
+  if (selector.startsWith("[") && selector.endsWith("]")) {
+    const [name, rawValue] = selector.slice(1, -1).split("=");
+    if (!name) return false;
+    if (!rawValue) return element.hasAttribute(name);
+    return element.getAttribute(name) === rawValue.replace(/^"|"$/g, "");
+  }
+  return element.tagName.toLowerCase() === selector.toLowerCase();
 }

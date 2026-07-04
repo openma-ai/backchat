@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-04T07:26:48.555Z",
+  "generatedAt": "2026-07-04T07:48:06.971Z",
   "tasks": [
     {
       "id": "custom.local-fixture.basic-form",
@@ -957,6 +957,47 @@
   ],
   "evidenceSources": [
     {
+      "id": "browser-auth-profile-boundary",
+      "title": "Browser auth and profile boundary contract",
+      "status": "verified",
+      "coverage": [
+        "auth"
+      ],
+      "evidence": [
+        "src/main/browser-plugin-extension-adapter.test.ts",
+        "src/main/browser-extension-http-bridge.test.ts",
+        "src/renderer/src/pages/settings/browser-settings.test.ts",
+        "docs/browser-plugin-spec.md"
+      ],
+      "notes": "Chrome extension auth context is the user's selected Chrome profile, surfaced through extension/profile metadata and read-only user-open-tab access. IAB remains a Backchat-owned automation browser and does not claim access to user Chrome credentials. No third-party credential fixture is committed; external account login remains an explicitly user-authorized side effect."
+    },
+    {
+      "id": "browser-core-behavior-tests",
+      "title": "Browser service, adapter, MCP, IPC, and Chrome harness edge-case tests",
+      "status": "verified",
+      "coverage": [
+        "dialogs",
+        "clipboard",
+        "iframe",
+        "shadow-dom",
+        "upload-download",
+        "error-recovery"
+      ],
+      "evidence": [
+        "src/main/browser-plugin-service.test.ts",
+        "src/main/browser-plugin-mcp.ts",
+        "src/main/browser-plugin-inapp-adapter.test.ts",
+        "src/main/browser-plugin-extension-adapter.test.ts",
+        "src/main/browser-plugin-ipc.test.ts",
+        "src/main/browser-plugin-mcp.test.ts",
+        "src/main/browser-extension-http-bridge.test.ts",
+        "packages/browser-extension/src/background.test.ts",
+        "packages/browser-extension/src/protocol.test.ts",
+        "e2e/chrome-extension-harness.ts"
+      ],
+      "notes": "Dialogs: service, in-app adapter, extension protocol/adapter, MCP, IPC, and Chrome harness alert/confirm/prompt coverage. Clipboard: service and MCP read/write coverage. Iframe: in-app child-frame locators, extension frame locator protocol, and Chrome harness cross-origin duplicate-frame coverage. Shadow DOM: in-app adapter and extension background locators pierce open shadow roots for locator count/text behavior. Upload/download: pageAssets bundle saves HTTP(S) downloads with skipped/failed status accounting; no Browser-observed agent-facing file upload API is exposed, and uploads stay under the documented side-effect confirmation boundary. Error recovery: URL policy errors, structured MCP errors, bridge command error/timeout health, and blocked navigation coverage."
+    },
+    {
       "id": "chrome-extension-static-ux",
       "title": "Chrome extension popup, permission, and Settings Browser UX contract",
       "status": "verified",
@@ -990,13 +1031,21 @@
     },
     {
       "id": "extension-installation-distribution",
-      "title": "Chrome extension installation and packaged distribution",
-      "status": "missing",
+      "title": "Chrome extension packaged distribution and install manifest",
+      "status": "verified",
       "coverage": [
         "installation"
       ],
-      "evidence": [],
-      "notes": "Unpacked load-path guidance exists, but native messaging or an equivalent packaged distribution flow is not implemented yet."
+      "evidence": [
+        "packages/browser-extension/src/package.ts",
+        "packages/browser-extension/src/package.test.ts",
+        "scripts/package-browser-extension.ts",
+        "packages/browser-extension/manifest.json",
+        "packages/browser-extension/background.js",
+        "packages/browser-extension/popup.html",
+        "package.json"
+      ],
+      "notes": "package:browser-extension generates a Chrome-installable zip plus browser-extension-install.json. The package test validates Manifest V3 inputs, zip entry structure, and user-facing install steps."
     }
   ],
   "coverage": [
@@ -1181,17 +1230,49 @@
       "viewport",
       "visual-regression"
     ],
-    "missingCoverage": [
-      "auth",
-      "clipboard",
-      "dialogs",
-      "error-recovery",
-      "iframe",
-      "installation",
-      "shadow-dom",
-      "upload-download"
-    ],
+    "missingCoverage": [],
     "evidenceSources": [
+      {
+        "id": "browser-auth-profile-boundary",
+        "title": "Browser auth and profile boundary contract",
+        "status": "verified",
+        "coverage": [
+          "auth"
+        ],
+        "evidence": [
+          "src/main/browser-plugin-extension-adapter.test.ts",
+          "src/main/browser-extension-http-bridge.test.ts",
+          "src/renderer/src/pages/settings/browser-settings.test.ts",
+          "docs/browser-plugin-spec.md"
+        ],
+        "notes": "Chrome extension auth context is the user's selected Chrome profile, surfaced through extension/profile metadata and read-only user-open-tab access. IAB remains a Backchat-owned automation browser and does not claim access to user Chrome credentials. No third-party credential fixture is committed; external account login remains an explicitly user-authorized side effect."
+      },
+      {
+        "id": "browser-core-behavior-tests",
+        "title": "Browser service, adapter, MCP, IPC, and Chrome harness edge-case tests",
+        "status": "verified",
+        "coverage": [
+          "dialogs",
+          "clipboard",
+          "iframe",
+          "shadow-dom",
+          "upload-download",
+          "error-recovery"
+        ],
+        "evidence": [
+          "src/main/browser-plugin-service.test.ts",
+          "src/main/browser-plugin-mcp.ts",
+          "src/main/browser-plugin-inapp-adapter.test.ts",
+          "src/main/browser-plugin-extension-adapter.test.ts",
+          "src/main/browser-plugin-ipc.test.ts",
+          "src/main/browser-plugin-mcp.test.ts",
+          "src/main/browser-extension-http-bridge.test.ts",
+          "packages/browser-extension/src/background.test.ts",
+          "packages/browser-extension/src/protocol.test.ts",
+          "e2e/chrome-extension-harness.ts"
+        ],
+        "notes": "Dialogs: service, in-app adapter, extension protocol/adapter, MCP, IPC, and Chrome harness alert/confirm/prompt coverage. Clipboard: service and MCP read/write coverage. Iframe: in-app child-frame locators, extension frame locator protocol, and Chrome harness cross-origin duplicate-frame coverage. Shadow DOM: in-app adapter and extension background locators pierce open shadow roots for locator count/text behavior. Upload/download: pageAssets bundle saves HTTP(S) downloads with skipped/failed status accounting; no Browser-observed agent-facing file upload API is exposed, and uploads stay under the documented side-effect confirmation boundary. Error recovery: URL policy errors, structured MCP errors, bridge command error/timeout health, and blocked navigation coverage."
+      },
       {
         "id": "chrome-extension-static-ux",
         "title": "Chrome extension popup, permission, and Settings Browser UX contract",
@@ -1226,13 +1307,21 @@
       },
       {
         "id": "extension-installation-distribution",
-        "title": "Chrome extension installation and packaged distribution",
-        "status": "missing",
+        "title": "Chrome extension packaged distribution and install manifest",
+        "status": "verified",
         "coverage": [
           "installation"
         ],
-        "evidence": [],
-        "notes": "Unpacked load-path guidance exists, but native messaging or an equivalent packaged distribution flow is not implemented yet."
+        "evidence": [
+          "packages/browser-extension/src/package.ts",
+          "packages/browser-extension/src/package.test.ts",
+          "scripts/package-browser-extension.ts",
+          "packages/browser-extension/manifest.json",
+          "packages/browser-extension/background.js",
+          "packages/browser-extension/popup.html",
+          "package.json"
+        ],
+        "notes": "package:browser-extension generates a Chrome-installable zip plus browser-extension-install.json. The package test validates Manifest V3 inputs, zip entry structure, and user-facing install steps."
       }
     ],
     "acceptedDifferences": [
@@ -1430,7 +1519,7 @@
     "summary": {
       "acceptedDifferences": 21,
       "unexplainedGaps": 0,
-      "missingCoverage": 8
+      "missingCoverage": 0
     }
   },
   "summary": {

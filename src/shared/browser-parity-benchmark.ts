@@ -186,6 +186,71 @@ export const DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE: BrowserParityCoverage[] =
   "visual-regression",
 ];
 
+export const DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE: BrowserParityEvidenceSource = {
+  id: "browser-core-behavior-tests",
+  title: "Browser service, adapter, MCP, IPC, and Chrome harness edge-case tests",
+  status: "verified",
+  coverage: ["dialogs", "clipboard", "iframe", "shadow-dom", "upload-download", "error-recovery"],
+  evidence: [
+    "src/main/browser-plugin-service.test.ts",
+    "src/main/browser-plugin-mcp.ts",
+    "src/main/browser-plugin-inapp-adapter.test.ts",
+    "src/main/browser-plugin-extension-adapter.test.ts",
+    "src/main/browser-plugin-ipc.test.ts",
+    "src/main/browser-plugin-mcp.test.ts",
+    "src/main/browser-extension-http-bridge.test.ts",
+    "packages/browser-extension/src/background.test.ts",
+    "packages/browser-extension/src/protocol.test.ts",
+    "e2e/chrome-extension-harness.ts",
+  ],
+  notes: [
+    "Dialogs: service, in-app adapter, extension protocol/adapter, MCP, IPC, and Chrome harness alert/confirm/prompt coverage.",
+    "Clipboard: service and MCP read/write coverage.",
+    "Iframe: in-app child-frame locators, extension frame locator protocol, and Chrome harness cross-origin duplicate-frame coverage.",
+    "Shadow DOM: in-app adapter and extension background locators pierce open shadow roots for locator count/text behavior.",
+    "Upload/download: pageAssets bundle saves HTTP(S) downloads with skipped/failed status accounting; no Browser-observed agent-facing file upload API is exposed, and uploads stay under the documented side-effect confirmation boundary.",
+    "Error recovery: URL policy errors, structured MCP errors, bridge command error/timeout health, and blocked navigation coverage.",
+  ].join(" "),
+};
+
+export const DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE: BrowserParityEvidenceSource = {
+  id: "browser-auth-profile-boundary",
+  title: "Browser auth and profile boundary contract",
+  status: "verified",
+  coverage: ["auth"],
+  evidence: [
+    "src/main/browser-plugin-extension-adapter.test.ts",
+    "src/main/browser-extension-http-bridge.test.ts",
+    "src/renderer/src/pages/settings/browser-settings.test.ts",
+    "docs/browser-plugin-spec.md",
+  ],
+  notes: [
+    "Chrome extension auth context is the user's selected Chrome profile, surfaced through extension/profile metadata and read-only user-open-tab access.",
+    "IAB remains a Backchat-owned automation browser and does not claim access to user Chrome credentials.",
+    "No third-party credential fixture is committed; external account login remains an explicitly user-authorized side effect.",
+  ].join(" "),
+};
+
+export const DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE: BrowserParityEvidenceSource = {
+  id: "extension-installation-distribution",
+  title: "Chrome extension packaged distribution and install manifest",
+  status: "verified",
+  coverage: ["installation"],
+  evidence: [
+    "packages/browser-extension/src/package.ts",
+    "packages/browser-extension/src/package.test.ts",
+    "scripts/package-browser-extension.ts",
+    "packages/browser-extension/manifest.json",
+    "packages/browser-extension/background.js",
+    "packages/browser-extension/popup.html",
+    "package.json",
+  ],
+  notes: [
+    "package:browser-extension generates a Chrome-installable zip plus browser-extension-install.json.",
+    "The package test validates Manifest V3 inputs, zip entry structure, and user-facing install steps.",
+  ].join(" "),
+};
+
 export const DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN: BrowserParityBenchmarkPlan = {
   tasks: [
     {

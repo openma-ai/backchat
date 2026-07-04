@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN,
+  DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE,
+  DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE,
+  DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE,
   DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
   auditBrowserParityEvidencePack,
   buildBrowserParityEvidencePack,
@@ -564,5 +567,87 @@ describe("browser parity benchmark", () => {
       "browser-gui-screenshots",
       "native-messaging-installer",
     ]);
+  });
+
+  it("ships a verified core behavior evidence source for implemented browser edge cases", () => {
+    const audit = auditBrowserParityEvidencePack({
+      tasks: selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN),
+      comparisons: [],
+      requiredCoverage: DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+      evidenceSources: [DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE],
+    });
+
+    expect(DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE).toMatchObject({
+      id: "browser-core-behavior-tests",
+      status: "verified",
+      coverage: ["dialogs", "clipboard", "iframe", "shadow-dom", "upload-download", "error-recovery"],
+    });
+    expect(DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE.evidence).toEqual(
+      expect.arrayContaining([
+        "src/main/browser-plugin-service.test.ts",
+        "src/main/browser-plugin-mcp.ts",
+        "src/main/browser-plugin-inapp-adapter.test.ts",
+        "src/main/browser-extension-http-bridge.test.ts",
+        "packages/browser-extension/src/background.test.ts",
+        "e2e/chrome-extension-harness.ts",
+      ]),
+    );
+    expect(audit.missingCoverage).not.toContain("dialogs");
+    expect(audit.missingCoverage).not.toContain("clipboard");
+    expect(audit.missingCoverage).not.toContain("iframe");
+    expect(audit.missingCoverage).not.toContain("shadow-dom");
+    expect(audit.missingCoverage).not.toContain("upload-download");
+    expect(audit.missingCoverage).not.toContain("error-recovery");
+    expect(audit.missingCoverage).toEqual(
+      expect.arrayContaining(["auth", "installation"]),
+    );
+  });
+
+  it("ships a verified extension installation evidence source", () => {
+    const audit = auditBrowserParityEvidencePack({
+      tasks: selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN),
+      comparisons: [],
+      requiredCoverage: DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+      evidenceSources: [DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE],
+    });
+
+    expect(DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE).toMatchObject({
+      id: "extension-installation-distribution",
+      status: "verified",
+      coverage: ["installation"],
+    });
+    expect(DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE.evidence).toEqual(
+      expect.arrayContaining([
+        "scripts/package-browser-extension.ts",
+        "packages/browser-extension/src/package.test.ts",
+        "packages/browser-extension/manifest.json",
+        "package.json",
+      ]),
+    );
+    expect(audit.missingCoverage).not.toContain("installation");
+  });
+
+  it("ships a verified auth/profile boundary evidence source", () => {
+    const audit = auditBrowserParityEvidencePack({
+      tasks: selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN),
+      comparisons: [],
+      requiredCoverage: DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+      evidenceSources: [DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE],
+    });
+
+    expect(DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE).toMatchObject({
+      id: "browser-auth-profile-boundary",
+      status: "verified",
+      coverage: ["auth"],
+    });
+    expect(DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE.evidence).toEqual(
+      expect.arrayContaining([
+        "src/main/browser-plugin-extension-adapter.test.ts",
+        "src/main/browser-extension-http-bridge.test.ts",
+        "src/renderer/src/pages/settings/browser-settings.test.ts",
+        "docs/browser-plugin-spec.md",
+      ]),
+    );
+    expect(audit.missingCoverage).not.toContain("auth");
   });
 });
