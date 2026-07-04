@@ -101,11 +101,13 @@ async function main(): Promise<void> {
   }
 
   const tasks = selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN);
+  const evidenceSources = browserParityEvidenceSources();
   const pack = {
     ...buildBrowserParityEvidencePack({
       generatedAt: new Date().toISOString(),
       tasks,
       comparisons,
+      evidenceSources,
     }),
     missingPairs,
     sources: {
@@ -126,6 +128,53 @@ async function main(): Promise<void> {
   console.log(`Wrote ${join(outputDir, "manifest.json")}`);
   console.log(`Wrote ${join(outputDir, "summary.md")}`);
   console.log(JSON.stringify(pack.summary, null, 2));
+}
+
+function browserParityEvidenceSources(): ReturnType<typeof buildBrowserParityEvidencePack>["evidenceSources"] {
+  const staticUxEvidence = [
+    "packages/browser-extension/manifest.json",
+    "packages/browser-extension/popup.html",
+    "packages/browser-extension/popup.css",
+    "packages/browser-extension/popup.js",
+    "packages/browser-extension/src/manifest.test.ts",
+    "packages/browser-extension/src/background.test.ts",
+    "src/renderer/src/pages/settings/Browser.tsx",
+    "src/renderer/src/pages/settings/browser-settings.test.ts",
+  ];
+  const visualEvidence = [
+    "artifacts/browser-plugin-gui-evidence/manifest.json",
+  ];
+
+  return [
+    {
+      id: "chrome-extension-static-ux",
+      title: "Chrome extension popup, permission, and Settings Browser UX contract",
+      status: everyRepoPathExists(staticUxEvidence) ? "verified" : "missing",
+      coverage: ["extension-ux", "permissions"],
+      evidence: staticUxEvidence,
+      notes: "Covers popup/status/paused/port diagnostics, required permission display, and Backchat Settings status model.",
+    },
+    {
+      id: "browser-gui-visual-evidence",
+      title: "Browser GUI screenshot evidence manifest",
+      status: everyRepoPathExists(visualEvidence) ? "verified" : "missing",
+      coverage: ["visual-regression"],
+      evidence: visualEvidence,
+      notes: "Local screenshot manifest records IAB and Chrome extension GUI evidence; screenshots stay outside the small committed evidence pack.",
+    },
+    {
+      id: "extension-installation-distribution",
+      title: "Chrome extension installation and packaged distribution",
+      status: "missing",
+      coverage: ["installation"],
+      evidence: [],
+      notes: "Unpacked load-path guidance exists, but native messaging or an equivalent packaged distribution flow is not implemented yet.",
+    },
+  ];
+}
+
+function everyRepoPathExists(paths: string[]): boolean {
+  return paths.every((path) => existsSync(join(repoRoot, path)));
 }
 
 async function readTrace(path: string): Promise<BrowserParityTrace> {
@@ -167,6 +216,9 @@ function renderSummary(pack: ReturnType<typeof buildBrowserParityEvidencePack> &
     `- Partial comparisons: ${pack.summary.partialComparisons}`,
     `- Failing comparisons: ${pack.summary.failingComparisons}`,
     `- Missing pairs: ${pack.missingPairs.length}`,
+    `- Accepted differences: ${pack.gapAudit.summary.acceptedDifferences}`,
+    `- Unexplained gaps: ${pack.gapAudit.summary.unexplainedGaps}`,
+    `- Missing required coverage: ${pack.gapAudit.summary.missingCoverage}`,
     "",
     "## Completed Comparisons",
     "",
@@ -187,9 +239,47 @@ function renderSummary(pack: ReturnType<typeof buildBrowserParityEvidencePack> &
   }
 
   if (pack.parityGaps.length > 0) {
-    lines.push("## Parity Gaps", "");
+    lines.push("## Raw Diffs", "");
     for (const gap of pack.parityGaps) {
       lines.push(`- ${gap.pairId} / ${gap.field}: ${String(gap.left)} vs ${String(gap.right)}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("## Gap Audit", "");
+  if (pack.gapAudit.acceptedDifferences.length > 0) {
+    lines.push("### Accepted differences", "");
+    for (const diff of pack.gapAudit.acceptedDifferences) {
+      lines.push(`- ${diff.pairId} / ${diff.field}: ${diff.category}; ${diff.reason}`);
+    }
+    lines.push("");
+  }
+  if (pack.gapAudit.unexplainedGaps.length > 0) {
+    lines.push("### Unexplained gaps", "");
+    for (const gap of pack.gapAudit.unexplainedGaps) {
+      lines.push(`- ${gap.pairId} / ${gap.field}: ${gap.reason}`);
+    }
+    lines.push("");
+  } else {
+    lines.push("### Unexplained gaps", "", "- none", "");
+  }
+  if (pack.gapAudit.missingCoverage.length > 0) {
+    lines.push("### Missing required coverage", "");
+    for (const coverage of pack.gapAudit.missingCoverage) {
+      lines.push(`- ${coverage}`);
+    }
+    lines.push("");
+  } else {
+    lines.push("### Missing required coverage", "", "- none", "");
+  }
+
+  if (pack.evidenceSources.length > 0) {
+    lines.push("## Supplemental Evidence Sources", "");
+    for (const source of pack.evidenceSources) {
+      lines.push(
+        `- ${source.id}: ${source.status}; coverage=${source.coverage.join(", ")}`,
+      );
+      if (source.notes) lines.push(`  ${source.notes}`);
     }
     lines.push("");
   }
@@ -203,7 +293,6 @@ function renderSummary(pack: ReturnType<typeof buildBrowserParityEvidencePack> &
   for (const [name, url] of Object.entries(pack.sources)) {
     lines.push(`- ${name}: ${url}`);
   }
-  lines.push("");
 
   return `${lines.join("\n")}\n`;
 }

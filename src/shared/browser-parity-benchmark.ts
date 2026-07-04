@@ -5,15 +5,26 @@ export type BrowserParityBenchmarkSource =
   | "custom-smoke";
 
 export type BrowserParityCoverage =
+  | "auth"
+  | "clipboard"
+  | "dialogs"
   | "viewport"
   | "screenshot"
   | "dom-snapshot"
+  | "error-recovery"
+  | "extension-ux"
+  | "iframe"
+  | "installation"
   | "locator"
+  | "permissions"
+  | "shadow-dom"
   | "tab-lifecycle"
   | "chrome-extension"
   | "real-site-dynamic-content"
   | "input"
-  | "navigation";
+  | "navigation"
+  | "upload-download"
+  | "visual-regression";
 
 export type BrowserParitySideEffectLevel = "read-only" | "local-only" | "external-write";
 export type BrowserParityTaskStability = "stable" | "candidate" | "blocked";
@@ -87,12 +98,62 @@ export interface BrowserParityTraceComparison {
   status: "pass" | "partial" | "fail";
 }
 
+export type BrowserParityAcceptedDifferenceCategory =
+  | "dynamic-content"
+  | "dynamic-visual"
+  | "encoded-visual"
+  | "harness-implementation"
+  | "timing-reward";
+
+export interface BrowserParityAcceptedDifference {
+  pairId: string;
+  taskId: string;
+  field: string;
+  left: unknown;
+  right: unknown;
+  category: BrowserParityAcceptedDifferenceCategory;
+  reason: string;
+}
+
+export interface BrowserParityUnexplainedGap {
+  pairId: string;
+  taskId: string;
+  field: string;
+  left: unknown;
+  right: unknown;
+  reason: string;
+}
+
+export interface BrowserParityGapAudit {
+  requiredCoverage: BrowserParityCoverage[];
+  missingCoverage: BrowserParityCoverage[];
+  evidenceSources: BrowserParityEvidenceSource[];
+  acceptedDifferences: BrowserParityAcceptedDifference[];
+  unexplainedGaps: BrowserParityUnexplainedGap[];
+  summary: {
+    acceptedDifferences: number;
+    unexplainedGaps: number;
+    missingCoverage: number;
+  };
+}
+
+export interface BrowserParityEvidenceSource {
+  id: string;
+  title: string;
+  status: "verified" | "missing" | "stale";
+  coverage: BrowserParityCoverage[];
+  evidence: string[];
+  notes?: string;
+}
+
 export interface BrowserParityEvidencePack {
   generatedAt: string;
   tasks: BrowserParityBenchmarkTask[];
   comparisons: BrowserParityTraceComparison[];
+  evidenceSources: BrowserParityEvidenceSource[];
   coverage: BrowserParityCoverage[];
   parityGaps: Array<{ pairId: string; taskId: string; field: string; left: unknown; right: unknown }>;
+  gapAudit: BrowserParityGapAudit;
   summary: {
     totalTasks: number;
     completedComparisons: number;
@@ -101,6 +162,29 @@ export interface BrowserParityEvidencePack {
     failingComparisons: number;
   };
 }
+
+export const DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE: BrowserParityCoverage[] = [
+  "auth",
+  "chrome-extension",
+  "clipboard",
+  "dialogs",
+  "dom-snapshot",
+  "error-recovery",
+  "extension-ux",
+  "iframe",
+  "input",
+  "installation",
+  "locator",
+  "navigation",
+  "permissions",
+  "real-site-dynamic-content",
+  "screenshot",
+  "shadow-dom",
+  "tab-lifecycle",
+  "upload-download",
+  "viewport",
+  "visual-regression",
+];
 
 export const DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN: BrowserParityBenchmarkPlan = {
   tasks: [
@@ -342,6 +426,7 @@ export function buildBrowserParityEvidencePack(params: {
   generatedAt: string;
   tasks: BrowserParityBenchmarkTask[];
   comparisons: BrowserParityTraceComparison[];
+  evidenceSources?: BrowserParityEvidenceSource[];
 }): BrowserParityEvidencePack {
   const coverage = [...new Set(params.tasks.flatMap((task) => task.coverage))].sort();
   const parityGaps = params.comparisons.flatMap((comparison) =>
@@ -353,13 +438,21 @@ export function buildBrowserParityEvidencePack(params: {
       right: diff.right,
     }))
   );
+  const gapAudit = auditBrowserParityEvidencePack({
+    tasks: params.tasks,
+    comparisons: params.comparisons,
+    requiredCoverage: DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+    evidenceSources: params.evidenceSources ?? [],
+  });
 
   return {
     generatedAt: params.generatedAt,
     tasks: params.tasks,
     comparisons: params.comparisons,
+    evidenceSources: params.evidenceSources ?? [],
     coverage,
     parityGaps,
+    gapAudit,
     summary: {
       totalTasks: params.tasks.length,
       completedComparisons: params.comparisons.length,
@@ -368,6 +461,119 @@ export function buildBrowserParityEvidencePack(params: {
       failingComparisons: params.comparisons.filter((comparison) => comparison.status === "fail").length,
     },
   };
+}
+
+export function auditBrowserParityEvidencePack(params: {
+  tasks: BrowserParityBenchmarkTask[];
+  comparisons: BrowserParityTraceComparison[];
+  requiredCoverage: BrowserParityCoverage[];
+  evidenceSources?: BrowserParityEvidenceSource[];
+}): BrowserParityGapAudit {
+  const observedCoverage = new Set(params.tasks.flatMap((task) => task.coverage));
+  const evidenceSources = params.evidenceSources ?? [];
+  for (const source of evidenceSources) {
+    if (source.status !== "verified") continue;
+    for (const coverage of source.coverage) {
+      observedCoverage.add(coverage);
+    }
+  }
+  for (const comparison of params.comparisons) {
+    if (isChromeSurface(comparison.left.surface) || isChromeSurface(comparison.right.surface)) {
+      observedCoverage.add("chrome-extension");
+    }
+  }
+  const requiredCoverage = [...params.requiredCoverage].sort();
+  const missingCoverage = requiredCoverage.filter((coverage) => !observedCoverage.has(coverage));
+  const acceptedDifferences: BrowserParityAcceptedDifference[] = [];
+  const unexplainedGaps: BrowserParityUnexplainedGap[] = [];
+
+  for (const comparison of params.comparisons) {
+    for (const diff of comparison.diffs) {
+      const accepted = comparison.status === "pass"
+        ? classifyAcceptedDifference(comparison, diff)
+        : null;
+      if (accepted) {
+        acceptedDifferences.push(accepted);
+      } else {
+        unexplainedGaps.push({
+          pairId: comparison.id,
+          taskId: comparison.taskId,
+          field: diff.field,
+          left: diff.left,
+          right: diff.right,
+          reason: comparison.status === "pass"
+            ? "uncontracted-pass-diff"
+            : `comparison-status-${comparison.status}`,
+        });
+      }
+    }
+  }
+
+  return {
+    requiredCoverage,
+    missingCoverage,
+    evidenceSources,
+    acceptedDifferences,
+    unexplainedGaps,
+    summary: {
+      acceptedDifferences: acceptedDifferences.length,
+      unexplainedGaps: unexplainedGaps.length,
+      missingCoverage: missingCoverage.length,
+    },
+  };
+}
+
+function isChromeSurface(surface: string): boolean {
+  return surface.includes("chrome");
+}
+
+function classifyAcceptedDifference(
+  comparison: BrowserParityTraceComparison,
+  diff: { field: string; left: unknown; right: unknown },
+): BrowserParityAcceptedDifference | null {
+  const base = {
+    pairId: comparison.id,
+    taskId: comparison.taskId,
+    field: diff.field,
+    left: diff.left,
+    right: diff.right,
+  };
+  if (diff.field === "screenshotBase64Length") {
+    return {
+      ...base,
+      category: "encoded-visual",
+      reason: "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.",
+    };
+  }
+  if (diff.field === "stepCount") {
+    return {
+      ...base,
+      category: "harness-implementation",
+      reason: "Harness step count records implementation trace granularity, not user-visible browser behavior.",
+    };
+  }
+  if (diff.field === "wobReward" && comparison.taskId.startsWith("miniwob.")) {
+    return {
+      ...base,
+      category: "timing-reward",
+      reason: "MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields.",
+    };
+  }
+  if (diff.field === "linkCount" && isRealSiteDynamicTask(comparison.taskId)) {
+    return {
+      ...base,
+      category: "dynamic-content",
+      reason: "Public real-site link inventory can drift while final URL, title, heading, and target text match.",
+    };
+  }
+  if (diff.field === "screenshotHeight" && isRealSiteDynamicTask(comparison.taskId)) {
+    return {
+      ...base,
+      category: "dynamic-visual",
+      reason: "Public real-site full-page height can drift with banners, references, and responsive content.",
+    };
+  }
+  return null;
 }
 
 function sameValue(left: unknown, right: unknown): boolean {

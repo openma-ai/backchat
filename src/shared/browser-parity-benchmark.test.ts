@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN,
+  DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+  auditBrowserParityEvidencePack,
   buildBrowserParityEvidencePack,
   compareBrowserParityTracePair,
   selectStableBrowserParityTasks,
@@ -321,5 +323,246 @@ describe("browser parity benchmark", () => {
         expect.objectContaining({ pairId: "iab-local-fixture", field: "screenshotBase64Length" }),
       ]),
     );
+  });
+
+  it("classifies pass-only dynamic diffs as accepted, not unexplained gaps", () => {
+    const comparison = compareBrowserParityTracePair({
+      id: "chrome-wikipedia-selenium",
+      taskId: "webvoyager.wikipedia.selenium-search",
+      left: {
+        surface: "codex-native-chrome",
+        ok: true,
+        observations: {
+          finalUrl: "https://en.wikipedia.org/wiki/Selenium_(software)",
+          title: "Selenium (software) - Wikipedia",
+          heading: "Selenium (software)",
+          firstParagraphSnippet: "Selenium is an open source project.",
+          linkCount: 317,
+          domSnapshotContainsSelenium: true,
+          screenshotMimeType: "image/jpeg",
+          screenshotWidth: 1713,
+          screenshotHeight: 6304,
+          screenshotBase64Length: 1_649_332,
+          tabClosed: true,
+        },
+        artifacts: { screenshot: "/tmp/codex-wikipedia.jpg" },
+        steps: [{ name: "run", ok: true }],
+        errors: [],
+      },
+      right: {
+        surface: "backchat-chrome",
+        ok: true,
+        observations: {
+          finalUrl: "https://en.wikipedia.org/wiki/Selenium_(software)",
+          title: "Selenium (software) - Wikipedia",
+          heading: "Selenium (software)",
+          firstParagraphSnippet: "Selenium is an open source project.",
+          linkCount: 332,
+          domSnapshotContainsSelenium: true,
+          screenshotMimeType: "image/jpeg",
+          screenshotWidth: 1713,
+          screenshotHeight: 6865,
+          screenshotBase64Length: 2_051_076,
+          tabClosed: true,
+        },
+        artifacts: { screenshot: "/tmp/backchat-wikipedia.jpg" },
+        steps: [{ name: "run", ok: true }],
+        errors: [],
+      },
+    });
+
+    const audit = auditBrowserParityEvidencePack({
+      tasks: selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN),
+      comparisons: [comparison],
+      requiredCoverage: DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+    });
+
+    expect(audit.acceptedDifferences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pairId: "chrome-wikipedia-selenium",
+          field: "linkCount",
+          category: "dynamic-content",
+        }),
+        expect.objectContaining({
+          pairId: "chrome-wikipedia-selenium",
+          field: "screenshotHeight",
+          category: "dynamic-visual",
+        }),
+        expect.objectContaining({
+          pairId: "chrome-wikipedia-selenium",
+          field: "screenshotBase64Length",
+          category: "encoded-visual",
+        }),
+      ]),
+    );
+    expect(audit.unexplainedGaps).toEqual([]);
+    expect(audit.missingCoverage).toEqual(
+      expect.arrayContaining(["auth", "permissions", "shadow-dom", "upload-download"]),
+    );
+  });
+
+  it("keeps partial comparison diffs as unexplained gaps until fixed or contracted", () => {
+    const comparison = compareBrowserParityTracePair({
+      id: "iab-miniwob-click-button",
+      taskId: "miniwob.click-button",
+      left: {
+        surface: "codex-native-iab",
+        ok: true,
+        observations: {
+          finalUrl: "http://127.0.0.1:61234/miniwob/click-button.html",
+          title: "Click Button Task",
+          miniwobTaskId: "click-button",
+          benchmarkInstanceId: "miniwob.click-button:seed:button-v1",
+          seed: "button-v1",
+          utterance: 'Click on the "OK" button.',
+          wobDone: true,
+          wobRawReward: 1,
+          domSnapshotContainsUtterance: true,
+          screenshotMimeType: "image/jpeg",
+          screenshotWidth: 960,
+          screenshotHeight: 640,
+          tabClosed: true,
+        },
+        artifacts: { screenshot: "/tmp/codex-miniwob.jpg" },
+        steps: [{ name: "solve", ok: true }],
+        errors: [],
+      },
+      right: {
+        surface: "backchat-iab",
+        ok: true,
+        observations: {
+          finalUrl: "http://127.0.0.1:61234/miniwob/click-button.html",
+          title: "Click Button Task",
+          miniwobTaskId: "click-button",
+          benchmarkInstanceId: "miniwob.click-button:seed:button-v1",
+          seed: "button-v1",
+          utterance: 'Click on the "OK" button.',
+          wobDone: true,
+          wobRawReward: 1,
+          domSnapshotContainsUtterance: true,
+          screenshotMimeType: "image/jpeg",
+          screenshotWidth: 2560,
+          screenshotHeight: 1440,
+          tabClosed: true,
+        },
+        artifacts: { screenshot: "/tmp/backchat-miniwob.jpg" },
+        steps: [{ name: "solve", ok: true }],
+        errors: [],
+      },
+    });
+
+    const audit = auditBrowserParityEvidencePack({
+      tasks: selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN),
+      comparisons: [comparison],
+      requiredCoverage: DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+    });
+
+    expect(comparison.status).toBe("partial");
+    expect(audit.acceptedDifferences).toEqual([]);
+    expect(audit.unexplainedGaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pairId: "iab-miniwob-click-button",
+          field: "screenshotWidth",
+          reason: "comparison-status-partial",
+        }),
+      ]),
+    );
+  });
+
+  it("infers Chrome extension coverage from Chrome surface comparisons", () => {
+    const comparison = compareBrowserParityTracePair({
+      id: "chrome-local-fixture",
+      taskId: "custom.local-fixture.basic-form",
+      left: {
+        surface: "codex-native-chrome",
+        ok: true,
+        observations: {
+          finalUrl: "http://127.0.0.1/fixture",
+          title: "Fixture",
+          heading: "Fixture",
+          resultAfterPing: "Ada:1",
+          trustedResult: "trusted",
+          domSnapshotContainsHeading: true,
+          screenshotMimeType: "image/jpeg",
+          screenshotWidth: 1728,
+          screenshotHeight: 880,
+          tabClosed: true,
+        },
+        steps: [{ name: "run", ok: true }],
+        errors: [],
+      },
+      right: {
+        surface: "backchat-chrome",
+        ok: true,
+        observations: {
+          finalUrl: "http://127.0.0.1/fixture",
+          title: "Fixture",
+          heading: "Fixture",
+          resultAfterPing: "Ada:1",
+          trustedResult: "trusted",
+          domSnapshotContainsHeading: true,
+          screenshotMimeType: "image/jpeg",
+          screenshotWidth: 1728,
+          screenshotHeight: 880,
+          tabClosed: true,
+        },
+        steps: [{ name: "run", ok: true }],
+        errors: [],
+      },
+    });
+
+    const audit = auditBrowserParityEvidencePack({
+      tasks: selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN),
+      comparisons: [comparison],
+      requiredCoverage: DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+    });
+
+    expect(audit.missingCoverage).not.toContain("chrome-extension");
+  });
+
+  it("uses verified supplemental evidence sources to satisfy non-task coverage", () => {
+    const audit = auditBrowserParityEvidencePack({
+      tasks: selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN),
+      comparisons: [],
+      requiredCoverage: DEFAULT_BROWSER_PARITY_REQUIRED_COVERAGE,
+      evidenceSources: [
+        {
+          id: "chrome-extension-static-ux",
+          title: "Chrome extension popup and permission contract",
+          status: "verified",
+          coverage: ["extension-ux", "permissions"],
+          evidence: [
+            "packages/browser-extension/popup.html",
+            "packages/browser-extension/manifest.json",
+          ],
+        },
+        {
+          id: "browser-gui-screenshots",
+          title: "Browser GUI screenshot evidence",
+          status: "verified",
+          coverage: ["visual-regression"],
+          evidence: ["artifacts/browser-plugin-gui-evidence/manifest.json"],
+        },
+        {
+          id: "native-messaging-installer",
+          title: "Native Messaging installer",
+          status: "missing",
+          coverage: ["installation"],
+          evidence: [],
+        },
+      ],
+    });
+
+    expect(audit.missingCoverage).not.toContain("extension-ux");
+    expect(audit.missingCoverage).not.toContain("permissions");
+    expect(audit.missingCoverage).not.toContain("visual-regression");
+    expect(audit.missingCoverage).toContain("installation");
+    expect(audit.evidenceSources.map((source) => source.id)).toEqual([
+      "chrome-extension-static-ux",
+      "browser-gui-screenshots",
+      "native-messaging-installer",
+    ]);
   });
 });

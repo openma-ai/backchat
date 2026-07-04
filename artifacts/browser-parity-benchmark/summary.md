@@ -1,6 +1,6 @@
 # Backchat Browser Parity Benchmark Evidence
 
-Generated: 2026-07-03T13:57:24.315Z
+Generated: 2026-07-04T07:26:48.555Z
 
 ## Summary
 
@@ -10,6 +10,9 @@ Generated: 2026-07-03T13:57:24.315Z
 - Partial comparisons: 0
 - Failing comparisons: 0
 - Missing pairs: 0
+- Accepted differences: 21
+- Unexplained gaps: 0
+- Missing required coverage: 8
 
 ## Completed Comparisons
 
@@ -85,7 +88,7 @@ Generated: 2026-07-03T13:57:24.315Z
 - Right screenshot: /Users/xiaoyang/Proj/backchat/artifacts/browser-real-site-diff/backchat-chrome-wikipedia-screenshot
 - Diffs: linkCount, screenshotHeight, screenshotBase64Length
 
-## Parity Gaps
+## Raw Diffs
 
 - iab-local-fixture / screenshotBase64Length: 21500 vs 22516
 - iab-local-fixture / stepCount: 12 vs 13
@@ -108,6 +111,56 @@ Generated: 2026-07-03T13:57:24.315Z
 - chrome-wikipedia-selenium / linkCount: 317 vs 332
 - chrome-wikipedia-selenium / screenshotHeight: 6304 vs 6865
 - chrome-wikipedia-selenium / screenshotBase64Length: 1649332 vs 2051076
+
+## Gap Audit
+
+### Accepted differences
+
+- iab-local-fixture / screenshotBase64Length: encoded-visual; Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.
+- iab-local-fixture / stepCount: harness-implementation; Harness step count records implementation trace granularity, not user-visible browser behavior.
+- chrome-local-fixture / screenshotBase64Length: encoded-visual; Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.
+- chrome-local-fixture / stepCount: harness-implementation; Harness step count records implementation trace granularity, not user-visible browser behavior.
+- iab-miniwob-click-button / wobReward: timing-reward; MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields.
+- iab-miniwob-click-button / screenshotBase64Length: encoded-visual; Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.
+- iab-miniwob-click-button / stepCount: harness-implementation; Harness step count records implementation trace granularity, not user-visible browser behavior.
+- chrome-miniwob-click-button / wobReward: timing-reward; MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields.
+- chrome-miniwob-click-button / screenshotBase64Length: encoded-visual; Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.
+- iab-miniwob-enter-text / wobReward: timing-reward; MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields.
+- iab-miniwob-enter-text / screenshotBase64Length: encoded-visual; Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.
+- chrome-miniwob-enter-text / wobReward: timing-reward; MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields.
+- chrome-miniwob-enter-text / screenshotBase64Length: encoded-visual; Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.
+- chrome-miniwob-enter-text / stepCount: harness-implementation; Harness step count records implementation trace granularity, not user-visible browser behavior.
+- iab-wikipedia-selenium / linkCount: dynamic-content; Public real-site link inventory can drift while final URL, title, heading, and target text match.
+- iab-wikipedia-selenium / screenshotHeight: dynamic-visual; Public real-site full-page height can drift with banners, references, and responsive content.
+- iab-wikipedia-selenium / screenshotBase64Length: encoded-visual; Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.
+- iab-wikipedia-selenium / stepCount: harness-implementation; Harness step count records implementation trace granularity, not user-visible browser behavior.
+- chrome-wikipedia-selenium / linkCount: dynamic-content; Public real-site link inventory can drift while final URL, title, heading, and target text match.
+- chrome-wikipedia-selenium / screenshotHeight: dynamic-visual; Public real-site full-page height can drift with banners, references, and responsive content.
+- chrome-wikipedia-selenium / screenshotBase64Length: encoded-visual; Encoded screenshot byte size is not a semantic parity field when MIME and geometry match.
+
+### Unexplained gaps
+
+- none
+
+### Missing required coverage
+
+- auth
+- clipboard
+- dialogs
+- error-recovery
+- iframe
+- installation
+- shadow-dom
+- upload-download
+
+## Supplemental Evidence Sources
+
+- chrome-extension-static-ux: verified; coverage=extension-ux, permissions
+  Covers popup/status/paused/port diagnostics, required permission display, and Backchat Settings status model.
+- browser-gui-visual-evidence: verified; coverage=visual-regression
+  Local screenshot manifest records IAB and Chrome extension GUI evidence; screenshots stay outside the small committed evidence pack.
+- extension-installation-distribution: missing; coverage=installation
+  Unpacked load-path guidance exists, but native messaging or an equivalent packaged distribution flow is not implemented yet.
 
 ## Selected Task Sources
 

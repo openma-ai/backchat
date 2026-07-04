@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-03T13:57:24.315Z",
+  "generatedAt": "2026-07-04T07:26:48.555Z",
   "tasks": [
     {
       "id": "custom.local-fixture.basic-form",
@@ -955,6 +955,50 @@
       "status": "pass"
     }
   ],
+  "evidenceSources": [
+    {
+      "id": "chrome-extension-static-ux",
+      "title": "Chrome extension popup, permission, and Settings Browser UX contract",
+      "status": "verified",
+      "coverage": [
+        "extension-ux",
+        "permissions"
+      ],
+      "evidence": [
+        "packages/browser-extension/manifest.json",
+        "packages/browser-extension/popup.html",
+        "packages/browser-extension/popup.css",
+        "packages/browser-extension/popup.js",
+        "packages/browser-extension/src/manifest.test.ts",
+        "packages/browser-extension/src/background.test.ts",
+        "src/renderer/src/pages/settings/Browser.tsx",
+        "src/renderer/src/pages/settings/browser-settings.test.ts"
+      ],
+      "notes": "Covers popup/status/paused/port diagnostics, required permission display, and Backchat Settings status model."
+    },
+    {
+      "id": "browser-gui-visual-evidence",
+      "title": "Browser GUI screenshot evidence manifest",
+      "status": "verified",
+      "coverage": [
+        "visual-regression"
+      ],
+      "evidence": [
+        "artifacts/browser-plugin-gui-evidence/manifest.json"
+      ],
+      "notes": "Local screenshot manifest records IAB and Chrome extension GUI evidence; screenshots stay outside the small committed evidence pack."
+    },
+    {
+      "id": "extension-installation-distribution",
+      "title": "Chrome extension installation and packaged distribution",
+      "status": "missing",
+      "coverage": [
+        "installation"
+      ],
+      "evidence": [],
+      "notes": "Unpacked load-path guidance exists, but native messaging or an equivalent packaged distribution flow is not implemented yet."
+    }
+  ],
   "coverage": [
     "dom-snapshot",
     "input",
@@ -1114,6 +1158,281 @@
       "right": 2051076
     }
   ],
+  "gapAudit": {
+    "requiredCoverage": [
+      "auth",
+      "chrome-extension",
+      "clipboard",
+      "dialogs",
+      "dom-snapshot",
+      "error-recovery",
+      "extension-ux",
+      "iframe",
+      "input",
+      "installation",
+      "locator",
+      "navigation",
+      "permissions",
+      "real-site-dynamic-content",
+      "screenshot",
+      "shadow-dom",
+      "tab-lifecycle",
+      "upload-download",
+      "viewport",
+      "visual-regression"
+    ],
+    "missingCoverage": [
+      "auth",
+      "clipboard",
+      "dialogs",
+      "error-recovery",
+      "iframe",
+      "installation",
+      "shadow-dom",
+      "upload-download"
+    ],
+    "evidenceSources": [
+      {
+        "id": "chrome-extension-static-ux",
+        "title": "Chrome extension popup, permission, and Settings Browser UX contract",
+        "status": "verified",
+        "coverage": [
+          "extension-ux",
+          "permissions"
+        ],
+        "evidence": [
+          "packages/browser-extension/manifest.json",
+          "packages/browser-extension/popup.html",
+          "packages/browser-extension/popup.css",
+          "packages/browser-extension/popup.js",
+          "packages/browser-extension/src/manifest.test.ts",
+          "packages/browser-extension/src/background.test.ts",
+          "src/renderer/src/pages/settings/Browser.tsx",
+          "src/renderer/src/pages/settings/browser-settings.test.ts"
+        ],
+        "notes": "Covers popup/status/paused/port diagnostics, required permission display, and Backchat Settings status model."
+      },
+      {
+        "id": "browser-gui-visual-evidence",
+        "title": "Browser GUI screenshot evidence manifest",
+        "status": "verified",
+        "coverage": [
+          "visual-regression"
+        ],
+        "evidence": [
+          "artifacts/browser-plugin-gui-evidence/manifest.json"
+        ],
+        "notes": "Local screenshot manifest records IAB and Chrome extension GUI evidence; screenshots stay outside the small committed evidence pack."
+      },
+      {
+        "id": "extension-installation-distribution",
+        "title": "Chrome extension installation and packaged distribution",
+        "status": "missing",
+        "coverage": [
+          "installation"
+        ],
+        "evidence": [],
+        "notes": "Unpacked load-path guidance exists, but native messaging or an equivalent packaged distribution flow is not implemented yet."
+      }
+    ],
+    "acceptedDifferences": [
+      {
+        "pairId": "iab-local-fixture",
+        "taskId": "custom.local-fixture.basic-form",
+        "field": "screenshotBase64Length",
+        "left": 21500,
+        "right": 22516,
+        "category": "encoded-visual",
+        "reason": "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match."
+      },
+      {
+        "pairId": "iab-local-fixture",
+        "taskId": "custom.local-fixture.basic-form",
+        "field": "stepCount",
+        "left": 12,
+        "right": 13,
+        "category": "harness-implementation",
+        "reason": "Harness step count records implementation trace granularity, not user-visible browser behavior."
+      },
+      {
+        "pairId": "chrome-local-fixture",
+        "taskId": "custom.local-fixture.basic-form",
+        "field": "screenshotBase64Length",
+        "left": 31364,
+        "right": 33412,
+        "category": "encoded-visual",
+        "reason": "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match."
+      },
+      {
+        "pairId": "chrome-local-fixture",
+        "taskId": "custom.local-fixture.basic-form",
+        "field": "stepCount",
+        "left": 12,
+        "right": 15,
+        "category": "harness-implementation",
+        "reason": "Harness step count records implementation trace granularity, not user-visible browser behavior."
+      },
+      {
+        "pairId": "iab-miniwob-click-button",
+        "taskId": "miniwob.click-button",
+        "field": "wobReward",
+        "left": 0.8341000000000001,
+        "right": 1,
+        "category": "timing-reward",
+        "reason": "MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields."
+      },
+      {
+        "pairId": "iab-miniwob-click-button",
+        "taskId": "miniwob.click-button",
+        "field": "screenshotBase64Length",
+        "left": 13272,
+        "right": 15060,
+        "category": "encoded-visual",
+        "reason": "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match."
+      },
+      {
+        "pairId": "iab-miniwob-click-button",
+        "taskId": "miniwob.click-button",
+        "field": "stepCount",
+        "left": 11,
+        "right": 12,
+        "category": "harness-implementation",
+        "reason": "Harness step count records implementation trace granularity, not user-visible browser behavior."
+      },
+      {
+        "pairId": "chrome-miniwob-click-button",
+        "taskId": "miniwob.click-button",
+        "field": "wobReward",
+        "left": 0.9436,
+        "right": 0.9965,
+        "category": "timing-reward",
+        "reason": "MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields."
+      },
+      {
+        "pairId": "chrome-miniwob-click-button",
+        "taskId": "miniwob.click-button",
+        "field": "screenshotBase64Length",
+        "left": 20392,
+        "right": 22272,
+        "category": "encoded-visual",
+        "reason": "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match."
+      },
+      {
+        "pairId": "iab-miniwob-enter-text",
+        "taskId": "miniwob.enter-text",
+        "field": "wobReward",
+        "left": 0.7114,
+        "right": 0.9991,
+        "category": "timing-reward",
+        "reason": "MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields."
+      },
+      {
+        "pairId": "iab-miniwob-enter-text",
+        "taskId": "miniwob.enter-text",
+        "field": "screenshotBase64Length",
+        "left": 13180,
+        "right": 15060,
+        "category": "encoded-visual",
+        "reason": "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match."
+      },
+      {
+        "pairId": "chrome-miniwob-enter-text",
+        "taskId": "miniwob.enter-text",
+        "field": "wobReward",
+        "left": 0.905,
+        "right": 0.9908,
+        "category": "timing-reward",
+        "reason": "MiniWoB shaped reward includes time scaling; done/raw reward remain the parity fields."
+      },
+      {
+        "pairId": "chrome-miniwob-enter-text",
+        "taskId": "miniwob.enter-text",
+        "field": "screenshotBase64Length",
+        "left": 19836,
+        "right": 21896,
+        "category": "encoded-visual",
+        "reason": "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match."
+      },
+      {
+        "pairId": "chrome-miniwob-enter-text",
+        "taskId": "miniwob.enter-text",
+        "field": "stepCount",
+        "left": 12,
+        "right": 11,
+        "category": "harness-implementation",
+        "reason": "Harness step count records implementation trace granularity, not user-visible browser behavior."
+      },
+      {
+        "pairId": "iab-wikipedia-selenium",
+        "taskId": "webvoyager.wikipedia.selenium-search",
+        "field": "linkCount",
+        "left": 310,
+        "right": 335,
+        "category": "dynamic-content",
+        "reason": "Public real-site link inventory can drift while final URL, title, heading, and target text match."
+      },
+      {
+        "pairId": "iab-wikipedia-selenium",
+        "taskId": "webvoyager.wikipedia.selenium-search",
+        "field": "screenshotHeight",
+        "left": 7360,
+        "right": 7747,
+        "category": "dynamic-visual",
+        "reason": "Public real-site full-page height can drift with banners, references, and responsive content."
+      },
+      {
+        "pairId": "iab-wikipedia-selenium",
+        "taskId": "webvoyager.wikipedia.selenium-search",
+        "field": "screenshotBase64Length",
+        "left": 1422384,
+        "right": 1876116,
+        "category": "encoded-visual",
+        "reason": "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match."
+      },
+      {
+        "pairId": "iab-wikipedia-selenium",
+        "taskId": "webvoyager.wikipedia.selenium-search",
+        "field": "stepCount",
+        "left": 11,
+        "right": 10,
+        "category": "harness-implementation",
+        "reason": "Harness step count records implementation trace granularity, not user-visible browser behavior."
+      },
+      {
+        "pairId": "chrome-wikipedia-selenium",
+        "taskId": "webvoyager.wikipedia.selenium-search",
+        "field": "linkCount",
+        "left": 317,
+        "right": 332,
+        "category": "dynamic-content",
+        "reason": "Public real-site link inventory can drift while final URL, title, heading, and target text match."
+      },
+      {
+        "pairId": "chrome-wikipedia-selenium",
+        "taskId": "webvoyager.wikipedia.selenium-search",
+        "field": "screenshotHeight",
+        "left": 6304,
+        "right": 6865,
+        "category": "dynamic-visual",
+        "reason": "Public real-site full-page height can drift with banners, references, and responsive content."
+      },
+      {
+        "pairId": "chrome-wikipedia-selenium",
+        "taskId": "webvoyager.wikipedia.selenium-search",
+        "field": "screenshotBase64Length",
+        "left": 1649332,
+        "right": 2051076,
+        "category": "encoded-visual",
+        "reason": "Encoded screenshot byte size is not a semantic parity field when MIME and geometry match."
+      }
+    ],
+    "unexplainedGaps": [],
+    "summary": {
+      "acceptedDifferences": 21,
+      "unexplainedGaps": 0,
+      "missingCoverage": 8
+    }
+  },
   "summary": {
     "totalTasks": 5,
     "completedComparisons": 8,
