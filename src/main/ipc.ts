@@ -162,6 +162,8 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
 
   const sessionManager = new SessionManager({
     send,
+    acpBinDir: deps.acpBinDir,
+    acpInstallRoot: deps.acpInstallRoot,
     // MCP servers come from settings now — Phase 8 finishes the per-agent
     // override matrix; for now we pass every configured server through to
     // every spawn. ACP McpServer shape matches our SettingsMcpServer.

@@ -25,6 +25,10 @@ vi.mock("@open-managed-agents-desktop/acp/binary-update", () => ({
   ensureLatestAcpBinary: vi.fn(async () => undefined),
 }));
 
+vi.mock("@open-managed-agents-desktop/acp/installer", () => ({
+  installAcpRegistryAgent: vi.fn(async () => ({ commandPath: "/tmp/backchat-acp-bin/fake-agent" })),
+}));
+
 vi.mock("@open-managed-agents-desktop/acp/probe", () => ({
   probeAgentAuthStatus: probeAgentAuthStatusMock,
 }));

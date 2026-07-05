@@ -34,6 +34,13 @@ import {
   sessionUpdateInner,
   sessionUpdateType,
 } from "./reduce-turn";
+import {
+  detectNativeAgentRawEvent,
+  detectNativeAgentToolEvent,
+  type NativeAgentContext,
+  type NativeAgentProvider,
+  type NativeAgentUpdate,
+} from "./native-agent-events";
 
 export type { AcpSessionConfigOption } from "./session-config-options";
 
@@ -56,6 +63,22 @@ export interface SessionRow {
    *             pair row is the user-facing entry point.
    */
   kind?: "main" | "side" | "pair";
+  /** Side-session subtype. Side chats are subordinate sessions attached
+   *  to the active main session; native subagents are provider-created
+   *  activity and are not user-created from the GUI. */
+  sideKind?: "chat" | "subagent";
+  /** Parent link for GUI-created side chats. When the active ACP agent
+   *  supports session/fork this seeds the side session from the parent
+   *  ACP context; promoteSideToMain clears the link so the session
+   *  becomes a normal independent fork. */
+  sideParent?: SideSessionParentLink;
+  /** Parent-child task metadata for side subagents. The optional ACP parent
+   *  id is only used for fork-based context seeding; task progress is tracked
+   *  in Backchat's own store. */
+  subagent?: SubagentLink;
+  /** Whether the live ACP agent advertised the unstable session/fork
+   *  capability. This gates inherited subagent startup only. */
+  supportsSessionFork?: boolean;
   /** Lifecycle:
    *    "draft"     → empty session, no IPC fired yet.
    *    "persisted" → loaded from disk; ACP child NOT spawned (spawns
@@ -162,6 +185,45 @@ export interface PairRow {
   pendingMembers?: Set<string>;
 }
 
+export type SubagentInheritance = "fresh" | "fork";
+
+export interface SideSessionParentLink {
+  parentSessionId: string;
+  parentAcpSessionId?: string;
+  inheritance: SubagentInheritance;
+}
+
+export interface SubagentLink {
+  parentSessionId: string;
+  parentAcpSessionId?: string;
+  inheritance: SubagentInheritance;
+}
+
+export interface SubagentActivity {
+  parentSessionId: string;
+  parentAcpSessionId?: string;
+  childSessionId: string;
+  inheritance: SubagentInheritance;
+  task: string;
+  status: "draft" | "running" | "complete" | "error" | "cancelled";
+  startedAt: number;
+  updatedAt: number;
+  errorMessage?: string;
+  native?: NativeSubagentMetadata;
+}
+
+export interface NativeSubagentMetadata {
+  provider: NativeAgentProvider;
+  toolCallId?: string;
+  childThreadId?: string;
+  nickname?: string;
+  agentType?: string;
+  forkContext?: boolean;
+  result?: string;
+  closed?: boolean;
+  childToolCallIds?: string[];
+}
+
 export interface PairTurnTarget {
   session_id: string;
   turn_id: string;
@@ -236,7 +298,7 @@ export interface TurnDeliveryMeta {
   degraded: boolean;
 }
 
-export type SideTabType = "chat" | "file" | "browser" | "terminal";
+export type SideTabType = "chat" | "subagent" | "file" | "browser" | "terminal";
 
 /** UI tab in the right rail. The `payload` field is type-specific — for
  *  chat it's a sessionId (matches SessionRow.id), for file it's a cwd
@@ -308,6 +370,14 @@ export class SessionStore {
    *  during a stream would re-open the same tab. Cleared on session
    *  dispose. */
   #autoOpenedHtmlBySession = new Map<string, Set<string>>();
+  /** Parent session id → child task activity. This is Backchat's subagent
+   *  communication surface: fork only seeds context, while this map tracks
+   *  task assignment, progress, completion and errors. */
+  #subagentsByParent = new Map<string, SubagentActivity[]>();
+  #nativeAgentContextByToolCall = new Map<
+    string,
+    NativeAgentContext & { parentSessionId: string }
+  >();
   #listeners = new Set<() => void>();
   /** Snapshot version — bumps on every mutation. Lets useSyncExternalStore
    *  return a stable === reference when nothing changed. */
@@ -447,6 +517,12 @@ export class SessionStore {
       .sort((a, b) => a.startedAt - b.startedAt);
   }
 
+  subagentsFor(parentSessionId: string): SubagentActivity[] {
+    return [...(this.#subagentsByParent.get(parentSessionId) ?? [])].sort(
+      (a, b) => a.startedAt - b.startedAt,
+    );
+  }
+
   // ------- Mutations called by the UI -------
 
   setActive(id: string | null): void {
@@ -463,13 +539,13 @@ export class SessionStore {
     }
     // Side tabs live in a Map keyed by main session id. After the
     // switch, resync #sideActiveId so the now-active bucket's
-    // chat tab (if any) is the side-chat ChatView subscribes to.
+    // session-backed tab (if any) is the side ChatView subscribes to.
     const newBucketActiveTabId = this.#activeSideTabByMain.get(id) ?? null;
     if (newBucketActiveTabId) {
       const tab = (this.#sideTabsByMain.get(id) ?? []).find(
         (t) => t.id === newBucketActiveTabId,
       );
-      this.#sideActiveId = tab && tab.type === "chat" ? tab.payload : null;
+      this.#sideActiveId = tab && isSideSessionTab(tab.type) ? tab.payload : null;
     } else {
       this.#sideActiveId = null;
     }
@@ -645,10 +721,10 @@ export class SessionStore {
     return this.#tabsBucket().find((t) => t.id === id) ?? null;
   }
 
-  /** Add a tab to the side rail. For chat tabs the caller should
-   *  pre-create the SessionRow via newSideDraft() and pass the new id
-   *  as `payload`. For non-chat tabs, payload is the type-specific
-   *  scratch state. Returns the new tab's id. */
+  /** Add a tab to the side rail. For chat/subagent tabs the caller should
+   *  pre-create the SessionRow and pass the new id as `payload`. For
+   *  non-session tabs, payload is the type-specific scratch state.
+   *  Returns the new tab's id. */
   openSideTab(type: SideTabType, payload: string, label?: string): string {
     const id = `tab-${Math.random().toString(36).slice(2, 8)}`;
     const tab: SideTab = {
@@ -665,9 +741,9 @@ export class SessionStore {
     // no-op when already open AND when the provider hasn't mounted
     // yet, so it's safe to call unconditionally here.
     setRightRailCollapsed(false);
-    // Chat tabs need the SessionRow's side-active pointer to match so
+    // Session-backed tabs need the SessionRow's side-active pointer to match so
     // existing ChatView(mode="side") plumbing still resolves the row.
-    if (type === "chat") this.#sideActiveId = payload;
+    if (isSideSessionTab(type)) this.#sideActiveId = payload;
     this.#emit();
     return id;
   }
@@ -697,10 +773,10 @@ export class SessionStore {
     if (this.#activeBucket() === id) {
       const next = nextTabs[nextTabs.length - 1] ?? null;
       this.#setActiveBucket(next?.id ?? null);
-      this.#sideActiveId = next && next.type === "chat" ? next.payload : null;
+      this.#sideActiveId = next && isSideSessionTab(next.type) ? next.payload : null;
     }
     // Caller is responsible for tearing down the underlying resource:
-    //   chat tabs → sessionDispose IPC
+    //   chat/subagent tabs → sessionDispose IPC
     //   terminal tabs → uiTermDispose IPC
     //   file/browser → no backing resource, nothing to do
     this.#emit();
@@ -711,7 +787,7 @@ export class SessionStore {
     this.#setActiveBucket(id);
     if (id) {
       const t = this.#tabsBucket().find((x) => x.id === id);
-      this.#sideActiveId = t && t.type === "chat" ? t.payload : null;
+      this.#sideActiveId = t && isSideSessionTab(t.type) ? t.payload : null;
     } else {
       this.#sideActiveId = null;
     }
@@ -726,8 +802,13 @@ export class SessionStore {
    *  UI category changes. */
   promoteSideToMain(sessionId: string): string | null {
     const row = this.#sessions.get(sessionId);
-    if (!row || row.kind !== "side") return null;
-    this.#mutateSession(sessionId, (s) => ({ ...s, kind: "main" }));
+    if (!row || row.kind !== "side" || row.sideKind === "subagent") return null;
+    this.#mutateSession(sessionId, (s) => ({
+      ...s,
+      kind: "main",
+      sideKind: undefined,
+      sideParent: undefined,
+    }));
     // Drop the side-panel tab that wraps this chat. closeSideTab
     // would also tear down the ACP child — we want to keep it, so
     // just splice the tab out by hand.
@@ -745,7 +826,7 @@ export class SessionStore {
       if (wasActive) {
         const next = nextTabs[nextTabs.length - 1] ?? null;
         this.#setActiveBucket(next?.id ?? null);
-        this.#sideActiveId = next && next.type === "chat" ? next.payload : null;
+        this.#sideActiveId = next && isSideSessionTab(next.type) ? next.payload : null;
       }
     }
     if (this.#sideActiveId === sessionId) this.#sideActiveId = null;
@@ -842,17 +923,31 @@ export class SessionStore {
    *  the row with `kind: "side"` (so it never appears in the sidebar
    *  list) and assigns the new id to `#sideActiveId` instead of the
    *  main active pointer. The main thread is left undisturbed. */
-  newSideDraft(): string {
+  newSideDraft(opts?: {
+    parentSessionId?: string;
+    parentAcpSessionId?: string;
+    inheritance?: SubagentInheritance;
+    agentId?: string;
+    cwd?: string;
+  }): string {
     const id = `side-${Math.random().toString(36).slice(2, 10)}`;
     this.#sessions.set(id, {
       id,
-      agent_id: "",
-      cwd: "",
+      agent_id: opts?.agentId ?? "",
+      cwd: opts?.cwd ?? "",
       acp_session_id: "",
       label: "",
       kind: "side",
+      sideKind: "chat",
       status: "draft",
       createdAt: Date.now(),
+      sideParent: opts?.parentSessionId
+        ? {
+            parentSessionId: opts.parentSessionId,
+            parentAcpSessionId: opts.parentAcpSessionId,
+            inheritance: opts.inheritance ?? "fresh",
+          }
+        : undefined,
     });
     this.#sideActiveId = id;
     this.#emit();
@@ -923,6 +1018,10 @@ export class SessionStore {
         : s.queuedTurnIds,
       status: "running",
     }));
+    this.#recordSubagentActivity(sessionId, {
+      task: promptText,
+      status: "running",
+    });
     this.#emit();
   }
 
@@ -965,6 +1064,140 @@ export class SessionStore {
     const prev = this.#sessions.get(id);
     if (!prev) return;
     this.#sessions.set(id, update(prev));
+  }
+
+  #recordSubagentActivity(
+    childSessionId: string,
+    patch: Partial<Pick<SubagentActivity, "task" | "status" | "errorMessage">>,
+  ): void {
+    const row = this.#sessions.get(childSessionId);
+    const link = row?.subagent;
+    if (!row || !link) return;
+
+    const now = Date.now();
+    const prevList = this.#subagentsByParent.get(link.parentSessionId) ?? [];
+    const idx = prevList.findIndex((a) => a.childSessionId === childSessionId);
+    const prev = idx >= 0 ? prevList[idx] : undefined;
+    const next: SubagentActivity = {
+      parentSessionId: link.parentSessionId,
+      parentAcpSessionId: link.parentAcpSessionId,
+      childSessionId,
+      inheritance: link.inheritance,
+      task: patch.task ?? prev?.task ?? row.label,
+      status: patch.status ?? prev?.status ?? "draft",
+      startedAt: prev?.startedAt ?? now,
+      updatedAt: now,
+      errorMessage: patch.errorMessage,
+    };
+    const nextList =
+      idx >= 0
+        ? [
+            ...prevList.slice(0, idx),
+            next,
+            ...prevList.slice(idx + 1),
+          ]
+        : [...prevList, next];
+    this.#subagentsByParent.set(link.parentSessionId, nextList);
+  }
+
+  #ingestNativeAgentToolEvent(
+    parentSessionId: string,
+    tool: { toolCallId: string; parentToolUseId?: string },
+  ): void {
+    const expectedProvider = nativeProviderForAgent(
+      this.#sessions.get(parentSessionId)?.agent_id,
+    );
+    if (!expectedProvider) return;
+    const context =
+      this.#nativeAgentContextByToolCall.get(tool.toolCallId) ??
+      (tool.parentToolUseId
+        ? this.#nativeAgentContextByToolCall.get(tool.parentToolUseId)
+        : undefined);
+    const sameParentContext =
+      context?.parentSessionId === parentSessionId ? context : undefined;
+    this.#ingestNativeAgentUpdates(
+      parentSessionId,
+      detectNativeAgentToolEvent(tool, sameParentContext).filter(
+        (update) => update.provider === expectedProvider,
+      ),
+    );
+  }
+
+  #ingestNativeAgentUpdates(parentSessionId: string, updates: NativeAgentUpdate[]): void {
+    for (const update of updates) {
+      this.#upsertNativeSubagentActivity(parentSessionId, update);
+    }
+  }
+
+  #upsertNativeSubagentActivity(parentSessionId: string, update: NativeAgentUpdate): void {
+    const existingContext = update.toolCallId
+      ? this.#nativeAgentContextByToolCall.get(update.toolCallId)
+      : undefined;
+    const childSessionId =
+      update.childId ??
+      existingContext?.childId ??
+      (update.toolCallId ? `${update.provider}:${update.toolCallId}` : undefined);
+    if (!childSessionId) return;
+
+    const parent = this.#sessions.get(parentSessionId);
+    const now = Date.now();
+    const prevList = this.#subagentsByParent.get(parentSessionId) ?? [];
+    let idx = prevList.findIndex((a) => a.childSessionId === childSessionId);
+    if (idx < 0 && existingContext?.childId && existingContext.childId !== childSessionId) {
+      idx = prevList.findIndex((a) => a.childSessionId === existingContext.childId);
+    }
+    const prev = idx >= 0 ? prevList[idx] : undefined;
+    const native: NativeSubagentMetadata = {
+      ...(prev?.native ?? {}),
+      provider: update.provider,
+      toolCallId: update.toolCallId ?? prev?.native?.toolCallId,
+      childThreadId: nativeChildThreadId(update) ?? prev?.native?.childThreadId,
+      nickname: update.nickname ?? prev?.native?.nickname,
+      agentType: update.agentType ?? prev?.native?.agentType,
+      forkContext: update.forkContext ?? prev?.native?.forkContext,
+      result: update.result ?? prev?.native?.result,
+      closed: update.closed ?? prev?.native?.closed,
+      childToolCallIds: appendUnique(
+        prev?.native?.childToolCallIds,
+        update.childToolCallId,
+      ),
+    };
+    const next: SubagentActivity = {
+      parentSessionId,
+      parentAcpSessionId: parent?.acp_session_id || prev?.parentAcpSessionId,
+      childSessionId,
+      inheritance:
+        update.forkContext === true
+          ? "fork"
+          : update.forkContext === false
+            ? "fresh"
+            : prev?.inheritance ?? "fresh",
+      task: update.task ?? prev?.task ?? parent?.label ?? "",
+      status: update.status ?? prev?.status ?? "running",
+      startedAt: prev?.startedAt ?? now,
+      updatedAt: now,
+      errorMessage: update.errorMessage ?? prev?.errorMessage,
+      native,
+    };
+    const nextList =
+      idx >= 0
+        ? [
+            ...prevList.slice(0, idx),
+            next,
+            ...prevList.slice(idx + 1),
+          ]
+        : [...prevList, next];
+    this.#subagentsByParent.set(parentSessionId, nextList);
+
+    if (update.toolCallId) {
+      this.#nativeAgentContextByToolCall.set(update.toolCallId, {
+        provider: update.provider,
+        operation: update.operation ?? existingContext?.operation,
+        toolCallId: update.toolCallId,
+        childId: childSessionId,
+        parentSessionId,
+      });
+    }
   }
 
   #isPairMember(sessionId: string): boolean {
@@ -1193,6 +1426,7 @@ export class SessionStore {
             configOptions: configOptions ?? s.configOptions,
             currentModeId:
               selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
+            supportsSessionFork: ev.supports_session_fork ?? s.supportsSessionFork,
             status: s.activeTurnId ? "running" : "ready",
             lastError: undefined,
           }));
@@ -1207,6 +1441,7 @@ export class SessionStore {
             createdAt: Date.now(),
             configOptions,
             currentModeId: selectedModeIdFromConfigOptions(configOptions),
+            supportsSessionFork: ev.supports_session_fork,
           });
         }
         if (!this.#activeId) this.#activeId = ev.session_id;
@@ -1322,12 +1557,19 @@ export class SessionStore {
           ...turn,
           events: [...turn.events, { payload: ev.event, receivedAt: Date.now() }],
         });
+        if (nativeProviderForAgent(this.#sessions.get(ev.session_id)?.agent_id) === "codex") {
+          this.#ingestNativeAgentUpdates(
+            ev.session_id,
+            detectNativeAgentRawEvent(ev.event),
+          );
+        }
         // Sniff tool_call payloads for workspace artifacts: file paths
         // from rawInput, localhost service URLs from rawOutput. These
         // feed the side panel's 推荐 tile so the user can jump to
         // whatever the agent just touched.
         if (parsed.kind === "tool_call") {
           const tool = parsed.tool;
+          this.#ingestNativeAgentToolEvent(ev.session_id, tool);
           const files = extractFilePaths(tool.rawInput);
           const services = extractServiceUrls(tool.rawOutput);
           this.#ingestArtifacts(ev.session_id, files, services);
@@ -1357,6 +1599,25 @@ export class SessionStore {
         }
         break;
       }
+      case "session.native_subagent": {
+        this.#ingestNativeAgentUpdates(ev.session_id, [
+          {
+            provider: ev.provider,
+            operation:
+              ev.provider === "claude"
+                ? "claude_agent"
+                : undefined,
+            toolCallId: ev.tool_call_id,
+            childId: ev.child_id,
+            task: ev.task,
+            agentType: ev.agent_type,
+            status: ev.status,
+            result: ev.result,
+            errorMessage: ev.error_message,
+          },
+        ]);
+        break;
+      }
       case "session.complete": {
         const turn = this.#turns.get(ev.turn_id);
         if (turn) {
@@ -1374,6 +1635,7 @@ export class SessionStore {
         this.#advanceAfterTurn(ev.session_id, ev.turn_id, {
           unread: isBackgroundChat,
         });
+        this.#recordSubagentActivity(ev.session_id, { status: "complete" });
         this.#dropPairPendingForSession(ev.session_id, ev.turn_id);
         break;
       }
@@ -1398,6 +1660,10 @@ export class SessionStore {
             });
           }
           this.#advanceAfterTurn(ev.session_id, ev.turn_id);
+          this.#recordSubagentActivity(ev.session_id, {
+            status: "error",
+            errorMessage: ev.message,
+          });
           this.#dropPairPendingForSession(ev.session_id, ev.turn_id);
         }
         this.#mutateSession(ev.session_id, (s) => ({
@@ -1410,6 +1676,7 @@ export class SessionStore {
         break;
       }
       case "session.disposed": {
+        this.#recordSubagentActivity(ev.session_id, { status: "cancelled" });
         this.#mutateSession(ev.session_id, (s) => ({ ...s, status: "disposed" }));
         if (this.#activeId === ev.session_id) {
           const fallback = [...this.#sessions.values()].find(
@@ -1648,6 +1915,9 @@ export const selectActiveSideTab = (s: SessionStore) => s.activeSideTab();
 export const selectArtifactsFor =
   (sessionId: string | null | undefined) => (s: SessionStore) =>
     sessionId ? s.artifactsFor(sessionId) : { files: [], services: [] };
+export const selectSubagentsFor =
+  (sessionId: string | null | undefined) => (s: SessionStore) =>
+    sessionId ? s.subagentsFor(sessionId) : [];
 export const selectTurnsFor = (sessionId: string) => (s: SessionStore) =>
   s.turnsFor(sessionId);
 
@@ -1666,7 +1936,9 @@ export function newSideDraftSession(): string {
 function defaultSideTabLabel(type: SideTabType, payload: string): string {
   switch (type) {
     case "chat":
-      return "New chat";
+      return "Side chat";
+    case "subagent":
+      return "子任务";
     case "file": {
       const trimmed = payload.replace(/\/+$/, "");
       const last = trimmed.split("/").pop();
@@ -1685,6 +1957,43 @@ function defaultSideTabLabel(type: SideTabType, payload: string): string {
       return last || "Terminal";
     }
   }
+}
+
+function isSideSessionTab(type: SideTabType): boolean {
+  return type === "chat" || type === "subagent";
+}
+
+function nativeChildThreadId(update: NativeAgentUpdate): string | undefined {
+  if (!update.childId) return undefined;
+  return update.toolCallId && update.childId === `${update.provider}:${update.toolCallId}`
+    ? undefined
+    : update.childId;
+}
+
+function appendUnique(
+  values: string[] | undefined,
+  value: string | undefined,
+): string[] | undefined {
+  if (!value) return values;
+  const next = values ? [...values] : [];
+  if (!next.includes(value)) next.push(value);
+  return next;
+}
+
+function nativeProviderForAgent(agentId: string | undefined): NativeAgentProvider | undefined {
+  const normalized = (agentId ?? "").toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === "codex-acp" || normalized.includes("codex")) return "codex";
+  if (
+    normalized === "claude-acp" ||
+    normalized.includes("claude-code") ||
+    normalized.includes("claude") ||
+    normalized === "cc" ||
+    normalized.startsWith("cc-")
+  ) {
+    return "claude";
+  }
+  return undefined;
 }
 
 function safeParse(s: string): unknown {

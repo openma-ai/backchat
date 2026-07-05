@@ -10,6 +10,11 @@ import {
   SearchIcon,
   ServerIcon,
 } from "lucide-react";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
 
 type SettingsTab = {
@@ -28,7 +33,7 @@ const TABS: SettingsTab[] = [
 ];
 
 const SECTION_ORDER: SettingsTab["section"][] = ["Personal", "Integrations", "Archived"];
-const iconSlotClass = "flex w-5 shrink-0 items-center justify-center";
+const iconSlotClass = "flex w-4 shrink-0 items-center justify-center";
 
 export function SettingsLayout() {
   const location = useLocation();
@@ -40,12 +45,13 @@ export function SettingsLayout() {
   }, [query]);
 
   return (
-    <div className="flex h-full min-h-0 bg-bg text-fg">
-      <aside className="app-drag-region flex w-[348px] shrink-0 flex-col bg-bg-sidebar/80 px-8 pb-6 pt-12">
+    <div className="flex h-full min-h-0 gap-[var(--stage-inset)] bg-bg-sidebar p-[var(--stage-inset)] text-fg">
+      <aside className="app-drag-region liquid-glass flex w-[232px] shrink-0 flex-col rounded-2xl px-2 pb-2 pt-2">
+        <div className="h-[30px]" />
         <Link
           to="/"
           aria-label="Back to app"
-          className="app-no-drag mb-5 inline-flex h-7 w-fit items-center gap-2 rounded-md px-2 text-sm text-fg-subtle transition-colors hover:text-fg"
+          className="app-no-drag mb-2 inline-flex h-7 w-fit items-center gap-2 rounded-md px-2 text-xs text-fg-subtle transition-colors hover:bg-bg-surface/55 hover:text-fg"
         >
           <span className={iconSlotClass}>
             <ArrowLeftIcon className="size-3.5" />
@@ -53,26 +59,26 @@ export function SettingsLayout() {
           <span>Back to app</span>
         </Link>
 
-        <label className="app-no-drag mb-6 flex h-8 items-center gap-2 rounded-lg bg-bg px-2 text-sm shadow-sm ring-1 ring-border/60 transition-colors focus-within:ring-border-strong">
-          <span className={cn(iconSlotClass, "text-fg-subtle")}>
+        <InputGroup className="app-no-drag mb-3 h-8 rounded-lg border-border/45 bg-bg/65 shadow-chip-press">
+          <InputGroupAddon className="pl-2 pr-1 text-fg-subtle">
             <SearchIcon className="size-3.5" />
-          </span>
-          <input
+          </InputGroupAddon>
+          <InputGroupInput
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search settings..."
-            className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-subtle"
+            className="h-8 text-xs text-fg placeholder:text-fg-subtle md:text-xs"
           />
-        </label>
+        </InputGroup>
 
         <nav className="app-no-drag min-h-0 flex-1 overflow-y-auto">
           {SECTION_ORDER.map((section) => {
             const items = visibleTabs.filter((tab) => tab.section === section);
             if (items.length === 0) return null;
             return (
-              <div key={section} className="mb-7">
-                <div className="mb-2 px-2 text-sm text-fg-subtle">{section}</div>
-                <ul className="space-y-1">
+              <div key={section} className="mb-4">
+                <div className="mb-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{section}</div>
+                <ul className="space-y-0.5">
                   {items.map((tab) => {
                     const active = location.pathname === tab.to;
                     const Icon = tab.icon;
@@ -81,14 +87,14 @@ export function SettingsLayout() {
                         <Link
                           to={tab.to}
                           className={cn(
-                            "flex h-8 items-center gap-2 rounded-lg px-2 text-sm transition-colors",
+                            "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
                             active
-                              ? "bg-bg-surface text-fg"
+                              ? "liquid-glass-selected text-fg"
                               : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
                           )}
                         >
                           <span className={iconSlotClass}>
-                            <Icon className="size-4" />
+                            <Icon className="size-3.5" />
                           </span>
                           <span>{tab.label}</span>
                         </Link>
@@ -101,18 +107,18 @@ export function SettingsLayout() {
           })}
         </nav>
 
-        <div className="app-no-drag mt-auto rounded-lg bg-bg-surface/55 py-2 text-sm text-fg-muted">
-          <div className="flex items-center gap-2 px-2">
+        <div className="app-no-drag mt-auto rounded-md bg-bg-surface/45 py-1.5 text-xs text-fg-muted">
+          <div className="flex h-7 items-center gap-2 px-2">
             <span className={iconSlotClass}>
-              <BotIcon className="size-4" />
+              <BotIcon className="size-3.5" />
             </span>
             <span>Chat settings</span>
           </div>
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[780px] px-8 pb-24 pt-24">
+      <main className="min-w-0 flex-1 overflow-y-auto rounded-2xl bg-bg/80 shadow-card-soft">
+        <div className="w-full px-8 pb-16 pt-8">
           <Outlet />
         </div>
       </main>

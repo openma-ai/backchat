@@ -34,6 +34,12 @@ export interface ToolEntry {
   rawInput?: unknown;
   rawOutput?: unknown;
   toolName?: string;
+  /** Vendor/implementation extension data carried by ACP `_meta`. ACP
+   *  explicitly reserves this shape for custom protocol details. */
+  meta?: Record<string, unknown>;
+  /** Known vendor extension used by claude-agent-acp to associate subagent
+   *  child tool calls with the parent Task/Agent tool use. */
+  parentToolUseId?: string;
   /** ACP tool content blocks. Each block is one of:
    *    { type: "content", content: { type: "text" | "image" | ..., ... } }
    *    { type: "diff", path, oldText, newText }
@@ -192,11 +198,13 @@ function stringField(raw: Record<string, unknown>, names: string[]): string | un
 function normalizeToolCall(
   raw: Record<string, unknown>,
 ): Partial<ToolEntry> & { toolCallId: string } {
-  const meta = raw._meta as { claudeCode?: { toolName?: string } } | undefined;
+  const meta = objectField(raw._meta);
+  const claudeMeta = objectField(meta.claudeCode);
   const toolCallId = raw.toolCallId ?? raw.tool_call_id ?? raw.id;
   const entry: Partial<ToolEntry> & { toolCallId: string } = {
     toolCallId: String(toolCallId ?? ""),
   };
+  if (Object.keys(meta).length > 0) entry.meta = meta;
   const title = raw.title ?? raw.name ?? raw.toolName ?? raw.tool_name;
   if (typeof title === "string") entry.title = title;
   if (typeof raw.kind === "string") entry.kind = raw.kind;
@@ -207,9 +215,24 @@ function normalizeToolCall(
   if (rawOutput !== undefined && rawOutput !== null) entry.rawOutput = rawOutput;
   if (Array.isArray(raw.content)) entry.content = raw.content as ToolContentBlock[];
   if (Array.isArray(raw.locations)) entry.locations = raw.locations as ToolEntry["locations"];
-  const toolName = meta?.claudeCode?.toolName ?? raw.toolName ?? raw.tool_name ?? raw.name;
+  const toolName = claudeMeta.toolName ?? raw.toolName ?? raw.tool_name ?? raw.name;
   if (typeof toolName === "string") entry.toolName = toolName;
+  const parentToolUseId =
+    stringValue(claudeMeta.parentToolUseId) ??
+    stringValue(raw.parentToolUseId) ??
+    stringValue(raw.parent_tool_use_id);
+  if (parentToolUseId) entry.parentToolUseId = parentToolUseId;
   return entry;
+}
+
+function objectField(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function normalizePermissionRequest(raw: Record<string, unknown>, event: unknown): ParsedAcpEvent {
@@ -569,6 +592,8 @@ export function reduceTurn(events: readonly { payload: unknown }[]): TurnRender 
         rawInput: incoming.rawInput,
         rawOutput: incoming.rawOutput,
         toolName: incoming.toolName,
+        meta: incoming.meta,
+        parentToolUseId: incoming.parentToolUseId,
         content: incoming.content,
         locations: incoming.locations,
       };
@@ -591,6 +616,15 @@ export function reduceTurn(events: readonly { payload: unknown }[]): TurnRender 
     if (incoming.kind !== undefined) prev.kind = incoming.kind;
     if (incoming.status !== undefined) prev.status = incoming.status;
     if (incoming.toolName !== undefined) prev.toolName = incoming.toolName;
+    if (incoming.meta !== undefined) {
+      prev.meta = {
+        ...(prev.meta ?? {}),
+        ...incoming.meta,
+      };
+    }
+    if (incoming.parentToolUseId !== undefined) {
+      prev.parentToolUseId = incoming.parentToolUseId;
+    }
     if (incoming.rawInput !== undefined) {
       const incEmpty = isEmptyObject(incoming.rawInput);
       const prevHasContent = !isEmptyObject(prev.rawInput);

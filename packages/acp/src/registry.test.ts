@@ -102,4 +102,21 @@ describe("ACP agent setup registry", () => {
       spec: { command: geminiShim, args: ["--acp"] },
     });
   });
+
+  it("does not detect registry-managed agents from system PATH", async () => {
+    const sysDir = join(tmpdir(), `backchat-acp-system-${process.pid}-${Date.now()}`);
+    await mkdir(sysDir, { recursive: true });
+    const geminiSystem = join(sysDir, "openma-acp-gemini");
+    await writeFile(geminiSystem, "#!/usr/bin/env node\n", { mode: 0o755 });
+
+    const detected = await detect("gemini", {
+      env: {
+        PATH: sysDir,
+        OPENMA_ACP_BIN_DIR: join(sysDir, "managed-missing"),
+      },
+      systemPathFallbackDirs: [],
+    });
+
+    expect(detected).toBeNull();
+  });
 });

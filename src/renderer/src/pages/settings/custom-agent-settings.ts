@@ -56,6 +56,7 @@ export function upsertCustomAgentServer(
     ...rest,
     {
       id,
+      enabled: true,
       ...(form.label.trim() ? { label_override: form.label.trim() } : {}),
       command_override: command,
       ...(args.length > 0 ? { args_override: args } : {}),

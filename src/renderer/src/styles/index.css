@@ -491,10 +491,30 @@ body,
    `scrollbar-width: thin` is the Firefox/standards way to ask for the
    same; both declarations together cover every renderer. */
 .sidebar-scrollbar {
-  scrollbar-width: thin;
+  scrollbar-width: auto;
+  scrollbar-color: color-mix(in srgb, var(--fg) 35%, transparent) transparent;
 }
 .sidebar-scrollbar::-webkit-scrollbar {
   width: 8px;
+  background: transparent;
+}
+.sidebar-scrollbar::-webkit-scrollbar-track,
+.sidebar-scrollbar::-webkit-scrollbar-track-piece,
+.sidebar-scrollbar::-webkit-scrollbar-corner {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+}
+.sidebar-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--fg) 45%, transparent);
 }
 
 /* Chat scroller — Codex-style short pill.

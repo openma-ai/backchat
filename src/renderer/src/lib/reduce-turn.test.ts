@@ -62,6 +62,36 @@ describe("reduceTurn ACP event compatibility", () => {
     expect(out.timeline).toEqual([{ kind: "tool", toolCallId: "tool-2" }]);
   });
 
+  test("preserves ACP _meta extension fields from tool calls", () => {
+    const out = render({
+      sessionUpdate: "tool_call",
+      toolCallId: "tool-child-read",
+      rawInput: { file_path: "/repo/src/main.ts" },
+      _meta: {
+        claudeCode: {
+          toolName: "Read",
+          parentToolUseId: "toolu-parent-task",
+        },
+        vendorNote: "keep me",
+      },
+    });
+
+    expect(out.tools).toEqual([
+      expect.objectContaining({
+        toolCallId: "tool-child-read",
+        toolName: "Read",
+        parentToolUseId: "toolu-parent-task",
+        meta: {
+          claudeCode: {
+            toolName: "Read",
+            parentToolUseId: "toolu-parent-task",
+          },
+          vendorNote: "keep me",
+        },
+      }),
+    ]);
+  });
+
   test("renders OpenMA thinking and tool use/result events through the existing turn shape", () => {
     const out = render(
       {

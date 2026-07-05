@@ -8,10 +8,9 @@
  *   - **official** (registry-fetch.ts): live JSON from
  *     cdn.agentclientprotocol.com, fetched once at startup, cached to disk.
  *
- * Detection rule: only entries whose spec.command resolves on $PATH count as
- * detected. For npx/uvx-based entries, additionally require the package to be
- * globally installed — `npx`/`uvx` are always on PATH once Node/uv are
- * installed, so the bare `which` check would lie.
+ * Detection rule: registry-managed entries resolve from Backchat's managed
+ * ACP bin directory. Only entries marked systemPath, plus custom overrides,
+ * fall back to the user's system PATH.
  *
  * Vendored from @open-managed-agents/acp-runtime (Apache-2.0).
  */
@@ -141,6 +140,9 @@ export async function detectEntry(
   options: ResolveAgentCommandOptions = {},
 ): Promise<KnownAgentEntry | null> {
   const managedCommand = await resolveManagedCommand(entry.spec.command, options);
+  if (!managedCommand && entry.installSource === "registry" && !entry.systemPath) {
+    return null;
+  }
   const command = managedCommand ?? await resolveSystemCommand(entry, options);
   if (!command) return null;
   if (entry.spec.command === "npx" && !isNpxPackageInstalled(entry)) return null;

@@ -50,6 +50,7 @@ describe("custom agent settings", () => {
 
     expect(agents).toEqual([{
       id: "studio",
+      enabled: true,
       label_override: "Studio ACP",
       command_override: "/usr/local/bin/studio-acp",
       args_override: ["--acp"],

@@ -21,6 +21,8 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
+import { useSettings } from "@/lib/settings-store";
 import {
   selectActiveId,
   selectPairs,
@@ -205,18 +207,15 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Chats — flex-1 takes all remaining space. scrollbarGutter
-          permanently reserves the bar's width so rows don't shift left
-          when crossing the overflow threshold. Sibling sticky-pinned
-          rows (New chat / Search / Settings) carry the same extra
-          paddingRight so right edges line up. */}
+      {/* Chats — flex-1 takes all remaining space. The scrollbar is overlay-
+          styled; do not reserve a classic gutter here, because macOS draws
+          that gutter as bright vertical seams while the thumb is active. */}
       <nav
         ref={navRef}
         className="sidebar-scrollbar flex-1 overflow-y-auto pt-[var(--row-gap-y)]"
         style={{
           paddingLeft: "8px",
           paddingRight: "8px",
-          scrollbarGutter: "stable",
         }}
       >
         {sessions.length === 0 && pairs.length === 0 ? (
@@ -539,12 +538,13 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
+  const settings = useSettings();
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
     queryFn: () => window.backchat.agentsList(),
     enabled: open,
   });
-  const detected = agents.filter((a) => a.detected);
+  const enabled = agents.filter((a) => enabledAgentIds(settings).has(a.id) && isAgentRunnable(a));
 
   const toggle = (id: string) => {
     setPicked((prev) => {
@@ -557,7 +557,7 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
 
   const start = () => {
     if (picked.size < 2) return;
-    const agentIds = detected
+    const agentIds = enabled
       .map((a) => a.id)
       .filter((id) => picked.has(id));
     const pair_id = sessionStore.newDraftPair(agentIds);
@@ -588,12 +588,12 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
         <div className="px-2 py-1.5 text-[11px] text-fg-subtle">
           选 2–4 个 agent 一起聊
         </div>
-        {detected.length === 0 ? (
+        {enabled.length === 0 ? (
           <div className="px-2 py-2 text-xs text-fg-muted">
-            没有检测到 agent
+            没有启用的 agent
           </div>
         ) : (
-          detected.map((a) => {
+          enabled.map((a) => {
             const isPicked = picked.has(a.id);
             const atCap = !isPicked && picked.size >= 4;
             return (

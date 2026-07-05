@@ -63,6 +63,7 @@ const AgentOverrideSchema = z.object({
    *  around so a user can keep settings for an agent they uninstalled and
    *  reinstall later without losing config. */
   id: z.string().min(1),
+  enabled: z.boolean().optional(),
   label_override: z.string().optional(),
   command_override: z.string().optional(),
   args_override: z.array(z.string()).optional(),

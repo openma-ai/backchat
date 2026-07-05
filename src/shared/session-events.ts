@@ -26,6 +26,10 @@ export interface SessionStartParams {
    *  via `session/load`. Falls back to `session/new` when the agent doesn't
    *  advertise the loadSession capability. */
   resume?: { acp_session_id: string };
+  /** Seed this session by forking an existing ACP-side session. This is the
+   *  SDK's unstable `session/fork` path and should be treated as a context
+   *  inheritance mechanism, not as the whole subagent communication model. */
+  fork?: { acp_session_id: string };
 }
 
 export interface PairStartParams {
@@ -132,6 +136,11 @@ export type SessionEventOut =
        *  runtime session configuration. Kept as unknown at the shared
        *  IPC boundary; the renderer narrows to its display shape. */
       config_options?: readonly unknown[];
+      /** Whether the agent advertised the unstable `session/fork`
+       *  capability on initialize. The renderer uses this only to seed
+       *  GUI-created side chats / forks with inherited context; native
+       *  subagent communication state is tracked separately. */
+      supports_session_fork?: boolean;
     }
   | {
       type: "session.event";
@@ -141,6 +150,21 @@ export type SessionEventOut =
        *  like `{ type: "requestPermission", … }`. The renderer's reducer
        *  branches on the discriminator. */
       event: unknown;
+    }
+  | {
+      type: "session.native_subagent";
+      session_id: string;
+      provider: "codex" | "claude";
+      /** ACP/native tool call id that created or reported this child. */
+      tool_call_id?: string;
+      /** Provider-native child id. For Claude this is transcript
+       *  `toolUseResult.agentId`, not text scraped from the result. */
+      child_id: string;
+      task?: string;
+      agent_type?: string;
+      status?: "running" | "complete" | "error" | "cancelled";
+      result?: string;
+      error_message?: string;
     }
   | { type: "session.complete"; session_id: string; turn_id: string }
   | {

@@ -32,11 +32,11 @@ export function SettingsMcpServers() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 text-xs">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-base font-medium text-fg">MCP Servers</h1>
-          <p className="mt-1 text-xs text-fg-muted">
+          <h1 className="text-sm font-medium text-fg">MCP Servers</h1>
+          <p className="mt-1 max-w-[64ch] text-[11px] leading-5 text-fg-muted">
             Tools & data sources every chat session connects to. Forwarded
             verbatim to <span className="font-mono">session/new</span>.
           </p>
@@ -60,19 +60,19 @@ export function SettingsMcpServers() {
       )}
 
       {editing === null && servers.length === 0 && (
-        <div className="rounded-md bg-bg-surface/50 p-6 text-center text-xs text-fg-muted">
+        <div className="rounded-xl border border-border/45 bg-bg/70 p-5 text-center text-xs text-fg-muted shadow-card-soft">
           No MCP servers configured yet.
         </div>
       )}
 
       {editing === null && servers.length > 0 && (
-        <ul className="divide-y divide-border/40 rounded-lg bg-bg-surface/40">
+        <ul className="overflow-hidden rounded-xl border border-border/45 bg-bg/70 shadow-card-soft">
           {servers.map((s) => (
-            <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+            <li key={s.id} className="flex min-h-10 items-center gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-bg-surface/50 [&+&]:border-t [&+&]:border-border/35">
               <Badge variant="secondary" className="text-[11px] uppercase">
                 {s.type}
               </Badge>
-              <span className="text-sm font-medium text-fg">{s.name}</span>
+              <span className="font-medium text-fg">{s.name}</span>
               <span className="ml-1 truncate font-mono text-[11px] text-fg-subtle">
                 {s.type === "stdio" ? `${s.command} ${s.args.join(" ")}` : s.url}
               </span>
@@ -234,9 +234,9 @@ function ServerForm({
   const pairLabel = isStdio ? "Environment variable" : "Header";
 
   return (
-    <form onSubmit={save} className="space-y-3 rounded-lg bg-bg-surface/50 p-4">
+    <form onSubmit={save} className="space-y-3 rounded-xl border border-border/45 bg-bg/70 p-3 text-xs shadow-card-soft">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-fg">
+        <h2 className="text-xs font-medium text-fg">
           {initial ? `Edit ${initial.name}` : "Add MCP server"}
         </h2>
         <button
@@ -250,14 +250,14 @@ function ServerForm({
       </div>
 
       <Field label="Type">
-        <div className="flex gap-1 rounded-md bg-bg p-1">
+        <div className="flex gap-1 rounded-lg bg-bg-surface/45 p-1">
           {(["http", "sse", "stdio"] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setF((p) => ({ ...p, type: t }))}
               className={cn(
-                "flex-1 rounded px-2 py-1.5 text-xs uppercase tracking-wider transition-colors",
+                "flex-1 rounded-md px-2 py-1.5 text-[11px] uppercase tracking-wide transition-colors",
                 f.type === t
                   ? "bg-bg-surface text-fg shadow-chip-press"
                   : "text-fg-muted hover:text-fg",
@@ -329,7 +329,7 @@ function ServerForm({
           </button>
         </div>
         {f.pairs.length === 0 ? (
-          <p className="rounded-md bg-bg/60 px-2.5 py-2 text-[11px] text-fg-subtle">
+          <p className="rounded-md bg-bg-surface/45 px-2.5 py-2 text-[11px] text-fg-subtle">
             No {pairLabel.toLowerCase()}s configured.
           </p>
         ) : (
@@ -443,6 +443,6 @@ function Field({
 }
 
 const inputClass = cn(
-  "h-8 w-full rounded-md bg-bg px-2.5 text-sm text-fg placeholder:text-fg-subtle",
-  "focus:outline-none focus:ring-1 focus:ring-fg/30",
+  "h-7 w-full rounded-md border border-border/60 bg-bg/80 px-2 text-xs text-fg placeholder:text-fg-subtle",
+  "focus:border-border-strong focus:outline-none",
 );

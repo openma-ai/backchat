@@ -248,6 +248,53 @@ describe("SessionStore event reducers", () => {
     expect(turn?.assistantText).toBe("Done");
   });
 
+});
+
+describe("SessionStore slash commands", () => {
+  test("stores ACP availableCommands updates for the composer slash picker", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-1",
+      acp_session_id: "acp-1",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+      config_options: initialConfig,
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "",
+      event: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          {
+            name: "web",
+            description: "Search the web for information",
+            input: { hint: "query to search for" },
+          },
+          {
+            name: "test",
+            description: "Run tests for the current project",
+          },
+        ],
+      },
+    });
+
+    expect(store.get("sess-1")?.availableCommands).toEqual([
+      {
+        name: "web",
+        description: "Search the web for information",
+        input: { hint: "query to search for" },
+      },
+      {
+        name: "test",
+        description: "Run tests for the current project",
+      },
+    ]);
+  });
+
   test("accepts snake_case available command updates", () => {
     const store = new SessionStore();
     store.apply({
@@ -385,6 +432,415 @@ describe("SessionStore prompt queue state", () => {
     expect(store.get(sessionId)?.queuedPrompts).toEqual([
       { turn_id: "turn-next", text: "next", created_at: 123 },
     ]);
+  });
+});
+
+describe("SessionStore side chats and native subagents", () => {
+  test("stores fork capability from session.ready events", () => {
+    const store = new SessionStore();
+
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-acp",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      supports_session_fork: true,
+    });
+
+    expect(store.get("parent-session")?.supportsSessionFork).toBe(true);
+  });
+
+  test("opens a subordinate side chat with fork inheritance", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-acp",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      supports_session_fork: true,
+    });
+
+    const childId = store.newSideDraft({
+      parentSessionId: "parent-session",
+      parentAcpSessionId: "parent-acp",
+      inheritance: "fork",
+      agentId: "codex-acp",
+      cwd: "/repo",
+    });
+    store.openSideTab("chat", childId, "Side chat");
+
+    expect(store.get(childId)).toMatchObject({
+      kind: "side",
+      sideKind: "chat",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      sideParent: {
+        parentSessionId: "parent-session",
+        parentAcpSessionId: "parent-acp",
+        inheritance: "fork",
+      },
+    });
+    expect(store.activeSideTab()?.type).toBe("chat");
+    expect(store.sideActiveId()).toBe(childId);
+  });
+
+  test("promotes a side chat into an independent fork", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-acp",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      supports_session_fork: true,
+    });
+    const childId = store.newSideDraft({
+      parentSessionId: "parent-session",
+      parentAcpSessionId: "parent-acp",
+      inheritance: "fork",
+      agentId: "codex-acp",
+      cwd: "/repo",
+    });
+    store.openSideTab("chat", childId, "Side chat");
+
+    expect(store.promoteSideToMain(childId)).toBe(childId);
+
+    expect(store.get(childId)).toMatchObject({
+      kind: "main",
+      sideKind: undefined,
+      sideParent: undefined,
+    });
+    expect(store.activeId()).toBe(childId);
+    expect(store.sideActiveId()).toBeNull();
+    expect(store.activeSideTab()).toBeNull();
+  });
+
+  test("tracks Codex native multi-agent tool calls as parent subagent activity", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-codex-thread",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-parent", "parent-session", "Ask a native Codex subagent");
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-spawn",
+        toolName: "spawn_agent",
+        status: "completed",
+        rawInput: {
+          agent_type: "default",
+          fork_context: false,
+          message: "Review the auth boundary",
+        },
+        rawOutput: JSON.stringify({
+          agent_id: "codex-child-thread",
+          nickname: "Cicero",
+        }),
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")).toEqual([
+      expect.objectContaining({
+        childSessionId: "codex-child-thread",
+        parentSessionId: "parent-session",
+        parentAcpSessionId: "parent-codex-thread",
+        inheritance: "fresh",
+        task: "Review the auth boundary",
+        status: "running",
+        native: expect.objectContaining({
+          provider: "codex",
+          toolCallId: "call-spawn",
+          childThreadId: "codex-child-thread",
+          nickname: "Cicero",
+          agentType: "default",
+          forkContext: false,
+        }),
+      }),
+    ]);
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "call-wait",
+        toolName: "wait_agent",
+        status: "completed",
+        rawInput: { targets: ["codex-child-thread"], timeout_ms: 60000 },
+        rawOutput: {
+          status: {
+            "codex-child-thread": { completed: "CHILD_OK" },
+          },
+          timed_out: false,
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
+      childSessionId: "codex-child-thread",
+      status: "complete",
+      native: {
+        provider: "codex",
+        result: "CHILD_OK",
+      },
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "call-close",
+        toolName: "close_agent",
+        status: "completed",
+        rawInput: { target: "codex-child-thread" },
+        rawOutput: {
+          previous_status: { completed: "CHILD_OK" },
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
+      childSessionId: "codex-child-thread",
+      status: "complete",
+      native: {
+        provider: "codex",
+        closed: true,
+      },
+    });
+  });
+
+  test("keeps split Codex spawn_agent output running until wait_agent completes", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-codex-thread",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-parent", "parent-session", "Spawn a native Codex subagent");
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-spawn",
+        toolName: "spawn_agent",
+        status: "pending",
+        rawInput: {
+          agent_type: "default",
+          fork_context: true,
+          message: "Compare native session protocols",
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
+      childSessionId: "codex:call-spawn",
+      status: "running",
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "call-spawn",
+        status: "completed",
+        rawOutput: {
+          agent_id: "codex-child-thread",
+          nickname: "Cicero",
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
+      childSessionId: "codex-child-thread",
+      inheritance: "fork",
+      task: "Compare native session protocols",
+      status: "running",
+      native: {
+        provider: "codex",
+        childThreadId: "codex-child-thread",
+        nickname: "Cicero",
+      },
+    });
+  });
+
+  test("tracks Claude Code Task tool invocations as native subagent activity", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-claude-thread",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-parent", "parent-session", "Ask a native Claude agent");
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        type: "agent.tool_use",
+        id: "toolu-task",
+        name: "Task",
+        input: {
+          subagent_type: "general-purpose",
+          description: "Audit native subagent protocol",
+          prompt: "Inspect Codex and Claude native subagent events.",
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")).toEqual([
+      expect.objectContaining({
+        childSessionId: "claude:toolu-task",
+        parentSessionId: "parent-session",
+        parentAcpSessionId: "parent-claude-thread",
+        inheritance: "fresh",
+        task: "Audit native subagent protocol",
+        status: "running",
+        native: expect.objectContaining({
+          provider: "claude",
+          toolCallId: "toolu-task",
+          agentType: "general-purpose",
+        }),
+      }),
+    ]);
+    expect(store.subagentsFor("parent-session")[0]?.native?.childThreadId).toBeUndefined();
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "toolu-child-read",
+        rawInput: { file_path: "/repo/src/main.ts" },
+        _meta: {
+          claudeCode: {
+            toolName: "Read",
+            parentToolUseId: "toolu-task",
+          },
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")[0]?.native).toMatchObject({
+      provider: "claude",
+      toolCallId: "toolu-task",
+      childToolCallIds: ["toolu-child-read"],
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "toolu-task",
+        status: "completed",
+        rawOutput: [
+          {
+            type: "text",
+            text: "Async agent launched successfully.\nagentId: text-only",
+          },
+        ],
+        _meta: {
+          claudeCode: {
+            toolName: "Agent",
+            toolResponse: {
+              isAsync: true,
+              status: "async_launched",
+              agentId: "claude-child-agent",
+              description: "Audit native subagent protocol",
+              prompt: "Inspect Codex and Claude native subagent events.",
+            },
+          },
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
+      childSessionId: "claude-child-agent",
+      status: "running",
+      native: {
+        provider: "claude",
+        childThreadId: "claude-child-agent",
+      },
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        type: "agent.tool_result",
+        tool_use_id: "toolu-task",
+        content: [
+          {
+            type: "text",
+            text: "Findings ready.\nagentId: claude-child-agent (use SendMessage with to: 'claude-child-agent' to continue this agent)",
+          },
+        ],
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
+      childSessionId: "claude-child-agent",
+      status: "complete",
+      native: {
+        provider: "claude",
+        result: expect.stringContaining("Findings ready."),
+      },
+    });
+  });
+
+  test("does not infer native subagents for non-Claude-Code and non-Codex agents", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-generic-thread",
+      agent_id: "gemini-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-parent", "parent-session", "Run a generic tool");
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        type: "agent.tool_use",
+        id: "toolu-task",
+        name: "Task",
+        input: {
+          description: "This is just a tool name in another adapter",
+          prompt: "Do not treat this as Claude Code native subagent protocol.",
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")).toEqual([]);
   });
 });
 

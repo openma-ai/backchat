@@ -4,7 +4,7 @@
  */
 
 import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { Readable, Writable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
 import type { AgentSpec, ChildHandle, Spawner } from "../types.js";
 
 export class NodeSpawner implements Spawner {
@@ -36,15 +36,9 @@ export class NodeSpawner implements Spawner {
       });
     }
 
-    const stdin = (Writable as unknown as {
-      toWeb(s: NodeJS.WritableStream): WritableStream<Uint8Array>;
-    }).toWeb(child.stdin);
-    const stdout = (Readable as unknown as {
-      toWeb(s: NodeJS.ReadableStream): ReadableStream<Uint8Array>;
-    }).toWeb(child.stdout);
-    const stderr = (Readable as unknown as {
-      toWeb(s: NodeJS.ReadableStream): ReadableStream<Uint8Array>;
-    }).toWeb(child.stderr);
+    const stdin = nodeWritableToWeb(child.stdin);
+    const stdout = nodeReadableToWeb(child.stdout);
+    const stderr = nodeReadableToWeb(child.stderr);
 
     const exited = new Promise<{ code: number | null; signal: string | null }>((resolve) => {
       let settled = false;
@@ -66,4 +60,95 @@ export class NodeSpawner implements Spawner {
 
     return { stdin, stdout, stderr, kill, exited };
   }
+}
+
+function nodeReadableToWeb(stream: Readable): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const cleanup = () => {
+        stream.off("data", onData);
+        stream.off("end", onEnd);
+        stream.off("close", onEnd);
+        stream.off("error", onError);
+      };
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        cleanup();
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      };
+      const onData = (chunk: Buffer | string) => {
+        if (closed) return;
+        const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+        try {
+          controller.enqueue(new Uint8Array(bytes));
+        } catch {
+          closed = true;
+          cleanup();
+        }
+      };
+      const onEnd = () => close();
+      const onError = (error: Error) => {
+        if (closed) return;
+        closed = true;
+        cleanup();
+        try {
+          controller.error(error);
+        } catch {
+          /* already closed */
+        }
+      };
+
+      stream.on("data", onData);
+      stream.once("end", onEnd);
+      stream.once("close", onEnd);
+      stream.once("error", onError);
+    },
+    cancel() {
+      stream.destroy();
+    },
+  });
+}
+
+function nodeWritableToWeb(stream: Writable): WritableStream<Uint8Array> {
+  return new WritableStream<Uint8Array>({
+    write(chunk) {
+      if (stream.destroyed || stream.writableEnded) return;
+      return new Promise<void>((resolve, reject) => {
+        const onError = (error: Error) => {
+          cleanup();
+          reject(error);
+        };
+        const onDrain = () => {
+          cleanup();
+          resolve();
+        };
+        const cleanup = () => {
+          stream.off("error", onError);
+          stream.off("drain", onDrain);
+        };
+        stream.once("error", onError);
+        const canContinue = stream.write(Buffer.from(chunk), (error?: Error | null) => {
+          if (error) onError(error);
+          else if (canContinue) {
+            cleanup();
+            resolve();
+          }
+        });
+        if (!canContinue) stream.once("drain", onDrain);
+      });
+    },
+    close() {
+      if (stream.destroyed || stream.writableEnded) return;
+      return new Promise<void>((resolve) => stream.end(resolve));
+    },
+    abort() {
+      stream.destroy();
+    },
+  });
 }

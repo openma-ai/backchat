@@ -4,11 +4,13 @@ import {
   ArrowUpFromLineIcon,
   FileIcon,
   FolderIcon,
+  GitBranchIcon,
   GlobeIcon,
   MessageSquareIcon,
   PlusIcon,
   SquareTerminalIcon,
   XIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { ChatView } from "@/components/chat/ChatView";
 import { FileTree } from "@/components/shell/FileTree";
@@ -36,11 +38,14 @@ import {
 
 /**
  * SideChatPanel — Codex-style right rail. Multi-tab; each tab is one
- * of four types:
+ * of five types:
  *
- *   chat       → side ACP session (independent from main thread).
- *                Backed by a SessionRow (kind:"side"); tab payload
- *                holds the session id.
+ *   chat       → side ACP session subordinate to the active main
+ *                thread. It uses ACP session/fork when available for
+ *                context inheritance, and can be promoted into an
+ *                independent main fork.
+ *   subagent   → native provider-created subagent activity. The GUI
+ *                does not create these; CC/Codex events surface them.
  *   file       → cwd file tree. Payload is the absolute cwd path.
  *   browser    → Electron <webview>. Payload is the current URL.
  *   terminal   → pty shell (same UiTerm broker as the bottom panel).
@@ -62,6 +67,9 @@ export function SideChatPanel() {
   const settings = useSettings();
   const { toggle: toggleRail } = useRightRailCollapse();
   const navigate = useNavigate();
+  const canStartSideChat = !!mainActive && mainActive.status !== "draft";
+  const canForkSideChat =
+    canStartSideChat && !!mainActive?.supportsSessionFork && !!mainActive?.acp_session_id;
 
   const promoteActive = useCallback(() => {
     if (!activeTab || activeTab.type !== "chat") return;
@@ -69,6 +77,33 @@ export function SideChatPanel() {
     if (!sid) return;
     void navigate({ to: "/chat/$sessionId", params: { sessionId: sid } });
   }, [activeTab, navigate]);
+
+  const openSideChat = useCallback(
+    async () => {
+      if (!mainActive || !canStartSideChat) return;
+      const settingsCwd = settings?.default.workspace_path?.trim() || "";
+      const cwd =
+        settingsCwd ||
+        mainActive.cwd ||
+        (await window.backchat.uiFsHome());
+      const inheritance = canForkSideChat ? "fork" : "fresh";
+      const sid = sessionStore.newSideDraft({
+        parentSessionId: mainActive.id,
+        parentAcpSessionId: canForkSideChat ? mainActive.acp_session_id : undefined,
+        inheritance,
+        agentId: mainActive.agent_id || settings?.default.agent_id || "",
+        cwd,
+      });
+      sessionStore.openSideTab("chat", sid, "Side chat");
+    },
+    [
+      canForkSideChat,
+      canStartSideChat,
+      mainActive,
+      settings?.default.agent_id,
+      settings?.default.workspace_path,
+    ],
+  );
 
   const openTab = useCallback(
     async (type: SideTabType) => {
@@ -84,8 +119,7 @@ export function SideChatPanel() {
         mainActive?.cwd ||
         (await window.backchat.uiFsHome());
       if (type === "chat") {
-        const sid = sessionStore.newSideDraft();
-        sessionStore.openSideTab("chat", sid, "New chat");
+        await openSideChat();
       } else if (type === "file") {
         sessionStore.openSideTab("file", cwd, undefined);
       } else if (type === "browser") {
@@ -104,12 +138,12 @@ export function SideChatPanel() {
         sessionStore.openSideTab("terminal", terminalId, undefined);
       }
     },
-    [mainActive?.cwd, settings?.default.workspace_path],
+    [mainActive?.cwd, openSideChat, settings?.default.workspace_path],
   );
 
   const closeTab = useCallback((tab: SideTab) => {
     // Tear down the underlying resource before removing the tab.
-    if (tab.type === "chat") {
+    if (tab.type === "chat" || tab.type === "subagent") {
       void window.backchat.sessionDispose({ session_id: tab.payload });
     } else if (tab.type === "terminal") {
       void window.backchat.uiTermDispose({ terminalId: tab.payload });
@@ -170,7 +204,9 @@ export function SideChatPanel() {
               onClose={() => closeTab(t)}
             />
           ))}
-          <AddTabButton onPick={openTab} />
+          <AddTabButton
+            onPick={openTab}
+          />
           {/* Promote-to-main button — only relevant for chat tabs. The
               side chat is a fast scratch surface; once it's worth
               keeping, "promote" lifts it into the sidebar list as a
@@ -196,7 +232,7 @@ export function SideChatPanel() {
 
       <div className="flex-1 min-h-0">
         {!activeTab ? (
-          <EmptyState onPick={openTab} />
+          <EmptyState onPick={openTab} canStartSideChat={canStartSideChat} />
         ) : (
           <ActiveTabBody tab={activeTab} />
         )}
@@ -210,7 +246,7 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
   // prop on the ChatView (for chat tabs) makes React unmount + remount
   // on tab swap so the streaming-markdown channel re-attaches to the
   // right session.
-  if (tab.type === "chat") {
+  if (tab.type === "chat" || tab.type === "subagent") {
     return <ChatView key={tab.payload} mode="side" />;
   }
   if (tab.type === "file") {
@@ -251,7 +287,13 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
   return null;
 }
 
-function EmptyState({ onPick }: { onPick: (type: SideTabType) => void }) {
+function EmptyState({
+  onPick,
+  canStartSideChat,
+}: {
+  onPick: (type: SideTabType) => void;
+  canStartSideChat: boolean;
+}) {
   // 推荐 ordering:
   //   1. Services the agent has spun up in THIS chat (localhost URLs
   //      sniffed from tool_call output). Most relevant — user just
@@ -307,9 +349,17 @@ function EmptyState({ onPick }: { onPick: (type: SideTabType) => void }) {
   return (
     <div className="h-full overflow-y-auto px-4 pb-6">
       <div className="grid grid-cols-2 auto-rows-fr gap-3 pt-2">
-        {EMPTY_TILES.map((tile) => (
-          <QuickTile key={tile.type} tile={tile} onClick={() => onPick(tile.type)} />
-        ))}
+        {EMPTY_TILES.map((tile) => {
+          const disabled = tile.type === "chat" && !canStartSideChat;
+          return (
+            <QuickTile
+              key={tile.type}
+              tile={tile}
+              disabled={disabled}
+              onClick={() => onPick(tile.type)}
+            />
+          );
+        })}
       </div>
 
       {artifacts.services.length > 0 && (
@@ -435,28 +485,31 @@ interface QuickTileSpec {
   type: SideTabType;
   title: string;
   subtitle: string;
-  icon: typeof FolderIcon;
+  icon: LucideIcon;
   shortcut?: string;
 }
 
 const EMPTY_TILES: QuickTileSpec[] = [
   { type: "file", title: "文件", subtitle: "浏览项目文件", icon: FolderIcon, shortcut: "⌘P" },
-  { type: "chat", title: "侧边聊天", subtitle: "发起侧边对话", icon: MessageSquareIcon },
+  { type: "chat", title: "Side chat", subtitle: "Fork 当前上下文", icon: MessageSquareIcon },
   { type: "browser", title: "浏览器", subtitle: "打开网站", icon: GlobeIcon, shortcut: "⌘T" },
   { type: "terminal", title: "终端", subtitle: "启动交互式 shell", icon: SquareTerminalIcon, shortcut: "⌃`" },
 ];
 
 function QuickTile({
   tile,
+  disabled,
   onClick,
 }: {
   tile: QuickTileSpec;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   const Icon = tile.icon;
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       // select-none: a stray click on the tile label otherwise registers
       // as native text selection (image #24). Tiles are pure UI, nothing
@@ -469,6 +522,7 @@ function QuickTile({
         "flex h-full flex-col items-center justify-between gap-2 rounded-xl px-4 py-6",
         "bg-bg-surface/60 text-fg hover:bg-bg-surface",
         "transition-colors",
+        "disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-bg-surface/60",
         "min-h-[140px]",
       )}
     >
@@ -595,7 +649,11 @@ function TabChip({
   );
 }
 
-function AddTabButton({ onPick }: { onPick: (type: SideTabType) => void }) {
+function AddTabButton({
+  onPick,
+}: {
+  onPick: (type: SideTabType) => void;
+}) {
   // Radix DropdownMenu — uses a Portal so the popover content escapes
   // any overflow-hidden ancestor (the side panel `<aside>` is one),
   // and handles click-outside + focus return for us. Replaced a
@@ -639,17 +697,17 @@ function AddTabButton({ onPick }: { onPick: (type: SideTabType) => void }) {
   );
 }
 
-const ICON_BY_TYPE: Record<SideTabType, typeof MessageSquareIcon> = {
+const ICON_BY_TYPE: Record<SideTabType, LucideIcon> = {
   chat: MessageSquareIcon,
+  subagent: GitBranchIcon,
   file: FolderIcon,
   browser: GlobeIcon,
   terminal: SquareTerminalIcon,
 };
 
-// Order matches image #14: 文件 / 侧边聊天 / 浏览器 / 终端.
-const POPOVER_ITEMS: { type: SideTabType; label: string; icon: typeof FolderIcon }[] = [
+const POPOVER_ITEMS: { type: SideTabType; label: string; icon: LucideIcon }[] = [
   { type: "file", label: "文件", icon: FolderIcon },
-  { type: "chat", label: "侧边聊天", icon: MessageSquareIcon },
+  { type: "chat", label: "Side chat", icon: MessageSquareIcon },
   { type: "browser", label: "浏览器", icon: GlobeIcon },
   { type: "terminal", label: "终端", icon: SquareTerminalIcon },
 ];

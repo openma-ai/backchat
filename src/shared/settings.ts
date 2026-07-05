@@ -30,6 +30,7 @@ export interface SettingsAppearance {
 
 export interface SettingsAgentOverride {
   id: string;
+  enabled?: boolean;
   label_override?: string;
   command_override?: string;
   args_override?: string[];

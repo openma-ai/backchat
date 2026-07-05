@@ -87,6 +87,11 @@ export interface SessionOptions {
    *  loadSession fall back to a fresh `session/new` and the caller is
    *  expected to surface the loss of history. */
   resumeAcpSessionId?: string;
+  /** If set, init() calls the SDK's unstable ACP `session/fork` surface
+   *  instead of `session/new`. This is not the subagent protocol itself;
+   *  it is only a way to seed a child session from a parent session's
+   *  context when the agent advertises `sessionCapabilities.fork`. */
+  forkFromAcpSessionId?: string;
   /** MCP servers to advertise to the ACP child via `session/new`'s
    *  `mcpServers` array. Per the ACP schema each entry is one of three
    *  variants: { type: "http"|"sse", name, url, headers } | { type: "stdio",
@@ -115,10 +120,17 @@ export interface AcpSession {
    *  Text and resource_link are baseline; optional media/content
    *  blocks are gated by this object. */
   readonly promptCapabilities: schema.PromptCapabilities;
+  /** Whether initialize advertised the unstable `session/fork` capability. */
+  readonly supportsSessionFork: boolean;
   prompt(
     input: string | readonly schema.ContentBlock[],
     opts?: { abortSignal?: AbortSignal },
   ): AsyncIterable<unknown>;
+  /** Drain idle session updates that arrived outside a prompt turn, such as
+   *  available_commands_update/current_mode_update/config_option_update after
+   *  session/new. Hosts use this to seed renderer session state before the
+   *  first user prompt. */
+  drainPendingEvents(): unknown[];
   /** Set one ACP session configuration option and return the full updated state. */
   setConfigOption(
     configId: string,

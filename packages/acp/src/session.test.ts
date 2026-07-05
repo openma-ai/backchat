@@ -10,6 +10,75 @@ import { AcpSessionImpl } from "./session";
 import type { ChildHandle } from "./types";
 
 describe("AcpSessionImpl", () => {
+  it("forks an existing ACP session when the unstable fork capability is advertised", async () => {
+    let forkRequest:
+      | { sessionId: string; cwd: string; mcpServers?: unknown[] }
+      | undefined;
+    let newSessionCalled = false;
+    const harness = createInMemoryAcpHarness(() => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: {
+            sessionCapabilities: { fork: {} },
+          },
+        };
+      },
+      async unstable_forkSession(params) {
+        forkRequest = params as typeof forkRequest;
+        return {
+          sessionId: "forked-session",
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "gpt-5",
+              options: [{ value: "gpt-5", name: "GPT-5" }],
+            },
+          ],
+        };
+      },
+      async newSession() {
+        newSessionCalled = true;
+        return { sessionId: "fresh-session" };
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async authenticate() {
+        return {};
+      },
+      async cancel() {
+        return;
+      },
+    }));
+
+    const session = new AcpSessionImpl({
+      child: harness.child,
+      id: "test-acp-session",
+      options: {
+        agent: { command: "fake-agent", cwd: "/tmp/backchat-test" },
+        mcpServers: [],
+        forkFromAcpSessionId: "parent-acp-session",
+      } as never,
+    });
+
+    await session.init();
+    await session.dispose();
+
+    expect(session.acpSessionId).toBe("forked-session");
+    expect(session.supportsSessionFork).toBe(true);
+    expect(newSessionCalled).toBe(false);
+    expect(forkRequest).toEqual({
+      sessionId: "parent-acp-session",
+      cwd: "/tmp/backchat-test",
+      mcpServers: [],
+    });
+    expect(session.configOptions[0]?.currentValue).toBe("gpt-5");
+  });
+
   it("captures and updates ACP session config options", async () => {
     let setConfigRequest:
       | { sessionId: string; configId: string; value: string }
@@ -82,6 +151,64 @@ describe("AcpSessionImpl", () => {
     });
     expect(next[0]?.currentValue).toBe("gpt-5");
     expect(session.configOptions[0]?.currentValue).toBe("gpt-5");
+  });
+
+  it("drains idle session state updates emitted during session startup", async () => {
+    const harness = createInMemoryAcpHarness((conn) => ({
+      async initialize() {
+        return { protocolVersion: PROTOCOL_VERSION };
+      },
+      async newSession() {
+        await conn.sessionUpdate({
+          sessionId: "fresh-session",
+          update: {
+            sessionUpdate: "available_commands_update",
+            availableCommands: [
+              {
+                name: "review",
+                description: "Review the current workspace",
+              },
+            ],
+          },
+        });
+        return { sessionId: "fresh-session" };
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async authenticate() {
+        return {};
+      },
+      async cancel() {
+        return;
+      },
+    }));
+
+    const session = new AcpSessionImpl({
+      child: harness.child,
+      id: "test-acp-session",
+      options: {
+        agent: { command: "fake-agent", cwd: "/tmp/backchat-test" },
+        mcpServers: [],
+      },
+    });
+
+    await session.init();
+    const pending = session.drainPendingEvents();
+    await session.dispose();
+
+    expect(pending).toEqual([
+      {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          {
+            name: "review",
+            description: "Review the current workspace",
+          },
+        ],
+      },
+    ]);
+    expect(session.drainPendingEvents()).toEqual([]);
   });
 
   it("does not replay session/load transcript updates on the next prompt", async () => {

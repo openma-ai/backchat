@@ -14,6 +14,9 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "smoke:claude-acp-fork": "tsx scripts/smoke-claude-agent-acp-fork.ts",
+    "smoke:claude-acp-meta": "tsx scripts/smoke-claude-agent-acp-meta.ts",
+    "smoke:codex-acp-native": "tsx scripts/smoke-codex-acp-native.ts",
     "test:e2e": "electron-vite build && playwright test",
     "package": "electron-vite build && electron-builder",
     "package:dir": "electron-vite build && electron-builder --dir",
@@ -48,6 +51,8 @@
     "use-stick-to-bottom": "^1.1.4"
   },
   "devDependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.55.0",
+    "@agentclientprotocol/codex-acp": "1.1.0",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.100.14",

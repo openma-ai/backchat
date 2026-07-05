@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import type { AcpSession, SessionOptions } from "@open-managed-agents-desktop/acp";
 import { SessionManager } from "./session-manager";
@@ -6,6 +9,7 @@ import { appendEvent, appendEventsTx } from "./sql-store.js";
 const mocks = vi.hoisted(() => ({
   runtimeStart: vi.fn(),
   probeAgentAuthStatus: vi.fn(async () => ({ status: "configured" })),
+  installAcpRegistryAgent: vi.fn(),
 }));
 
 vi.mock("node:child_process", () => ({
@@ -30,15 +34,22 @@ vi.mock("@open-managed-agents-desktop/acp/node-spawner", () => ({
 }));
 
 vi.mock("@open-managed-agents-desktop/acp/registry", () => ({
-  resolveKnownAgent: vi.fn(() => ({
-    id: "codex-acp",
-    label: "Codex",
-    spec: { command: "node", args: [] },
+  resolveKnownAgent: vi.fn((id: string) => ({
+    id,
+    label: id,
+    spec: { command: id === "registry-agent" ? "registry-agent" : "node", args: [] },
+    ...(id === "registry-agent"
+      ? { registryId: "registry-agent", installSource: "registry" as const }
+      : {}),
   })),
 }));
 
 vi.mock("@open-managed-agents-desktop/acp/binary-update", () => ({
   ensureLatestAcpBinary: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@open-managed-agents-desktop/acp/installer", () => ({
+  installAcpRegistryAgent: mocks.installAcpRegistryAgent,
 }));
 
 vi.mock("@open-managed-agents-desktop/acp/probe", () => ({
@@ -60,6 +71,143 @@ vi.mock("./session-cwd.js", () => ({
 }));
 
 describe("SessionManager prompt queue", () => {
+  it("installs missing registry-managed agents before starting the ACP runtime", async () => {
+    const root = join(tmpdir(), `backchat-managed-start-${process.pid}-${Date.now()}`);
+    const binDir = join(root, "bin");
+    const commandPath = join(binDir, "registry-agent");
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    mocks.installAcpRegistryAgent.mockImplementationOnce(async (options: { binDir: string }) => {
+      await mkdir(options.binDir, { recursive: true });
+      await writeFile(commandPath, "#!/bin/sh\n", { mode: 0o755 });
+      return { commandPath };
+    });
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (msg) => events.push(msg),
+      acpBinDir: binDir,
+      acpInstallRoot: root,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "registry-agent" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-managed-install",
+      agent_id: "registry-agent",
+      cwd: "/repo",
+    });
+
+    expect(mocks.installAcpRegistryAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registryId: "registry-agent",
+        shimName: "registry-agent",
+        binDir,
+        installRoot: root,
+      }),
+    );
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({
+          command: commandPath,
+        }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "session.ready",
+        session_id: "sess-managed-install",
+      }),
+    );
+  });
+
+  it("passes fork requests to the ACP runtime without treating fork as the subagent protocol", async () => {
+    const fake = createControllableAcpSession({ supportsSessionFork: true });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (msg) => events.push(msg),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "codex-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-subagent",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      fork: { acp_session_id: "parent-acp-session" },
+    } as never);
+
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        forkFromAcpSessionId: "parent-acp-session",
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "session.ready",
+        session_id: "sess-subagent",
+        supports_session_fork: true,
+      }),
+    );
+  });
+
+  it("flushes initial idle session state after session.ready", async () => {
+    const fake = createControllableAcpSession({
+      pendingEvents: [
+        {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [
+            {
+              name: "review",
+              description: "Review the current workspace",
+            },
+          ],
+        },
+      ],
+    });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (msg) => events.push(msg),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "claude-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-slash",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "session.ready",
+        session_id: "sess-slash",
+      }),
+    );
+    expect(events).toContainEqual({
+      type: "session.event",
+      session_id: "sess-slash",
+      turn_id: "",
+      event: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          {
+            name: "review",
+            description: "Review the current workspace",
+          },
+        ],
+      },
+    });
+    expect(fake.drainCount()).toBe(1);
+  });
+
   it("serializes prompts for one ACP session", async () => {
     const fake = createControllableAcpSession();
     mocks.runtimeStart.mockResolvedValueOnce(fake.session);
@@ -277,17 +425,23 @@ describe("SessionManager prompt queue", () => {
     fake.release();
     await prompt;
   });
+
 });
 
 function createControllableAcpSession(opts: {
   promptCapabilities?: AcpSession["promptCapabilities"];
+  supportsSessionFork?: boolean;
+  pendingEvents?: unknown[];
 } = {}): {
   session: AcpSession;
   prompts: unknown[];
+  drainCount: () => number;
   releaseNext: () => void;
 } {
   const prompts: unknown[] = [];
   const releases: Array<() => void> = [];
+  let pendingEvents = [...(opts.pendingEvents ?? [])];
+  let drainCount = 0;
   const session: AcpSession = {
     id: "runtime-session",
     acpSessionId: "acp-session",
@@ -306,6 +460,12 @@ function createControllableAcpSession(opts: {
         await done;
       })();
     },
+    drainPendingEvents() {
+      drainCount++;
+      const events = pendingEvents;
+      pendingEvents = [];
+      return events;
+    },
     async setConfigOption() {
       return [];
     },
@@ -316,6 +476,7 @@ function createControllableAcpSession(opts: {
       return;
     },
     promptCapabilities: opts.promptCapabilities ?? {},
+    supportsSessionFork: opts.supportsSessionFork ?? false,
     isAlive() {
       return true;
     },
@@ -327,6 +488,7 @@ function createControllableAcpSession(opts: {
   return {
     session,
     prompts,
+    drainCount: () => drainCount,
     releaseNext: () => {
       const release = releases.shift();
       if (!release) throw new Error("no prompt waiting");
@@ -356,6 +518,9 @@ function createStreamingAcpSession(events: unknown[]): {
         await done;
       })();
     },
+    drainPendingEvents() {
+      return [];
+    },
     async setConfigOption() {
       return [];
     },
@@ -366,6 +531,7 @@ function createStreamingAcpSession(events: unknown[]): {
       return;
     },
     promptCapabilities: {},
+    supportsSessionFork: false,
     isAlive() {
       return true;
     },

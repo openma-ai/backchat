@@ -28,7 +28,7 @@
 
 import { spawn as childSpawn } from "node:child_process";
 import { access } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { basename, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   AcpRuntimeImpl,
@@ -40,6 +40,7 @@ import {
 import { NodeSpawner } from "@open-managed-agents-desktop/acp/node-spawner";
 import { resolveKnownAgent, type KnownAgentEntry } from "@open-managed-agents-desktop/acp/registry";
 import { ensureLatestAcpBinary } from "@open-managed-agents-desktop/acp/binary-update";
+import { installAcpRegistryAgent } from "@open-managed-agents-desktop/acp/installer";
 import {
   probeAgentAuthStatus,
   type ProbeAgentAuthStatus,
@@ -86,6 +87,8 @@ interface QueuedPrompt {
 
 export interface SessionManagerDeps {
   send: Sender;
+  acpBinDir?: string;
+  acpInstallRoot?: string;
   /** Build the per-session ACP McpServer[] for `session/new`. Returns the
    *  user's globally-configured servers (from settings, see Phase 8 for the
    *  per-agent override matrix). */
@@ -123,6 +126,8 @@ export interface SessionManagerDeps {
 
 export class SessionManager {
   #send: Sender;
+  #acpBinDir?: string;
+  #acpInstallRoot?: string;
   #resolveMcpServers: SessionManagerDeps["resolveMcpServers"];
   #buildCallbacks: SessionManagerDeps["buildCallbacks"];
   #resolveDefaults: SessionManagerDeps["resolveDefaults"];
@@ -133,6 +138,8 @@ export class SessionManager {
 
   constructor(deps: SessionManagerDeps) {
     this.#send = deps.send;
+    this.#acpBinDir = deps.acpBinDir;
+    this.#acpInstallRoot = deps.acpInstallRoot;
     this.#resolveMcpServers = deps.resolveMcpServers;
     this.#buildCallbacks = deps.buildCallbacks;
     this.#resolveDefaults = deps.resolveDefaults;
@@ -198,7 +205,7 @@ export class SessionManager {
     const agent = resolveKnownAgent(agentId);
     if (!agent) throw new Error(`unknown ACP agent: ${agentId}`);
     const override = this.#resolveAgentOverride(agent.id) ?? {};
-    const command = override.commandOverride || agent.spec.command;
+    let command = override.commandOverride || agent.spec.command;
     const args = override.argsOverride ?? agent.spec.args;
     return this.#runtime.start({
       agent: {
@@ -229,6 +236,7 @@ export class SessionManager {
         agent_id: sess.agentId,
         cwd: sess.cwd,
         config_options: sess.acp.configOptions,
+        supports_session_fork: sess.acp.supportsSessionFork,
       });
     }
   }
@@ -244,6 +252,7 @@ export class SessionManager {
         agent_id: existing.agentId,
         cwd: existing.cwd,
         config_options: existing.acp.configOptions,
+        supports_session_fork: existing.acp.supportsSessionFork,
       });
       return;
     }
@@ -278,12 +287,30 @@ export class SessionManager {
     // Apply per-agent overrides from settings — lets the user point at a
     // custom binary path or inject env vars (ANTHROPIC_API_KEY etc.) per
     // agent without touching the registry.
-    const command = override.commandOverride || agent.spec.command;
+    let command = override.commandOverride || agent.spec.command;
     const args = override.argsOverride ?? agent.spec.args;
     const agentEnv = scrubAcpSpawnEnv({
       ...(agent.spec.env ?? {}),
       ...(override.envOverride ?? {}),
     });
+
+    const usesManagedRegistryCommand =
+      !!knownAgent && agent.spec.command === command && !agent.systemPath;
+    if (usesManagedRegistryCommand) {
+      try {
+        command = await this.#ensureManagedAgentCommand(agent);
+      } catch (error) {
+        this.#send({
+          type: "session.error",
+          session_id: p.session_id,
+          message:
+            `Could not install ${agent.label} from ACP registry: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+        });
+        return;
+      }
+    }
 
     // Verify binary is on PATH. Defense in depth: detectAll() should have
     // gated the picker, but the user could uninstall between picker and
@@ -335,7 +362,7 @@ export class SessionManager {
     // stuck on whatever they first installed). Runs at most once per
     // hour per agent_id; failures (network, permission, arch mismatch)
     // are swallowed and we fall through to spawning whatever is on disk.
-    if (knownAgent && agent.spec.command === command) {
+    if (knownAgent && (agent.spec.command === command || usesManagedRegistryCommand)) {
       await ensureLatestAcpBinary(agent.id, {
         registryVersion: agent.version,
         install: agent.install,
@@ -355,6 +382,7 @@ export class SessionManager {
         },
         mcpServers: this.#resolveMcpServers(agent.id) as never,
         resumeAcpSessionId: p.resume?.acp_session_id,
+        forkFromAcpSessionId: p.fork?.acp_session_id,
         clientCallbacks: this.#buildCallbacks(p.session_id, sessionCwd),
       });
       this.#sessions.set(p.session_id, {
@@ -387,8 +415,18 @@ export class SessionManager {
         agent_id: agent.id,
         cwd: sessionCwd,
         config_options: acpSession.configOptions,
+        supports_session_fork: acpSession.supportsSessionFork,
       });
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
+      const active = this.#sessions.get(p.session_id);
+      if (active) {
+        this.#flushPendingSessionState(active);
+        setTimeout(() => {
+          if (this.#sessions.get(active.id) === active) {
+            this.#flushPendingSessionState(active);
+          }
+        }, 50);
+      }
     } catch (e) {
       this.#send({
         type: "session.error",
@@ -485,6 +523,17 @@ export class SessionManager {
     });
   }
 
+  #flushPendingSessionState(sess: ActiveSession): void {
+    for (const event of sess.acp.drainPendingEvents()) {
+      this.#send({
+        type: "session.event",
+        session_id: sess.id,
+        turn_id: "",
+        event,
+      });
+    }
+  }
+
   async #probeAuthBeforeStart(
     agent: KnownAgentEntry,
     cwd: string,
@@ -502,6 +551,32 @@ export class SessionManager {
         message: "Could not verify agent authentication before starting.",
       };
     }
+  }
+
+  async #ensureManagedAgentCommand(agent: KnownAgentEntry): Promise<string> {
+    if (agent.installSource !== "registry" || !agent.registryId) {
+      return agent.spec.command;
+    }
+    if (!this.#acpBinDir || !this.#acpInstallRoot) {
+      return agent.spec.command;
+    }
+    const shimPath = `${this.#acpBinDir}/${basename(agent.spec.command)}`;
+    const installed = await access(shimPath).then(() => true, () => false);
+    if (!installed) {
+      await installAcpRegistryAgent({
+        registryId: agent.registryId,
+        shimName: basename(agent.spec.command),
+        binDir: this.#acpBinDir,
+        installRoot: this.#acpInstallRoot,
+        shimArgs: agent.spec.args,
+        shimEnv: agent.spec.env,
+        env: scrubAcpSpawnEnv({
+          ...(agent.spec.env ?? {}),
+          ...(this.#resolveAgentOverride(agent.id)?.envOverride ?? {}),
+        }),
+      });
+    }
+    return shimPath;
   }
 
   async #runPrompt(sess: ActiveSession, p: SessionPromptParams): Promise<void> {

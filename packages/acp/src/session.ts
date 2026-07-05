@@ -51,6 +51,7 @@ export class AcpSessionImpl implements AcpSession {
   #agentInfo: schema.Implementation | null = null;
   #configOptions: readonly schema.SessionConfigOption[] = [];
   #promptCapabilities: schema.PromptCapabilities = {};
+  #supportsSessionFork = false;
 
   constructor(deps: ConstructDeps) {
     this.id = deps.id;
@@ -138,6 +139,23 @@ export class AcpSessionImpl implements AcpSession {
     this.#authMethods = initResult.authMethods ?? [];
     this.#agentInfo = initResult.agentInfo ?? null;
     this.#promptCapabilities = initResult.agentCapabilities?.promptCapabilities ?? {};
+    this.#supportsSessionFork =
+      initResult.agentCapabilities?.sessionCapabilities?.fork != null;
+
+    const wantsFork = this.options.forkFromAcpSessionId;
+    if (wantsFork) {
+      if (!this.#supportsSessionFork || !this.#agent.unstable_forkSession) {
+        throw new Error("ACP agent does not support unstable session/fork");
+      }
+      const forked = await this.#agent.unstable_forkSession({
+        sessionId: wantsFork,
+        cwd: this.options.agent.cwd ?? process.cwd(),
+        mcpServers: this.options.mcpServers ?? [],
+      });
+      this.#sessionId = forked.sessionId;
+      this.#configOptions = forked.configOptions ?? [];
+      return;
+    }
 
     const wantsResume = this.options.resumeAcpSessionId;
     const supportsLoad = initResult.agentCapabilities?.loadSession === true;
@@ -187,6 +205,10 @@ export class AcpSessionImpl implements AcpSession {
 
   get promptCapabilities(): schema.PromptCapabilities {
     return this.#promptCapabilities;
+  }
+
+  get supportsSessionFork(): boolean {
+    return this.#supportsSessionFork;
   }
 
   /** Drive a user-initiated signin step. Settings → "Sign in / switch
@@ -264,6 +286,11 @@ export class AcpSessionImpl implements AcpSession {
       throw new Error(`AcpSession ${this.id} is disposed`);
     }
     return this.#promptIter(input, opts);
+  }
+
+  drainPendingEvents(): unknown[] {
+    if (this.#pendingEvents.length === 0) return [];
+    return this.#pendingEvents.splice(0);
   }
 
   async *#promptIter(

@@ -86,6 +86,7 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { ConversationTimeline } from "./ConversationTimeline";
 import { isComposerAgentLocked, resolveComposerAgentId } from "@/lib/composer-agent";
+import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
 import {
   CHAT_COMPOSER_FRAME_CLASS,
   CHAT_GENERATED_IMAGE_CLASS,
@@ -101,6 +102,7 @@ type AgentOption = {
   label: string;
   command: string;
   detected: boolean;
+  installed?: boolean;
 };
 
 /**
@@ -180,6 +182,8 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     text: string,
     attachments: PromptAttachment[] = [],
     intent: AgentMessageIntent = "submit",
+    configOverrides: Record<string, string | boolean> = {},
+    selectedAgentId?: string,
   ) => {
     let target = active;
     if (!target) {
@@ -197,6 +201,19 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       ? resolveRunningDeliveryMeta(target.agent_id, intent)
       : idleDeliveryMeta(intent);
     if (!delivery) return;
+    const draftAgentId = target.status === "draft"
+      ? selectedAgentId || pickedAgentId || target.agent_id || ""
+      : "";
+    if (target.status === "draft" && !draftAgentId) {
+      toast.error("No harness setup", {
+        description: "Install and enable an ACP agent in Settings first.",
+        action: {
+          label: "Open Settings",
+          onClick: () => void navigate({ to: "/settings/agents" }),
+        },
+      });
+      return;
+    }
 
     // Register the turn FIRST — this paints the user bubble immediately,
     // before any awaits. ACP events arrive via session.event push later
@@ -207,7 +224,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     sessionStore.registerTurn(turn_id, target.id, displayText, delivery);
 
     if (target.status === "draft") {
-      const agentId = pickedAgentId || settings?.default.agent_id || "";
+      const agentId = draftAgentId;
       const label = deriveLabel(displayText);
       sessionStore.promoteDraft(target.id, agentId, label);
       // Cwd precedence:
@@ -220,8 +237,15 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       // rooted there until they noticed).
       const startCwd =
         pickedCwd?.trim() ||
+        target.chosenCwd?.trim() ||
+        target.cwd?.trim() ||
         settings?.default.workspace_path?.trim() ||
         undefined;
+      const parentLink = target.sideParent ?? target.subagent;
+      const fork =
+        parentLink?.inheritance === "fork" && parentLink.parentAcpSessionId
+          ? { acp_session_id: parentLink.parentAcpSessionId }
+          : undefined;
       // Register the listener BEFORE firing sessionStart — otherwise the
       // session.ready push event can arrive in the IPC channel before
       // waitForReady's listener attaches, and we'd hang for 10s waiting
@@ -231,9 +255,23 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         session_id: target.id,
         agent_id: agentId,
         cwd: startCwd,
+        fork,
       });
       const r = await readyPromise;
       if (r !== "ready") return; // session.error already showed in topbar
+      for (const [config_id, value] of Object.entries(configOverrides)) {
+        try {
+          await window.backchat.sessionSetConfigOption({
+            session_id: target.id,
+            config_id,
+            value,
+          });
+        } catch (e) {
+          toast.error("Couldn't switch model", {
+            description: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
     } else if (target.status === "ready" && !target.activeTurnId) {
       const readyPromise = waitForReady(target.id, 10_000);
       void window.backchat.sessionStart({
@@ -500,6 +538,35 @@ function idleDeliveryMeta(intent: AgentMessageIntent): TurnDeliveryMeta {
     effectiveDelivery: turnEnd,
     degraded: false,
   };
+}
+
+function normalizeAgentConfigOptions(value: unknown): AcpSessionConfigOption[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const options = value.filter((item): item is AcpSessionConfigOption => {
+    if (!item || typeof item !== "object") return false;
+    const option = item as { type?: unknown; id?: unknown };
+    return typeof option.id === "string" && (option.type === "select" || option.type === "boolean");
+  });
+  return options.length > 0 ? options : undefined;
+}
+
+function applyConfigOverrides(
+  options: AcpSessionConfigOption[] | undefined,
+  overrides: Record<string, string | boolean>,
+): AcpSessionConfigOption[] | undefined {
+  if (!options?.length) return options;
+  if (Object.keys(overrides).length === 0) return options;
+  return options.map((option) => {
+    const value = overrides[option.id];
+    if (value === undefined) return option;
+    if (option.type === "select" && typeof value === "string") {
+      return { ...option, currentValue: value };
+    }
+    if (option.type === "boolean" && typeof value === "boolean") {
+      return { ...option, currentValue: value };
+    }
+    return option;
+  });
 }
 
 function EmptyStateIntro({ hasDefaultAgent }: { hasDefaultAgent: boolean }) {
@@ -1400,6 +1467,8 @@ export function Composer({
     text: string,
     attachments?: PromptAttachment[],
     intent?: AgentMessageIntent,
+    configOverrides?: Record<string, string | boolean>,
+    selectedAgentId?: string,
   ) => void;
   onCancel: () => void;
 }) {
@@ -1408,14 +1477,19 @@ export function Composer({
   const [dismissedSlashText, setDismissedSlashText] = useState<string | null>(null);
   const [selectedSkillCommand, setSelectedSkillCommand] =
     useState<AcpAvailableCommand | null>(null);
+  const [draftConfigValues, setDraftConfigValues] = useState<Record<string, string | boolean>>({});
   const taRef = useRef<HTMLTextAreaElement>(null);
   const settings = useSettings();
+  const navigate = useNavigate();
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
     queryFn: () => window.backchat.agentsList(),
     staleTime: 60_000,
   });
-  const detectedAgents = agents.filter((a) => a.detected);
+  const enabledAgents = useMemo(() => {
+    const enabledIds = enabledAgentIds(settings);
+    return agents.filter((agent) => enabledIds.has(agent.id) && isAgentRunnable(agent));
+  }, [agents, settings]);
   const agentLocked = isComposerAgentLocked(sessionAgentId);
   const resolvedDefaultAgentId = resolveComposerAgentId({
     sessionAgentId,
@@ -1425,9 +1499,22 @@ export function Composer({
     lockedAgentId ||
     pickedAgentId ||
     resolvedDefaultAgentId ||
-    detectedAgents[0]?.id ||
+    enabledAgents[0]?.id ||
     "";
   const currentAgent = agents.find((a) => a.id === currentAgentId);
+  const currentEnabledAgent = enabledAgents.find((a) => a.id === currentAgentId);
+  const hasHarnessSetup =
+    !!agentPickerLabel ||
+    !!lockedAgentId ||
+    !!currentEnabledAgent;
+  const effectiveConfigOptions = useMemo(
+    () =>
+      applyConfigOverrides(
+        configOptions ?? normalizeAgentConfigOptions(currentEnabledAgent?.config_options),
+        draftConfigValues,
+      ),
+    [configOptions, currentEnabledAgent?.config_options, draftConfigValues],
+  );
   const staticAgentIds = agentPickerAgentIds?.filter(Boolean) ?? [];
   const visibleStaticAgentIds = staticAgentIds.slice(0, 3);
   const defaultRunningAction = running
@@ -1460,7 +1547,22 @@ export function Composer({
       : null;
 
   const pickAgent = (id: string) => {
+    setDraftConfigValues({});
     onPickAgent(id);
+  };
+
+  useEffect(() => {
+    if (lockedAgentId) setDraftConfigValues({});
+  }, [lockedAgentId]);
+
+  const notifyNoHarnessSetup = () => {
+    toast.error("No harness setup", {
+      description: "Open Settings to install and enable an ACP agent first.",
+      action: {
+        label: "Open Settings",
+        onClick: () => void navigate({ to: "/settings/agents" }),
+      },
+    });
   };
 
   const pickAttachments = async () => {
@@ -1536,13 +1638,17 @@ export function Composer({
       return;
     }
     const commandText = `/${cmd.name}`;
+    if (!hasHarnessSetup) {
+      notifyNoHarnessSetup();
+      return;
+    }
     if (!canSubmitComposer({
       text: commandText,
       disabled,
       running,
-      actionDisabled: primaryRunningAction?.disabled,
+      actionDisabled: primaryRunningAction?.disabled || !hasHarnessSetup,
     })) return;
-    onSubmit(commandText, undefined, primaryIntent);
+    onSubmit(commandText, undefined, primaryIntent, draftConfigValues, currentEnabledAgent?.id);
     setText("");
     setDismissedSlashText(null);
   };
@@ -1556,6 +1662,11 @@ export function Composer({
 
   const submitComposer = (intent: AgentMessageIntent = primaryIntent) => {
     const t = buildSubmitText();
+    const hasContent = t.trim().length > 0 || attachments.length > 0;
+    if (hasContent && !hasHarnessSetup) {
+      notifyNoHarnessSetup();
+      return;
+    }
     const action = running
       ? describeRunningMessageAction({
           agentId: currentAgentId,
@@ -1568,9 +1679,9 @@ export function Composer({
       attachments,
       disabled,
       running,
-      actionDisabled: action?.disabled,
+      actionDisabled: action?.disabled || !hasHarnessSetup,
     })) return;
-    onSubmit(t, attachments, intent);
+    onSubmit(t, attachments, intent, draftConfigValues, currentEnabledAgent?.id);
     setText("");
     setAttachments([]);
     setSelectedSkillCommand(null);
@@ -1582,14 +1693,14 @@ export function Composer({
     attachments,
     disabled,
     running,
-    actionDisabled: primaryRunningAction?.disabled,
+    actionDisabled: primaryRunningAction?.disabled || !hasHarnessSetup,
   });
   const canSteerNow = canSubmitComposer({
     text: buildSubmitText(),
     attachments,
     disabled,
     running,
-    actionDisabled: steerRunningAction?.disabled,
+    actionDisabled: steerRunningAction?.disabled || !hasHarnessSetup,
   });
 
   return (
@@ -1831,12 +1942,15 @@ export function Composer({
             <SessionRunChip
               disabled={!!running}
               locked={!!lockedAgentId || agentLocked}
-              agents={detectedAgents}
+              agents={enabledAgents}
               currentAgentId={currentAgentId}
-              currentAgentLabel={currentAgent?.label}
-              configOptions={configOptions}
+              currentAgentLabel={currentEnabledAgent?.label ?? currentAgent?.label}
+              configOptions={effectiveConfigOptions}
               onPickAgent={pickAgent}
-              onSetConfigOption={(configId, value) => onSetConfigOption?.(configId, value)}
+              onSetConfigOption={(configId, value) => {
+                if (lockedAgentId) onSetConfigOption?.(configId, value);
+                else setDraftConfigValues((prev) => ({ ...prev, [configId]: value }));
+              }}
             />
           )}
 
@@ -1916,15 +2030,20 @@ function SessionRunChip({
   configOptions?: AcpSessionConfigOption[];
   onSetConfigOption: (configId: string, value: string | boolean) => void;
 }) {
-  const agentLabel = currentAgentLabel || (currentAgentId ? currentAgentId : "Choose agent");
+  const navigate = useNavigate();
+  const noHarnessSetup = agents.length === 0 && !locked;
+  const agentLabel = noHarnessSetup
+    ? "No harness setup"
+    : currentAgentLabel || (currentAgentId ? currentAgentId : "Choose agent");
   const configSections = useMemo(
     () => buildConfigOptionSections(configOptions),
     [configOptions],
   );
-  const configSummary =
-    configOptions?.find((option) => option.category === "model") ??
-    configOptions?.find((option) => option.category === "mode") ??
-    configOptions?.find((option) => option.category === "thought_level");
+  const configSummary = noHarnessSetup
+    ? undefined
+    : configOptions?.find((option) => option.category === "model") ??
+      configOptions?.find((option) => option.category === "mode") ??
+      configOptions?.find((option) => option.category === "thought_level");
   const configLabel = configSummary
     ? selectedConfigOptionLabel(configSummary)
     : "Defaults";
@@ -1940,14 +2059,22 @@ function SessionRunChip({
           "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         )}
         style={{ height: "32px" }}
-        aria-label={`Run on Local with ${agentLabel} using ${configLabel}`}
+        aria-label={
+          noHarnessSetup
+            ? "Run on Local with no harness setup"
+            : `Run on Local with ${agentLabel} using ${configLabel}`
+        }
       >
         <MonitorIcon className="size-3.5 shrink-0 text-fg-subtle" />
         <span className="shrink-0">Local</span>
         <span className="text-fg-subtle">·</span>
         <span className="truncate">{agentLabel}</span>
-        <span className="text-fg-subtle">·</span>
-        <span className="shrink-0">{configLabel}</span>
+        {!noHarnessSetup && (
+          <>
+            <span className="text-fg-subtle">·</span>
+            <span className="shrink-0">{configLabel}</span>
+          </>
+        )}
         <ChevronDownIcon className="size-3.5 shrink-0 text-fg-subtle" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6} className="w-[280px]">
@@ -1991,10 +2118,9 @@ function SessionRunChip({
           ) : (
             <SessionRunItem
               icon={TerminalIcon}
-              label="No harness detected"
-              hint="Install an ACP agent first"
-              disabled
-              onSelect={() => undefined}
+              label="No harness setup"
+              hint="Open Settings to install and enable"
+              onSelect={() => void navigate({ to: "/settings/agents" })}
             />
           )}
         </SessionRunSection>

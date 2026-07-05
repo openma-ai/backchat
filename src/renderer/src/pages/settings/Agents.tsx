@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2Icon,
   CircleIcon,
+  CpuIcon,
   DownloadIcon,
   ExternalLinkIcon,
   KeyRoundIcon,
@@ -17,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useSettings, patchSettings } from "@/lib/settings-store";
+import { isAgentEnabled } from "@/lib/enabled-agents";
 import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";
 import {
@@ -54,15 +56,20 @@ export function SettingsAgents() {
   const [waitingAuthAgentId, setWaitingAuthAgentId] = useState<string | null>(null);
   const [selectedAuthMethodByAgent, setSelectedAuthMethodByAgent] = useState<Record<string, string>>({});
   const [customForm, setCustomForm] = useState<CustomAgentFormState | null>(null);
-  const { data: agents = [] } = useQuery({
+  const { data: agents = [], isLoading: agentsLoading, error: agentsError } = useQuery({
     queryKey: ["agents", "setup"],
-    queryFn: () => window.backchat.agentsList({ probeAuth: true }),
+    queryFn: () => window.backchat.agentsList(),
   });
   const action = useMutation({
     mutationFn: async (input: AgentAction) => {
       if (input.type === "install" && input.id) {
         const next = await window.backchat.agentInstall(input.id);
         const installed = next.find((item) => item.id === input.id);
+        if (settings && installed && deriveAgentSetupState(installed).canDefault) {
+          await patchSettings({
+            agents: upsertAgentEnabled(settings, input.id, true),
+          });
+        }
         if (installed && deriveAgentSetupState(installed).canDefault) {
           return window.backchat.agentSetDefault(input.id);
         }
@@ -74,8 +81,15 @@ export function SettingsAgents() {
         return window.backchat.agentAuthenticate({ id: input.id, methodId: input.methodId });
       }
       if (input.type === "probe" && input.id) return window.backchat.agentProbe(input.id);
-      if (input.type === "default" && input.id) return window.backchat.agentSetDefault(input.id);
-      return window.backchat.agentsList({ probeAuth: true, refresh: true });
+      if (input.type === "default" && input.id) {
+        if (settings) {
+          await patchSettings({
+            agents: upsertAgentEnabled(settings, input.id, true),
+          });
+        }
+        return window.backchat.agentSetDefault(input.id);
+      }
+      return window.backchat.agentsList({ refresh: true });
     },
     onSuccess: (next, variables) => {
       queryClient.setQueryData(["agents", "setup"], next);
@@ -159,13 +173,20 @@ export function SettingsAgents() {
     });
   };
 
+  const setAgentEnabled = async (agentId: string, enabled: boolean) => {
+    if (!settings) return;
+    await patchSettings({
+      agents: upsertAgentEnabled(settings, agentId, enabled),
+    });
+  };
+
   return (
-    <div className="space-y-7">
+    <div className="space-y-10 text-xs">
       <header className="space-y-2">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-base font-medium text-fg">Agents</h1>
-            <p className="mt-1 max-w-[58ch] text-xs leading-5 text-fg-muted">
+            <h1 className="text-sm font-medium text-fg">Agents</h1>
+            <p className="mt-1 max-w-[62ch] text-[11px] leading-5 text-fg-muted">
               Pick the ACP agent used for new chats. Install, auth, and credential
               checks stay local.
             </p>
@@ -187,25 +208,43 @@ export function SettingsAgents() {
             {action.error instanceof Error ? action.error.message : String(action.error)}
           </p>
         )}
+        {agentsError && (
+          <p className="mt-2 rounded-md bg-danger-subtle px-3 py-2 text-xs text-danger">
+            {agentsError instanceof Error ? agentsError.message : String(agentsError)}
+          </p>
+        )}
       </header>
 
       <section>
-        <SectionHeading className="mb-2" label="Default agent" detail={`${available.length} available`} />
-        {available.length === 0 ? (
-          <p className="rounded-lg bg-warning-subtle/60 px-3 py-3 text-xs text-fg">
-            No ACP agents are ready yet. Install one below, then authenticate if needed.
-          </p>
+        <SectionHeading className="mb-4" label="Default agent" detail={`${available.length} available`} />
+        {agentsLoading ? (
+          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
+            <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
+            Loading agents…
+          </div>
+        ) : available.length === 0 ? (
+          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
+            <CpuIcon className="size-4 shrink-0 text-fg-subtle" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-fg">No default agent yet</p>
+              <p className="mt-0.5 text-xs text-fg-muted">
+                Install and enable an ACP agent from Registry first.
+              </p>
+            </div>
+          </div>
         ) : (
-          <ul className="overflow-hidden rounded-lg bg-bg-surface/45">
+          <ul className="space-y-1">
             {available.map((a) => (
               <li key={a.id}>
                 <AgentRow
                   agent={a}
                   selected={defaultId === a.id}
+                  enabled={isAgentEnabled(settings, a.id)}
                   waitingForAuth={waitingAuthAgentId === a.id}
                   selectedMethodId={selectedAuthMethodByAgent[a.id]}
                   activeAction={action.isPending ? action.variables ?? null : null}
                   onSetDefault={() => action.mutate({ type: "default", id: a.id })}
+                  onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
                   onInstall={() => action.mutate({ type: "install", id: a.id })}
                   onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
                   onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
@@ -231,27 +270,54 @@ export function SettingsAgents() {
         )}
       </section>
 
-      {unavailable.length > 0 && (
-        <details className="group rounded-lg bg-bg-surface/25 px-3 py-2">
-          {/* Collapsed by default — the registry has ~30 agents, most of
-              which the user will never install. The few they have are
-              what matters, and they live in the section above. */}
-          <summary className="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wider text-fg-subtle hover:text-fg-muted">
-            <span className="inline-flex items-center gap-2">
-              <span className="text-[13px] transition-transform group-open:rotate-90">›</span>
-              Show {unavailable.length} not installed
-            </span>
-          </summary>
-          <ul className="mt-2 overflow-hidden rounded-md bg-bg/35">
+      <section>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <SectionHeading
+            label="Registry"
+            detail={unavailable.length > 0
+              ? `${unavailable.length} installable ACP agent${unavailable.length === 1 ? "" : "s"}`
+              : "Managed agent packages"}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => action.mutate({ type: "refresh" })}
+            disabled={action.isPending}
+            className="h-7 gap-1.5 px-2 text-xs text-fg-muted hover:text-fg"
+          >
+            <RefreshCwIcon className="size-3.5" />
+            Refresh
+          </Button>
+        </div>
+        {agentsLoading ? (
+          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
+            <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
+            Loading registry…
+          </div>
+        ) : unavailable.length === 0 ? (
+          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
+            <DownloadIcon className="size-4 shrink-0 text-fg-subtle" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-fg">Registry is empty</p>
+              <p className="mt-0.5 text-xs text-fg-muted">
+                No additional ACP agents are available from the local registry.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ul className="space-y-1">
             {unavailable.map((a) => (
               <AgentRow
                 key={a.id}
                 agent={a}
                 selected={false}
+                enabled={false}
                 waitingForAuth={waitingAuthAgentId === a.id}
                 selectedMethodId={selectedAuthMethodByAgent[a.id]}
                 activeAction={action.isPending ? action.variables ?? null : null}
                 onSetDefault={() => action.mutate({ type: "default", id: a.id })}
+                onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
                 onInstall={() => action.mutate({ type: "install", id: a.id })}
                 onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
                 onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
@@ -264,11 +330,12 @@ export function SettingsAgents() {
               />
             ))}
           </ul>
-        </details>
-      )}
+        )}
+      </section>
 
       {settings && (
-        <section className="space-y-3">
+        <>
+        <section className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <SectionHeading
               label="Custom agent servers"
@@ -289,11 +356,11 @@ export function SettingsAgents() {
           </div>
 
           {customRows.length > 0 && (
-            <ul className="overflow-hidden rounded-lg bg-bg-surface/45">
+            <ul className="space-y-1">
               {customRows.map((row) => (
                 <li
                   key={row.id}
-                  className="group/custom flex min-h-12 items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-bg/40 [&+&]:border-t [&+&]:border-border/35"
+                  className="group/custom flex min-h-10 items-center gap-3 rounded-xl px-4 py-3 text-xs transition-colors hover:bg-bg-surface/70"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
@@ -344,11 +411,14 @@ export function SettingsAgents() {
               onSave={() => { void saveCustomAgent(); }}
             />
           )}
+        </section>
 
-          <div className="flex items-center justify-between gap-4 rounded-lg bg-bg-surface/45 px-3 py-2.5">
+        <section>
+          <SectionHeading className="mb-4" label="Prompt queue" detail="Agent loop scheduling" />
+          <div className="flex items-center justify-between gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-bg-surface/70">
             <div className="min-w-0">
               <h3 className="text-sm font-medium text-fg">Prompt queue</h3>
-              <p className="mt-0.5 text-xs text-fg-muted">
+              <p className="mt-0.5 text-[11px] text-fg-muted">
                 Follow-up prompts wait for the current agent loop before they start.
               </p>
             </div>
@@ -360,6 +430,7 @@ export function SettingsAgents() {
             />
           </div>
         </section>
+        </>
       )}
     </div>
   );
@@ -391,10 +462,12 @@ function authStillBlocks(agent: AgentInfo | undefined): boolean {
 function AgentRow({
   agent,
   selected,
+  enabled,
   waitingForAuth,
   selectedMethodId,
   activeAction,
   onSetDefault,
+  onSetEnabled,
   onInstall,
   onUpgrade,
   onUninstall,
@@ -405,10 +478,12 @@ function AgentRow({
 }: {
   agent: AgentInfo;
   selected: boolean;
+  enabled: boolean;
   waitingForAuth: boolean;
   selectedMethodId?: string;
   activeAction: AgentAction | null;
   onSetDefault: () => void;
+  onSetEnabled: (enabled: boolean) => void;
   onInstall: () => void;
   onUpgrade: () => void;
   onUninstall: () => void;
@@ -424,13 +499,13 @@ function AgentRow({
   const pendingLabel = rowPending ? pendingActionLabel(activeAction) : null;
   const authMethodId = setup.authMethod?.id ?? "";
   const commandText = agent.command !== agent.id ? agent.command : "";
+  const canEnable = setup.canDefault;
 
   return (
     <div
       className={cn(
-        "group/agent grid min-h-12 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-3 py-2.5 text-left text-sm transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]",
-        "[&+&]:border-t [&+&]:border-border/35",
-        selected ? "bg-brand-subtle/55 text-fg" : "text-fg hover:bg-bg/40",
+        "group/agent grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-1.5 rounded-xl px-4 py-3 text-left text-xs transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]",
+        selected ? "bg-bg-surface text-fg shadow-sm" : "text-fg hover:bg-bg-surface/70",
         !setup.available && "text-fg-subtle",
       )}
     >
@@ -438,7 +513,7 @@ function AgentRow({
         type="button"
         onClick={onSetDefault}
         disabled={!setup.canDefault}
-        className="grid size-7 place-items-center rounded-md text-fg-subtle transition-colors hover:bg-bg/60 hover:text-fg disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-fg-subtle disabled:opacity-45"
+        className="grid size-7 place-items-center rounded-md text-fg-subtle transition-colors hover:bg-bg-surface/60 hover:text-fg disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-fg-subtle disabled:opacity-45"
         aria-label={selected ? "Default agent" : "Set as default agent"}
       >
         {selected ? (
@@ -451,6 +526,11 @@ function AgentRow({
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="truncate font-medium">{agent.label}</span>
           <span className="shrink-0 font-mono text-[11px] text-fg-subtle">{agent.id}</span>
+          {enabled && (
+            <span className="shrink-0 rounded bg-success-subtle/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
+              Enabled
+            </span>
+          )}
           {selected && (
             <span className="shrink-0 rounded bg-bg/55 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-fg-muted">
               Default
@@ -464,6 +544,20 @@ function AgentRow({
         </div>
       </div>
       <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:col-span-1 sm:col-start-3">
+        <label
+          className={cn(
+            "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[11px] text-fg-muted",
+            canEnable ? "hover:bg-bg/50 hover:text-fg" : "opacity-45",
+          )}
+        >
+          <Checkbox
+            checked={enabled}
+            disabled={!canEnable || anyPending}
+            onCheckedChange={(checked) => onSetEnabled(checked === true)}
+            aria-label={`${enabled ? "Disable" : "Enable"} ${agent.label}`}
+          />
+          Enable
+        </label>
         {agent.homepage && (
           <a
             href={agent.homepage}
@@ -602,7 +696,7 @@ function CredentialPanel({
   };
 
   return (
-    <div className="ml-9 mt-1 rounded-md bg-bg-surface/50 px-3 py-3 text-xs text-fg-muted">
+    <div className="ml-9 mt-1 rounded-lg border border-border/35 bg-bg-surface/45 px-3 py-3 text-xs text-fg-muted">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-medium text-fg">Configure {agent.label} credentials</div>
@@ -663,10 +757,10 @@ function CustomAgentPanel({
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const inputClass = "h-8 rounded border border-border-subtle bg-bg px-2 text-xs text-fg outline-none focus:border-border";
-  const textareaClass = "min-h-18 rounded border border-border-subtle bg-bg px-2 py-1.5 font-mono text-xs text-fg outline-none focus:border-border";
+  const inputClass = "h-7 rounded-md border border-border/60 bg-bg/80 px-2 text-xs text-fg outline-none focus:border-border-strong";
+  const textareaClass = "min-h-16 rounded-md border border-border/60 bg-bg/80 px-2 py-1.5 font-mono text-xs text-fg outline-none focus:border-border-strong";
   return (
-    <div className="mt-3 rounded-md bg-bg-surface/50 px-3 py-3 text-xs text-fg-muted">
+    <div className="mt-3 rounded-xl border border-border/45 bg-bg/70 px-3 py-3 text-xs text-fg-muted shadow-card-soft">
       <div className="grid gap-2 md:grid-cols-2">
         <label className="grid gap-1">
           <span className="font-medium text-fg">ID</span>
@@ -787,6 +881,7 @@ function upsertAgentEnv(
   const rest = settings.agents.filter((agent) => agent.id !== agentId);
   if (
     nextEnv.length === 0 &&
+    !existing?.enabled &&
     !existing?.label_override &&
     !existing?.command_override &&
     !existing?.args_override
@@ -797,10 +892,40 @@ function upsertAgentEnv(
     ...rest,
     {
       id: agentId,
+      ...(existing?.enabled ? { enabled: true } : {}),
       ...(existing?.label_override ? { label_override: existing.label_override } : {}),
       ...(existing?.command_override ? { command_override: existing.command_override } : {}),
       ...(existing?.args_override ? { args_override: existing.args_override } : {}),
       env: nextEnv,
+    },
+  ];
+}
+
+function upsertAgentEnabled(
+  settings: Settings,
+  agentId: string,
+  enabled: boolean,
+): Settings["agents"] {
+  const existing = settings.agents.find((agent) => agent.id === agentId);
+  const rest = settings.agents.filter((agent) => agent.id !== agentId);
+  if (
+    !enabled &&
+    !existing?.label_override &&
+    !existing?.command_override &&
+    !existing?.args_override &&
+    (existing?.env ?? []).length === 0
+  ) {
+    return rest;
+  }
+  return [
+    ...rest,
+    {
+      id: agentId,
+      ...(enabled ? { enabled: true } : {}),
+      ...(existing?.label_override ? { label_override: existing.label_override } : {}),
+      ...(existing?.command_override ? { command_override: existing.command_override } : {}),
+      ...(existing?.args_override ? { args_override: existing.args_override } : {}),
+      env: existing?.env ?? [],
     },
   ];
 }

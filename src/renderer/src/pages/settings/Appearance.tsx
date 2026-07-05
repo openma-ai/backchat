@@ -34,10 +34,10 @@ export function SettingsAppearance() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5 text-xs">
       <header>
-        <h1 className="text-base font-medium text-fg">Appearance</h1>
-        <p className="mt-1 text-xs text-fg-muted">
+        <h1 className="text-sm font-medium text-fg">Appearance</h1>
+        <p className="mt-1 text-[11px] text-fg-muted">
           Theme, font, density. Applies immediately across all windows.
         </p>
       </header>
@@ -119,17 +119,17 @@ function RadioGroup({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="flex gap-1 rounded-md bg-bg-surface/40 p-1">
+    <div className="flex gap-1 rounded-xl border border-border/45 bg-bg/70 p-1 shadow-card-soft">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            "flex-1 rounded px-2 py-1.5 text-xs transition-colors",
+            "flex-1 rounded-md px-2 py-1.5 text-xs transition-colors",
             value === o.value
-              ? "bg-bg text-fg shadow-chip-press"
-              : "text-fg-muted hover:text-fg",
+              ? "bg-bg-surface text-fg shadow-chip-press"
+              : "text-fg-muted hover:bg-bg-surface/50 hover:text-fg",
           )}
         >
           {o.label}
