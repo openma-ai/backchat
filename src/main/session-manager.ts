@@ -53,6 +53,7 @@ import type {
   SessionSetConfigOptionParams,
   SessionStartParams,
 } from "../shared/session-events.js";
+import type { AgentMessageDelivery } from "../shared/agent-interaction.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
 import {
   appendEvent,
@@ -447,18 +448,30 @@ export class SessionManager {
       });
       return;
     }
-    const effectiveDelivery = p.effective_delivery ?? "turn_end";
-    if (effectiveDelivery !== "turn_end") {
+    const effectiveDelivery = normalizeAcpPromptDelivery(p);
+    if (effectiveDelivery === "unsupported") {
+      const requestedDelivery = p.requested_delivery ?? p.effective_delivery ?? "unsupported";
       this.#send({
         type: "session.error",
         session_id: p.session_id,
         turn_id: p.turn_id,
-        message: `delivery ${effectiveDelivery} is not supported by this ACP transport`,
+        message: `delivery ${requestedDelivery} is not supported by this ACP transport`,
       });
       return;
     }
 
-    return this.#dispatchPrompt(sess, p);
+    const requestedDelivery = p.requested_delivery ?? p.effective_delivery;
+    const prompt = {
+      ...p,
+      effective_delivery: effectiveDelivery,
+      delivery_degraded:
+        p.delivery_degraded ||
+        (requestedDelivery != null && requestedDelivery !== effectiveDelivery),
+    };
+    if (effectiveDelivery === "llm_boundary") {
+      return this.#runPrompt(sess, prompt);
+    }
+    return this.#dispatchPrompt(sess, prompt);
   }
 
   #dispatchPrompt(sess: ActiveSession, p: SessionPromptParams): Promise<void> {
@@ -817,6 +830,16 @@ function buildAcpPromptBlocks(
     });
   }
   return blocks.length > 0 ? blocks : [{ type: "text", text: p.text }];
+}
+
+function normalizeAcpPromptDelivery(p: SessionPromptParams): AgentMessageDelivery {
+  const requested = p.requested_delivery ?? p.effective_delivery ?? "turn_end";
+  if (requested === "turn_end") return "turn_end";
+  // Clash-style steer: while a turn is running, fire another session/prompt
+  // instead of serializing it behind the turn-end queue. ACP does not name this
+  // as a separate RPC; the adapter/agent decides how to absorb concurrent input.
+  if (requested === "llm_boundary") return "llm_boundary";
+  return "unsupported";
 }
 
 function stripAttachmentData(

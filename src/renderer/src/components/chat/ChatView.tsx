@@ -39,7 +39,6 @@ import type {
   AgentMessageDelivery,
   AgentMessageIntent,
 } from "@shared/agent-interaction.js";
-import { GENERIC_ACP_DELIVERY_CAPABILITIES } from "@shared/agent-interaction.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -93,6 +92,7 @@ import {
   CHAT_TURN_FRAME_CLASS,
 } from "@/lib/chat-layout";
 import {
+  BACKCHAT_ACP_DELIVERY_CAPABILITIES,
   describeRunningMessageAction,
   shouldOfferExplicitSteer,
 } from "@/lib/composer-delivery";
@@ -162,7 +162,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     const action = describeRunningMessageAction({
       agentId: agentId || settings?.default.agent_id,
       intent,
-      transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+      transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
     });
     if (action.disabled) {
       toast.error(`${action.label} is not available`, {
@@ -1521,7 +1521,7 @@ export function Composer({
     ? describeRunningMessageAction({
         agentId: currentAgentId,
         intent: "submit",
-        transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+        transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
       })
     : null;
   const primaryIntent: AgentMessageIntent =
@@ -1530,7 +1530,7 @@ export function Composer({
     ? describeRunningMessageAction({
         agentId: currentAgentId,
         intent: primaryIntent,
-        transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+        transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
       })
     : null;
   const offerExplicitSteer =
@@ -1542,7 +1542,7 @@ export function Composer({
       ? describeRunningMessageAction({
           agentId: currentAgentId,
           intent: "steer",
-          transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+          transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
         })
       : null;
 
@@ -1671,7 +1671,7 @@ export function Composer({
       ? describeRunningMessageAction({
           agentId: currentAgentId,
           intent,
-          transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+          transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
         })
       : null;
     if (!canSubmitComposer({

@@ -372,7 +372,7 @@ describe("SessionStore prompt queue state", () => {
     expect(store.get(sessionId)?.status).toBe("ready");
   });
 
-  test("records requested and effective delivery for queued prompts", () => {
+  test("keeps llm-boundary steer turns running instead of queuing them", () => {
     const store = new SessionStore();
     const sessionId = "sess-queue-delivery";
     store.registerStarting(sessionId, "codex-acp", "Queue delivery test");
@@ -390,22 +390,24 @@ describe("SessionStore prompt queue state", () => {
       effectiveDelivery: "turn_end",
       degraded: false,
     });
-    store.registerTurn("turn-steer-degraded", sessionId, "steer me", {
+    store.registerTurn("turn-steer", sessionId, "steer me", {
       intent: "steer",
       requestedDelivery: "llm_boundary",
-      effectiveDelivery: "turn_end",
-      degraded: true,
+      effectiveDelivery: "llm_boundary",
+      degraded: false,
     });
 
-    const degraded = store
+    const steer = store
       .turnsFor(sessionId)
-      .find((turn) => turn.id === "turn-steer-degraded");
+      .find((turn) => turn.id === "turn-steer");
 
-    expect(degraded?.status).toBe("queued");
-    expect(degraded?.promptIntent).toBe("steer");
-    expect(degraded?.requestedDelivery).toBe("llm_boundary");
-    expect(degraded?.effectiveDelivery).toBe("turn_end");
-    expect(degraded?.deliveryDegraded).toBe(true);
+    expect(steer?.status).toBe("running");
+    expect(steer?.promptIntent).toBe("steer");
+    expect(steer?.requestedDelivery).toBe("llm_boundary");
+    expect(steer?.effectiveDelivery).toBe("llm_boundary");
+    expect(steer?.deliveryDegraded).toBe(false);
+    expect(store.get(sessionId)?.activeTurnId).toBe("turn-active-delivery");
+    expect(store.get(sessionId)?.queuedTurnIds).toBeUndefined();
   });
 
   test("applies main-process queue snapshots", () => {

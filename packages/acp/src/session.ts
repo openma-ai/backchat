@@ -44,7 +44,7 @@ export class AcpSessionImpl implements AcpSession {
   #agent!: Agent;
   #sessionId!: string;
   #disposed = false;
-  #promptActive = false;
+  #activePromptCount = 0;
   #pendingEvents: unknown[] = [];
   #waiters: Array<(v: IteratorResult<unknown>) => void> = [];
   #authMethods: readonly schema.AuthMethod[] = [];
@@ -72,7 +72,7 @@ export class AcpSessionImpl implements AcpSession {
         // forces every consumer to do a redundant `.update.foo` indirection.
         const inner = (params as { update?: unknown })?.update;
         const update = inner !== undefined ? inner : params;
-        if (!this.#promptActive && !isIdleSessionUpdate(update)) {
+        if (this.#activePromptCount === 0 && !isIdleSessionUpdate(update)) {
           return;
         }
         this.#pushEvent(update);
@@ -313,7 +313,7 @@ export class AcpSessionImpl implements AcpSession {
     }
     turnAbort.signal.addEventListener("abort", onAbort, { once: true });
 
-    this.#promptActive = true;
+    this.#activePromptCount += 1;
     const prompt =
       typeof input === "string"
         ? [{ type: "text" as const, text: input }]
@@ -324,7 +324,7 @@ export class AcpSessionImpl implements AcpSession {
         prompt,
       })
       .finally(() => {
-        this.#promptActive = false;
+        this.#activePromptCount = Math.max(0, this.#activePromptCount - 1);
         if (turnTimer) clearTimeout(turnTimer);
         opts?.abortSignal?.removeEventListener("abort", onAbort);
       });

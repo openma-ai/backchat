@@ -333,7 +333,7 @@ describe("SessionManager prompt queue", () => {
     await prompt;
   });
 
-  it("rejects non-turn-end effective delivery until a transport implements it", async () => {
+  it("runs llm-boundary delivery immediately instead of the turn-end queue", async () => {
     const fake = createControllableAcpSession();
     mocks.runtimeStart.mockResolvedValueOnce(fake.session);
     const events: unknown[] = [];
@@ -351,7 +351,16 @@ describe("SessionManager prompt queue", () => {
       cwd: "/repo",
     });
 
-    const prompt = manager.prompt({
+    const first = manager.prompt({
+      session_id: "sess-unsupported-delivery",
+      turn_id: "turn-active",
+      text: "active turn",
+      requested_delivery: "turn_end",
+      effective_delivery: "turn_end",
+    });
+    await vi.waitUntil(() => fake.prompts.length === 1);
+
+    const steer = manager.prompt({
       session_id: "sess-unsupported-delivery",
       turn_id: "turn-steer",
       text: "steer now",
@@ -359,14 +368,58 @@ describe("SessionManager prompt queue", () => {
       requested_delivery: "llm_boundary",
       effective_delivery: "llm_boundary",
     });
-    await prompt;
+
+    await vi.waitUntil(() => fake.prompts.length === 2);
+    expect(fake.prompts).toEqual([
+      [{ type: "text", text: "active turn" }],
+      [{ type: "text", text: "steer now" }],
+    ]);
+    expect(events).not.toContainEqual({
+      type: "session.error",
+      session_id: "sess-unsupported-delivery",
+      turn_id: "turn-steer",
+      message: "delivery llm_boundary is not supported by this ACP transport",
+    });
+
+    fake.releaseNext();
+    await first;
+    fake.releaseNext();
+    await steer;
+  });
+
+  it("rejects delivery modes ACP cannot honestly emulate", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (msg) => events.push(msg),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "hermes" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-unsupported-delivery",
+      agent_id: "hermes",
+      cwd: "/repo",
+    });
+
+    await manager.prompt({
+      session_id: "sess-unsupported-delivery",
+      turn_id: "turn-interrupt",
+      text: "interrupt now",
+      prompt_intent: "interrupt",
+      requested_delivery: "interrupt",
+      effective_delivery: "interrupt",
+    });
 
     expect(fake.prompts).toEqual([]);
     expect(events).toContainEqual({
       type: "session.error",
       session_id: "sess-unsupported-delivery",
-      turn_id: "turn-steer",
-      message: "delivery llm_boundary is not supported by this ACP transport",
+      turn_id: "turn-interrupt",
+      message: "delivery interrupt is not supported by this ACP transport",
     });
   });
 

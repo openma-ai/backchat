@@ -15,6 +15,12 @@ export interface RunningMessageActionDescription {
   title: string;
 }
 
+export const BACKCHAT_ACP_DELIVERY_CAPABILITIES: AgentDeliveryCapabilities = {
+  llmBoundary: true,
+  interrupt: false,
+  collect: false,
+};
+
 export function describeRunningMessageAction({
   agentId,
   intent,
@@ -36,8 +42,11 @@ export function describeRunningMessageAction({
   };
 }
 
-export function shouldOfferExplicitSteer(agentId: string | null | undefined): boolean {
-  return getAgentInteractionProfile(agentId).actions.steer !== "unsupported";
+export function shouldOfferExplicitSteer(
+  agentId: string | null | undefined,
+): boolean {
+  const profile = getAgentInteractionProfile(agentId);
+  return profile.actions.steer === "llm_boundary";
 }
 
 function labelForDecision(decision: RunningMessageDeliveryDecision): string {

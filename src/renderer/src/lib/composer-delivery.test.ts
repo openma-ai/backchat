@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GENERIC_ACP_DELIVERY_CAPABILITIES } from "@shared/agent-interaction";
 import {
+  BACKCHAT_ACP_DELIVERY_CAPABILITIES,
   describeRunningMessageAction,
   shouldOfferExplicitSteer,
 } from "./composer-delivery";
@@ -31,6 +32,19 @@ describe("describeRunningMessageAction", () => {
     expect(action.title).toContain("Steer is not available");
   });
 
+  it("labels explicit Codex steer as steer for Backchat's Clash-style transport", () => {
+    const action = describeRunningMessageAction({
+      agentId: "codex-acp",
+      intent: "steer",
+      transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
+    });
+
+    expect(action.label).toBe("Steer");
+    expect(action.decision.requestedDelivery).toBe("llm_boundary");
+    expect(action.decision.effectiveDelivery).toBe("llm_boundary");
+    expect(action.title).toContain("model boundary");
+  });
+
   it("marks default Hermes interrupt as unavailable over generic ACP", () => {
     const action = describeRunningMessageAction({
       agentId: "hermes",
@@ -44,7 +58,7 @@ describe("describeRunningMessageAction", () => {
 });
 
 describe("shouldOfferExplicitSteer", () => {
-  it("offers explicit steer for Codex but not Gemini", () => {
+  it("offers explicit steer when the agent profile has steer intent", () => {
     expect(shouldOfferExplicitSteer("codex-acp")).toBe(true);
     expect(shouldOfferExplicitSteer("gemini")).toBe(false);
   });

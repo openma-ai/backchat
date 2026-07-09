@@ -995,7 +995,8 @@ export class SessionStore {
     delivery?: TurnDeliveryMeta,
   ): void {
     const row = this.#sessions.get(sessionId);
-    const isQueued = !!row?.activeTurnId;
+    const queuesBehindActiveTurn =
+      !!row?.activeTurnId && (delivery?.effectiveDelivery ?? "turn_end") === "turn_end";
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
@@ -1003,7 +1004,7 @@ export class SessionStore {
       events: [],
       assistantText: "",
       thoughtText: "",
-      status: isQueued ? "queued" : "running",
+      status: queuesBehindActiveTurn ? "queued" : "running",
       promptIntent: delivery?.intent,
       requestedDelivery: delivery?.requestedDelivery,
       effectiveDelivery: delivery?.effectiveDelivery,
@@ -1013,7 +1014,7 @@ export class SessionStore {
     this.#mutateSession(sessionId, (s) => ({
       ...s,
       activeTurnId: s.activeTurnId ?? turnId,
-      queuedTurnIds: s.activeTurnId
+      queuedTurnIds: queuesBehindActiveTurn
         ? [...(s.queuedTurnIds ?? []), turnId]
         : s.queuedTurnIds,
       status: "running",
