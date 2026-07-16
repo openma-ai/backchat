@@ -1,11 +1,20 @@
 import { describe, expect, test } from "vitest";
-import { reduceTurn } from "./reduce-turn";
+import { reduceTurn, sanitizeThoughtText } from "./reduce-turn";
 
 function render(...payloads: unknown[]) {
   return reduceTurn(payloads.map((payload) => ({ payload })));
 }
 
 describe("reduceTurn ACP event compatibility", () => {
+  test("drops HTML-comment placeholders from thought progress", () => {
+    expect(sanitizeThoughtText("Planning\n<!-- -->\nNext")).toBe("Planning\n\nNext");
+    const out = render({
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "<!-- -->" },
+    });
+    expect(out.thoughtText).toBe("");
+  });
+
   test("unwraps ACP session notifications and preserves text/tool chronology", () => {
     const out = render(
       {

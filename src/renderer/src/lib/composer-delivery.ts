@@ -1,7 +1,6 @@
 import {
   GENERIC_ACP_DELIVERY_CAPABILITIES,
   decideRunningMessageDelivery,
-  getAgentInteractionProfile,
   type AgentDeliveryCapabilities,
   type AgentMessageIntent,
   type RunningMessageDeliveryDecision,
@@ -14,12 +13,6 @@ export interface RunningMessageActionDescription {
   ariaLabel: string;
   title: string;
 }
-
-export const BACKCHAT_ACP_DELIVERY_CAPABILITIES: AgentDeliveryCapabilities = {
-  llmBoundary: true,
-  interrupt: false,
-  collect: false,
-};
 
 export function describeRunningMessageAction({
   agentId,
@@ -40,13 +33,6 @@ export function describeRunningMessageAction({
     ariaLabel: `${label} (Enter)`,
     title: titleForDecision(decision, label),
   };
-}
-
-export function shouldOfferExplicitSteer(
-  agentId: string | null | undefined,
-): boolean {
-  const profile = getAgentInteractionProfile(agentId);
-  return profile.actions.steer === "llm_boundary";
 }
 
 function labelForDecision(decision: RunningMessageDeliveryDecision): string {

@@ -13,6 +13,23 @@ import type {
   SessionStartParams,
 } from "./session-events.js";
 import type { Settings } from "./settings.js";
+import type {
+  BrowserElementHoverInfo,
+  BrowserElementPickResult,
+  BrowserRegionPickResult,
+} from "./browser-element-picker.js";
+import type {
+  BrowserUiCommand,
+  BrowserViewIdentityInput,
+  BrowserViewRegistrationInput,
+} from "./browser-harness.js";
+import type {
+  BrowserClearDataInput,
+  BrowserClearProfileDataInput,
+  BrowserCredentialSummary,
+  BrowserDownloadInfo,
+  BrowserWebContentsInput,
+} from "./browser-data.js";
 
 export interface AgentInfo {
   id: string;
@@ -330,6 +347,40 @@ export interface BackchatApi {
     }) => void,
   ): () => void;
 
+  // ----- In-app browser annotations -----
+
+  browserElementPickerBegin(p: { webContentsId: number }): Promise<void>;
+  browserElementPickerHover(p: {
+    webContentsId: number;
+    x: number;
+    y: number;
+  }): Promise<BrowserElementHoverInfo | null>;
+  browserElementPickerCommit(p: {
+    webContentsId: number;
+  }): Promise<BrowserElementPickResult | null>;
+  browserElementPickerCaptureRegion(p: {
+    webContentsId: number;
+    rect: { x: number; y: number; width: number; height: number };
+  }): Promise<BrowserRegionPickResult>;
+  browserElementPickerCancel(p: { webContentsId: number }): Promise<void>;
+  browserViewRegister(p: BrowserViewRegistrationInput): Promise<void>;
+  browserViewUnregister(p: BrowserViewIdentityInput): Promise<void>;
+  browserViewSetActive(p: BrowserViewIdentityInput): Promise<void>;
+  browserCaptureScreenshot(p: BrowserWebContentsInput): Promise<{ path: string }>;
+  browserShowDeviceToolbar(p: BrowserWebContentsInput): Promise<void>;
+  browserClearData(p: BrowserClearDataInput): Promise<void>;
+  browserClearProfileData(p: BrowserClearProfileDataInput): Promise<void>;
+  browserDownloadsList(p: BrowserWebContentsInput): Promise<BrowserDownloadInfo[]>;
+  browserDownloadAction(p: BrowserWebContentsInput & {
+    downloadId: string;
+    action: "open" | "reveal" | "cancel";
+  }): Promise<void>;
+  browserCredentialsList(p: BrowserWebContentsInput): Promise<BrowserCredentialSummary[]>;
+  browserCredentialFill(p: BrowserWebContentsInput & { credentialId: string }): Promise<void>;
+  browserCredentialDelete(p: BrowserWebContentsInput & { credentialId: string }): Promise<void>;
+  onBrowserDownloadsChanged(handler: () => void): () => void;
+  onBrowserToolTabCommand(handler: (command: BrowserUiCommand) => void): () => void;
+
   // ----- User-facing fs (side-panel file tree) -----
 
   /** List the entries inside a directory. Folders first, then
@@ -352,6 +403,14 @@ export interface BackchatApi {
    *  empty array when cancelled. Image entries include base64 `data`
    *  when small enough for preview / ACP image blocks. */
   uiFsPickFiles(p?: { defaultPath?: string }): Promise<PromptAttachment[]>;
+
+  /** Persist an in-app PNG capture under the local Backchat data root and
+   *  return a fully populated image attachment, including inline base64. */
+  uiFsSaveCapture(p: {
+    data: string;
+    name?: string;
+    mimeType?: "image/png";
+  }): Promise<PromptAttachment>;
 
   /** Recent entries in a directory — sorted by mtime (newest first),
    *  hidden / noise (.dotfiles, node_modules) filtered out. Top N

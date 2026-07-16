@@ -55,6 +55,15 @@ import {
 import "./ui-terminal-broker.js";
 // Side-effect import: directory listing for the side-panel file tree.
 import "./ui-fs-broker.js";
+// Side-effect import: CDP-backed selection and screenshots for the
+// in-app browser. Ownership checks keep callers scoped to their own webview.
+import "./browser-element-picker-broker.js";
+// Side-effect import: task-scoped Browser WebView registry and browser
+// harness routing. Agent tools and the visible right rail share these guests.
+import { browserWebviewTools } from "./browser-view-broker.js";
+// Side-effect import: current-tab browser data, downloads, screenshots and
+// privacy controls. Each handler revalidates the guest ownership boundary.
+import "./browser-data-broker.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -62,6 +71,7 @@ interface RegisterDeps {
   registryCachePath: string;
   acpBinDir: string;
   acpInstallRoot: string;
+  browserMcpServerForTask?: (taskId: string) => unknown;
 }
 
 interface TestAgentSetupCall {
@@ -167,7 +177,12 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     // MCP servers come from settings now — Phase 8 finishes the per-agent
     // override matrix; for now we pass every configured server through to
     // every spawn. ACP McpServer shape matches our SettingsMcpServer.
-    resolveMcpServers: () => settingsStore.get().mcp_servers as unknown[],
+    resolveMcpServers: (_agentId, taskId) => [
+      ...settingsStore.get().mcp_servers,
+      ...(deps.browserMcpServerForTask
+        ? [deps.browserMcpServerForTask(taskId)]
+        : []),
+    ] as unknown[],
     resolveDefaults: () => {
       const s = settingsStore.get();
       return {
@@ -571,6 +586,47 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     ipcMain.handle(
       InvokeChannel.TestAgentSetupCalls,
       () => testAgentSetupFixture?.calls ?? [],
+    );
+    ipcMain.handle(
+      InvokeChannel.TestBrowserTool,
+      async (
+        _event,
+        p: { taskId: string; name: string; args?: Record<string, unknown> },
+      ) => {
+        const args = p.args ?? {};
+        switch (p.name) {
+          case "browser_tabs":
+            return browserWebviewTools.tabs(p.taskId, args as never);
+          case "browser_navigate":
+            return browserWebviewTools.navigate(p.taskId, String(args["url"] ?? ""));
+          case "browser_screenshot":
+            return browserWebviewTools.screenshot(p.taskId, args["full_page"] === true);
+          case "browser_click":
+            return browserWebviewTools.click(p.taskId, String(args["selector"] ?? ""));
+          case "browser_type":
+            return browserWebviewTools.type(
+              p.taskId,
+              String(args["selector"] ?? ""),
+              String(args["text"] ?? ""),
+              args["submit"] === true,
+            );
+          case "browser_get_text":
+            return browserWebviewTools.getText(
+              p.taskId,
+              typeof args["selector"] === "string" ? args["selector"] : undefined,
+              typeof args["max_chars"] === "number" ? args["max_chars"] : undefined,
+            );
+          case "browser_eval":
+            return browserWebviewTools.evaluate(
+              p.taskId,
+              String(args["expression"] ?? ""),
+            );
+          case "browser_close":
+            return browserWebviewTools.close(p.taskId);
+          default:
+            throw new Error(`Unknown browser test tool: ${p.name}`);
+        }
+      },
     );
   }
 

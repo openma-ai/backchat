@@ -15,7 +15,7 @@
      "sidebar" material; pushing to 48px+ visibly fogs on lower-end GPUs
      without adding visual weight (the human eye plateaus around 24-32px
      blur radius). Keep saturation lift moderate to avoid over-tinting. */
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-surface) 62%, transparent);
   backdrop-filter: blur(32px) saturate(180%);
   -webkit-backdrop-filter: blur(32px) saturate(180%);
   border: 1px solid color-mix(in srgb, #ffffff 35%, transparent);
@@ -62,7 +62,7 @@
     0 4px 12px -2px color-mix(in srgb, var(--fg) 12%, transparent);
 }
 .dark .liquid-glass-selected {
-  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  background: color-mix(in srgb, var(--bg-bubble) 80%, transparent);
   box-shadow:
     inset 0 1px 0 0 color-mix(in srgb, #ffffff 28%, transparent),
     inset 0 0 0 1px color-mix(in srgb, #ffffff 12%, transparent),
@@ -72,7 +72,7 @@
     0 4px 12px -2px rgb(0 0 0 / 0.55);
 }
 .dark .liquid-glass {
-  background: color-mix(in srgb, var(--bg) 38%, transparent);
+  background: color-mix(in srgb, var(--bg-surface) 70%, transparent);
   border-color: color-mix(in srgb, #ffffff 14%, transparent);
   box-shadow:
     inset 0 1px 0 0 color-mix(in srgb, #ffffff 22%, transparent),
@@ -80,6 +80,22 @@
     inset 0 -1px 0 0 color-mix(in srgb, #ffffff 6%, transparent),
     0 1px 3px 0 rgb(0 0 0 / 0.5),
     0 16px 40px -12px rgb(0 0 0 / 0.7);
+}
+
+/* Electron <webview> is a separate Chromium surface. During live native
+   window resize, the guest and translucent full-height rail can repaint on
+   different frames, making the panel flash and trail the window edge.
+   AppShell sets data-window-resizing without involving React; use an opaque
+   equivalent while the drag is active, then restore the resting material. */
+html[data-window-resizing="true"] .liquid-glass {
+  background: color-mix(in srgb, var(--bg-surface) 62%, var(--bg-sidebar));
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: none !important;
+}
+
+html.dark[data-window-resizing="true"] .liquid-glass {
+  background: color-mix(in srgb, var(--bg-surface) 70%, var(--bg-sidebar));
 }
 
 /* Composer-only override of .liquid-glass's drop shadow. The composer
@@ -119,28 +135,30 @@
   /* White on this brand clears AA. */
   --brand-fg: #ffffff;
 
-  /* Elevation ladder — neutral cool gray, NO warm tint. Previous palette
-     was olive-tan and read as "dated" against a brand that's already
-     warm. Cooler neutrals let the brand pop without competing.
-       --bg          pure white card surface
-       --bg-sidebar  cool gray-50 stage so the cards lift visibly
-       --bg-surface  near-bg, used for inline surfaces (chips, bubbles)
-     Pairwise luminance gap ≥ 4% (taste-saas non-negotiable). */
-  --bg: #ffffff;
-  --bg-sidebar: #ebecee;
-  --bg-surface: #f4f5f6;
+  /* Restrained elevation ladder — nearly neutral grays. Large surfaces stay
+     close to white while bubbles keep just enough depth to remain distinct;
+     the trace of yellow-gray avoids both a blue cast and a red/brown tint.
+       --bg          near-white card surface
+       --bg-sidebar  warm-neutral stage so the cards lift visibly
+       --bg-surface  light gray, used for raised controls and glass
+       --bg-bubble   distinct gray for message and selection bubbles
+     Gray is used for hierarchy, not as the dominant light-theme color. */
+  --bg: oklch(0.995 0 0);
+  --bg-sidebar: oklch(0.965 0.002 95);
+  --bg-surface: oklch(0.982 0.001 95);
+  --bg-bubble: oklch(0.955 0.0015 95);
   --bg-overlay: oklch(0 0 0 / 0.3);
 
-  /* Text — cool grays, not the previous warm grays. Higher contrast on
-     fg so body text feels crisper. */
-  --fg: #0f1115;
-  --fg-muted: #5b6066;
-  --fg-subtle: #8a8f96;
+  /* Text stays visually neutral. Even the subtle tier keeps 4.5:1+
+     contrast on --bg so placeholders and metadata remain readable. */
+  --fg: oklch(0.19 0.002 80);
+  --fg-muted: oklch(0.45 0.002 85);
+  --fg-subtle: oklch(0.52 0.002 85);
 
-  /* Borders — slightly cooler than the surface for a subtle hint of
-     edge without reading as line work. */
-  --border: #e2e4e8;
-  --border-strong: #d0d3d8;
+  /* Borders share the surface hue and separate elevation without
+     reintroducing a cold blue-gray outline. */
+  --border: oklch(0.9 0.0015 95);
+  --border-strong: oklch(0.83 0.002 95);
 
   --success: oklch(0.6 0.18 145);
   --success-subtle: oklch(0.96 0.04 145);
@@ -280,19 +298,21 @@
      reads inside chips/highlights painted with it. */
   --brand-fg: #1a0e09;
 
-  /* Dark elevation — cool charcoal stage, near-black card so the
-     sidebar reads as the brightest layer. */
-  --bg: #1a1d22;
-  --bg-sidebar: #0d1014;
-  --bg-surface: #232730;
+  /* Dark elevation uses compact neutral-charcoal steps. Large glass surfaces
+     stay close to the stage; bubbles get the highest step without becoming
+     broad slabs of mid-gray. */
+  --bg: oklch(0.215 0.002 85);
+  --bg-sidebar: oklch(0.17 0.0015 85);
+  --bg-surface: oklch(0.265 0.0025 85);
+  --bg-bubble: oklch(0.305 0.0025 85);
   --bg-overlay: oklch(0 0 0 / 0.6);
 
-  --fg: #e9eaec;
-  --fg-muted: #9aa0a8;
-  --fg-subtle: #6e747c;
+  --fg: oklch(0.94 0.0015 95);
+  --fg-muted: oklch(0.74 0.002 90);
+  --fg-subtle: oklch(0.69 0.002 90);
 
-  --border: #2a2e36;
-  --border-strong: #3a3e48;
+  --border: oklch(0.33 0.0025 85);
+  --border-strong: oklch(0.40 0.003 85);
 
   --success: oklch(0.76 0.16 145);
   --success-subtle: oklch(0.22 0.05 145);
@@ -350,6 +370,7 @@
   --color-bg: var(--bg);
   --color-bg-sidebar: var(--bg-sidebar);
   --color-bg-surface: var(--bg-surface);
+  --color-bg-bubble: var(--bg-bubble);
   --color-bg-overlay: var(--bg-overlay);
 
   --color-fg: var(--fg);
@@ -686,4 +707,12 @@ body,
 }
 .app-no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* The side conversation lives on a glass surface, where the default
+   near-white user bubble disappears into the panel. Keep this after the
+   Tailwind utility layer so it can override the shared bg token without
+   changing the message geometry used by main and side conversations. */
+[data-chat-surface="side"] .is-user > [data-slot="message-content"] {
+  background: var(--bg-bubble);
 }

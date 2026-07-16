@@ -101,9 +101,20 @@ const SettingsSchema = z.object({
   }),
   appearance: z.object({
     theme: z.enum(["system", "light", "dark"]).default("system"),
+    language: z.enum(["system", "en", "zh-CN"]).default("system"),
     font_size: z.enum(["sm", "md", "lg"]).default("md"),
     density: z.enum(["compact", "default", "roomy"]).default("default"),
   }),
+  browser: z.object({
+    enabled: z.boolean().default(true),
+    web_link_target: z.enum(["external", "in_app"]).default("external"),
+    local_link_target: z.enum(["external", "in_app"]).default("in_app"),
+    annotation_screenshots: z.enum(["always", "never"]).default("always"),
+    default_zoom: z.number().min(0.5).max(2).default(1),
+    download_path: z.string().default(""),
+    ask_before_download: z.boolean().default(false),
+    autofill_enabled: z.boolean().default(false),
+  }).optional(),
   agents: z.array(AgentOverrideSchema).default([]),
   mcp_servers: z.array(McpServerSchema).default([]),
 });

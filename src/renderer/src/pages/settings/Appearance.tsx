@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import { useTheme } from "@/lib/theme";
+import { useI18n, type LanguagePreference } from "@/lib/i18n";
 
 /**
  * Settings → Appearance. Theme / font size / density.
@@ -15,6 +16,7 @@ import { useTheme } from "@/lib/theme";
 export function SettingsAppearance() {
   const settings = useSettings();
   const { theme: localTheme, setTheme } = useTheme();
+  const { t } = useI18n();
 
   // Reconcile: if settings load shows a different theme than the local hook
   // has cached, take settings as the source of truth.
@@ -36,31 +38,47 @@ export function SettingsAppearance() {
   return (
     <div className="space-y-5 text-xs">
       <header>
-        <h1 className="text-sm font-medium text-fg">Appearance</h1>
+        <h1 className="text-sm font-medium text-fg">{t("appearance.title")}</h1>
         <p className="mt-1 text-[11px] text-fg-muted">
-          Theme, font, density. Applies immediately across all windows.
+          {t("appearance.description")}
         </p>
       </header>
 
-      <Section label="Theme">
+      <Section label={t("appearance.language")}>
+        <RadioGroup
+          value={settings.appearance.language}
+          options={[
+            { value: "system", label: t("appearance.languageSystem") },
+            { value: "en", label: t("appearance.languageEnglish") },
+            { value: "zh-CN", label: t("appearance.languageChinese") },
+          ]}
+          onChange={(language) =>
+            void patchSettings({
+              appearance: { ...settings.appearance, language: language as LanguagePreference },
+            })
+          }
+        />
+      </Section>
+
+      <Section label={t("appearance.theme")}>
         <RadioGroup
           value={settings.appearance.theme}
           options={[
-            { value: "system", label: "Match system" },
-            { value: "light", label: "Light" },
-            { value: "dark", label: "Dark" },
+            { value: "system", label: t("appearance.themeSystem") },
+            { value: "light", label: t("appearance.themeLight") },
+            { value: "dark", label: t("appearance.themeDark") },
           ]}
           onChange={(v) => void setThemeBoth(v as "system" | "light" | "dark")}
         />
       </Section>
 
-      <Section label="Font size">
+      <Section label={t("appearance.fontSize")}>
         <RadioGroup
           value={settings.appearance.font_size}
           options={[
-            { value: "sm", label: "Small" },
-            { value: "md", label: "Medium" },
-            { value: "lg", label: "Large" },
+            { value: "sm", label: t("appearance.fontSmall") },
+            { value: "md", label: t("appearance.fontMedium") },
+            { value: "lg", label: t("appearance.fontLarge") },
           ]}
           onChange={(v) =>
             void patchSettings({
@@ -70,13 +88,13 @@ export function SettingsAppearance() {
         />
       </Section>
 
-      <Section label="Density">
+      <Section label={t("appearance.density")}>
         <RadioGroup
           value={settings.appearance.density}
           options={[
-            { value: "compact", label: "Compact" },
-            { value: "default", label: "Default" },
-            { value: "roomy", label: "Roomy" },
+            { value: "compact", label: t("appearance.densityCompact") },
+            { value: "default", label: t("appearance.densityDefault") },
+            { value: "roomy", label: t("appearance.densityRoomy") },
           ]}
           onChange={(v) =>
             void patchSettings({

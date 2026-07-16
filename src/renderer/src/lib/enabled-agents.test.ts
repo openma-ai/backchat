@@ -11,6 +11,7 @@ const baseSettings: Settings = {
   },
   appearance: {
     theme: "system",
+    language: "system",
     font_size: "md",
     density: "default",
   },

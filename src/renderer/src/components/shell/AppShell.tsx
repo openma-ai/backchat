@@ -24,12 +24,15 @@ import { cn } from "@/lib/utils";
  */
 
 const SIDEBAR_W = 240;
+const MIN_RAIL_W = 200;
+const MAX_RAIL_W = 560;
 const SIDEBAR_TR =
   "transform 280ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms cubic-bezier(0.32, 0.72, 0, 1), bottom 280ms cubic-bezier(0.32, 0.72, 0, 1)";
 const MAIN_TR =
   "padding-left 280ms cubic-bezier(0.32, 0.72, 0, 1), padding-right 280ms cubic-bezier(0.32, 0.72, 0, 1), padding-bottom 280ms cubic-bezier(0.32, 0.72, 0, 1)";
 const BOTTOM_TR =
   "transform 280ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms cubic-bezier(0.32, 0.72, 0, 1)";
+const WINDOW_RESIZE_SETTLE_MS = 180;
 
 export type CollapseState = boolean;
 
@@ -78,6 +81,7 @@ export function AppShell({
   children: React.ReactNode;
   className?: string;
 }) {
+  useWindowResizePerformanceMode();
   const { collapsed: leftCollapsed } = useSidebarCollapse();
   const { collapsed: rightCollapsed } = useRightRailCollapse();
   const { collapsed: bottomCollapsed } = useBottomBarCollapse();
@@ -86,6 +90,8 @@ export function AppShell({
   // resize handle — without this, every move event queues a fresh
   // 280 ms animation and the cursor visibly lags the panel edge.
   const [resizing, setResizing] = React.useState(false);
+  const [sidebarWidth, setSidebarWidth] = React.useState(SIDEBAR_W);
+  const [rightRailWidth, setRightRailWidth] = React.useState(380);
 
   // Where the bottom edge of the main column + the side rail sits when
   // the bottom panel is open. The panel is a floating rounded card
@@ -105,14 +111,11 @@ export function AppShell({
         "relative h-full bg-bg-sidebar text-fg",
         className,
       )}
-      style={
-        // Override the CSS var with the resizable state. All consumers
-        // (sidebar/rail bottom reservation, main padding, panel height
-        // itself) read --bottom-panel-h via var() — one source.
-        bottomPanel
-          ? ({ "--bottom-panel-h": `${bottomHeight}px` } as React.CSSProperties)
-          : undefined
-      }
+      style={{
+        "--bottom-panel-h": `${bottomHeight}px`,
+        "--sidebar-w": `${sidebarWidth}px`,
+        "--right-rail-w": `${rightRailWidth}px`,
+      } as React.CSSProperties}
     >
       {/* Left sidebar — absolute floating card. Spans full height
           regardless of bottom panel state (the bottom panel is inset
@@ -126,7 +129,7 @@ export function AppShell({
           left: "var(--stage-inset)",
           top: "var(--stage-inset)",
           bottom: "var(--stage-inset)",
-          width: `${SIDEBAR_W}px`,
+          width: `${sidebarWidth}px`,
           transform: leftCollapsed
             ? `translateX(calc(-100% - var(--stage-inset))) scale(0.96)`
             : "translateX(0) scale(1)",
@@ -139,6 +142,7 @@ export function AppShell({
         aria-hidden={leftCollapsed}
       >
         {sidebar}
+        <RailResizer side="right" width={sidebarWidth} onResize={setSidebarWidth} onResizingChange={setResizing} />
       </aside>
 
       {/* Right side-chat panel — mirror of the sidebar. Only mounts when
@@ -155,7 +159,7 @@ export function AppShell({
             right: "var(--stage-inset)",
             top: "var(--stage-inset)",
             bottom: bottomReservation,
-            width: "var(--right-rail-w)",
+            width: `${rightRailWidth}px`,
             transform: rightCollapsed
               ? `translateX(calc(100% + var(--stage-inset))) scale(0.96)`
               : "translateX(0) scale(1)",
@@ -168,6 +172,7 @@ export function AppShell({
           aria-hidden={rightCollapsed}
         >
           {rightPanel}
+          <RailResizer side="left" width={rightRailWidth} onResize={setRightRailWidth} onResizingChange={setResizing} />
         </aside>
       )}
 
@@ -188,10 +193,10 @@ export function AppShell({
           // by the rail's backdrop-filter.
           paddingLeft: leftCollapsed
             ? "var(--stage-inset)"
-            : `calc(${SIDEBAR_W}px + var(--stage-inset))`,
+            : `calc(${sidebarWidth}px + var(--stage-inset))`,
           paddingRight: rightCollapsed || !rightPanel
             ? "var(--stage-inset)"
-            : "calc(var(--right-rail-w) + var(--stage-inset))",
+            : `calc(${rightRailWidth}px + var(--stage-inset))`,
           paddingBottom: bottomReservation,
           transition: resizing ? "none" : MAIN_TR,
         }}
@@ -296,6 +301,37 @@ export function AppShell({
   );
 }
 
+/**
+ * Live macOS window resizing continuously resizes Electron webview surfaces.
+ * The guest surface and the translucent full-height rail otherwise repaint on
+ * different frames, which makes the rail flash and lag behind the window edge.
+ * Toggle a DOM-only mode during the drag so CSS can use an opaque equivalent,
+ * then restore the resting material once the native resize stream settles.
+ * Keeping this outside React avoids reconciling the shell on every event.
+ */
+function useWindowResizePerformanceMode(): void {
+  React.useEffect(() => {
+    const root = document.documentElement;
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const handleResize = () => {
+      root.dataset.windowResizing = "true";
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        delete root.dataset.windowResizing;
+        settleTimer = undefined;
+      }, WINDOW_RESIZE_SETTLE_MS);
+    };
+
+    window.addEventListener("resize", handleResize, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (settleTimer) clearTimeout(settleTimer);
+      delete root.dataset.windowResizing;
+    };
+  }, []);
+}
+
 /** Renders the side-chat + terminal toggles ONLY when the current
  *  route is a chat (`/chat/$sessionId`). On `/` (home, no session)
  *  and `/settings/*` the toggles are hidden — those surfaces have
@@ -311,7 +347,7 @@ function ChromeToggles({
 }) {
   const location = useLocation();
   const isChatRoute = location.pathname.startsWith("/chat/");
-  if (!isChatRoute) return null;
+  if (!isChatRoute && !rightPanel && !bottomPanel) return null;
   return (
     <>
       {rightPanel && <GlobalSideChatToggle />}
@@ -600,6 +636,66 @@ function BottomPanelResizer({
           "bg-border-strong opacity-0 group-hover/resizer:opacity-100 transition-opacity",
         )}
       />
+    </div>
+  );
+}
+
+function RailResizer({
+  side,
+  width,
+  onResize,
+  onResizingChange,
+}: {
+  side: "left" | "right";
+  width: number;
+  onResize: (width: number) => void;
+  onResizingChange: (resizing: boolean) => void;
+}) {
+  const startX = React.useRef(0);
+  const startWidth = React.useRef(width);
+  const dragging = React.useRef(false);
+
+  const down = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    startX.current = event.clientX;
+    startWidth.current = width;
+    dragging.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onResizingChange(true);
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+  };
+  const move = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    const delta = side === "right"
+      ? event.clientX - startX.current
+      : startX.current - event.clientX;
+    onResize(Math.max(MIN_RAIL_W, Math.min(MAX_RAIL_W, startWidth.current + delta)));
+  };
+  const up = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    onResizingChange(false);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-label={side === "right" ? "Resize sidebar" : "Resize side panel"}
+      aria-orientation="vertical"
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={up}
+      className={cn(
+        "absolute inset-y-2 z-30 w-2 cursor-ew-resize group/rail-resizer",
+        side === "right" ? "-right-1" : "-left-1",
+      )}
+    >
+      <span className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 rounded-full bg-border-strong opacity-0 transition-opacity group-hover/rail-resizer:opacity-70" />
     </div>
   );
 }

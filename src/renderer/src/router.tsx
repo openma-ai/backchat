@@ -28,6 +28,7 @@ import { PairChatPage } from "@/pages/PairChatPage";
 import { ShellLayout } from "@/components/shell/ShellLayout";
 import { SettingsAgents } from "@/pages/settings/Agents";
 import { SettingsAppearance } from "@/pages/settings/Appearance";
+import { SettingsBrowserPage } from "@/pages/settings/Browser";
 import { SettingsAbout } from "@/pages/settings/About";
 import { SettingsMcpServers } from "@/pages/settings/McpServers";
 import { Archive as SettingsArchive } from "@/pages/settings/Archive";
@@ -90,6 +91,11 @@ const settingsAppearance = createRoute({
   path: "/appearance",
   component: SettingsAppearance,
 });
+const settingsBrowser = createRoute({
+  getParentRoute: () => settingsRoot,
+  path: "/browser",
+  component: SettingsBrowserPage,
+});
 const settingsAbout = createRoute({
   getParentRoute: () => settingsRoot,
   path: "/about",
@@ -108,6 +114,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoot.addChildren([
     settingsAgents,
     settingsMcp,
+    settingsBrowser,
     settingsAppearance,
     settingsArchive,
     settingsAbout,

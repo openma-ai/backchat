@@ -17,6 +17,9 @@ importers:
       '@lobehub/icons':
         specifier: ^5.10.0
         version: 5.10.0(@lobehub/ui@5.15.8)(@types/react@19.2.16)(antd@6.4.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@open-managed-agents-desktop/acp':
         specifier: workspace:*
         version: link:packages/acp

@@ -12,22 +12,28 @@
 import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
 
-export async function launchApp(): Promise<{
+export async function launchApp(options: { language?: "en" | "zh-CN" } = {}): Promise<{
   app: ElectronApplication;
   page: Page;
   home: string;
   cleanup: () => Promise<void>;
 }> {
-  return launchAppWithHome(await mkdtemp(join(tmpdir(), "backchat-e2e-")));
+  return launchAppWithHome(
+    await mkdtemp(join(tmpdir(), "backchat-e2e-")),
+    options,
+  );
 }
 
-export async function launchAppWithHome(home: string): Promise<{
+export async function launchAppWithHome(
+  home: string,
+  options: { language?: "en" | "zh-CN" } = {},
+): Promise<{
   app: ElectronApplication;
   page: Page;
   home: string;
@@ -49,12 +55,17 @@ export async function launchAppWithHome(home: string): Promise<{
   });
   const page = await app.firstWindow();
   try {
-    // Wait for the React tree to mount. New chat is stable across empty,
-    // restored, and archived-search surfaces; individual specs can then wait
-    // for the composer or transcript state they actually need.
-    await page.getByRole("button", { name: "New chat", exact: true }).waitFor({
+    // Wait on a locale-independent marker, then force English for the legacy
+    // E2E suite unless a localization test explicitly requests Chinese.
+    await page.getByTestId("new-chat-button").waitFor({
       timeout: 30_000,
     });
+    await page.evaluate(async (language) => {
+      const current = await window.backchat.settingsGet();
+      await window.backchat.settingsPatch({
+        appearance: { ...current.appearance, language },
+      });
+    }, options.language ?? "en");
   } catch (e) {
     await closeApp(app).catch(() => undefined);
     throw e;
@@ -126,7 +137,19 @@ export async function injectSession(
     },
     { sessionId, agentId, cwd },
   );
-  await page.getByRole("button", { name: `${agentId} · ${sessionId.slice(0, 6)}` }).click();
+  const sessionButton = page.getByRole("button", {
+    name: `${agentId} · ${sessionId.slice(0, 6)}`,
+  });
+  if (!(await sessionButton.isVisible())) {
+    const projectButton = page.getByRole("button", {
+      name: basename(cwd),
+      exact: true,
+    });
+    if ((await projectButton.getAttribute("aria-expanded")) !== "true") {
+      await projectButton.click();
+    }
+  }
+  await sessionButton.click();
   return sessionId;
 }
 

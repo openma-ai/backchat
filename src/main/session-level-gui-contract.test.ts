@@ -12,7 +12,7 @@ describe("session level GUI contract", () => {
       "utf-8",
     );
 
-    expect(sidePanelSource).toContain('label: "Side chat"');
+    expect(sidePanelSource).toContain('labelKey: "sideChat.title"');
     expect(sidePanelSource).toContain('sessionStore.newSideDraft({');
     expect(sidePanelSource).toContain('openSideTab("chat"');
     expect(sidePanelSource).not.toContain('onPickSubagent');
@@ -43,6 +43,51 @@ describe("session level GUI contract", () => {
     expect(chatViewSource).toContain("fork,");
   });
 
+  it("renders native subagents through the same conversation view as side chats", () => {
+    const sidePanelSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/shell/SideChatPanel.tsx",
+      ),
+      "utf-8",
+    );
+    const chatViewSource = readFileSync(
+      resolve(__dirname, "../renderer/src/components/chat/ChatView.tsx"),
+      "utf-8",
+    );
+    const messageSource = readFileSync(
+      resolve(__dirname, "../renderer/src/components/ai-elements/message.tsx"),
+      "utf-8",
+    );
+    const stylesSource = readFileSync(
+      resolve(__dirname, "../renderer/src/styles/index.css"),
+      "utf-8",
+    );
+
+    expect(sidePanelSource).toContain(
+      'tab.type === "chat" || tab.type === "subagent"',
+    );
+    expect(sidePanelSource).toContain('<ChatView key={tab.payload} mode="side" />');
+    expect(sidePanelSource).not.toContain("SubagentActivityTab");
+    expect(sidePanelSource).not.toContain("SubagentActivityList");
+    expect(chatViewSource).toContain(
+      'const isNativeSubagent = active?.sideKind === "subagent";',
+    );
+    expect(chatViewSource).toContain("Native subagent is managed by its parent");
+    expect(chatViewSource).toContain(
+      'data-chat-surface={isSide ? "side" : "main"}',
+    );
+    expect(messageSource).toMatch(
+      /export const MessageContent[\s\S]*?<div\s+data-slot="message-content"/,
+    );
+    const sideBubbleSelector =
+      '[data-chat-surface="side"] .is-user > [data-slot="message-content"]';
+    expect(stylesSource).toContain(sideBubbleSelector);
+    expect(stylesSource.indexOf(sideBubbleSelector)).toBeGreaterThan(
+      stylesSource.indexOf('@import "tailwindcss";'),
+    );
+  });
+
   it("keeps native subagent detection scoped to runtime events", () => {
     const storeSource = readFileSync(
       resolve(__dirname, "../renderer/src/lib/session-store.ts"),
@@ -59,5 +104,30 @@ describe("session level GUI contract", () => {
     expect(nativeSource).toContain('name === "spawn_agent"');
     expect(nativeSource).toContain('name === "task" || name === "agent"');
     expect(nativeSource).not.toContain("agentId:");
+  });
+
+  it("keeps every task browser window and its tabs mounted", () => {
+    const sidePanelSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/shell/SideChatPanel.tsx",
+      ),
+      "utf-8",
+    );
+    const browserTabSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/shell/BrowserTab.tsx",
+      ),
+      "utf-8",
+    );
+
+    expect(sidePanelSource).toContain("selectBrowserWindows");
+    expect(sidePanelSource).toContain("browserWindows.flatMap");
+    expect(sidePanelSource).toContain("onBrowserToolTabCommand");
+    expect(sidePanelSource).toContain("patchSideTabForTask");
+    expect(browserTabSource).toContain("browserViewRegister");
+    expect(browserTabSource).toContain("browserViewSetActive");
+    expect(browserTabSource).toContain("browserViewUnregister");
   });
 });

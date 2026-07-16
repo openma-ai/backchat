@@ -11,13 +11,14 @@
  */
 
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { userInfo } from "node:os";
 import { basename, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { InvokeChannel } from "../shared/ipc-channels.js";
 import type { PromptAttachment } from "../shared/session-events.js";
+import { openmaRoot } from "./storage-root.js";
 
 interface DirEntry {
   name: string;
@@ -41,6 +42,7 @@ function trueHome(): string {
 }
 
 const MAX_INLINE_IMAGE_BYTES = 12 * 1024 * 1024;
+const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;
 let testPickedFiles: PromptAttachment[] | null = null;
 
 function cloneAttachment(a: PromptAttachment): PromptAttachment {
@@ -156,6 +158,47 @@ ipcMain.handle(
     if (result.canceled || result.filePaths.length === 0) return [];
     const rows = await Promise.all(result.filePaths.slice(0, 10).map(toPromptAttachment));
     return rows.filter((row): row is PromptAttachment => row !== null);
+  },
+);
+
+ipcMain.handle(
+  InvokeChannel.UiFsSaveCapture,
+  async (
+    _e,
+    p: { data: string; name?: string; mimeType?: "image/png" },
+  ): Promise<PromptAttachment> => {
+    if (!p || typeof p.data !== "string" || p.data.length === 0) {
+      throw new Error("Capture data is empty");
+    }
+    if (p.mimeType && p.mimeType !== "image/png") {
+      throw new Error("Only PNG captures are supported");
+    }
+    const bytes = Buffer.from(p.data, "base64");
+    if (bytes.length === 0 || bytes.length > MAX_CAPTURE_BYTES) {
+      throw new Error("Capture exceeds the 16 MB limit");
+    }
+    const pngSignature = bytes.subarray(0, 8).toString("hex");
+    if (pngSignature !== "89504e470d0a1a0a") {
+      throw new Error("Capture is not a valid PNG image");
+    }
+
+    const requestedName = basename(p.name || `page-element-${Date.now()}.png`);
+    const safeName = requestedName
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "page-element.png";
+    const finalName = safeName.toLowerCase().endsWith(".png")
+      ? safeName
+      : `${safeName}.png`;
+    const captureDir = join(openmaRoot(), "captures");
+    const capturePath = join(
+      captureDir,
+      `${Date.now()}-${randomUUID().slice(0, 8)}-${finalName}`,
+    );
+    await mkdir(captureDir, { recursive: true });
+    await writeFile(capturePath, bytes, { flag: "wx" });
+    const attachment = await toPromptAttachment(capturePath);
+    if (!attachment) throw new Error("Saved capture could not be attached");
+    return attachment;
   },
 );
 

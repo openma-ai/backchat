@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { SessionStore, type AcpSessionConfigOption } from "./session-store";
+import {
+  SessionStore,
+  selectSessions,
+  selectTurnsFor,
+  type AcpSessionConfigOption,
+  type SubagentActivity,
+} from "./session-store";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -58,6 +64,72 @@ describe("SessionStore replay", () => {
 
     expect(store.turnsFor(sessionId)).toHaveLength(1);
     expect(store.turnsFor(sessionId)[0]?.assistantText).toBe("Rendered once.");
+  });
+});
+
+describe("SessionStore performance invariants", () => {
+  test("reuses collection snapshots when an unrelated store slice changes", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-1", "codex-acp", "First");
+    store.registerTurn("turn-1", "sess-1", "hello");
+    const turnsSelector = selectTurnsFor("sess-1");
+
+    const sessionsBefore = store.snapshot(selectSessions);
+    const turnsBefore = store.snapshot(turnsSelector);
+
+    store.setSideActive("unrelated-side-session");
+
+    expect(store.snapshot(selectSessions)).toBe(sessionsBefore);
+    expect(store.snapshot(turnsSelector)).toBe(turnsBefore);
+
+    store.registerTurn("turn-2", "sess-1", "changed");
+    expect(store.snapshot(turnsSelector)).not.toBe(turnsBefore);
+  });
+
+  test("coalesces adjacent streaming chunks without losing tool boundaries", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-1", "codex-acp", "First");
+    store.registerTurn("turn-1", "sess-1", "hello");
+    const firstRun = Array.from({ length: 500 }, (_, i) => `a${i};`);
+    const secondRun = Array.from({ length: 500 }, (_, i) => `b${i};`);
+
+    for (const text of firstRun) {
+      store.apply({
+        type: "session.event",
+        session_id: "sess-1",
+        turn_id: "turn-1",
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      });
+    }
+    store.apply({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-1",
+        title: "Read file",
+        status: "completed",
+      },
+    });
+    for (const text of secondRun) {
+      store.apply({
+        type: "session.event",
+        session_id: "sess-1",
+        turn_id: "turn-1",
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      });
+    }
+
+    const turn = store.turnsFor("sess-1")[0]!;
+    expect(turn.assistantText).toBe(firstRun.join("") + secondRun.join(""));
+    expect(turn.events).toHaveLength(3);
   });
 });
 
@@ -372,7 +444,7 @@ describe("SessionStore prompt queue state", () => {
     expect(store.get(sessionId)?.status).toBe("ready");
   });
 
-  test("keeps llm-boundary steer turns running instead of queuing them", () => {
+  test("queues llm-boundary steer turns behind the active turn", () => {
     const store = new SessionStore();
     const sessionId = "sess-queue-delivery";
     store.registerStarting(sessionId, "codex-acp", "Queue delivery test");
@@ -393,21 +465,21 @@ describe("SessionStore prompt queue state", () => {
     store.registerTurn("turn-steer", sessionId, "steer me", {
       intent: "steer",
       requestedDelivery: "llm_boundary",
-      effectiveDelivery: "llm_boundary",
-      degraded: false,
+      effectiveDelivery: "turn_end",
+      degraded: true,
     });
 
     const steer = store
       .turnsFor(sessionId)
       .find((turn) => turn.id === "turn-steer");
 
-    expect(steer?.status).toBe("running");
+    expect(steer?.status).toBe("queued");
     expect(steer?.promptIntent).toBe("steer");
     expect(steer?.requestedDelivery).toBe("llm_boundary");
-    expect(steer?.effectiveDelivery).toBe("llm_boundary");
-    expect(steer?.deliveryDegraded).toBe(false);
+    expect(steer?.effectiveDelivery).toBe("turn_end");
+    expect(steer?.deliveryDegraded).toBe(true);
     expect(store.get(sessionId)?.activeTurnId).toBe("turn-active-delivery");
-    expect(store.get(sessionId)?.queuedTurnIds).toBeUndefined();
+    expect(store.get(sessionId)?.queuedTurnIds).toEqual(["turn-steer"]);
   });
 
   test("applies main-process queue snapshots", () => {
@@ -519,6 +591,89 @@ describe("SessionStore side chats and native subagents", () => {
     expect(store.activeSideTab()).toBeNull();
   });
 
+  test("keeps an independent multi-tab browser window for each task", () => {
+    const store = new SessionStore();
+    for (const sessionId of ["task-a", "task-b"]) {
+      store.apply({
+        type: "session.ready",
+        session_id: sessionId,
+        acp_session_id: `acp-${sessionId}`,
+        agent_id: "codex-acp",
+        cwd: "/repo",
+      });
+    }
+
+    store.openSideTabForTask(
+      "task-a",
+      "browser",
+      "https://a.example/one",
+      "A one",
+      "browser-a-1",
+    );
+    store.openSideTabForTask(
+      "task-a",
+      "browser",
+      "https://a.example/two",
+      "A two",
+      "browser-a-2",
+    );
+    store.openSideTabForTask(
+      "task-b",
+      "browser",
+      "https://b.example/one",
+      "B one",
+      "browser-b-1",
+    );
+
+    expect(store.browserWindows()).toEqual([
+      {
+        taskId: "task-a",
+        activeTabId: "browser-a-2",
+        tabs: [
+          expect.objectContaining({ id: "browser-a-1", payload: "https://a.example/one" }),
+          expect.objectContaining({ id: "browser-a-2", payload: "https://a.example/two" }),
+        ],
+      },
+      {
+        taskId: "task-b",
+        activeTabId: "browser-b-1",
+        tabs: [
+          expect.objectContaining({ id: "browser-b-1", payload: "https://b.example/one" }),
+        ],
+      },
+    ]);
+
+    store.setActiveSideTabForTask("task-a", "browser-a-1");
+    expect(store.browserWindows()[0]?.activeTabId).toBe("browser-a-1");
+    expect(store.browserWindows()[1]?.activeTabId).toBe("browser-b-1");
+  });
+
+  test("task browser opens are idempotent for a tool-provided tab id", () => {
+    const store = new SessionStore();
+    store.openSideTabForTask(
+      "task-a",
+      "browser",
+      "about:blank",
+      "New tab",
+      "browser-tool-tab",
+    );
+    store.openSideTabForTask(
+      "task-a",
+      "browser",
+      "https://example.com",
+      "Example",
+      "browser-tool-tab",
+    );
+
+    const window = store.browserWindows()[0];
+    expect(window?.tabs).toHaveLength(1);
+    expect(window?.tabs[0]).toMatchObject({
+      id: "browser-tool-tab",
+      payload: "https://example.com",
+      label: "Example",
+    });
+  });
+
   test("tracks Codex native multi-agent tool calls as parent subagent activity", () => {
     const store = new SessionStore();
     store.apply({
@@ -570,6 +725,37 @@ describe("SessionStore side chats and native subagents", () => {
       }),
     ]);
 
+    const spawned = store.subagentsFor("parent-session")[0]!;
+    const viewSessionId = (spawned as typeof spawned & { viewSessionId?: string })
+      .viewSessionId;
+    expect(viewSessionId).toEqual(expect.any(String));
+    expect(store.sideTabs()).toEqual([
+      expect.objectContaining({
+        type: "subagent",
+        payload: viewSessionId,
+        label: "Cicero",
+      }),
+    ]);
+    expect(store.sideActiveId()).toBe(viewSessionId);
+    expect(store.get(viewSessionId!)).toMatchObject({
+      kind: "side",
+      sideKind: "subagent",
+      label: "Cicero",
+      status: "running",
+      subagent: {
+        parentSessionId: "parent-session",
+        parentAcpSessionId: "parent-codex-thread",
+        inheritance: "fresh",
+      },
+    });
+    expect(store.turnsFor(viewSessionId!)).toEqual([
+      expect.objectContaining({
+        promptText: "Review the auth boundary",
+        assistantText: "",
+        status: "running",
+      }),
+    ]);
+
     store.apply({
       type: "session.event",
       session_id: "parent-session",
@@ -597,6 +783,20 @@ describe("SessionStore side chats and native subagents", () => {
         result: "CHILD_OK",
       },
     });
+    expect(
+      (store.subagentsFor("parent-session")[0] as SubagentActivity & {
+        viewSessionId?: string;
+      }).viewSessionId,
+    ).toBe(viewSessionId);
+    expect(store.sideTabs()).toHaveLength(1);
+    expect(store.get(viewSessionId!)).toMatchObject({ status: "ready" });
+    expect(store.turnsFor(viewSessionId!)).toEqual([
+      expect.objectContaining({
+        promptText: "Review the auth boundary",
+        assistantText: "CHILD_OK",
+        status: "complete",
+      }),
+    ]);
 
     store.apply({
       type: "session.event",
@@ -656,6 +856,19 @@ describe("SessionStore side chats and native subagents", () => {
       childSessionId: "codex:call-spawn",
       status: "running",
     });
+    expect(store.subagentsFor("parent-session")).toHaveLength(1);
+    const initialActivity = store.subagentsFor("parent-session")[0]!;
+    const initialViewSessionId = (
+      initialActivity as typeof initialActivity & { viewSessionId?: string }
+    ).viewSessionId;
+    expect(initialViewSessionId).toEqual(expect.any(String));
+    expect(store.sideTabs()).toEqual([
+      expect.objectContaining({
+        type: "subagent",
+        payload: initialViewSessionId,
+        label: "Compare native session…",
+      }),
+    ]);
 
     store.apply({
       type: "session.event",
@@ -683,6 +896,68 @@ describe("SessionStore side chats and native subagents", () => {
         nickname: "Cicero",
       },
     });
+    expect(store.subagentsFor("parent-session")).toHaveLength(1);
+    expect(store.sideTabs()).toHaveLength(1);
+    expect(
+      (store.subagentsFor("parent-session")[0] as SubagentActivity & {
+        viewSessionId?: string;
+      }).viewSessionId,
+    ).toBe(initialViewSessionId);
+    expect(store.sideTabs()[0]).toMatchObject({
+      payload: initialViewSessionId,
+      label: "Cicero",
+    });
+  });
+
+  test("tracks explicit Codex spawnAgent tool invocations for generic agent ids", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-thread",
+      agent_id: "agent",
+      cwd: "/repo",
+    });
+    store.setActive("parent-session");
+    store.registerTurn("turn-parent", "parent-session", "Ask a native Codex agent");
+
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-spawn",
+        title: "spawnAgent",
+        status: "completed",
+        rawInput: {
+          forkContext: true,
+          message: "Explore the architecture",
+        },
+        rawOutput: {
+          agent_id: "codex-child-thread",
+          nickname: "Jason",
+        },
+      },
+    });
+
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
+      childSessionId: "codex-child-thread",
+      inheritance: "fork",
+      task: "Explore the architecture",
+      status: "running",
+      native: {
+        provider: "codex",
+        childThreadId: "codex-child-thread",
+        nickname: "Jason",
+      },
+    });
+    expect(store.sideTabs()).toEqual([
+      expect.objectContaining({
+        type: "subagent",
+        label: "Jason",
+      }),
+    ]);
   });
 
   test("tracks Claude Code Task tool invocations as native subagent activity", () => {
@@ -816,7 +1091,7 @@ describe("SessionStore side chats and native subagents", () => {
     });
   });
 
-  test("does not infer native subagents for non-Claude-Code and non-Codex agents", () => {
+  test("does not infer native subagents from non-native tool names", () => {
     const store = new SessionStore();
     store.apply({
       type: "session.ready",

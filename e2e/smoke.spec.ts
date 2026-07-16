@@ -48,6 +48,65 @@ test.describe("backchat smoke", () => {
     }
   });
 
+  test("native subagent renders as a side-chat conversation with a visible user bubble", async ({}, testInfo) => {
+    const { page, cleanup } = await launchApp();
+    try {
+      await page.setViewportSize({ width: 1600, height: 1000 });
+      const sid = await injectSession(page, {
+        agentId: "codex-acp",
+        cwd: "/tmp/backchat-native-subagent",
+      });
+      await injectEvent(page, {
+        type: "session.native_subagent",
+        session_id: sid,
+        provider: "codex",
+        tool_call_id: "spawn-native-e2e",
+        child_id: "native-child-e2e",
+        task: "Review the native subagent conversation surface",
+        agent_type: "default",
+        status: "complete",
+        result: "The native child uses the ordinary side-chat transcript.",
+      });
+
+      const sideChat = page.locator('[data-chat-surface="side"]');
+      const userBubble = sideChat.locator(
+        '.is-user > [data-slot="message-content"]',
+      );
+      await expect(userBubble).toContainText(
+        "Review the native subagent conversation surface",
+      );
+      await expect(
+        sideChat.getByText(
+          "The native child uses the ordinary side-chat transcript.",
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          userBubble.evaluate((element) => {
+            const probe = document.createElement("span");
+            probe.style.background = "var(--bg-surface)";
+            document.body.append(probe);
+            const defaultBubbleColor = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return getComputedStyle(element).backgroundColor !== defaultBubbleColor;
+          }),
+        )
+        .toBe(true);
+
+      const screenshotPath = testInfo.outputPath(
+        "native-subagent-sidechat.png",
+      );
+      await page.screenshot({ path: screenshotPath });
+      await testInfo.attach("native subagent side chat", {
+        path: screenshotPath,
+        contentType: "image/png",
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("available_commands_update populates the slash picker", async () => {
     const { page, cleanup } = await launchApp();
     try {
@@ -370,6 +429,289 @@ test.describe("backchat smoke", () => {
           },
         ]);
       await expect(page.locator('[aria-label="notes.md"]')).toBeHidden();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("selected assistant text becomes a response annotation on the next prompt", async ({}, testInfo) => {
+    const { page, cleanup } = await launchApp();
+    try {
+      const sid = await injectSession(page, { agentId: "codex-acp" });
+      const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
+      if (!(await closeSidePanel.isVisible())) {
+        await page.getByRole("button", { name: "Open side chat" }).click();
+      }
+      await expect(closeSidePanel).toBeVisible();
+      const turnId = "turn-annotation-source";
+      const responseText = "Backchat keeps annotations attached to the next prompt.";
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sid,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: responseText },
+        },
+      });
+      await injectEvent(page, {
+        type: "session.complete",
+        session_id: sid,
+        turn_id: turnId,
+      });
+
+      const response = page.getByText(responseText, { exact: true });
+      await expect(response).toBeVisible();
+      const selectedRect = await response.evaluate((element) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        const textNode = walker.nextNode();
+        if (!textNode) throw new Error("assistant response has no text node");
+        const range = document.createRange();
+        range.selectNodeContents(textNode);
+        const rect = range.getBoundingClientRect();
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        return {
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        };
+      });
+
+      const selectionToolbarScreenshot = testInfo.outputPath("response-selection-toolbar.png");
+      await page.screenshot({ path: selectionToolbarScreenshot });
+      await testInfo.attach("response selection toolbar", {
+        path: selectionToolbarScreenshot,
+        contentType: "image/png",
+      });
+      await expect(page.getByRole("button", { name: "More details" })).toHaveCount(0);
+      await page.getByRole("button", { name: "Add to prompt" }).click();
+      const editor = page.getByRole("dialog", { name: "Response annotation" });
+      await expect(editor).toBeVisible();
+      const commentInput = editor.getByPlaceholder("Add an optional comment…");
+      const voiceButton = editor.getByRole("button", { name: "Record voice comment" });
+      await expect(voiceButton).toBeVisible();
+      await expect(
+        editor.getByRole("button", { name: "Save annotation comment" }),
+      ).toHaveCount(0);
+      const annotationBadge = page.locator("[data-response-annotation-badge]");
+      await expect(annotationBadge).toBeVisible();
+      await expect(annotationBadge.locator("svg")).toHaveCount(1);
+      await expect.poll(async () => {
+        const [editorBox, currentBadgeBox] = await Promise.all([
+          editor.boundingBox(),
+          annotationBadge.boundingBox(),
+        ]);
+        if (!editorBox || !currentBadgeBox) return 0;
+        return editorBox.x - currentBadgeBox.x - currentBadgeBox.width;
+      }).toBeGreaterThanOrEqual(12);
+      const [emptyEditorBox, emptyInputBox, badgeBox] = await Promise.all([
+        editor.boundingBox(),
+        commentInput.boundingBox(),
+        annotationBadge.boundingBox(),
+      ]);
+      expect(emptyEditorBox).not.toBeNull();
+      expect(emptyInputBox).not.toBeNull();
+      expect(badgeBox).not.toBeNull();
+      expect(badgeBox!.x).toBeGreaterThanOrEqual(selectedRect.right + 4);
+      expect(badgeBox!.x).toBeLessThanOrEqual(selectedRect.right + 5);
+      expect(badgeBox!.y + badgeBox!.height).toBeLessThanOrEqual(selectedRect.top + 2);
+      expect(badgeBox!.y + badgeBox!.height).toBeGreaterThanOrEqual(selectedRect.top - 1);
+      expect(emptyEditorBox!.x).toBeGreaterThanOrEqual(
+        badgeBox!.x + badgeBox!.width + 12,
+      );
+      expect(emptyEditorBox!.width).toBeGreaterThanOrEqual(300);
+      expect(emptyEditorBox!.width).toBeLessThanOrEqual(320);
+      expect(emptyEditorBox!.height).toBeGreaterThanOrEqual(56);
+      await expect.poll(() => editor.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).borderRadius),
+      )).toBe(16);
+      const emptyEditorScreenshot = testInfo.outputPath(
+        "response-annotation-empty-editor.png",
+      );
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: emptyEditorScreenshot });
+      await testInfo.attach("empty response annotation editor", {
+        path: emptyEditorScreenshot,
+        contentType: "image/png",
+      });
+
+      await page.evaluate(() => {
+        class MockSpeechRecognition {
+          continuous = false;
+          interimResults = false;
+          lang = "";
+          onresult: ((event: unknown) => void) | null = null;
+          onend: (() => void) | null = null;
+
+          start() {
+            queueMicrotask(() => {
+              this.onresult?.({
+                results: [[{ transcript: "Voice note from selection." }]],
+              });
+              this.onend?.();
+            });
+          }
+
+          stop() {
+            this.onend?.();
+          }
+        }
+        (window as Window & { SpeechRecognition?: unknown }).SpeechRecognition =
+          MockSpeechRecognition;
+      });
+      await voiceButton.click();
+      await expect(commentInput).toHaveValue("Voice note from selection.");
+      await expect(voiceButton).toHaveCount(0);
+
+      await commentInput.fill("First line");
+      await commentInput.press("Enter");
+      await commentInput.type("Second line");
+      await expect(commentInput).toHaveValue("First line\nSecond line");
+
+      const comment = [
+        "Keep this behavior,",
+        "but explain why it matters.",
+        "Preserve the selected context",
+        "and these line breaks.",
+      ].join("\n");
+      await commentInput.fill(comment);
+      await expect(commentInput).toHaveValue(comment);
+      const saveButton = editor.getByRole("button", { name: "Save annotation comment" });
+      await expect(saveButton).toBeVisible();
+      await expect.poll(() => editor.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).borderRadius),
+      )).toBeLessThanOrEqual(16);
+      const [expandedEditorBox, expandedInputBox] = await Promise.all([
+        editor.boundingBox(),
+        commentInput.boundingBox(),
+      ]);
+      expect(expandedEditorBox).not.toBeNull();
+      expect(expandedInputBox).not.toBeNull();
+      expect(expandedEditorBox!.height).toBeGreaterThan(emptyEditorBox!.height + 40);
+      expect(expandedInputBox!.height).toBeGreaterThan(emptyInputBox!.height + 40);
+      const editorScreenshot = testInfo.outputPath("response-annotation-editor.png");
+      await page.screenshot({ path: editorScreenshot });
+      await testInfo.attach("response annotation editor", {
+        path: editorScreenshot,
+        contentType: "image/png",
+      });
+      await saveButton.click();
+      await expect(editor).toBeHidden();
+
+      const annotationChip = page.getByRole("button", { name: "1 annotation" });
+      await expect(annotationChip).toBeVisible();
+      const composerScreenshot = testInfo.outputPath("response-annotation-composer.png");
+      await page.screenshot({ path: composerScreenshot });
+      await testInfo.attach("response annotation composer context", {
+        path: composerScreenshot,
+        contentType: "image/png",
+      });
+      await annotationChip.click();
+      const annotationPopover = page.locator(
+        '[data-slot="popover-content"][aria-label="Response annotations"]',
+      );
+      await expect(annotationPopover).toBeVisible();
+      await expect(annotationPopover.getByText("Selected text", { exact: true })).toBeVisible();
+      await expect(
+        annotationPopover.getByText(
+          comment,
+          { exact: true },
+        ),
+      ).toBeVisible();
+      const popoverScreenshot = testInfo.outputPath("response-annotation-popover.png");
+      await page.screenshot({ path: popoverScreenshot });
+      await testInfo.attach("response annotation popover", {
+        path: popoverScreenshot,
+        contentType: "image/png",
+      });
+      await page.keyboard.press("Escape");
+
+      const composer = page.locator('textarea[placeholder="Reply…"]');
+      await composer.fill("Update the implementation notes.");
+      await composer.press("Enter");
+
+      await expect
+        .poll(async () =>
+          page.evaluate(() =>
+            // @ts-expect-error — test bridge typed in preload/index.ts
+            window.__backchatTest.readSessionPrompts().then(
+              (calls: Array<{
+                text: string;
+                annotations?: Array<{ text: string; comment?: string }>;
+              }>) => calls.map((call) => ({
+                text: call.text,
+                annotations: call.annotations,
+              })),
+            ),
+          ),
+        )
+        .toEqual([
+          {
+            text: "Update the implementation notes.",
+            annotations: [
+              {
+                id: expect.any(String),
+                source_session_id: sid,
+                source_turn_id: turnId,
+                text: responseText,
+                comment,
+              },
+            ],
+          },
+        ]);
+      await expect(annotationChip).toBeHidden();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("selected response text can start a side chat with its annotation", async () => {
+    const { page, cleanup } = await launchApp();
+    try {
+      const sid = await injectSession(page, { agentId: "codex-acp" });
+      const turnId = "turn-side-annotation";
+      const responseText = "Use a side chat to explore this response independently.";
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sid,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: responseText },
+        },
+      });
+      await injectEvent(page, {
+        type: "session.complete",
+        session_id: sid,
+        turn_id: turnId,
+      });
+
+      const response = page.getByText(responseText, { exact: true });
+      await response.evaluate((element) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        const textNode = walker.nextNode();
+        if (!textNode) throw new Error("assistant response has no text node");
+        const range = document.createRange();
+        range.selectNodeContents(textNode);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      });
+
+      await page.getByRole("button", { name: "Ask in side chat" }).click();
+      const sideChat = page.locator('[data-chat-surface="side"]');
+      await expect(sideChat).toBeVisible();
+      await expect(sideChat.getByRole("button", { name: "1 annotation" })).toBeVisible();
+      await expect(
+        page.locator('[data-chat-surface="main"]').getByRole("button", { name: "1 annotation" }),
+      ).toHaveCount(0);
     } finally {
       await cleanup();
     }

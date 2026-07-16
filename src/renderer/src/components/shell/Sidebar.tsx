@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ContextMenu } from "radix-ui";
 import {
+  ChevronRightIcon,
   Loader2Icon,
   LayoutGridIcon,
   PinIcon,
@@ -16,9 +17,10 @@ import {
   Settings2Icon,
   SquarePenIcon,
   ArchiveIcon,
+  FolderOpenIcon,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
@@ -34,6 +36,54 @@ import {
 } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
 import { useSidebarCollapse } from "@/components/shell/AppShell";
+import { folderName, projectKeyForCwd } from "@/lib/project-path";
+import { useI18n } from "@/lib/i18n";
+
+export interface SidebarProjectGroup {
+  key: string;
+  label: string;
+  sessions: SessionRow[];
+}
+
+export function groupSidebarSessions(sessions: SessionRow[]): {
+  pinned: SessionRow[];
+  projects: SidebarProjectGroup[];
+  chats: SessionRow[];
+} {
+  const pinned: SessionRow[] = [];
+  const chats: SessionRow[] = [];
+  const projectMap = new Map<string, SidebarProjectGroup>();
+
+  for (const session of sessions) {
+    if (session.pinnedAt != null) {
+      pinned.push(session);
+      continue;
+    }
+
+    const projectKey = projectKeyForCwd(session.cwd);
+    if (!projectKey) {
+      chats.push(session);
+      continue;
+    }
+
+    const group = projectMap.get(projectKey);
+    if (group) {
+      group.sessions.push(session);
+    } else {
+      projectMap.set(projectKey, {
+        key: projectKey,
+        label: folderName(projectKey),
+        sessions: [session],
+      });
+    }
+  }
+
+  return {
+    pinned,
+    projects: [...projectMap.values()],
+    chats,
+  };
+}
 
 /**
  * Sidebar — top row is a drag region reserved for macOS trafficLight
@@ -52,6 +102,7 @@ import { useSidebarCollapse } from "@/components/shell/AppShell";
  * --row-h / --row-gap-y so heights match the card's toolbar.
  */
 export function Sidebar() {
+  const { t } = useI18n();
   const sessions = useSessionStore(selectSessions);
   const pairs = useSessionStore(selectPairs);
   const activeId = useSessionStore(selectActiveId);
@@ -62,6 +113,10 @@ export function Sidebar() {
   // dropdown can be open at a time. Lifting this up avoids the
   // "right-click row A then row B leaves both menus open" bug.
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [openProjectKeys, setOpenProjectKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const grouped = useMemo(() => groupSidebarSessions(sessions), [sessions]);
 
   const goHome = () => {
     sessionStore.setActive(null);
@@ -83,6 +138,28 @@ export function Sidebar() {
     ? decodeURIComponent(location.pathname.slice("/pair/".length))
     : null;
   const onHome = location.pathname === "/";
+  useEffect(() => {
+    if (!activeId) return;
+    const activeProject = grouped.projects.find((group) =>
+      group.sessions.some((session) => session.id === activeId),
+    );
+    if (!activeProject) return;
+    setOpenProjectKeys((prev) => {
+      if (prev.has(activeProject.key)) return prev;
+      const next = new Set(prev);
+      next.add(activeProject.key);
+      return next;
+    });
+  }, [activeId, grouped.projects]);
+
+  const toggleProject = (key: string) => {
+    setOpenProjectKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   // Single class for every collapsible text label in the sidebar — fades
   // out before the column width starts shrinking and fades in after the
@@ -104,7 +181,9 @@ export function Sidebar() {
   // with chat rows regardless of OS "show scroll bars" preference
   // (Always vs Automatic). Re-measure when sessions change or window
   // resizes — content height crossing the overflow threshold flips the
-  // bar on/off and the var follows.
+  // bar on/off and the var follows. ResizeObserver already reports the
+  // nav's height changes during a window resize, so a second global resize
+  // listener would only force the same layout read twice per frame.
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const navRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -121,10 +200,8 @@ export function Sidebar() {
     measure();
     const ro = new ResizeObserver(measure);
     if (navRef.current) ro.observe(navRef.current);
-    window.addEventListener("resize", measure);
     return () => {
       ro.disconnect();
-      window.removeEventListener("resize", measure);
     };
   }, [sessions.length, pairs.length]);
 
@@ -154,8 +231,9 @@ export function Sidebar() {
       >
         <button
           type="button"
+          data-testid="new-chat-button"
           onClick={goHome}
-          aria-label="New chat"
+          aria-label={t("sidebar.newChat")}
           aria-current={onHome ? "page" : undefined}
           className={cn(
             "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
@@ -169,7 +247,7 @@ export function Sidebar() {
           <span className="inline-flex size-4 shrink-0 items-center justify-center text-fg-muted">
             <SquarePenIcon className="size-3.5" />
           </span>
-          <span className={labelCls}>New chat</span>
+          <span className={labelCls}>{t("sidebar.newChat")}</span>
         </button>
 
         <PairChatLauncher labelCls={labelCls} />
@@ -184,7 +262,7 @@ export function Sidebar() {
               new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
             )
           }
-          aria-label="Open command palette"
+          aria-label={t("sidebar.search")}
           className={cn(
             "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
             "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
@@ -195,7 +273,7 @@ export function Sidebar() {
           <span className="inline-flex size-4 shrink-0 items-center justify-center">
             <SearchIcon className="size-3.5" />
           </span>
-          <span className={labelCls}>Search</span>
+          <span className={labelCls}>{t("sidebar.search")}</span>
           <span
             className={cn(
               "ml-auto inline-flex w-6 shrink-0 items-center justify-end font-mono text-[11px] text-fg-subtle",
@@ -221,53 +299,25 @@ export function Sidebar() {
         {sessions.length === 0 && pairs.length === 0 ? (
           <div>
             <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
-              Chats
+              {t("sidebar.chats")}
             </div>
             <button
               type="button"
               onClick={goHome}
               className="block w-full px-2 py-2 text-left text-xs text-fg-muted hover:text-fg"
             >
-              Start a new chat
+              {t("sidebar.startNewChat")}
             </button>
           </div>
         ) : (
           (() => {
-            // Split: Pinned (those with pinnedAt) + Chats (rest). Within
-            // each group, sort by recency (Sessions arrive pre-ordered from
-            // `listSessionsForSidebar` which puts pinned first by pinned_at
-            // desc, then unpinned by last_used_at desc). Stable partition.
-            const pinned: typeof sessions = [];
-            const chats: typeof sessions = [];
-            for (const s of sessions) {
-              if (s.pinnedAt != null) pinned.push(s);
-              else chats.push(s);
-            }
+            const { pinned, projects, chats } = grouped;
             return (
               <>
-                {pairs.length > 0 && (
-                  <div className="mb-3">
-                    <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
-                      Pairs
-                    </div>
-                    <ul className="m-0 list-none space-y-0.5 p-0">
-                      {pairs.map((p) => (
-                        <li key={p.id}>
-                          <PairSidebarRow
-                            row={p}
-                            active={p.id === activePairId}
-                            labelCls={labelCls}
-                            onSelect={() => onSelectPair(p.id)}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
                 {pinned.length > 0 && (
                   <div className="mb-3">
                     <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
-                      Pinned
+                      {t("sidebar.pinned")}
                     </div>
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {pinned.map((s) => (
@@ -287,10 +337,74 @@ export function Sidebar() {
                     </ul>
                   </div>
                 )}
+                {pairs.length > 0 && (
+                  <div className="mb-3">
+                    <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
+                      {t("sidebar.pairs")}
+                    </div>
+                    <ul className="m-0 list-none space-y-0.5 p-0">
+                      {pairs.map((p) => (
+                        <li key={p.id}>
+                          <PairSidebarRow
+                            row={p}
+                            active={p.id === activePairId}
+                            labelCls={labelCls}
+                            onSelect={() => onSelectPair(p.id)}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {projects.length > 0 && (
+                  <div className="mb-3">
+                    <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
+                      {t("sidebar.projects")}
+                    </div>
+                    <ul className="m-0 list-none space-y-0.5 p-0">
+                      {projects.map((project) => {
+                        const open = openProjectKeys.has(project.key);
+                        return (
+                          <li key={project.key}>
+                            <ProjectSidebarRow
+                              group={project}
+                              active={project.sessions.some(
+                                (session) =>
+                                  session.id === activeId &&
+                                  location.pathname.startsWith("/chat/"),
+                              )}
+                              open={open}
+                              labelCls={labelCls}
+                              onToggle={() => toggleProject(project.key)}
+                            />
+                            {open && (
+                              <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0 pl-4">
+                                {project.sessions.map((s) => (
+                                  <li key={s.id}>
+                                    <SessionRow
+                                      row={s}
+                                      active={s.id === activeId && location.pathname.startsWith("/chat/")}
+                                      labelCls={labelCls}
+                                      onSelect={() => onSelectSession(s.id)}
+                                      menuOpen={openMenuId === s.id}
+                                      onMenuOpenChange={(openMenu) =>
+                                        setOpenMenuId(openMenu ? s.id : null)
+                                      }
+                                    />
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
                 {chats.length > 0 && (
                   <div>
                     <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
-                      Chats
+                      {t("sidebar.chats")}
                     </div>
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {chats.map((s) => (
@@ -327,7 +441,7 @@ export function Sidebar() {
       >
         <Link
           to="/settings"
-          aria-label="Settings"
+          aria-label={t("sidebar.settings")}
           className={cn(
             "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-xs",
             settingsActive
@@ -339,10 +453,63 @@ export function Sidebar() {
           <span className="inline-flex size-4 shrink-0 items-center justify-center">
             <Settings2Icon className="size-3.5" />
           </span>
-          <span className={labelCls}>Settings</span>
+          <span className={labelCls}>{t("sidebar.settings")}</span>
         </Link>
       </div>
     </div>
+  );
+}
+
+function ProjectSidebarRow({
+  group,
+  active,
+  open,
+  labelCls,
+  onToggle,
+}: {
+  group: SidebarProjectGroup;
+  active: boolean;
+  open: boolean;
+  labelCls: string;
+  onToggle: () => void;
+}) {
+  const running = group.sessions.some(
+    (session) => session.status === "running" || session.status === "starting",
+  );
+  const unread = group.sessions.some((session) => session.unread);
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={group.label}
+      aria-expanded={open}
+      title={group.key}
+      className={cn(
+        "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+        active
+          ? "liquid-glass-selected text-fg"
+          : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+        "transition-colors",
+      )}
+      style={{ height: "var(--row-h)" }}
+    >
+      <FolderOpenIcon className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" />
+      <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
+        {group.label}
+      </span>
+      {running ? (
+        <Loader2Icon className="size-3 shrink-0 animate-spin text-fg-subtle" />
+      ) : unread && !active ? (
+        <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: "oklch(0.62 0.16 240)" }} />
+      ) : null}
+      <ChevronRightIcon
+        className={cn(
+          "size-3.5 shrink-0 text-fg-subtle transition-transform",
+          open && "rotate-90",
+          labelCls,
+        )}
+      />
+    </button>
   );
 }
 
@@ -357,11 +524,12 @@ function PairSidebarRow({
   labelCls: string;
   onSelect: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={onSelect}
-      aria-label={row.label || "Pair chat"}
+      aria-label={row.label || t("sidebar.pairChat")}
       className={cn(
         "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
         active
@@ -373,7 +541,7 @@ function PairSidebarRow({
     >
       <LayoutGridIcon className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" />
       <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
-        {row.label || "Pair chat"}
+        {row.label || t("sidebar.pairChat")}
       </span>
       {row.activeTurnId && (
         <Loader2Icon className="size-3 shrink-0 animate-spin text-fg-subtle" />
@@ -405,6 +573,7 @@ function SessionRow({
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useI18n();
   const running = row.status === "running" || row.status === "starting";
   const errored = row.status === "errored";
   const pinned = row.pinnedAt != null;
@@ -455,7 +624,7 @@ function SessionRow({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    aria-label="Session actions"
+                    aria-label={t("sidebar.sessionActions")}
                     onClick={(e) => e.stopPropagation()}
                     className={cn(
                       "flex size-4 items-center justify-center rounded text-fg-muted transition-opacity hover:bg-bg-surface/80 hover:text-fg",
@@ -471,14 +640,14 @@ function SessionRow({
                     className="flex items-center gap-2 py-1 text-xs"
                   >
                     {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
-                    <span>{pinned ? "Unpin" : "Pin"}</span>
+                    <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => { /* Rename TBD */ }}
                     className="flex items-center gap-2 py-1 text-xs"
                   >
                     <PencilIcon className="size-3.5" />
-                    <span>Rename</span>
+                    <span>{t("sidebar.rename")}</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
                   <DropdownMenuItem
@@ -486,7 +655,7 @@ function SessionRow({
                     className="flex items-center gap-2 py-1 text-xs"
                   >
                     <ArchiveIcon className="size-3.5" />
-                    <span>Archive</span>
+                    <span>{t("sidebar.archive")}</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -503,14 +672,14 @@ function SessionRow({
             className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
-            <span>{pinned ? "Unpin" : "Pin"}</span>
+            <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
           </ContextMenu.Item>
           <ContextMenu.Item
             onSelect={() => { /* Rename TBD */ }}
             className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <PencilIcon className="size-3.5" />
-            <span>Rename</span>
+            <span>{t("sidebar.rename")}</span>
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-border/60" />
           <ContextMenu.Item
@@ -518,7 +687,7 @@ function SessionRow({
             className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <ArchiveIcon className="size-3.5" />
-            <span>Archive</span>
+            <span>{t("sidebar.archive")}</span>
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
@@ -535,6 +704,7 @@ function SessionRow({
  *  has 3 detected agents and wants a pair, two clicks total.
  */
 function PairChatLauncher({ labelCls }: { labelCls: string }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
@@ -571,7 +741,7 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Pair chat"
+          aria-label={t("sidebar.pairChat")}
           className={cn(
             "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
             "text-fg hover:bg-bg-surface/60 transition-colors",
@@ -581,7 +751,7 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
           <span className="inline-flex size-4 shrink-0 items-center justify-center text-fg-muted">
             <LayoutGridIcon className="size-3.5" />
           </span>
-          <span className={labelCls}>Pair chat</span>
+          <span className={labelCls}>{t("sidebar.pairChat")}</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">

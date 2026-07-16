@@ -171,6 +171,64 @@ const api: BackchatApi = {
     return () => ipcRenderer.removeListener(PushChannel.UiTermExit, l);
   },
 
+  browserElementPickerBegin: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserElementPickerBegin, p) as Promise<void>,
+  browserElementPickerHover: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserElementPickerHover, p) as Promise<
+      import("../shared/browser-element-picker.js").BrowserElementHoverInfo | null
+    >,
+  browserElementPickerCommit: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserElementPickerCommit, p) as Promise<
+      import("../shared/browser-element-picker.js").BrowserElementPickResult | null
+    >,
+  browserElementPickerCaptureRegion: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserElementPickerCaptureRegion, p) as Promise<
+      import("../shared/browser-element-picker.js").BrowserRegionPickResult
+    >,
+  browserElementPickerCancel: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserElementPickerCancel, p) as Promise<void>,
+  browserViewRegister: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserViewRegister, p) as Promise<void>,
+  browserViewUnregister: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserViewUnregister, p) as Promise<void>,
+  browserViewSetActive: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserViewSetActive, p) as Promise<void>,
+  browserCaptureScreenshot: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserCaptureScreenshot, p) as Promise<{ path: string }>,
+  browserShowDeviceToolbar: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserShowDeviceToolbar, p) as Promise<void>,
+  browserClearData: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserClearData, p) as Promise<void>,
+  browserClearProfileData: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserClearProfileData, p) as Promise<void>,
+  browserDownloadsList: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDownloadsList, p) as Promise<
+      import("../shared/browser-data.js").BrowserDownloadInfo[]
+    >,
+  browserDownloadAction: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserDownloadAction, p) as Promise<void>,
+  browserCredentialsList: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserCredentialsList, p) as Promise<
+      import("../shared/browser-data.js").BrowserCredentialSummary[]
+    >,
+  browserCredentialFill: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserCredentialFill, p) as Promise<void>,
+  browserCredentialDelete: (p) =>
+    ipcRenderer.invoke(InvokeChannel.BrowserCredentialDelete, p) as Promise<void>,
+  onBrowserDownloadsChanged: (handler) => {
+    const l = () => handler();
+    ipcRenderer.on(PushChannel.BrowserDownloadsChanged, l);
+    return () => ipcRenderer.removeListener(PushChannel.BrowserDownloadsChanged, l);
+  },
+  onBrowserToolTabCommand: (handler) => {
+    const l = (
+      _e: IpcRendererEvent,
+      command: import("../shared/browser-harness.js").BrowserUiCommand,
+    ) => handler(command);
+    ipcRenderer.on(PushChannel.BrowserToolTabCommand, l);
+    return () => ipcRenderer.removeListener(PushChannel.BrowserToolTabCommand, l);
+  },
+
   uiFsListDir: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsListDir, p) as Promise<
       { name: string; isDir: boolean; error?: string }[]
@@ -181,6 +239,10 @@ const api: BackchatApi = {
   uiFsPickFiles: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsPickFiles, p ?? {}) as Promise<
       import("../shared/session-events.js").PromptAttachment[]
+    >,
+  uiFsSaveCapture: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsSaveCapture, p) as Promise<
+      import("../shared/session-events.js").PromptAttachment
     >,
   uiFsRecent: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsRecent, p) as Promise<
@@ -243,5 +305,10 @@ if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
       ipcRenderer.invoke(InvokeChannel.TestSetAgentSetupFixture, fixture),
     agentSetupCalls: () =>
       ipcRenderer.invoke(InvokeChannel.TestAgentSetupCalls),
+    browserTool: (p: {
+      taskId: string;
+      name: string;
+      args?: Record<string, unknown>;
+    }) => ipcRenderer.invoke(InvokeChannel.TestBrowserTool, p),
   });
 }

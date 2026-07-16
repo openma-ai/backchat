@@ -18,6 +18,7 @@ import { BrowserTab } from "@/components/shell/BrowserTab";
 import { TerminalTab } from "@/components/shell/TerminalTab";
 import { useRightRailCollapse } from "@/components/shell/AppShell";
 import { useSettings } from "@/lib/settings-store";
+import { browserSettings } from "@shared/browser-settings.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,10 +26,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   selectActive,
   selectActiveSideTab,
   selectArtifactsFor,
+  selectBrowserWindows,
   selectSideTabs,
   sessionStore,
   useSessionStore,
@@ -61,15 +64,37 @@ import {
  * tab bar instead of floating over the stage.
  */
 export function SideChatPanel() {
+  const { t } = useI18n();
   const tabs = useSessionStore(selectSideTabs);
   const activeTab = useSessionStore(selectActiveSideTab);
+  const browserWindows = useSessionStore(selectBrowserWindows);
   const mainActive = useSessionStore(selectActive);
   const settings = useSettings();
+  const browserEnabled = browserSettings(settings?.browser).enabled;
   const { toggle: toggleRail } = useRightRailCollapse();
   const navigate = useNavigate();
   const canStartSideChat = !!mainActive && mainActive.status !== "draft";
   const canForkSideChat =
     canStartSideChat && !!mainActive?.supportsSessionFork && !!mainActive?.acp_session_id;
+
+  useEffect(() => window.backchat.onBrowserToolTabCommand((command) => {
+    if (!browserEnabled) return;
+    if (command.action === "open") {
+      sessionStore.openSideTabForTask(
+        command.sessionId,
+        "browser",
+        command.url,
+        undefined,
+        command.tabId,
+      );
+      return;
+    }
+    if (command.action === "activate") {
+      sessionStore.setActiveSideTabForTask(command.sessionId, command.tabId);
+      return;
+    }
+    sessionStore.closeSideTabForTask(command.sessionId, command.tabId);
+  }), [browserEnabled]);
 
   const promoteActive = useCallback(() => {
     if (!activeTab || activeTab.type !== "chat") return;
@@ -94,7 +119,7 @@ export function SideChatPanel() {
         agentId: mainActive.agent_id || settings?.default.agent_id || "",
         cwd,
       });
-      sessionStore.openSideTab("chat", sid, "Side chat");
+      sessionStore.openSideTab("chat", sid, t("sideChat.title"));
     },
     [
       canForkSideChat,
@@ -102,11 +127,13 @@ export function SideChatPanel() {
       mainActive,
       settings?.default.agent_id,
       settings?.default.workspace_path,
+      t,
     ],
   );
 
   const openTab = useCallback(
     async (type: SideTabType) => {
+      if (type === "browser" && !browserEnabled) return;
       // Resolve cwd for file / terminal tabs in this order:
       //   1. settings.default.workspace_path — user preference if set.
       //   2. active main session's cwd — this is now ALWAYS a real
@@ -125,7 +152,7 @@ export function SideChatPanel() {
       } else if (type === "browser") {
         sessionStore.openSideTab(
           "browser",
-          "https://www.google.com",
+          "about:blank",
           undefined,
         );
       } else if (type === "terminal") {
@@ -138,12 +165,12 @@ export function SideChatPanel() {
         sessionStore.openSideTab("terminal", terminalId, undefined);
       }
     },
-    [mainActive?.cwd, openSideChat, settings?.default.workspace_path],
+    [browserEnabled, mainActive?.cwd, openSideChat, settings?.default.workspace_path],
   );
 
   const closeTab = useCallback((tab: SideTab) => {
     // Tear down the underlying resource before removing the tab.
-    if (tab.type === "chat" || tab.type === "subagent") {
+    if (tab.type === "chat") {
       void window.backchat.sessionDispose({ session_id: tab.payload });
     } else if (tab.type === "terminal") {
       void window.backchat.uiTermDispose({ terminalId: tab.payload });
@@ -152,7 +179,7 @@ export function SideChatPanel() {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col bg-transparent">
       {/* Header geometry aligned to the fixed top-right toggles via the
           shared --chrome-* tokens:
             stage-inset (6) + border (1) + pt-1.5 (6) + size-6/2 (12) = 25
@@ -160,7 +187,7 @@ export function SideChatPanel() {
           px-3 (12) + border (1) = 13 ≈ chrome-gap (16) on the inside
           edge — close enough that the in-panel button and the fixed
           terminal toggle outside read as mirrored across the seam. */}
-      <div className="shrink-0 flex items-center gap-[var(--chrome-gap)] pl-[var(--chrome-gap)] pr-[var(--chrome-gap)] pt-1.5 pb-2">
+      <div className="shrink-0 flex items-center gap-[var(--chrome-gap)] bg-transparent pl-3 pr-[var(--chrome-gap)] pt-1.5 pb-2">
         {/* Collapse rail button — image #13: lives inside the panel's
             top-left when expanded. Mirrors the left sidebar toggle's
             position + icon family. */}
@@ -170,7 +197,7 @@ export function SideChatPanel() {
           aria-label="Close side panel"
           title="Close side panel"
           className={cn(
-            "app-no-drag inline-flex size-6 shrink-0 items-center justify-center rounded-md",
+            "app-no-drag relative z-20 inline-flex size-6 shrink-0 items-center justify-center rounded-md",
             "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
             "transition-colors",
           )}
@@ -190,12 +217,11 @@ export function SideChatPanel() {
           </svg>
         </button>
 
-        {/* Tab chips. Single-active model — only the active tab's body
-            is mounted; switching unmounts the prior body and remounts
-            the next (state lives in sessionStore so chat scrollback
-            replays on re-mount via StreamingMarkdown's reattach). */}
-        <div className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto">
-          {tabs.map((t) => (
+        {/* The rail selects one surface at a time. Browser surfaces are
+            kept mounted below; other tab types retain their established
+            mount/unmount behavior. */}
+        <div className="-mb-3 -ml-3 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto pb-3 pl-3">
+        {tabs.map((t) => (
             <TabChip
               key={t.id}
               tab={t}
@@ -203,16 +229,17 @@ export function SideChatPanel() {
               onPick={() => sessionStore.setActiveSideTab(t.id)}
               onClose={() => closeTab(t)}
             />
-          ))}
-          <AddTabButton
+        ))}
+        <AddTabButton
             onPick={openTab}
-          />
+            browserEnabled={browserEnabled}
+        />
           {/* Promote-to-main button — only relevant for chat tabs. The
               side chat is a fast scratch surface; once it's worth
               keeping, "promote" lifts it into the sidebar list as a
               real main session (kind flip + route navigate) without
               disposing the ACP child or losing scrollback. */}
-          {activeTab?.type === "chat" && (
+        {activeTab?.type === "chat" && (
             <button
               type="button"
               onClick={promoteActive}
@@ -226,15 +253,57 @@ export function SideChatPanel() {
             >
               <ArrowUpFromLineIcon className="size-3.5" />
             </button>
-          )}
+        )}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0">
-        {!activeTab ? (
-          <EmptyState onPick={openTab} canStartSideChat={canStartSideChat} />
-        ) : (
+      <div className="relative flex-1 min-h-0">
+        {!activeTab && (
+          <EmptyState
+            onPick={openTab}
+            canStartSideChat={canStartSideChat}
+            browserEnabled={browserEnabled}
+          />
+        )}
+        {activeTab && activeTab.type !== "browser" && (
           <ActiveTabBody tab={activeTab} />
+        )}
+        {browserWindows.flatMap((browserWindow) =>
+          browserWindow.tabs.map((tab) => {
+            const visible =
+              (mainActive?.id ?? null) === browserWindow.taskId && activeTab?.id === tab.id;
+            return (
+              <div
+                key={`${browserWindow.taskId}:${tab.id}`}
+                aria-hidden={!visible}
+                className={cn(
+                  "absolute inset-0",
+                  visible ? "visible pointer-events-auto" : "invisible pointer-events-none",
+                )}
+              >
+                <BrowserTab
+                  sessionId={browserWindow.taskId}
+                  tabId={tab.id}
+                  active={browserWindow.activeTabId === tab.id}
+                  visible={visible}
+                  initialUrl={tab.payload}
+                  onUrlChange={(url) =>
+                    sessionStore.patchSideTabForTask(browserWindow.taskId, tab.id, {
+                      payload: url,
+                      label: deriveBrowserLabel(url),
+                      faviconUrl: undefined,
+                    })
+                  }
+                  onPageMeta={({ title, faviconUrl }) =>
+                    sessionStore.patchSideTabForTask(browserWindow.taskId, tab.id, {
+                      ...(title ? { label: title } : {}),
+                      ...(faviconUrl ? { faviconUrl } : {}),
+                    })
+                  }
+                />
+              </div>
+            );
+          }),
         )}
       </div>
     </div>
@@ -263,20 +332,6 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
       />
     );
   }
-  if (tab.type === "browser") {
-    return (
-      <BrowserTab
-        key={tab.id}
-        initialUrl={tab.payload}
-        onUrlChange={(url) =>
-          sessionStore.patchSideTab(tab.id, {
-            payload: url,
-            label: deriveBrowserLabel(url),
-          })
-        }
-      />
-    );
-  }
   if (tab.type === "terminal") {
     return (
       <div className="h-full px-3 pb-3">
@@ -290,9 +345,11 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
 function EmptyState({
   onPick,
   canStartSideChat,
+  browserEnabled,
 }: {
   onPick: (type: SideTabType) => void;
   canStartSideChat: boolean;
+  browserEnabled: boolean;
 }) {
   // 推荐 ordering:
   //   1. Services the agent has spun up in THIS chat (localhost URLs
@@ -310,7 +367,7 @@ function EmptyState({
   );
   const artifacts = useSessionStore(artifactsSelector);
   const hasArtifacts =
-    artifacts.files.length > 0 || artifacts.services.length > 0;
+    artifacts.files.length > 0 || (browserEnabled && artifacts.services.length > 0);
 
   const [recent, setRecent] = useState<
     { name: string; path: string; isDir: boolean; mtime: number }[]
@@ -349,7 +406,7 @@ function EmptyState({
   return (
     <div className="h-full overflow-y-auto px-4 pb-6">
       <div className="grid grid-cols-2 auto-rows-fr gap-3 pt-2">
-        {EMPTY_TILES.map((tile) => {
+        {EMPTY_TILES.filter((tile) => browserEnabled || tile.type !== "browser").map((tile) => {
           const disabled = tile.type === "chat" && !canStartSideChat;
           return (
             <QuickTile
@@ -362,7 +419,7 @@ function EmptyState({
         })}
       </div>
 
-      {artifacts.services.length > 0 && (
+      {browserEnabled && artifacts.services.length > 0 && (
         <section className="mt-6">
           <div className="mb-2 text-xs font-medium text-fg select-none">正在跑的服务</div>
           <ul className="space-y-1">
@@ -483,17 +540,17 @@ function shortenServiceUrl(u: string): string {
 
 interface QuickTileSpec {
   type: SideTabType;
-  title: string;
-  subtitle: string;
+  titleKey: TranslationKey;
+  subtitleKey: TranslationKey;
   icon: LucideIcon;
   shortcut?: string;
 }
 
 const EMPTY_TILES: QuickTileSpec[] = [
-  { type: "file", title: "文件", subtitle: "浏览项目文件", icon: FolderIcon, shortcut: "⌘P" },
-  { type: "chat", title: "Side chat", subtitle: "Fork 当前上下文", icon: MessageSquareIcon },
-  { type: "browser", title: "浏览器", subtitle: "打开网站", icon: GlobeIcon, shortcut: "⌘T" },
-  { type: "terminal", title: "终端", subtitle: "启动交互式 shell", icon: SquareTerminalIcon, shortcut: "⌃`" },
+  { type: "file", titleKey: "sideChat.file", subtitleKey: "sideChat.fileHint", icon: FolderIcon, shortcut: "⌘P" },
+  { type: "chat", titleKey: "sideChat.title", subtitleKey: "sideChat.forkHint", icon: MessageSquareIcon },
+  { type: "browser", titleKey: "sideChat.browser", subtitleKey: "sideChat.browserHint", icon: GlobeIcon, shortcut: "⌘T" },
+  { type: "terminal", titleKey: "sideChat.terminal", subtitleKey: "sideChat.terminalHint", icon: SquareTerminalIcon, shortcut: "⌃`" },
 ];
 
 function QuickTile({
@@ -505,6 +562,7 @@ function QuickTile({
   disabled?: boolean;
   onClick: () => void;
 }) {
+  const { t } = useI18n();
   const Icon = tile.icon;
   return (
     <button
@@ -529,8 +587,8 @@ function QuickTile({
       <div className="flex flex-col items-center gap-2">
         <Icon className="size-6 text-fg-subtle" />
         <div className="text-center">
-          <div className="text-sm font-medium">{tile.title}</div>
-          <div className="mt-0.5 text-[11px] text-fg-muted">{tile.subtitle}</div>
+          <div className="text-sm font-medium">{t(tile.titleKey)}</div>
+          <div className="mt-0.5 text-[11px] text-fg-muted">{t(tile.subtitleKey)}</div>
         </div>
       </div>
       {tile.shortcut ? (
@@ -592,6 +650,7 @@ function TabChip({
   onPick: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const Icon = ICON_BY_TYPE[tab.type];
   return (
     <div
@@ -605,7 +664,7 @@ function TabChip({
         // bg-bg-surface/60 hover landed too close to the bg-bg-surface
         // active background).
         active
-          ? "bg-bg text-fg shadow-[inset_0_0_0_1px_var(--border)]"
+          ? "liquid-glass-selected text-fg"
           : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
         "transition-colors",
       )}
@@ -614,15 +673,15 @@ function TabChip({
       <button
         type="button"
         onClick={onPick}
-        className="inline-flex items-center gap-1.5 truncate max-w-[140px]"
+        className="inline-flex items-center gap-1.5 truncate max-w-[160px]"
         title={tab.label}
       >
-        <Icon
-          className={cn(
-            "size-3.5 shrink-0",
-            active ? "text-fg" : "text-fg-subtle",
-          )}
-        />
+         <Icon
+           className={cn(
+             "size-3.5 shrink-0",
+             active ? "text-fg" : "text-fg-subtle",
+           )}
+         />
         {/* min-w-0 so the truncate inside the flex actually engages,
             and the label always shows even when narrow — image #95
             had chat/browser tabs reading as icon-only because the
@@ -632,7 +691,7 @@ function TabChip({
       <button
         type="button"
         onClick={onClose}
-        aria-label="Close tab"
+        aria-label={t("sideChat.closeTab")}
         className={cn(
           "inline-flex size-4 items-center justify-center rounded",
           // Always visible on the active tab (so the user can always
@@ -651,9 +710,12 @@ function TabChip({
 
 function AddTabButton({
   onPick,
+  browserEnabled,
 }: {
   onPick: (type: SideTabType) => void;
+  browserEnabled: boolean;
 }) {
+  const { t } = useI18n();
   // Radix DropdownMenu — uses a Portal so the popover content escapes
   // any overflow-hidden ancestor (the side panel `<aside>` is one),
   // and handles click-outside + focus return for us. Replaced a
@@ -663,9 +725,9 @@ function AddTabButton({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="New tab"
-          title="New tab"
-          className={cn(
+          aria-label={t("sideChat.newTab")}
+          title={t("sideChat.newTab")}
+            className={cn(
             "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
             "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
             "transition-colors",
@@ -679,7 +741,7 @@ function AddTabButton({
         sideOffset={4}
         className="min-w-[180px]"
       >
-        {POPOVER_ITEMS.map((item) => {
+        {POPOVER_ITEMS.filter((item) => browserEnabled || item.type !== "browser").map((item) => {
           const Icon = item.icon;
           return (
             <DropdownMenuItem
@@ -688,7 +750,7 @@ function AddTabButton({
               className="flex items-center gap-2 text-xs"
             >
               <Icon className="size-3.5 text-fg-subtle" />
-              <span className="flex-1">{item.label}</span>
+              <span className="flex-1">{t(item.labelKey)}</span>
             </DropdownMenuItem>
           );
         })}
@@ -705,18 +767,29 @@ const ICON_BY_TYPE: Record<SideTabType, LucideIcon> = {
   terminal: SquareTerminalIcon,
 };
 
-const POPOVER_ITEMS: { type: SideTabType; label: string; icon: LucideIcon }[] = [
-  { type: "file", label: "文件", icon: FolderIcon },
-  { type: "chat", label: "Side chat", icon: MessageSquareIcon },
-  { type: "browser", label: "浏览器", icon: GlobeIcon },
-  { type: "terminal", label: "终端", icon: SquareTerminalIcon },
+const POPOVER_ITEMS: { type: SideTabType; labelKey: TranslationKey; icon: LucideIcon }[] = [
+  { type: "file", labelKey: "sideChat.file", icon: FolderIcon },
+  { type: "chat", labelKey: "sideChat.title", icon: MessageSquareIcon },
+  { type: "browser", labelKey: "sideChat.browser", icon: GlobeIcon },
+  { type: "terminal", labelKey: "sideChat.terminal", icon: SquareTerminalIcon },
 ];
 
 function deriveBrowserLabel(url: string): string {
+  if (url === "about:blank") return "New tab";
   try {
     return new URL(url).hostname;
   } catch {
     return "Browser";
+  }
+}
+
+function faviconFallback(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return `${parsed.origin}/favicon.ico`;
+  } catch {
+    return null;
   }
 }
 

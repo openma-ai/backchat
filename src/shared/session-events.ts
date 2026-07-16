@@ -71,6 +71,70 @@ export interface PromptAttachment {
   data?: string;
 }
 
+/** DOM context captured when the user points at an element in the in-app
+ * browser. Field names intentionally use snake_case because this object is
+ * serialized verbatim into the agent-facing prompt context. */
+export interface BrowserElementAnnotationDetails {
+  url: string;
+  title: string;
+  /** Exact executable selector captured from the runtime page. */
+  selector: string;
+  /** Human-readable DOM ancestry kept separate from the exact selector. */
+  dom_path?: string;
+  tag_name: string;
+  id?: string;
+  class_names: string[];
+  role?: string;
+  aria_label?: string;
+  text?: string;
+  attributes: Record<string, string>;
+  outer_html?: string;
+  /** Small, agent-relevant computed-style snapshot captured at selection time. */
+  computed_styles?: Record<string, string>;
+  /** User-requested changes relative to `computed_styles`. */
+  style_changes?: BrowserElementStyleChange[];
+  rect: { x: number; y: number; width: number; height: number };
+  viewport: {
+    width: number;
+    height: number;
+    device_pixel_ratio: number;
+  };
+  screenshot_name: string;
+}
+
+export interface BrowserElementStyleChange {
+  property: string;
+  from: string;
+  to: string;
+}
+
+export interface BrowserRegionAnnotationDetails {
+  url: string;
+  title: string;
+  rect: { x: number; y: number; width: number; height: number };
+  viewport: {
+    width: number;
+    height: number;
+    device_pixel_ratio: number;
+  };
+  screenshot_name: string;
+}
+
+/** A quoted range from an earlier assistant response. The renderer keeps
+ *  these separate from the visible composer text; the main process turns
+ *  them into the same <response-annotations> context understood by Codex. */
+export interface PromptAnnotation {
+  id: string;
+  /** Omitted on older rows and ordinary assistant-response annotations. */
+  kind?: "response" | "browser_element" | "browser_region";
+  source_session_id: string;
+  source_turn_id: string;
+  text: string;
+  comment?: string;
+  browser?: BrowserElementAnnotationDetails;
+  browser_region?: BrowserRegionAnnotationDetails;
+}
+
 export interface SessionPromptParams {
   session_id: string;
   /** Stable per-turn id. Used to route `session.event` and `session.complete`
@@ -78,6 +142,7 @@ export interface SessionPromptParams {
   turn_id: string;
   text: string;
   attachments?: PromptAttachment[];
+  annotations?: PromptAnnotation[];
   /** Running-time submission semantics. ACP v1 only standardizes
    *  turn-level prompts, so requested_* captures product intent while
    *  effective_* captures what this transport can honestly deliver. */

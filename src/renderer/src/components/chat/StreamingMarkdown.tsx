@@ -20,6 +20,7 @@
 import { useEffect, useRef } from "react";
 import * as smd from "streaming-markdown";
 import { sessionStore } from "@/lib/session-store";
+import { openBrowserAwareUrl } from "@/lib/browser-open";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -99,7 +100,7 @@ export function StreamingMarkdown({ turnId, kind, className, cwd, prefixSkip = 0
       const url = (a.getAttribute("href") ?? "").trim();
       if (!url) return;
       if (/^https?:\/\//i.test(url)) {
-        window.open(url, "_blank", "noopener,noreferrer");
+        openBrowserAwareUrl(url);
         return;
       }
       // Compute the absolute path early so html/non-html routing can
@@ -119,8 +120,7 @@ export function StreamingMarkdown({ turnId, kind, className, cwd, prefixSkip = 0
       // auto-open-on-tool-completion behavior). Anything else → OS
       // default app.
       if (/\.html?$/i.test(path)) {
-        sessionStore.openSideTab(
-          "browser",
+        openBrowserAwareUrl(
           "file://" + path,
           path.split("/").pop() || path,
         );

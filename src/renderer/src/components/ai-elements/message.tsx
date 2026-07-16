@@ -30,6 +30,7 @@ export type MessageProps = HTMLAttributes<HTMLDivElement> & {
 
 export const Message = ({ className, from, ...props }: MessageProps) => (
   <div
+    data-slot="message"
     className={cn(
       "group flex w-full max-w-[85%] flex-col gap-2",
       from === "user" ? "is-user ml-auto justify-end" : "is-assistant",
@@ -47,15 +48,16 @@ export const MessageContent = ({
   ...props
 }: MessageContentProps) => (
   <div
+    data-slot="message-content"
     className={cn(
       // Tighter than upstream — codex/Linear-density pass:
       //   - drop `is-user:dark` (don't invert theme just for one bubble)
       //   - rounded-2xl + smaller px/py reads as a chat pill, not a slab
-      //   - bg-bg-surface (our token) instead of `bg-secondary` so it
-      //     resolves consistently in both themes
+      //   - dedicated bg-bg-bubble keeps messages on their own gray step
+      //     instead of collapsing into controls that use bg-bg-surface
       //   - leading-6 + [13px] matches codex's prose density
       "flex w-fit min-w-0 max-w-full flex-col gap-1 overflow-hidden text-[13px] leading-6",
-      "group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:bg-bg-surface group-[.is-user]:px-3 group-[.is-user]:py-1.5 group-[.is-user]:text-fg",
+      "group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:bg-bg-bubble group-[.is-user]:px-3 group-[.is-user]:py-1.5 group-[.is-user]:text-fg",
       "group-[.is-assistant]:text-fg",
       className
     )}

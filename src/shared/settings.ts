@@ -24,8 +24,25 @@ export interface SettingsDefault {
 
 export interface SettingsAppearance {
   theme: "system" | "light" | "dark";
+  /** UI language. System resolves from the renderer's preferred languages. */
+  language: "system" | "en" | "zh-CN";
   font_size: "sm" | "md" | "lg";
   density: "compact" | "default" | "roomy";
+}
+
+export interface SettingsBrowser {
+  /** Master switch for the task-scoped built-in browser surface. */
+  enabled: boolean;
+  /** Where ordinary http(s) links opened from chat should go. */
+  web_link_target: "external" | "in_app";
+  /** Where localhost, loopback, and file URLs should go. */
+  local_link_target: "external" | "in_app";
+  /** Whether page annotations include their labeled screenshot. */
+  annotation_screenshots: "always" | "never";
+  default_zoom: number;
+  download_path: string;
+  ask_before_download: boolean;
+  autofill_enabled: boolean;
 }
 
 export interface SettingsAgentOverride {
@@ -57,6 +74,7 @@ export type SettingsMcpServer =
 export interface Settings {
   default: SettingsDefault;
   appearance: SettingsAppearance;
+  browser?: SettingsBrowser;
   agents: SettingsAgentOverride[];
   mcp_servers: SettingsMcpServer[];
 }

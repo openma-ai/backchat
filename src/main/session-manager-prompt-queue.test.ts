@@ -125,7 +125,7 @@ describe("SessionManager prompt queue", () => {
     );
   });
 
-  it("runs prompts concurrently when prompt queue is disabled in settings", async () => {
+  it("still queues running follow-ups when prompt queue is disabled in settings", async () => {
     const send = vi.fn();
     const firstPromptDone = deferred();
     const prompt = vi.fn(async function* (_text: string) {
@@ -166,10 +166,18 @@ describe("SessionManager prompt queue", () => {
     });
     await waitMicrotask();
 
-    expect(prompt).toHaveBeenCalledTimes(2);
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.queue_update",
+      session_id: "session-no-queue",
+      active_turn_id: "turn-1",
+      queued: [expect.objectContaining({ turn_id: "turn-2", text: "second" })],
+    }));
 
     firstPromptDone.resolve();
     await first;
     await second;
+
+    expect(prompt).toHaveBeenCalledTimes(2);
   });
 });

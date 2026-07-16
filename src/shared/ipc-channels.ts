@@ -57,6 +57,23 @@ export const InvokeChannel = {
   UiTermInput: "uiTerm:input",
   UiTermResize: "uiTerm:resize",
   UiTermDispose: "uiTerm:dispose",
+  BrowserElementPickerBegin: "browserElementPicker:begin",
+  BrowserElementPickerHover: "browserElementPicker:hover",
+  BrowserElementPickerCommit: "browserElementPicker:commit",
+  BrowserElementPickerCaptureRegion: "browserElementPicker:captureRegion",
+  BrowserElementPickerCancel: "browserElementPicker:cancel",
+  BrowserViewRegister: "browserView:register",
+  BrowserViewUnregister: "browserView:unregister",
+  BrowserViewSetActive: "browserView:setActive",
+  BrowserCaptureScreenshot: "browserData:captureScreenshot",
+  BrowserShowDeviceToolbar: "browserData:showDeviceToolbar",
+  BrowserClearData: "browserData:clearData",
+  BrowserClearProfileData: "browserData:clearProfileData",
+  BrowserDownloadsList: "browserData:downloadsList",
+  BrowserDownloadAction: "browserData:downloadAction",
+  BrowserCredentialsList: "browserData:credentialsList",
+  BrowserCredentialFill: "browserData:credentialFill",
+  BrowserCredentialDelete: "browserData:credentialDelete",
   /** Directory listing — side-panel file tree reads a path's children
    *  (one level at a time, lazy-expand). Returns name + isDir; the
    *  renderer is responsible for handling errors (permission denied,
@@ -71,6 +88,9 @@ export const InvokeChannel = {
   /** Native file picker for prompt attachments. Returns selected
    *  images/files with metadata and small image preview data. */
   UiFsPickFiles: "uiFs:pickFiles",
+  /** Persist a renderer-generated PNG (for example a browser element
+   *  annotation) and return it as an ordinary prompt attachment. */
+  UiFsSaveCapture: "uiFs:saveCapture",
   /** Recent entries in a directory — list children, sort by mtime
    *  (newest first), return the top N. Used by the side-panel empty
    *  state "推荐" feed to surface what the user is actually working
@@ -99,6 +119,7 @@ export const InvokeChannel = {
   TestSetPickedFiles: "__test:setPickedFiles",
   TestSetAgentSetupFixture: "__test:setAgentSetupFixture",
   TestAgentSetupCalls: "__test:agentSetupCalls",
+  TestBrowserTool: "__test:browserTool",
 } as const;
 
 export const PushChannel = {
@@ -131,6 +152,11 @@ export const PushChannel = {
   /** Menu → renderer: trigger a renderer action. Payload is a short
    *  string code: "new-chat" | "command-palette". */
   MenuAction: "menu:action",
+  /** Browser harness → renderer. Keeps tool-created tabs in the same
+   *  task-scoped right-rail browser window the user can see. */
+  BrowserToolTabCommand: "browserTool:tabCommand",
+  /** Browser download progress for the task-scoped in-app browser. */
+  BrowserDownloadsChanged: "browserData:downloadsChanged",
 } as const;
 
 export type InvokeChannelName = (typeof InvokeChannel)[keyof typeof InvokeChannel];

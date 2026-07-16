@@ -203,6 +203,11 @@ export interface SubagentActivity {
   parentSessionId: string;
   parentAcpSessionId?: string;
   childSessionId: string;
+  /** Stable renderer-owned session id used by the side-panel ChatView.
+   *  Native providers may first report a fallback tool-call id and later
+   *  replace it with the real child id; this id deliberately survives that
+   *  migration so the tab and transcript never duplicate. */
+  viewSessionId: string;
   inheritance: SubagentInheritance;
   task: string;
   status: "draft" | "running" | "complete" | "error" | "cancelled";
@@ -314,7 +319,18 @@ export interface SideTab {
    *    terminal   → cwd's last segment (matches BottomPanel) */
   label: string;
   payload: string;
+  /** Browser tabs populate this from Electron's page-favicon-updated event. */
+  faviconUrl?: string;
   createdAt: number;
+}
+
+/** One task owns one logical browser window. Its webview tabs stay mounted
+ *  independently from the right rail's currently selected surface, so
+ *  switching to Files/Terminal (or another task) does not discard page state. */
+export interface TaskBrowserWindow {
+  taskId: string | null;
+  tabs: SideTab[];
+  activeTabId: string | null;
 }
 
 /** Things the agent has produced in a conversation — drives the side
@@ -358,6 +374,7 @@ export class SessionStore {
    *  when the rail switches. */
   #sideTabsByMain = new Map<string | null, SideTab[]>();
   #activeSideTabByMain = new Map<string | null, string | null>();
+  #activeBrowserTabByMain = new Map<string | null, string>();
   /** Collected workspace artifacts per main session. Updated lazily
    *  from the session.event stream: file paths from tool_call rawInput,
    *  localhost URLs from tool_call rawOutput. Used by the side panel's
@@ -435,6 +452,40 @@ export class SessionStore {
     for (const s of subs) s(d);
   }
 
+  /** Keep only one event per uninterrupted text/thought run. ACP adapters
+   *  commonly emit one event per token; retaining each token makes both the
+   *  event array and reduceTurn work grow without adding timeline detail.
+   *  Tool/plan events still break runs because they remain between segments. */
+  #appendStreamEvent(
+    turn: Turn,
+    kind: "text" | "thought",
+    text: string,
+    receivedAt: number,
+  ): void {
+    const last = turn.events.at(-1);
+    const parsedLast = last ? parseAcpEvent(last.payload) : null;
+    if (parsedLast?.kind === kind) {
+      const merged = mergeStreamingText(parsedLast.text, text);
+      turn.events[turn.events.length - 1] = {
+        payload: {
+          sessionUpdate:
+            kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
+          content: { type: "text", text: merged },
+        },
+        receivedAt: last!.receivedAt,
+      };
+      return;
+    }
+    turn.events.push({
+      payload: {
+        sessionUpdate:
+          kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
+        content: { type: "text", text },
+      },
+      receivedAt,
+    });
+  }
+
   getVersion = (): number => this.#version;
 
   /** Run `selector` against the current store, but only re-evaluate it when
@@ -445,7 +496,22 @@ export class SessionStore {
   snapshot<T>(selector: (s: SessionStore) => T): T {
     const cached = this.#snapshotCache.get(selector as (s: SessionStore) => unknown);
     if (cached && cached.version === this.#version) return cached.value as T;
-    const value = selector(this);
+    let value = selector(this);
+    // list()/turnsFor()/pairList() intentionally return derived arrays. A
+    // global store version bump may be unrelated to that collection; retain
+    // the previous array when all members are still identical so
+    // useSyncExternalStore can skip the component render.
+    if (
+      cached &&
+      Array.isArray(cached.value) &&
+      Array.isArray(value) &&
+      cached.value.length === value.length &&
+      cached.value.every((item, index) =>
+        Object.is(item, (value as readonly unknown[])[index]),
+      )
+    ) {
+      value = cached.value as T;
+    }
     this.#snapshotCache.set(selector as (s: SessionStore) => unknown, {
       version: this.#version,
       value,
@@ -521,6 +587,14 @@ export class SessionStore {
     return [...(this.#subagentsByParent.get(parentSessionId) ?? [])].sort(
       (a, b) => a.startedAt - b.startedAt,
     );
+  }
+
+  subagentByChildId(childSessionId: string): SubagentActivity | null {
+    for (const list of this.#subagentsByParent.values()) {
+      const match = list.find((activity) => activity.childSessionId === childSessionId);
+      if (match) return match;
+    }
+    return null;
   }
 
   // ------- Mutations called by the UI -------
@@ -721,12 +795,54 @@ export class SessionStore {
     return this.#tabsBucket().find((t) => t.id === id) ?? null;
   }
 
+  browserWindows(): TaskBrowserWindow[] {
+    const windows: TaskBrowserWindow[] = [];
+    for (const [taskId, sideTabs] of this.#sideTabsByMain) {
+      const tabs = sideTabs.filter((tab) => tab.type === "browser");
+      if (tabs.length === 0) continue;
+      const remembered = this.#activeBrowserTabByMain.get(taskId);
+      const activeTabId = tabs.some((tab) => tab.id === remembered)
+        ? remembered!
+        : tabs[0]!.id;
+      windows.push({ taskId, tabs, activeTabId });
+    }
+    return windows;
+  }
+
   /** Add a tab to the side rail. For chat/subagent tabs the caller should
    *  pre-create the SessionRow and pass the new id as `payload`. For
    *  non-session tabs, payload is the type-specific scratch state.
    *  Returns the new tab's id. */
-  openSideTab(type: SideTabType, payload: string, label?: string): string {
-    const id = `tab-${Math.random().toString(36).slice(2, 8)}`;
+  #openSideTabForBucket(
+    bucket: string | null,
+    type: SideTabType,
+    payload: string,
+    label?: string,
+    requestedId?: string,
+  ): string {
+    const id = requestedId || `tab-${Math.random().toString(36).slice(2, 8)}`;
+    const prevTabs = this.#sideTabsByMain.get(bucket) ?? [];
+    const existingIndex = prevTabs.findIndex((tab) => tab.id === id);
+    if (existingIndex >= 0) {
+      const existing = prevTabs[existingIndex]!;
+      const next: SideTab = {
+        ...existing,
+        type,
+        payload,
+        label: label || defaultSideTabLabel(type, payload),
+      };
+      this.#sideTabsByMain.set(bucket, [
+        ...prevTabs.slice(0, existingIndex),
+        next,
+        ...prevTabs.slice(existingIndex + 1),
+      ]);
+      this.#activeSideTabByMain.set(bucket, id);
+      if (type === "browser") this.#activeBrowserTabByMain.set(bucket, id);
+      this.#syncVisibleSideSession(bucket);
+      setRightRailCollapsed(false);
+      this.#emit();
+      return id;
+    }
     const tab: SideTab = {
       id,
       type,
@@ -734,8 +850,9 @@ export class SessionStore {
       payload,
       createdAt: Date.now(),
     };
-    this.#setTabsBucket([...this.#tabsBucket(), tab]);
-    this.#setActiveBucket(id);
+    this.#sideTabsByMain.set(bucket, [...prevTabs, tab]);
+    this.#activeSideTabByMain.set(bucket, id);
+    if (type === "browser") this.#activeBrowserTabByMain.set(bucket, id);
     // Spawning a tab that the user can't see is pointless — ensure
     // the right rail is expanded. setRightRailCollapsed(false) is a
     // no-op when already open AND when the provider hasn't mounted
@@ -743,20 +860,50 @@ export class SessionStore {
     setRightRailCollapsed(false);
     // Session-backed tabs need the SessionRow's side-active pointer to match so
     // existing ChatView(mode="side") plumbing still resolves the row.
-    if (isSideSessionTab(type)) this.#sideActiveId = payload;
+    this.#syncVisibleSideSession(bucket);
     this.#emit();
     return id;
+  }
+
+  openSideTab(type: SideTabType, payload: string, label?: string): string {
+    return this.#openSideTabForBucket(this.#sideBucket(), type, payload, label);
+  }
+
+  openSideTabForTask(
+    taskId: string,
+    type: SideTabType,
+    payload: string,
+    label?: string,
+    tabId?: string,
+  ): string {
+    return this.#openSideTabForBucket(taskId, type, payload, label, tabId);
   }
 
   /** Update a tab's mutable fields (label rename, URL change for a
    *  browser tab, cwd navigate for a file tab). The tab object is
    *  replaced immutably so React identity comparisons see the change. */
   patchSideTab(id: string, patch: Partial<Omit<SideTab, "id" | "createdAt">>): void {
-    const tabs = this.#tabsBucket();
+    this.#patchSideTabForBucket(this.#sideBucket(), id, patch);
+  }
+
+  patchSideTabForTask(
+    taskId: string | null,
+    id: string,
+    patch: Partial<Omit<SideTab, "id" | "createdAt">>,
+  ): void {
+    this.#patchSideTabForBucket(taskId, id, patch);
+  }
+
+  #patchSideTabForBucket(
+    bucket: string | null,
+    id: string,
+    patch: Partial<Omit<SideTab, "id" | "createdAt">>,
+  ): void {
+    const tabs = this.#sideTabsByMain.get(bucket) ?? [];
     const idx = tabs.findIndex((t) => t.id === id);
     if (idx < 0) return;
     const prev = tabs[idx]!;
-    this.#setTabsBucket([
+    this.#sideTabsByMain.set(bucket, [
       ...tabs.slice(0, idx),
       { ...prev, ...patch },
       ...tabs.slice(idx + 1),
@@ -765,16 +912,31 @@ export class SessionStore {
   }
 
   closeSideTab(id: string): void {
-    const tabs = this.#tabsBucket();
+    this.#closeSideTabForBucket(this.#sideBucket(), id);
+  }
+
+  closeSideTabForTask(taskId: string, id: string): void {
+    this.#closeSideTabForBucket(taskId, id);
+  }
+
+  #closeSideTabForBucket(bucket: string | null, id: string): void {
+    const tabs = this.#sideTabsByMain.get(bucket) ?? [];
     const tab = tabs.find((t) => t.id === id);
     if (!tab) return;
     const nextTabs = tabs.filter((t) => t.id !== id);
-    this.#setTabsBucket(nextTabs);
-    if (this.#activeBucket() === id) {
+    if (nextTabs.length === 0) this.#sideTabsByMain.delete(bucket);
+    else this.#sideTabsByMain.set(bucket, nextTabs);
+    if (this.#activeSideTabByMain.get(bucket) === id) {
       const next = nextTabs[nextTabs.length - 1] ?? null;
-      this.#setActiveBucket(next?.id ?? null);
-      this.#sideActiveId = next && isSideSessionTab(next.type) ? next.payload : null;
+      if (next) this.#activeSideTabByMain.set(bucket, next.id);
+      else this.#activeSideTabByMain.delete(bucket);
     }
+    if (this.#activeBrowserTabByMain.get(bucket) === id) {
+      const nextBrowser = [...nextTabs].reverse().find((candidate) => candidate.type === "browser");
+      if (nextBrowser) this.#activeBrowserTabByMain.set(bucket, nextBrowser.id);
+      else this.#activeBrowserTabByMain.delete(bucket);
+    }
+    this.#syncVisibleSideSession(bucket);
     // Caller is responsible for tearing down the underlying resource:
     //   chat/subagent tabs → sessionDispose IPC
     //   terminal tabs → uiTermDispose IPC
@@ -783,15 +945,34 @@ export class SessionStore {
   }
 
   setActiveSideTab(id: string | null): void {
-    if (this.#activeBucket() === id) return;
-    this.#setActiveBucket(id);
-    if (id) {
-      const t = this.#tabsBucket().find((x) => x.id === id);
-      this.#sideActiveId = t && isSideSessionTab(t.type) ? t.payload : null;
-    } else {
-      this.#sideActiveId = null;
+    this.#setActiveSideTabForBucket(this.#sideBucket(), id);
+  }
+
+  setActiveSideTabForTask(taskId: string, id: string | null): void {
+    this.#setActiveSideTabForBucket(taskId, id);
+  }
+
+  #setActiveSideTabForBucket(bucket: string | null, id: string | null): void {
+    if (this.#activeSideTabByMain.get(bucket) === id) return;
+    if (id) this.#activeSideTabByMain.set(bucket, id);
+    else this.#activeSideTabByMain.delete(bucket);
+    const tab = id
+      ? (this.#sideTabsByMain.get(bucket) ?? []).find((candidate) => candidate.id === id)
+      : null;
+    if (tab?.type === "browser") {
+      this.#activeBrowserTabByMain.set(bucket, tab.id);
     }
+    this.#syncVisibleSideSession(bucket);
     this.#emit();
+  }
+
+  #syncVisibleSideSession(bucket: string | null): void {
+    if (bucket !== this.#sideBucket()) return;
+    const activeId = this.#activeSideTabByMain.get(bucket) ?? null;
+    const tab = activeId
+      ? (this.#sideTabsByMain.get(bucket) ?? []).find((candidate) => candidate.id === activeId)
+      : null;
+    this.#sideActiveId = tab && isSideSessionTab(tab.type) ? tab.payload : null;
   }
 
   /** Promote a side-chat session into a main one. Flips
@@ -995,8 +1176,7 @@ export class SessionStore {
     delivery?: TurnDeliveryMeta,
   ): void {
     const row = this.#sessions.get(sessionId);
-    const queuesBehindActiveTurn =
-      !!row?.activeTurnId && (delivery?.effectiveDelivery ?? "turn_end") === "turn_end";
+    const isQueued = !!row?.activeTurnId;
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
@@ -1004,7 +1184,7 @@ export class SessionStore {
       events: [],
       assistantText: "",
       thoughtText: "",
-      status: queuesBehindActiveTurn ? "queued" : "running",
+      status: isQueued ? "queued" : "running",
       promptIntent: delivery?.intent,
       requestedDelivery: delivery?.requestedDelivery,
       effectiveDelivery: delivery?.effectiveDelivery,
@@ -1014,7 +1194,7 @@ export class SessionStore {
     this.#mutateSession(sessionId, (s) => ({
       ...s,
       activeTurnId: s.activeTurnId ?? turnId,
-      queuedTurnIds: queuesBehindActiveTurn
+      queuedTurnIds: s.activeTurnId
         ? [...(s.queuedTurnIds ?? []), turnId]
         : s.queuedTurnIds,
       status: "running",
@@ -1083,6 +1263,7 @@ export class SessionStore {
       parentSessionId: link.parentSessionId,
       parentAcpSessionId: link.parentAcpSessionId,
       childSessionId,
+      viewSessionId: prev?.viewSessionId ?? childSessionId,
       inheritance: link.inheritance,
       task: patch.task ?? prev?.task ?? row.label,
       status: patch.status ?? prev?.status ?? "draft",
@@ -1108,7 +1289,6 @@ export class SessionStore {
     const expectedProvider = nativeProviderForAgent(
       this.#sessions.get(parentSessionId)?.agent_id,
     );
-    if (!expectedProvider) return;
     const context =
       this.#nativeAgentContextByToolCall.get(tool.toolCallId) ??
       (tool.parentToolUseId
@@ -1116,11 +1296,12 @@ export class SessionStore {
         : undefined);
     const sameParentContext =
       context?.parentSessionId === parentSessionId ? context : undefined;
+    const updates = detectNativeAgentToolEvent(tool, sameParentContext);
     this.#ingestNativeAgentUpdates(
       parentSessionId,
-      detectNativeAgentToolEvent(tool, sameParentContext).filter(
-        (update) => update.provider === expectedProvider,
-      ),
+      expectedProvider
+        ? updates.filter((update) => update.provider === expectedProvider)
+        : updates.filter((update) => update.provider === "codex"),
     );
   }
 
@@ -1167,6 +1348,9 @@ export class SessionStore {
       parentSessionId,
       parentAcpSessionId: parent?.acp_session_id || prev?.parentAcpSessionId,
       childSessionId,
+      viewSessionId:
+        prev?.viewSessionId ??
+        `native-subagent-${Math.random().toString(36).slice(2, 10)}`,
       inheritance:
         update.forkContext === true
           ? "fork"
@@ -1189,6 +1373,7 @@ export class SessionStore {
           ]
         : [...prevList, next];
     this.#subagentsByParent.set(parentSessionId, nextList);
+    this.#syncNativeSubagentView(parentSessionId, next);
 
     if (update.toolCallId) {
       this.#nativeAgentContextByToolCall.set(update.toolCallId, {
@@ -1198,6 +1383,101 @@ export class SessionStore {
         childId: childSessionId,
         parentSessionId,
       });
+    }
+  }
+
+  /** Materialize provider-native activity as an ordinary side-session view.
+   *  ChatView then renders native children with the exact same conversation
+   *  surface as GUI-created side chats. Only the data source differs: the
+   *  task is the user turn and the structured native result is the assistant
+   *  turn. */
+  #syncNativeSubagentView(
+    parentSessionId: string,
+    activity: SubagentActivity,
+  ): void {
+    const parent = this.#sessions.get(parentSessionId);
+    if (!parent) return;
+
+    const viewSessionId = activity.viewSessionId;
+    const turnId = `${viewSessionId}:turn`;
+    const label = subagentActivityLabel(activity);
+    const rowStatus = nativeActivitySessionStatus(activity.status);
+    const turnStatus = nativeActivityTurnStatus(activity.status);
+    const previousRow = this.#sessions.get(viewSessionId);
+    const previousTurn = this.#turns.get(turnId);
+
+    this.#sessions.set(viewSessionId, {
+      ...previousRow,
+      id: viewSessionId,
+      agent_id: parent.agent_id,
+      cwd: parent.cwd,
+      acp_session_id:
+        activity.native?.childThreadId ?? previousRow?.acp_session_id ?? "",
+      label,
+      kind: "side",
+      sideKind: "subagent",
+      subagent: {
+        parentSessionId,
+        parentAcpSessionId: activity.parentAcpSessionId,
+        inheritance: activity.inheritance,
+      },
+      status: rowStatus,
+      lastError: activity.errorMessage,
+      createdAt: previousRow?.createdAt ?? activity.startedAt,
+      activeTurnId: turnStatus === "running" ? turnId : undefined,
+    });
+
+    this.#turns.set(turnId, {
+      id: turnId,
+      sessionId: viewSessionId,
+      promptText: activity.task,
+      events: previousTurn?.events ?? [],
+      assistantText:
+        activity.native?.result ?? previousTurn?.assistantText ?? "",
+      thoughtText: previousTurn?.thoughtText ?? "",
+      status: turnStatus,
+      errorMessage: activity.errorMessage,
+      startedAt: previousTurn?.startedAt ?? activity.startedAt,
+      endedAt:
+        turnStatus === "running"
+          ? undefined
+          : previousTurn?.endedAt ?? activity.updatedAt,
+    });
+
+    const tabs = this.#sideTabsByMain.get(parentSessionId) ?? [];
+    // Clean up the short-lived aggregate tab from older hot-reloaded builds.
+    const withoutLegacy = tabs.filter(
+      (tab) =>
+        !(
+          tab.type === "subagent" &&
+          tab.payload === parentSessionId &&
+          tab.label === "Subagents"
+        ),
+    );
+    const tabIndex = withoutLegacy.findIndex(
+      (tab) => tab.type === "subagent" && tab.payload === viewSessionId,
+    );
+
+    if (tabIndex < 0) {
+      if (withoutLegacy.length !== tabs.length) {
+        this.#sideTabsByMain.set(parentSessionId, withoutLegacy);
+      }
+      this.#openSideTabForBucket(
+        parentSessionId,
+        "subagent",
+        viewSessionId,
+        label,
+      );
+      return;
+    }
+
+    const tab = withoutLegacy[tabIndex]!;
+    if (tab.label !== label || withoutLegacy.length !== tabs.length) {
+      this.#sideTabsByMain.set(parentSessionId, [
+        ...withoutLegacy.slice(0, tabIndex),
+        { ...tab, label },
+        ...withoutLegacy.slice(tabIndex + 1),
+      ]);
     }
   }
 
@@ -1365,28 +1645,20 @@ export class SessionStore {
           endedAt: r.ts,
         };
       } else if (current) {
-        // Every non-user_prompt row is a stored ACP event — push it
-        // verbatim. reduceTurn handles agent_message_chunk +
-        // agent_thought_chunk + structural alike, building the
-        // timeline in the same order they were persisted (which now
-        // matches the live arrival order because SessionManager appends
-        // streamed events as they arrive). For back-compat, also accept
-        // legacy coalesced `agent_message` / `agent_thought` rows
-        // and feed them in as a single chunk.
+        // Every non-user_prompt row is a stored ACP event. Structural
+        // events stay verbatim; adjacent text/thought chunks are compacted
+        // into runs so long histories do not rebuild thousands of token
+        // objects. Tool boundaries remain in place, preserving the same
+        // live ordering. For back-compat, also accept legacy coalesced
+        // `agent_message` / `agent_thought` rows.
         if (r.type === "agent_message") {
           const text = (data as { text?: string })?.text ?? "";
           current.assistantText += text;
-          current.events.push({
-            payload: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
-            receivedAt: r.ts,
-          });
+          this.#appendStreamEvent(current, "text", text, r.ts);
         } else if (r.type === "agent_thought") {
           const text = (data as { text?: string })?.text ?? "";
           current.thoughtText += text;
-          current.events.push({
-            payload: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } },
-            receivedAt: r.ts,
-          });
+          this.#appendStreamEvent(current, "thought", text, r.ts);
         } else {
           // New persisted chunks are stored as the raw ACP event under
           // each row's `data`. They already have sessionUpdate /
@@ -1394,10 +1666,13 @@ export class SessionStore {
           const parsed = parseAcpEvent(data);
           if (parsed.kind === "text") {
             current.assistantText = mergeStreamingText(current.assistantText, parsed.text);
+            this.#appendStreamEvent(current, "text", parsed.text, r.ts);
           } else if (parsed.kind === "thought") {
             current.thoughtText = mergeStreamingText(current.thoughtText, parsed.text);
+            this.#appendStreamEvent(current, "thought", parsed.text, r.ts);
+          } else {
+            current.events.push({ payload: data, receivedAt: r.ts });
           }
-          current.events.push({ payload: data, receivedAt: r.ts });
         }
       }
     }
@@ -1540,14 +1815,11 @@ export class SessionStore {
               turn.thoughtText = next;
               if (delta) this.#emitStream(ev.turn_id, { kind: "thought", text: delta });
             }
-            // Append to events log too — used by tools-only fallback
-            // renderers and debug inspection. We DO replace the array (not
-            // mutate) because React-side tool list reducers still inspect
-            // `events` via reduceTurn() for the structural pieces, and
-            // they need referential change detection.
-            // BUT we don't `#emit` here either; the next structural event
-            // (tool_call, plan, complete) carries the bump.
-            turn.events = [...turn.events, { payload: ev.event, receivedAt: Date.now() }];
+            // Preserve timeline ordering without retaining one array entry
+            // per token. React is deliberately asleep in this branch; the
+            // next structural event/turn completion publishes the compacted
+            // event list.
+            this.#appendStreamEvent(turn, parsed.kind, text, Date.now());
             return;
           }
         }
@@ -1913,12 +2185,16 @@ export const selectSideActiveId = (s: SessionStore) => s.sideActiveId();
 export const selectSideTabs = (s: SessionStore) => s.sideTabs();
 export const selectActiveSideTabId = (s: SessionStore) => s.activeSideTabId();
 export const selectActiveSideTab = (s: SessionStore) => s.activeSideTab();
+export const selectBrowserWindows = (s: SessionStore) => s.browserWindows();
 export const selectArtifactsFor =
   (sessionId: string | null | undefined) => (s: SessionStore) =>
     sessionId ? s.artifactsFor(sessionId) : { files: [], services: [] };
 export const selectSubagentsFor =
   (sessionId: string | null | undefined) => (s: SessionStore) =>
     sessionId ? s.subagentsFor(sessionId) : [];
+export const selectSubagentByChildId =
+  (childSessionId: string | null | undefined) => (s: SessionStore) =>
+    childSessionId ? s.subagentByChildId(childSessionId) : null;
 export const selectTurnsFor = (sessionId: string) => (s: SessionStore) =>
   s.turnsFor(sessionId);
 
@@ -1962,6 +2238,32 @@ function defaultSideTabLabel(type: SideTabType, payload: string): string {
 
 function isSideSessionTab(type: SideTabType): boolean {
   return type === "chat" || type === "subagent";
+}
+
+function subagentActivityLabel(activity: SubagentActivity): string {
+  const name =
+    activity.native?.nickname ||
+    activity.task ||
+    activity.native?.agentType ||
+    activity.childSessionId;
+  return name.length <= 24 ? name : name.slice(0, 23).trimEnd() + "…";
+}
+
+function nativeActivitySessionStatus(
+  status: SubagentActivity["status"],
+): SessionRow["status"] {
+  if (status === "error") return "errored";
+  if (status === "complete" || status === "cancelled") return "ready";
+  return "running";
+}
+
+function nativeActivityTurnStatus(
+  status: SubagentActivity["status"],
+): Turn["status"] {
+  if (status === "complete") return "complete";
+  if (status === "error") return "error";
+  if (status === "cancelled") return "cancelled";
+  return "running";
 }
 
 function nativeChildThreadId(update: NativeAgentUpdate): string | undefined {

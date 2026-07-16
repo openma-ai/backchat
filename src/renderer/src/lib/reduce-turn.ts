@@ -315,6 +315,10 @@ function isTransportDiagnosticText(text: string): boolean {
   return /^Falling back from WebSockets to HTTPS transport\./i.test(text.trim());
 }
 
+export function sanitizeThoughtText(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, "");
+}
+
 function parsePlanEntries(rawEntries: unknown): PlanEntry[] {
   if (!Array.isArray(rawEntries)) return [];
   return rawEntries
@@ -361,12 +365,16 @@ export function parseAcpEvent(event: unknown): ParsedAcpEvent {
         : { kind: "silent", event };
     }
     if (inner.type === "agent.thinking_chunk" && typeof inner.delta === "string") {
+      const text = sanitizeThoughtText(inner.delta);
       return inner.delta.length > 0
-        ? { kind: "thought", text: inner.delta, event }
+        ? text.length > 0
+          ? { kind: "thought", text, event }
+          : { kind: "silent", event }
         : { kind: "silent", event };
     }
     if (inner.type === "agent.thinking") {
-      const text = typeof inner.text === "string" ? inner.text : extractTextBlocks(inner.content);
+      const rawText = typeof inner.text === "string" ? inner.text : extractTextBlocks(inner.content);
+      const text = typeof rawText === "string" ? sanitizeThoughtText(rawText) : rawText;
       return typeof text === "string" && text.length > 0
         ? { kind: "thought", text, event }
         : { kind: "silent", event };
@@ -416,7 +424,10 @@ export function parseAcpEvent(event: unknown): ParsedAcpEvent {
       return { kind: "text", text: inner.text, event };
     }
     if (inner.type === "thought" && typeof inner.text === "string" && inner.text.length > 0) {
-      return { kind: "thought", text: inner.text, event };
+      const text = sanitizeThoughtText(inner.text);
+      return text.length > 0
+        ? { kind: "thought", text, event }
+        : { kind: "silent", event };
     }
     if (inner.type === "requestPermission") {
       return normalizePermissionRequest(inner, event);
@@ -444,9 +455,11 @@ export function parseAcpEvent(event: unknown): ParsedAcpEvent {
     if (update === "agent_message_chunk" && isTransportDiagnosticText(text)) {
       return { kind: "silent", event };
     }
+    const visibleText = update === "agent_thought_chunk" ? sanitizeThoughtText(text) : text;
+    if (visibleText.length === 0) return { kind: "silent", event };
     return {
       kind: update === "agent_thought_chunk" ? "thought" : "text",
-      text,
+      text: visibleText,
       event,
     };
   }

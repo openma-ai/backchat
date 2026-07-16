@@ -34,7 +34,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
-import type { PromptAttachment } from "@shared/session-events.js";
+import { openBrowserAwareUrl } from "@/lib/browser-open";
+import type { PromptAnnotation, PromptAttachment } from "@shared/session-events.js";
 import type {
   AgentMessageDelivery,
   AgentMessageIntent,
@@ -52,11 +53,6 @@ import {
 } from "@/components/ai-elements/conversation";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import { Message, MessageContent } from "@/components/ai-elements/message";
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { safeJson } from "@/lib/format";
@@ -81,21 +77,34 @@ import {
 } from "@/lib/session-store";
 import { reduceTurn, type ToolContentBlock, type TurnRender } from "@/lib/reduce-turn";
 import { useSettings } from "@/lib/settings-store";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { AgentIcon } from "@/components/AgentIcon";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { ConversationTimeline } from "./ConversationTimeline";
 import { isComposerAgentLocked, resolveComposerAgentId } from "@/lib/composer-agent";
 import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
+import { folderName, isPerSessionFolderPath } from "@/lib/project-path";
 import {
   CHAT_COMPOSER_FRAME_CLASS,
   CHAT_GENERATED_IMAGE_CLASS,
   CHAT_TURN_FRAME_CLASS,
 } from "@/lib/chat-layout";
+import { describeRunningMessageAction } from "@/lib/composer-delivery";
 import {
-  BACKCHAT_ACP_DELIVERY_CAPABILITIES,
-  describeRunningMessageAction,
-  shouldOfferExplicitSteer,
-} from "@/lib/composer-delivery";
+  promptAnnotationStore,
+  usePromptAnnotations,
+} from "@/lib/prompt-annotations";
+import {
+  composerInsertionStore,
+  useComposerInsertions,
+} from "@/lib/composer-insertions";
+import {
+  browserAnnotationScreenshotName,
+} from "@/lib/browser-element-annotation";
+import {
+  ComposerAnnotationStrip,
+  ResponseAnnotationController,
+} from "./ResponseAnnotations";
 
 type AgentOption = {
   id: string;
@@ -123,6 +132,7 @@ type AgentOption = {
  * sessions don't have URLs — the rail owns their lifecycle).
  */
 export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
+  const { t } = useI18n();
   const isSide = mode === "side";
   const activeSelector = isSide ? selectSideActive : selectActive;
   const active = useSessionStore(activeSelector);
@@ -136,6 +146,8 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   const turns = useSessionStore(turnsSelector);
   const settings = useSettings();
   const navigate = useNavigate();
+  const isNativeSubagent = active?.sideKind === "subagent";
+  const transcriptRef = useRef<HTMLDivElement>(null);
 
   // Local workspace pick — used by the composer chip BEFORE the session
   // exists. We don't park it on SessionRow.chosenCwd because:
@@ -162,7 +174,6 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     const action = describeRunningMessageAction({
       agentId: agentId || settings?.default.agent_id,
       intent,
-      transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
     });
     if (action.disabled) {
       toast.error(`${action.label} is not available`, {
@@ -184,6 +195,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     intent: AgentMessageIntent = "submit",
     configOverrides: Record<string, string | boolean> = {},
     selectedAgentId?: string,
+    annotations: PromptAnnotation[] = [],
   ) => {
     let target = active;
     if (!target) {
@@ -196,6 +208,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         void navigate({ to: "/chat/$sessionId", params: { sessionId: sid } });
       }
     }
+    // Provider-native children are observed through their parent's
+    // structured runtime events. They use the same conversation surface as a
+    // side chat, but Backchat does not own their live ACP transport, so the
+    // composer stays read-only instead of sending to an unrelated session id.
+    if (target.sideKind === "subagent") return;
     const isRunningTarget = target.status === "running" || !!target.activeTurnId;
     const delivery = isRunningTarget
       ? resolveRunningDeliveryMeta(target.agent_id, intent)
@@ -220,7 +237,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     // and get reduced into the same turn id. If session.start ends up
     // failing the turn gets marked errored, not vanished.
     const turn_id = `turn-${Math.random().toString(36).slice(2, 10)}`;
-    const displayText = derivePromptDisplayText(text, attachments);
+    const displayText = derivePromptDisplayText(text, attachments, annotations.length);
     sessionStore.registerTurn(turn_id, target.id, displayText, delivery);
 
     if (target.status === "draft") {
@@ -290,6 +307,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       turn_id,
       text,
       ...(attachments.length > 0 ? { attachments } : {}),
+      ...(annotations.length > 0 ? { annotations } : {}),
       prompt_intent: delivery.intent,
       requested_delivery: delivery.requestedDelivery,
       effective_delivery: delivery.effectiveDelivery,
@@ -309,12 +327,14 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     active && active.status !== "draft" ? active.agent_id : undefined;
   const composer = (
     <Composer
+      sessionId={active?.id}
       sessionAgentId={boundComposerAgentId}
       disabled={
+        isNativeSubagent ||
         (active?.status === "starting" && !!active?.agent_id) ||
         active?.status === "errored"
       }
-      running={active?.status === "running" || hasActiveTurn}
+      running={!isNativeSubagent && (active?.status === "running" || hasActiveTurn)}
       availableCommands={active?.availableCommands}
       attachmentDefaultPath={
         active?.cwd || pickedCwd || settings?.default.workspace_path || undefined
@@ -349,21 +369,23 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         sessionStore.dequeueAsk(active!.id, ask.ask.requestId);
       }}
       placeholder={
-        !active || active.status === "draft"
-          ? "Ask anything…"
+        isNativeSubagent
+          ? "Native subagent is managed by its parent"
+          : !active || active.status === "draft"
+          ? t("chat.askAnything")
           : active.status === "starting"
-            ? "Starting…"
+            ? t("chat.starting")
             : active.status === "errored"
-              ? "Session errored. Start a new chat."
+              ? t("chat.sessionErrored")
               : active.status === "running" || hasActiveTurn
                 ? queuedTurnCount > 0
                   ? `${queuedTurnCount} queued…`
-                  : "Add to queue…"
-                : "Reply…"
+                  : t("chat.addToQueue")
+                : t("chat.reply")
       }
       onSubmit={onSubmit}
       onCancel={() => {
-        if (active?.activeTurnId) {
+        if (!isNativeSubagent && active?.activeTurnId) {
           void window.backchat.sessionCancel({
             session_id: active.id,
             turn_id: active.activeTurnId,
@@ -431,7 +453,10 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   }, [isEmpty, active?.id]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-chat-surface={isSide ? "side" : "main"}
+    >
       {isEmpty ? (
         // Empty state — heading + composer form a single vertically
         // centered group. Group width matches the composer (max-w-2xl)
@@ -470,11 +495,30 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             >
               <MarkdownCwdProvider cwd={active?.cwd}>
                 <div
+                  ref={transcriptRef}
                   className={CHAT_TURN_FRAME_CLASS}
                   data-chat-column="turns"
                 >
                   {turns.map((turn) => <TurnBlock key={turn.id} turn={turn} />)}
                 </div>
+                <ResponseAnnotationController
+                  scopeRef={transcriptRef}
+                  destinationSessionId={active!.id}
+                  onAskInSideChat={isSide ? undefined : async (annotation) => {
+                    const settingsCwd = settings?.default.workspace_path?.trim() || "";
+                    const cwd = settingsCwd || active!.cwd || await window.backchat.uiFsHome();
+                    const canFork = !!active!.supportsSessionFork && !!active!.acp_session_id;
+                    const sid = sessionStore.newSideDraft({
+                      parentSessionId: active!.id,
+                      parentAcpSessionId: canFork ? active!.acp_session_id : undefined,
+                      inheritance: canFork ? "fork" : "fresh",
+                      agentId: active!.agent_id || settings?.default.agent_id || "",
+                      cwd,
+                    });
+                    promptAnnotationStore.add(sid, annotation);
+                    sessionStore.openSideTab("chat", sid, "Side chat");
+                  }}
+                />
               </MarkdownCwdProvider>
             </ConversationContent>
             <ConversationScrollButton />
@@ -570,14 +614,15 @@ function applyConfigOverrides(
 }
 
 function EmptyStateIntro({ hasDefaultAgent }: { hasDefaultAgent: boolean }) {
+  const { t } = useI18n();
   return (
     <div className="reveal-in flex flex-col items-center text-center">
       <h2 className="font-display text-2xl font-normal leading-tight text-fg">
-        {hasDefaultAgent ? "What can I help with?" : "Pick a default agent"}
+        {hasDefaultAgent ? t("chat.whatCanIHelp") : t("chat.pickDefaultAgent")}
       </h2>
       {!hasDefaultAgent && (
         <p className="mt-2 max-w-sm text-sm text-fg-muted">
-          Open Settings → Agents to choose one.
+          {t("chat.openSettingsChooseAgent")}
         </p>
       )}
     </div>
@@ -595,16 +640,22 @@ function SessionIntro({ agentId: _agentId, cwd: _cwd }: { agentId: string; cwd: 
 }
 
 export function TurnBlock({ turn }: { turn: Turn }) {
+  const { t } = useI18n();
   const rendered: TurnRender = reduceTurn(turn.events);
   const cwd = useContext(MarkdownCwdContext);
 
   const isStreaming = turn.status === "running";
   const isQueued = turn.status === "queued";
-  const hasAnything =
+  const hasVisibleContent =
     turn.assistantText.length > 0 ||
-    turn.thoughtText.length > 0 ||
     rendered.tools.length > 0 ||
     rendered.plan.length > 0;
+  const showTransientThought = shouldShowTransientThought({
+    isStreaming,
+    thoughtText: turn.thoughtText,
+    hasVisibleContent,
+  });
+  const hasAnything = hasVisibleContent || showTransientThought;
 
   return (
     <div className="group/turn reveal-in mb-6 space-y-2" data-turn-id={turn.id}>
@@ -616,41 +667,21 @@ export function TurnBlock({ turn }: { turn: Turn }) {
         </Message>
       )}
 
+      <div
+        data-annotatable-response
+        data-annotation-ready={!isStreaming}
+        data-source-session-id={turn.sessionId}
+        data-source-turn-id={turn.id}
+        className="min-w-0"
+      >
       <AssistantGutter>
         {rendered.plan.length > 0 && <PlanBlock entries={rendered.plan} />}
 
-        {/* Thought block — wrapped in <Reasoning> so claude-acp's long
-            english thinking dumps (image #99) don't masquerade as part
-            of the assistant prose. Default open while streaming so the
-            user sees live progress; collapsible once the turn is
-            complete. The ai-elements Reasoning component handles the
-            "Thinking… / Thought for Ns" header + chevron + collapse
-            animation; we feed it the same dual-track body we'd use
-            inline — StreamingMarkdown during stream, StreamdownText
-            after. */}
-        {turn.thoughtText.length > 0 && (
-          <Reasoning isStreaming={isStreaming} defaultOpen={isStreaming}>
-            <ReasoningTrigger />
-            <ReasoningContent>
-              {isStreaming ? (
-                <StreamingMarkdown
-                  turnId={turn.id}
-                  kind="thought"
-                  className="text-fg-muted"
-                  cwd={cwd}
-                />
-              ) : (
-                <StreamdownText
-                  className={cn(
-                    "text-[13px] leading-6 text-fg-muted",
-                    "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-                    "[&>p]:my-1.5 [&>ul]:my-1.5 [&>ol]:my-1.5 [&>pre]:my-2",
-                  )}
-                  text={turn.thoughtText}
-                />
-              )}
-            </ReasoningContent>
-          </Reasoning>
+        {showTransientThought && (
+          <div className="flex items-center gap-2 text-xs text-fg-subtle">
+            <BrainIcon className="size-3.5" />
+            <span>{t("chat.thinking")}</span>
+          </div>
         )}
 
         {/* Tools + assistant text streamed inline by timeline order.
@@ -812,6 +843,7 @@ export function TurnBlock({ turn }: { turn: Turn }) {
           <p className="text-xs italic text-fg-subtle">cancelled</p>
         )}
       </AssistantGutter>
+      </div>
     </div>
   );
 }
@@ -1430,6 +1462,7 @@ function shortPath(p: string): string {
 }
 
 export function Composer({
+  sessionId,
   sessionAgentId,
   agentPickerLabel,
   agentPickerAgentIds,
@@ -1448,6 +1481,7 @@ export function Composer({
   onSubmit,
   onCancel,
 }: {
+  sessionId?: string;
   sessionAgentId?: string;
   agentPickerLabel?: string;
   agentPickerAgentIds?: string[];
@@ -1469,15 +1503,31 @@ export function Composer({
     intent?: AgentMessageIntent,
     configOverrides?: Record<string, string | boolean>,
     selectedAgentId?: string,
+    annotations?: PromptAnnotation[],
   ) => void;
   onCancel: () => void;
 }) {
+  const { t } = useI18n();
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [dismissedSlashText, setDismissedSlashText] = useState<string | null>(null);
   const [selectedSkillCommand, setSelectedSkillCommand] =
     useState<AcpAvailableCommand | null>(null);
   const [draftConfigValues, setDraftConfigValues] = useState<Record<string, string | boolean>>({});
+  const annotations = usePromptAnnotations(sessionId);
+  const browserScreenshotNames = useMemo(
+    () =>
+      new Set(
+        annotations.flatMap((annotation) => {
+          const screenshotName = browserAnnotationScreenshotName(annotation);
+          return screenshotName ? [screenshotName] : [];
+        }),
+      ),
+    [annotations],
+  );
+  const previousBrowserScreenshotNamesRef = useRef(browserScreenshotNames);
+  const previousBrowserScreenshotSessionRef = useRef(sessionId);
+  const composerInsertions = useComposerInsertions(sessionId);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const settings = useSettings();
   const navigate = useNavigate();
@@ -1521,7 +1571,6 @@ export function Composer({
     ? describeRunningMessageAction({
         agentId: currentAgentId,
         intent: "submit",
-        transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
       })
     : null;
   const primaryIntent: AgentMessageIntent =
@@ -1530,21 +1579,8 @@ export function Composer({
     ? describeRunningMessageAction({
         agentId: currentAgentId,
         intent: primaryIntent,
-        transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
       })
     : null;
-  const offerExplicitSteer =
-    running &&
-    shouldOfferExplicitSteer(currentAgentId) &&
-    defaultRunningAction?.decision.requestedDelivery !== "llm_boundary";
-  const steerRunningAction =
-    offerExplicitSteer
-      ? describeRunningMessageAction({
-          agentId: currentAgentId,
-          intent: "steer",
-          transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
-        })
-      : null;
 
   const pickAgent = (id: string) => {
     setDraftConfigValues({});
@@ -1580,6 +1616,38 @@ export function Composer({
       });
     }
   };
+
+  useEffect(() => {
+    if (!sessionId || composerInsertions.length === 0) return;
+    const incomingAttachments = composerInsertions.flatMap(
+      (insertion) => insertion.attachments,
+    );
+    if (incomingAttachments.length > 0) {
+      setAttachments((current) => mergeAttachments(current, incomingAttachments));
+    }
+    composerInsertionStore.consume(
+      sessionId,
+      composerInsertions.map((insertion) => insertion.id),
+    );
+    requestAnimationFrame(() => taRef.current?.focus());
+  }, [composerInsertions, sessionId]);
+
+  useEffect(() => {
+    if (previousBrowserScreenshotSessionRef.current !== sessionId) {
+      previousBrowserScreenshotSessionRef.current = sessionId;
+      previousBrowserScreenshotNamesRef.current = browserScreenshotNames;
+      return;
+    }
+    const previous = previousBrowserScreenshotNamesRef.current;
+    const removed = new Set(
+      [...previous].filter((name) => !browserScreenshotNames.has(name)),
+    );
+    previousBrowserScreenshotNamesRef.current = browserScreenshotNames;
+    if (removed.size === 0) return;
+    setAttachments((current) => current.filter(
+      (attachment) => !removed.has(attachment.name),
+    ));
+  }, [browserScreenshotNames, sessionId]);
 
   useEffect(() => {
     if (!disabled) taRef.current?.focus();
@@ -1644,11 +1712,19 @@ export function Composer({
     }
     if (!canSubmitComposer({
       text: commandText,
-      disabled,
+      disabled: !!disabled,
       running,
       actionDisabled: primaryRunningAction?.disabled || !hasHarnessSetup,
     })) return;
-    onSubmit(commandText, undefined, primaryIntent, draftConfigValues, currentEnabledAgent?.id);
+    onSubmit(
+      commandText,
+      undefined,
+      primaryIntent,
+      draftConfigValues,
+      currentEnabledAgent?.id,
+      annotations,
+    );
+    if (sessionId) promptAnnotationStore.clear(sessionId);
     setText("");
     setDismissedSlashText(null);
   };
@@ -1662,7 +1738,8 @@ export function Composer({
 
   const submitComposer = (intent: AgentMessageIntent = primaryIntent) => {
     const t = buildSubmitText();
-    const hasContent = t.trim().length > 0 || attachments.length > 0;
+    const hasContent =
+      t.trim().length > 0 || attachments.length > 0 || annotations.length > 0;
     if (hasContent && !hasHarnessSetup) {
       notifyNoHarnessSetup();
       return;
@@ -1671,36 +1748,38 @@ export function Composer({
       ? describeRunningMessageAction({
           agentId: currentAgentId,
           intent,
-          transport: BACKCHAT_ACP_DELIVERY_CAPABILITIES,
         })
       : null;
     if (!canSubmitComposer({
       text: t,
       attachments,
-      disabled,
+      annotations,
+      disabled: !!disabled,
       running,
       actionDisabled: action?.disabled || !hasHarnessSetup,
     })) return;
-    onSubmit(t, attachments, intent, draftConfigValues, currentEnabledAgent?.id);
+    onSubmit(
+      t,
+      attachments,
+      intent,
+      draftConfigValues,
+      currentEnabledAgent?.id,
+      annotations,
+    );
     setText("");
     setAttachments([]);
     setSelectedSkillCommand(null);
     setDismissedSlashText(null);
+    if (sessionId) promptAnnotationStore.clear(sessionId);
   };
 
   const canSubmitNow = canSubmitComposer({
     text: buildSubmitText(),
     attachments,
-    disabled,
+    annotations,
+    disabled: !!disabled,
     running,
     actionDisabled: primaryRunningAction?.disabled || !hasHarnessSetup,
-  });
-  const canSteerNow = canSubmitComposer({
-    text: buildSubmitText(),
-    attachments,
-    disabled,
-    running,
-    actionDisabled: steerRunningAction?.disabled || !hasHarnessSetup,
   });
 
   return (
@@ -1736,8 +1815,38 @@ export function Composer({
         {attachments.length > 0 && (
           <AttachmentPreviewStrip
             attachments={attachments}
+            browserScreenshotNames={browserScreenshotNames}
             onRemove={(id) => {
+              const removed = attachments.find((attachment) => attachment.id === id);
               setAttachments((prev) => prev.filter((a) => a.id !== id));
+              if (removed && sessionId) {
+                for (const annotation of annotations) {
+                  if (browserAnnotationScreenshotName(annotation) === removed.name) {
+                    promptAnnotationStore.remove(sessionId, annotation.id);
+                  }
+                }
+              }
+              requestAnimationFrame(() => taRef.current?.focus());
+            }}
+          />
+        )}
+        {annotations.length > 0 && (
+          <ComposerAnnotationStrip
+            annotations={annotations}
+            attachments={attachments}
+            onRemove={(annotationId) => {
+              const removed = annotations.find(
+                (annotation) => annotation.id === annotationId,
+              );
+              const screenshotName = removed
+                ? browserAnnotationScreenshotName(removed)
+                : null;
+              if (screenshotName) {
+                setAttachments((current) => current.filter(
+                  (attachment) => attachment.name !== screenshotName,
+                ));
+              }
+              if (sessionId) promptAnnotationStore.remove(sessionId, annotationId);
               requestAnimationFrame(() => taRef.current?.focus());
             }}
           />
@@ -1757,7 +1866,29 @@ export function Composer({
             }
             if (attachments.length > 0 && e.key === "Backspace" && text.length === 0) {
               e.preventDefault();
+              const removed = attachments[attachments.length - 1];
               setAttachments((prev) => prev.slice(0, -1));
+              if (removed && sessionId) {
+                for (const annotation of annotations) {
+                  if (browserAnnotationScreenshotName(annotation) === removed.name) {
+                    promptAnnotationStore.remove(sessionId, annotation.id);
+                  }
+                }
+              }
+              return;
+            }
+            if (annotations.length > 0 && e.key === "Backspace" && text.length === 0) {
+              e.preventDefault();
+              const last = annotations[annotations.length - 1];
+              const screenshotName = last
+                ? browserAnnotationScreenshotName(last)
+                : null;
+              if (screenshotName) {
+                setAttachments((current) => current.filter(
+                  (attachment) => attachment.name !== screenshotName,
+                ));
+              }
+              if (last && sessionId) promptAnnotationStore.remove(sessionId, last.id);
               return;
             }
             // Slash picker has first dibs on arrow / enter / escape. Only
@@ -1804,8 +1935,8 @@ export function Composer({
               submitComposer();
             }
           }}
-          placeholder={selectedSkillCommand ? "Add instructions…" : placeholder}
-          disabled={disabled}
+          placeholder={selectedSkillCommand ? t("chat.addInstructions") : placeholder}
+          disabled={!!disabled}
           rows={1}
           className={cn(
             // Bigger min-h so the empty composer has presence (Codex / Claude
@@ -1841,7 +1972,7 @@ export function Composer({
             "max-h-[260px] overflow-y-auto p-1",
           )}
           role="listbox"
-          aria-label="Slash commands"
+          aria-label={t("chat.slashCommands")}
         >
           {filteredCommands.map((cmd, i) => (
             <button
@@ -1883,10 +2014,10 @@ export function Composer({
         <div className="flex items-center gap-1">
           <button
             type="button"
-            aria-label="Attach files"
-            title="Attach files"
+            aria-label={t("chat.attachFiles")}
+            title={t("chat.attachFiles")}
             onClick={() => void pickAttachments()}
-            disabled={disabled}
+            disabled={!!disabled}
             className={cn(
               "inline-flex size-8 shrink-0 items-center justify-center rounded-md",
               "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
@@ -1958,8 +2089,8 @@ export function Composer({
             <button
               type="button"
               onClick={onCancel}
-              aria-label="Stop"
-              title="Stop"
+              aria-label={t("chat.stop")}
+              title={t("chat.stop")}
               className={cn(
                 "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2",
                 "text-fg-subtle hover:text-fg hover:bg-bg-surface",
@@ -1969,33 +2100,14 @@ export function Composer({
               <SquareIcon className="size-3.5" />
             </button>
           )}
-          {running && steerRunningAction && (
-            <button
-              type="button"
-              onClick={() => {
-                submitComposer("steer");
-              }}
-              disabled={!canSteerNow}
-              aria-label={`${steerRunningAction.label} (Steer)`}
-              title={steerRunningAction.title}
-              className={cn(
-                "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2",
-                "text-fg-subtle hover:text-fg hover:bg-bg-surface",
-                "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
-                "transition-colors",
-              )}
-            >
-              <ZapIcon className="size-4" />
-            </button>
-          )}
           <button
             type="button"
             onClick={() => {
               submitComposer(primaryIntent);
             }}
             disabled={!canSubmitNow}
-            aria-label={running ? primaryRunningAction?.ariaLabel : "Send (Enter)"}
-            title={running ? primaryRunningAction?.title : "Send (↵)"}
+            aria-label={running ? primaryRunningAction?.ariaLabel : t("chat.send")}
+            title={running ? primaryRunningAction?.title : t("chat.send")}
             className={cn(
               "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2",
               "text-fg-subtle hover:text-fg hover:bg-bg-surface",
@@ -2030,11 +2142,12 @@ function SessionRunChip({
   configOptions?: AcpSessionConfigOption[];
   onSetConfigOption: (configId: string, value: string | boolean) => void;
 }) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const noHarnessSetup = agents.length === 0 && !locked;
   const agentLabel = noHarnessSetup
-    ? "No harness setup"
-    : currentAgentLabel || (currentAgentId ? currentAgentId : "Choose agent");
+    ? t("chat.noHarness")
+    : currentAgentLabel || (currentAgentId ? currentAgentId : t("chat.chooseAgent"));
   const configSections = useMemo(
     () => buildConfigOptionSections(configOptions),
     [configOptions],
@@ -2046,7 +2159,7 @@ function SessionRunChip({
       configOptions?.find((option) => option.category === "thought_level");
   const configLabel = configSummary
     ? selectedConfigOptionLabel(configSummary)
-    : "Defaults";
+    : t("chat.defaults");
 
   return (
     <DropdownMenu>
@@ -2066,7 +2179,7 @@ function SessionRunChip({
         }
       >
         <MonitorIcon className="size-3.5 shrink-0 text-fg-subtle" />
-        <span className="shrink-0">Local</span>
+        <span className="shrink-0">{t("chat.local")}</span>
         <span className="text-fg-subtle">·</span>
         <span className="truncate">{agentLabel}</span>
         {!noHarnessSetup && (
@@ -2078,31 +2191,31 @@ function SessionRunChip({
         <ChevronDownIcon className="size-3.5 shrink-0 text-fg-subtle" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6} className="w-[280px]">
-        <SessionRunSection title="Runtime">
+        <SessionRunSection title={t("chat.runtime")}>
           <SessionRunItem
             icon={MonitorIcon}
-            label="Local"
-            hint="This machine"
+            label={t("chat.local")}
+            hint={t("chat.thisMachine")}
             active
             onSelect={() => undefined}
           />
           <SessionRunItem
             icon={CloudIcon}
-            label="Cloud"
-            hint="Coming later"
+            label={t("chat.cloud")}
+            hint={t("chat.comingLater")}
             disabled
             onSelect={() => undefined}
           />
           <SessionRunItem
             icon={GlobeIcon}
-            label="Other machine"
-            hint="Not connected"
+            label={t("chat.otherMachine")}
+            hint={t("chat.notConnected")}
             disabled
             onSelect={() => undefined}
           />
         </SessionRunSection>
 
-        <SessionRunSection title="Harness">
+        <SessionRunSection title={t("chat.harness")}>
           {agents.length > 0 ? (
             agents.map((agent) => (
               <SessionRunItem
@@ -2118,7 +2231,7 @@ function SessionRunChip({
           ) : (
             <SessionRunItem
               icon={TerminalIcon}
-              label="No harness setup"
+              label={t("chat.noHarness")}
               hint="Open Settings to install and enable"
               onSelect={() => void navigate({ to: "/settings/agents" })}
             />
@@ -2232,11 +2345,13 @@ function SessionRunItem({
 export function canSubmitComposer({
   text,
   attachments,
+  annotations,
   disabled,
   actionDisabled,
 }: {
   text: string;
   attachments?: PromptAttachment[];
+  annotations?: PromptAnnotation[];
   disabled: boolean;
   running?: boolean;
   actionDisabled?: boolean;
@@ -2244,23 +2359,43 @@ export function canSubmitComposer({
   return (
     !disabled &&
     !actionDisabled &&
-    (text.trim().length > 0 || (attachments?.length ?? 0) > 0)
+    (text.trim().length > 0 ||
+      (attachments?.length ?? 0) > 0 ||
+      (annotations?.length ?? 0) > 0)
   );
+}
+
+export function shouldShowTransientThought({
+  isStreaming,
+  thoughtText,
+  hasVisibleContent,
+}: {
+  isStreaming: boolean;
+  thoughtText: string;
+  hasVisibleContent: boolean;
+}): boolean {
+  return isStreaming && thoughtText.trim().length > 0 && !hasVisibleContent;
 }
 
 function AttachmentPreviewStrip({
   attachments,
+  browserScreenshotNames,
   onRemove,
 }: {
   attachments: PromptAttachment[];
+  browserScreenshotNames: ReadonlySet<string>;
   onRemove: (id: string) => void;
 }) {
+  const visibleAttachments = attachments.filter(
+    (attachment) => !browserScreenshotNames.has(attachment.name),
+  );
+  if (visibleAttachments.length === 0) return null;
   return (
     <div
       className="flex w-full flex-wrap items-center gap-2"
       aria-label="Attachments"
     >
-      {attachments.map((a) => {
+      {visibleAttachments.map((a) => {
         const isPreviewableImage = a.kind === "image" && a.data && a.mimeType;
         if (isPreviewableImage) {
           return (
@@ -2272,7 +2407,10 @@ function AttachmentPreviewStrip({
               <img
                 src={`data:${a.mimeType};base64,${a.data}`}
                 alt={a.name}
-                className="size-full object-cover"
+                className={cn(
+                  "size-full object-cover",
+                  browserScreenshotNames.has(a.name) && "object-top",
+                )}
               />
               <button
                 type="button"
@@ -2400,6 +2538,7 @@ function ProjectChipRow({
   onSetCwd: (p: string) => void;
   onClearCwd: () => void;
 }) {
+  const { t } = useI18n();
   // Recent workspaces — dedupe by absolute path, keep most-recent-first
   // ordering implicit in sessionsList's sort.
   const { data: persisted = [] } = useQuery({
@@ -2413,6 +2552,7 @@ function ProjectChipRow({
     for (const r of persisted) {
       const cwd = r.cwd?.trim();
       if (!cwd || seen.has(cwd)) continue;
+      if (isPerSessionFolderPath(cwd)) continue;
       seen.add(cwd);
       out.push(cwd);
       if (out.length >= 8) break;
@@ -2432,7 +2572,7 @@ function ProjectChipRow({
     staleTime: 10_000,
   });
 
-  const cwdLabel = activeCwd ? shortPath(activeCwd) : "Choose project";
+  const cwdLabel = activeCwd ? folderName(activeCwd) : t("chat.chooseProject");
 
   return (
     <div className="flex items-center gap-2 px-3 text-xs text-fg-muted">
@@ -2445,7 +2585,7 @@ function ProjectChipRow({
             "hover:bg-bg-surface/60 focus:outline-none focus:bg-bg-surface/60",
             "transition-colors disabled:cursor-default disabled:hover:bg-transparent",
           )}
-          title={activeCwd || "Choose a project folder"}
+          title={activeCwd || t("chat.chooseProjectFolder")}
         >
           <FolderOpenIcon className="size-3.5" />
           <span className="max-w-[200px] truncate">{cwdLabel}</span>
@@ -2463,7 +2603,7 @@ function ProjectChipRow({
                     title={p}
                   >
                     <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-                    <span className="flex-1 truncate">{shortPath(p)}</span>
+                    <span className="flex-1 truncate">{folderName(p)}</span>
                     {p === activeCwd && (
                       <CheckIcon className="size-3.5 text-fg-muted" />
                     )}
@@ -2477,14 +2617,14 @@ function ProjectChipRow({
               className="flex items-center gap-2 text-xs"
             >
               <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-              <span>Browse…</span>
+              <span>{t("common.browse")}</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={onClearCwd}
               className="flex items-center gap-2 text-xs"
             >
               <XIcon className="size-3.5 text-fg-subtle" />
-              <span>No project — use a per-chat folder</span>
+              <span>{t("chat.noProject")}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         )}
@@ -2500,16 +2640,16 @@ function ProjectChipRow({
             "hover:bg-bg-surface/60 focus:outline-none focus:bg-bg-surface/60",
             "transition-colors",
           )}
-          title="Where this conversation runs"
+          title={t("chat.whereRuns")}
         >
           <MonitorIcon className="size-3.5" />
-          <span>Local</span>
+          <span>{t("chat.local")}</span>
           <ChevronDownIcon className="size-3 opacity-60" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={6} className="min-w-[220px]">
           <DropdownMenuItem className="flex items-center gap-2 text-xs">
             <MonitorIcon className="size-3.5 text-fg-subtle" />
-            <span className="flex-1">Local</span>
+            <span className="flex-1">{t("chat.local")}</span>
             <CheckIcon className="size-3.5 text-fg-muted" />
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -2518,8 +2658,8 @@ function ProjectChipRow({
           >
             <CloudIcon className="mt-0.5 size-3.5 text-fg-subtle" />
             <div className="min-w-0 flex-1">
-              <div>Cloud</div>
-              <div className="text-[11px] text-fg-subtle">Coming soon</div>
+              <div>{t("chat.cloud")}</div>
+              <div className="text-[11px] text-fg-subtle">{t("chat.comingSoon")}</div>
             </div>
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -2742,6 +2882,7 @@ function AskOption({
  *  trust-the-agent path (matches Codex's amber warning on its full-
  *  access chip in image #3). */
 function PermissionModeChip({ disabled }: { disabled: boolean }) {
+  const { t } = useI18n();
   const settings = useSettings();
   const mode = settings?.default.permission_mode ?? "ask";
 
@@ -2754,6 +2895,7 @@ function PermissionModeChip({ disabled }: { disabled: boolean }) {
 
   const meta = MODE_META[mode];
   const Icon = meta.icon;
+  const label = t(meta.labelKey);
 
   return (
     <DropdownMenu>
@@ -2767,16 +2909,17 @@ function PermissionModeChip({ disabled }: { disabled: boolean }) {
           "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         )}
         style={{ height: "32px" }}
-        aria-label={`Permission mode: ${meta.label}`}
+        aria-label={label}
       >
         <Icon className="size-3.5" />
-        <span>{meta.label}</span>
+        <span>{label}</span>
         <ChevronDownIcon className="size-3.5 opacity-70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={6} className="min-w-[220px]">
         {(["auto", "ask", "read_only"] as const).map((m) => {
           const item = MODE_META[m];
           const ItemIcon = item.icon;
+          const itemLabel = t(item.labelKey);
           return (
             <DropdownMenuItem
               key={m}
@@ -2785,8 +2928,8 @@ function PermissionModeChip({ disabled }: { disabled: boolean }) {
             >
               <ItemIcon className={cn("mt-0.5 size-3.5 shrink-0", item.toneClass)} />
               <div className="min-w-0 flex-1">
-                <div className={cn(m === mode && "text-fg")}>{item.label}</div>
-                <div className="text-[11px] text-fg-subtle">{item.hint}</div>
+                <div className={cn(m === mode && "text-fg")}>{itemLabel}</div>
+                <div className="text-[11px] text-fg-subtle">{t(item.hintKey)}</div>
               </div>
               {m === mode && <CheckIcon className="mt-0.5 size-3.5 text-fg-muted" />}
             </DropdownMenuItem>
@@ -2803,8 +2946,8 @@ const MODE_META: Record<
   "ask" | "auto" | "read_only",
   {
     icon: typeof ShieldAlertIcon;
-    label: string;
-    hint: string;
+    labelKey: TranslationKey;
+    hintKey: TranslationKey;
     /** Tailwind classes that tone the chip — auto picks up a warm hint
      *  so the trust-the-agent mode reads as a deliberate choice, not
      *  the boring default. */
@@ -2813,20 +2956,20 @@ const MODE_META: Record<
 > = {
   ask: {
     icon: ShieldAlertIcon,
-    label: "Ask each time",
-    hint: "Show a modal for every tool call.",
+    labelKey: "permission.ask",
+    hintKey: "permission.askHint",
     toneClass: "text-fg-muted",
   },
   auto: {
     icon: ZapIcon,
-    label: "Full access",
-    hint: "Auto-approve every tool. Use with trusted agents.",
+    labelKey: "permission.auto",
+    hintKey: "permission.autoHint",
     toneClass: "text-warning",
   },
   read_only: {
     icon: EyeIcon,
-    label: "Read-only",
-    hint: "Auto-reject anything that writes.",
+    labelKey: "permission.readOnly",
+    hintKey: "permission.readOnlyHint",
     toneClass: "text-fg-muted",
   },
 };
@@ -2834,9 +2977,13 @@ const MODE_META: Record<
 function derivePromptDisplayText(
   text: string,
   attachments: PromptAttachment[],
+  annotationCount = 0,
 ): string {
-  if (attachments.length === 0) return text;
   if (text.trim().length > 0) return text;
+  if (attachments.length === 0 && annotationCount > 0) {
+    return annotationCount === 1 ? "[1 annotation]" : `[${annotationCount} annotations]`;
+  }
+  if (attachments.length === 0) return text;
   if (attachments.length === 1) {
     const a = attachments[0]!;
     return `[Attached ${a.kind}: ${a.name}]`;
@@ -3083,7 +3230,7 @@ function MarkdownAnchor({
     e.preventDefault();
     e.stopPropagation();
     if (target.kind === "http") {
-      window.open(target.url, "_blank", "noopener,noreferrer");
+      openBrowserAwareUrl(target.url);
       return;
     }
     // HTML / HTM → render inline in the sidebar BrowserTab. Anything
@@ -3094,8 +3241,7 @@ function MarkdownAnchor({
     // session-store.#autoOpenHtml). Reusing the same code path here
     // means a manual click matches the auto-open behavior.
     if (/\.html?$/i.test(target.path)) {
-      sessionStore.openSideTab(
-        "browser",
+      openBrowserAwareUrl(
         "file://" + target.path,
         target.path.split("/").pop() || target.path,
       );

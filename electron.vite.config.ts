@@ -27,7 +27,12 @@ export default defineConfig({
         // marks each one external; we still need this explicit entry for
         // `electron` (which lives in devDependencies — built into the
         // runtime, not bundled).
-        external: ["electron", "node-pty"],
+        external: [
+          "electron",
+          "node-pty",
+          /^@modelcontextprotocol\/sdk(?:\/.*)?$/,
+          /^zod(?:\/.*)?$/,
+        ],
       },
     },
     resolve: {

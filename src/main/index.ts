@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, nativeImage, net, protocol, shell } from "electron";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { registerIpc } from "./ipc.js";
 import { setSessionRoot } from "./session-cwd.js";
 import { settingsStore } from "./settings-store.js";
@@ -10,6 +11,7 @@ import { disposeAllUiTerminals } from "./ui-terminal-broker.js";
 import { openmaRoot } from "./storage-root.js";
 import { BACKCHAT_PROTOCOL, findBackchatDeepLink, parseBackchatDeepLink, type BackchatDeepLink } from "./deep-link.js";
 import { PushChannel } from "../shared/ipc-channels.js";
+import { browserHarnessMcpBridge } from "./browser-view-broker.js";
 
 // Dev-only: enable CDP on port 9222 so agent-browser can drive the
 // renderer for end-to-end UI tests. No-op in production. Also skip
@@ -27,6 +29,7 @@ if (
 }
 
 const windows = new Set<BrowserWindow>();
+const mainDir = dirname(fileURLToPath(import.meta.url));
 const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
 const showE2eWindow = process.env["BACKCHAT_E2E_VISIBLE"] === "1";
 const pendingDeepLinks: BackchatDeepLink[] = [];
@@ -181,7 +184,7 @@ function createWindow(): BrowserWindow {
     trafficLightPosition:
       process.platform === "darwin" ? { x: 24, y: 18 } : undefined,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.cjs"),
+      preload: join(mainDir, "../preload/index.cjs"),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -249,7 +252,7 @@ function createWindow(): BrowserWindow {
   if (process.env["ELECTRON_RENDERER_URL"]) {
     void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   } else {
-    void win.loadFile(join(__dirname, "../renderer/index.html"));
+    void win.loadFile(join(mainDir, "../renderer/index.html"));
   }
   return win;
 }
@@ -366,10 +369,13 @@ if (!gotLock) {
     process.env.PATH = [acpBinDir, process.env.PATH].filter(Boolean).join(delimiter);
     setSessionRoot(join(root, "sessions"));
     openSessionDb(join(root, "sessions.db"));
+    await browserHarnessMcpBridge.start();
     registerIpc({
       registryCachePath: join(root, "registry-cache.json"),
       acpBinDir,
       acpInstallRoot: acpRoot,
+      browserMcpServerForTask: (taskId) =>
+        browserHarnessMcpBridge.descriptor(taskId),
     });
 
     installAppMenu({
@@ -397,4 +403,5 @@ app.on("window-all-closed", () => {
 // reboot on macOS / until next user logout on Linux).
 app.on("before-quit", () => {
   disposeAllUiTerminals();
+  void browserHarnessMcpBridge.stop();
 });
