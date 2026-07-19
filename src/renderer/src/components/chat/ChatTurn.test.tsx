@@ -35,6 +35,7 @@ vi.mock("@/lib/session-store", async (importOriginal) => {
 
 vi.mock("use-stick-to-bottom", () => ({
   useStickToBottomContext: () => ({
+    contentRef: { current: null },
     scrollRef: { current: null },
     stopScroll: vi.fn(),
   }),
@@ -351,6 +352,30 @@ describe("TurnBlock", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("components");
     expect(html).not.toContain("renderer");
+  });
+
+  it("keeps grouped-tool controls optically inset inside their highlight", () => {
+    const events = ["components", "renderer"].map((target, index) => ({
+      payload: {
+        sessionUpdate: "tool_call",
+        toolCallId: `search-alignment-${index}`,
+        kind: "search",
+        status: "completed",
+        title: `Searched for ${target}`,
+        rawInput: { query: target },
+      },
+      receivedAt: index + 1,
+    }));
+    const html = renderToStaticMarkup(
+      <TurnBlock turn={turn({ status: "complete", events })} />,
+    );
+    const triggerClass = html.match(
+      /data-tool-group-trigger="true"[^>]*class="([^"]+)"/,
+    )?.[1];
+
+    expect(triggerClass).toContain("px-2");
+    expect(triggerClass).toContain("py-1");
+    expect(html.match(/data-tool-group-icon-slot="true"/g)).toHaveLength(2);
   });
 
   it("groups tools separated only by hidden Codex thought summaries", () => {

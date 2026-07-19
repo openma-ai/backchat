@@ -234,4 +234,24 @@ describe("session level GUI contract", () => {
       'className="side-tab-scroll min-w-0 flex-1 overflow-x-auto pb-3"',
     );
   });
+
+  it("anchors both nested activity disclosures while their height changes", () => {
+    const reasoningSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/ai-elements/reasoning.tsx",
+      ),
+      "utf-8",
+    );
+    const activityGroupSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/chat/ActivityToolGroup.tsx",
+      ),
+      "utf-8",
+    );
+
+    expect(reasoningSource).toContain("preserveScrollAnchor({");
+    expect(activityGroupSource).toContain("preserveScrollAnchor({");
+  });
 });

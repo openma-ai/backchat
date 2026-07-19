@@ -3,7 +3,8 @@ import {
   ListChecksIcon,
   Loader2Icon,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 
 import {
   isToolRunning,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/chat-tool-presentation";
 import { useI18n } from "@/lib/i18n";
 import type { SubagentActivity } from "@/lib/session-store";
-import { cn } from "@/lib/utils";
+import { cn, preserveScrollAnchor } from "@/lib/utils";
 import { ToolRow } from "./ToolPresentation";
 
 export function ActivityToolGroup({
@@ -29,6 +30,8 @@ export function ActivityToolGroup({
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const stick = useStickToBottomContext();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   if (tools.length === 1) {
     const tool = tools[0]!;
     return (
@@ -44,20 +47,36 @@ export function ActivityToolGroup({
   const latest =
     tools.findLast((tool) => isToolRunning(tool.status)) ?? tools.at(-1)!;
   const latestVerb = pickToolActivityVerb(latest);
+  const toggleOpen = () => {
+    preserveScrollAnchor({
+      scrollElement: stick.scrollRef.current,
+      anchorElement: triggerRef.current,
+      contentElement: stick.contentRef.current,
+      update: () => setOpen((value) => !value),
+      stopScroll: stick.stopScroll,
+    });
+  };
 
   return (
     <div className="py-0.5" data-tool-group-size={tools.length}>
       <button
+        ref={triggerRef}
+        data-tool-group-trigger
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[13px] text-fg-muted hover:bg-bg-surface/40"
+        onClick={toggleOpen}
+        className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[13px] text-fg-muted hover:bg-bg-surface/40"
       >
-        {running ? (
-          <Loader2Icon className="size-3.5 shrink-0 animate-spin" />
-        ) : (
-          <ListChecksIcon className="size-3.5 shrink-0" />
-        )}
+        <span
+          data-tool-group-icon-slot
+          className="grid size-5 shrink-0 place-items-center"
+        >
+          {running ? (
+            <Loader2Icon className="size-3.5 animate-spin" />
+          ) : (
+            <ListChecksIcon className="size-3.5" />
+          )}
+        </span>
         <span className="shrink-0 whitespace-nowrap">
           {running
             ? latestVerb
@@ -71,12 +90,17 @@ export function ActivityToolGroup({
             {t("chat.toolCallCount", { count: tools.length })}
           </span>
         )}
-        <ChevronRightIcon
-          className={cn(
-            "ml-auto size-3.5 shrink-0 text-fg-subtle transition-transform",
-            open && "rotate-90",
-          )}
-        />
+        <span
+          data-tool-group-icon-slot
+          className="ml-auto grid size-5 shrink-0 place-items-center"
+        >
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 text-fg-subtle transition-transform",
+              open && "rotate-90",
+            )}
+          />
+        </span>
       </button>
       {open && (
         <div className="ml-4 mt-1 border-l border-border/40 pl-2">

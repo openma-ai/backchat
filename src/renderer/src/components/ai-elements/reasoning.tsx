@@ -6,7 +6,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { cn } from "@/lib/utils";
+import { cn, preserveScrollAnchor } from "@/lib/utils";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import {
@@ -19,12 +19,14 @@ import {
   useRef,
   useState,
 } from "react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 
 interface ReasoningContextValue {
   isStreaming: boolean;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   duration: number | undefined;
+  triggerRef: { current: HTMLButtonElement | null };
 }
 
 const ReasoningContext = createContext<ReasoningContextValue | null>(null);
@@ -59,6 +61,7 @@ export const Reasoning = memo(
     children,
     ...props
   }: ReasoningProps) => {
+    const stick = useStickToBottomContext();
     const resolvedDefaultOpen = defaultOpen ?? isStreaming;
     // Track if defaultOpen was explicitly set to false (to prevent auto-open)
     const isExplicitlyClosed = defaultOpen === false;
@@ -74,6 +77,7 @@ export const Reasoning = memo(
     });
 
     const hasEverStreamedRef = useRef(isStreaming);
+    const triggerRef = useRef<HTMLButtonElement | null>(null);
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const startTimeRef = useRef<number | null>(null);
 
@@ -122,13 +126,19 @@ export const Reasoning = memo(
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {
-        setIsOpen(newOpen);
+        preserveScrollAnchor({
+          scrollElement: stick.scrollRef.current,
+          anchorElement: triggerRef.current,
+          contentElement: stick.contentRef.current,
+          update: () => setIsOpen(newOpen),
+          stopScroll: stick.stopScroll,
+        });
       },
-      [setIsOpen]
+      [setIsOpen, stick.contentRef, stick.scrollRef, stick.stopScroll]
     );
 
     const contextValue = useMemo(
-      () => ({ duration, isOpen, isStreaming, setIsOpen }),
+      () => ({ duration, isOpen, isStreaming, setIsOpen, triggerRef }),
       [duration, isOpen, isStreaming, setIsOpen]
     );
 
@@ -172,10 +182,11 @@ export const ReasoningTrigger = memo(
     showIcon = true,
     ...props
   }: ReasoningTriggerProps) => {
-    const { isStreaming, isOpen, duration } = useReasoning();
+    const { isStreaming, isOpen, duration, triggerRef } = useReasoning();
 
     return (
       <CollapsibleTrigger
+        ref={triggerRef}
         className={cn(
           "sticky top-0 z-10 flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
           className
