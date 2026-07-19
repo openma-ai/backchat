@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArchiveRestoreIcon, Trash2Icon } from "lucide-react";
+import { StatusNotice } from "@/components/ui/status-notice";
 import { cn } from "@/lib/utils";
 import { sessionStore } from "@/lib/session-store";
 import type { PersistedSessionInfo } from "@shared/api.js";
@@ -92,7 +93,7 @@ export function Archive() {
       )}
 
       {error && (
-        <div className="rounded-xl border border-danger/35 bg-danger-subtle/30 px-3 py-2 text-[11px] text-danger shadow-card-soft">
+        <StatusNotice tone="danger">
           <div className="font-medium">无法加载归档列表</div>
           <div className="mt-0.5 opacity-80">
             {error}
@@ -101,7 +102,7 @@ export function Archive() {
               新加的 IPC 通道需要重启 Electron 主进程才能生效。请退出 app 重启。
             </span>
           </div>
-        </div>
+        </StatusNotice>
       )}
 
       {rows !== null && !error && rows.length === 0 && (

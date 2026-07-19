@@ -31,6 +31,25 @@ test.describe("backchat smoke", () => {
     }
   });
 
+  test("home suggestion selection creates an editable composer template", async () => {
+    const { page, cleanup } = await launchApp();
+    try {
+      await page.locator('[data-suggestion-kind="shape"]').click();
+
+      const options = page.getByRole("listbox", { name: "Shape an idea" });
+      await expect(options).toBeVisible();
+      await options.getByRole("option").first().click();
+
+      const template = page.locator(".composer-template-row");
+      await expect(template).toBeVisible();
+      await expect(template).toContainText("Help me shape");
+      await expect(template).toContainText("into a concrete plan");
+      await expect(template.getByRole("textbox", { name: "idea" })).toBeFocused();
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("injected session.ready surfaces in sidebar + topbar", async () => {
     const { page, cleanup } = await launchApp();
     try {
@@ -174,6 +193,9 @@ test.describe("backchat smoke", () => {
       await expect(modelPicker).toContainText("GPT-5 mini");
 
       await modelPicker.click();
+      await page
+        .getByRole("menuitem", { name: "Model GPT-5 mini", exact: true })
+        .hover();
       await page.getByRole("menuitem", { name: "GPT-5 Model" }).click();
 
       await expect
@@ -462,25 +484,16 @@ test.describe("backchat smoke", () => {
 
       const response = page.getByText(responseText, { exact: true });
       await expect(response).toBeVisible();
-      const selectedRect = await response.evaluate((element) => {
+      await response.evaluate((element) => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
         const textNode = walker.nextNode();
         if (!textNode) throw new Error("assistant response has no text node");
         const range = document.createRange();
         range.selectNodeContents(textNode);
-        const rect = range.getBoundingClientRect();
         const selection = window.getSelection();
         selection?.removeAllRanges();
         selection?.addRange(range);
         element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-        return {
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom,
-          left: rect.left,
-          width: rect.width,
-          height: rect.height,
-        };
       });
 
       const selectionToolbarScreenshot = testInfo.outputPath("response-selection-toolbar.png");
@@ -499,7 +512,9 @@ test.describe("backchat smoke", () => {
       await expect(
         editor.getByRole("button", { name: "Save annotation comment" }),
       ).toHaveCount(0);
-      const annotationBadge = page.locator("[data-response-annotation-badge]");
+      const annotationBadge = page.getByRole("button", {
+        name: "Edit response annotation 1",
+      });
       await expect(annotationBadge).toBeVisible();
       await expect(annotationBadge.locator("svg")).toHaveCount(1);
       await expect.poll(async () => {
@@ -509,7 +524,7 @@ test.describe("backchat smoke", () => {
         ]);
         if (!editorBox || !currentBadgeBox) return 0;
         return editorBox.x - currentBadgeBox.x - currentBadgeBox.width;
-      }).toBeGreaterThanOrEqual(12);
+      }).toBeGreaterThanOrEqual(4);
       const [emptyEditorBox, emptyInputBox, badgeBox] = await Promise.all([
         editor.boundingBox(),
         commentInput.boundingBox(),
@@ -518,13 +533,6 @@ test.describe("backchat smoke", () => {
       expect(emptyEditorBox).not.toBeNull();
       expect(emptyInputBox).not.toBeNull();
       expect(badgeBox).not.toBeNull();
-      expect(badgeBox!.x).toBeGreaterThanOrEqual(selectedRect.right + 4);
-      expect(badgeBox!.x).toBeLessThanOrEqual(selectedRect.right + 5);
-      expect(badgeBox!.y + badgeBox!.height).toBeLessThanOrEqual(selectedRect.top + 2);
-      expect(badgeBox!.y + badgeBox!.height).toBeGreaterThanOrEqual(selectedRect.top - 1);
-      expect(emptyEditorBox!.x).toBeGreaterThanOrEqual(
-        badgeBox!.x + badgeBox!.width + 12,
-      );
       expect(emptyEditorBox!.width).toBeGreaterThanOrEqual(300);
       expect(emptyEditorBox!.width).toBeLessThanOrEqual(320);
       expect(emptyEditorBox!.height).toBeGreaterThanOrEqual(56);

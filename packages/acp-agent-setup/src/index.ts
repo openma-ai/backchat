@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { access } from "node:fs/promises";
-import { basename, delimiter, join } from "node:path";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { basename, delimiter, dirname, join } from "node:path";
 import {
   detectEntry,
   getKnownAgents,
@@ -17,8 +17,11 @@ import {
 } from "@open-managed-agents-desktop/acp/installer";
 import {
   authenticateAgent,
-  probeAgentConfigOptions,
+  disposeAllAcpSetupProcesses,
+  probeAgentSessionConfig,
   probeAgentAuthStatus,
+  type ProbeAgentAuthStatus,
+  type ProbeAgentSessionConfigResult,
   type AuthenticateAgentResult,
   type TerminalAuthLaunchOptions,
 } from "@open-managed-agents-desktop/acp/probe";
@@ -47,9 +50,16 @@ export interface AcpAgentSetupAuth {
   methods?: AcpAgentSetupAuthMethod[];
 }
 
+export interface AcpAgentCapabilityInspection {
+  status: "ready" | "blocked-auth" | "degraded";
+  inspected_at: string;
+  error?: string;
+}
+
 export interface AcpAgentSetupInfo {
   id: string;
   label: string;
+  icon?: string;
   command: string;
   installHint?: string;
   homepage?: string;
@@ -65,6 +75,9 @@ export interface AcpAgentSetupInfo {
   custom?: boolean;
   auth?: AcpAgentSetupAuth;
   config_options?: unknown[];
+  available_commands?: unknown[];
+  session_modes?: unknown;
+  capability_inspection?: AcpAgentCapabilityInspection;
 }
 
 export interface AcpAgentSetupOverride {
@@ -77,71 +90,221 @@ export interface AcpAgentSetupOverride {
 
 export interface AcpAgentSetupServiceDeps {
   registryCachePath: string;
+  probeCachePath?: string;
   acpBinDir: string;
   acpInstallRoot: string;
   probeCwd?: string;
-  probeTimeoutMs?: number;
+  authInspectionTimeoutMs?: number;
+  capabilityInspectionTimeoutMs?: number;
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
   refreshRegistry?: (opts: { refresh?: boolean }) => Promise<void>;
   launchInteractiveAuth?: (options: TerminalAuthLaunchOptions) => Promise<void>;
   agentOverrides?: () => readonly AcpAgentSetupOverride[];
-  getDefaultAgentId?: () => string;
-  saveDefaultAgentId?: (id: string) => Promise<void>;
+  getEnabledAgentIds?: () => readonly string[];
   managedByName?: string;
-}
-
-export interface AcpAgentListOptions {
-  probeAuth?: boolean;
-  probeConfigOptions?: boolean;
-  refresh?: boolean;
-  probeAgentId?: string;
-  probeConfigAgentId?: string;
 }
 
 export interface AcpAgentSetupService {
   warmup(): Promise<void>;
-  listAgents(options?: AcpAgentListOptions): Promise<AcpAgentSetupInfo[]>;
-  probeAgent(id: string): Promise<AcpAgentSetupInfo[]>;
+  refreshEnabledAgents(): Promise<AcpAgentSetupInfo[]>;
+  listAgents(): Promise<AcpAgentSetupInfo[]>;
   installAgent(id: string): Promise<AcpAgentSetupInfo[]>;
   upgradeAgent(id: string): Promise<AcpAgentSetupInfo[]>;
   uninstallAgent(id: string): Promise<AcpAgentSetupInfo[]>;
   authenticateAgent(id: string, options?: { methodId?: string }): Promise<AcpAgentSetupInfo[]>;
-  setDefaultAgent(id: string): Promise<AcpAgentSetupInfo[]>;
+  dispose(): Promise<void>;
 }
+
+type AgentSnapshotPlan = {
+  trigger: "list" | "startup" | "manual" | "install" | "update" | "uninstall";
+  refreshRegistry: boolean;
+  auth:
+    | { target: "detected" }
+    | { target: "ids"; ids: readonly string[] };
+  capabilities:
+    | { target: "detected" }
+    | { target: "ids"; ids: readonly string[] };
+};
+
+const NO_LIVE_PROBE_PLAN: AgentSnapshotPlan = {
+  trigger: "list",
+  refreshRegistry: false,
+  auth: { target: "ids", ids: [] },
+  capabilities: { target: "ids", ids: [] },
+};
 
 export function createAcpAgentSetupService(deps: AcpAgentSetupServiceDeps): AcpAgentSetupService {
   return new AcpAgentSetupServiceImpl(deps);
 }
 
 class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
+  private nextOperationId = 1;
+  private probeCachePromise: Promise<Record<string, CachedAgentProbe>> | null = null;
+  private probeCacheWrite: Promise<void> = Promise.resolve();
+  private readonly authCache = new Map<string, AcpAgentSetupAuth>();
+  private readonly capabilityInspections =
+    new Map<string, AcpAgentCapabilityInspection>();
+
   constructor(private readonly deps: AcpAgentSetupServiceDeps) {}
 
-  async warmup(): Promise<void> {
-    await this.listAgents({ probeAuth: true, refresh: true });
+  dispose(): Promise<void> {
+    return disposeAllAcpSetupProcesses();
   }
 
-  async listAgents(options: AcpAgentListOptions = {}): Promise<AcpAgentSetupInfo[]> {
-    await this.refreshRegistry(options);
+  async warmup(): Promise<void> {
+    await this.collectAgentSnapshot({
+      trigger: "startup",
+      refreshRegistry: true,
+      auth: { target: "ids", ids: [] },
+      capabilities: { target: "detected" },
+    });
+  }
+
+  async refreshEnabledAgents(): Promise<AcpAgentSetupInfo[]> {
+    const enabledAgentIds = this.deps.getEnabledAgentIds?.() ?? [];
+    return this.collectAgentSnapshot({
+      trigger: "manual",
+      refreshRegistry: true,
+      auth: { target: "ids", ids: enabledAgentIds },
+      capabilities: { target: "ids", ids: enabledAgentIds },
+    });
+  }
+
+  async listAgents(): Promise<AcpAgentSetupInfo[]> {
+    return this.collectAgentSnapshot(NO_LIVE_PROBE_PLAN);
+  }
+
+  private async collectAgentSnapshot(
+    plan: AgentSnapshotPlan,
+  ): Promise<AcpAgentSetupInfo[]> {
+    const operationId = `setup-${this.nextOperationId++}`;
+    const operationStartedAt = Date.now();
+    await this.refreshRegistry({ refresh: plan.refreshRegistry });
+    const probeCache = await this.loadProbeCache();
     const entries = this.catalogEntries();
     const detected = (await Promise.all(entries.map((entry) => detectEntry(entry, this.resolveOptions()))))
       .filter((entry): entry is SetupAgentEntry => entry !== null);
     const detectedById = new Map(detected.map((agent) => [agent.id, agent]));
+    const authAgentIds = new Set(
+      plan.auth.target === "ids" ? plan.auth.ids : [],
+    );
+    const capabilityAgentIds = new Set(
+      plan.capabilities.target === "ids" ? plan.capabilities.ids : [],
+    );
 
-    return Promise.all(entries.map(async (entry) => {
+    const result = await Promise.all(entries.map(async (entry) => {
       const detectedEntry = detectedById.get(entry.id);
-      const auth = detectedEntry && (options.probeAuth || options.probeAgentId === entry.id)
-        ? await this.probeAuth(detectedEntry).catch(() => undefined)
-        : undefined;
-      const configOptions = detectedEntry &&
-        (options.probeConfigOptions || options.probeConfigAgentId === entry.id) &&
-        !(auth && authBlocksDefault(auth))
-        ? await this.probeConfigOptions(detectedEntry).catch(() => undefined)
-        : undefined;
+      const shouldProbeAuth = Boolean(detectedEntry) &&
+        (plan.auth.target === "detected" || authAgentIds.has(entry.id));
+      let auth = detectedEntry ? this.authCache.get(entry.id) : undefined;
+      const shouldProbeCapabilities = Boolean(detectedEntry) &&
+        (
+          plan.capabilities.target === "detected"
+          || capabilityAgentIds.has(entry.id)
+        );
+      let sessionConfig: ProbeAgentSessionConfigResult | undefined;
+      if (detectedEntry && shouldProbeCapabilities) {
+        const startedAt = Date.now();
+        let outcome = "settled";
+        let errorDetail: string | undefined;
+        logSetupOperation({
+          operationId,
+          trigger: plan.trigger,
+          scope: "full",
+          agentId: entry.id,
+          outcome: "started",
+          durationMs: 0,
+        });
+        try {
+          sessionConfig = await this.probeSessionConfig(detectedEntry);
+          auth = setupAuthFromProbeStatus(sessionConfig.auth);
+          if (auth) {
+            this.authCache.set(entry.id, auth);
+          } else {
+            this.authCache.delete(entry.id);
+          }
+          this.capabilityInspections.set(entry.id, {
+            status: setupAuthBlocksCapabilities(auth)
+              ? "blocked-auth"
+              : "ready",
+            inspected_at: new Date().toISOString(),
+          });
+        } catch (error) {
+          outcome = "degraded";
+          errorDetail = errorMessage(error);
+          this.capabilityInspections.set(entry.id, {
+            status: "degraded",
+            error: errorDetail,
+            inspected_at: new Date().toISOString(),
+          });
+          // Keep the last confirmed state across a transient probe failure.
+        } finally {
+          logSetupOperation({
+            operationId,
+            trigger: plan.trigger,
+            scope: "full",
+            agentId: entry.id,
+            outcome,
+            durationMs: Date.now() - startedAt,
+            ...(errorDetail ? { detail: errorDetail } : {}),
+          });
+        }
+      } else if (detectedEntry && shouldProbeAuth) {
+        const startedAt = Date.now();
+        let outcome = "settled";
+        logSetupOperation({
+          operationId,
+          trigger: plan.trigger,
+          scope: "auth",
+          agentId: entry.id,
+          outcome: "started",
+          durationMs: 0,
+        });
+        try {
+          auth = await this.probeAuth(detectedEntry);
+          if (auth) {
+            this.authCache.set(entry.id, auth);
+          } else {
+            this.authCache.delete(entry.id);
+          }
+        } catch {
+          outcome = "degraded";
+          // Keep the last confirmed state across a transient probe failure.
+        } finally {
+          logSetupOperation({
+            operationId,
+            trigger: plan.trigger,
+            scope: "auth",
+            agentId: entry.id,
+            outcome,
+            durationMs: Date.now() - startedAt,
+          });
+        }
+      }
+      const usableSessionConfig =
+        sessionConfig && !setupAuthBlocksCapabilities(auth)
+          ? sessionConfig
+          : undefined;
+      if (usableSessionConfig) {
+        await this.cacheProbe(entry.id, usableSessionConfig);
+      }
+      const cachedProbe = detectedEntry ? probeCache[entry.id] : undefined;
+      const configOptions =
+        usableSessionConfig?.configOptions ??
+        cachedProbe?.config_options ??
+        entry.configOptions;
+      const availableCommands =
+        usableSessionConfig?.availableCommands ??
+        cachedProbe?.available_commands;
+      const sessionModes =
+        usableSessionConfig?.modes ??
+        cachedProbe?.session_modes;
       const installInfo = await this.managedInstallInfo(entry);
       return {
         id: entry.id,
         label: entry.label,
+        ...(entry.icon ? { icon: entry.icon } : {}),
         command: detectedEntry?.spec.command ?? entry.spec.command,
         installHint: entry.installHint,
         homepage: entry.homepage,
@@ -156,26 +319,69 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         ...(entry.installSource ? { installSource: entry.installSource } : {}),
         ...(entry.custom ? { custom: true } : {}),
         ...(auth ? { auth } : {}),
-        ...(configOptions ?? entry.configOptions ? { config_options: configOptions ?? entry.configOptions } : {}),
+        ...(configOptions ? { config_options: configOptions } : {}),
+        ...(availableCommands ? { available_commands: availableCommands } : {}),
+        ...(sessionModes ? { session_modes: sessionModes } : {}),
+        ...(detectedEntry && this.capabilityInspections.has(entry.id)
+          ? {
+              capability_inspection:
+                this.capabilityInspections.get(entry.id)!,
+            }
+          : {}),
       } satisfies AcpAgentSetupInfo;
     }));
-  }
-
-  async probeAgent(id: string): Promise<AcpAgentSetupInfo[]> {
-    await this.refreshRegistry({ refresh: false });
-    if (!this.catalogEntries().some((candidate) => candidate.id === id)) {
-      throw new Error(`Unknown ACP agent: ${id}`);
-    }
-    return this.listAgents({ probeAgentId: id });
+    logSetupOperation({
+      operationId,
+      trigger: plan.trigger,
+      scope: "snapshot",
+      agentId: "*",
+      outcome: "settled",
+      durationMs: Date.now() - operationStartedAt,
+    });
+    return result;
   }
 
   async installAgent(id: string): Promise<AcpAgentSetupInfo[]> {
     await this.refreshRegistry({ refresh: true });
     const entry = this.requireEntry(id);
+    await this.installEntry(entry);
+    return this.collectAgentSnapshot({
+      trigger: "install",
+      refreshRegistry: false,
+      auth: { target: "ids", ids: [id] },
+      capabilities: { target: "ids", ids: [id] },
+    });
+  }
+
+  async upgradeAgent(id: string): Promise<AcpAgentSetupInfo[]> {
+    await this.refreshRegistry({ refresh: false });
+    const entry = this.requireEntry(id);
+    const installInfo = await this.managedInstallInfo(entry);
+    if (!installInfo.installed) {
+      throw new Error(`${entry.label} is not installed by ${this.managedByName()}`);
+    }
+    await this.installEntry(entry);
+    return this.collectAgentSnapshot({
+      trigger: "update",
+      refreshRegistry: false,
+      auth: { target: "ids", ids: [id] },
+      capabilities: { target: "ids", ids: [id] },
+    });
+  }
+
+  private async installEntry(entry: SetupAgentEntry): Promise<void> {
     if (entry.installSource === "registry") {
       if (!entry.registryId) throw new Error(`${entry.label} is missing an ACP registry id`);
       await installAcpRegistryAgent({
         registryId: entry.registryId,
+        ...(entry.registryDistribution ? {
+          registryAgent: {
+            id: entry.registryId,
+            name: entry.label,
+            ...(entry.version ? { version: entry.version } : {}),
+            distribution: entry.registryDistribution,
+          },
+        } : {}),
         shimName: basename(entry.spec.command),
         binDir: this.deps.acpBinDir,
         installRoot: this.deps.acpInstallRoot,
@@ -197,17 +403,6 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     } else {
       throw new Error(`${entry.label} is not installable from ${this.managedByName()}`);
     }
-    return this.listAgents({ refresh: true, probeAuth: true });
-  }
-
-  async upgradeAgent(id: string): Promise<AcpAgentSetupInfo[]> {
-    await this.refreshRegistry({ refresh: true });
-    const entry = this.requireEntry(id);
-    const installInfo = await this.managedInstallInfo(entry);
-    if (!installInfo.installed) {
-      throw new Error(`${entry.label} is not installed by ${this.managedByName()}`);
-    }
-    return this.installAgent(id);
   }
 
   async uninstallAgent(id: string): Promise<AcpAgentSetupInfo[]> {
@@ -229,10 +424,12 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     } else {
       throw new Error(`${entry.label} is not managed by ${this.managedByName()}`);
     }
-    if (this.deps.getDefaultAgentId?.() === id) {
-      await this.deps.saveDefaultAgentId?.("");
-    }
-    return this.listAgents({ refresh: true });
+    this.authCache.delete(id);
+    return this.collectAgentSnapshot({
+      ...NO_LIVE_PROBE_PLAN,
+      trigger: "uninstall",
+      refreshRegistry: true,
+    });
   }
 
   async authenticateAgent(id: string, options: { methodId?: string } = {}): Promise<AcpAgentSetupInfo[]> {
@@ -249,34 +446,17 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       methodId: options.methodId,
       launchInteractiveAuth: this.deps.launchInteractiveAuth,
     });
-    return this.listAgents({
-      refresh: result.status === "completed",
-      ...(result.status === "completed"
-        ? { probeAuth: true }
-        : { probeAgentId: id }),
-    });
-  }
-
-  async setDefaultAgent(id: string): Promise<AcpAgentSetupInfo[]> {
-    const normalized = id.trim();
-    if (!this.deps.saveDefaultAgentId) {
-      throw new Error("Default agent settings are not configured");
+    if (result.status === "completed") {
+      this.authCache.set(id, {
+        status: "configured",
+        message: "Authentication completed",
+        ...(options.methodId ? { methodId: options.methodId } : {}),
+      });
     }
-    if (!normalized) {
-      await this.deps.saveDefaultAgentId("");
-      return this.listAgents({ probeAuth: true });
-    }
-
-    await this.refreshRegistry({ refresh: false });
-    const entry = await this.detectCatalogEntry(normalized);
-    if (!entry) throw new Error(`ACP agent is not available: ${normalized}`);
-    const auth = await this.probeAuth(entry);
-    if (auth && authBlocksDefault(auth)) {
-      const suffix = auth.message ? ` ${auth.message}` : "";
-      throw new Error(`Authenticate ${entry.label} before setting as default.${suffix}`);
-    }
-    await this.deps.saveDefaultAgentId(normalized);
-    return this.listAgents({ probeAgentId: normalized });
+    // Authentication is an explicit lifecycle of its own. Do not follow it
+    // with another disposable ACP probe; the next real session is the source
+    // of truth if a browser/terminal flow is still finishing.
+    return this.listAgents();
   }
 
   private async refreshRegistry(options: { refresh?: boolean }): Promise<void> {
@@ -302,6 +482,11 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return {
       ...process.env,
       ...this.deps.env,
+      // A setup probe is a fresh harness process. Do not let a parent Claude
+      // session make the child believe it is already running inside one.
+      CLAUDECODE: undefined,
+      CLAUDE_CODE_ENTRYPOINT: undefined,
+      CLAUDE_CODE_SSE_PORT: undefined,
       OPENMA_ACP_BIN_DIR: this.deps.acpBinDir,
       PATH: path,
     };
@@ -366,44 +551,90 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       agent: entry.spec,
       env: this.spawnEnv(),
       ...(this.deps.probeCwd ? { cwd: this.deps.probeCwd } : {}),
-      timeoutMs: this.deps.probeTimeoutMs ?? 15_000,
+      timeoutMs: this.deps.authInspectionTimeoutMs ?? 15_000,
     });
-    if (status.status === "none") return undefined;
-    const method = status.methodName ?? status.methodId;
-    const prefix = status.status === "configured"
-      ? method ? `ACP auth is configured (${method}).` : "ACP auth is configured."
-      : status.status === "needs-auth"
-        ? method ? `Authentication required (${method}).` : "Authentication required."
-        : "Could not verify auth.";
-    return {
-      status: status.status,
-      message: status.message ? `${prefix} ${status.message}` : prefix,
-      ...(status.methodId ? { methodId: status.methodId } : {}),
-      ...(status.methodName ? { methodName: status.methodName } : {}),
-      ...(status.methods ? { methods: status.methods.map((m) => ({
-        id: m.id,
-        ...(m.name ? { name: m.name } : {}),
-        ...(m.description ? { description: m.description } : {}),
-        ...(m.type ? { type: m.type } : {}),
-        ...(m.vars ? { vars: m.vars } : {}),
-        ...(m.link ? { link: m.link } : {}),
-      })) } : {}),
-    };
+    return setupAuthFromProbeStatus(status);
   }
 
-  private async probeConfigOptions(entry: KnownAgentEntry): Promise<unknown[] | undefined> {
-    const configOptions = await probeAgentConfigOptions({
+  private async probeSessionConfig(
+    entry: KnownAgentEntry,
+  ): Promise<ProbeAgentSessionConfigResult> {
+    return probeAgentSessionConfig({
       agent: entry.spec,
       env: this.spawnEnv(),
       ...(this.deps.probeCwd ? { cwd: this.deps.probeCwd } : {}),
-      timeoutMs: this.deps.probeTimeoutMs ?? 15_000,
+      timeoutMs: this.deps.capabilityInspectionTimeoutMs ?? 30_000,
     });
-    return configOptions.length > 0 ? configOptions : undefined;
+  }
+
+  private probeCachePath(): string {
+    return this.deps.probeCachePath ??
+      join(dirname(this.deps.registryCachePath), "agent-probe-cache.json");
+  }
+
+  private loadProbeCache(): Promise<Record<string, CachedAgentProbe>> {
+    if (this.probeCachePromise) return this.probeCachePromise;
+    this.probeCachePromise = readFile(this.probeCachePath(), "utf8")
+      .then((raw) => parseProbeCache(raw))
+      .catch(() => ({}));
+    return this.probeCachePromise;
+  }
+
+  private async cacheProbe(
+    id: string,
+    result: ProbeAgentSessionConfigResult,
+  ): Promise<void> {
+    const cache = await this.loadProbeCache();
+    cache[id] = {
+      config_options: result.configOptions,
+      available_commands: result.availableCommands,
+      ...(result.modes ? { session_modes: result.modes } : {}),
+      updated_at: new Date().toISOString(),
+    };
+    const path = this.probeCachePath();
+    const tempPath = `${path}.tmp-${process.pid}`;
+    const serialized = JSON.stringify({ version: 1, agents: cache }, null, 2);
+    const write = async () => {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(tempPath, serialized, "utf8");
+      await rename(tempPath, path);
+    };
+    this.probeCacheWrite = this.probeCacheWrite.then(write, write);
+    await this.probeCacheWrite;
   }
 
   private managedByName(): string {
     return this.deps.managedByName?.trim() || "this host";
   }
+}
+
+interface CachedAgentProbe {
+  config_options: unknown[];
+  available_commands: unknown[];
+  session_modes?: unknown;
+  updated_at: string;
+}
+
+function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {
+  const parsed = JSON.parse(raw) as {
+    version?: unknown;
+    agents?: Record<string, Partial<CachedAgentProbe>>;
+  };
+  if (parsed.version !== 1 || !parsed.agents || typeof parsed.agents !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(parsed.agents).flatMap(([id, value]) =>
+      Array.isArray(value.config_options) && Array.isArray(value.available_commands)
+        ? [[id, {
+            config_options: value.config_options,
+            available_commands: value.available_commands,
+            ...(value.session_modes ? { session_modes: value.session_modes } : {}),
+            updated_at: typeof value.updated_at === "string" ? value.updated_at : "",
+          } satisfies CachedAgentProbe]]
+        : [],
+    ),
+  );
 }
 
 type SetupAgentEntry = KnownAgentEntry & { custom?: boolean };
@@ -468,8 +699,58 @@ function overrideEnv(override: AcpAgentSetupOverride): Record<string, string> | 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-function authBlocksDefault(auth: AcpAgentSetupAuth): boolean {
-  return auth.status === "needs-auth" || auth.status === "unknown";
+function setupAuthFromProbeStatus(
+  status: ProbeAgentAuthStatus,
+): AcpAgentSetupAuth | undefined {
+  if (status.status === "none") return undefined;
+  const method = status.methodName ?? status.methodId;
+  const prefix = status.status === "configured"
+    ? method ? `ACP auth is configured (${method}).` : "ACP auth is configured."
+    : status.status === "needs-auth"
+      ? method ? `Authentication required (${method}).` : "Authentication required."
+      : "Could not verify auth.";
+  return {
+    status: status.status,
+    message: status.message ? `${prefix} ${status.message}` : prefix,
+    ...(status.methodId ? { methodId: status.methodId } : {}),
+    ...(status.methodName ? { methodName: status.methodName } : {}),
+    ...(status.methods ? { methods: status.methods.map((methodInfo) => ({
+      id: methodInfo.id,
+      ...(methodInfo.name ? { name: methodInfo.name } : {}),
+      ...(methodInfo.description ? { description: methodInfo.description } : {}),
+      ...(methodInfo.type ? { type: methodInfo.type } : {}),
+      ...(methodInfo.vars ? { vars: methodInfo.vars } : {}),
+      ...(methodInfo.link ? { link: methodInfo.link } : {}),
+    })) } : {}),
+  };
+}
+
+function setupAuthBlocksCapabilities(
+  auth: AcpAgentSetupAuth | undefined,
+): boolean {
+  return auth?.status === "needs-auth" || auth?.status === "unknown";
+}
+
+function logSetupOperation(fields: {
+  operationId: string;
+  trigger: AgentSnapshotPlan["trigger"];
+  scope: "auth" | "full" | "snapshot";
+  agentId: string;
+  outcome: string;
+  durationMs: number;
+  detail?: string;
+}): void {
+  if (process.env.NODE_ENV === "test") return;
+  const detail = fields.detail
+    ? ` error=${JSON.stringify(fields.detail.replace(/\s+/g, " ").slice(0, 500))}`
+    : "";
+  process.stderr.write(
+    `[agent-lifecycle] op=${fields.operationId} trigger=${fields.trigger} scope=${fields.scope} agent=${fields.agentId} outcome=${fields.outcome} total_ms=${fields.durationMs}${detail}\n`,
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export interface LaunchTerminalAuthOptions {

@@ -28,7 +28,7 @@ interface AcpRegistryTargetConfig {
   sha256?: string;
 }
 
-interface AcpRegistryAgent {
+export interface AcpRegistryAgent {
   id: string;
   name?: string;
   version?: string;
@@ -48,6 +48,7 @@ interface AcpRegistryResponse {
 
 export interface InstallAcpRegistryAgentOptions {
   registryId: string;
+  registryAgent?: AcpRegistryAgent;
   shimName: string;
   binDir: string;
   fetchImpl?: typeof fetch;
@@ -189,8 +190,10 @@ async function writeExecutableShim(
   env: Record<string, string | undefined> = {},
 ): Promise<void> {
   await mkdir(dirname(shimPath), { recursive: true });
-  await writeFile(shimPath, renderShellShim(commandPath, args, env), "utf8");
-  await chmod(shimPath, 0o755);
+  const stagedPath = `${shimPath}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(stagedPath, renderShellShim(commandPath, args, env), "utf8");
+  await chmod(stagedPath, 0o755);
+  await rename(stagedPath, shimPath);
 }
 
 async function fetchBytes(url: string, fetchImpl: typeof fetch): Promise<Buffer> {
@@ -386,6 +389,14 @@ function packagePathParts(packageName: string): string[] {
   return packageName.split("/").filter(Boolean);
 }
 
+function isNpmTargetMissing(error: unknown): boolean {
+  const stderr = typeof error === "object" && error !== null && "stderr" in error
+    ? String((error as { stderr?: unknown }).stderr ?? "")
+    : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bETARGET\b|No matching version found/i.test(`${message}\n${stderr}`);
+}
+
 async function resolvePackageBin(prefixDir: string, packageSpec: string): Promise<string> {
   const packageName = packageNameFromSpec(packageSpec);
   const packageJsonPath = join(prefixDir, "node_modules", ...packagePathParts(packageName), "package.json");
@@ -405,60 +416,73 @@ async function resolvePackageBin(prefixDir: string, packageSpec: string): Promis
 async function installNpxDistribution(
   npx: AcpRegistryNpxDistribution,
   options: Required<Pick<InstallAcpRegistryAgentOptions, "binDir" | "registryId" | "shimName">> &
-    Pick<InstallAcpRegistryAgentOptions, "installRoot" | "npmCommand" | "env" | "shimArgs" | "shimEnv">,
+    Pick<InstallAcpRegistryAgentOptions, "installRoot" | "npmCommand" | "env" | "shimArgs" | "shimEnv"> &
+    { version?: string },
 ): Promise<InstallResult> {
   const installRoot = options.installRoot ?? options.binDir;
-  const prefixDir = join(installRoot, "registry", sanitizePathComponent(options.registryId), "npx");
-  await mkdir(prefixDir, { recursive: true });
-
-  await execFileAsync(
-    options.npmCommand ?? "npm",
-    ["install", "--prefix", prefixDir, "--omit=dev", "--no-audit", "--no-fund", npx.package],
-    {
-      env: {
-        ...process.env,
-        ...(options.env ?? {}),
-      },
-      timeout: 120_000,
-      maxBuffer: 1024 * 1024,
-    },
+  const prefixDir = versionedInstallDir(
+    installRoot,
+    options.registryId,
+    options.version,
+    `npx:${npx.package}`,
   );
+  let packageBin: string;
+  try {
+    packageBin = await resolvePackageBin(prefixDir, npx.package);
+    await access(packageBin);
+  } catch {
+    const stagedDir = `${prefixDir}.tmp-${process.pid}-${Date.now()}`;
+    await rm(stagedDir, { recursive: true, force: true });
+    try {
+      const npmOptions = {
+        env: {
+          ...process.env,
+          ...(options.env ?? {}),
+        },
+        timeout: 120_000,
+        maxBuffer: 1024 * 1024,
+      };
+      const installArgs = [
+        "install",
+        "--prefix",
+        stagedDir,
+        "--omit=dev",
+        "--no-audit",
+        "--no-fund",
+      ];
+      try {
+        await execFileAsync(
+          options.npmCommand ?? "npm",
+          [...installArgs, "--prefer-offline", npx.package],
+          npmOptions,
+        );
+      } catch (error) {
+        if (!isNpmTargetMissing(error)) throw error;
+        await rm(stagedDir, { recursive: true, force: true });
+        await execFileAsync(
+          options.npmCommand ?? "npm",
+          [...installArgs, "--prefer-online", npx.package],
+          npmOptions,
+        );
+      }
+      const stagedBin = await resolvePackageBin(stagedDir, npx.package);
+      await access(stagedBin);
+      await rm(prefixDir, { recursive: true, force: true });
+      await mkdir(dirname(prefixDir), { recursive: true });
+      await rename(stagedDir, prefixDir);
+    } catch (error) {
+      await rm(stagedDir, { recursive: true, force: true });
+      throw error;
+    }
+    packageBin = await resolvePackageBin(prefixDir, npx.package);
+  }
 
-  const packageBin = await resolvePackageBin(prefixDir, npx.package);
   const shimPath = join(options.binDir, options.shimName);
   await writeExecutableShim(shimPath, packageBin, options.shimArgs ?? npx.args ?? [], {
     ...(npx.env ?? {}),
     ...(options.shimEnv ?? {}),
   });
   return { commandPath: shimPath };
-}
-
-function pythonPackageNameFromSpec(packageSpec: string): string {
-  return (packageSpec
-    .split(/[<>=!~\[]/, 1)[0]
-    ?? packageSpec)
-    .trim()
-    .replace(/_/g, "-");
-}
-
-async function firstExecutableInDir(binDir: string, preferredName: string): Promise<string> {
-  const entries: string[] = await readdir(binDir).catch(() => []);
-  const preferred = [
-    preferredName,
-    preferredName.replace(/-/g, "_"),
-    basename(preferredName),
-  ];
-  for (const name of [...preferred, ...entries]) {
-    if (!entries.includes(name)) continue;
-    const candidate = join(binDir, name);
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // Keep looking; uv may create several helper files depending on platform.
-    }
-  }
-  throw new Error(`uv did not expose an executable for ${preferredName}`);
 }
 
 async function installUvxDistribution(
@@ -496,11 +520,42 @@ async function installUvxDistribution(
   return { commandPath: shimPath };
 }
 
+function pythonPackageNameFromSpec(packageSpec: string): string {
+  return (packageSpec
+    .split(/[<>=!~\[]/, 1)[0]
+    ?? packageSpec)
+    .trim()
+    .replace(/_/g, "-");
+}
+
+async function firstExecutableInDir(binDir: string, preferredName: string): Promise<string> {
+  const entries: string[] = await readdir(binDir).catch(() => []);
+  const preferred = [
+    preferredName,
+    preferredName.replace(/-/g, "_"),
+    basename(preferredName),
+  ];
+  for (const name of [...preferred, ...entries]) {
+    if (!entries.includes(name)) continue;
+    const candidate = join(binDir, name);
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Keep looking; uv may create several helper files depending on platform.
+    }
+  }
+  throw new Error(`uv did not expose an executable for ${preferredName}`);
+}
+
 export async function installAcpRegistryAgent(options: InstallAcpRegistryAgentOptions): Promise<InstallResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const registry = await fetchRegistry(fetchImpl);
-  const agent = registry.agents?.find((candidate) => candidate.id === options.registryId);
+  const registry = options.registryAgent ? null : await fetchRegistry(fetchImpl);
+  const agent = options.registryAgent ?? registry?.agents?.find((candidate) => candidate.id === options.registryId);
   if (!agent) throw new Error(`ACP registry agent not found: ${options.registryId}`);
+  if (agent.id !== options.registryId) {
+    throw new Error(`ACP registry snapshot mismatch: expected ${options.registryId}, got ${agent.id}`);
+  }
 
   const platformKey = currentPlatformKey();
   const target = agent.distribution?.binary?.[platformKey];
@@ -525,6 +580,7 @@ export async function installAcpRegistryAgent(options: InstallAcpRegistryAgentOp
       env: options.env,
       shimArgs: options.shimArgs,
       shimEnv: options.shimEnv,
+      version: agent.version,
     });
   } else if (agent.distribution?.uvx) {
     result = await installUvxDistribution(agent.distribution.uvx, {

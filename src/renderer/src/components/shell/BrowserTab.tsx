@@ -9,25 +9,15 @@ import {
 import { createPortal } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  CameraIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   Code2Icon,
-  CopyIcon,
-  DownloadIcon,
-  EllipsisVerticalIcon,
   ExternalLinkIcon,
-  KeyRoundIcon,
+  FileTextIcon,
   MessageCirclePlusIcon,
-  MinusIcon,
-  PlusIcon,
-  PrinterIcon,
   RotateCwIcon,
   SearchIcon,
   Settings2Icon,
-  SmartphoneIcon,
-  Trash2Icon,
-  UploadIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -42,16 +32,30 @@ import { cn } from "@/lib/utils";
 import {
   browserAnnotationGesture,
   browserAnnotationMarkers,
-  browserElementAnnotationLabel,
+  buildBrowserElementPromptAnnotation,
+  buildBrowserRegionPromptAnnotation,
   browserElementScreenshotName,
   browserStyleChanges,
   browserStyleDraft,
-  browserRegionAnnotationLabel,
   browserRegionScreenshotName,
   type BrowserStyleDraft,
   type BrowserStyleProperty,
 } from "@/lib/browser-element-annotation";
 import { composerInsertionStore } from "@/lib/composer-insertions";
+import {
+  browserAddressLabel,
+  normalizeBrowserUrl,
+} from "@/lib/browser-url";
+import {
+  applyBrowserFindQuery,
+  bindBrowserFindShortcuts,
+  clearBrowserFind,
+  findNextInBrowser,
+} from "@/lib/browser-find";
+import { BrowserPickerController } from "@/lib/browser-picker-controller";
+import { BrowserResizeSnapshotController } from "@/lib/browser-resize-snapshot-controller";
+import { bindBrowserViewRegistration } from "@/lib/browser-view-registration";
+import { bindBrowserWebviewEvents } from "@/lib/browser-webview-events";
 import {
   promptAnnotationStore,
   usePromptAnnotations,
@@ -59,23 +63,13 @@ import {
 import {
   AnnotationBadge,
   AnnotationEditor,
-} from "@/components/chat/ResponseAnnotations";
+} from "../chat/AnnotationEditor";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
+  BrowserDataDialog,
+  type BrowserDataPanel,
+} from "@/components/shell/BrowserDataDialog";
+import { BrowserMenu } from "@/components/shell/BrowserMenu";
+import { FileOpenMenu } from "@/components/shell/FileOpenMenu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSettings } from "@/lib/settings-store";
@@ -118,6 +112,28 @@ type BrowserRegionDrag = {
 
 const RESIZE_SNAPSHOT_SETTLE_MS = 180;
 
+function localPathFromFileUrl(raw: string): string | undefined {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "file:") return undefined;
+    let path = decodeURIComponent(url.pathname);
+    if (/^\/[a-z]:\//i.test(path)) path = path.slice(1);
+    return path || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function localFileName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+function localFileExtension(path: string): string {
+  const name = localFileName(path);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1) : "FILE";
+}
+
 /**
  * BrowserTab — Electron `<webview>` with a minimal URL bar +
  * back / forward / reload. webviewTag must be true in the main
@@ -139,6 +155,7 @@ export function BrowserTab({
   active,
   visible,
   initialUrl,
+  sourcePath,
   onUrlChange,
   onPageMeta,
 }: {
@@ -147,10 +164,12 @@ export function BrowserTab({
   active: boolean;
   visible: boolean;
   initialUrl: string;
+  sourcePath?: string;
   onUrlChange?: (url: string) => void;
   onPageMeta?: (meta: { title?: string; faviconUrl?: string }) => void;
 }) {
   const navigate = useNavigate();
+  const localSourcePath = sourcePath ?? localPathFromFileUrl(initialUrl);
   // Electron's <webview> tag exposes a custom DOM interface (goBack,
   // canGoBack, src setter, etc.). Typing it as a structural any-shape
   // avoids pulling in Electron's renderer types (which aren't loaded
@@ -159,9 +178,13 @@ export function BrowserTab({
   const registeredWebContentsIdRef = useRef<number | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
+  const onUrlChangeRef = useRef(onUrlChange);
+  const onPageMetaRef = useRef(onPageMeta);
+  onUrlChangeRef.current = onUrlChange;
+  onPageMetaRef.current = onPageMeta;
   const [urlInput, setUrlInput] = useState(initialUrl);
   const [urlFocused, setUrlFocused] = useState(false);
-  const [currentUrl, setCurrentUrl] = useState(() => normalizeUrl(initialUrl));
+  const [currentUrl, setCurrentUrl] = useState(() => normalizeBrowserUrl(initialUrl));
   const [canBack, setCanBack] = useState(false);
   const [canFwd, setCanFwd] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -169,9 +192,7 @@ export function BrowserTab({
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [zoomFactor, setZoomFactor] = useState(1);
-  const [browserPanel, setBrowserPanel] = useState<
-    "import" | "passwords" | "downloads" | "clear-data" | null
-  >(null);
+  const [browserPanel, setBrowserPanel] = useState<BrowserDataPanel>(null);
   const [downloads, setDownloads] = useState<BrowserDownloadInfo[]>([]);
   const [credentials, setCredentials] = useState<BrowserCredentialSummary[]>([]);
   const [clearKinds, setClearKinds] = useState<BrowserClearDataKind[]>([
@@ -184,12 +205,6 @@ export function BrowserTab({
   const [regionDrag, setRegionDrag] = useState<BrowserRegionDrag | null>(null);
   const [resizeSnapshot, setResizeSnapshot] = useState<string | null>(null);
   const cachedSnapshotRef = useRef<string | null>(null);
-  const pickerWebContentsIdRef = useRef<number | null>(null);
-  const pickerSessionIdRef = useRef<string | null>(null);
-  const pickerBusyRef = useRef(false);
-  const hoverFrameRef = useRef<number | null>(null);
-  const hoverRequestVersionRef = useRef(0);
-  const pendingHoverPointRef = useRef<BrowserPoint | null>(null);
   const regionDragRef = useRef<BrowserRegionDrag | null>(null);
   const browserViewportRef = useRef<HTMLDivElement | null>(null);
   const browserAnnotationEditorRef = useRef<HTMLDivElement | null>(null);
@@ -216,57 +231,17 @@ export function BrowserTab({
     if (!sessionId) return;
     const webview = webviewRef.current;
     if (!webview) return;
-    let disposed = false;
-    let pendingWebContentsId: number | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    const retry = () => {
-      if (disposed || retryTimer || registeredWebContentsIdRef.current !== null) return;
-      retryTimer = setTimeout(() => {
-        retryTimer = undefined;
-        register();
-      }, 25);
-    };
-    const register = () => {
-      if (disposed) return;
-      try {
-        const webContentsId = webview.getWebContentsId();
-        if (
-          registeredWebContentsIdRef.current === webContentsId ||
-          pendingWebContentsId === webContentsId
-        ) return;
-        pendingWebContentsId = webContentsId;
-        void window.backchat.browserViewRegister({
-          sessionId,
-          tabId,
-          webContentsId,
-          active: activeRef.current,
-        }).then(() => {
-          pendingWebContentsId = null;
-          if (!disposed) registeredWebContentsIdRef.current = webContentsId;
-        }).catch(() => {
-          pendingWebContentsId = null;
-          retry();
-        });
-      } catch {
-        retry();
-      }
-    };
-    webview.addEventListener("dom-ready", register);
-    register();
-    return () => {
-      disposed = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      webview.removeEventListener("dom-ready", register);
-      const webContentsId = registeredWebContentsIdRef.current;
-      registeredWebContentsIdRef.current = null;
-      if (webContentsId !== null) {
-        void window.backchat.browserViewUnregister({
-          sessionId,
-          tabId,
-          webContentsId,
-        }).catch(() => undefined);
-      }
-    };
+    return bindBrowserViewRegistration(webview, {
+      sessionId,
+      tabId,
+      getActive: () => activeRef.current,
+      register: (input) => window.backchat.browserViewRegister(input),
+      unregister: (input) => window.backchat.browserViewUnregister(input),
+      setActive: (input) => window.backchat.browserViewSetActive(input),
+      onRegistered: (webContentsId) => {
+        registeredWebContentsIdRef.current = webContentsId;
+      },
+    });
   }, [sessionId, tabId]);
 
   useEffect(() => {
@@ -296,7 +271,7 @@ export function BrowserTab({
     (raw: string) => {
       const wv = webviewRef.current;
       if (!wv) return;
-      const url = normalizeUrl(raw);
+      const url = normalizeBrowserUrl(raw);
       setUrlInput(url);
       void wv.loadURL(url).catch(() => {
         // Keep a small fallback for test doubles and older Electron webviews.
@@ -319,6 +294,20 @@ export function BrowserTab({
       () => toast.error("Could not copy the address"),
     );
   }, [currentUrl]);
+
+  const openLocalFile = useCallback(() => {
+    if (!localSourcePath) return;
+    void window.backchat.uiFsOpenPath({ path: localSourcePath }).then((error) => {
+      if (error) {
+        toast.error("Couldn't open file", { description: error });
+      }
+    });
+  }, [localSourcePath]);
+
+  const revealLocalFile = useCallback(() => {
+    if (!localSourcePath) return;
+    void window.backchat.uiFsRevealPath({ path: localSourcePath });
+  }, [localSourcePath]);
 
   const changeZoom = useCallback((delta: number) => {
     const webview = webviewRef.current;
@@ -434,187 +423,87 @@ export function BrowserTab({
   }, []);
 
   const closeFind = useCallback(() => {
-    webviewRef.current?.stopFindInPage("clearSelection");
+    clearBrowserFind(webviewRef.current);
     setFindOpen(false);
     setFindQuery("");
   }, []);
 
   useEffect(() => {
     if (!visible) return;
-    const onFindShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        openFind();
-      } else if (event.key === "Escape" && findOpen) {
-        event.preventDefault();
-        closeFind();
-      }
-    };
-    window.addEventListener("keydown", onFindShortcut);
-    return () => window.removeEventListener("keydown", onFindShortcut);
+    return bindBrowserFindShortcuts(window, {
+      isOpen: () => findOpen,
+      onOpen: openFind,
+      onClose: closeFind,
+    });
   }, [closeFind, findOpen, openFind, visible]);
 
   useEffect(() => {
     if (!findOpen) return;
-    const query = findQuery.trim();
-    if (query) webviewRef.current?.findInPage(query);
-    else webviewRef.current?.stopFindInPage("clearSelection");
+    applyBrowserFindQuery(webviewRef.current, findQuery);
   }, [findOpen, findQuery]);
 
   useEffect(() => {
     const wv = webviewRef.current;
     if (!wv) return;
-    const onDidNavigate = () => {
-      setCanBack(wv.canGoBack());
-      setCanFwd(wv.canGoForward());
-      const u = wv.getURL();
-      setUrlInput(u);
-      setCurrentUrl(u);
-      onUrlChange?.(u);
-    };
-    const onTitleUpdated = (event: Event) => {
-      const title = (event as Event & { title?: string }).title?.trim();
-      if (title) onPageMeta?.({ title });
-    };
-    const onFaviconUpdated = (event: Event) => {
-      const faviconUrl = (event as Event & { favicons?: string[] }).favicons?.find(
-        (candidate) => /^(https?|data):/i.test(candidate),
-      );
-      if (faviconUrl) onPageMeta?.({ faviconUrl });
-    };
     const cacheCurrentFrame = () => {
       void captureDataUrl().then((dataUrl) => {
         if (dataUrl) cachedSnapshotRef.current = dataUrl;
       });
     };
-    const onDomReady = () => {
-      setCurrentUrl(wv.getURL());
-      setZoomFactor(wv.getZoomFactor());
-      void wv.executeJavaScript<string | null>(
-        "document.querySelector('link[rel~=\"icon\"], link[rel=\"shortcut icon\"]')?.href ?? null",
-      ).then((faviconUrl) => {
-        if (faviconUrl && /^(https?|data):/i.test(faviconUrl)) {
-          onPageMeta?.({ faviconUrl });
-        }
-      }).catch(() => undefined);
-      cacheCurrentFrame();
-    };
-    const onNavigationStart = (event: Event) => {
-      const navigationEvent = event as Event & { isMainFrame?: boolean };
-      if (navigationEvent.isMainFrame === false) return;
-      void cancelPickerRef.current();
-      setLoading(true);
-      setReady(false);
-    };
-    const onLoadStop = () => {
-      setLoading(false);
-      setReady(true);
-      cacheCurrentFrame();
-    };
-    wv.addEventListener("did-navigate", onDidNavigate);
-    wv.addEventListener("did-navigate-in-page", onDidNavigate);
-    wv.addEventListener("page-title-updated", onTitleUpdated);
-    wv.addEventListener("page-favicon-updated", onFaviconUpdated);
-    wv.addEventListener("dom-ready", onDomReady);
-    wv.addEventListener("did-start-navigation", onNavigationStart);
-    wv.addEventListener("did-stop-loading", onLoadStop);
-    return () => {
-      wv.removeEventListener("did-navigate", onDidNavigate);
-      wv.removeEventListener("did-navigate-in-page", onDidNavigate);
-      wv.removeEventListener("page-title-updated", onTitleUpdated);
-      wv.removeEventListener("page-favicon-updated", onFaviconUpdated);
-      wv.removeEventListener("dom-ready", onDomReady);
-      wv.removeEventListener("did-start-navigation", onNavigationStart);
-      wv.removeEventListener("did-stop-loading", onLoadStop);
-    };
-  }, [captureDataUrl, onPageMeta, onUrlChange]);
+    return bindBrowserWebviewEvents(wv, {
+      onNavigation: ({ canBack: nextCanBack, canForward, url }) => {
+        setCanBack(nextCanBack);
+        setCanFwd(canForward);
+        setUrlInput(url);
+        setCurrentUrl(url);
+        onUrlChangeRef.current?.(url);
+      },
+      onPageMeta: (meta) => onPageMetaRef.current?.(meta),
+      onDomReady: ({ url, zoomFactor: nextZoomFactor }) => {
+        setCurrentUrl(url);
+        setZoomFactor(nextZoomFactor);
+        setReady(true);
+      },
+      onMainFrameNavigationStart: () => {
+        void cancelPickerRef.current();
+        setLoading(true);
+        setReady(false);
+      },
+      onLoadStop: () => {
+        setLoading(false);
+        setReady(true);
+      },
+      onCacheFrame: cacheCurrentFrame,
+    });
+  }, [captureDataUrl]);
 
   useEffect(() => {
     if (!visible) {
       setResizeSnapshot(null);
       return;
     }
-    let resizing = false;
-    let settleTimer: ReturnType<typeof setTimeout> | undefined;
-    const onResize = () => {
-      if (!resizing) {
-        resizing = true;
+    const controller = new BrowserResizeSnapshotController({
+      settleMs: RESIZE_SNAPSHOT_SETTLE_MS,
+      capture: captureDataUrl,
+      getCachedSnapshot: () => cachedSnapshotRef.current,
+      onCacheSnapshot: (dataUrl) => {
+        cachedSnapshotRef.current = dataUrl;
+      },
+      cancelPicker: () => {
         void cancelPickerRef.current();
-        const cached = cachedSnapshotRef.current;
-        if (cached) {
-          setResizeSnapshot(cached);
-        } else {
-          void captureDataUrl().then((dataUrl) => {
-            if (resizing && dataUrl) setResizeSnapshot(dataUrl);
-          });
-        }
-      }
-      if (settleTimer) clearTimeout(settleTimer);
-      settleTimer = setTimeout(() => {
-        resizing = false;
-        setResizeSnapshot(null);
-        settleTimer = undefined;
-        void captureDataUrl().then((dataUrl) => {
-          if (dataUrl) cachedSnapshotRef.current = dataUrl;
-        });
-      }, RESIZE_SNAPSHOT_SETTLE_MS);
-    };
+      },
+      onSnapshot: setResizeSnapshot,
+      scheduleTimeout: (callback, delay) => window.setTimeout(callback, delay),
+      cancelTimeout: (timerId) => window.clearTimeout(timerId),
+    });
+    const onResize = () => controller.resize();
 
     window.addEventListener("resize", onResize, { passive: true });
     return () => {
       window.removeEventListener("resize", onResize);
-      if (settleTimer) clearTimeout(settleTimer);
+      controller.dispose();
     };
   }, [captureDataUrl, visible]);
-
-  const resetPickerUi = useCallback(() => {
-    pickerWebContentsIdRef.current = null;
-    pickerSessionIdRef.current = null;
-    pickerBusyRef.current = false;
-    pendingHoverPointRef.current = null;
-    regionDragRef.current = null;
-    hoverRequestVersionRef.current += 1;
-    if (hoverFrameRef.current !== null) {
-      cancelAnimationFrame(hoverFrameRef.current);
-      hoverFrameRef.current = null;
-    }
-    setPickerHover(null);
-    setRegionDrag(null);
-    setIsPickingElement(false);
-  }, []);
-
-  const cancelElementPicker = useCallback(async () => {
-    const webContentsId = pickerWebContentsIdRef.current;
-    resetPickerUi();
-    if (webContentsId === null) return;
-    await window.backchat.browserElementPickerCancel({ webContentsId }).catch(() => undefined);
-  }, [resetPickerUi]);
-  cancelPickerRef.current = cancelElementPicker;
-
-  useEffect(() => () => {
-    const webContentsId = pickerWebContentsIdRef.current;
-    if (hoverFrameRef.current !== null) cancelAnimationFrame(hoverFrameRef.current);
-    if (webContentsId !== null) {
-      void window.backchat.browserElementPickerCancel({ webContentsId });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isPickingElement && !visible) {
-      void cancelElementPicker();
-    }
-  }, [cancelElementPicker, isPickingElement, visible]);
-
-  useEffect(() => {
-    if (!isPickingElement) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      void cancelElementPicker();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cancelElementPicker, isPickingElement]);
 
   useEffect(() => {
     if (editingAnnotationId && !editingMarker) setEditingAnnotationId(null);
@@ -647,17 +536,12 @@ export function BrowserTab({
       : null;
     const annotationId = globalThis.crypto?.randomUUID?.()
       ?? `browser-annotation-${Date.now()}`;
-    const annotation: PromptAnnotation = {
+    const annotation = buildBrowserElementPromptAnnotation({
       id: annotationId,
-      kind: "browser_element",
-      source_session_id: destinationSessionId,
-      source_turn_id: "browser",
-      text: browserElementAnnotationLabel(result.element),
-      browser: {
-        ...result.element,
-        screenshot_name: attachment?.name ?? "",
-      },
-    };
+      sessionId: destinationSessionId,
+      element: result.element,
+      screenshotName: attachment?.name ?? "",
+    });
     promptAnnotationStore.add(destinationSessionId, annotation);
     if (attachment) {
       composerInsertionStore.add(destinationSessionId, {
@@ -685,17 +569,12 @@ export function BrowserTab({
       : null;
     const annotationId = globalThis.crypto?.randomUUID?.()
       ?? `browser-region-${Date.now()}`;
-    const annotation: PromptAnnotation = {
+    const annotation = buildBrowserRegionPromptAnnotation({
       id: annotationId,
-      kind: "browser_region",
-      source_session_id: destinationSessionId,
-      source_turn_id: "browser",
-      text: browserRegionAnnotationLabel(result.region),
-      browser_region: {
-        ...result.region,
-        screenshot_name: attachment?.name ?? "",
-      },
-    };
+      sessionId: destinationSessionId,
+      region: result.region,
+      screenshotName: attachment?.name ?? "",
+    });
     promptAnnotationStore.add(destinationSessionId, annotation);
     if (attachment) {
       composerInsertionStore.add(destinationSessionId, {
@@ -715,120 +594,106 @@ export function BrowserTab({
     });
   }, [captureDataUrl]);
 
-  const beginElementPicker = useCallback(async () => {
-    const webview = webviewRef.current;
-    const destinationSessionId = visible ? sessionId : null;
-    if (!webview || !destinationSessionId) return;
-    try {
-      const webContentsId = webview.getWebContentsId();
-      await window.backchat.browserElementPickerBegin({ webContentsId });
-      pickerWebContentsIdRef.current = webContentsId;
-      pickerSessionIdRef.current = destinationSessionId;
-      setPickerHover(null);
-      setRegionDrag(null);
-      setIsPickingElement(true);
-    } catch (error) {
-      resetPickerUi();
-      toast.error("Couldn't start page annotation", {
-        description: error instanceof Error ? error.message : String(error),
-      });
+  const pickerRuntimeRef = useRef({
+    visible,
+    sessionId,
+    addElementResult,
+    addRegionResult,
+    refreshSnapshot,
+  });
+  pickerRuntimeRef.current = {
+    visible,
+    sessionId,
+    addElementResult,
+    addRegionResult,
+    refreshSnapshot,
+  };
+  const pickerControllerRef = useRef<BrowserPickerController | null>(null);
+  if (!pickerControllerRef.current) {
+    pickerControllerRef.current = new BrowserPickerController({
+      api: {
+        begin: (input) => window.backchat.browserElementPickerBegin(input),
+        cancel: (input) => window.backchat.browserElementPickerCancel(input),
+        hover: (input) => window.backchat.browserElementPickerHover(input),
+        commit: (input) => window.backchat.browserElementPickerCommit(input),
+        captureRegion: (input) =>
+          window.backchat.browserElementPickerCaptureRegion(input),
+      },
+      getTarget: () => {
+        const runtime = pickerRuntimeRef.current;
+        const webview = webviewRef.current;
+        if (!runtime.visible || !runtime.sessionId || !webview) return null;
+        return {
+          webContentsId: webview.getWebContentsId(),
+          sessionId: runtime.sessionId,
+        };
+      },
+      scheduleFrame: (callback) => requestAnimationFrame(() => callback()),
+      cancelFrame: (frameId) => cancelAnimationFrame(frameId),
+      onPickingChange: (active) => {
+        regionDragRef.current = null;
+        setRegionDrag(null);
+        setIsPickingElement(active);
+      },
+      onHover: setPickerHover,
+      onElementResult: async (destinationSessionId, result) => {
+        await pickerRuntimeRef.current.addElementResult(destinationSessionId, result);
+      },
+      onRegionResult: async (destinationSessionId, result) => {
+        await pickerRuntimeRef.current.addRegionResult(destinationSessionId, result);
+      },
+      onRefreshSnapshot: () => pickerRuntimeRef.current.refreshSnapshot(),
+      onError: (stage, error) => {
+        const title = stage === "begin"
+          ? "Couldn't start page annotation"
+          : stage === "element"
+            ? "Couldn't annotate this page"
+            : "Couldn't capture this page region";
+        toast.error(title, {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      },
+    });
+  }
+  const pickerController = pickerControllerRef.current;
+  const cancelElementPicker = useCallback(
+    () => pickerController.cancel(),
+    [pickerController],
+  );
+  cancelPickerRef.current = cancelElementPicker;
+
+  useEffect(() => () => {
+    void pickerController.dispose();
+  }, [pickerController]);
+
+  useEffect(() => {
+    if (isPickingElement && !visible) {
+      void cancelElementPicker();
     }
-  }, [resetPickerUi, sessionId, visible]);
+  }, [cancelElementPicker, isPickingElement, visible]);
+
+  useEffect(() => {
+    if (!isPickingElement) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      void cancelElementPicker();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cancelElementPicker, isPickingElement]);
 
   const annotatePageElement = useCallback(async () => {
-    if (isPickingElement) {
-      await cancelElementPicker();
+    if (pickerController.isPicking()) {
+      await pickerController.cancel();
       return;
     }
-    await beginElementPicker();
-  }, [beginElementPicker, cancelElementPicker, isPickingElement]);
+    await pickerController.begin();
+  }, [pickerController]);
 
   const editBrowserAnnotation = useCallback((annotationId: string) => {
     setEditingAnnotationId(annotationId);
   }, []);
-
-  const requestElementHover = useCallback((point: BrowserPoint) => {
-    pendingHoverPointRef.current = point;
-    if (hoverFrameRef.current !== null || pickerBusyRef.current) return;
-    hoverFrameRef.current = requestAnimationFrame(() => {
-      hoverFrameRef.current = null;
-      const nextPoint = pendingHoverPointRef.current;
-      const webContentsId = pickerWebContentsIdRef.current;
-      if (!nextPoint || webContentsId === null || pickerBusyRef.current) return;
-      const requestVersion = ++hoverRequestVersionRef.current;
-      void window.backchat.browserElementPickerHover({
-        webContentsId,
-        ...nextPoint,
-      }).then((hover) => {
-        if (
-          pickerWebContentsIdRef.current === webContentsId &&
-          requestVersion === hoverRequestVersionRef.current &&
-          !pickerBusyRef.current
-        ) {
-          setPickerHover(hover);
-        }
-      }).catch(() => undefined);
-    });
-  }, []);
-
-  const commitElementAt = useCallback(async (point: BrowserPoint) => {
-    const webContentsId = pickerWebContentsIdRef.current;
-    const destinationSessionId = pickerSessionIdRef.current;
-    if (webContentsId === null || !destinationSessionId || pickerBusyRef.current) return;
-    pickerBusyRef.current = true;
-    try {
-      const hover = await window.backchat.browserElementPickerHover({
-        webContentsId,
-        ...point,
-      });
-      if (!hover) {
-        pickerBusyRef.current = false;
-        setPickerHover(null);
-        return;
-      }
-      setPickerHover(hover);
-      const result = await window.backchat.browserElementPickerCommit({ webContentsId });
-      if (!result) {
-        pickerBusyRef.current = false;
-        return;
-      }
-      await addElementResult(destinationSessionId, result);
-      resetPickerUi();
-      refreshSnapshot();
-      await beginElementPicker();
-    } catch (error) {
-      await window.backchat.browserElementPickerCancel({ webContentsId }).catch(() => undefined);
-      resetPickerUi();
-      toast.error("Couldn't annotate this page", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }, [addElementResult, beginElementPicker, refreshSnapshot, resetPickerUi]);
-
-  const captureRegion = useCallback(async (
-    rect: { x: number; y: number; width: number; height: number },
-  ) => {
-    const webContentsId = pickerWebContentsIdRef.current;
-    const destinationSessionId = pickerSessionIdRef.current;
-    if (webContentsId === null || !destinationSessionId || pickerBusyRef.current) return;
-    pickerBusyRef.current = true;
-    try {
-      const result = await window.backchat.browserElementPickerCaptureRegion({
-        webContentsId,
-        rect,
-      });
-      await addRegionResult(destinationSessionId, result);
-      resetPickerUi();
-      refreshSnapshot();
-      await beginElementPicker();
-    } catch (error) {
-      await window.backchat.browserElementPickerCancel({ webContentsId }).catch(() => undefined);
-      resetPickerUi();
-      toast.error("Couldn't capture this page region", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }, [addRegionResult, beginElementPicker, refreshSnapshot, resetPickerUi]);
 
   const pointerPoint = useCallback((event: ReactPointerEvent<HTMLDivElement>): BrowserPoint => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -847,22 +712,22 @@ export function BrowserTab({
       setRegionDrag(next);
       return;
     }
-    requestElementHover(point);
-  }, [pointerPoint, requestElementHover]);
+    pickerController.requestHover(point);
+  }, [pickerController, pointerPoint]);
 
   const onPickerPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || pickerBusyRef.current) return;
+    if (event.button !== 0 || pickerController.isBusy()) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = pointerPoint(event);
     const drag = { start: point, current: point };
     regionDragRef.current = drag;
     setRegionDrag(drag);
-  }, [pointerPoint]);
+  }, [pickerController, pointerPoint]);
 
   const onPickerPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = regionDragRef.current;
-    if (!drag || event.button !== 0 || pickerBusyRef.current) return;
+    if (!drag || event.button !== 0 || pickerController.isBusy()) return;
     event.preventDefault();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -872,11 +737,11 @@ export function BrowserTab({
     setRegionDrag(null);
     const gesture = browserAnnotationGesture(drag.start, end);
     if (gesture.kind === "region") {
-      void captureRegion(gesture.rect);
+      void pickerController.captureRegion(gesture.rect);
     } else {
-      void commitElementAt(end);
+      void pickerController.commit(end);
     }
-  }, [captureRegion, commitElementAt, pointerPoint]);
+  }, [pickerController, pointerPoint]);
 
   const onPickerPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -914,7 +779,27 @@ export function BrowserTab({
       data-browser-active={active ? "true" : "false"}
       data-browser-visible={visible ? "true" : "false"}
     >
-      {/* Browser chrome stays visually attached to the task tab row. */}
+      {/* A local artifact is a document surface, not a browser address bar.
+          Keep preview and native file actions in the same stable title row. */}
+      {localSourcePath ? (
+        <div className="flex h-11 shrink-0 items-center gap-3 border-b border-border/55 px-4">
+          <FileTextIcon className="size-4 shrink-0 text-fg-muted" />
+          <div className="min-w-0 flex flex-1 items-baseline gap-2">
+            <span className="truncate text-xs font-medium text-fg">
+              {localFileName(localSourcePath)}
+            </span>
+            <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
+              {localFileExtension(localSourcePath)}
+            </span>
+          </div>
+          <FileOpenMenu
+            path={localSourcePath}
+            onOpenDefault={openLocalFile}
+            onReveal={revealLocalFile}
+          />
+        </div>
+      ) : (
+      /* Browser chrome stays visually attached to the task tab row. */
       <div className="shrink-0 flex items-center gap-1 bg-transparent px-3 pt-1 pb-1.5">
         <NavButton
           onClick={() => webviewRef.current?.goBack()}
@@ -947,20 +832,24 @@ export function BrowserTab({
           <div className="relative">
             <input
               type="text"
-              value={urlInput === "about:blank" ? "" : urlFocused ? urlInput : addressLabel(urlInput)}
-            onChange={(e) => setUrlInput(e.target.value)}
-            onFocus={(e) => {
-              setUrlFocused(true);
-              e.currentTarget.select();
-            }}
-            onBlur={() => setUrlFocused(false)}
-            placeholder="Enter URL or search"
-            className={cn(
-              "h-7 w-full rounded-md border border-border/60 px-3 text-xs",
-              "bg-bg-surface/75 text-fg shadow-none placeholder:text-fg-subtle",
-              "transition-colors hover:bg-bg-surface/80",
-              "focus:border-border-strong focus:bg-bg-surface focus:outline-none",
-            )}
+              value={urlInput === "about:blank"
+                ? ""
+                : urlFocused
+                  ? urlInput
+                  : browserAddressLabel(urlInput)}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onFocus={(e) => {
+                setUrlFocused(true);
+                e.currentTarget.select();
+              }}
+              onBlur={() => setUrlFocused(false)}
+              placeholder="Enter URL or search"
+              className={cn(
+                "h-7 w-full rounded-md border border-border/60 px-3 text-xs",
+                "bg-bg-surface/75 text-fg shadow-none placeholder:text-fg-subtle",
+                "transition-colors hover:bg-bg-surface/80",
+                "focus:border-border-strong focus:bg-bg-surface focus:outline-none",
+              )}
             />
           </div>
         </form>
@@ -979,286 +868,57 @@ export function BrowserTab({
         >
           <MessageCirclePlusIcon className="size-3.5" />
         </NavButton>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="Browser menu"
-              title="Browser menu"
-              className={cn(
-                "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
-                "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
-                "transition-colors",
-              )}
-            >
-              <EllipsisVerticalIcon className="size-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={6} className="w-64 p-1.5">
-            <DropdownMenuItem onSelect={openFind} className="h-8 gap-2 text-xs">
-              <SearchIcon className="size-3.5" />
-              <span>Find in page</span>
-              <span className="ml-auto text-[10px] text-fg-subtle">⌘F</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void printPage()} className="h-8 gap-2 text-xs">
-              <PrinterIcon className="size-3.5" />
-              Print
-            </DropdownMenuItem>
-            <div className="flex h-9 items-center gap-2 px-1.5 text-xs text-fg">
-              <span className="mr-auto">Zoom</span>
-              <button
-                type="button"
-                aria-label="Zoom out"
-                onClick={() => changeZoom(-0.1)}
-                className="inline-flex size-6 items-center justify-center rounded-md text-fg-muted hover:bg-bg-surface hover:text-fg"
-              >
-                <MinusIcon className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                aria-label="Reset zoom"
-                onClick={resetZoom}
-                className="min-w-10 rounded-md px-1 py-1 tabular-nums text-fg-muted hover:bg-bg-surface hover:text-fg"
-              >
-                {Math.round(zoomFactor * 100)}%
-              </button>
-              <button
-                type="button"
-                aria-label="Zoom in"
-                onClick={() => changeZoom(0.1)}
-                className="inline-flex size-6 items-center justify-center rounded-md text-fg-muted hover:bg-bg-surface hover:text-fg"
-              >
-                <PlusIcon className="size-3.5" />
-              </button>
-            </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => void showDeviceToolbar()}
-              className="h-8 gap-2 text-xs"
-            >
-              <SmartphoneIcon className="size-3.5" />
-              Show device toolbar
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => void captureScreenshot()}
-              className="h-8 gap-2 text-xs"
-            >
-              <CameraIcon className="size-3.5" />
-              Capture screenshot
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => webviewRef.current?.reload()}
-              className="h-8 gap-2 text-xs"
-            >
-              <RotateCwIcon className="size-3.5" />
-              Reload page
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={copyAddress} className="h-8 gap-2 text-xs">
-              <CopyIcon className="size-3.5" />
-              Copy address
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={openExternal}
-              disabled={!canOpenExternal}
-              className="h-8 gap-2 text-xs"
-            >
-              <ExternalLinkIcon className="size-3.5" />
-              Open in default browser
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => setBrowserPanel("import")}
-              className="h-8 gap-2 text-xs"
-            >
-              <UploadIcon className="size-3.5" />
-              Import cookies and passwords…
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => setBrowserPanel("passwords")}
-              className="h-8 gap-2 text-xs"
-            >
-              <KeyRoundIcon className="size-3.5" />
-              Passwords and autofill
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => setBrowserPanel("downloads")}
-              className="h-8 gap-2 text-xs"
-            >
-              <DownloadIcon className="size-3.5" />
-              Downloads
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => setBrowserPanel("clear-data")}
-              className="h-8 gap-2 text-xs"
-            >
-              <Trash2Icon className="size-3.5" />
-              Clear browsing data
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => void navigate({ to: "/settings/browser" })}
-              className="h-8 gap-2 text-xs"
-            >
-              <Settings2Icon className="size-3.5" />
-              Browser settings
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <BrowserMenu
+          zoomFactor={zoomFactor}
+          canOpenExternal={canOpenExternal}
+          onOpenFind={openFind}
+          onPrintPage={() => void printPage()}
+          onChangeZoom={changeZoom}
+          onResetZoom={resetZoom}
+          onShowDeviceToolbar={() => void showDeviceToolbar()}
+          onCaptureScreenshot={() => void captureScreenshot()}
+          onReload={() => webviewRef.current?.reload()}
+          onCopyAddress={copyAddress}
+          onOpenExternal={openExternal}
+          onOpenPanel={setBrowserPanel}
+          onOpenSettings={() => void navigate({ to: "/settings/browser" })}
+        />
       </div>
-      <Dialog
-        open={browserPanel !== null}
-        onOpenChange={(open) => {
-          if (!open) setBrowserPanel(null);
+      )}
+      <BrowserDataDialog
+        panel={browserPanel}
+        downloads={downloads}
+        credentials={credentials}
+        clearKinds={clearKinds}
+        onClose={() => setBrowserPanel(null)}
+        onClearKindsChange={setClearKinds}
+        onFillCredential={(credentialId) => {
+          void window.backchat.browserCredentialFill({
+            webContentsId: browserWebContentsId(),
+            credentialId,
+          });
         }}
-      >
-        <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
-          {browserPanel === "import" && (
-            <>
-              <DialogHeader className="border-b border-border/60 p-4">
-                <DialogTitle>Import cookies and passwords</DialogTitle>
-                <DialogDescription>
-                  Import from an installed browser profile. Exported cookie or password files are not accepted.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3 p-4 text-xs text-fg-muted">
-                <div className="rounded-lg border border-border/60 bg-bg-surface/40 p-3">
-                  <div className="flex items-center gap-2 text-fg">
-                    <UploadIcon className="size-4" />
-                    <span className="font-medium">System browser profiles</span>
-                  </div>
-                  <p className="mt-1.5 leading-5">
-                    Profile migration is scoped to local browser data and will never read an exported file.
-                  </p>
-                </div>
-                <p>Install or sign in to a supported browser first, then run the migration from this panel.</p>
-              </div>
-              <DialogFooter className="border-t border-border/60 p-3">
-                <Button type="button" variant="outline" onClick={() => setBrowserPanel(null)}>Close</Button>
-              </DialogFooter>
-            </>
-          )}
-          {browserPanel === "passwords" && (
-            <>
-              <DialogHeader className="border-b border-border/60 p-4">
-                <DialogTitle>Passwords and autofill</DialogTitle>
-                <DialogDescription>
-                  Saved credentials stay in the main process and are only filled after you choose them.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="max-h-72 overflow-y-auto p-3">
-                {credentials.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border/70 p-5 text-center text-xs text-fg-muted">
-                    No saved passwords in this browser profile.
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {credentials.map((credential) => (
-                      <div key={credential.id} className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-bg-surface/60">
-                        <KeyRoundIcon className="size-4 shrink-0 text-fg-subtle" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs text-fg">{credential.origin}</div>
-                          <div className="truncate text-[11px] text-fg-muted">{credential.username}</div>
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => void window.backchat.browserCredentialFill({
-                            webContentsId: browserWebContentsId(),
-                            credentialId: credential.id,
-                          })}
-                        >
-                          Fill
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`Delete ${credential.origin}`}
-                          onClick={() => void window.backchat.browserCredentialDelete({
-                            webContentsId: browserWebContentsId(),
-                            credentialId: credential.id,
-                          }).then(loadCredentials)}
-                        >
-                          <Trash2Icon className="size-3.5" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-          {browserPanel === "downloads" && (
-            <>
-              <DialogHeader className="border-b border-border/60 p-4">
-                <DialogTitle>Downloads</DialogTitle>
-                <DialogDescription>Files downloaded by the in-app browser.</DialogDescription>
-              </DialogHeader>
-              <div className="max-h-72 overflow-y-auto p-3">
-                {downloads.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border/70 p-5 text-center text-xs text-fg-muted">
-                    No downloads yet.
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {downloads.map((download) => (
-                      <div key={download.id} className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-bg-surface/60">
-                        <DownloadIcon className="size-4 shrink-0 text-fg-subtle" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs text-fg">{download.fileName}</div>
-                          <div className="truncate text-[11px] text-fg-muted">{download.state}</div>
-                        </div>
-                        <Button type="button" size="sm" variant="ghost" onClick={() => void window.backchat.browserDownloadAction({
-                          webContentsId: browserWebContentsId(), downloadId: download.id, action: "reveal",
-                        })}>Show</Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-          {browserPanel === "clear-data" && (
-            <>
-              <DialogHeader className="border-b border-border/60 p-4">
-                <DialogTitle>Clear browsing data</DialogTitle>
-                <DialogDescription>Choose what to remove from this browser profile.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2 p-4">
-                {([
-                  ["history", "Browsing history"],
-                  ["cookies", "Cookies and site data"],
-                  ["cache", "Cached images and files"],
-                  ["passwords", "Saved passwords"],
-                ] as const).map(([kind, label]) => (
-                  <label key={kind} className="flex items-center gap-2 rounded-md px-1 py-1.5 text-xs text-fg">
-                    <Checkbox
-                      checked={clearKinds.includes(kind)}
-                      onCheckedChange={(checked) => setClearKinds((current) => checked
-                        ? [...new Set([...current, kind])]
-                        : current.filter((candidate) => candidate !== kind))}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              <DialogFooter className="border-t border-border/60 p-3">
-                <Button type="button" variant="outline" onClick={() => setBrowserPanel(null)}>Cancel</Button>
-                <Button type="button" onClick={() => void clearBrowsingData()} disabled={clearKinds.length === 0}>Clear data</Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+        onDeleteCredential={(credentialId) => {
+          void window.backchat.browserCredentialDelete({
+            webContentsId: browserWebContentsId(),
+            credentialId,
+          }).then(loadCredentials);
+        }}
+        onRevealDownload={(downloadId) => {
+          void window.backchat.browserDownloadAction({
+            webContentsId: browserWebContentsId(),
+            downloadId,
+            action: "reveal",
+          });
+        }}
+        onClearData={() => void clearBrowsingData()}
+      />
       {findOpen && (
         <form
           className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border/70 px-3"
           onSubmit={(event) => {
             event.preventDefault();
-            const query = findQuery.trim();
-            if (query) webviewRef.current?.findInPage(query, { forward: true, findNext: true });
+            findNextInBrowser(webviewRef.current, findQuery);
           }}
         >
           <SearchIcon className="size-3.5 shrink-0 text-fg-subtle" />
@@ -1286,7 +946,7 @@ export function BrowserTab({
             type above. */}
         <webview
           ref={webviewRef}
-          src={normalizeUrl(initialUrl || "about:blank")}
+          src={normalizeBrowserUrl(initialUrl || "about:blank")}
           className={cn(
             "h-full w-full bg-bg",
             (resizeSnapshot || showingBlankPage) && "invisible",
@@ -1570,27 +1230,4 @@ function NavButton({
       {children}
     </button>
   );
-}
-
-/** http(s) / file URL → as-is. Bare word with a dot → assume http
- *  (`localhost:3000`, `example.com`). Anything else → Google search. */
-function normalizeUrl(raw: string): string {
-  const t = raw.trim();
-  if (!t) return "about:blank";
-  if (/^(https?|file|about):/i.test(t)) return t;
-  if (/^\//.test(t)) return "file://" + t;
-  if (/^[a-z0-9.-]+(:\d+)?(\/.*)?$/i.test(t)) return "https://" + t;
-  return "https://www.google.com/search?q=" + encodeURIComponent(t);
-}
-
-function addressLabel(url: string): string {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed.host + (parsed.pathname === "/" ? "" : parsed.pathname);
-    }
-  } catch {
-    // Keep the raw value while a user is entering an incomplete address.
-  }
-  return url;
 }

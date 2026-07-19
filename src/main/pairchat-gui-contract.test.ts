@@ -11,10 +11,10 @@ describe("PairChatView composer", () => {
       ),
       "utf-8",
     );
-    const chatSource = readFileSync(
+    const composerSource = readFileSync(
       resolve(
         __dirname,
-        "../renderer/src/components/chat/ChatView.tsx",
+        "../renderer/src/components/chat/Composer.tsx",
       ),
       "utf-8",
     );
@@ -22,8 +22,8 @@ describe("PairChatView composer", () => {
     expect(pairSource).toContain("Composer");
     expect(pairSource).toContain("CHAT_COMPOSER_FRAME_CLASS");
     expect(pairSource).toContain("agentPickerAgentIds");
-    expect(chatSource).toContain("agentPickerAgentIds");
-    expect(chatSource).not.toContain("UsersIcon");
+    expect(composerSource).toContain("agentPickerAgentIds");
+    expect(composerSource).not.toContain("UsersIcon");
     expect(pairSource).not.toContain("@/components/ui/textarea");
     expect(pairSource).not.toContain("@/components/ui/button");
   });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Settings } from "@shared/settings";
+import * as customAgentSettings from "./custom-agent-settings";
 import {
   customAgentRows,
   parseCustomAgentArgs,
@@ -10,12 +11,13 @@ import {
 
 const baseSettings: Settings = {
   default: {
-    agent_id: "",
     workspace_path: "",
     permission_mode: "ask",
     prompt_queue_enabled: true,
   },
   appearance: {
+    light_theme_id: "backchat-light",
+    dark_theme_id: "backchat-dark",
     theme: "system",
     language: "system",
     font_size: "md",
@@ -88,5 +90,64 @@ describe("custom agent settings", () => {
       id: "qwen-code",
       env: [{ name: "OPENAI_API_KEY", value: "sk-test" }],
     }]);
+  });
+
+  it("updates credential env without losing the rest of an agent override", () => {
+    const upsertAgentEnv = (
+      customAgentSettings as typeof customAgentSettings & {
+        upsertAgentEnv?: (
+          settings: Settings,
+          agentId: string,
+          values: Record<string, string>,
+        ) => Settings["agents"];
+      }
+    ).upsertAgentEnv;
+    const settings: Settings = {
+      ...baseSettings,
+      agents: [{
+        id: "studio",
+        enabled: true,
+        label_override: "Studio ACP",
+        command_override: "/usr/local/bin/studio-acp",
+        env: [
+          { name: "KEEP", value: "yes" },
+          { name: "TOKEN", value: "old" },
+        ],
+      }],
+    };
+
+    expect(upsertAgentEnv).toBeTypeOf("function");
+    expect(upsertAgentEnv?.(settings, "studio", {
+      TOKEN: "new",
+      CLEARED: "",
+    })).toEqual([{
+      id: "studio",
+      enabled: true,
+      label_override: "Studio ACP",
+      command_override: "/usr/local/bin/studio-acp",
+      env: [
+        { name: "KEEP", value: "yes" },
+        { name: "TOKEN", value: "new" },
+      ],
+    }]);
+  });
+
+  it("removes an otherwise empty disabled override", () => {
+    const upsertAgentEnabled = (
+      customAgentSettings as typeof customAgentSettings & {
+        upsertAgentEnabled?: (
+          settings: Settings,
+          agentId: string,
+          enabled: boolean,
+        ) => Settings["agents"];
+      }
+    ).upsertAgentEnabled;
+    const settings: Settings = {
+      ...baseSettings,
+      agents: [{ id: "codex-acp", enabled: true, env: [] }],
+    };
+
+    expect(upsertAgentEnabled).toBeTypeOf("function");
+    expect(upsertAgentEnabled?.(settings, "codex-acp", false)).toEqual([]);
   });
 });

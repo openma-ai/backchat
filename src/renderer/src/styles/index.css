@@ -113,74 +113,906 @@ html.dark[data-window-resizing="true"] .liquid-glass {
     0 1px 3px 0 rgb(0 0 0 / 0.05);
 }
 
+/* Suggestion cards fill the composer instead of immediately submitting.
+   The pulse lives on a pseudo-element so it can animate on the compositor
+   without replacing the glass card's carefully layered shadow. */
+.composer-suggestion-fill::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: 0;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--brand) 58%, transparent);
+  border-radius: inherit;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--brand) 26%, transparent);
+  animation: composer-suggestion-pulse 640ms var(--ease-soft) both;
+}
+
+@keyframes composer-suggestion-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.985) translateY(2px);
+  }
+  38% {
+    opacity: 1;
+    transform: scale(1.004) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.012) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-suggestion-fill::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* Slash commands are a small capability palette, not an unstructured dump.
+   Native commands stay first; skills form a separate, capped section until
+   the user filters. The panel is opaque so command copy remains legible over
+   conversation content and the right rail. */
+.slash-command-panel {
+  max-height: min(360px, calc(100vh - 220px));
+  margin-bottom: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--bg-surface) 94%, var(--bg));
+  box-shadow:
+    0 14px 36px rgb(0 0 0 / 0.22),
+    inset 0 1px 0 rgb(255 255 255 / 0.04);
+  animation: slash-command-panel-in var(--dur-slow) var(--ease-quart) both;
+}
+
+.slash-command-section + .slash-command-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.slash-command-section-label {
+  display: flex;
+  height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding-inline: 8px;
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.slash-command-item {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 28px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  color: var(--fg-muted);
+  text-align: left;
+  transition:
+    color var(--dur-fast) var(--ease-snap),
+    background-color var(--dur-fast) var(--ease-snap);
+}
+
+.slash-command-item:hover,
+.slash-command-item[aria-selected="true"] {
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.slash-command-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.slash-command-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg-subtle);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.slash-command-token {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-hint {
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-subtle);
+  background: var(--bg-surface);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-description {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-subtle);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-enter {
+  color: var(--fg-subtle);
+  opacity: 0;
+  transform: translateX(-2px);
+  transition:
+    opacity var(--dur-fast) var(--ease-snap),
+    transform var(--dur-fast) var(--ease-quart);
+}
+
+.slash-command-item:hover .slash-command-enter,
+.slash-command-item:focus-visible .slash-command-enter,
+.slash-command-item[aria-selected="true"] .slash-command-enter {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.slash-command-more {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px 5px 44px;
+  color: var(--fg-subtle);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+@keyframes slash-command-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slash-command-panel {
+    animation: none;
+  }
+  .slash-command-item,
+  .slash-command-enter {
+    transition: none;
+  }
+}
+
+/* Sonner previously referenced --popover, which is only a Tailwind alias
+   here and therefore resolved to transparent at runtime. Keep notifications
+   on an opaque app surface so errors remain readable over the right rail. */
+[data-sonner-toast].cn-toast {
+  color: var(--fg) !important;
+  background: var(--bg) !important;
+  border-color: var(--border-strong) !important;
+  box-shadow: 0 4px 8px rgb(0 0 0 / 0.28) !important;
+}
+
+[data-sonner-toast].cn-toast[data-type="error"] {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong)) !important;
+  box-shadow:
+    inset 3px 0 0 var(--danger),
+    0 4px 8px rgb(0 0 0 / 0.28) !important;
+}
+
+[data-sonner-toast].cn-toast [data-description] {
+  color: var(--fg-muted) !important;
+}
+
+[data-sonner-toast].cn-toast [data-button] {
+  color: var(--bg) !important;
+  background: var(--fg) !important;
+}
+
+/* Theme image contribution points. Plugins provide URLs only; placement,
+   opacity, hit-testing, and responsive behavior remain owned by Backchat. */
+.theme-app-background {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--theme-asset-app-background, none);
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-soft);
+}
+html[data-theme-asset-app-background="true"] .theme-app-background {
+  opacity: 0.24;
+}
+
+.theme-sidebar-background {
+  isolation: isolate;
+}
+.theme-sidebar-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--theme-asset-sidebar-background, none);
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-soft);
+}
+html[data-theme-asset-sidebar-background="true"] .theme-sidebar-background::before {
+  opacity: 0.82;
+}
+
+.theme-empty-state-art {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  margin-bottom: 20px;
+  place-items: center;
+  color: var(--fg-subtle);
+  background-image: var(--theme-asset-empty-state, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+html[data-theme-asset-empty-state="true"] .theme-empty-state-art {
+  width: 112px;
+  height: 112px;
+}
+html[data-theme-asset-empty-state="true"] .theme-empty-state-art .openma-home-mark {
+  display: none;
+}
+
+.openma-home-mark {
+  display: block;
+  width: 68px;
+  height: 68px;
+  color: inherit;
+  background: currentColor;
+  opacity: 0.78;
+  -webkit-mask-image: var(--openma-home-mark);
+  mask-image: var(--openma-home-mark);
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.home-empty-stage {
+  position: relative;
+}
+
+.home-empty-stack {
+  --home-composer-width: 42rem;
+  --home-composer-width: var(--home-composer-theme-width, 42rem);
+  --home-empty-stack-offset-y: clamp(-24px, -3vh, -12px);
+  margin-top: var(--home-empty-stack-offset-y);
+}
+
+.home-composer-stack {
+  max-width: var(--home-composer-frame-width, 48rem);
+}
+
+.home-hero-panel {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+}
+
+.home-hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-hero-panel {
+  position: relative;
+  display: grid;
+  min-height: clamp(480px, 58vh, 620px);
+  min-height: var(--home-hero-height, clamp(480px, 58vh, 620px));
+  overflow: hidden;
+  padding: 42px 48px 72px;
+  background-image:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--bg) 24%, transparent) 0%,
+      transparent 54%
+    ),
+    var(--theme-asset-home-hero-background, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-hero-panel[data-home-hero-surface="framed"] {
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-hero-panel[data-home-hero-surface="flush"] {
+  border: 0;
+  border-radius: 0;
+}
+
+.home-theme-masthead {
+  position: absolute;
+  top: 18px;
+  left: 36px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--brand);
+  text-align: left;
+}
+
+.home-theme-masthead-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  font-size: 34px;
+}
+
+.home-theme-masthead strong,
+.home-theme-masthead small {
+  display: block;
+}
+
+.home-theme-masthead strong {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+}
+
+.home-theme-masthead small {
+  margin-top: 3px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+html[data-theme-asset-home-hero-background="true"] .home-hero-panel .theme-empty-state-art {
+  display: none;
+}
+html[data-theme-asset-home-hero-background="true"] .home-hero-copy {
+  position: relative;
+  z-index: 1;
+  width: max-content;
+  max-width: 46%;
+  align-self: center;
+  justify-self: start;
+  align-items: flex-start;
+  text-align: left;
+}
+html[data-theme-asset-home-hero-background="true"] .home-hero-copy[data-slogan-horizontal="center"] {
+  justify-self: center;
+  align-items: center;
+  text-align: center;
+}
+html[data-theme-asset-home-hero-background="true"] .home-hero-copy[data-slogan-horizontal="right"] {
+  justify-self: end;
+  align-items: flex-end;
+  text-align: right;
+}
+html[data-theme-asset-home-hero-background="true"] .home-hero-copy[data-slogan-vertical="top"] {
+  align-self: start;
+  margin-top: 58px;
+}
+html[data-theme-asset-home-hero-background="true"] .home-hero-copy[data-slogan-vertical="bottom"] {
+  align-self: end;
+}
+html[data-theme-asset-home-hero-background="true"] .home-hero-title {
+  font-family: var(--home-slogan-font-family, var(--font-display));
+  font-size: var(--home-slogan-font-size, 34px);
+  font-weight: var(--home-slogan-font-weight, 400);
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.home-slogan-emphasis {
+  color: var(--brand);
+}
+
+.home-hero-subtitle {
+  max-width: 36rem;
+  margin-top: 16px;
+  color: var(--fg-muted);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-suggestions {
+  position: relative;
+  z-index: 2;
+  margin-top: var(--home-suggestion-offset-y, clamp(-128px, -12vh, -96px));
+  padding-inline: 0;
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-empty-stage {
+  padding: 0;
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-empty-content {
+  align-items: flex-start;
+  overflow-y: auto;
+  padding-block: 12px 24px;
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-empty-stack {
+  --home-composer-width: 880px;
+  --home-composer-width: var(--home-composer-theme-width, 880px);
+  margin-top: 0;
+  gap: 40px;
+}
+
+html[data-theme-asset-home-hero-background="true"]
+  .home-empty-content:has(.home-empty-intro[data-home-hero-width="bleed"]) {
+  padding-top: 0;
+  padding-inline: 0;
+}
+
+html[data-theme-asset-home-hero-background="true"]
+  .home-empty-stack:has(.home-empty-intro[data-home-hero-width="bleed"]) {
+  max-width: none;
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-suggestion-card {
+  min-height: var(--home-suggestion-card-height, 148px);
+  align-items: var(--home-suggestion-align, center);
+  gap: var(--home-suggestion-gap, 12px);
+  padding: var(--home-suggestion-card-padding, 18px);
+  text-align: var(--home-suggestion-text-align, center);
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-suggestion-icon {
+  width: var(--home-suggestion-icon-size, 52px);
+  height: var(--home-suggestion-icon-size, 52px);
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-suggestion-fallback-icon {
+  width: var(--home-suggestion-icon-size, 26px);
+  height: var(--home-suggestion-icon-size, 26px);
+}
+
+html[data-theme-asset-home-hero-background="true"] .home-suggestion-label {
+  max-width: 18ch;
+  text-align: var(--home-suggestion-text-align, center);
+}
+
+.home-suggestion-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: var(--home-suggestion-align, flex-start);
+  gap: 6px;
+}
+
+.home-suggestion-description {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: var(--home-suggestion-text-align, left);
+}
+
+.home-corner-decoration {
+  display: none;
+}
+
+html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration {
+  position: absolute;
+  right: 18px;
+  bottom: 24px;
+  z-index: 3;
+  display: block;
+  width: 164px;
+  height: 218px;
+  padding: 8px 8px 34px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-surface) 94%, white);
+  box-shadow: var(--shadow-md);
+  transform: rotate(5deg);
+  transform-origin: center;
+  pointer-events: none;
+}
+
+html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::before {
+  content: "";
+  position: absolute;
+  inset: 8px 8px 34px;
+  background-image: var(--theme-asset-home-corner-decoration, none);
+  background-position: 73% 38%;
+  background-repeat: no-repeat;
+  background-size: 310%;
+}
+
+html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::after {
+  content: "♥";
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  color: var(--brand);
+  font-size: 15px;
+}
+
+@media (max-width: 760px) {
+  html[data-theme-asset-home-hero-background="true"] .home-hero-panel {
+    min-height: 280px;
+    padding: 32px 28px 58px;
+    background-position: 62% center;
+  }
+  html[data-theme-asset-home-hero-background="true"] .home-hero-copy {
+    max-width: 58%;
+  }
+  html[data-theme-asset-home-hero-background="true"] .home-hero-title {
+    font-size: min(var(--home-slogan-font-size, 28px), 34px);
+  }
+  html[data-theme-asset-home-hero-background="true"] .home-suggestions {
+    margin-top: -42px;
+    padding-inline: 14px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .home-corner-decoration {
+    display: none !important;
+  }
+}
+
+[data-suggestion-kind="understand"] {
+  --home-suggestion-icon: var(--theme-asset-suggestion-understand-icon, none);
+  --home-suggestion-background: var(--theme-asset-suggestion-understand-background, none);
+}
+[data-suggestion-kind="shape"] {
+  --home-suggestion-icon: var(--theme-asset-suggestion-shape-icon, none);
+  --home-suggestion-background: var(--theme-asset-suggestion-shape-background, none);
+}
+[data-suggestion-kind="refine"] {
+  --home-suggestion-icon: var(--theme-asset-suggestion-refine-icon, none);
+  --home-suggestion-background: var(--theme-asset-suggestion-refine-background, none);
+}
+[data-suggestion-kind="unblock"] {
+  --home-suggestion-icon: var(--theme-asset-suggestion-unblock-icon, none);
+  --home-suggestion-background: var(--theme-asset-suggestion-unblock-background, none);
+}
+
+.home-suggestions {
+  max-width: calc(var(--home-composer-width) - 32px);
+  margin-inline: auto;
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: 12px;
+}
+
+.home-suggestions[data-suggestion-width="composer"] {
+  max-width: var(--home-composer-width);
+}
+
+.home-suggestions[data-suggestion-width="wide"] {
+  max-width: min(100%, 1120px);
+}
+
+.home-suggestion-card {
+  min-height: var(--home-suggestion-card-height, 112px);
+  display: flex;
+  flex-direction: column;
+  align-items: var(--home-suggestion-align, flex-start);
+  justify-content: center;
+  gap: var(--home-suggestion-gap, 24px);
+  padding: var(--home-suggestion-card-padding, 18px);
+  border: 1px solid var(--border);
+  border-radius: var(--home-suggestion-card-radius, 16px);
+  background-color: var(--bg-surface);
+  background-image:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--bg-surface) 78%, transparent),
+      color-mix(in srgb, var(--bg) 88%, transparent)
+    ),
+    var(--home-suggestion-background, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  transition:
+    transform var(--dur-base) var(--ease-quart),
+    border-color var(--dur-base) var(--ease-snap),
+    background-color var(--dur-base) var(--ease-snap);
+}
+.home-suggestion-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  background-color: var(--bg-bubble);
+}
+.home-suggestion-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.home-suggestion-card:active {
+  transform: translateY(0);
+}
+
+.home-suggestion-icon {
+  display: none;
+  width: var(--home-suggestion-icon-size, 38px);
+  height: var(--home-suggestion-icon-size, 38px);
+  flex: none;
+  background-image: var(--home-suggestion-icon, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.home-suggestion-fallback-icon {
+  width: var(--home-suggestion-icon-size, 22px);
+  height: var(--home-suggestion-icon-size, 22px);
+}
+
+.home-suggestion-label {
+  text-align: var(--home-suggestion-text-align, left);
+}
+
+.home-suggestion-stage {
+  min-height: var(--home-suggestion-card-height, 112px);
+}
+
+.home-suggestion-composer-popover {
+  position: absolute;
+  right: 32px;
+  bottom: calc(100% + 12px);
+  left: 32px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  animation: home-suggestion-select-in 240ms var(--ease-quart);
+}
+
+.home-suggestion-select-header {
+  display: flex;
+  min-height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding-inline: 4px;
+  color: var(--fg-muted);
+}
+
+.home-suggestion-select-back {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--fg-subtle);
+  transition:
+    color var(--dur-fast) var(--ease-snap),
+    background-color var(--dur-fast) var(--ease-snap);
+}
+
+.home-suggestion-select-back:hover {
+  color: var(--fg);
+  background: var(--bg-surface);
+}
+
+.home-suggestion-select-back:focus-visible,
+.home-suggestion-option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.home-suggestion-select-title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-suggestion-options {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.home-suggestion-option {
+  display: grid;
+  min-height: 42px;
+  min-width: 0;
+  overflow: hidden;
+  grid-template-columns: 20px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--fg);
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease-snap);
+}
+
+.home-suggestion-option:hover,
+.home-suggestion-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--bg-surface) 84%, transparent);
+}
+
+.home-suggestion-option-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.home-suggestion-option-copy {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-suggestion-option-prefix {
+  color: var(--fg-muted);
+}
+
+.home-suggestion-slot-preview {
+  display: inline-block;
+  margin-inline: 4px;
+  padding-inline: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  background: var(--bg-surface);
+  font-size: 12px;
+  line-height: 20px;
+  vertical-align: 1px;
+}
+
+.home-suggestion-slot-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline: 4px;
+  padding: 0 4px 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-surface);
+  transition:
+    border-color var(--dur-fast) var(--ease-snap),
+    background-color var(--dur-fast) var(--ease-snap);
+}
+
+.home-suggestion-slot-token:focus-within {
+  border-color: var(--ring);
+  background: var(--bg);
+}
+
+.composer-template-row {
+  animation: composer-template-row-in 200ms var(--ease-quart);
+}
+
+@keyframes composer-template-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.home-suggestion-option-enter {
+  width: 14px;
+  height: 14px;
+  color: var(--fg-subtle);
+  opacity: 0;
+  transform: translateX(-3px);
+  transition:
+    opacity var(--dur-fast) var(--ease-snap),
+    transform var(--dur-fast) var(--ease-quart);
+}
+
+.home-suggestion-option:hover .home-suggestion-option-enter,
+.home-suggestion-option:focus-visible .home-suggestion-option-enter,
+.home-suggestion-option[aria-selected="true"] .home-suggestion-option-enter {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@keyframes home-suggestion-select-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    clip-path: inset(0 0 12% 0 round 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0 round 10px);
+  }
+}
+
+html[data-theme-asset-suggestion-understand-icon="true"] [data-suggestion-kind="understand"] .home-suggestion-icon,
+html[data-theme-asset-suggestion-shape-icon="true"] [data-suggestion-kind="shape"] .home-suggestion-icon,
+html[data-theme-asset-suggestion-refine-icon="true"] [data-suggestion-kind="refine"] .home-suggestion-icon,
+html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unblock"] .home-suggestion-icon {
+  display: block;
+}
+html[data-theme-asset-suggestion-understand-icon="true"] [data-suggestion-kind="understand"] .home-suggestion-fallback-icon,
+html[data-theme-asset-suggestion-shape-icon="true"] [data-suggestion-kind="shape"] .home-suggestion-fallback-icon,
+html[data-theme-asset-suggestion-refine-icon="true"] [data-suggestion-kind="refine"] .home-suggestion-fallback-icon,
+html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unblock"] .home-suggestion-fallback-icon {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-template-row {
+    animation: none;
+  }
+  .home-suggestion-select {
+    animation: none;
+  }
+  .home-suggestion-card {
+    transition: none;
+  }
+  .home-suggestion-option,
+  .home-suggestion-option-enter {
+    transition: none;
+  }
+  .home-suggestion-card:hover,
+  .home-suggestion-card:active {
+    transform: none;
+  }
+}
+
 @import "tailwindcss";
 
 /* ---------- Dark mode: class-based ---------- */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ---------- Light theme (default) ----------
-   Token names, hex values, and oklch curves match the openma console palette
-   verbatim so the desktop's shadcn + ai-elements surfaces feel like the same
-   product. If you change a token here, sync to
-   open-managed-agents/apps/console/src/index.css. */
+/* Theme plugins own all visual values. This root contains only structural and
+   motion tokens shared by every theme; semantic Tailwind aliases below consume
+   the active plugin's inline custom properties. */
 :root {
-  /* Brand — vermilion (朱砂红), the exact color from the app icon
-     (#f84f32). Restraint comes from WHERE we use it (rare, only where
-     the eye should jump), not from desaturating into mud. brand-subtle
-     is a near-white warm wash for selection backgrounds. brand-hover
-     is pulled a touch darker for press feedback. */
-  --brand: #f84f32;
-  --brand-hover: oklch(0.62 0.21 36);
-  --brand-subtle: oklch(0.97 0.018 36);
-  /* White on this brand clears AA. */
-  --brand-fg: #ffffff;
-
-  /* Restrained elevation ladder — nearly neutral grays. Large surfaces stay
-     close to white while bubbles keep just enough depth to remain distinct;
-     the trace of yellow-gray avoids both a blue cast and a red/brown tint.
-       --bg          near-white card surface
-       --bg-sidebar  warm-neutral stage so the cards lift visibly
-       --bg-surface  light gray, used for raised controls and glass
-       --bg-bubble   distinct gray for message and selection bubbles
-     Gray is used for hierarchy, not as the dominant light-theme color. */
-  --bg: oklch(0.995 0 0);
-  --bg-sidebar: oklch(0.965 0.002 95);
-  --bg-surface: oklch(0.982 0.001 95);
-  --bg-bubble: oklch(0.955 0.0015 95);
-  --bg-overlay: oklch(0 0 0 / 0.3);
-
-  /* Text stays visually neutral. Even the subtle tier keeps 4.5:1+
-     contrast on --bg so placeholders and metadata remain readable. */
-  --fg: oklch(0.19 0.002 80);
-  --fg-muted: oklch(0.45 0.002 85);
-  --fg-subtle: oklch(0.52 0.002 85);
-
-  /* Borders share the surface hue and separate elevation without
-     reintroducing a cold blue-gray outline. */
-  --border: oklch(0.9 0.0015 95);
-  --border-strong: oklch(0.83 0.002 95);
-
-  --success: oklch(0.6 0.18 145);
-  --success-subtle: oklch(0.96 0.04 145);
-  --warning: oklch(0.7 0.16 75);
-  --warning-subtle: oklch(0.96 0.04 75);
-  --danger: oklch(0.58 0.22 25);
-  --danger-subtle: oklch(0.96 0.04 25);
-  --info: oklch(0.58 0.16 260);
-  --info-subtle: oklch(0.96 0.03 260);
-  --accent-violet: oklch(0.55 0.2 300);
-  --accent-violet-subtle: oklch(0.96 0.03 300);
-
-  --shadow-md: 0 4px 12px -4px rgb(0 0 0 / 0.12);
-  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.08);
-  /* Card shadows — the floating-card stage uses a soft double-layer drop
-     and a slightly heavier press tone when an input focuses. Minted as
-     tokens so dark mode can warm or cool them independently from light. */
-  --shadow-card-soft: 0 8px 24px -12px rgb(0 0 0 / 0.10), 0 2px 6px -2px rgb(0 0 0 / 0.04);
-  --shadow-card-press: 0 2px 4px -2px rgb(0 0 0 / 0.08), 0 6px 12px -6px rgb(0 0 0 / 0.08);
-  --shadow-input-rest: 0 1px 2px -1px rgb(0 0 0 / 0.05), 0 4px 8px -6px rgb(0 0 0 / 0.06);
-  --shadow-chip-press: 0 1px 2px -1px rgb(0 0 0 / 0.08);
-
   /* Motion tokens. Default Tailwind transitions feel "computer-y". These
      give interactions weight without being slow.
        soft   — iOS-style spring out; modal/toast/menu reveal
@@ -192,9 +1024,8 @@ html.dark[data-window-resizing="true"] .liquid-glass {
   --dur-quick: 100ms;
   --dur-base: 150ms;
   --dur-slow: 220ms;
-
-  --ring: var(--brand);
-  color-scheme: light;
+  --motion-disclosure-duration: var(--dur-slow);
+  --motion-disclosure-easing: var(--ease-soft);
 
   /* ---------- Spatial tokens (taste-saas) ----------
      Wireless: every visible alignment lives in tokens, not in per-component
@@ -287,57 +1118,6 @@ html.dark[data-window-resizing="true"] .liquid-glass {
   --bottom-panel-h: 160px;
 }
 
-/* ---------- Dark theme ---------- */
-.dark {
-  /* Brand — same vermilion family as light, lifted in lightness so it
-     stays legible on a dark canvas without losing the icon's identity. */
-  --brand: oklch(0.72 0.20 36);
-  --brand-hover: oklch(0.78 0.20 36);
-  --brand-subtle: oklch(0.30 0.08 36);
-  /* Dark theme subtle is a deep red wash, so a dark warm foreground
-     reads inside chips/highlights painted with it. */
-  --brand-fg: #1a0e09;
-
-  /* Dark elevation uses compact neutral-charcoal steps. Large glass surfaces
-     stay close to the stage; bubbles get the highest step without becoming
-     broad slabs of mid-gray. */
-  --bg: oklch(0.215 0.002 85);
-  --bg-sidebar: oklch(0.17 0.0015 85);
-  --bg-surface: oklch(0.265 0.0025 85);
-  --bg-bubble: oklch(0.305 0.0025 85);
-  --bg-overlay: oklch(0 0 0 / 0.6);
-
-  --fg: oklch(0.94 0.0015 95);
-  --fg-muted: oklch(0.74 0.002 90);
-  --fg-subtle: oklch(0.69 0.002 90);
-
-  --border: oklch(0.33 0.0025 85);
-  --border-strong: oklch(0.40 0.003 85);
-
-  --success: oklch(0.76 0.16 145);
-  --success-subtle: oklch(0.22 0.05 145);
-  --warning: oklch(0.8 0.14 75);
-  --warning-subtle: oklch(0.22 0.05 75);
-  --danger: oklch(0.72 0.18 25);
-  --danger-subtle: oklch(0.22 0.05 25);
-  --info: oklch(0.72 0.14 260);
-  --info-subtle: oklch(0.22 0.04 260);
-  --accent-violet: oklch(0.72 0.16 300);
-  --accent-violet-subtle: oklch(0.22 0.05 300);
-
-  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
-  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 0.4);
-  /* Dark sibling — shadows are heavier on a dark stage because a soft
-     light-mode shadow disappears entirely. */
-  --shadow-card-soft: 0 8px 24px -12px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.25);
-  --shadow-card-press: 0 2px 4px -2px rgb(0 0 0 / 0.4), 0 6px 12px -6px rgb(0 0 0 / 0.35);
-  --shadow-input-rest: 0 1px 2px -1px rgb(0 0 0 / 0.3), 0 4px 8px -6px rgb(0 0 0 / 0.25);
-  --shadow-chip-press: 0 1px 2px -1px rgb(0 0 0 / 0.35);
-
-  --ring: var(--brand);
-  color-scheme: dark;
-}
-
 /* ---------- Tailwind theme tokens ----------
    Exposes the OMA palette to Tailwind v4 utilities (`bg-bg`, `text-fg-muted`,
    `border-border`, etc.) AND aliases the shadcn primitive token names so
@@ -401,6 +1181,7 @@ html.dark[data-window-resizing="true"] .liquid-glass {
   --shadow-card-press: var(--shadow-card-press);
   --shadow-input-rest: var(--shadow-input-rest);
   --shadow-chip-press: var(--shadow-chip-press);
+  --shadow-pip: var(--shadow-pip);
 
   /* shadcn primitive aliases — see file-level comment. */
   --color-background: var(--bg);
@@ -468,6 +1249,17 @@ body,
   *:focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -590,8 +1382,29 @@ body,
   display: inline-block;
   animation: brand-loader-dot 1200ms var(--ease-soft) infinite;
 }
+.openma-startup-loader-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brand-loader-dot 1200ms var(--ease-soft) infinite;
+}
 @media (prefers-reduced-motion: reduce) {
-  .brand-loader-dot { animation: none; opacity: 0.6; }
+  .brand-loader-dot,
+  .openma-startup-loader-dot { animation: none; opacity: 0.6; }
+}
+
+/* Empty-turn wait state. Keep "Thinking" typographically stable while the
+   three periods breathe in sequence; this shows activity without moving
+   surrounding content or impersonating a real reasoning block. */
+@keyframes thinking-placeholder-dot {
+  0%, 20%, 100% { opacity: 0.25; }
+  50%           { opacity: 1; }
+}
+.thinking-placeholder-dot {
+  display: inline-block;
+  animation: thinking-placeholder-dot 1350ms var(--ease-soft) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-placeholder-dot { animation: none; opacity: 0.7; }
 }
 
 /* Skeleton placeholder pulse — quieter than animate-pulse (Tailwind's default
@@ -642,30 +1455,6 @@ body,
   .reveal-in { animation: none; opacity: 1; }
 }
 
-/* Composer slide-in — fired when ChatView transitions from empty (home)
-   state to conversation state. The empty-state composer was vertically
-   centered; the conversation composer is bottom-pinned. Without this,
-   the new bottom composer pops in instantly while the empty one
-   disappears. Slide it up from below the viewport edge so the motion
-   feels like the composer "moves to its new home". Same cubic-bezier
-   as the sidebar slide so all the shell motions feel coupled. */
-@keyframes composer-slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.composer-slide-in {
-  animation: composer-slide-in 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .composer-slide-in { animation: none; }
-}
-
 /* ---------- Reduced motion ----------
    WCAG 2.3.3 (AAA). Zeroing out the motion tokens lets every component that
    reads --dur-* / --ease-* (Tailwind arbitrary values or inline styles) honor
@@ -707,6 +1496,41 @@ body,
 }
 .app-no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* Shared intrinsic-height disclosure. CSS grid can interpolate 0fr → 1fr
+   without measuring content in JavaScript, which keeps nested sidebar rows
+   smooth even when their count changes. */
+.animated-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    visibility 0s linear var(--motion-disclosure-duration);
+}
+
+.animated-collapse[data-state="open"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    visibility 0s linear 0s;
+}
+
+.animated-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+  transform: translateY(-2px);
+  transition: transform var(--motion-disclosure-duration) var(--motion-disclosure-easing);
+}
+
+.animated-collapse[data-state="open"] > .animated-collapse-inner {
+  transform: translateY(0);
 }
 
 /* The side conversation lives on a glass surface, where the default

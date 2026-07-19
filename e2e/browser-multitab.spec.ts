@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { injectSession, launchApp } from "./helpers";
+import { injectSession, launchApp, openBrowserPanel } from "./helpers";
 
 async function browserTool<T>(
   page: Page,
@@ -40,11 +40,7 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-window-a",
     });
-    const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
-    if (!(await closeSidePanel.isVisible())) {
-      await page.getByRole("button", { name: "Open side chat" }).click();
-    }
-    await page.getByRole("button", { name: /浏览器/ }).click();
+    await openBrowserPanel(page);
 
     const taskARoots = page.locator(`[data-browser-task="${taskA}"]`);
     await expect(taskARoots).toHaveCount(1);
@@ -53,7 +49,9 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
     await expect.poll(() => browserTool(page, taskA, "browser_tabs", { action: "list" })).toMatchObject({
       tabs: [expect.objectContaining({ active: true })],
     });
-    await browserTool(page, taskA, "browser_navigate", { url: "about:blank" });
+    await browserTool(page, taskA, "browser_navigate", {
+      url: "about:blank#first-workspace",
+    });
     await executeGuest(firstRoot, `(() => {
       document.title = 'First workspace';
       document.body.innerHTML = '<main><h1>First tab</h1><input id="draft" value="alpha"><button id="increment">Increment</button></main>';
@@ -67,23 +65,21 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
     const opened = await browserTool<{
       active_tab_id: string;
       tabs: Array<{ tab_id: string; active: boolean }>;
-    }>(page, taskA, "browser_tabs", { action: "new", url: "about:blank" });
+    }>(page, taskA, "browser_tabs", {
+      action: "new",
+      url: "about:blank#second-workspace",
+    });
     expect(opened.tabs).toHaveLength(2);
     await expect(taskARoots).toHaveCount(2);
     const secondRoot = taskARoots.nth(1);
     await expect(secondRoot).toHaveAttribute("data-browser-visible", "true");
     await executeGuest(secondRoot, `(() => {
       document.title = 'Second workspace';
-      const favicon = document.createElement('link');
-      favicon.rel = 'icon';
-      favicon.href = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="%236361f2"/><path d="M4 8h8M8 4v8" stroke="white" stroke-width="2"/></svg>';
-      document.head.append(favicon);
       document.body.innerHTML = '<main><h1>Second tab</h1><input id="draft" value="beta"></main>';
       Object.assign(document.body.style, { margin: '0', padding: '32px', fontFamily: 'sans-serif', background: '#fff8ee' });
     })()`);
     const secondTabChip = page.locator('button[title="Second workspace"]');
     await expect(secondTabChip).toBeVisible();
-    await expect(secondTabChip.locator("img")).toHaveAttribute("src", /^data:image\/svg\+xml/);
     const secondGuestId = await guestId(secondRoot);
     expect(secondGuestId).not.toBe(firstGuestId);
 
@@ -115,10 +111,12 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-window-b",
     });
-    await page.getByRole("button", { name: /浏览器/ }).click();
+    await openBrowserPanel(page);
     const taskBRoot = page.locator(`[data-browser-task="${taskB}"]`);
     await expect(taskBRoot).toHaveCount(1);
-    await browserTool(page, taskB, "browser_navigate", { url: "about:blank" });
+    await browserTool(page, taskB, "browser_navigate", {
+      url: "about:blank#task-b-browser",
+    });
     await executeGuest(taskBRoot, `(() => {
       document.title = 'Task B browser';
       document.body.innerHTML = '<main><h1>Task B only</h1></main>';

@@ -24,4 +24,5 @@ describe("composer agent selection", () => {
     expect(isComposerAgentLocked("codex-acp")).toBe(true);
     expect(isComposerAgentLocked("")).toBe(false);
   });
+
 });

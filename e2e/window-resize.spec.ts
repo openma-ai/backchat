@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { injectSession, launchApp } from "./helpers";
+import { injectSession, launchApp, openBrowserPanel } from "./helpers";
 
 test("live window resize freezes the browser guest and simplifies panel compositing", async ({}, testInfo) => {
   const { app, page, cleanup } = await launchApp();
@@ -9,11 +9,7 @@ test("live window resize freezes the browser guest and simplifies panel composit
       cwd: "/tmp/backchat-resize-test",
     });
     const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
-    if (!(await closeSidePanel.isVisible())) {
-      await page.getByRole("button", { name: "Open side chat" }).click();
-    }
-    await expect(closeSidePanel).toBeVisible();
-    await page.getByRole("button", { name: /浏览器/ }).click();
+    await openBrowserPanel(page);
 
     const webview = page.locator("webview");
     await webview.waitFor();

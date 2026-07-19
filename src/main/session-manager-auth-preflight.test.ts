@@ -42,6 +42,7 @@ vi.mock("./sql-store.js", () => ({
   appendEvent: vi.fn(),
   appendEventsTx: vi.fn(),
   archiveSession: vi.fn(),
+  setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
   touchSession: vi.fn(),
   upsertSession: vi.fn(),
@@ -49,8 +50,8 @@ vi.mock("./sql-store.js", () => ({
 
 const { SessionManager } = await import("./session-manager.js");
 
-describe("SessionManager auth preflight", () => {
-  it("reports auth_required before spawning a default agent that now needs auth", async () => {
+describe("SessionManager start hot path", () => {
+  it("does not spawn a disposable auth probe before the real ACP session", async () => {
     const send = vi.fn();
     probeAgentAuthStatusMock.mockResolvedValue({
       status: "needs-auth",
@@ -70,13 +71,7 @@ describe("SessionManager auth preflight", () => {
 
     await manager.start({ session_id: "session-auth", agent_id: "fake-agent" });
 
-    expect(runtimeStartMock).not.toHaveBeenCalled();
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({
-      type: "session.error",
-      session_id: "session-auth",
-      code: "auth_required",
-      agent_id: "fake-agent",
-      message: expect.stringContaining("Authenticate Fake Agent before starting"),
-    }));
+    expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
+    expect(runtimeStartMock).toHaveBeenCalledOnce();
   });
 });

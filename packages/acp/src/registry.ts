@@ -96,6 +96,7 @@ function mergeOverlay(
       merged.push({
         id: o.id,
         label: ov.label || o.label,
+        icon: o.icon ?? ov.icon,
         spec: ov.spec,
         version: o.version,
         installHint: ov.installHint || o.installHint,
@@ -105,6 +106,7 @@ function mergeOverlay(
         wraps: ov.wraps,
         install: ov.install ?? o.install,
         registryId: ov.registryId ?? o.registryId,
+        registryDistribution: o.registryDistribution,
         installSource: ov.installSource ?? o.installSource,
         downloadUrl: ov.downloadUrl ?? o.downloadUrl,
         downloadKind: ov.downloadKind ?? o.downloadKind,
@@ -147,11 +149,16 @@ export async function detectEntry(
   if (!command) return null;
   if (entry.spec.command === "npx" && !isNpxPackageInstalled(entry)) return null;
   if (entry.spec.command === "uvx" && !isUvxPackageInstalled(entry)) return null;
+  const args =
+    managedCommand && entry.installSource === "registry"
+      ? undefined
+      : entry.spec.args;
   return {
     ...entry,
     spec: {
       ...entry.spec,
       command,
+      ...(args ? { args } : { args: undefined }),
     },
   };
 }

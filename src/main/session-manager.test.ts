@@ -1,10 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import type { AcpSession, SessionOptions } from "@open-managed-agents-desktop/acp";
-import { SessionManager } from "./session-manager";
-import { appendEvent, appendEventsTx } from "./sql-store.js";
+import { acpEventUiRoute, SessionManager } from "./session-manager";
+import { appendEvent, appendEventsTx, setSessionTitle } from "./sql-store.js";
 
 const mocks = vi.hoisted(() => ({
   runtimeStart: vi.fn(),
@@ -60,6 +57,7 @@ vi.mock("./sql-store.js", () => ({
   appendEvent: vi.fn(),
   appendEventsTx: vi.fn(),
   archiveSession: vi.fn(),
+  setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
   touchSession: vi.fn(),
   upsertSession: vi.fn(),
@@ -71,22 +69,299 @@ vi.mock("./session-cwd.js", () => ({
 }));
 
 describe("SessionManager prompt queue", () => {
-  it("installs missing registry-managed agents before starting the ACP runtime", async () => {
-    const root = join(tmpdir(), `backchat-managed-start-${process.pid}-${Date.now()}`);
-    const binDir = join(root, "bin");
-    const commandPath = join(binDir, "registry-agent");
+  it("cancels session-scoped broker work when an active turn is cancelled", async () => {
+    mocks.runtimeStart.mockClear();
     const fake = createControllableAcpSession();
     mocks.runtimeStart.mockResolvedValueOnce(fake.session);
-    mocks.installAcpRegistryAgent.mockImplementationOnce(async (options: { binDir: string }) => {
-      await mkdir(options.binDir, { recursive: true });
-      await writeFile(commandPath, "#!/bin/sh\n", { mode: 0o755 });
-      return { commandPath };
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
     });
+    const cancelPending = vi.fn();
+    manager.setOnSessionPendingWorkCancelled(cancelPending);
+
+    await manager.start({
+      session_id: "sess-cancel-active",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    const prompting = manager.prompt({
+      session_id: "sess-cancel-active",
+      turn_id: "turn-active",
+      text: "run it",
+    });
+    await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+
+    manager.cancel("sess-cancel-active", "turn-active");
+    expect(cancelPending).toHaveBeenCalledWith("sess-cancel-active");
+
+    fake.releaseNext();
+    await prompting;
+  });
+
+  it("coalesces concurrent starts for the same session into one ACP process", async () => {
+    mocks.runtimeStart.mockClear();
+    const fake = createControllableAcpSession();
+    let release!: (session: AcpSession) => void;
+    mocks.runtimeStart.mockImplementationOnce(
+      () => new Promise<AcpSession>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    const params = {
+      session_id: "sess-concurrent-start",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    };
+
+    const first = manager.start(params);
+    const second = manager.start(params);
+    await vi.waitFor(() => {
+      expect(mocks.runtimeStart).toHaveBeenCalledTimes(1);
+    });
+    release(fake.session);
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(manager.sessionCount()).toBe(1);
+    expect(firstResult).toMatchObject({
+      status: "ready",
+      session_id: "sess-concurrent-start",
+      agent_id: "codex-acp",
+      acp_session_id: "acp-session",
+    });
+    expect(secondResult).toEqual(firstResult);
+  });
+
+  it("returns a structured start error instead of requiring push-event timing", async () => {
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await expect(manager.start({
+      session_id: "sess-no-agent",
+      agent_id: "",
+      cwd: "/repo",
+    })).resolves.toEqual({
+      status: "error",
+      session_id: "sess-no-agent",
+      message: "No agent selected. Pick an enabled agent and try again.",
+    });
+  });
+
+  it("cancels an in-flight start without leaving a zombie ACP process", async () => {
+    mocks.runtimeStart.mockClear();
+    const fake = createControllableAcpSession();
+    const dispose = vi.fn(async () => undefined);
+    let release!: (session: AcpSession) => void;
+    mocks.runtimeStart.mockImplementationOnce(
+      () => new Promise<AcpSession>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const starting = manager.start({
+      session_id: "sess-cancelled-start",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    await vi.waitFor(() => {
+      expect(mocks.runtimeStart).toHaveBeenCalledTimes(1);
+    });
+    const disposing = manager.dispose("sess-cancelled-start");
+    release({ ...fake.session, dispose });
+    await Promise.all([starting, disposing]);
+
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(manager.sessionCount()).toBe(0);
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "session.ready" }),
+    );
+    expect(send).toHaveBeenCalledWith({
+      type: "session.disposed",
+      session_id: "sess-cancelled-start",
+    });
+  });
+
+  it("bypasses the settings project for an explicitly managed global chat", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({
+        agentId: "codex-acp",
+        cwd: "/default-project",
+      }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-global-managed",
+      agent_id: "codex-acp",
+      workspace_mode: "managed",
+    });
+
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({ cwd: "/tmp/backchat-test" }),
+      }),
+    );
+  });
+
+  it("gives Codex tool subprocesses a writable Fontconfig cache", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-fontconfig-cache",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({
+          env: expect.objectContaining({
+            XDG_CACHE_HOME: expect.stringMatching(
+              /^\/private\/tmp\/openma-acp-cache-\d+$/,
+            ),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("disables Codex native multi-agent tools for OpenMA sessions", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => ({
+        envOverride: {
+          CODEX_CONFIG: JSON.stringify({
+            model_reasoning_effort: "high",
+            features: { shell_tool: true },
+          }),
+        },
+      }),
+    });
+
+    await manager.start({
+      session_id: "sess-no-native-subagents",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    const options = mocks.runtimeStart.mock.calls.at(-1)?.[0] as SessionOptions;
+    expect(JSON.parse(options.agent.env?.CODEX_CONFIG ?? "{}")).toEqual({
+      model_reasoning_effort: "high",
+      features: {
+        shell_tool: true,
+        multi_agent: false,
+        multi_agent_v2: false,
+      },
+    });
+  });
+
+  it("rejects config-operation failures without terminally erroring the session", async () => {
+    const fake = createControllableAcpSession();
+    fake.session.setConfigOption = vi.fn(async () => {
+      throw new Error("unsupported model");
+    });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({
+      session_id: "sess-config-error",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    send.mockClear();
+
+    await expect(manager.setConfigOption({
+      session_id: "sess-config-error",
+      config_id: "model",
+      value: "missing",
+    })).rejects.toThrow("unsupported model");
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "session.error" }),
+    );
+    expect(manager.sessionCount()).toBe(1);
+  });
+
+  it("classifies ACP event routes for boundary observability", () => {
+    expect(
+      acpEventUiRoute({
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Warning: Skill descriptions were shortened to fit the 2% skills context budget.",
+        },
+      }),
+    ).toBe("composer_notice");
+    expect(acpEventUiRoute({ sessionUpdate: "usage_update", used: 12 })).toBe(
+      "session_state",
+    );
+    expect(
+      acpEventUiRoute({
+        sessionUpdate: "session_info_update",
+        _meta: { codex: { threadStatus: { type: "idle" } } },
+      }),
+    ).toBe("session_metadata");
+    expect(
+      acpEventUiRoute({ sessionUpdate: "future_codex_event", payload: {} }),
+    ).toBe("boundary");
+  });
+
+  it("never installs or updates an agent as part of session start", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    mocks.installAcpRegistryAgent.mockClear();
     const events: unknown[] = [];
     const manager = new SessionManager({
       send: (msg) => events.push(msg),
-      acpBinDir: binDir,
-      acpInstallRoot: root,
       resolveMcpServers: () => [],
       buildCallbacks: () => ({}),
       resolveDefaults: () => ({ agentId: "registry-agent" }),
@@ -99,18 +374,11 @@ describe("SessionManager prompt queue", () => {
       cwd: "/repo",
     });
 
-    expect(mocks.installAcpRegistryAgent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        registryId: "registry-agent",
-        shimName: "registry-agent",
-        binDir,
-        installRoot: root,
-      }),
-    );
+    expect(mocks.installAcpRegistryAgent).not.toHaveBeenCalled();
     expect(mocks.runtimeStart).toHaveBeenCalledWith(
       expect.objectContaining({
         agent: expect.objectContaining({
-          command: commandPath,
+          command: "registry-agent",
         }),
       }),
     );
@@ -797,6 +1065,126 @@ describe("SessionManager prompt queue", () => {
 
     fake.release();
     await prompt;
+  });
+
+  it("persists an agent-supplied session title", async () => {
+    const fake = createStreamingAcpSession([
+      {
+        sessionUpdate: "session_info_update",
+        title: "Repository overview",
+      },
+    ]);
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "codex-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-agent-title",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    const prompt = manager.prompt({
+      session_id: "sess-agent-title",
+      turn_id: "turn-agent-title",
+      text: "show repository",
+    });
+    fake.release();
+    await prompt;
+
+    expect(vi.mocked(setSessionTitle)).toHaveBeenCalledWith(
+      "sess-agent-title",
+      "Repository overview",
+    );
+  });
+
+  it("persists discriminator-less ACP events as boundary diagnostics", async () => {
+    const boundaryEvent = {
+      type: "pi.experimental_status",
+      payload: { phase: "warming_context" },
+    };
+    const fake = createStreamingAcpSession([boundaryEvent]);
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "pi-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-boundary-observability",
+      agent_id: "pi-acp",
+      cwd: "/repo",
+    });
+
+    const prompt = manager.prompt({
+      session_id: "sess-boundary-observability",
+      turn_id: "turn-boundary-observability",
+      text: "show adapter events",
+    });
+    fake.release();
+    await prompt;
+
+    expect(vi.mocked(appendEvent)).toHaveBeenCalledWith(
+      "sess-boundary-observability",
+      "acp_boundary:missing_discriminator",
+      boundaryEvent,
+    );
+  });
+
+  it("surfaces a silent ACP turn as an error instead of a successful empty response", async () => {
+    const fake = createStreamingAcpSession([
+      {
+        sessionUpdate: "session_info_update",
+        _meta: { piAcp: { running: true } },
+      },
+      {
+        sessionUpdate: "session_info_update",
+        _meta: { piAcp: { running: false } },
+      },
+    ]);
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (msg) => events.push(msg),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "pi-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-silent",
+      agent_id: "pi-acp",
+      cwd: "/repo",
+    });
+
+    const prompt = manager.prompt({
+      session_id: "sess-silent",
+      turn_id: "turn-silent",
+      text: "hello?",
+    });
+    fake.release();
+    await prompt;
+
+    expect(events).toContainEqual({
+      type: "session.error",
+      session_id: "sess-silent",
+      turn_id: "turn-silent",
+      message:
+        "The agent finished without a response. Its provider may have rejected or rate-limited the request. Try again or choose another model.",
+    });
+    expect(events).not.toContainEqual({
+      type: "session.complete",
+      session_id: "sess-silent",
+      turn_id: "turn-silent",
+    });
   });
 
 });

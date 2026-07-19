@@ -10,6 +10,7 @@ const fakeEntry = {
 
 const authenticateAgentMock = vi.fn();
 const probeAgentAuthStatusMock = vi.fn();
+const probeAgentSessionConfigMock = vi.fn();
 const uninstallAcpRegistryAgentMock = vi.fn();
 
 vi.mock("@open-managed-agents-desktop/acp/registry", () => ({
@@ -31,6 +32,7 @@ vi.mock("@open-managed-agents-desktop/acp/installer", () => ({
 vi.mock("@open-managed-agents-desktop/acp/probe", () => ({
   authenticateAgent: authenticateAgentMock,
   probeAgentAuthStatus: probeAgentAuthStatusMock,
+  probeAgentSessionConfig: probeAgentSessionConfigMock,
 }));
 
 const { createAgentSetupService } = await import("./agent-setup.js");
@@ -39,10 +41,11 @@ describe("agent setup lifecycle", () => {
   beforeEach(() => {
     authenticateAgentMock.mockReset();
     probeAgentAuthStatusMock.mockReset();
+    probeAgentSessionConfigMock.mockReset();
     uninstallAcpRegistryAgentMock.mockReset();
   });
 
-  it("keeps auth metadata after an external sign-in flow has been launched", async () => {
+  it("does not start a follow-up probe after an external sign-in flow launches", async () => {
     authenticateAgentMock.mockResolvedValue({ status: "started" });
     probeAgentAuthStatusMock.mockResolvedValue({
       status: "needs-auth",
@@ -59,97 +62,45 @@ describe("agent setup lifecycle", () => {
 
     const agents = await service.authenticateAgent("fake-agent", { methodId: "login" });
 
-    expect(probeAgentAuthStatusMock).toHaveBeenCalledOnce();
-    expect(agents[0]).toMatchObject({
-      id: "fake-agent",
-      auth: {
-        status: "needs-auth",
-        methodId: "login",
-        methodName: "Login",
-      },
-    });
+    expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
+    expect(agents[0]).toMatchObject({ id: "fake-agent" });
   });
 
-  it("uses settings env overrides when probing agent auth", async () => {
+  it("uses settings env overrides during the startup probe", async () => {
     let probedEnv: Record<string, string> | undefined;
-    probeAgentAuthStatusMock.mockImplementation(async ({ agent }) => {
+    probeAgentSessionConfigMock.mockImplementation(async ({ agent }) => {
       probedEnv = agent.env;
-      return { status: "configured" };
+      return {
+        configOptions: [],
+        availableCommands: [],
+        auth: { status: "configured" },
+      };
     });
 
     const service = createAgentSetupService({
       acpBinDir: "/tmp/backchat-acp-bin",
       acpInstallRoot: "/tmp/backchat-acp-root",
       registryCachePath: "/tmp/backchat-registry.json",
+      getEnabledAgentIds: () => ["fake-agent"],
       agentOverrides: () => [{
         id: "fake-agent",
         env: [{ name: "OPENAI_API_KEY", value: "sk-test" }],
       }],
     } as never);
 
-    await service.probeAgent("fake-agent");
+    await service.warmup();
 
-    expect(probeAgentAuthStatusMock).toHaveBeenCalledOnce();
+    expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
+    expect(probeAgentSessionConfigMock).toHaveBeenCalledOnce();
     expect(probedEnv).toMatchObject({ OPENAI_API_KEY: "sk-test" });
   });
 
-  it("rejects setting a needs-auth agent as default", async () => {
-    const saveDefaultAgentId = vi.fn();
-    probeAgentAuthStatusMock.mockResolvedValue({
-      status: "needs-auth",
-      methodId: "login",
-      methodName: "Login",
-      message: "Sign in first.",
-      methods: [{ id: "login", name: "Login", type: "agent" }],
+  it("warms up available agents with one full capability inspection", async () => {
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: { status: "configured" },
     });
-
-    const service = createAgentSetupService({
-      acpBinDir: "/tmp/backchat-acp-bin",
-      acpInstallRoot: "/tmp/backchat-acp-root",
-      registryCachePath: "/tmp/backchat-registry.json",
-      saveDefaultAgentId,
-    } as never);
-
-    await expect((service as never as { setDefaultAgent: (id: string) => Promise<unknown> })
-      .setDefaultAgent("fake-agent")).rejects.toThrow(/Authenticate Fake Agent before setting as default/);
-    expect(saveDefaultAgentId).not.toHaveBeenCalled();
-  });
-
-  it("persists configured agents as the default", async () => {
-    const saveDefaultAgentId = vi.fn();
-    probeAgentAuthStatusMock.mockResolvedValue({ status: "configured" });
-
-    const service = createAgentSetupService({
-      acpBinDir: "/tmp/backchat-acp-bin",
-      acpInstallRoot: "/tmp/backchat-acp-root",
-      registryCachePath: "/tmp/backchat-registry.json",
-      saveDefaultAgentId,
-    } as never);
-
-    await (service as never as { setDefaultAgent: (id: string) => Promise<unknown> })
-      .setDefaultAgent("fake-agent");
-
-    expect(saveDefaultAgentId).toHaveBeenCalledWith("fake-agent");
-  });
-
-  it("clears the default when uninstalling the selected managed agent", async () => {
-    const saveDefaultAgentId = vi.fn();
-    const service = createAgentSetupService({
-      acpBinDir: "/tmp/backchat-acp-bin",
-      acpInstallRoot: "/tmp/backchat-acp-root",
-      registryCachePath: "/tmp/backchat-registry.json",
-      getDefaultAgentId: () => "fake-agent",
-      saveDefaultAgentId,
-    } as never);
-
-    await service.uninstallAgent("fake-agent");
-
-    expect(uninstallAcpRegistryAgentMock).toHaveBeenCalledOnce();
-    expect(saveDefaultAgentId).toHaveBeenCalledWith("");
-  });
-
-  it("warms up available agents by probing auth state", async () => {
-    probeAgentAuthStatusMock.mockResolvedValue({ status: "configured" });
     const service = createAgentSetupService({
       acpBinDir: "/tmp/backchat-acp-bin",
       acpInstallRoot: "/tmp/backchat-acp-root",
@@ -158,6 +109,7 @@ describe("agent setup lifecycle", () => {
 
     await (service as never as { warmup: () => Promise<void> }).warmup();
 
-    expect(probeAgentAuthStatusMock).toHaveBeenCalledOnce();
+    expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
+    expect(probeAgentSessionConfigMock).toHaveBeenCalledOnce();
   });
 });

@@ -3,7 +3,6 @@ import type { SettingsAgentOverride } from "../shared/settings.js";
 import {
   createAcpAgentSetupService,
   launchTerminalAuth as launchAcpTerminalAuth,
-  type AcpAgentListOptions,
   type AcpAgentSetupOverride,
   type AcpAgentSetupService,
   type AcpAgentSetupServiceDeps,
@@ -17,24 +16,22 @@ export interface AgentSetupServiceDeps extends Omit<
   agentOverrides?: () => SettingsAgentOverride[];
 }
 
-export type AgentListOptions = AcpAgentListOptions;
-
 export interface AgentSetupService {
   warmup(): Promise<void>;
-  listAgents(options?: AgentListOptions): Promise<AgentInfo[]>;
-  probeAgent(id: string): Promise<AgentInfo[]>;
+  refreshEnabledAgents(): Promise<AgentInfo[]>;
+  listAgents(): Promise<AgentInfo[]>;
   installAgent(id: string): Promise<AgentInfo[]>;
   upgradeAgent(id: string): Promise<AgentInfo[]>;
   uninstallAgent(id: string): Promise<AgentInfo[]>;
   authenticateAgent(id: string, options?: { methodId?: string }): Promise<AgentInfo[]>;
-  setDefaultAgent(id: string): Promise<AgentInfo[]>;
+  dispose(): Promise<void>;
 }
 
 export function createAgentSetupService(deps: AgentSetupServiceDeps): AgentSetupService {
   const { agentOverrides, ...acpDeps } = deps;
   const service: AcpAgentSetupService = createAcpAgentSetupService({
     ...acpDeps,
-    managedByName: "Backchat",
+    managedByName: "OpenMA",
     ...(agentOverrides
       ? { agentOverrides: () => agentOverrides().map(settingsAgentOverrideToAcpOverride) }
       : {}),
@@ -44,7 +41,7 @@ export function createAgentSetupService(deps: AgentSetupServiceDeps): AgentSetup
 
 export function launchTerminalAuth(options: TerminalAuthLaunchOptions): Promise<void> {
   return launchAcpTerminalAuth(options, {
-    returnInstruction: "Return to Backchat and click Check again after authentication completes.",
+    returnInstruction: "Return to OpenMA after authentication completes. Setup status is checked automatically.",
   });
 }
 

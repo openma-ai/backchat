@@ -94,7 +94,7 @@ describe("agent setup service", () => {
       refreshRegistry: async () => undefined,
     });
 
-    await expect(service.upgradeAgent("gemini")).rejects.toThrow(/not installed by Backchat/);
+    await expect(service.upgradeAgent("gemini")).rejects.toThrow(/not installed by OpenMA/);
   });
 
   it("lists command-backed custom agent servers from settings overrides", async () => {

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" data-icon-family="rose-garden">
+  <defs>
+    <linearGradient id="badge" x1="20" y1="16" x2="76" y2="82" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff91ac"/><stop offset="1" stop-color="#d84f78"/>
+    </linearGradient>
+  </defs>
+  <circle cx="48" cy="48" r="44" fill="#fff3f6" stroke="#f4c4cf" stroke-width="2"/>
+  <circle cx="48" cy="49" r="34" fill="url(#badge)"/>
+  <path d="M30 30h14a9 9 0 1 1 16 0h8v14a9 9 0 1 1 0 16v8H54a9 9 0 1 0-16 0h-8V54a9 9 0 1 1 0-16Z" fill="#fffafc" fill-rule="evenodd"/>
+  <path d="M30 25c10-8 25-10 37-2" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+</svg>

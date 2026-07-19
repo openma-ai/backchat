@@ -4,6 +4,7 @@ import type {
   BrowserRegionPickResult,
 } from "../shared/browser-element-picker.js";
 import type { BrowserElementAnnotationDetails } from "../shared/session-events.js";
+import { describeBrowserNodeAtPoint } from "./browser-node-hit-test.js";
 
 interface CdpDebuggerLike {
   isAttached(): boolean;
@@ -478,31 +479,15 @@ export class BrowserElementPickerService {
       x: Math.round(x),
       y: Math.round(y),
     };
-    const hitResponse = asRecord(
-      await cdpCommand(session.target, "Runtime.evaluate", {
-        expression: `document.elementFromPoint(${hitPoint.x}, ${hitPoint.y})`,
-        objectGroup: "backchat-browser-annotation-hit-test",
-        returnByValue: false,
-        silent: true,
-      }),
+    const hit = await describeBrowserNodeAtPoint(
+      session.target.debugger,
+      hitPoint,
     );
-    const hitResult = asRecord(hitResponse.result);
-    const hitObjectId = typeof hitResult.objectId === "string" ? hitResult.objectId : "";
-    if (!hitObjectId) {
+    if (!hit) {
       if (requestVersion === session.requestVersion) session.hover = null;
       return null;
     }
-    let nodeResponse: unknown;
-    try {
-      nodeResponse = await cdpCommand(session.target, "DOM.describeNode", {
-        objectId: hitObjectId,
-      });
-    } finally {
-      await session.target.debugger.sendCommand("Runtime.releaseObject", {
-        objectId: hitObjectId,
-      }).catch(() => undefined);
-    }
-    const node = asRecord(asRecord(nodeResponse).node);
+    const node = hit.node;
     const backendNodeId = finite(node.backendNodeId);
     if (!backendNodeId) {
       if (requestVersion === session.requestVersion) session.hover = null;
@@ -520,7 +505,7 @@ export class BrowserElementPickerService {
     const selector = hoverSelector(tagName, attributeRecord(node.attributes));
     const hover: HoverRecord = {
       backendNodeId,
-      frameId: typeof node.frameId === "string" ? node.frameId : "",
+      frameId: hit.frameId,
       selector,
       tag_name: tagName,
       rect,

@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeController } from "@/components/ThemeController";
+import { AppStartupGate } from "@/components/AppStartupGate";
 import { router } from "@/router";
+import { applyStoredTheme } from "@/lib/theme";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/jetbrains-mono";
 import "./styles/index.css";
@@ -23,12 +26,19 @@ const queryClient = new QueryClient({
   },
 });
 
+// Apply the cached selection before React paints. ThemeController reconciles
+// it with ~/.openma/config.toml as soon as settings arrive over IPC.
+applyStoredTheme();
+
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ThemeController />
+      <AppStartupGate>
+        <RouterProvider router={router} />
+      </AppStartupGate>
       <Toaster position="bottom-right" />
     </QueryClientProvider>
   </StrictMode>,

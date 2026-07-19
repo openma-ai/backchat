@@ -4,6 +4,7 @@ import { useBottomBarCollapse } from "@/components/shell/AppShell";
 import { TerminalTab } from "@/components/shell/TerminalTab";
 import { cn } from "@/lib/utils";
 import { selectActive, useSessionStore } from "@/lib/session-store";
+import { useTheme } from "@/lib/theme";
 
 /**
  * BottomPanel — full-width footer hosting one or more pty-backed
@@ -24,6 +25,7 @@ import { selectActive, useSessionStore } from "@/lib/session-store";
  */
 export function BottomPanel() {
   const { collapsed, toggle } = useBottomBarCollapse();
+  const { themeId, effective } = useTheme();
   const active = useSessionStore(selectActive);
   const [tabs, setTabs] = useState<TabState[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -107,7 +109,7 @@ export function BottomPanel() {
       <div className="flex-1 min-h-0 relative">
         {tabs.map((t) => (
           <div
-            key={t.id}
+            key={`${t.id}-${themeId}-${effective}`}
             className={cn(
               // Inner padding so xterm.js's canvas doesn't kiss the
               // outer rounded corners. The terminal renders inside

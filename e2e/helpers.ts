@@ -9,7 +9,12 @@
  * The build step (`pnpm build`) must have run before `pnpm test:e2e`.
  * package.json wires this as a prereq; in CI we always re-build first.
  */
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import {
+  _electron as electron,
+  type ElectronApplication,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -114,6 +119,72 @@ export async function closeApp(app: ElectronApplication): Promise<void> {
       }),
     ]);
   }
+}
+
+/** Refresh renderer-owned query caches after a test changes settings through
+ * the public IPC API. Real settings screens invalidate those queries
+ * themselves; direct E2E setup intentionally bypasses that UI lifecycle. */
+export async function reloadRenderer(page: Page): Promise<void> {
+  await page.reload();
+  await page.getByTestId("new-chat-button").waitFor({ timeout: 30_000 });
+}
+
+/** Open a persisted session through the same collapsed project grouping users
+ * see in the sidebar. Persisted projects intentionally start collapsed. */
+export async function openPersistedSession(
+  page: Page,
+  title: string,
+  projectLabel: string,
+): Promise<Locator> {
+  const navigation = page.getByRole("navigation");
+  const project = navigation.getByRole("button", {
+    name: projectLabel,
+    exact: true,
+  });
+  if ((await project.getAttribute("aria-expanded")) !== "true") {
+    await project.click();
+  }
+  const session = navigation.getByRole("button", { name: title, exact: true });
+  await session.waitFor({ state: "visible" });
+  await session.click();
+  return session;
+}
+
+export async function openCommandPalette(page: Page): Promise<Locator> {
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const palette = page.getByRole("dialog");
+  await palette.waitFor({ state: "visible" });
+  return palette;
+}
+
+export async function openBrowserPanel(page: Page): Promise<void> {
+  const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
+  if (!(await closeSidePanel.isVisible())) {
+    await page.getByRole("button", { name: "Open side chat" }).click();
+  }
+  await closeSidePanel.waitFor({ state: "visible" });
+  await page.getByRole("button", { name: /^Browser\b/ }).click();
+  const browser = page.locator('[data-browser-visible="true"]');
+  await browser.waitFor({ state: "visible" });
+  const webview = browser.locator("webview");
+  await webview.waitFor({ state: "attached" });
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ));
+  await webview.evaluate((element) =>
+    (element as HTMLElement & { loadURL(url: string): Promise<void> }).loadURL(
+      "about:blank#backchat-e2e",
+    ),
+  );
+  await webview.waitFor({ state: "visible" });
+}
+
+export async function waitForRunnableHarness(page: Page): Promise<Locator> {
+  const runButton = page.getByRole("button", {
+    name: /Run on Local with .* using/,
+  });
+  await runButton.waitFor({ state: "visible", timeout: 15_000 });
+  return runButton;
 }
 
 /** Push a `session.ready` event via the test IPC bridge so a fresh

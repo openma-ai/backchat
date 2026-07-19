@@ -4,6 +4,8 @@ import {
   browserAnnotationGesture,
   browserAnnotationMarkers,
   browserAnnotationScreenshotName,
+  buildBrowserElementPromptAnnotation,
+  buildBrowserRegionPromptAnnotation,
   browserElementAnnotationLabel,
   browserElementScreenshotName,
   browserStyleChanges,
@@ -70,6 +72,51 @@ describe("browser element annotations", () => {
     expect(browserRegionAnnotationLabel(region)).toBe("Region 200x100");
     expect(browserRegionScreenshotName()).toBe("page-region-5678.png");
     vi.restoreAllMocks();
+  });
+
+  it("builds an element prompt annotation without losing picker metadata", () => {
+    expect(buildBrowserElementPromptAnnotation({
+      id: "element-annotation-1",
+      sessionId: "session-1",
+      element: pick,
+      screenshotName: "element.png",
+    })).toEqual({
+      id: "element-annotation-1",
+      kind: "browser_element",
+      source_session_id: "session-1",
+      source_turn_id: "browser",
+      text: "#save — Save settings",
+      browser: {
+        ...pick,
+        screenshot_name: "element.png",
+      },
+    });
+  });
+
+  it("builds a region prompt annotation with an empty screenshot name when capture is disabled", () => {
+    const region = {
+      url: "https://example.test",
+      title: "Example",
+      rect: { x: 20, y: 30, width: 200, height: 100 },
+      viewport: { width: 1200, height: 800, device_pixel_ratio: 2 },
+    };
+
+    expect(buildBrowserRegionPromptAnnotation({
+      id: "region-annotation-1",
+      sessionId: "session-1",
+      region,
+      screenshotName: "",
+    })).toEqual({
+      id: "region-annotation-1",
+      kind: "browser_region",
+      source_session_id: "session-1",
+      source_turn_id: "browser",
+      text: "Region 200x100",
+      browser_region: {
+        ...region,
+        screenshot_name: "",
+      },
+    });
   });
 
   it("treats both DOM elements and freeform regions as screenshot-backed page annotations", () => {

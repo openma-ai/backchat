@@ -19,7 +19,11 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AgentSpec } from "./types.js";
-import { registryShimName, type KnownAgentEntry } from "./known-agents.js";
+import {
+  registryShimName,
+  type KnownAgentEntry,
+  type KnownAgentRegistryDistribution,
+} from "./known-agents.js";
 
 const REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
@@ -27,16 +31,13 @@ const DEFAULT_TTL_MS = 60 * 60 * 1000;
 export interface OfficialRegistryAgent {
   id: string;
   name: string;
+  icon?: string;
   version?: string;
   description?: string;
   repository?: string;
   website?: string;
   license?: string;
-  distribution: {
-    npx?: { package: string; args?: string[]; env?: Record<string, string> };
-    binary?: Record<string, { archive: string; cmd: string; args?: string[]; env?: Record<string, string> }>;
-    uvx?: { package: string; args?: string[]; env?: Record<string, string> };
-  };
+  distribution: KnownAgentRegistryDistribution;
 }
 
 interface OfficialRegistry {
@@ -152,11 +153,13 @@ export function mapOfficialAgent(o: OfficialRegistryAgent): KnownAgentEntry | nu
   return {
     id: o.id,
     label: o.name,
+    ...(o.icon ? { icon: o.icon } : {}),
     spec,
     version: o.version,
     installHint,
     install,
     registryId: o.id,
+    registryDistribution: o.distribution,
     installSource: "registry",
     homepage: o.website ?? o.repository,
   };

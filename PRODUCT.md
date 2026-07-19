@@ -6,38 +6,32 @@ product
 
 ## Users
 
-Developers and operators who run local agent sessions through OpenMA Desktop and
-need compact, glanceable desktop affordances while they keep working in other
-apps.
+Developers and technical teams who want one local desktop workspace for multiple ACP agents. They move between projects, agents, models, commands, files, terminals, and conversations, and need the interface to expose the active runtime state without slowing down the work.
 
 ## Product Purpose
 
-OpenMA Desktop is a local-first desktop client for ACP-compatible agents. The
-pet app is a lightweight companion surface for session state, notifications,
-deeplinks, and future harness integrations without forcing users into one
-agent vendor or one main window.
+OpenMA Desktop is a local-first, vendor-neutral ACP client. It makes multiple agent harnesses feel like one coherent desktop product while preserving each harness's real capabilities, configuration, commands, and runtime behavior. Success means users can start or resume work quickly, understand what is active, and trust that visible state comes from the selected agent rather than fabricated defaults.
 
 ## Brand Personality
 
-Capable, calm, playful. The UI should feel trustworthy and efficient while
-leaving room for small pet-like moments.
+Calm, precise, and responsive. The product should feel technically capable without becoming noisy, ornamental, or self-important. Copy is direct and concrete; interaction feedback is immediate and spatially stable.
 
 ## Anti-references
 
-Avoid marketing-page theatrics, loud decorative panels, game-like clutter in
-work surfaces, and pet UI that blocks or displaces the user's real desktop
-work.
+- Generic AI dashboards with fake capability labels or static model lists.
+- Layouts that jump, squeeze, or reveal accidental scrollbars as transient UI appears.
+- Heavy glass effects, transparent error surfaces, and decorative animation without state meaning.
+- Persistent selected states for structural items such as project folders.
+- Long, repetitive, abstract suggestion copy that does not help the user form a concrete request.
 
 ## Design Principles
 
-- Keep the agent state visible without stealing focus.
-- Treat pet interactions as desktop utilities first, animation second.
-- Prefer stable harness adapters over one-off integrations.
-- Preserve the user's spatial intent when panels, badges, or edge states open.
-- Make attention states clear, quiet, and reversible.
+- Show live truth: derive agent, model, command, and status UI from the selected harness.
+- Preserve spatial continuity: transient suggestions, loading states, and menus should not move stable landmarks.
+- Progressive disclosure over density: keep primary choices compact and reveal detailed capability sets on demand.
+- Make state changes legible: use restrained, tokenized motion and immediate local feedback.
+- Prefer concrete action language: suggestions and errors should help the user take the next step.
 
 ## Accessibility & Inclusion
 
-Use readable system typography, clear focus states, reduced-motion-safe
-animation, and compact hit targets that remain keyboard accessible.
-
+Maintain keyboard access, visible focus, semantic labels, sufficient contrast in all themes, and reduced-motion fallbacks. Truncation must preserve accessible names or titles, and color must never be the only carrier of state.

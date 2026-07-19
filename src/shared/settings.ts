@@ -9,9 +9,6 @@
  */
 
 export interface SettingsDefault {
-  /** Canonical agent id chosen as the "default browser" for new chats.
-   *  Empty string means "no default — first detected wins". */
-  agent_id: string;
   /** Default cwd for new sessions. Empty string → fallback to $HOME. */
   workspace_path: string;
   /** Composer permission mode. See settings-store.ts for the full
@@ -23,6 +20,11 @@ export interface SettingsDefault {
 }
 
 export interface SettingsAppearance {
+  /** Preferred concrete theme contribution for light appearance. */
+  light_theme_id: string;
+  /** Preferred concrete theme contribution for dark appearance. */
+  dark_theme_id: string;
+  /** Whether to use the light preference, dark preference, or follow the OS. */
   theme: "system" | "light" | "dark";
   /** UI language. System resolves from the renderer's preferred languages. */
   language: "system" | "en" | "zh-CN";

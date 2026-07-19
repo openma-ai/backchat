@@ -21,7 +21,9 @@ import { useEffect, useRef } from "react";
 import * as smd from "streaming-markdown";
 import { sessionStore } from "@/lib/session-store";
 import { openBrowserAwareUrl } from "@/lib/browser-open";
+import { previewLocalFile } from "@/lib/file-preview";
 import { cn } from "@/lib/utils";
+import { createStreamTextPacer } from "./stream-text-pacer";
 
 interface Props {
   turnId: string;
@@ -41,9 +43,19 @@ interface Props {
    *  arrive after mount are always appended in full — only the initial
    *  replay is sliced. */
   prefixSkip?: number;
+  /** Pace a synchronous accumulator replay instead of painting it at once.
+   *  Used by the Reasoning block, which mounts on the first thought chunk. */
+  paceReplay?: boolean;
 }
 
-export function StreamingMarkdown({ turnId, kind, className, cwd, prefixSkip = 0 }: Props) {
+export function StreamingMarkdown({
+  turnId,
+  kind,
+  className,
+  cwd,
+  prefixSkip = 0,
+  paceReplay = false,
+}: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Stash cwd in a ref so the click handler always sees the latest
   // value without forcing the parser to remount when cwd changes mid-
@@ -60,6 +72,11 @@ export function StreamingMarkdown({ turnId, kind, className, cwd, prefixSkip = 0
     // re-render the current accumulator.
     host.replaceChildren();
     const parser = smd.parser(smd.default_renderer(host));
+    const pacer = createStreamTextPacer({
+      write: (text) => smd.parser_write(parser, text),
+      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      cancel: (handle) => window.clearTimeout(handle as number),
+    });
     // First handler invocation is the synchronous replay of the current
     // accumulator (see sessionStore.subscribeTurnStream). For
     // segment-aware interleaving the parent renders earlier assistant
@@ -67,12 +84,11 @@ export function StreamingMarkdown({ turnId, kind, className, cwd, prefixSkip = 0
     // `prefixSkip` chars off the replay payload — the rendered tail
     // covers only "everything after the last tool break". Live deltas
     // arriving after that first call are always appended in full.
-    let replayConsumed = false;
+    let subscribing = true;
     const off = sessionStore.subscribeTurnStream(turnId, (d) => {
       if (d.kind !== kind) return;
       let text = d.text;
-      if (!replayConsumed) {
-        replayConsumed = true;
+      if (subscribing) {
         if (prefixSkip > 0 && text.length > prefixSkip) {
           text = text.slice(prefixSkip);
         } else if (prefixSkip >= text.length) {
@@ -80,10 +96,20 @@ export function StreamingMarkdown({ turnId, kind, className, cwd, prefixSkip = 0
           // nothing to render until the next live delta.
           return;
         }
+        // Rebuild an already-visible accumulator immediately on a late
+        // mount. Reasoning is the exception: it mounts on the first thought
+        // chunk, so that first replay should still reveal character by
+        // character instead of flashing the whole adapter chunk.
+        if (paceReplay) pacer.enqueue(text);
+        else smd.parser_write(parser, text);
+        return;
       }
-      // Direct DOM mutation. No setState, no React render.
-      smd.parser_write(parser, text);
+      // Direct DOM mutation. No setState, no React render. Chunk boundaries
+      // are intentionally hidden from the user: the pacer reveals Unicode
+      // characters individually at a stable cadence.
+      pacer.enqueue(text);
     });
+    subscribing = false;
     // Event delegation for <a> clicks. streaming-markdown emits raw
     // <a href=...> nodes that, when clicked, would let Chromium
     // navigate the whole renderer to the link's URL — fine for
@@ -116,22 +142,17 @@ export function StreamingMarkdown({ turnId, kind, className, cwd, prefixSkip = 0
         path = base.replace(/\/$/, "") + "/" + url.replace(/^\.\//, "");
       }
       if (!path) return;
-      // HTML → sidebar BrowserTab (in-app preview, matches the
-      // auto-open-on-tool-completion behavior). Anything else → OS
-      // default app.
-      if (/\.html?$/i.test(path)) {
-        openBrowserAwareUrl(
-          "file://" + path,
-          path.split("/").pop() || path,
-        );
-        return;
-      }
-      void window.backchat.uiFsOpenPath({ path });
+      void previewLocalFile(path);
     };
     host.addEventListener("click", onClickAnchor);
     return () => {
       host.removeEventListener("click", onClickAnchor);
       off();
+      // Ensure the parser receives every queued character before its final
+      // end marker. The completed Streamdown view replaces this host in the
+      // same commit, so this does not add visible completion latency.
+      pacer.flush();
+      pacer.dispose();
       // Tell the parser we're done so any half-open inline element
       // (e.g. an unfinished `**` emphasis) flushes as plain text instead
       // of staying open in the DOM. The host node itself is removed by
@@ -142,7 +163,7 @@ export function StreamingMarkdown({ turnId, kind, className, cwd, prefixSkip = 0
         /* parser_end can throw on certain partial states; not fatal. */
       }
     };
-  }, [turnId, kind, prefixSkip]);
+  }, [turnId, kind, prefixSkip, paceReplay]);
 
   return (
     <div

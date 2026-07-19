@@ -18,7 +18,9 @@
 import { useEffect, useMemo } from "react";
 import { useParams } from "@tanstack/react-router";
 import type { PromptAttachment } from "@shared/session-events.js";
-import { Composer, TurnBlock, MarkdownCwdProvider } from "./ChatView";
+import { Composer } from "./ChatView";
+import { MarkdownCwdProvider } from "./ChatMarkdown";
+import { TurnBlock } from "./ChatTurn";
 import { cn } from "@/lib/utils";
 import {
   Conversation,
@@ -195,17 +197,16 @@ function PairComposer({ pair }: { pair: PairRow }) {
         sessionStore.promoteDraft(m.id, m.agent_id, m.label);
       }
       if (m.status === "draft" || (m.status === "ready" && !m.activeTurnId)) {
-        const readyPromise = waitForReady(m.id, 10_000);
-        void window.backchat.sessionStart({
+        const startResult = await window.backchat.sessionStart({
           session_id: m.id,
           agent_id: m.agent_id,
+          workspace_mode: m.status === "draft" ? "managed" : undefined,
           cwd: m.cwd || undefined,
           resume: m.acp_session_id
             ? { acp_session_id: m.acp_session_id }
             : undefined,
         });
-        const ready = await readyPromise;
-        if (ready !== "ready") return;
+        if (startResult.status !== "ready") return;
       }
     }
     const targets = sessionStore.registerPairTurn(pair.id, displayText);
@@ -263,28 +264,4 @@ function derivePairPromptDisplayText(
   }
   const names = attachments.map((a) => a.name).join(", ");
   return `[Attached ${attachments.length} files: ${names}]`;
-}
-
-function waitForReady(
-  sessionId: string,
-  ms: number,
-): Promise<"ready" | "error" | "timeout"> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      off();
-      resolve("timeout");
-    }, ms);
-    const off = window.backchat.onSessionEvent((e) => {
-      if (e.session_id !== sessionId) return;
-      if (e.type === "session.ready") {
-        clearTimeout(timer);
-        off();
-        resolve("ready");
-      } else if (e.type === "session.error") {
-        clearTimeout(timer);
-        off();
-        resolve("error");
-      }
-    });
-  });
 }

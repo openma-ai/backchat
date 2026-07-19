@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   SessionStore,
   selectSessions,
@@ -6,6 +8,41 @@ import {
   type AcpSessionConfigOption,
   type SubagentActivity,
 } from "./session-store";
+import { reduceTurn } from "./reduce-turn";
+
+describe("session store module boundaries", () => {
+  test("keeps public data contracts in a dedicated type module", () => {
+    const source = readFileSync(resolve(__dirname, "session-store.ts"), "utf8");
+
+    expect(source).toContain('from "./session-types"');
+    expect(source).not.toContain("export interface SessionRow {");
+    expect(source).not.toContain("export interface Turn {");
+  });
+
+  test("delegates workspace artifact parsing to a pure helper module", () => {
+    const source = readFileSync(resolve(__dirname, "session-store.ts"), "utf8");
+
+    expect(source).toContain('from "./session-artifacts"');
+    expect(source).not.toContain("function extractFilePaths(");
+    expect(source).not.toContain("function extractServiceUrls(");
+  });
+
+  test("delegates persisted side workspace normalization to a pure helper module", () => {
+    const source = readFileSync(resolve(__dirname, "session-store.ts"), "utf8");
+
+    expect(source).toContain('from "./session-workspace-normalization"');
+    expect(source).not.toContain("function normalizeRestoredSideSession(");
+    expect(source).not.toContain("function isPersistedSideTab(");
+  });
+
+  test("delegates native subagent status and provider mapping to a pure helper module", () => {
+    const source = readFileSync(resolve(__dirname, "session-store.ts"), "utf8");
+
+    expect(source).toContain('from "./session-native-activity"');
+    expect(source).not.toContain("function nativeActivityTurnStatus(");
+    expect(source).not.toContain("function nativeProviderForAgent(");
+  });
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -31,6 +68,47 @@ const initialConfig: AcpSessionConfigOption[] = [
 ];
 
 describe("SessionStore replay", () => {
+  test("restores the latest session metadata and usage from history", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-replay-metadata",
+      acp_session_id: "acp-replay-metadata",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+
+    store.replayHistory("sess-replay-metadata", [
+      {
+        seq: 1,
+        type: "session_info_update",
+        data: JSON.stringify({
+          sessionUpdate: "session_info_update",
+          title: "Restored title",
+          _meta: { codex: { threadStatus: { type: "idle" } } },
+        }),
+        ts: 1000,
+      },
+      {
+        seq: 2,
+        type: "usage_update",
+        data: JSON.stringify({
+          sessionUpdate: "usage_update",
+          used: 80,
+          size: 100,
+        }),
+        ts: 1001,
+      },
+    ]);
+
+    expect(store.get("sess-replay-metadata")).toMatchObject({
+      label: "Restored title",
+      agentThreadStatus: "idle",
+      usage: { used: 80, size: 100 },
+    });
+    expect(store.turnsFor("sess-replay-metadata")).toEqual([]);
+  });
+
   test("replays persisted assistant chunks exactly once", () => {
     const store = new SessionStore();
     const sessionId = "sess-replay-history-dedupe";
@@ -65,9 +143,72 @@ describe("SessionStore replay", () => {
     expect(store.turnsFor(sessionId)).toHaveLength(1);
     expect(store.turnsFor(sessionId)[0]?.assistantText).toBe("Rendered once.");
   });
+
+  test("restores a turn's end time from its final persisted event", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-duration";
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "Do some work" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Done." },
+        }),
+        ts: 4_600,
+      },
+    ]);
+
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      startedAt: 1_000,
+      endedAt: 4_600,
+    });
+  });
 });
 
 describe("SessionStore performance invariants", () => {
+  test("shows Codex skill-context warnings as expiring session notices", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = new SessionStore();
+      store.registerStarting("sess-warning", "codex-acp", "Codex");
+      store.registerTurn("turn-warning", "sess-warning", "hello");
+      const warning =
+        "Warning: Skill descriptions were shortened to fit the 2% skills context budget. " +
+        "Codex can still see every skill, but some descriptions are shorter.";
+
+      store.apply({
+        type: "session.event",
+        session_id: "sess-warning",
+        turn_id: "turn-warning",
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: `${warning}\n\n` },
+        },
+      });
+
+      expect(store.get("sess-warning")?.notice).toMatchObject({
+        message: warning,
+        tone: "warning",
+      });
+      expect(store.turnsFor("sess-warning")[0]?.assistantText).toBe("");
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(store.get("sess-warning")?.notice).toBeDefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(store.get("sess-warning")?.notice).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("reuses collection snapshots when an unrelated store slice changes", () => {
     const store = new SessionStore();
     store.registerStarting("sess-1", "codex-acp", "First");
@@ -131,6 +272,289 @@ describe("SessionStore performance invariants", () => {
     expect(turn.assistantText).toBe(firstRun.join("") + secondRun.join(""));
     expect(turn.events).toHaveLength(3);
   });
+
+  test("publishes trailing final-answer events when a turn completes after its last tool", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-final-after-tool";
+    const turnId = "turn-final-after-tool";
+    const selector = selectTurnsFor(sessionId);
+    store.registerStarting(sessionId, "codex-acp", "Codex");
+    store.registerTurn(turnId, sessionId, "create a document");
+
+    store.apply({
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: turnId,
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-render",
+        title: "View rendered document",
+        status: "completed",
+      },
+    });
+    const eventsPublishedAtTool = store.snapshot(selector)[0]!.events;
+
+    for (const text of ["Created ", "the document."]) {
+      store.apply({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "msg-final",
+          _meta: { codex: { phase: "final_answer" } },
+          content: { type: "text", text },
+        },
+      });
+    }
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: turnId,
+    });
+
+    const completed = store.snapshot(selector)[0]!;
+    expect(completed.events).not.toBe(eventsPublishedAtTool);
+    expect(reduceTurn(completed.events).timeline.at(-1)).toEqual({
+      kind: "assistant_text",
+      phase: "final_answer",
+      text: "Created the document.",
+    });
+  });
+
+  test("publishes only the first thought chunk so the Reasoning block can mount", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-thought", "pi-acp", "Pi");
+    store.registerTurn("turn-thought", "sess-thought", "inspect this");
+    const turnsSelector = selectTurnsFor("sess-thought");
+    const beforeSnapshot = store.snapshot(turnsSelector);
+    const beforeThought = store.getVersion();
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-thought",
+      turn_id: "turn-thought",
+      event: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "First" },
+      },
+    });
+    const afterFirstThought = store.getVersion();
+    const afterFirstSnapshot = store.snapshot(turnsSelector);
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-thought",
+      turn_id: "turn-thought",
+      event: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: " second" },
+      },
+    });
+    const afterSecondSnapshot = store.snapshot(turnsSelector);
+
+    expect(afterFirstThought).toBe(beforeThought + 1);
+    expect(store.getVersion()).toBe(afterFirstThought);
+    expect(afterFirstSnapshot).not.toBe(beforeSnapshot);
+    expect(afterSecondSnapshot).toBe(afterFirstSnapshot);
+  });
+
+  test("preserves message identity and Codex phase while compacting stream chunks", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-phase", "codex-acp", "Codex");
+    store.registerTurn("turn-phase", "sess-phase", "inspect this");
+
+    for (const text of ["Checking ", "files"]) {
+      store.apply({
+        type: "session.event",
+        session_id: "sess-phase",
+        turn_id: "turn-phase",
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "msg-commentary",
+          _meta: { codex: { phase: "commentary" } },
+          content: { type: "text", text },
+        },
+      });
+    }
+
+    const [event] = store.turnsFor("sess-phase")[0]!.events;
+    expect(event?.payload).toMatchObject({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "msg-commentary",
+      _meta: { codex: { phase: "commentary" } },
+      content: { type: "text", text: "Checking files" },
+    });
+  });
+
+  test("publishes each new Codex thought message as a replaceable tail status", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-codex-thought", "codex-acp", "Codex");
+    store.registerTurn(
+      "turn-codex-thought",
+      "sess-codex-thought",
+      "inspect this",
+    );
+    const selector = selectTurnsFor("sess-codex-thought");
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-thought",
+      turn_id: "turn-codex-thought",
+      event: {
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "rs-one",
+        content: { type: "text", text: "Planning one" },
+      },
+    });
+    const firstSnapshot = store.snapshot(selector);
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-thought",
+      turn_id: "turn-codex-thought",
+      event: {
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "rs-two",
+        content: { type: "text", text: "Planning two" },
+      },
+    });
+    const secondSnapshot = store.snapshot(selector);
+
+    expect(secondSnapshot).not.toBe(firstSnapshot);
+    expect(secondSnapshot[0]?.events).toHaveLength(2);
+    expect(secondSnapshot[0]?.activeThoughtMessageId).toBe("rs-two");
+    expect(secondSnapshot[0]?.activeThoughtSegmentText).toBe("Planning two");
+  });
+});
+
+describe("SessionStore task side workspace persistence", () => {
+  test("round-trips each task's tabs, active surface, artifacts, and native child view", () => {
+    const source = new SessionStore();
+    source.apply({
+      type: "session.ready",
+      session_id: "task-a",
+      acp_session_id: "acp-task-a",
+      agent_id: "codex-acp",
+      cwd: "/repo-a",
+    });
+    source.registerTurn("turn-a", "task-a", "Build the page");
+    source.apply({
+      type: "session.event",
+      session_id: "task-a",
+      turn_id: "turn-a",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "write-a",
+        title: "Write file",
+        status: "completed",
+        rawInput: { path: "/repo-a/index.html" },
+        rawOutput: "Preview: http://localhost:4173",
+      },
+    });
+    source.openSideTabForTask(
+      "task-a",
+      "browser",
+      "http://localhost:4173/dashboard",
+      "Dashboard",
+      "browser-a",
+    );
+    source.patchSideTabForTask("task-a", "browser-a", {
+      faviconUrl: "https://example.test/favicon.ico",
+    });
+    source.openSideTabForTask("task-a", "file", "/repo-a/src", "src", "files-a");
+    source.openSideTabForTask("task-a", "terminal", "pty-dead", "repo-a", "term-a");
+    source.patchSideTabForTask("task-a", "term-a", { terminalCwd: "/repo-a" });
+    source.setActiveSideTabForTask("task-a", "browser-a");
+
+    source.apply({
+      type: "session.event",
+      session_id: "task-a",
+      turn_id: "turn-a",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "spawn-a",
+        toolName: "spawn_agent",
+        status: "completed",
+        rawInput: { message: "Audit the layout" },
+        rawOutput: { agent_id: "child-a", nickname: "Layout audit" },
+      },
+    });
+    source.apply({
+      type: "session.event",
+      session_id: "task-a",
+      turn_id: "turn-a",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "wait-a",
+        toolName: "wait_agent",
+        status: "completed",
+        rawInput: { targets: ["child-a"] },
+        rawOutput: { status: { "child-a": { completed: "Looks good." } } },
+      },
+    });
+
+    const snapshots = source.sideWorkspaceSnapshots();
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toMatchObject({
+      taskId: "task-a",
+      state: {
+        version: 1,
+        activeTabId: expect.any(String),
+        activeBrowserTabId: "browser-a",
+        artifacts: {
+          files: expect.arrayContaining(["/repo-a/index.html"]),
+          services: expect.arrayContaining(["http://localhost:4173"]),
+        },
+      },
+    });
+
+    const restored = new SessionStore();
+    restored.apply({
+      type: "session.ready",
+      session_id: "task-a",
+      acp_session_id: "acp-task-a",
+      agent_id: "codex-acp",
+      cwd: "/repo-a",
+    });
+    restored.hydrateSideWorkspaces(snapshots);
+    restored.setActive("task-a");
+
+    expect(restored.sideTabs()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "browser-a",
+          payload: "http://localhost:4173/dashboard",
+          faviconUrl: "https://example.test/favicon.ico",
+        }),
+        expect.objectContaining({ id: "files-a", payload: "/repo-a/src" }),
+        expect.objectContaining({
+          id: "term-a",
+          type: "terminal",
+          payload: "",
+          terminalCwd: "/repo-a",
+          needsRestore: true,
+        }),
+        expect.objectContaining({ type: "subagent", label: "Layout audit" }),
+      ]),
+    );
+    expect(restored.activeSideTabId()).toBe(snapshots[0]!.state.activeTabId);
+    expect(restored.browserWindows()[0]?.activeTabId).toBe("browser-a");
+    expect(restored.artifactsFor("task-a")).toMatchObject({
+      files: expect.arrayContaining(["/repo-a/index.html"]),
+      services: expect.arrayContaining(["http://localhost:4173"]),
+    });
+
+    const child = restored.subagentsFor("task-a")[0]!;
+    expect(child).toMatchObject({ childSessionId: "child-a", status: "complete" });
+    expect(restored.turnsFor(child.viewSessionId)).toEqual([
+      expect.objectContaining({
+        promptText: "Audit the layout",
+        assistantText: "Looks good.",
+        status: "complete",
+      }),
+    ]);
+  });
 });
 
 describe("SessionStore config options", () => {
@@ -148,6 +572,42 @@ describe("SessionStore config options", () => {
 
     expect(store.get("sess-1")?.configOptions).toEqual(initialConfig);
     expect(store.get("sess-1")?.currentModeId).toBe("code");
+  });
+
+  test("drops malformed session.ready options with the canonical validator", () => {
+    const store = new SessionStore();
+
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-1",
+      acp_session_id: "acp-1",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+      config_options: [
+        {
+          id: "telemetry",
+          name: "Telemetry",
+          type: "boolean",
+          currentValue: false,
+        },
+        {
+          id: "broken-model",
+          name: "Broken model",
+          type: "select",
+          currentValue: "opus",
+          options: [{ value: "opus" }],
+        },
+      ],
+    });
+
+    expect(store.get("sess-1")?.configOptions).toEqual([
+      {
+        id: "telemetry",
+        name: "Telemetry",
+        type: "boolean",
+        currentValue: false,
+      },
+    ]);
   });
 
   test("replaces config options from config_option_update", () => {
@@ -244,6 +704,157 @@ describe("SessionStore config options", () => {
     });
 
     expect(store.get(sessionId)?.configOptions?.[0]?.currentValue).toBe("gpt-5");
+  });
+});
+
+describe("SessionStore ACP session metadata", () => {
+  test("adapts usage updates without creating a transcript turn", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-usage",
+      acp_session_id: "acp-usage",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-usage",
+      turn_id: "turn-does-not-exist",
+      event: {
+        sessionUpdate: "usage_update",
+        used: 206_720,
+        size: 258_400,
+        cost: { amount: 0.42, currency: "USD" },
+      },
+    });
+
+    expect(store.get("sess-usage")?.usage).toEqual({
+      used: 206_720,
+      size: 258_400,
+      cost: { amount: 0.42, currency: "USD" },
+    });
+    expect(store.turnsFor("sess-usage")).toEqual([]);
+  });
+
+  test("preserves the last valid usage when a malformed update arrives", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-usage",
+      acp_session_id: "acp-usage",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-usage",
+      turn_id: "turn-1",
+      event: { sessionUpdate: "usage_update", used: 10, size: 100 },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-usage",
+      turn_id: "turn-1",
+      event: { sessionUpdate: "usage_update", used: -1, size: 0 },
+    });
+
+    expect(store.get("sess-usage")?.usage).toEqual({ used: 10, size: 100 });
+  });
+
+  test("merges session info while keeping the local turn lifecycle authoritative", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-info",
+      acp_session_id: "acp-info",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-info",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        title: "Agent supplied title",
+        updatedAt: "2026-07-18T10:00:00.000Z",
+        _meta: {
+          codex: {
+            threadStatus: { type: "active" },
+            stableValue: true,
+          },
+        },
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-info",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: { codex: { threadStatus: { type: "idle" } } },
+      },
+    });
+
+    expect(store.get("sess-info")).toMatchObject({
+      label: "Agent supplied title",
+      status: "ready",
+      sessionUpdatedAt: "2026-07-18T10:00:00.000Z",
+      agentThreadStatus: "idle",
+      sessionInfoMeta: {
+        codex: {
+          threadStatus: { type: "idle" },
+          stableValue: true,
+        },
+      },
+    });
+    expect(store.turnsFor("sess-info")).toEqual([]);
+  });
+});
+
+describe("SessionStore project drafts", () => {
+  test("binds a project cwd when the draft is created", () => {
+    const store = new SessionStore();
+
+    const id = store.newDraft("/work/project-a");
+
+    expect(store.get(id)).toMatchObject({
+      status: "draft",
+      chosenCwd: "/work/project-a",
+      projectScope: "project",
+    });
+    expect(store.active()?.id).toBe(id);
+  });
+
+  test("marks a global draft as explicitly outside projects", () => {
+    const store = new SessionStore();
+
+    const id = store.newDraft();
+
+    expect(store.get(id)).toMatchObject({
+      status: "draft",
+      projectScope: "none",
+    });
+  });
+
+  test("does not restore untitled pre-prompt shells as ghost chats", () => {
+    const store = new SessionStore();
+
+    store.seedPersisted([
+      {
+        id: "legacy-empty",
+        agent_id: "codex-acp",
+        cwd: "/work/project-a",
+        acp_session_id: "acp-empty",
+        title: "",
+        last_used_at: 1,
+        created_at: 1,
+      },
+    ]);
+
+    expect(store.get("legacy-empty")).toBeUndefined();
   });
 });
 
@@ -399,6 +1010,77 @@ describe("SessionStore slash commands", () => {
 });
 
 describe("SessionStore prompt queue state", () => {
+  test("deduplicates broker asks and clears them when the active turn terminates", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-broker-lifecycle";
+    store.registerStarting(sessionId, "codex-acp", "Approval test");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-broker-lifecycle",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-active", sessionId, "run it");
+    const brokerAsk = {
+      kind: "permission" as const,
+      ask: {
+        requestId: "permission-1",
+        sessionId,
+        toolCall: { title: "Run command" },
+        options: [
+          {
+            optionId: "cancel",
+            name: "Cancel",
+            kind: "reject_once" as const,
+          },
+        ],
+      },
+    };
+
+    store.enqueueAsk(sessionId, brokerAsk);
+    store.enqueueAsk(sessionId, brokerAsk);
+    expect(store.get(sessionId)?.pendingAsks).toEqual([brokerAsk]);
+
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-active",
+    });
+    expect(store.get(sessionId)?.pendingAsks).toBeUndefined();
+  });
+
+  test("retains an approval that arrives before its session row is restored", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-late-restore";
+    const brokerAsk = {
+      kind: "permission" as const,
+      ask: {
+        requestId: "permission-before-ready",
+        sessionId,
+        toolCall: { title: "Run command" },
+        options: [
+          {
+            optionId: "allow",
+            name: "Allow",
+            kind: "allow_once" as const,
+          },
+        ],
+      },
+    };
+
+    store.enqueueAsk(sessionId, brokerAsk);
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-late-restore",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    expect(store.get(sessionId)?.pendingAsks).toEqual([brokerAsk]);
+  });
+
   test("keeps the active turn running and marks later turns queued", () => {
     const store = new SessionStore();
     const sessionId = "sess-queue-state";
@@ -726,6 +1408,8 @@ describe("SessionStore side chats and native subagents", () => {
     ]);
 
     const spawned = store.subagentsFor("parent-session")[0]!;
+    expect(spawned.avatarId).toEqual(expect.any(String));
+    const avatarId = spawned.avatarId;
     const viewSessionId = (spawned as typeof spawned & { viewSessionId?: string })
       .viewSessionId;
     expect(viewSessionId).toEqual(expect.any(String));
@@ -734,12 +1418,14 @@ describe("SessionStore side chats and native subagents", () => {
         type: "subagent",
         payload: viewSessionId,
         label: "Cicero",
+        avatarId,
       }),
     ]);
     expect(store.sideActiveId()).toBe(viewSessionId);
     expect(store.get(viewSessionId!)).toMatchObject({
       kind: "side",
       sideKind: "subagent",
+      subagentAvatarId: avatarId,
       label: "Cicero",
       status: "running",
       subagent: {
@@ -777,6 +1463,7 @@ describe("SessionStore side chats and native subagents", () => {
 
     expect(store.subagentsFor("parent-session")[0]).toMatchObject({
       childSessionId: "codex-child-thread",
+      avatarId,
       status: "complete",
       native: {
         provider: "codex",
@@ -858,6 +1545,8 @@ describe("SessionStore side chats and native subagents", () => {
     });
     expect(store.subagentsFor("parent-session")).toHaveLength(1);
     const initialActivity = store.subagentsFor("parent-session")[0]!;
+    expect(initialActivity.avatarId).toEqual(expect.any(String));
+    const initialAvatarId = initialActivity.avatarId;
     const initialViewSessionId = (
       initialActivity as typeof initialActivity & { viewSessionId?: string }
     ).viewSessionId;
@@ -867,6 +1556,7 @@ describe("SessionStore side chats and native subagents", () => {
         type: "subagent",
         payload: initialViewSessionId,
         label: "Compare native session…",
+        avatarId: initialAvatarId,
       }),
     ]);
 
@@ -887,6 +1577,7 @@ describe("SessionStore side chats and native subagents", () => {
 
     expect(store.subagentsFor("parent-session")[0]).toMatchObject({
       childSessionId: "codex-child-thread",
+      avatarId: initialAvatarId,
       inheritance: "fork",
       task: "Compare native session protocols",
       status: "running",
@@ -906,6 +1597,7 @@ describe("SessionStore side chats and native subagents", () => {
     expect(store.sideTabs()[0]).toMatchObject({
       payload: initialViewSessionId,
       label: "Cicero",
+      avatarId: initialAvatarId,
     });
   });
 

@@ -27,8 +27,9 @@
  */
 
 import { spawn as childSpawn } from "node:child_process";
-import { access } from "node:fs/promises";
-import { basename, isAbsolute } from "node:path";
+import { access, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   AcpRuntimeImpl,
@@ -39,12 +40,6 @@ import {
 } from "@open-managed-agents-desktop/acp";
 import { NodeSpawner } from "@open-managed-agents-desktop/acp/node-spawner";
 import { resolveKnownAgent, type KnownAgentEntry } from "@open-managed-agents-desktop/acp/registry";
-import { ensureLatestAcpBinary } from "@open-managed-agents-desktop/acp/binary-update";
-import { installAcpRegistryAgent } from "@open-managed-agents-desktop/acp/installer";
-import {
-  probeAgentAuthStatus,
-  type ProbeAgentAuthStatus,
-} from "@open-managed-agents-desktop/acp/probe";
 import type {
   PromptAnnotation,
   PromptAttachment,
@@ -53,12 +48,15 @@ import type {
   SessionPromptParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
+  SessionStartResult,
 } from "../shared/session-events.js";
+import { extractAcpSystemNotice } from "../shared/acp-system-notices.js";
 import type { AgentMessageDelivery } from "../shared/agent-interaction.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
 import {
   appendEvent,
   archiveSession,
+  setSessionTitle,
   setSessionTitleIfEmpty,
   touchSession,
   upsertSession,
@@ -79,6 +77,9 @@ interface ActiveSession {
   activePromptTurnId: string | null;
   queuedPrompts: QueuedPrompt[];
   promptQueueEnabled: boolean;
+  /** Main-process timestamp used only for start→prompt latency diagnostics. */
+  readyAt: number;
+  disposed: boolean;
 }
 
 interface QueuedPrompt {
@@ -101,14 +102,13 @@ export interface SessionManagerDeps {
    *  spawn cwd is passed so the fs broker can scope "inside cwd → auto
    *  allow" without re-deriving the path. */
   buildCallbacks: (sessionId: string, sessionCwd: string) => ClientCallbacks;
-  /** Settings-driven defaults consulted when `start()` arrives without an
-   *  agent_id or cwd. Returning empty / undefined falls back to the
-   *  registry overlay defaults (first detected agent for agent_id;
-   *  ensureSessionCwd for cwd).
+  /** Settings-driven runtime preferences consulted by `start()`.
    *
    *  `agentOverride` lets per-agent config (custom command, extra env)
    *  reach the spawn step. Settings/Agents UI populates this. */
   resolveDefaults: () => {
+    /** Legacy fixture/config compatibility only. Session start deliberately
+     * ignores this value and requires `SessionStartParams.agent_id`. */
     agentId?: string;
     cwd?: string;
     permissionMode?: "ask" | "auto" | "read_only";
@@ -128,8 +128,6 @@ export interface SessionManagerDeps {
 
 export class SessionManager {
   #send: Sender;
-  #acpBinDir?: string;
-  #acpInstallRoot?: string;
   #resolveMcpServers: SessionManagerDeps["resolveMcpServers"];
   #buildCallbacks: SessionManagerDeps["buildCallbacks"];
   #resolveDefaults: SessionManagerDeps["resolveDefaults"];
@@ -137,11 +135,11 @@ export class SessionManager {
   #spawner = new NodeSpawner();
   #runtime = new AcpRuntimeImpl(this.#spawner);
   #sessions = new Map<string, ActiveSession>();
+  #starting = new Map<string, Promise<SessionStartResult>>();
+  #cancelledStarts = new Set<string>();
 
   constructor(deps: SessionManagerDeps) {
     this.#send = deps.send;
-    this.#acpBinDir = deps.acpBinDir;
-    this.#acpInstallRoot = deps.acpInstallRoot;
     this.#resolveMcpServers = deps.resolveMcpServers;
     this.#buildCallbacks = deps.buildCallbacks;
     this.#resolveDefaults = deps.resolveDefaults;
@@ -152,6 +150,36 @@ export class SessionManager {
     this.#send = send;
   }
 
+  #readyResult(
+    session_id: string,
+    sess: Pick<ActiveSession, "acpSessionId" | "agentId" | "cwd" | "acp">,
+  ): SessionStartResult {
+    const result: Extract<SessionStartResult, { status: "ready" }> = {
+      status: "ready",
+      session_id,
+      acp_session_id: sess.acpSessionId,
+      agent_id: sess.agentId,
+      cwd: sess.cwd,
+      config_options: [...sess.acp.configOptions],
+      supports_session_fork: sess.acp.supportsSessionFork,
+    };
+    this.#send({
+      type: "session.ready",
+      session_id,
+      acp_session_id: result.acp_session_id,
+      agent_id: result.agent_id,
+      cwd: result.cwd,
+      config_options: result.config_options,
+      supports_session_fork: result.supports_session_fork,
+    });
+    return result;
+  }
+
+  #errorResult(session_id: string, message: string): SessionStartResult {
+    this.#send({ type: "session.error", session_id, message });
+    return { status: "error", session_id, message };
+  }
+
   has(id: string): boolean {
     return this.#sessions.has(id);
   }
@@ -160,130 +188,56 @@ export class SessionManager {
     return this.#sessions.size;
   }
 
-  /** Spin up a throwaway AcpSession for the named agent JUST long enough
-   *  to read its `initialize.authMethods` list. Disposed before returning.
-   *
-   *  Used by Settings → Agents to render the per-agent sign-in picker.
-   *  Lives on SessionManager rather than ipc.ts so we reuse the spawner +
-   *  runtime + agent override resolution (custom command, env vars) that
-   *  start() already wired up — keeps the "what binary actually runs"
-   *  logic in one place. */
-  async probeAuthMethods(agentId: string): Promise<{
-    methods: ReadonlyArray<{ id: string; name: string; description?: string | null; type?: string | undefined }>;
-    agentName: string | null;
-  }> {
-    const sess = await this.#openOneShot(agentId);
-    try {
-      return {
-        methods: sess.authMethods.map((m) => ({
-          id: m.id,
-          name: m.name,
-          description: m.description ?? null,
-          type: (m as { type?: string }).type,
-        })),
-        agentName:
-          sess.agentInfo?.title ?? sess.agentInfo?.name ?? null,
-      };
-    } finally {
-      await sess.dispose().catch(() => undefined);
-    }
-  }
-
-  /** User-initiated sign-in. Spawns a one-shot AcpSession and invokes
-   *  the agent's authenticate sub-flow (OAuth browser handoff for
-   *  oauth-personal, API-key validation for the env_var variants).
-   *  Disposed regardless of outcome — keyring/file state the agent
-   *  wrote is what persists. */
-  async authenticateAgent(agentId: string, methodId: string): Promise<void> {
-    const sess = await this.#openOneShot(agentId);
-    try {
-      await sess.authenticate(methodId);
-    } finally {
-      await sess.dispose().catch(() => undefined);
-    }
-  }
-
-  async #openOneShot(agentId: string) {
-    const agent = resolveKnownAgent(agentId);
-    if (!agent) throw new Error(`unknown ACP agent: ${agentId}`);
-    const override = this.#resolveAgentOverride(agent.id) ?? {};
-    let command = override.commandOverride || agent.spec.command;
-    const args = override.argsOverride ?? agent.spec.args;
-    return this.#runtime.start({
-      agent: {
-        command,
-        args,
-        cwd: process.cwd(),
-        env: scrubAcpSpawnEnv({
-          ...(agent.spec.env ?? {}),
-          ...(override.envOverride ?? {}),
-        }),
-      },
-      mcpServers: [],
-      // No client callbacks — auth flows shouldn't try to call back
-      // into permission / fs / terminal handlers. If an agent does
-      // require those during signin, we'll surface the failure and
-      // revisit the contract then.
-    });
-  }
-
   /** Re-announce alive sessions — used by the renderer's mount handshake so a
    *  reload sees what's running. */
   announceAll(): void {
     for (const [session_id, sess] of this.#sessions) {
-      this.#send({
-        type: "session.ready",
-        session_id,
-        acp_session_id: sess.acpSessionId,
-        agent_id: sess.agentId,
-        cwd: sess.cwd,
-        config_options: sess.acp.configOptions,
-        supports_session_fork: sess.acp.supportsSessionFork,
-      });
+      this.#readyResult(session_id, sess);
     }
   }
 
-  async start(p: SessionStartParams): Promise<void> {
+  async start(p: SessionStartParams): Promise<SessionStartResult> {
+    const inFlight = this.#starting.get(p.session_id);
+    if (inFlight) return inFlight;
+    const operation = this.#startOnce(p);
+    this.#starting.set(p.session_id, operation);
+    try {
+      return await operation;
+    } finally {
+      if (this.#starting.get(p.session_id) === operation) {
+        this.#starting.delete(p.session_id);
+        this.#cancelledStarts.delete(p.session_id);
+      }
+    }
+  }
+
+  async #startOnce(p: SessionStartParams): Promise<SessionStartResult> {
+    const startRequestedAt = Date.now();
     // Idempotent re-ack.
     const existing = this.#sessions.get(p.session_id);
     if (existing) {
-      this.#send({
-        type: "session.ready",
-        session_id: p.session_id,
-        acp_session_id: existing.acpSessionId,
-        agent_id: existing.agentId,
-        cwd: existing.cwd,
-        config_options: existing.acp.configOptions,
-        supports_session_fork: existing.acp.supportsSessionFork,
-      });
-      return;
+      return this.#readyResult(p.session_id, existing);
     }
 
-    // Resolve agent: caller-provided id wins; otherwise fall back to the
-    // settings-level default; otherwise nothing — surface a useful error
-    // ("set a default in Settings → Agents") instead of a cryptic "unknown
-    // agent: ".
+    // Agent selection belongs to the renderer's recent-run preference. The
+    // main process requires an explicit id so a stale legacy default can
+    // never silently launch the wrong harness.
     const defaults = this.#resolveDefaults();
-    const requestedAgentId = p.agent_id || defaults.agentId || "";
+    const requestedAgentId = p.agent_id || "";
     if (!requestedAgentId) {
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        message:
-          "No default agent configured. Open Settings → Agents and pick a default.",
-      });
-      return;
+      return this.#errorResult(
+        p.session_id,
+        "No agent selected. Pick an enabled agent and try again.",
+      );
     }
     const knownAgent = resolveKnownAgent(requestedAgentId);
     const override = this.#resolveAgentOverride(requestedAgentId) ?? {};
     const agent = knownAgent ?? customAgentFromOverride(requestedAgentId, override);
     if (!agent) {
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        message: `unknown ACP agent: ${requestedAgentId}`,
-      });
-      return;
+      return this.#errorResult(
+        p.session_id,
+        `unknown ACP agent: ${requestedAgentId}`,
+      );
     }
 
     // Apply per-agent overrides from settings — lets the user point at a
@@ -296,97 +250,71 @@ export class SessionManager {
       ...(override.envOverride ?? {}),
     });
 
-    const usesManagedRegistryCommand =
-      !!knownAgent && agent.spec.command === command && !agent.systemPath;
-    if (usesManagedRegistryCommand) {
-      try {
-        command = await this.#ensureManagedAgentCommand(agent);
-      } catch (error) {
-        this.#send({
-          type: "session.error",
-          session_id: p.session_id,
-          message:
-            `Could not install ${agent.label} from ACP registry: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-        });
-        return;
-      }
-    }
-
     // Verify binary is on PATH. Defense in depth: detectAll() should have
     // gated the picker, but the user could uninstall between picker and
     // start. Surface a clean error with the install hint instead of letting
     // child_process throw an unhelpful ENOENT.
     const onPath = await commandExists(command);
     if (!onPath) {
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        message:
-          `binary not on PATH for ${agent.id}: \`${command}\`` +
+      return this.#errorResult(
+        p.session_id,
+        `binary not on PATH for ${agent.id}: \`${command}\`` +
           (agent.installHint ? `. Install: ${agent.installHint}` : ""),
-      });
-      return;
+      );
     }
 
-    // Cwd resolution: caller > settings default > managed-dir fallback.
-    // The last branch creates a per-session dir under ~/.openma/sessions/
-    // which outlives the daemon (resume-friendly, see session-cwd.ts).
-    const sessionCwd =
-      p.cwd ?? defaults.cwd ?? (await ensureSessionCwd(p.session_id));
-
-    const auth = await this.#probeAuthBeforeStart({
-      ...agent,
-      spec: {
-        ...agent.spec,
-        command,
-        args,
-        env: agentEnv,
-      },
-    }, sessionCwd);
-    if (auth && authBlocksSessionStart(auth)) {
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        code: "auth_required",
-        agent_id: agent.id,
-        auth: publicAuthForSessionError(auth),
-        message: agentAuthRequiredMessage(agent, auth),
-      });
-      return;
+    // New main-chat drafts carry an explicit workspace policy so global
+    // chats cannot silently inherit settings.default.workspace_path.
+    // Calls without a policy retain the legacy resolution used by resumes.
+    let sessionCwd: string;
+    if (p.workspace_mode === "managed") {
+      sessionCwd = await ensureSessionCwd(p.session_id);
+    } else if (
+      p.workspace_mode === "project"
+      || p.workspace_mode === "inherited"
+    ) {
+      if (!p.cwd?.trim()) {
+        return this.#errorResult(
+          p.session_id,
+          `${p.workspace_mode} workspace mode requires a cwd.`,
+        );
+      }
+      sessionCwd = p.cwd.trim();
+    } else {
+      sessionCwd =
+        p.cwd ?? (await ensureSessionCwd(p.session_id));
     }
-
-    // Best-effort: pull the latest binary for this agent before we spawn,
-    // so a user who hasn't manually upgraded a binary still gets fixes
-    // shipped by the upstream adapter (e.g. codex-acp 0.14.0 added image
-    // generation tool_call emission — without auto-update the user is
-    // stuck on whatever they first installed). Runs at most once per
-    // hour per agent_id; failures (network, permission, arch mismatch)
-    // are swallowed and we fall through to spawning whatever is on disk.
-    if (knownAgent && (agent.spec.command === command || usesManagedRegistryCommand)) {
-      await ensureLatestAcpBinary(agent.id, {
-        registryVersion: agent.version,
-        install: agent.install,
-        command,
-      }).catch(() => {
-        /* swallowed — best-effort */
-      });
+    const runtimeAgentEnv = await prepareAcpToolEnvironment(
+      agent.id,
+      agentEnv,
+    );
+    if (process.env.NODE_ENV !== "test") {
+      process.stderr.write(
+        `[session-cwd] sid=${p.session_id.slice(0, 12)} mode=${p.workspace_mode ?? "managed-fallback"} requested=${p.cwd ?? "(none)"} resolved=${sessionCwd}\n`,
+      );
     }
 
     try {
+      if (this.#cancelledStarts.has(p.session_id)) {
+        return { status: "cancelled", session_id: p.session_id };
+      }
+      const runtimeStartedAt = Date.now();
       const acpSession = await this.#runtime.start({
         agent: {
           command,
           args,
           cwd: sessionCwd,
-          env: agentEnv,
+          env: runtimeAgentEnv,
         },
         mcpServers: this.#resolveMcpServers(agent.id, p.session_id) as never,
         resumeAcpSessionId: p.resume?.acp_session_id,
         forkFromAcpSessionId: p.fork?.acp_session_id,
         clientCallbacks: this.#buildCallbacks(p.session_id, sessionCwd),
       });
+      if (this.#cancelledStarts.has(p.session_id)) {
+        await Promise.resolve(acpSession.dispose()).catch(() => undefined);
+        return { status: "cancelled", session_id: p.session_id };
+      }
       this.#sessions.set(p.session_id, {
         id: p.session_id,
         acp: acpSession,
@@ -398,6 +326,8 @@ export class SessionManager {
         activePromptTurnId: null,
         queuedPrompts: [],
         promptQueueEnabled: defaults.promptQueueEnabled !== false,
+        readyAt: Date.now(),
+        disposed: false,
       });
       // Persist the session shell — title stays empty for now, the renderer
       // can later derive it from the first user prompt or let the user
@@ -410,16 +340,14 @@ export class SessionManager {
         acp_session_id: acpSession.acpSessionId,
         last_used_at: Date.now(),
       });
-      this.#send({
-        type: "session.ready",
-        session_id: p.session_id,
-        acp_session_id: acpSession.acpSessionId,
-        agent_id: agent.id,
-        cwd: sessionCwd,
-        config_options: acpSession.configOptions,
-        supports_session_fork: acpSession.supportsSessionFork,
-      });
+      const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
+      if (process.env.NODE_ENV !== "test") {
+        const readyAt = Date.now();
+        process.stderr.write(
+          `[session-latency] sid=${p.session_id.slice(0, 12)} agent=${agent.id} start_ready_ms=${readyAt - startRequestedAt} prepare_ms=${runtimeStartedAt - startRequestedAt} runtime_ms=${readyAt - runtimeStartedAt}\n`,
+        );
+      }
       const active = this.#sessions.get(p.session_id);
       if (active) {
         this.#flushPendingSessionState(active);
@@ -429,12 +357,15 @@ export class SessionManager {
           }
         }, 50);
       }
+      return result;
     } catch (e) {
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        message: e instanceof Error ? e.message : String(e),
-      });
+      if (this.#cancelledStarts.has(p.session_id)) {
+        return { status: "cancelled", session_id: p.session_id };
+      }
+      return this.#errorResult(
+        p.session_id,
+        e instanceof Error ? e.message : String(e),
+      );
     }
   }
 
@@ -448,6 +379,11 @@ export class SessionManager {
         message: "no such session",
       });
       return;
+    }
+    if (process.env.NODE_ENV !== "test") {
+      process.stderr.write(
+        `[session-latency] sid=${p.session_id.slice(0, 12)} turn=${p.turn_id.slice(0, 12)} agent=${sess.agentId} ready_to_prompt_ms=${Date.now() - sess.readyAt}\n`,
+      );
     }
     const effectiveDelivery = normalizeAcpPromptDelivery(p);
     if (effectiveDelivery === "unsupported") {
@@ -481,10 +417,11 @@ export class SessionManager {
       this.#sendPromptQueueUpdate(sess);
     }
     const run = async () => {
+      if (sess.disposed) return;
       if (wasBusy) {
         sess.queuedPrompts = sess.queuedPrompts.filter((prompt) => prompt.turnId !== p.turn_id);
         sess.activePromptTurnId = p.turn_id;
-        this.#sendPromptQueueUpdate(sess);
+        if (!sess.disposed) this.#sendPromptQueueUpdate(sess);
       }
       try {
         await this.#runPrompt(sess, p);
@@ -518,6 +455,7 @@ export class SessionManager {
   }
 
   #sendPromptQueueUpdate(sess: ActiveSession): void {
+    if (sess.disposed) return;
     this.#send({
       type: "session.queue_update",
       session_id: sess.id,
@@ -542,52 +480,8 @@ export class SessionManager {
     }
   }
 
-  async #probeAuthBeforeStart(
-    agent: KnownAgentEntry,
-    cwd: string,
-  ): Promise<ProbeAgentAuthStatus | null> {
-    try {
-      const auth = await probeAgentAuthStatus({
-        agent: agent.spec,
-        cwd,
-        timeoutMs: 15_000,
-      });
-      return auth.status === "none" ? null : auth;
-    } catch {
-      return {
-        status: "unknown",
-        message: "Could not verify agent authentication before starting.",
-      };
-    }
-  }
-
-  async #ensureManagedAgentCommand(agent: KnownAgentEntry): Promise<string> {
-    if (agent.installSource !== "registry" || !agent.registryId) {
-      return agent.spec.command;
-    }
-    if (!this.#acpBinDir || !this.#acpInstallRoot) {
-      return agent.spec.command;
-    }
-    const shimPath = `${this.#acpBinDir}/${basename(agent.spec.command)}`;
-    const installed = await access(shimPath).then(() => true, () => false);
-    if (!installed) {
-      await installAcpRegistryAgent({
-        registryId: agent.registryId,
-        shimName: basename(agent.spec.command),
-        binDir: this.#acpBinDir,
-        installRoot: this.#acpInstallRoot,
-        shimArgs: agent.spec.args,
-        shimEnv: agent.spec.env,
-        env: scrubAcpSpawnEnv({
-          ...(agent.spec.env ?? {}),
-          ...(this.#resolveAgentOverride(agent.id)?.envOverride ?? {}),
-        }),
-      });
-    }
-    return shimPath;
-  }
-
   async #runPrompt(sess: ActiveSession, p: SessionPromptParams): Promise<void> {
+    const promptStartedAt = Date.now();
     const ctrl = new AbortController();
     sess.turns.set(p.turn_id, ctrl);
     let promptErr: string | null = null;
@@ -607,6 +501,9 @@ export class SessionManager {
     // single-string view.
     let assistantText = "";
     let thoughtText = "";
+    let emittedVisibleOutput = false;
+    let loggedFirstEvent = false;
+    const observedEventTypes = new Set<string>();
     // Persist the user prompt up front — even if the turn errors halfway,
     // we want the user's message in the log for replay.
     const displayText = derivePromptDisplayText(p.text, p.attachments, p.annotations?.length ?? 0);
@@ -625,26 +522,55 @@ export class SessionManager {
     try {
       const promptBlocks = buildAcpPromptBlocks(p, sess.acp.promptCapabilities);
       for await (const ev of sess.acp.prompt(promptBlocks, { abortSignal: ctrl.signal })) {
-        if (ctrl.signal.aborted) break;
+        if (ctrl.signal.aborted || sess.disposed) break;
         const t = (ev as { type?: string } | null | undefined)?.type;
         if (t === "promptComplete") continue;
         if (t === "promptError") {
           promptErr = (ev as { error?: string }).error ?? "ACP prompt error (no message)";
           continue;
         }
+        if (!loggedFirstEvent) {
+          loggedFirstEvent = true;
+          if (process.env.NODE_ENV !== "test") {
+            process.stderr.write(
+              `[session-latency] sid=${p.session_id.slice(0, 12)} turn=${p.turn_id.slice(0, 12)} agent=${sess.agentId} prompt_first_event_ms=${Date.now() - promptStartedAt}\n`,
+            );
+          }
+        }
         const ev2 = ev as { sessionUpdate?: string; content?: { type?: string; text?: string } } | null;
         const tag = ev2?.sessionUpdate;
+        if (tag === "session_info_update") {
+          const title = (ev as { title?: unknown }).title;
+          if (typeof title === "string" && title.trim()) {
+            setSessionTitle(p.session_id, title.trim().slice(0, 500));
+          }
+        }
+        const systemNotice = extractAcpSystemNotice(ev);
+        if (isUserVisibleAcpEvent(ev2) && !systemNotice) emittedVisibleOutput = true;
         if (tag === "agent_message_chunk" || tag === "agent_thought_chunk") {
           const c = ev2?.content;
           if (c?.type === "text" && typeof c.text === "string") {
-            if (tag === "agent_message_chunk") assistantText += c.text;
-            else thoughtText += c.text;
+            if (tag === "agent_message_chunk") {
+              if (!systemNotice) assistantText += c.text;
+            } else {
+              thoughtText += c.text;
+            }
           }
-          // Persist the chunk immediately. If the app exits mid-turn, replay
-          // still has every chunk that reached the main process.
-          appendEvent(p.session_id, tag, ev);
-        } else if (tag) {
-          appendEvent(p.session_id, tag, ev);
+        }
+        // Persist every ACP update, including future adapter events outside
+        // the protocol shape this client currently understands. Boundary
+        // rows retain the raw payload for gradual compatibility work.
+        const persistenceType = acpEventPersistenceType(ev);
+        if (persistenceType) {
+          appendEvent(p.session_id, persistenceType, ev);
+          if (!observedEventTypes.has(persistenceType)) {
+            observedEventTypes.add(persistenceType);
+            if (process.env.NODE_ENV !== "test") {
+              process.stderr.write(
+                `[acp-event] agent=${sess.agentId} type=${persistenceType} route=${acpEventUiRoute(ev)} ${acpEventShape(ev)}\n`,
+              );
+            }
+          }
         }
         this.#send({
           type: "session.event",
@@ -653,17 +579,32 @@ export class SessionManager {
           event: ev,
         });
       }
-      if (promptErr) {
+      if (sess.disposed) {
+        return;
+      } else if (promptErr) {
         this.#send({
           type: "session.error",
           session_id: p.session_id,
           turn_id: p.turn_id,
           message: promptErr,
         });
+      } else if (
+        sess.agentId === "pi-acp" &&
+        !ctrl.signal.aborted &&
+        !emittedVisibleOutput
+      ) {
+        this.#send({
+          type: "session.error",
+          session_id: p.session_id,
+          turn_id: p.turn_id,
+          message:
+            "The agent finished without a response. Its provider may have rejected or rate-limited the request. Try again or choose another model.",
+        });
       } else {
         this.#send({ type: "session.complete", session_id: p.session_id, turn_id: p.turn_id });
       }
     } catch (e) {
+      if (sess.disposed) return;
       this.#send({
         type: "session.error",
         session_id: p.session_id,
@@ -671,6 +612,11 @@ export class SessionManager {
         message: e instanceof Error ? e.message : String(e),
       });
     } finally {
+      if (!loggedFirstEvent && process.env.NODE_ENV !== "test") {
+        process.stderr.write(
+          `[session-latency] sid=${p.session_id.slice(0, 12)} turn=${p.turn_id.slice(0, 12)} agent=${sess.agentId} prompt_no_event_ms=${Date.now() - promptStartedAt}\n`,
+        );
+      }
       sess.turns.delete(p.turn_id);
       // thoughtText/assistantText accumulators are still maintained for
       // any in-process consumer; nothing reads them right now but we
@@ -685,41 +631,36 @@ export class SessionManager {
   async setConfigOption(p: SessionSetConfigOptionParams): Promise<void> {
     const sess = this.#sessions.get(p.session_id);
     if (!sess) {
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        message: "no such session",
-      });
-      return;
+      throw new Error("no such session");
     }
-    try {
-      const configOptions = await sess.acp.setConfigOption(p.config_id, p.value);
-      this.#send({
-        type: "session.event",
-        session_id: p.session_id,
-        turn_id: "",
-        event: {
-          sessionUpdate: "config_option_update",
-          configOptions,
-        },
-      });
-    } catch (e) {
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        message: e instanceof Error ? e.message : String(e),
-      });
-    }
+    const configOptions = await sess.acp.setConfigOption(p.config_id, p.value);
+    this.#send({
+      type: "session.event",
+      session_id: p.session_id,
+      turn_id: "",
+      event: {
+        sessionUpdate: "config_option_update",
+        configOptions,
+      },
+    });
   }
 
   cancel(session_id: string, turn_id: string): void {
     const sess = this.#sessions.get(session_id);
     if (!sess) return;
-    sess.turns.get(turn_id)?.abort();
+    const turn = sess.turns.get(turn_id);
+    if (!turn) return;
+    turn.abort();
+    this.#onSessionPendingWorkCancelled?.(session_id);
   }
 
   async dispose(session_id: string, opts?: { removeCwd?: boolean }): Promise<void> {
+    const starting = this.#starting.get(session_id);
+    if (starting) {
+      this.#cancelledStarts.add(session_id);
+    }
     await this.#killChild(session_id);
+    if (starting) await starting.catch(() => undefined);
     if (opts?.removeCwd) await removeSessionCwd(session_id);
     // Archive (soft-delete) in the persisted store so the sidebar stops
     // showing it but the history rows stay for any future "show archived"
@@ -731,28 +672,37 @@ export class SessionManager {
   }
 
   async disposeAll(): Promise<void> {
+    for (const id of this.#starting.keys()) {
+      this.#cancelledStarts.add(id);
+    }
+    const starting = [...this.#starting.values()];
     const ids = [...this.#sessions.keys()];
-    await Promise.all(ids.map((id) => this.#killChild(id)));
+    await Promise.allSettled([
+      ...starting,
+      ...ids.map((id) => this.#killChild(id)),
+    ]);
   }
 
   async #killChild(session_id: string): Promise<void> {
     const sess = this.#sessions.get(session_id);
     if (!sess) return;
+    sess.disposed = true;
+    sess.queuedPrompts = [];
     for (const ctrl of sess.turns.values()) ctrl.abort();
-    await sess.acp.dispose().catch(() => undefined);
+    await Promise.resolve(sess.acp.dispose()).catch(() => undefined);
     this.#sessions.delete(session_id);
     // Unblock any pending permission / fs / terminal request for this
     // session — its ACP child is gone, no one will answer them.
-    this.#onSessionGone?.(session_id);
+    this.#onSessionPendingWorkCancelled?.(session_id);
   }
 
-  /** Optional hook fired after a session's ACP child is killed. ipc.ts
-   *  wires this to brokers.cancelPendingFor so any pending UI promises
-   *  (permission modal, fs approval) unwind. */
-  setOnSessionGone(handler: (sessionId: string) => void): void {
-    this.#onSessionGone = handler;
+  /** Optional hook fired when a turn is cancelled or its ACP child is
+   *  killed. ipc.ts wires this to brokers.cancelPendingFor so permission
+   *  dialogs and filesystem approvals cannot outlive their agent work. */
+  setOnSessionPendingWorkCancelled(handler: (sessionId: string) => void): void {
+    this.#onSessionPendingWorkCancelled = handler;
   }
-  #onSessionGone?: (sessionId: string) => void;
+  #onSessionPendingWorkCancelled?: (sessionId: string) => void;
 
   #sendConfigOptions(
     session_id: string,
@@ -768,6 +718,103 @@ export class SessionManager {
         configOptions,
       },
     });
+  }
+}
+
+function isUserVisibleAcpEvent(
+  event:
+    | {
+        sessionUpdate?: string;
+        content?: { type?: string; text?: string };
+      }
+    | null,
+): boolean {
+  const tag = event?.sessionUpdate;
+  if (tag === "agent_message_chunk" || tag === "agent_thought_chunk") {
+    return event?.content?.type === "text" && (event.content.text?.length ?? 0) > 0;
+  }
+  return tag === "tool_call" || tag === "tool_call_update" || tag === "plan";
+}
+
+const KNOWN_ACP_SESSION_UPDATES = new Set([
+  "user_message_chunk",
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+  "plan",
+  "plan_update",
+  "plan_removed",
+  "available_commands_update",
+  "current_mode_update",
+  "config_option_update",
+  "session_info_update",
+  "usage_update",
+]);
+
+function acpEventPersistenceType(event: unknown): string | null {
+  if (!event || typeof event !== "object") {
+    return "acp_boundary:missing_discriminator";
+  }
+  const value = event as { sessionUpdate?: unknown; type?: unknown };
+  if (typeof value.sessionUpdate === "string" && value.sessionUpdate.length > 0) {
+    return KNOWN_ACP_SESSION_UPDATES.has(value.sessionUpdate)
+      ? value.sessionUpdate
+      : `acp_boundary:unknown:${sanitizeBoundaryType(value.sessionUpdate)}`;
+  }
+  if (value.type === "promptComplete" || value.type === "promptError") return null;
+  return "acp_boundary:missing_discriminator";
+}
+
+function sanitizeBoundaryType(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 80) || "empty";
+}
+
+function acpEventShape(event: unknown): string {
+  if (!event || typeof event !== "object") return `shape=${typeof event}`;
+  const keys = Object.keys(event as Record<string, unknown>).sort().slice(0, 12);
+  return `keys=${keys.join(",") || "(none)"}`;
+}
+
+export function acpEventUiRoute(
+  event: unknown,
+):
+  | "transcript"
+  | "composer_notice"
+  | "tool"
+  | "plan"
+  | "composer"
+  | "session_state"
+  | "session_metadata"
+  | "suppressed"
+  | "unadapted"
+  | "boundary" {
+  if (extractAcpSystemNotice(event)) return "composer_notice";
+  if (!event || typeof event !== "object") return "boundary";
+  const value = event as { sessionUpdate?: unknown };
+  switch (value.sessionUpdate) {
+    case "agent_message_chunk":
+    case "agent_thought_chunk":
+      return "transcript";
+    case "tool_call":
+    case "tool_call_update":
+      return "tool";
+    case "plan":
+    case "plan_update":
+    case "plan_removed":
+      return "plan";
+    case "available_commands_update":
+    case "config_option_update":
+      return "composer";
+    case "current_mode_update":
+    case "usage_update":
+      return "session_state";
+    case "session_info_update":
+      return "session_metadata";
+    case "user_message_chunk":
+      return "suppressed";
+    default:
+      return "boundary";
   }
 }
 
@@ -791,6 +838,50 @@ function scrubAcpSpawnEnv(
     CLAUDE_CODE_ENTRYPOINT: undefined,
     CLAUDE_CODE_SSE_PORT: undefined,
   };
+}
+
+async function prepareAcpToolEnvironment(
+  agentId: string,
+  base: Record<string, string | undefined>,
+): Promise<Record<string, string | undefined>> {
+  if (agentId !== "codex-acp") return base;
+  const codexBase: Record<string, string | undefined> = {
+    ...base,
+    CODEX_CONFIG: codexConfigWithoutNativeSubagents(base.CODEX_CONFIG),
+  };
+  if (codexBase.XDG_CACHE_HOME) return codexBase;
+  const cacheBase = process.platform === "darwin" ? "/private/tmp" : tmpdir();
+  const uid = typeof process.getuid === "function" ? process.getuid() : 0;
+  const cacheRoot = join(cacheBase, `openma-acp-cache-${uid}`);
+  await mkdir(join(cacheRoot, "fontconfig"), { recursive: true });
+  return { ...codexBase, XDG_CACHE_HOME: cacheRoot };
+}
+
+function codexConfigWithoutNativeSubagents(raw: string | undefined): string {
+  let config: Record<string, unknown> = {};
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        config = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // An invalid adapter override cannot be forwarded safely. Keep the
+      // product-owned native-subagent policy and let Codex load the rest of
+      // its configuration from config.toml.
+    }
+  }
+  const features = config.features;
+  return JSON.stringify({
+    ...config,
+    features: {
+      ...(features && typeof features === "object" && !Array.isArray(features)
+        ? features as Record<string, unknown>
+        : {}),
+      multi_agent: false,
+      multi_agent_v2: false,
+    },
+  });
 }
 
 function buildAcpPromptBlocks(
@@ -1002,42 +1093,6 @@ async function commandExists(command: string): Promise<boolean> {
   });
 }
 
-function authBlocksSessionStart(auth: ProbeAgentAuthStatus): boolean {
-  return auth.status === "needs-auth" || auth.status === "unknown";
-}
-
-function agentAuthRequiredMessage(
-  agent: KnownAgentEntry,
-  auth: ProbeAgentAuthStatus,
-): string {
-  const suffix = auth.message ? ` ${auth.message}` : "";
-  return `Authenticate ${agent.label} before starting.${suffix}`;
-}
-
-function publicAuthForSessionError(
-  auth: ProbeAgentAuthStatus,
-): NonNullable<Extract<SessionEventOut, { type: "session.error" }>["auth"]> {
-  const method = auth.methodName ?? auth.methodId;
-  const prefix = auth.status === "configured"
-    ? method ? `ACP auth is configured (${method}).` : "ACP auth is configured."
-    : auth.status === "needs-auth"
-      ? method ? `Authentication required (${method}).` : "Authentication required."
-      : "Could not verify auth.";
-  return {
-    status: auth.status === "none" ? "unknown" : auth.status,
-    message: auth.message ? `${prefix} ${auth.message}` : prefix,
-    ...(auth.methodId ? { methodId: auth.methodId } : {}),
-    ...(auth.methodName ? { methodName: auth.methodName } : {}),
-      ...(auth.methods ? { methods: auth.methods.map((method) => ({
-      id: method.id,
-      ...(method.name ? { name: method.name } : {}),
-      ...(method.description ? { description: method.description } : {}),
-      ...(method.type ? { type: method.type } : {}),
-      ...(method.vars ? { vars: method.vars } : {}),
-      ...(method.link ? { link: method.link } : {}),
-    })) } : {}),
-  };
-}
 
 /** Derive a sidebar label from the first prompt. Mirrors
  *  ChatView.deriveLabel in the renderer — keep in sync if you change

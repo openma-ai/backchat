@@ -15,12 +15,14 @@
  *     session-scoped, not turn-scoped — but we surface it here so the
  *     reducer test can verify the dispatch path.
  *   - `current_mode_update` → REPLACE the agent's current mode id.
- *   - everything else    → drop quietly; usage_update etc. are next.
+ *   - session-level metadata is handled by SessionStore before this reducer.
  *
  * Designed to be pure: pass an immutable event list, get a snapshot.
  * Re-running on each render is cheap because events list grows linearly
  * with the turn length (a few hundred at most).
  */
+
+import { extractAcpSystemNotice } from "@shared/acp-system-notices.js";
 
 export interface ChunkText {
   text: string;
@@ -70,6 +72,14 @@ export type TimelineItem =
        *  next tool_call starts a new segment. */
       kind: "assistant_text";
       text: string;
+      phase?: "commentary" | "final_answer";
+    }
+  | {
+      /** One logical thought message. Chunks sharing a messageId patch this
+       * item; a new messageId appends a new item to the activity timeline. */
+      kind: "thought";
+      messageId?: string;
+      text: string;
     }
   | {
       /** Pointer to a ToolEntry; the renderer looks the entry up in `tools`
@@ -81,12 +91,13 @@ export type TimelineItem =
 
 export interface TurnRender {
   thoughtText: string;
+  /** The current, replaceable thought status at the tail of a running
+   * activity stream. Cleared as soon as commentary or a tool follows it. */
+  currentThoughtText: string;
   assistantText: string;
   tools: ToolEntry[];
   plan: PlanEntry[];
-  /** Synthetic events the runtime emits in addition to ACP — e.g. the
-   *  "requestPermission" pause marker. Phase 6 renders these as modals;
-   *  Phase 3 just shows them inline as muted lines. */
+  /** Synthetic runtime notes that belong in the activity transcript. */
   notes: string[];
   /** Time-ordered list of "what to render between thought and assistant
    *  tail". Assistant message chunks and tool_calls interleave in the
@@ -131,8 +142,15 @@ export interface AvailableCommand {
 }
 
 export type ParsedAcpEvent =
-  | { kind: "text"; text: string; event: unknown }
-  | { kind: "thought"; text: string; event: unknown }
+  | {
+      kind: "text";
+      text: string;
+      phase?: "commentary" | "final_answer";
+      messageId?: string;
+      event: unknown;
+    }
+  | { kind: "thought"; text: string; messageId?: string; event: unknown }
+  | { kind: "notice"; notice: string; event: unknown }
   | { kind: "tool_call"; tool: Partial<ToolEntry> & { toolCallId: string }; event: unknown }
   | { kind: "commands"; commands: AvailableCommand[]; event: unknown }
   | { kind: "plan"; plan: PlanEntry[]; event: unknown }
@@ -235,43 +253,17 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function normalizePermissionRequest(raw: Record<string, unknown>, event: unknown): ParsedAcpEvent {
-  const params = raw.params && typeof raw.params === "object"
-    ? (raw.params as Record<string, unknown>)
-    : raw;
-  const toolCall = params.toolCall && typeof params.toolCall === "object"
-    ? (params.toolCall as Record<string, unknown>)
-    : null;
-  const id =
-    toolCall?.toolCallId ??
-    toolCall?.tool_call_id ??
-    params.toolCallId ??
-    params.tool_call_id ??
-    params.id ??
-    params.permissionId ??
-    params.permission_id ??
-    "request";
-  const title =
-    toolCall?.title ??
-    params.title ??
-    params.name ??
-    params.toolName ??
-    params.tool_name ??
-    "Permission request";
-  return {
-    kind: "tool_call",
-    tool: {
-      toolCallId: `permission-${String(id)}`,
-      title: String(title),
-      kind: typeof toolCall?.kind === "string" ? toolCall.kind : "permission",
-      status: "pending",
-      rawInput: toolCall?.rawInput ?? toolCall?.raw_input ?? params,
-      ...(Array.isArray(toolCall?.locations)
-        ? { locations: toolCall.locations as ToolEntry["locations"] }
-        : {}),
-    },
-    event,
-  };
+function messageIdFrom(raw: Record<string, unknown>): string | undefined {
+  return stringField(raw, ["messageId", "message_id"]);
+}
+
+function codexMessagePhase(
+  raw: Record<string, unknown>,
+): "commentary" | "final_answer" | undefined {
+  const codex = objectField(objectField(raw._meta).codex);
+  return codex.phase === "commentary" || codex.phase === "final_answer"
+    ? codex.phase
+    : undefined;
 }
 
 function extractContentText(inner: Record<string, unknown>): string | undefined {
@@ -355,20 +347,32 @@ export function parseAcpEvent(event: unknown): ParsedAcpEvent {
   if (!update) {
     if (inner.type === "agent.message_chunk" && typeof inner.delta === "string") {
       return inner.delta.length > 0
-        ? { kind: "text", text: inner.delta, event }
+        ? {
+            kind: "text",
+            text: inner.delta,
+            phase: codexMessagePhase(inner),
+            messageId: messageIdFrom(inner),
+            event,
+          }
         : { kind: "silent", event };
     }
     if (inner.type === "agent.message") {
       const text = extractTextBlocks(inner.content);
       return typeof text === "string" && text.length > 0
-        ? { kind: "text", text, event }
+        ? {
+            kind: "text",
+            text,
+            phase: codexMessagePhase(inner),
+            messageId: messageIdFrom(inner),
+            event,
+          }
         : { kind: "silent", event };
     }
     if (inner.type === "agent.thinking_chunk" && typeof inner.delta === "string") {
       const text = sanitizeThoughtText(inner.delta);
       return inner.delta.length > 0
         ? text.length > 0
-          ? { kind: "thought", text, event }
+          ? { kind: "thought", text, messageId: messageIdFrom(inner), event }
           : { kind: "silent", event }
         : { kind: "silent", event };
     }
@@ -376,7 +380,7 @@ export function parseAcpEvent(event: unknown): ParsedAcpEvent {
       const rawText = typeof inner.text === "string" ? inner.text : extractTextBlocks(inner.content);
       const text = typeof rawText === "string" ? sanitizeThoughtText(rawText) : rawText;
       return typeof text === "string" && text.length > 0
-        ? { kind: "thought", text, event }
+        ? { kind: "thought", text, messageId: messageIdFrom(inner), event }
         : { kind: "silent", event };
     }
     if (inner.type === "agent.tool_use" && typeof inner.id === "string") {
@@ -421,16 +425,25 @@ export function parseAcpEvent(event: unknown): ParsedAcpEvent {
       return { kind: "note", note: inner.error, event };
     }
     if (inner.type === "text" && typeof inner.text === "string" && inner.text.length > 0) {
-      return { kind: "text", text: inner.text, event };
+      return {
+        kind: "text",
+        text: inner.text,
+        phase: codexMessagePhase(inner),
+        messageId: messageIdFrom(inner),
+        event,
+      };
     }
     if (inner.type === "thought" && typeof inner.text === "string" && inner.text.length > 0) {
       const text = sanitizeThoughtText(inner.text);
       return text.length > 0
-        ? { kind: "thought", text, event }
+        ? { kind: "thought", text, messageId: messageIdFrom(inner), event }
         : { kind: "silent", event };
     }
     if (inner.type === "requestPermission") {
-      return normalizePermissionRequest(inner, event);
+      // Compatibility for sessions persisted before approval requests moved
+      // exclusively onto the broker channel. Approval is transient UI state,
+      // never a completed tool/activity row.
+      return { kind: "silent", event };
     }
     if (
       (inner.type === "tool_call" || inner.type === "tool_call_update") &&
@@ -452,6 +465,9 @@ export function parseAcpEvent(event: unknown): ParsedAcpEvent {
   if (update === "agent_message_chunk" || update === "agent_thought_chunk") {
     const text = extractContentText(inner);
     if (typeof text !== "string" || text.length === 0) return { kind: "silent", event };
+    const notice =
+      update === "agent_message_chunk" ? extractAcpSystemNotice(event) : null;
+    if (notice) return { kind: "notice", notice: notice.message, event };
     if (update === "agent_message_chunk" && isTransportDiagnosticText(text)) {
       return { kind: "silent", event };
     }
@@ -460,8 +476,14 @@ export function parseAcpEvent(event: unknown): ParsedAcpEvent {
     return {
       kind: update === "agent_thought_chunk" ? "thought" : "text",
       text: visibleText,
+      ...(update === "agent_thought_chunk"
+        ? { messageId: messageIdFrom(inner) }
+        : {
+            phase: codexMessagePhase(inner),
+            messageId: messageIdFrom(inner),
+          }),
       event,
-    };
+    } as ParsedAcpEvent;
   }
 
   if (update === "user_message_chunk") return { kind: "silent", event };
@@ -573,6 +595,7 @@ export function mergeStreamingText(accumulated: string, incoming: string): strin
 export function reduceTurn(events: readonly { payload: unknown }[]): TurnRender {
   const out: TurnRender = {
     thoughtText: "",
+    currentThoughtText: "",
     assistantText: "",
     tools: [],
     plan: [],
@@ -586,11 +609,43 @@ export function reduceTurn(events: readonly { payload: unknown }[]): TurnRender 
   // or at end-of-stream. Same chunk concatenation we used to do into
   // assistantText, but segment-aware.
   let textBuf = "";
+  let textPhase: "commentary" | "final_answer" | undefined;
   const flushText = () => {
     if (textBuf) {
-      out.timeline.push({ kind: "assistant_text", text: textBuf });
+      out.timeline.push({
+        kind: "assistant_text",
+        text: textBuf,
+        ...(textPhase ? { phase: textPhase } : {}),
+      });
       textBuf = "";
+      textPhase = undefined;
     }
+  };
+  const thoughtIndexByMessageId = new Map<string, number>();
+  let anonymousThoughtIndex: number | undefined;
+  const appendThought = (parsed: Extract<ParsedAcpEvent, { kind: "thought" }>) => {
+    const id = parsed.messageId;
+    const existingIndex = id
+      ? thoughtIndexByMessageId.get(id)
+      : anonymousThoughtIndex;
+    if (existingIndex !== undefined) {
+      const existing = out.timeline[existingIndex];
+      if (existing?.kind === "thought") {
+        existing.text = mergeStreamingText(existing.text, parsed.text);
+        out.currentThoughtText = latestThoughtSegment(existing.text);
+        return;
+      }
+    }
+    flushText();
+    const item: TimelineItem = {
+      kind: "thought",
+      text: parsed.text,
+      ...(id ? { messageId: id } : {}),
+    };
+    const index = out.timeline.push(item) - 1;
+    if (id) thoughtIndexByMessageId.set(id, index);
+    else anonymousThoughtIndex = index;
+    out.currentThoughtText = latestThoughtSegment(parsed.text);
   };
   const upsertTool = (incoming: Partial<ToolEntry> & { toolCallId: string }) => {
     const id = incoming.toolCallId;
@@ -659,11 +714,16 @@ export function reduceTurn(events: readonly { payload: unknown }[]): TurnRender 
     switch (parsed.kind) {
       case "thought":
         out.thoughtText = mergeStreamingText(out.thoughtText, parsed.text);
+        appendThought(parsed);
         break;
       case "text":
+        out.currentThoughtText = "";
+        if (textBuf && textPhase !== parsed.phase) flushText();
+        textPhase = parsed.phase;
         textBuf = mergeStreamingText(textBuf, parsed.text);
         break;
       case "tool_call":
+        out.currentThoughtText = "";
         upsertTool(parsed.tool);
         break;
       case "plan":
@@ -673,6 +733,7 @@ export function reduceTurn(events: readonly { payload: unknown }[]): TurnRender 
         out.notes.push(parsed.note);
         break;
       case "commands":
+      case "notice":
       case "silent":
         break;
       case "raw":
@@ -697,4 +758,13 @@ export function reduceTurn(events: readonly { payload: unknown }[]): TurnRender 
     .map((t) => t.text)
     .join("");
   return out;
+}
+
+export function latestThoughtSegment(text: string): string {
+  if (/\n{2,}\s*$/.test(text)) return "";
+  const segments = text
+    .split(/\n{2,}/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return segments.at(-1) ?? "";
 }

@@ -3,8 +3,8 @@
  *
  * Translates the SDK's request/response + notification model into a single
  * AsyncIterable<event> per turn:
- *   - sessionUpdate notifications and synthetic `requestPermission` events
- *     pile into a queue while `agent.prompt()` is in flight;
+ *   - sessionUpdate notifications pile into a queue while
+ *     `agent.prompt()` is in flight;
  *   - the iterator drains the queue, ending when prompt resolves;
  *   - sentinel events `promptComplete` / `promptError` fire at the end.
  *
@@ -60,6 +60,7 @@ export class AcpSessionImpl implements AcpSession {
   }
 
   async init(): Promise<void> {
+    const initStartedAt = Date.now();
     const stream = ndJsonStream(this.#child.stdin, this.#child.stdout);
     const cb: ClientCallbacks = this.options.clientCallbacks ?? {};
 
@@ -79,7 +80,6 @@ export class AcpSessionImpl implements AcpSession {
       },
       requestPermission: async (params) => {
         if (cb.requestPermission) {
-          this.#pushEvent({ type: "requestPermission", params });
           try {
             return await cb.requestPermission(params);
           } catch (e) {
@@ -88,7 +88,6 @@ export class AcpSessionImpl implements AcpSession {
           }
         }
         // No host handler → deny. Agent will surface "cancelled" to the user.
-        this.#pushEvent({ type: "requestPermission", params, autoDenied: true });
         return { outcome: { outcome: "cancelled" } };
       },
       readTextFile: cb.readTextFile
@@ -127,6 +126,7 @@ export class AcpSessionImpl implements AcpSession {
         terminal: !!cb.createTerminal,
       },
     });
+    const initializedAt = Date.now();
 
     // Stash the agent's advertised authMethods so the host can drive a
     // user-initiated "sign in / switch account" flow via
@@ -154,6 +154,7 @@ export class AcpSessionImpl implements AcpSession {
       });
       this.#sessionId = forked.sessionId;
       this.#configOptions = forked.configOptions ?? [];
+      this.#logInitPhases("fork", initStartedAt, initializedAt);
       return;
     }
 
@@ -169,6 +170,7 @@ export class AcpSessionImpl implements AcpSession {
         });
         this.#sessionId = wantsResume;
         this.#configOptions = loaded.configOptions ?? [];
+        this.#logInitPhases("load", initStartedAt, initializedAt);
         return;
       } catch (e) {
         // Resume failed — fall through to fresh session. Caller surfaces
@@ -184,6 +186,19 @@ export class AcpSessionImpl implements AcpSession {
     });
     this.#sessionId = newSession.sessionId;
     this.#configOptions = newSession.configOptions ?? [];
+    this.#logInitPhases("new", initStartedAt, initializedAt);
+  }
+
+  #logInitPhases(
+    openMode: "new" | "load" | "fork",
+    initStartedAt: number,
+    initializedAt: number,
+  ): void {
+    if (process.env.NODE_ENV === "test") return;
+    const completedAt = Date.now();
+    process.stderr.write(
+      `[acp-init] id=${this.id} mode=${openMode} initialize_ms=${initializedAt - initStartedAt} session_open_ms=${completedAt - initializedAt} total_ms=${completedAt - initStartedAt}\n`,
+    );
   }
 
   /** The agent's advertised auth methods (from `initialize.authMethods`).

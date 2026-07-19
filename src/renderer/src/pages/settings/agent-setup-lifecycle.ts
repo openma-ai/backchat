@@ -15,7 +15,7 @@ export type AgentAuthAction =
 export interface AgentSetupState {
   available: boolean;
   authNeeded: boolean;
-  canDefault: boolean;
+  canEnable: boolean;
   statusText: string;
   setupAction: AgentSetupAction;
   authAction: AgentAuthAction;
@@ -72,7 +72,7 @@ export function deriveAgentSetupState(
   return {
     available,
     authNeeded,
-    canDefault: available && !authNeeded,
+    canEnable: available && !authNeeded,
     statusText: statusText(agent, { waitingForAuth }),
     setupAction,
     authAction,

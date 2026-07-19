@@ -76,9 +76,6 @@ const AgentOverrideSchema = z.object({
 
 const SettingsSchema = z.object({
   default: z.object({
-    /** Canonical agent id chosen as the "default browser" for new chats.
-     *  Empty string means "no default — first detected wins". */
-    agent_id: z.string().default(""),
     /** Default cwd for new sessions. Empty string → fallback to $HOME. */
     workspace_path: z.string().default(""),
     /** Composer permission mode — how the renderer answers ACP permission
@@ -100,6 +97,8 @@ const SettingsSchema = z.object({
     prompt_queue_enabled: z.boolean().default(true),
   }),
   appearance: z.object({
+    light_theme_id: z.string().min(1).default("backchat-light"),
+    dark_theme_id: z.string().min(1).default("backchat-dark"),
     theme: z.enum(["system", "light", "dark"]).default("system"),
     language: z.enum(["system", "en", "zh-CN"]).default("system"),
     font_size: z.enum(["sm", "md", "lg"]).default("md"),
@@ -126,12 +125,41 @@ export type AgentOverride = z.infer<typeof AgentOverrideSchema>;
 // Seed used when no config file exists yet. Spelt out so zod 4 doesn't have
 // to infer defaults for parent objects from their inner-field defaults —
 // which it refuses to do without thunks.
-const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({
+export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({
   default: {},
   appearance: {},
   agents: [],
   mcp_servers: [],
 });
+
+export function hasDeprecatedAgentDefault(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const defaults = (value as Record<string, unknown>).default;
+  return Boolean(
+    defaults
+      && typeof defaults === "object"
+      && Object.prototype.hasOwnProperty.call(defaults, "agent_id"),
+  );
+}
+
+export function migrateDeprecatedWorkspacePath(settings: Settings): {
+  settings: Settings;
+  changed: boolean;
+} {
+  if (!settings.default.workspace_path.trim()) {
+    return { settings, changed: false };
+  }
+  return {
+    changed: true,
+    settings: {
+      ...settings,
+      default: {
+        ...settings.default,
+        workspace_path: "",
+      },
+    },
+  };
+}
 
 // -------------------- File location --------------------
 
@@ -171,6 +199,7 @@ class SettingsStore {
           `Fix the syntax or delete the file to regenerate defaults.`,
       );
     }
+    const deprecatedAgentDefault = hasDeprecatedAgentDefault(parsed);
     const result = SettingsSchema.safeParse(parsed);
     if (!result.success) {
       throw new Error(
@@ -179,7 +208,25 @@ class SettingsStore {
           .join("; ")}.`,
       );
     }
-    this.#current = result.data;
+    const migration = migrateDeprecatedWorkspacePath(result.data);
+    this.#current = migration.settings;
+    if (migration.changed || deprecatedAgentDefault) {
+      await writeFile(
+        SETTINGS_FILE,
+        this.#serializeWithHeader(this.#current),
+        "utf-8",
+      );
+      if (deprecatedAgentDefault) {
+        process.stderr.write(
+          "[settings] removed deprecated default.agent_id; run selection is recent-use based\n",
+        );
+      }
+      if (migration.changed) {
+        process.stderr.write(
+          "[settings] removed deprecated default.workspace_path; project ownership is per chat\n",
+        );
+      }
+    }
     return this.#current;
   }
 

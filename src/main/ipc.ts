@@ -7,6 +7,8 @@
  */
 
 import { BrowserWindow, ipcMain } from "electron";
+import { randomUUID } from "node:crypto";
+import { getKnownAgents } from "@open-managed-agents-desktop/acp/registry";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
 import type {
   AgentInfo,
@@ -15,6 +17,8 @@ import type {
   PersistedEventInfo,
   PersistedPairInfo,
   PersistedSessionInfo,
+  PersistedSideWorkspaceInfo,
+  SideWorkspaceSaveParams,
 } from "../shared/api.js";
 import type {
   SessionEventOut,
@@ -27,12 +31,13 @@ import type {
   PairPromptParams,
   PairStartParams,
 } from "../shared/pair-events.js";
-import type { Settings } from "../shared/settings.js";
+import type { Settings, SettingsMcpServer } from "../shared/settings.js";
 import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { appendEventsTx, archiveSession, deleteSession, listArchivedSessions, listPairGroups, listSessions, loadHistory, pinSession, savePairGroup, searchMessages, setSessionTitleIfEmpty, unarchiveSession, unpinSession, upsertSession } from "./sql-store.js";
+import { appendEventsTx, archiveSession, deleteSession, deleteSideWorkspace, getActivityStats, listArchivedSessions, listPairGroups, listSessions, listSideWorkspaces, loadHistory, pinSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchiveSession, unpinSession, upsertSession } from "./sql-store.js";
+import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
 import { openmaRoot } from "./storage-root.js";
@@ -61,6 +66,16 @@ import "./browser-element-picker-broker.js";
 // Side-effect import: task-scoped Browser WebView registry and browser
 // harness routing. Agent tools and the visible right rail share these guests.
 import { browserWebviewTools } from "./browser-view-broker.js";
+import { buildAcpMcpServers } from "./acp-mcp-injection.js";
+import { McpAppRuntime } from "./mcp-app-runtime.js";
+import { CodexPluginRuntime } from "./codex-plugin-runtime.js";
+import { PluginSkillsMcpBridge } from "./plugin-skills-mcp.js";
+import type { McpAppRequestInput, McpAppResolveInput } from "../shared/mcp-app.js";
+import {
+  readInlineVisualizationFile,
+  watchInlineVisualizationFile,
+} from "./inline-visualization-file.js";
+import { registerSandboxDocument } from "./mcp-app-document-store.js";
 // Side-effect import: current-tab browser data, downloads, screenshots and
 // privacy controls. Each handler revalidates the guest ownership boundary.
 import "./browser-data-broker.js";
@@ -69,25 +84,26 @@ interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
    *  overlay-only set; later phases pass `app.getPath('userData')/...` */
   registryCachePath: string;
+  probeCachePath?: string;
   acpBinDir: string;
   acpInstallRoot: string;
   browserMcpServerForTask?: (taskId: string) => unknown;
+  /** Codex-compatible plugin bundle roots. Defaults to ~/.openma/plugins. */
+  pluginRoots?: readonly string[];
 }
 
 interface TestAgentSetupCall {
-  type: "list" | "probe" | "install" | "upgrade" | "uninstall" | "auth" | "default";
+  type: "list" | "install" | "upgrade" | "uninstall" | "auth";
   id?: string;
   methodId?: string;
 }
 
 interface TestAgentSetupFixture {
   agents: AgentInfo[];
-  probeResults?: Record<string, AgentInfo[]>;
   authenticateResults?: Record<string, AgentInfo[]>;
   installResults?: Record<string, AgentInfo[]>;
   upgradeResults?: Record<string, AgentInfo[]>;
   uninstallResults?: Record<string, AgentInfo[]>;
-  defaultResults?: Record<string, AgentInfo[]>;
   calls?: TestAgentSetupCall[];
 }
 
@@ -97,7 +113,13 @@ interface TestAgentSetupFixture {
  * case in Phase 9, and is a no-op when no window is open (renderer reload
  * picks up via `sessionAnnounce`).
  */
-export function registerIpc(deps: RegisterDeps): SessionManager {
+export interface RegisteredIpcRuntime {
+  sessionManager: SessionManager;
+  refreshPlugins(): void;
+  dispose(): Promise<void>;
+}
+
+export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRuntime> {
   const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
   const testPromptCalls: SessionPromptParams[] = [];
   const testConfigOptionCalls: SessionSetConfigOptionParams[] = [];
@@ -106,19 +128,44 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     sessionId.startsWith("e2e-") || sessionId.startsWith("sess-test-");
   const agentSetup = createAgentSetupService({
     registryCachePath: deps.registryCachePath,
+    ...(deps.probeCachePath ? { probeCachePath: deps.probeCachePath } : {}),
     acpBinDir: deps.acpBinDir,
     acpInstallRoot: deps.acpInstallRoot,
     launchInteractiveAuth: launchTerminalAuth,
     agentOverrides: () => settingsStore.get().agents,
-    getDefaultAgentId: () => settingsStore.get().default.agent_id,
-    saveDefaultAgentId: async (id) => {
-      const s = settingsStore.get();
-      await settingsStore.patch({
-        default: { ...s.default, agent_id: id },
-      });
-    },
+    getEnabledAgentIds: () => settingsStore.get().agents
+      .filter((agent) => agent.enabled)
+      .map((agent) => agent.id),
   });
-  void agentSetup.warmup().catch((error) => {
+  const pluginRuntime = new CodexPluginRuntime(
+    deps.pluginRoots ?? [join(openmaRoot(), "plugins")],
+  );
+  const pluginCatalog = pluginRuntime.start();
+  for (const error of pluginCatalog.errors) {
+    process.stderr.write(`! Codex plugin skipped (${error.root}): ${error.message}\n`);
+  }
+  const pluginSkillsMcpBridge = new PluginSkillsMcpBridge(
+    () => pluginRuntime.skills(),
+  );
+  await pluginSkillsMcpBridge.start();
+  const allConfiguredMcpServers = (): SettingsMcpServer[] =>
+    pluginRuntime.withConfiguredMcpServers(settingsStore.get().mcp_servers);
+  const allAgentMcpServers = (): SettingsMcpServer[] => [
+    ...allConfiguredMcpServers(),
+    pluginSkillsMcpBridge.descriptor(),
+  ];
+  const mcpAppRuntime = new McpAppRuntime(allConfiguredMcpServers);
+  const inlineVisualizationWatches = new Map<
+    string,
+    { ownerId: number; close: () => void }
+  >();
+  const closeInlineVisualizationWatch = (watchId: string, ownerId?: number): void => {
+    const watch = inlineVisualizationWatches.get(watchId);
+    if (!watch || (ownerId !== undefined && watch.ownerId !== ownerId)) return;
+    watch.close();
+    inlineVisualizationWatches.delete(watchId);
+  };
+  const agentWarmup = agentSetup.warmup().catch((error) => {
     process.stderr.write(`! ACP agent warmup failed: ${error instanceof Error ? error.message : String(error)}\n`);
   });
   const recordTestAgentSetupCall = (call: TestAgentSetupCall): void => {
@@ -127,7 +174,7 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
   const testAgentSetupResult = (
     bucket: keyof Pick<
       TestAgentSetupFixture,
-      "probeResults" | "authenticateResults" | "installResults" | "upgradeResults" | "uninstallResults" | "defaultResults"
+      "authenticateResults" | "installResults" | "upgradeResults" | "uninstallResults"
     >,
     id: string,
   ): AgentInfo[] => {
@@ -177,17 +224,13 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     // MCP servers come from settings now — Phase 8 finishes the per-agent
     // override matrix; for now we pass every configured server through to
     // every spawn. ACP McpServer shape matches our SettingsMcpServer.
-    resolveMcpServers: (_agentId, taskId) => [
-      ...settingsStore.get().mcp_servers,
-      ...(deps.browserMcpServerForTask
-        ? [deps.browserMcpServerForTask(taskId)]
-        : []),
-    ] as unknown[],
+    resolveMcpServers: (_agentId, taskId) => buildAcpMcpServers(
+      allAgentMcpServers(),
+      deps.browserMcpServerForTask?.(taskId) as SettingsMcpServer | undefined,
+    ),
     resolveDefaults: () => {
       const s = settingsStore.get();
       return {
-        agentId: s.default.agent_id || undefined,
-        cwd: s.default.workspace_path || undefined,
         permissionMode: s.default.permission_mode,
         promptQueueEnabled: s.default.prompt_queue_enabled,
       };
@@ -231,7 +274,7 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
       killTerminal: async (params) => killTerminal(params) as never,
     }),
   });
-  sessionManager.setOnSessionGone(cancelPendingFor);
+  sessionManager.setOnSessionPendingWorkCancelled(cancelPendingFor);
 
   // Pair manager — sibling of sessionManager. Holds a reference and
   // calls its 1:1 API; the tee installed above routes pair-owned
@@ -246,21 +289,20 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
 
   ipcMain.handle(
     InvokeChannel.AgentsList,
-    (_e, options?: AgentListOptions): Promise<AgentInfo[]> | AgentInfo[] => {
+    async (_e, options?: AgentListOptions): Promise<AgentInfo[]> => {
       if (testAgentSetupFixture) {
         recordTestAgentSetupCall({ type: "list" });
         return testAgentSetupFixture.agents;
       }
-      return agentSetup.listAgents(options);
+      if (options?.readiness === "snapshot" && !options.refresh) {
+        return agentSetup.listAgents();
+      }
+      await agentWarmup;
+      return options?.refresh
+        ? agentSetup.refreshEnabledAgents()
+        : agentSetup.listAgents();
     },
   );
-  ipcMain.handle(InvokeChannel.AgentProbe, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
-    if (testAgentSetupFixture) {
-      recordTestAgentSetupCall({ type: "probe", id });
-      return testAgentSetupResult("probeResults", id);
-    }
-    return agentSetup.probeAgent(id);
-  });
   ipcMain.handle(InvokeChannel.AgentInstall, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
     if (testAgentSetupFixture) {
       recordTestAgentSetupCall({ type: "install", id });
@@ -292,34 +334,23 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
       return agentSetup.authenticateAgent(p.id, { methodId: p.methodId });
     },
   );
-  ipcMain.handle(InvokeChannel.AgentSetDefault, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
-    if (testAgentSetupFixture) {
-      recordTestAgentSetupCall({ type: "default", id });
-      return testAgentSetupResult("defaultResults", id);
-    }
-    return agentSetup.setDefaultAgent(id);
-  });
-
-  ipcMain.handle(
-    InvokeChannel.AcpAuthMethods,
-    (_e, agentId: string) => sessionManager.probeAuthMethods(agentId),
-  );
-  ipcMain.handle(
-    InvokeChannel.AcpAuthenticate,
-    (_e, p: { agentId: string; methodId: string }) =>
-      sessionManager.authenticateAgent(p.agentId, p.methodId),
-  );
-
   ipcMain.handle(InvokeChannel.SessionStart, (_e, p: SessionStartParams) => {
     if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
-      send({
-        type: "session.ready",
+      const result = {
+        status: "ready" as const,
         session_id: p.session_id,
         acp_session_id: p.resume?.acp_session_id ?? `acp-${p.session_id}`,
         agent_id: p.agent_id,
         cwd: p.cwd ?? "/tmp/backchat-test",
+      };
+      send({
+        type: "session.ready",
+        session_id: result.session_id,
+        acp_session_id: result.acp_session_id,
+        agent_id: result.agent_id,
+        cwd: result.cwd,
       });
-      return;
+      return result;
     }
     return sessionManager.start(p);
   });
@@ -477,9 +508,25 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     (_e, sessionId: string): PersistedEventInfo[] => loadHistory(sessionId),
   );
   ipcMain.handle(
+    InvokeChannel.SideWorkspacesList,
+    (): PersistedSideWorkspaceInfo[] => listSideWorkspaces(),
+  );
+  ipcMain.handle(
+    InvokeChannel.SideWorkspaceSave,
+    (_e, p: SideWorkspaceSaveParams) => saveSideWorkspace(p),
+  );
+  ipcMain.handle(
+    InvokeChannel.SideWorkspaceDelete,
+    (_e, p: { task_id: string }) => deleteSideWorkspace(p.task_id),
+  );
+  ipcMain.handle(
     InvokeChannel.SessionsSearch,
     (_e, query: string, limit?: number) => searchMessages(query, limit),
   );
+  ipcMain.handle(InvokeChannel.ActivityStats, async () => {
+    await agentWarmup;
+    return enrichActivityStats(getActivityStats(), getKnownAgents());
+  });
 
   // ---- Settings ----
   ipcMain.handle(InvokeChannel.SettingsGet, (): Settings => settingsStore.get());
@@ -487,10 +534,56 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     InvokeChannel.SettingsPatch,
     (_e, partial: Partial<Settings>) => settingsStore.patch(partial),
   );
+  ipcMain.handle(
+    InvokeChannel.McpAppResolve,
+    (_e, input: McpAppResolveInput) => mcpAppRuntime.resolve(input),
+  );
+  ipcMain.handle(
+    InvokeChannel.McpAppRequest,
+    (_e, input: McpAppRequestInput) => mcpAppRuntime.request(input),
+  );
+  ipcMain.handle(
+    InvokeChannel.InlineVisualizationRead,
+    (_e, input: { cwd: string; file: string }) => readInlineVisualizationFile(input),
+  );
+  ipcMain.handle(
+    InvokeChannel.InlineVisualizationRegisterDocument,
+    (_e, input: { html: string }) => {
+      if (typeof input?.html !== "string") throw new Error("Visualization document is required");
+      return { document_url: registerSandboxDocument(input.html) };
+    },
+  );
+  ipcMain.handle(
+    InvokeChannel.InlineVisualizationWatch,
+    async (event, input: { cwd: string; file: string }) => {
+      const watchId = randomUUID();
+      const ownerId = event.sender.id;
+      const close = await watchInlineVisualizationFile(input, () => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(PushChannel.InlineVisualizationChanged, { watch_id: watchId });
+        }
+      });
+      inlineVisualizationWatches.set(watchId, { ownerId, close });
+      event.sender.once("destroyed", () => closeInlineVisualizationWatch(watchId, ownerId));
+      return { watch_id: watchId };
+    },
+  );
+  ipcMain.handle(
+    InvokeChannel.InlineVisualizationUnwatch,
+    (event, input: { watch_id: string }) => {
+      closeInlineVisualizationWatch(input.watch_id, event.sender.id);
+    },
+  );
   // Push every settings mutation out to all open windows. Subscribed once
   // at registration; never unsubscribed (the store lives for the process
   // lifetime).
+  let mcpServerSnapshot = JSON.stringify(settingsStore.get().mcp_servers);
   settingsStore.subscribe((s) => {
+    const nextMcpServerSnapshot = JSON.stringify(s.mcp_servers);
+    if (nextMcpServerSnapshot !== mcpServerSnapshot) {
+      mcpServerSnapshot = nextMcpServerSnapshot;
+      void mcpAppRuntime.close();
+    }
     for (const w of BrowserWindow.getAllWindows()) {
       if (!w.isDestroyed()) w.webContents.send(PushChannel.SettingsChanged, s);
     }
@@ -630,5 +723,19 @@ export function registerIpc(deps: RegisterDeps): SessionManager {
     );
   }
 
-  return sessionManager;
+  return {
+    sessionManager,
+    refreshPlugins() {
+      pluginRuntime.refresh();
+      void mcpAppRuntime.close();
+    },
+    async dispose() {
+      await Promise.allSettled([
+        sessionManager.disposeAll(),
+        agentSetup.dispose(),
+        mcpAppRuntime.close(),
+        pluginSkillsMcpBridge.stop(),
+      ]);
+    },
+  };
 }

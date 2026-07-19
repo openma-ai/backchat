@@ -11,8 +11,14 @@ import type {
   SessionPromptParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
+  SessionStartResult,
 } from "./session-events.js";
 import type { Settings } from "./settings.js";
+import type {
+  McpAppRequestInput,
+  McpAppResolved,
+  McpAppResolveInput,
+} from "./mcp-app.js";
 import type {
   BrowserElementHoverInfo,
   BrowserElementPickResult,
@@ -34,6 +40,8 @@ import type {
 export interface AgentInfo {
   id: string;
   label: string;
+  /** Official ACP registry icon URL, when available. */
+  icon?: string;
   command: string;
   /** Human-readable. Set when the agent's binary isn't on PATH. */
   installHint?: string;
@@ -70,14 +78,22 @@ export interface AgentInfo {
     }>;
   };
   config_options?: unknown[];
+  available_commands?: unknown[];
+  session_modes?: unknown;
+  capability_inspection?: {
+    status: "ready" | "blocked-auth" | "degraded";
+    inspected_at: string;
+    error?: string;
+  };
 }
 
 export interface AgentListOptions {
-  probeAuth?: boolean;
-  probeConfigOptions?: boolean;
+  /** Explicit user refresh. Probe scope is owned by the setup service,
+   * never supplied by renderer code. */
   refresh?: boolean;
-  probeAgentId?: string;
-  probeConfigAgentId?: string;
+  /** `snapshot` returns inventory plus persisted facts immediately. `ready`
+   * waits for the cold-start barrier and is required for run selection. */
+  readiness?: "snapshot" | "ready";
 }
 
 /** Public shape of a persisted session row. Mirrors PersistedSession in
@@ -104,6 +120,20 @@ export interface PersistedEventInfo {
   type: string;
   data: string;
   ts: number;
+}
+
+/** Versioned renderer-owned workspace for one task's right sidebar.
+ *  Main deliberately treats `state_json` as opaque: the renderer owns
+ *  migration and validation while SQLite supplies durable task scoping. */
+export interface PersistedSideWorkspaceInfo {
+  task_id: string;
+  state_json: string;
+  updated_at: number;
+}
+
+export interface SideWorkspaceSaveParams {
+  task_id: string;
+  state_json: string;
 }
 
 /** UI metadata for a pair-chat group. The members are still ordinary
@@ -158,24 +188,9 @@ export interface FsWriteAskInfo {
   oldPreview: string;
 }
 
-/** What `acpAuthMethods` returns — the agent's `initialize.authMethods`
- *  reshaped for the Settings sign-in picker. */
-export interface AcpAuthMethodsResult {
-  /** initialize.agentInfo.title || .name, or null if the agent didn't
-   *  identify itself. Settings uses it as a friendly label
-   *  ("Gemini CLI 登录"). */
-  agentName: string | null;
-  methods: ReadonlyArray<{
-    id: string;
-    name: string;
-    description?: string | null;
-    /** ACP method variant — "env_var" / "terminal" / undefined for
-     *  the default "agent" type. UI may render env_var differently
-     *  (input field for the value instead of a button), but the
-     *  first pass just shows a button for every method. */
-    type?: string;
-  }>;
-}
+export type PendingBrokerAskInfo =
+  | { kind: "permission"; ask: PermissionAskInfo }
+  | { kind: "fsWrite"; ask: FsWriteAskInfo };
 
 export interface TerminalOutputFrame {
   sessionId: string;
@@ -203,6 +218,48 @@ export interface SearchHitInfo {
   snippet: string;
 }
 
+export interface ActivityDayInfo {
+  /** UTC calendar day. The renderer formats month labels in the user's locale. */
+  date: string;
+  /** New top-level tasks created that day; pair members count as one task. */
+  tasks: number;
+  /** User prompts persisted that day. */
+  turns: number;
+  /** Initial tool calls only; tool_call_update events are excluded. */
+  tool_calls: number;
+}
+
+export interface HarnessActivityInfo {
+  /** Persisted ACP agent id. In Backchat this is the harness dimension. */
+  harness_id: string;
+  /** Current display metadata from the ACP registry. */
+  harness_label?: string;
+  icon_url?: string;
+  tasks: number;
+  runs: number;
+  turns: number;
+  tool_calls: number;
+  active_days: number;
+  last_active_at: number;
+}
+
+export interface ActivityStatsInfo {
+  summary: {
+    total_tasks: number;
+    total_runs: number;
+    total_turns: number;
+    total_tool_calls: number;
+    total_harnesses: number;
+    active_days: number;
+    current_streak_days: number;
+    longest_streak_days: number;
+  };
+  /** Oldest to newest, zero-filled to a fixed window. */
+  daily: ActivityDayInfo[];
+  /** Ordered by turns, then tool calls, descending. */
+  harnesses: HarnessActivityInfo[];
+}
+
 export interface BackchatApi {
   /** Smoke test for the IPC channel. */
   ping(msg: string): Promise<string>;
@@ -210,24 +267,12 @@ export interface BackchatApi {
   /** All known ACP agents merged from the official registry + overlay,
    *  flagged by detection. Renderer uses this to power the agent picker. */
   agentsList(options?: AgentListOptions): Promise<AgentInfo[]>;
-  agentProbe(id: string): Promise<AgentInfo[]>;
   agentInstall(id: string): Promise<AgentInfo[]>;
   agentUpgrade(id: string): Promise<AgentInfo[]>;
   agentUninstall(id: string): Promise<AgentInfo[]>;
   agentAuthenticate(p: { id: string; methodId?: string }): Promise<AgentInfo[]>;
-  agentSetDefault(id: string): Promise<AgentInfo[]>;
 
-  /** Probe an ACP agent for the auth methods it advertises on
-   *  initialize. Settings → Agents calls this to render a sign-in
-   *  picker (one button per method). Throws if the agent isn't on
-   *  PATH / can't be spawned. */
-  acpAuthMethods(agentId: string): Promise<AcpAuthMethodsResult>;
-  /** Run the agent's signin sub-flow for the chosen methodId
-   *  (OAuth browser handoff, API-key validation, ...). Resolves on
-   *  success; rejects with the agent's raw error on failure. */
-  acpAuthenticate(agentId: string, methodId: string): Promise<void>;
-
-  sessionStart(p: SessionStartParams): Promise<void>;
+  sessionStart(p: SessionStartParams): Promise<SessionStartResult>;
   sessionPrompt(p: SessionPromptParams): Promise<void>;
   sessionSetConfigOption(p: SessionSetConfigOptionParams): Promise<void>;
   sessionCancel(p: { session_id: string; turn_id: string }): Promise<void>;
@@ -265,9 +310,16 @@ export interface BackchatApi {
    *  feeds these back into its in-memory store to reconstruct turns. */
   sessionsLoadHistory(sessionId: string): Promise<PersistedEventInfo[]>;
 
+  /** Durable right-rail UI/workspace state, one opaque JSON document per task. */
+  sideWorkspacesList(): Promise<PersistedSideWorkspaceInfo[]>;
+  sideWorkspaceSave(p: SideWorkspaceSaveParams): Promise<void>;
+  sideWorkspaceDelete(p: { task_id: string }): Promise<void>;
+
   /** Full-text search across persisted chat prose. Used by Cmd+K's
    *  Search section. Empty query returns []. */
   sessionsSearch(query: string, limit?: number): Promise<SearchHitInfo[]>;
+  /** Local-only activity analytics derived from the session SQLite index. */
+  activityStats(): Promise<ActivityStatsInfo>;
 
   /** Set/clear the "pinned to top of sidebar" flag. Pinned sessions
    *  appear in a separate section above the regular Chats list,
@@ -299,6 +351,21 @@ export interface BackchatApi {
   /** Notified on every patch. Returns an unsubscribe fn. */
   onSettingsChanged(handler: (s: Settings) => void): () => void;
 
+  /** Resolve and proxy the official io.modelcontextprotocol/ui extension.
+   *  The main process owns MCP transports; untrusted Views never receive
+   *  server credentials or direct access to Node/Electron APIs. */
+  mcpAppResolve(p: McpAppResolveInput): Promise<McpAppResolved | null>;
+  mcpAppRequest(p: McpAppRequestInput): Promise<unknown>;
+  /** Read a visualization fragment scoped to the active task workspace. */
+  inlineVisualizationRead(p: {
+    cwd: string;
+    file: string;
+  }): Promise<{ file: string; content: string }>;
+  inlineVisualizationRegisterDocument(p: { html: string }): Promise<{ document_url: string }>;
+  inlineVisualizationWatch(p: { cwd: string; file: string }): Promise<{ watch_id: string }>;
+  inlineVisualizationUnwatch(p: { watch_id: string }): Promise<void>;
+  onInlineVisualizationChanged(handler: (event: { watch_id: string }) => void): () => void;
+
   // ----- Brokers (Phase 6) -----
 
   /** Subscribe to permission asks pushed from the main process. Modal
@@ -306,6 +373,9 @@ export interface BackchatApi {
    *  for cancel). */
   onPermissionRequest(handler: (ask: PermissionAskInfo) => void): () => void;
   permissionRespond(requestId: string, optionId: string | null): Promise<void>;
+  /** Snapshot of unresolved broker asks. Used after renderer reload so a
+   *  blocking approval cannot be lost between IPC subscription lifetimes. */
+  brokerPendingAsks(): Promise<PendingBrokerAskInfo[]>;
 
   /** Out-of-cwd write approval flow. */
   onFsWriteApproval(handler: (ask: FsWriteAskInfo) => void): () => void;
@@ -422,6 +492,16 @@ export interface BackchatApi {
   /** Open a path with the OS-default handler. Returns "" on success
    *  or an error message string on failure. */
   uiFsOpenPath(p: { path: string }): Promise<string>;
+
+  /** Reveal a path in Finder / Explorer. */
+  uiFsRevealPath(p: { path: string }): Promise<void>;
+
+  /** Return a browser-renderable local preview when one is available. */
+  uiFsResolvePreview(p: { path: string }): Promise<{
+    sourcePath: string;
+    previewPath: string;
+    kind: "document" | "image" | "web" | "text";
+  } | null>;
 
   /** Read the current git branch for a workspace dir. Returns the
    *  branch name (e.g. "main"), or null if the path isn't a git repo,

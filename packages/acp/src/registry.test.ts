@@ -29,6 +29,7 @@ describe("ACP agent setup registry", () => {
                 version: "0.45.0",
                 repository: "https://github.com/agentclientprotocol/claude-agent-acp",
                 website: "https://agentclientprotocol.com",
+                icon: "https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg",
                 distribution: {
                   npx: {
                     package: "@agentclientprotocol/claude-agent-acp@0.45.0",
@@ -53,6 +54,9 @@ describe("ACP agent setup registry", () => {
     });
     expect(claude?.featured).toBe(true);
     expect(claude?.wraps).toBe("claude");
+    expect(claude?.icon).toBe(
+      "https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg",
+    );
   });
 
   it("keeps common registry agents available offline", async () => {
@@ -87,7 +91,11 @@ describe("ACP agent setup registry", () => {
     const binDir = join(tmpdir(), `backchat-acp-bin-${process.pid}-${Date.now()}`);
     await mkdir(binDir, { recursive: true });
     const geminiShim = join(binDir, "openma-acp-gemini");
-    await writeFile(geminiShim, "#!/usr/bin/env node\n", { mode: 0o755 });
+    await writeFile(
+      geminiShim,
+      "#!/bin/sh\nexec gemini --acp \"$@\"\n",
+      { mode: 0o755 },
+    );
 
     const detected = await detect("gemini", {
       env: {
@@ -99,7 +107,7 @@ describe("ACP agent setup registry", () => {
 
     expect(detected).toMatchObject({
       id: "gemini",
-      spec: { command: geminiShim, args: ["--acp"] },
+      spec: { command: geminiShim, args: undefined },
     });
   });
 

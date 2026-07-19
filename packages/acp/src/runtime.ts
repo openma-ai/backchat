@@ -16,11 +16,18 @@ export class AcpRuntimeImpl implements AcpRuntime {
   }
 
   async start(options: SessionOptions): Promise<AcpSession> {
+    const startedAt = Date.now();
+    const id = `acp-${startedAt}-${nextId++}`;
     const child = await this.#spawner.spawn(options.agent);
-    const id = `acp-${Date.now()}-${nextId++}`;
+    const spawnedAt = Date.now();
     const session = new AcpSessionImpl({ child, options, id });
     try {
       await session.init();
+      if (process.env.NODE_ENV !== "test") {
+        process.stderr.write(
+          `[acp-runtime] id=${id} command=${options.agent.command} spawn_ms=${spawnedAt - startedAt} init_ms=${Date.now() - spawnedAt} total_ms=${Date.now() - startedAt}\n`,
+        );
+      }
     } catch (e) {
       await session.dispose();
       throw e;

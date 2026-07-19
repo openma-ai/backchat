@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import {
   ArchiveIcon,
   ArrowLeftIcon,
-  BotIcon,
+  ChartColumnIcon,
   CpuIcon,
   InfoIcon,
   PaletteIcon,
@@ -27,6 +27,7 @@ type SettingsTab = {
 };
 
 const TABS: SettingsTab[] = [
+  { to: "/settings/activity", labelKey: "settings.activity", icon: ChartColumnIcon, section: "personal" },
   { to: "/settings/agents", labelKey: "settings.agents", icon: CpuIcon, section: "personal" },
   { to: "/settings/appearance", labelKey: "settings.appearance", icon: PaletteIcon, section: "personal" },
   { to: "/settings/mcp-servers", labelKey: "settings.mcpServers", icon: ServerIcon, section: "integrations" },
@@ -116,14 +117,6 @@ export function SettingsLayout() {
           })}
         </nav>
 
-        <div className="app-no-drag mt-auto rounded-md bg-bg-surface/45 py-1.5 text-xs text-fg-muted">
-          <div className="flex h-7 items-center gap-2 px-2">
-            <span className={iconSlotClass}>
-              <BotIcon className="size-3.5" />
-            </span>
-            <span>{t("settings.chatSettings")}</span>
-          </div>
-        </div>
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto rounded-2xl bg-bg/80 shadow-card-soft">

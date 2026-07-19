@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * FileTree — single-cwd lazy-expand file browser shown in a side
  * panel tab. Reads directory entries via the UiFsListDir IPC; clicking
  * a folder toggles its expanded state and fetches children on first
- * expand. No preview / no double-click open in v1.
+ * expand. Files route through the shared preview/open lifecycle.
  *
  * Performance: each directory is fetched once per expand cycle and
  * cached in component state. Re-collapse keeps the cache so re-expand
@@ -27,9 +27,11 @@ import { cn } from "@/lib/utils";
 export function FileTree({
   rootPath,
   onRootChange,
+  onOpenFile,
 }: {
   rootPath: string;
   onRootChange?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
 }) {
   const onPickRoot = useCallback(async () => {
     const next = await window.backchat.uiFsPickDir({ defaultPath: rootPath });
@@ -53,7 +55,13 @@ export function FileTree({
         <span className="truncate">{rootPath}</span>
       </button>
       <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-3">
-        <DirNode key={rootPath} path={rootPath} depth={0} initiallyExpanded />
+        <DirNode
+          key={rootPath}
+          path={rootPath}
+          depth={0}
+          initiallyExpanded
+          onOpenFile={onOpenFile}
+        />
       </div>
     </div>
   );
@@ -68,10 +76,12 @@ function DirNode({
   path,
   depth,
   initiallyExpanded = false,
+  onOpenFile,
 }: {
   path: string;
   depth: number;
   initiallyExpanded?: boolean;
+  onOpenFile?: (path: string) => void;
 }) {
   const [expanded] = useState(initiallyExpanded);
   const [entries, setEntries] = useState<Entry[] | null>(null);
@@ -105,6 +115,7 @@ function DirNode({
               path={path}
               entry={entry}
               depth={depth}
+              onOpenFile={onOpenFile}
             />
           ))}
           {loading && (
@@ -125,10 +136,12 @@ function FsRow({
   path,
   entry,
   depth,
+  onOpenFile,
 }: {
   path: string;
   entry: Entry;
   depth: number;
+  onOpenFile?: (path: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const childPath = useMemo(
@@ -136,8 +149,12 @@ function FsRow({
     [path, entry.name],
   );
   const onClick = useCallback(() => {
-    if (entry.isDir) setExpanded((v) => !v);
-  }, [entry.isDir]);
+    if (entry.isDir) {
+      setExpanded((v) => !v);
+      return;
+    }
+    if (!entry.error) onOpenFile?.(childPath);
+  }, [childPath, entry.error, entry.isDir, onOpenFile]);
 
   return (
     <li>
@@ -170,7 +187,7 @@ function FsRow({
         <span className="truncate">{entry.name}</span>
       </button>
       {entry.isDir && expanded && (
-        <DirNode path={childPath} depth={depth + 1} />
+        <DirNode path={childPath} depth={depth + 1} onOpenFile={onOpenFile} />
       )}
     </li>
   );

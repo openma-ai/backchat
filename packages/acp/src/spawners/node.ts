@@ -55,10 +55,32 @@ export class NodeSpawner implements Spawner {
     const kill = async (signal: "SIGTERM" | "SIGKILL" = "SIGTERM"): Promise<void> => {
       if (child.exitCode !== null || child.signalCode !== null) return;
       child.kill(signal);
-      await exited;
+      if (await waitForChildExit(exited, 2_000)) return;
+      if (signal !== "SIGKILL") {
+        child.kill("SIGKILL");
+        await waitForChildExit(exited, 2_000);
+      }
     };
 
     return { stdin, stdout, stderr, kill, exited };
+  }
+}
+
+async function waitForChildExit(
+  exited: ChildHandle["exited"],
+  timeoutMs: number,
+): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      exited.then(() => true),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Backchat Theme"
+  short_description: "Create and validate Backchat theme plugins"
+  default_prompt: "Use $create-backchat-theme to create a complete Backchat theme plugin."

@@ -68,3 +68,81 @@ export function upsertCustomAgentServer(
 export function removeCustomAgentServer(settings: Settings, id: string): Settings["agents"] {
   return settings.agents.filter((agent) => agent.id !== id || !agent.command_override);
 }
+
+export function upsertAgentEnv(
+  settings: Settings,
+  agentId: string,
+  values: Record<string, string>,
+): Settings["agents"] {
+  const existing = settings.agents.find((agent) => agent.id === agentId);
+  const names = new Set(Object.keys(values));
+  const keptEnv = (existing?.env ?? []).filter((entry) => !names.has(entry.name));
+  const nextEnv = [
+    ...keptEnv,
+    ...Object.entries(values)
+      .filter(([, value]) => value.length > 0)
+      .map(([name, value]) => ({ name, value })),
+  ];
+  const rest = settings.agents.filter((agent) => agent.id !== agentId);
+  if (
+    nextEnv.length === 0 &&
+    !existing?.enabled &&
+    !existing?.label_override &&
+    !existing?.command_override &&
+    !existing?.args_override
+  ) {
+    return rest;
+  }
+  return [
+    ...rest,
+    {
+      id: agentId,
+      ...(existing?.enabled ? { enabled: true } : {}),
+      ...(existing?.label_override
+        ? { label_override: existing.label_override }
+        : {}),
+      ...(existing?.command_override
+        ? { command_override: existing.command_override }
+        : {}),
+      ...(existing?.args_override
+        ? { args_override: existing.args_override }
+        : {}),
+      env: nextEnv,
+    },
+  ];
+}
+
+export function upsertAgentEnabled(
+  settings: Settings,
+  agentId: string,
+  enabled: boolean,
+): Settings["agents"] {
+  const existing = settings.agents.find((agent) => agent.id === agentId);
+  const rest = settings.agents.filter((agent) => agent.id !== agentId);
+  if (
+    !enabled &&
+    !existing?.label_override &&
+    !existing?.command_override &&
+    !existing?.args_override &&
+    (existing?.env ?? []).length === 0
+  ) {
+    return rest;
+  }
+  return [
+    ...rest,
+    {
+      id: agentId,
+      ...(enabled ? { enabled: true } : {}),
+      ...(existing?.label_override
+        ? { label_override: existing.label_override }
+        : {}),
+      ...(existing?.command_override
+        ? { command_override: existing.command_override }
+        : {}),
+      ...(existing?.args_override
+        ? { args_override: existing.args_override }
+        : {}),
+      env: existing?.env ?? [],
+    },
+  ];
+}

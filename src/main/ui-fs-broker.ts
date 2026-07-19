@@ -18,6 +18,7 @@ import { basename, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { InvokeChannel } from "../shared/ipc-channels.js";
 import type { PromptAttachment } from "../shared/session-events.js";
+import { resolveLocalFilePreview } from "./file-preview.js";
 import { openmaRoot } from "./storage-root.js";
 
 interface DirEntry {
@@ -296,6 +297,18 @@ ipcMain.handle(
     // shell.openPath returns "" on success, error message on failure.
     return shell.openPath(p.path);
   },
+);
+
+ipcMain.handle(
+  InvokeChannel.UiFsRevealPath,
+  (_e, p: { path: string }): void => {
+    shell.showItemInFolder(p.path);
+  },
+);
+
+ipcMain.handle(
+  InvokeChannel.UiFsResolvePreview,
+  (_e, p: { path: string }) => resolveLocalFilePreview(p.path),
 );
 
 ipcMain.handle(

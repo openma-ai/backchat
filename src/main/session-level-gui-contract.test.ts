@@ -33,14 +33,22 @@ describe("session level GUI contract", () => {
       resolve(__dirname, "../renderer/src/components/chat/ChatView.tsx"),
       "utf-8",
     );
-
+    const submissionSource = readFileSync(
+      resolve(__dirname, "../renderer/src/lib/chat-submission.ts"),
+      "utf-8",
+    );
     expect(sidePanelSource).toContain("const canForkSideChat");
     expect(sidePanelSource).toContain('const inheritance = canForkSideChat ? "fork" : "fresh"');
     expect(sidePanelSource).toContain("parentSessionId: mainActive.id");
     expect(sidePanelSource).toContain("parentAcpSessionId: canForkSideChat");
-    expect(chatViewSource).toContain("const parentLink = target.sideParent ?? target.subagent");
-    expect(chatViewSource).toContain("parentLink?.inheritance === \"fork\"");
-    expect(chatViewSource).toContain("fork,");
+    expect(chatViewSource).toContain("useChatSubmission");
+    expect(submissionSource).toContain(
+      "const parentLink = target.sideParent ?? target.subagent",
+    );
+    expect(submissionSource).toContain(
+      'parentLink?.inheritance === "fork"',
+    );
+    expect(submissionSource).toContain("fork: resolveChatFork(parentLink)");
   });
 
   it("renders native subagents through the same conversation view as side chats", () => {
@@ -53,6 +61,20 @@ describe("session level GUI contract", () => {
     );
     const chatViewSource = readFileSync(
       resolve(__dirname, "../renderer/src/components/chat/ChatView.tsx"),
+      "utf-8",
+    );
+    const activityToolGroupSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/chat/ActivityToolGroup.tsx",
+      ),
+      "utf-8",
+    );
+    const toolPresentationSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/chat/ToolPresentation.tsx",
+      ),
       "utf-8",
     );
     const messageSource = readFileSync(
@@ -68,6 +90,17 @@ describe("session level GUI contract", () => {
       'tab.type === "chat" || tab.type === "subagent"',
     );
     expect(sidePanelSource).toContain('<ChatView key={tab.payload} mode="side" />');
+    expect(sidePanelSource).toContain("<SubagentAvatar");
+    expect(sidePanelSource).toContain("avatarId={tab.avatarId}");
+    expect(activityToolGroupSource).toContain("subagentForToolCall");
+    expect(activityToolGroupSource).toContain(
+      'import { ToolRow } from "./ToolPresentation"',
+    );
+    expect(activityToolGroupSource).toContain(
+      "subagent={subagentForToolCall(subagents, tool.toolCallId)}",
+    );
+    expect(toolPresentationSource).toContain("<SubagentAvatar");
+    expect(toolPresentationSource).toContain("avatarId={subagent.avatarId}");
     expect(sidePanelSource).not.toContain("SubagentActivityTab");
     expect(sidePanelSource).not.toContain("SubagentActivityList");
     expect(chatViewSource).toContain(
@@ -97,10 +130,14 @@ describe("session level GUI contract", () => {
       resolve(__dirname, "../renderer/src/lib/native-agent-events.ts"),
       "utf-8",
     );
+    const activitySource = readFileSync(
+      resolve(__dirname, "../renderer/src/lib/session-native-activity.ts"),
+      "utf-8",
+    );
 
     expect(storeSource).toContain("nativeProviderForAgent");
-    expect(storeSource).toContain('normalized === "codex-acp"');
-    expect(storeSource).toContain('normalized === "claude-acp"');
+    expect(activitySource).toContain('normalized === "codex-acp"');
+    expect(activitySource).toContain('normalized === "claude-acp"');
     expect(nativeSource).toContain('name === "spawn_agent"');
     expect(nativeSource).toContain('name === "task" || name === "agent"');
     expect(nativeSource).not.toContain("agentId:");
@@ -126,8 +163,7 @@ describe("session level GUI contract", () => {
     expect(sidePanelSource).toContain("browserWindows.flatMap");
     expect(sidePanelSource).toContain("onBrowserToolTabCommand");
     expect(sidePanelSource).toContain("patchSideTabForTask");
-    expect(browserTabSource).toContain("browserViewRegister");
+    expect(browserTabSource).toContain("bindBrowserViewRegistration");
     expect(browserTabSource).toContain("browserViewSetActive");
-    expect(browserTabSource).toContain("browserViewUnregister");
   });
 });

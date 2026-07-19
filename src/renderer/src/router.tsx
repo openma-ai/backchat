@@ -3,7 +3,8 @@
  *
  *   /                              chat home (no session)
  *   /chat/$sessionId               single session view
- *   /settings                      → redirect /settings/agents
+ *   /settings                      → redirect /settings/activity
+ *   /settings/activity             local activity + harness analytics
  *   /settings/agents               default-agent picker + per-agent overrides
  *   /settings/mcp-servers          MCP server CRUD
  *   /settings/appearance           theme / font / density
@@ -33,6 +34,7 @@ import { SettingsAbout } from "@/pages/settings/About";
 import { SettingsMcpServers } from "@/pages/settings/McpServers";
 import { Archive as SettingsArchive } from "@/pages/settings/Archive";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
+import { SettingsActivity } from "@/pages/settings/Activity";
 
 function RootRoute() {
   const location = useLocation();
@@ -70,8 +72,8 @@ const settingsRoot = createRoute({
   // Bare `/settings` → first sub-page. Saves the user a redundant click and
   // keeps the URL stable (settings tabs each have their own path).
   beforeLoad: ({ location }) => {
-    if (location.pathname === "/settings") {
-      throw redirect({ to: "/settings/agents" });
+    if (location.pathname.replace(/\/+$/, "") === "/settings") {
+      throw redirect({ to: "/settings/activity" });
     }
   },
 });
@@ -80,6 +82,11 @@ const settingsAgents = createRoute({
   getParentRoute: () => settingsRoot,
   path: "/agents",
   component: SettingsAgents,
+});
+const settingsActivity = createRoute({
+  getParentRoute: () => settingsRoot,
+  path: "/activity",
+  component: SettingsActivity,
 });
 const settingsMcp = createRoute({
   getParentRoute: () => settingsRoot,
@@ -112,6 +119,7 @@ const routeTree = rootRoute.addChildren([
   chatRoute,
   pairRoute,
   settingsRoot.addChildren([
+    settingsActivity,
     settingsAgents,
     settingsMcp,
     settingsBrowser,

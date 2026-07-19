@@ -33,6 +33,11 @@ describe("i18n", () => {
     const { translate } = await loadI18n();
 
     expect(translate?.("zh-CN", "sidebar.pinned")).toBe("置顶");
+    expect(translate?.("zh-CN", "sidebar.pairChat")).toBe("多 Agent 对话");
+    expect(translate?.("zh-CN", "sidebar.pairs")).toBe("多 Agent 对话");
+    expect(translate?.("zh-CN", "sidebar.manageAgents")).toBe("管理 Agent");
+    expect(translate?.("en", "sidebar.pairChat")).toBe("Multi-Agent chat");
+    expect(translate?.("en", "sidebar.pairs")).toBe("Multi-Agent chats");
     expect(translate?.("en", "settings.available", { count: 3 })).toBe(
       "3 available",
     );
@@ -42,6 +47,19 @@ describe("i18n", () => {
     const { translate } = await loadI18n();
 
     expect(translate?.("zh-CN", "app.name")).toBe("Backchat");
+  });
+
+  it("keeps the original welcome line and uses OpenMA-specific starters", async () => {
+    const { translate } = await loadI18n();
+
+    expect(translate?.("en", "chat.whatCanIHelp")).toBe("What can I help with?");
+    expect(translate?.("zh-CN", "chat.whatCanIHelp")).toBe("有什么可以帮你？");
+    expect(translate?.("en", "chat.suggestionUnderstand")).toBe("Make sense of something");
+    expect(translate?.("en", "chat.suggestionShape")).toBe("Shape an idea");
+    expect(translate?.("en", "chat.suggestionRefine")).toBe("Improve what I have");
+    expect(translate?.("en", "chat.suggestionUnblock")).toBe("Help me get unstuck");
+    expect(translate?.("en", "chat.fast")).toBe("Fast");
+    expect(translate?.("zh-CN", "chat.fast")).toBe("Fast");
   });
 
   it("persists a language preference in appearance settings", () => {
@@ -77,6 +95,10 @@ describe("i18n", () => {
       resolve(__dirname, "../components/chat/ChatView.tsx"),
       "utf8",
     );
+    const homeSuggestions = readFileSync(
+      resolve(__dirname, "../components/chat/HomeSuggestions.tsx"),
+      "utf8",
+    );
     const e2eHelpers = readFileSync(
       resolve(__dirname, "../../../../e2e/helpers.ts"),
       "utf8",
@@ -86,8 +108,11 @@ describe("i18n", () => {
     expect(sidebar).toContain('t("sidebar.newChat")');
     expect(settingsLayout).toContain('labelKey: "settings.appearance"');
     expect(settingsLayout).toContain("t(tab.labelKey)");
-    expect(appearance).toContain('appearance: { ...settings.appearance, language:');
-    expect(chatView).toContain('t("chat.whatCanIHelp")');
+    expect(appearance).toMatch(
+      /mergeAppearanceSettings\(\s*settings\.appearance,\s*\{\s*language:/,
+    );
+    expect(homeSuggestions).toContain('t("chat.whatCanIHelp")');
+    expect(chatView).toContain("<EmptyStateIntro");
     expect(chatView).toContain('t("chat.reply")');
     expect(sidebar).toContain('data-testid="new-chat-button"');
     expect(e2eHelpers).toContain('getByTestId("new-chat-button")');

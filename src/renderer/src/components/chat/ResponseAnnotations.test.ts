@@ -1,15 +1,54 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createElement, createRef } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import type { PromptAnnotation } from "@shared/session-events.js";
 import * as responseAnnotations from "./ResponseAnnotations";
 import {
-  annotationAttachment,
+  AnnotationEditor,
   annotationEditorExpanded,
   annotationEditorPosition,
+} from "./AnnotationEditor";
+import {
+  annotationAttachment,
   annotationSummary,
-} from "./ResponseAnnotations";
+} from "./ComposerAnnotations";
 
 const viewport = { width: 1_000, height: 800 };
+
+describe("annotation module boundaries", () => {
+  it("delegates composer annotation presentation to its dedicated module", () => {
+    const responseSource = readFileSync(
+      resolve(__dirname, "ResponseAnnotations.tsx"),
+      "utf8",
+    );
+    const composerSource = readFileSync(
+      resolve(__dirname, "Composer.tsx"),
+      "utf8",
+    );
+
+    expect(responseSource).toContain('from "./ComposerAnnotations"');
+    expect(responseSource).not.toContain("export function ComposerAnnotationStrip(");
+    expect(composerSource).toContain('from "./ComposerAnnotations"');
+  });
+
+  it("delegates annotation editing to its dedicated module", () => {
+    const responseSource = readFileSync(
+      resolve(__dirname, "ResponseAnnotations.tsx"),
+      "utf8",
+    );
+    const browserSource = readFileSync(
+      resolve(__dirname, "../shell/BrowserTab.tsx"),
+      "utf8",
+    );
+
+    expect(responseSource).toContain('from "./AnnotationEditor"');
+    expect(responseSource).not.toContain("export const AnnotationEditor =");
+    expect(browserSource).toContain('from "../chat/AnnotationEditor"');
+  });
+});
 
 describe("annotationEditorPosition", () => {
   it("keeps the comment editor compact and places it to the right when it fits", () => {
@@ -50,6 +89,30 @@ describe("annotationEditorExpanded", () => {
     expect(annotationEditorExpanded("", true, false)).toBe(false);
     expect(annotationEditorExpanded("", true, true)).toBe(true);
     expect(annotationEditorExpanded("Needs a change", true, false)).toBe(true);
+  });
+
+  it("vertically centers the compact comment row", () => {
+    vi.stubGlobal("window", { innerWidth: 1_000, innerHeight: 800 });
+    const annotation: PromptAnnotation = {
+      id: "element-1",
+      kind: "browser_element",
+      source_session_id: "session-1",
+      source_turn_id: "browser",
+      text: "button#save",
+    };
+    const markup = renderToStaticMarkup(createElement(AnnotationEditor, {
+      ref: createRef<HTMLDivElement>(),
+      annotation,
+      index: 1,
+      rect: { top: 100, right: 200, bottom: 124, left: 120, width: 80, height: 24 },
+      details: createElement("div", null, "Style controls"),
+      onSave: () => undefined,
+      onCancel: () => undefined,
+      onRemove: () => undefined,
+    }));
+
+    expect(markup).toContain("flex min-w-0 flex-1 items-center");
+    expect(markup).toContain("py-0.5 pr-3");
   });
 });
 

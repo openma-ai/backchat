@@ -17,6 +17,18 @@
 
 import type { AgentSpec } from "./types.js";
 
+export interface KnownAgentRegistryDistribution {
+  binary?: Record<string, {
+    archive: string;
+    cmd: string;
+    args?: string[];
+    env?: Record<string, string>;
+    sha256?: string;
+  }>;
+  npx?: { package: string; args?: string[]; env?: Record<string, string> };
+  uvx?: { package: string; args?: string[]; env?: Record<string, string> };
+}
+
 export interface KnownAgentConfigSelectValue {
   value: string;
   name: string;
@@ -37,6 +49,8 @@ export interface KnownAgentEntry {
   /** Canonical id used by hosts and dropdowns. Slug-only, no spaces. */
   id: string;
   label: string;
+  /** Official registry icon URL, when advertised by the agent. */
+  icon?: string;
   spec: AgentSpec;
   /** Registry-advertised version string (semver). Used by
    *  acp-binary-update.ts to compare against the locally-installed
@@ -53,6 +67,9 @@ export interface KnownAgentEntry {
   systemPath?: boolean;
   /** Public ACP registry id. Used for app-managed installs. */
   registryId?: string;
+  /** Exact distribution from the registry snapshot used to render this entry.
+   *  Passing it to the installer avoids a second network fetch. */
+  registryDistribution?: KnownAgentRegistryDistribution;
   /** Install source for entries Backchat can install into its managed bin dir. */
   installSource?: "registry" | "adapter";
   /** Backchat-hosted executable URL for app-managed adapter installs. */
@@ -81,32 +98,6 @@ export function registryShimName(id: string): string {
   return `openma-acp-${id}`;
 }
 
-const CODEX_CONFIG_OPTIONS = [
-  {
-    id: "model",
-    name: "Model",
-    type: "select" as const,
-    category: "model",
-    currentValue: "gpt-5.5",
-    options: [
-      { value: "gpt-5.5", name: "GPT-5.5", description: "Codex conversational model" },
-      { value: "gpt-5.4", name: "GPT-5.4", description: "Codex compatibility profile" },
-    ],
-  },
-  {
-    id: "thought_level",
-    name: "Thinking effort",
-    type: "select" as const,
-    category: "thought_level",
-    currentValue: "medium",
-    options: [
-      { value: "low", name: "Low" },
-      { value: "medium", name: "Medium" },
-      { value: "high", name: "High" },
-    ],
-  },
-];
-
 export const OVERLAY_AGENTS: KnownAgentEntry[] = [
   {
     id: "claude-acp",
@@ -131,7 +122,6 @@ export const OVERLAY_AGENTS: KnownAgentEntry[] = [
     installHint:
       "download from https://github.com/zed-industries/codex-acp/releases and place on PATH",
     homepage: "https://github.com/zed-industries/codex-acp",
-    configOptions: CODEX_CONFIG_OPTIONS,
   },
   {
     id: "gemini",

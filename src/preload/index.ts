@@ -11,6 +11,7 @@ import type {
   SessionPromptParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
+  SessionStartResult,
 } from "../shared/session-events.js";
 import type { Settings } from "../shared/settings.js";
 
@@ -19,14 +20,6 @@ const api: BackchatApi = {
 
   agentsList: (options) =>
     ipcRenderer.invoke(InvokeChannel.AgentsList, options) as Promise<AgentInfo[]>,
-  acpAuthMethods: (agentId) =>
-    ipcRenderer.invoke(InvokeChannel.AcpAuthMethods, agentId) as Promise<
-      import("../shared/api.js").AcpAuthMethodsResult
-    >,
-  acpAuthenticate: (agentId, methodId) =>
-    ipcRenderer.invoke(InvokeChannel.AcpAuthenticate, { agentId, methodId }) as Promise<void>,
-  agentProbe: (id) =>
-    ipcRenderer.invoke(InvokeChannel.AgentProbe, id) as Promise<AgentInfo[]>,
   agentInstall: (id) =>
     ipcRenderer.invoke(InvokeChannel.AgentInstall, id) as Promise<AgentInfo[]>,
   agentUpgrade: (id) =>
@@ -35,11 +28,8 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.AgentUninstall, id) as Promise<AgentInfo[]>,
   agentAuthenticate: (p) =>
     ipcRenderer.invoke(InvokeChannel.AgentAuthenticate, p) as Promise<AgentInfo[]>,
-  agentSetDefault: (id) =>
-    ipcRenderer.invoke(InvokeChannel.AgentSetDefault, id) as Promise<AgentInfo[]>,
-
   sessionStart: (p: SessionStartParams) =>
-    ipcRenderer.invoke(InvokeChannel.SessionStart, p) as Promise<void>,
+    ipcRenderer.invoke(InvokeChannel.SessionStart, p) as Promise<SessionStartResult>,
   sessionPrompt: (p: SessionPromptParams) =>
     ipcRenderer.invoke(InvokeChannel.SessionPrompt, p) as Promise<void>,
   sessionSetConfigOption: (p: SessionSetConfigOptionParams) =>
@@ -77,9 +67,21 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.SessionsLoadHistory, sessionId) as Promise<
       import("../shared/api.js").PersistedEventInfo[]
     >,
+  sideWorkspacesList: () =>
+    ipcRenderer.invoke(InvokeChannel.SideWorkspacesList) as Promise<
+      import("../shared/api.js").PersistedSideWorkspaceInfo[]
+    >,
+  sideWorkspaceSave: (p) =>
+    ipcRenderer.invoke(InvokeChannel.SideWorkspaceSave, p) as Promise<void>,
+  sideWorkspaceDelete: (p) =>
+    ipcRenderer.invoke(InvokeChannel.SideWorkspaceDelete, p) as Promise<void>,
   sessionsSearch: (query, limit) =>
     ipcRenderer.invoke(InvokeChannel.SessionsSearch, query, limit) as Promise<
       import("../shared/api.js").SearchHitInfo[]
+    >,
+  activityStats: () =>
+    ipcRenderer.invoke(InvokeChannel.ActivityStats) as Promise<
+      import("../shared/api.js").ActivityStatsInfo
     >,
   sessionsPin: (p: { session_id: string }) =>
     ipcRenderer.invoke(InvokeChannel.SessionsPin, p) as Promise<void>,
@@ -108,6 +110,30 @@ const api: BackchatApi = {
     ipcRenderer.on(PushChannel.SettingsChanged, listener);
     return () => ipcRenderer.removeListener(PushChannel.SettingsChanged, listener);
   },
+  mcpAppResolve: (p) =>
+    ipcRenderer.invoke(InvokeChannel.McpAppResolve, p) as Promise<
+      import("../shared/mcp-app.js").McpAppResolved | null
+    >,
+  mcpAppRequest: (p) =>
+    ipcRenderer.invoke(InvokeChannel.McpAppRequest, p) as Promise<unknown>,
+  inlineVisualizationRead: (p) =>
+    ipcRenderer.invoke(InvokeChannel.InlineVisualizationRead, p) as Promise<{
+      file: string;
+      content: string;
+    }>,
+  inlineVisualizationRegisterDocument: (p) =>
+    ipcRenderer.invoke(InvokeChannel.InlineVisualizationRegisterDocument, p) as Promise<{
+      document_url: string;
+    }>,
+  inlineVisualizationWatch: (p) =>
+    ipcRenderer.invoke(InvokeChannel.InlineVisualizationWatch, p) as Promise<{ watch_id: string }>,
+  inlineVisualizationUnwatch: (p) =>
+    ipcRenderer.invoke(InvokeChannel.InlineVisualizationUnwatch, p) as Promise<void>,
+  onInlineVisualizationChanged: (handler) => {
+    const listener = (_e: IpcRendererEvent, event: { watch_id: string }) => handler(event);
+    ipcRenderer.on(PushChannel.InlineVisualizationChanged, listener);
+    return () => ipcRenderer.removeListener(PushChannel.InlineVisualizationChanged, listener);
+  },
 
   // ----- Brokers (Phase 6) -----
   onPermissionRequest: (handler) => {
@@ -118,6 +144,10 @@ const api: BackchatApi = {
   },
   permissionRespond: (requestId, optionId) =>
     ipcRenderer.invoke(InvokeChannel.PermissionRespond, { requestId, optionId }) as Promise<void>,
+  brokerPendingAsks: () =>
+    ipcRenderer.invoke(InvokeChannel.BrokerPendingAsks) as Promise<
+      import("../shared/api.js").PendingBrokerAskInfo[]
+    >,
 
   onFsWriteApproval: (handler) => {
     const l = (_e: IpcRendererEvent, ask: import("../shared/api.js").FsWriteAskInfo) =>
@@ -250,6 +280,14 @@ const api: BackchatApi = {
     >,
   uiFsOpenPath: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsOpenPath, p) as Promise<string>,
+  uiFsRevealPath: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsRevealPath, p) as Promise<void>,
+  uiFsResolvePreview: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsResolvePreview, p) as Promise<{
+      sourcePath: string;
+      previewPath: string;
+      kind: "document" | "image" | "web" | "text";
+    } | null>,
   uiFsGitBranch: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsGitBranch, p) as Promise<string | null>,
 

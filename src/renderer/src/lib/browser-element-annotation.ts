@@ -102,6 +102,44 @@ export function browserRegionScreenshotName(): string {
   return `page-region-${Date.now()}.png`;
 }
 
+export function buildBrowserElementPromptAnnotation(input: {
+  id: string;
+  sessionId: string;
+  element: BrowserElementPick;
+  screenshotName: string;
+}): PromptAnnotation {
+  return {
+    id: input.id,
+    kind: "browser_element",
+    source_session_id: input.sessionId,
+    source_turn_id: "browser",
+    text: browserElementAnnotationLabel(input.element),
+    browser: {
+      ...input.element,
+      screenshot_name: input.screenshotName,
+    },
+  };
+}
+
+export function buildBrowserRegionPromptAnnotation(input: {
+  id: string;
+  sessionId: string;
+  region: BrowserRegionPick;
+  screenshotName: string;
+}): PromptAnnotation {
+  return {
+    id: input.id,
+    kind: "browser_region",
+    source_session_id: input.sessionId,
+    source_turn_id: "browser",
+    text: browserRegionAnnotationLabel(input.region),
+    browser_region: {
+      ...input.region,
+      screenshot_name: input.screenshotName,
+    },
+  };
+}
+
 export function isBrowserPageAnnotation(
   annotation: PromptAnnotation,
 ): boolean {

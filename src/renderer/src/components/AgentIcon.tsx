@@ -44,6 +44,20 @@ export function AgentIcon({
   className?: string;
   title?: string;
 }) {
+  if (agentId === "pi-acp") {
+    return (
+      <svg
+        role="img"
+        aria-label={title ?? "pi ACP"}
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        className={className}
+      >
+        <path d="M1 1H11.7692V7.9999H8.17942V11.4999H4.58982V15H1V1ZM4.58982 4.50005V7.9999H8.17942V4.50005H4.58982Z" />
+        <path d="M11.7692 7.46154H15V15H11.7692V7.46154Z" />
+      </svg>
+    );
+  }
   const si = SIMPLE[agentId];
   if (si) {
     return (

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, nativeImage, net, protocol, shell } from "electron";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { registerIpc } from "./ipc.js";
 import { setSessionRoot } from "./session-cwd.js";
 import { settingsStore } from "./settings-store.js";
@@ -12,6 +12,8 @@ import { openmaRoot } from "./storage-root.js";
 import { BACKCHAT_PROTOCOL, findBackchatDeepLink, parseBackchatDeepLink, type BackchatDeepLink } from "./deep-link.js";
 import { PushChannel } from "../shared/ipc-channels.js";
 import { browserHarnessMcpBridge } from "./browser-view-broker.js";
+import { resolveSandboxResource } from "./mcp-app-document-store.js";
+import { resolveAllowedLocalFilePath } from "./local-file-protocol.js";
 
 // Dev-only: enable CDP on port 9222 so agent-browser can drive the
 // renderer for end-to-end UI tests. No-op in production. Also skip
@@ -33,6 +35,8 @@ const mainDir = dirname(fileURLToPath(import.meta.url));
 const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
 const showE2eWindow = process.env["BACKCHAT_E2E_VISIBLE"] === "1";
 const pendingDeepLinks: BackchatDeepLink[] = [];
+let disposeSessionsForShutdown: (() => Promise<void>) | null = null;
+let shutdownBarrierStarted = false;
 
 function registerBackchatProtocolClient(): void {
   if (testHooksEnabled) return;
@@ -133,6 +137,15 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
       stream: true,
       bypassCSP: true,
+    },
+  },
+  {
+    scheme: "oma-mcp-app",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
     },
   },
 ]);
@@ -294,36 +307,38 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     // Wire the oma-file:// handler. Whitelist enforced here so a
     // compromised renderer can't read arbitrary user files via
-    // `fetch("oma-file:///etc/passwd")`. Paths must live under one of
-    // the allow-list roots — anything else returns 404. The renderer
-    // composes the URL as `oma-file://abs-path` (we strip the
-    // leading `/` and re-add it inside the handler).
+    // `fetch("oma-file://local/file?path=/etc/passwd")`. Paths must live
+    // under one of the allow-list roots — anything else returns 403.
     const allowRoots = [
       join(homedir(), ".openma"),
       join(homedir(), ".codex", "generated_images"),
     ];
     protocol.handle("oma-file", async (request) => {
       try {
-        // URL shape: `oma-file://local/<abs-posix-path>`. "local" is a
-        // synthetic, ignored host token — without it Electron's URL
-        // parser eats the first path segment as the hostname (e.g.
-        // `oma-file:///Users/x.png` → hostname="Users", pathname="/x.png"
-        // and our pathname-only allow-list check silently rejects it).
-        // Renderer must always include the "local" host (see
-        // ToolContentRenderer in ChatView.tsx).
-        const url = new URL(request.url);
-        // URL also percent-encodes segments (spaces, CJK, etc.) —
-        // decodeURIComponent fixes those back to raw filesystem bytes.
-        const decoded = decodeURIComponent(url.pathname);
-        const abs = decoded.startsWith("/") ? decoded : "/" + decoded;
-        const allowed = allowRoots.some((r) => abs.startsWith(r + "/") || abs === r);
-        if (!allowed) {
+        // The query-based shape preserves both POSIX and Windows paths.
+        // The resolver also accepts the old pathname-based POSIX shape,
+        // normalizes traversal, and enforces a normalized path boundary.
+        const abs = resolveAllowedLocalFilePath(request.url, allowRoots);
+        if (!abs) {
           return new Response("forbidden", { status: 403 });
         }
-        return net.fetch("file://" + abs);
+        return net.fetch(pathToFileURL(abs).href);
       } catch (e) {
         return new Response(String(e), { status: 500 });
       }
+    });
+
+    protocol.handle("oma-mcp-app", (request) => {
+      const resource = resolveSandboxResource(request.url);
+      if (!resource) return new Response("not found", { status: 404 });
+      return new Response(resource.body, {
+        status: 200,
+        headers: {
+          "Content-Type": resource.contentType,
+          "Cross-Origin-Resource-Policy": "same-site",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
     });
 
     // Dev mode dock icon. In production the .icns embedded by
@@ -370,13 +385,15 @@ if (!gotLock) {
     setSessionRoot(join(root, "sessions"));
     openSessionDb(join(root, "sessions.db"));
     await browserHarnessMcpBridge.start();
-    registerIpc({
+    const ipcRuntime = await registerIpc({
       registryCachePath: join(root, "registry-cache.json"),
+      probeCachePath: join(root, "agent-probe-cache.json"),
       acpBinDir,
       acpInstallRoot: acpRoot,
       browserMcpServerForTask: (taskId) =>
         browserHarnessMcpBridge.descriptor(taskId),
     });
+    disposeSessionsForShutdown = () => ipcRuntime.dispose();
 
     installAppMenu({
       openNewWindow: () => createWindow(),
@@ -401,7 +418,17 @@ app.on("window-all-closed", () => {
 // Kill any live pty children before electron tears down. Without this,
 // orphaned shells linger as zombie processes (visible in `ps aux` until
 // reboot on macOS / until next user logout on Linux).
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   disposeAllUiTerminals();
-  void browserHarnessMcpBridge.stop();
+  if (!disposeSessionsForShutdown) {
+    void browserHarnessMcpBridge.stop();
+    return;
+  }
+  if (shutdownBarrierStarted) return;
+  event.preventDefault();
+  shutdownBarrierStarted = true;
+  void Promise.allSettled([
+    disposeSessionsForShutdown(),
+    browserHarnessMcpBridge.stop(),
+  ]).finally(() => app.quit());
 });

@@ -1,6 +1,7 @@
 /**
- * Renderer-side session store. In-memory only — no SQLite yet, that lands in
- * Phase 4. The store owns:
+ * Renderer-side session store. Main-session history and task-scoped right-rail
+ * workspaces are mirrored to SQLite through the preload API; this class keeps
+ * the live materialized view used by React.
  *
  *   - `sessions`:  metadata for every session the user has opened in this
  *                  window (id, agent, cwd, ready, last activity).
@@ -19,12 +20,9 @@
 
 import { useSyncExternalStore } from "react";
 import type { SessionEventOut } from "@shared/session-events.js";
-import type {
-  AgentMessageDelivery,
-  AgentMessageIntent,
-} from "@shared/agent-interaction.js";
 import { setRightRailCollapsed } from "@/lib/right-rail";
 import {
+  normalizeAgentConfigOptions,
   selectedModeIdFromConfigOptions,
   type AcpSessionConfigOption,
 } from "./session-config-options";
@@ -38,316 +36,69 @@ import {
   detectNativeAgentRawEvent,
   detectNativeAgentToolEvent,
   type NativeAgentContext,
-  type NativeAgentProvider,
   type NativeAgentUpdate,
 } from "./native-agent-events";
+import {
+  subagentAvatarId,
+  type SubagentAvatarId,
+} from "./subagent-avatar";
+import {
+  appendUnique,
+  nativeActivitySessionStatus,
+  nativeActivityTurnStatus,
+  nativeChildThreadId,
+  nativeProviderForAgent,
+} from "./session-native-activity";
+import {
+  defaultSideTabLabel,
+  isPersistedSideTab,
+  isPersistedSubagentActivity,
+  isSideSessionTab,
+  normalizeRestoredSideSession,
+  normalizeRestoredTurn,
+  normalizeWorkspaceArtifacts,
+  subagentActivityLabel,
+} from "./session-workspace-normalization";
+import {
+  basename,
+  dedupeBubble,
+  extractFilePaths,
+  extractHtmlPathsFromExecute,
+  extractServiceUrls,
+} from "./session-artifacts";
+import type {
+  AcpAvailableCommand,
+  AcpSessionUsage,
+  BrokerAsk,
+  NativeSubagentMetadata,
+  PairRow,
+  PairTurnTarget,
+  SessionRow,
+  SideSessionSnapshot,
+  SideTab,
+  SideTabType,
+  SideWorkspaceStateV1,
+  StreamDelta,
+  StreamSubscriber,
+  SubagentActivity,
+  SubagentInheritance,
+  TaskBrowserWindow,
+  TaskSideWorkspaceSnapshot,
+  Turn,
+  TurnDeliveryMeta,
+  WorkspaceArtifacts,
+} from "./session-types";
 
 export type { AcpSessionConfigOption } from "./session-config-options";
-
-export interface SessionRow {
-  id: string;
-  agent_id: string;
-  cwd: string;
-  acp_session_id: string;
-  /** UI label. Phase 3 derives from agent + short id; Phase 4 lets the user
-   *  rename, persisting to SQLite. */
-  label: string;
-  /** Which surface owns this session.
-   *    "main" → appears in the sidebar list, drives `/chat/$id`. Default.
-   *    "side" → lives only in the side-chat rail. Filtered out of the
-   *             sidebar `list()`. Not persisted to SQLite (renderer-only
-   *             scratch session — quitting and reopening loses it, matching
-   *             Codex's side-conversation lifetime).
-   *    "pair" → ordinary persisted session that is grouped by a pair-chat
-   *             UI row. Hidden from the single-chat sidebar because the
-   *             pair row is the user-facing entry point.
-   */
-  kind?: "main" | "side" | "pair";
-  /** Side-session subtype. Side chats are subordinate sessions attached
-   *  to the active main session; native subagents are provider-created
-   *  activity and are not user-created from the GUI. */
-  sideKind?: "chat" | "subagent";
-  /** Parent link for GUI-created side chats. When the active ACP agent
-   *  supports session/fork this seeds the side session from the parent
-   *  ACP context; promoteSideToMain clears the link so the session
-   *  becomes a normal independent fork. */
-  sideParent?: SideSessionParentLink;
-  /** Parent-child task metadata for side subagents. The optional ACP parent
-   *  id is only used for fork-based context seeding; task progress is tracked
-   *  in Backchat's own store. */
-  subagent?: SubagentLink;
-  /** Whether the live ACP agent advertised the unstable session/fork
-   *  capability. This gates inherited subagent startup only. */
-  supportsSessionFork?: boolean;
-  /** Lifecycle:
-   *    "draft"     → empty session, no IPC fired yet.
-   *    "persisted" → loaded from disk; ACP child NOT spawned (spawns
-   *                  lazily on first prompt with resume.acp_session_id).
-   *    "starting"  → session.start IPC fired; awaiting session.ready.
-   *    "ready"     → ACP child is alive, no in-flight turn.
-   *    "running"   → a turn is streaming.
-   *    "errored"   → start failed; lastError carries the reason.
-   *    "disposed"  → main process killed the child.
-   */
-  status: "draft" | "persisted" | "starting" | "ready" | "running" | "errored" | "disposed";
-  lastError?: string;
-  createdAt: number;
-  /** turn_id of the in-flight prompt, if any. */
-  activeTurnId?: string;
-  /** FIFO prompts submitted while `activeTurnId` is still running.
-   *  The main process serializes them against the ACP session; the
-   *  renderer keeps this list so completion of the current turn can
-   *  promote the next optimistic turn from queued → running. */
-  queuedTurnIds?: string[];
-  /** Main-process prompt queue snapshot. This mirrors the runtime contract
-   *  even when the current composer prevents normal users from double-send. */
-  queuedPrompts?: Array<{ turn_id: string; text: string; created_at: number }>;
-  /** User-picked workspace for a draft session. Only set when the user
-   *  explicitly chose a directory via the composer's workspace chip;
-   *  drafts without it fall back to settings.default.workspace_path on
-   *  submit, or — if that's also empty — the main-process managed
-   *  session cwd (userData/sessions/<sessionId>/).
-   *
-   *  Once the session leaves draft, the cwd is locked into `cwd` and
-   *  this field is no longer consulted (the ACP child has already
-   *  spawned with whatever path won). */
-  chosenCwd?: string;
-  /** Slash commands the agent has declared via the ACP
-   *  `available_commands_update` session event. Replaced wholesale on
-   *  each update (agents emit the full list, not a delta). Empty array
-   *  if the agent never sent one — composer then hides the slash
-   *  picker entirely. */
-  availableCommands?: AcpAvailableCommand[];
-  /** Agent-declared ACP session configuration options from
-   *  `session/new`, `session/load`, and `config_option_update`.
-   *  These drive model / mode / thought-level controls in the run menu. */
-  configOptions?: AcpSessionConfigOption[];
-  /** Current mode id the agent has declared via `current_mode_update`.
-   *  Surfaced in the topbar next to the agent label. The agent owns
-   *  the available mode set; we just echo whatever it said. */
-  currentModeId?: string;
-  /** Set when a turn completes (or errors) while this session is NOT
-   *  the active one — gives the sidebar an "unread" affordance so the
-   *  user can scan which background chats have new results. Cleared
-   *  the moment setActive() points at this session.
-   *
-   *  Intentionally driven by turn completion (not every incoming chunk)
-   *  so the dot doesn't flicker on for one chunk and off the next; it
-   *  marks "there's something finished to look at". */
-  unread?: boolean;
-  /** Wall-clock ms the user pinned this session. Undefined when
-   *  not pinned. Pinned sessions render in a separate "Pinned"
-   *  section at the top of the sidebar. */
-  pinnedAt?: number;
-  /** Wall-clock ms when the user archived this session. Archived
-   *  rows are hidden from the sidebar but kept in the persisted
-   *  store so Search can find them and the user can unarchive. */
-  archivedAt?: number;
-  /** Pending permission asks waiting on a user decision. Pushed by the
-   *  broker listener when an ACP child requests permission (or asks to
-   *  write outside cwd). ChatView renders the head item as a floating
-   *  panel above the composer; the user's click pops it and routes the
-   *  decision back over IPC.
-   *
-   *  Per-session queue, FIFO. Agents rarely fire multiple before the
-   *  first is answered, but the buffer keeps order intact when they do. */
-  pendingAsks?: BrokerAsk[];
-}
-
-export type BrokerAsk =
-  | { kind: "permission"; ask: import("@shared/api.js").PermissionAskInfo }
-  | { kind: "fsWrite"; ask: import("@shared/api.js").FsWriteAskInfo };
-
-/** A pair-chat — fans a single user prompt out to N agents. Members
- *  are stored separately in `#sessions` (one SessionRow per member);
- *  this row holds pair-wide metadata only. */
-export interface PairRow {
-  id: string;
-  /** Sidebar label, derived from the first prompt the same way single
-   *  chats are. Empty until a prompt is sent. */
-  label: string;
-  /** Member session ids in column order. Indexes are stable across
-   *  reload (the order is persisted via member created_at). */
-  members: string[];
-  /** Wall-clock of last activity — sidebar sort. */
-  lastUsedAt: number;
-  createdAt: number;
-  /** A pair-wide active turn id locks all members' composers
-   *  simultaneously: a new prompt only enables once every member has
-   *  finished the current turn. Cleared when the LAST member completes. */
-  activeTurnId?: string;
-  /** Per-member normal session turn ids for the active pair prompt.
-   *  The pair's UI has one prompt, but each underlying session gets a
-   *  distinct turn id because the turn store is keyed by turn id. */
-  memberTurnIds?: Record<string, string>;
-  /** Set of member session ids still running the active turn. Empty
-   *  set means turn complete. */
-  pendingMembers?: Set<string>;
-}
-
-export type SubagentInheritance = "fresh" | "fork";
-
-export interface SideSessionParentLink {
-  parentSessionId: string;
-  parentAcpSessionId?: string;
-  inheritance: SubagentInheritance;
-}
-
-export interface SubagentLink {
-  parentSessionId: string;
-  parentAcpSessionId?: string;
-  inheritance: SubagentInheritance;
-}
-
-export interface SubagentActivity {
-  parentSessionId: string;
-  parentAcpSessionId?: string;
-  childSessionId: string;
-  /** Stable renderer-owned session id used by the side-panel ChatView.
-   *  Native providers may first report a fallback tool-call id and later
-   *  replace it with the real child id; this id deliberately survives that
-   *  migration so the tab and transcript never duplicate. */
-  viewSessionId: string;
-  inheritance: SubagentInheritance;
-  task: string;
-  status: "draft" | "running" | "complete" | "error" | "cancelled";
-  startedAt: number;
-  updatedAt: number;
-  errorMessage?: string;
-  native?: NativeSubagentMetadata;
-}
-
-export interface NativeSubagentMetadata {
-  provider: NativeAgentProvider;
-  toolCallId?: string;
-  childThreadId?: string;
-  nickname?: string;
-  agentType?: string;
-  forkContext?: boolean;
-  result?: string;
-  closed?: boolean;
-  childToolCallIds?: string[];
-}
-
-export interface PairTurnTarget {
-  session_id: string;
-  turn_id: string;
-}
-
-/** Mirrors ACP `AvailableCommand`. `input` describes what the command
- *  expects after the name — `unstructured` means a free-text argument
- *  (e.g. `/commit <message>`), no input means a bare command. */
-export interface AcpAvailableCommand {
-  name: string;
-  description?: string;
-  input?: { hint?: string } | null;
-  /** Non-standard metadata some agents may attach. ACP v1 only
-   *  defines name/description/input, but clients may receive extra
-   *  fields and use them for display-only affordances. */
-  kind?: string;
-  type?: string;
-  category?: string;
-  source?: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface TurnEvent {
-  /** Raw ACP `sessionUpdate` payload OR a synthetic event from the runtime
-   *  (`{ type: "requestPermission", … }`). Discriminated by either
-   *  `sessionUpdate` (ACP) or `type` (synthetic). */
-  payload: unknown;
-  receivedAt: number;
-}
-
-/** Lightweight typed deltas emitted on the per-turn STREAM channel — the
- *  one consumed by the DOM-mutating <StreamingMarkdown> component. We never
- *  push these through React state; each delta is a direct callback into the
- *  subscriber. React only sees the structural store updates (turn start,
- *  tool change, complete) via the regular `#version` channel.
- *
- *  This is the load-bearing performance trick — see Phase 5.1 design notes.
- *  Without it, streaming a multi-KB markdown response into React state
- *  forces a full reconciliation on every chunk and you get the visible
- *  "stall" Claude Desktop / Alma avoid. */
-export type StreamDelta =
-  | { kind: "assistant"; text: string }
-  | { kind: "thought"; text: string };
-
-export type StreamSubscriber = (d: StreamDelta) => void;
-
-export interface Turn {
-  id: string;
-  sessionId: string;
-  promptText: string;
-  events: TurnEvent[];
-  /** Accumulated assistant text. The streaming channel pushes deltas into a
-   *  DOM-mutating renderer; this string is the SAME content but kept in JS
-   *  so a late-mounting component (e.g. user scrolls back into the turn)
-   *  can pick up the current state without re-running every event. */
-  assistantText: string;
-  thoughtText: string;
-  status: "queued" | "running" | "complete" | "error" | "cancelled";
-  promptIntent?: AgentMessageIntent;
-  requestedDelivery?: AgentMessageDelivery;
-  effectiveDelivery?: AgentMessageDelivery;
-  deliveryDegraded?: boolean;
-  errorMessage?: string;
-  startedAt: number;
-  endedAt?: number;
-}
-
-export interface TurnDeliveryMeta {
-  intent: AgentMessageIntent;
-  requestedDelivery: AgentMessageDelivery;
-  effectiveDelivery: AgentMessageDelivery;
-  degraded: boolean;
-}
-
-export type SideTabType = "chat" | "subagent" | "file" | "browser" | "terminal";
-
-/** UI tab in the right rail. The `payload` field is type-specific — for
- *  chat it's a sessionId (matches SessionRow.id), for file it's a cwd
- *  path, for browser it's the current URL, for terminal it's a
- *  pty terminalId allocated by UiTermSpawn. */
-export interface SideTab {
-  id: string;
-  type: SideTabType;
-  /** Short label shown on the tab chip. Auto-derived per type:
-   *    chat       → first prompt's deriveLabel
-   *    file       → cwd's last segment
-   *    browser    → page's hostname
-   *    terminal   → cwd's last segment (matches BottomPanel) */
-  label: string;
-  payload: string;
-  /** Browser tabs populate this from Electron's page-favicon-updated event. */
-  faviconUrl?: string;
-  createdAt: number;
-}
-
-/** One task owns one logical browser window. Its webview tabs stay mounted
- *  independently from the right rail's currently selected surface, so
- *  switching to Files/Terminal (or another task) does not discard page state. */
-export interface TaskBrowserWindow {
-  taskId: string | null;
-  tabs: SideTab[];
-  activeTabId: string | null;
-}
-
-/** Things the agent has produced in a conversation — drives the side
- *  panel's "推荐" feed. Files and services kept as ordered, deduped
- *  arrays (newest at index 0). Capped at 50 each so a runaway turn
- *  can't bloat the store. */
-export interface WorkspaceArtifacts {
-  /** Absolute file paths the agent has read / written / edited. */
-  files: string[];
-  /** localhost / 127.0.0.1 URLs observed in tool output — the dev
-   *  servers the agent has spun up. URL includes the port; same URL
-   *  re-observed bubbles to the top, doesn't duplicate. */
-  services: string[];
-}
+export type * from "./session-types";
 
 export class SessionStore {
+  static readonly NOTICE_DURATION_MS = 10_000;
+
   #sessions = new Map<string, SessionRow>();
+  /** Blocking broker asks can arrive before session.ready during reload.
+   *  Retain them by session id until the matching row is restored. */
+  #pendingAsksBeforeSession = new Map<string, BrokerAsk[]>();
   #turns = new Map<string, Turn>();
   /** Pair-chats. Each pair owns N member session ids; the members
    *  themselves live in `#sessions` like any other session — the pair
@@ -413,6 +164,7 @@ export class SessionStore {
    *  component is the only subscriber; it calls `parser_write` on a ref'd
    *  div and React stays asleep. */
   #streamSubscribers = new Map<string, Set<StreamSubscriber>>();
+  #noticeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   subscribe = (l: () => void): (() => void) => {
     this.#listeners.add(l);
@@ -461,15 +213,31 @@ export class SessionStore {
     kind: "text" | "thought",
     text: string,
     receivedAt: number,
+    metadata?: {
+      messageId?: string;
+      phase?: "commentary" | "final_answer";
+    },
   ): void {
     const last = turn.events.at(-1);
     const parsedLast = last ? parseAcpEvent(last.payload) : null;
-    if (parsedLast?.kind === kind) {
+    const sameMessage =
+      parsedLast?.kind === kind &&
+      parsedLast.messageId === metadata?.messageId &&
+      (kind !== "text" ||
+        (parsedLast.kind === "text" &&
+          parsedLast.phase === metadata?.phase));
+    if (sameMessage) {
       const merged = mergeStreamingText(parsedLast.text, text);
       turn.events[turn.events.length - 1] = {
         payload: {
           sessionUpdate:
             kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
+          ...(metadata?.messageId
+            ? { messageId: metadata.messageId }
+            : {}),
+          ...(metadata?.phase
+            ? { _meta: { codex: { phase: metadata.phase } } }
+            : {}),
           content: { type: "text", text: merged },
         },
         receivedAt: last!.receivedAt,
@@ -480,6 +248,10 @@ export class SessionStore {
       payload: {
         sessionUpdate:
           kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
+        ...(metadata?.messageId ? { messageId: metadata.messageId } : {}),
+        ...(metadata?.phase
+          ? { _meta: { codex: { phase: metadata.phase } } }
+          : {}),
         content: { type: "text", text },
       },
       receivedAt,
@@ -638,24 +410,32 @@ export class SessionStore {
   setChosenCwd(id: string, cwd: string | null): void {
     const row = this.#sessions.get(id);
     if (!row || row.status !== "draft") return;
+    const normalizedCwd = cwd?.trim() || undefined;
     this.#mutateSession(id, (s) => ({
       ...s,
-      chosenCwd: cwd ?? undefined,
+      chosenCwd: normalizedCwd,
+      projectScope: normalizedCwd ? "project" : "none",
     }));
     this.#emit();
   }
 
-  /** Push a new broker ask onto a session's pending queue. The session
-   *  may not exist yet (race with session.ready); in that case we drop
-   *  the ask silently — the IPC source already routes by session_id,
-   *  so a dropped ask means the agent's host record vanished, which
-   *  is best surfaced by main's cleanup paths, not the UI. */
+  /** Push a new broker ask onto a session's pending queue. */
   enqueueAsk(sessionId: string, ask: BrokerAsk): void {
     const row = this.#sessions.get(sessionId);
-    if (!row) return;
+    if (!row) {
+      const pending = this.#pendingAsksBeforeSession.get(sessionId) ?? [];
+      if (!pending.some((candidate) => candidate.ask.requestId === ask.ask.requestId)) {
+        this.#pendingAsksBeforeSession.set(sessionId, [...pending, ask]);
+      }
+      return;
+    }
+    const pending = row.pendingAsks ?? [];
+    if (pending.some((candidate) => candidate.ask.requestId === ask.ask.requestId)) {
+      return;
+    }
     this.#mutateSession(sessionId, (s) => ({
       ...s,
-      pendingAsks: [...(s.pendingAsks ?? []), ask],
+      pendingAsks: [...pending, ask],
     }));
     this.#emit();
   }
@@ -664,13 +444,58 @@ export class SessionStore {
    *  option (or the ask gets superseded by a cancel). */
   dequeueAsk(sessionId: string, requestId: string): void {
     const row = this.#sessions.get(sessionId);
-    if (!row?.pendingAsks?.length) return;
+    if (!row) {
+      const pending = this.#pendingAsksBeforeSession.get(sessionId);
+      if (!pending) return;
+      const next = pending.filter((ask) => ask.ask.requestId !== requestId);
+      if (next.length > 0) this.#pendingAsksBeforeSession.set(sessionId, next);
+      else this.#pendingAsksBeforeSession.delete(sessionId);
+      return;
+    }
+    if (!row.pendingAsks?.length) return;
     const next = row.pendingAsks.filter((a) => a.ask.requestId !== requestId);
     this.#mutateSession(sessionId, (s) => ({
       ...s,
       pendingAsks: next.length ? next : undefined,
     }));
     this.#emit();
+  }
+
+  dismissNotice(sessionId: string, noticeId?: string): void {
+    const row = this.#sessions.get(sessionId);
+    if (!row?.notice || (noticeId && row.notice.id !== noticeId)) return;
+    const timer = this.#noticeTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    this.#noticeTimers.delete(sessionId);
+    this.#mutateSession(sessionId, (session) => ({
+      ...session,
+      notice: undefined,
+    }));
+    this.#emit();
+  }
+
+  #showNotice(
+    sessionId: string,
+    message: string,
+    tone: "warning",
+  ): void {
+    const row = this.#sessions.get(sessionId);
+    if (!row) return;
+    const previousTimer = this.#noticeTimers.get(sessionId);
+    if (previousTimer) clearTimeout(previousTimer);
+
+    const now = Date.now();
+    const notice = {
+      id: `${sessionId}:${now}`,
+      message,
+      tone,
+      expiresAt: now + SessionStore.NOTICE_DURATION_MS,
+    } as const;
+    this.#mutateSession(sessionId, (session) => ({ ...session, notice }));
+    const timer = setTimeout(() => {
+      this.dismissNotice(sessionId, notice.id);
+    }, SessionStore.NOTICE_DURATION_MS);
+    this.#noticeTimers.set(sessionId, timer);
   }
 
   // -------- Pin / archive --------
@@ -809,6 +634,157 @@ export class SessionStore {
     return windows;
   }
 
+  /** Serialize every non-empty task rail into a versioned, JSON-safe shape.
+   *  Runtime handles are normalized: terminal ids are discarded in favor of
+   *  cwd, while in-flight side turns become interrupted rather than claiming
+   *  they are still attached to a process after restart. */
+  sideWorkspaceSnapshots(): TaskSideWorkspaceSnapshot[] {
+    const taskIds = new Set<string>();
+    for (const taskId of this.#sideTabsByMain.keys()) {
+      if (taskId) taskIds.add(taskId);
+    }
+    for (const taskId of this.#artifactsBySession.keys()) taskIds.add(taskId);
+    for (const taskId of this.#subagentsByParent.keys()) taskIds.add(taskId);
+
+    return [...taskIds].sort().flatMap((taskId) => {
+      // MCP App views are reconstructed from the owning tool call. Persisting
+      // the empty rail shell would restore a dead tab before chat history has
+      // recreated its AppBridge.
+      const sourceTabs = (this.#sideTabsByMain.get(taskId) ?? [])
+        .filter((tab) => tab.type !== "interactive");
+      const artifacts = this.#artifactsBySession.get(taskId) ?? { files: [], services: [] };
+      const subagents = this.#subagentsByParent.get(taskId) ?? [];
+      if (sourceTabs.length === 0 && artifacts.files.length === 0 && artifacts.services.length === 0 && subagents.length === 0) {
+        return [];
+      }
+
+      const parent = this.#sessions.get(taskId);
+      const tabs = sourceTabs.map((tab): SideTab =>
+        tab.type === "terminal"
+          ? {
+              ...tab,
+              payload: "",
+              terminalCwd: tab.terminalCwd || parent?.cwd || "",
+              needsRestore: true,
+            }
+          : { ...tab },
+      );
+      const sideSessionIds = new Set(
+        tabs.filter((tab) => isSideSessionTab(tab.type)).map((tab) => tab.payload),
+      );
+      const sideSessions = [...sideSessionIds].flatMap((sessionId) => {
+        const row = this.#sessions.get(sessionId);
+        if (!row || row.kind !== "side") return [];
+        return [{
+          row: { ...row, pendingAsks: undefined },
+          turns: this.turnsFor(sessionId).map((turn) => ({
+            ...turn,
+            events: turn.events.map((event) => ({ ...event })),
+          })),
+        }];
+      });
+
+      return [{
+        taskId,
+        state: {
+          version: 1,
+          tabs,
+          activeTabId: this.#activeSideTabByMain.get(taskId) ?? null,
+          activeBrowserTabId: this.#activeBrowserTabByMain.get(taskId) ?? null,
+          artifacts: {
+            files: [...artifacts.files],
+            services: [...artifacts.services],
+          },
+          sideSessions,
+          subagents: subagents.map((activity) => ({
+            ...activity,
+            native: activity.native ? { ...activity.native } : undefined,
+          })),
+        },
+      }];
+    });
+  }
+
+  /** Restore validated task workspace snapshots before the first chat route
+   *  paints. This replaces only right-rail-owned state; main session rows
+   *  seeded from SQLite remain authoritative. */
+  hydrateSideWorkspaces(snapshots: TaskSideWorkspaceSnapshot[]): void {
+    let changed = false;
+    for (const snapshot of snapshots) {
+      const { taskId, state } = snapshot;
+      if (!taskId || state?.version !== 1 || !Array.isArray(state.tabs)) continue;
+
+      const tabs = state.tabs
+        .filter(isPersistedSideTab)
+        .map((tab): SideTab =>
+          tab.type === "terminal"
+            ? {
+                ...tab,
+                payload: "",
+                terminalCwd: tab.terminalCwd || this.#sessions.get(taskId)?.cwd || "",
+                needsRestore: true,
+              }
+            : { ...tab, needsRestore: undefined },
+        );
+      if (tabs.length > 0) this.#sideTabsByMain.set(taskId, tabs);
+      else this.#sideTabsByMain.delete(taskId);
+
+      const activeTabId = tabs.some((tab) => tab.id === state.activeTabId)
+        ? state.activeTabId
+        : tabs.at(-1)?.id ?? null;
+      if (activeTabId) this.#activeSideTabByMain.set(taskId, activeTabId);
+      else this.#activeSideTabByMain.delete(taskId);
+
+      const browserTabs = tabs.filter((tab) => tab.type === "browser");
+      const activeBrowserTabId = browserTabs.some(
+        (tab) => tab.id === state.activeBrowserTabId,
+      )
+        ? state.activeBrowserTabId
+        : browserTabs[0]?.id ?? null;
+      if (activeBrowserTabId) {
+        this.#activeBrowserTabByMain.set(taskId, activeBrowserTabId);
+      } else {
+        this.#activeBrowserTabByMain.delete(taskId);
+      }
+
+      const artifacts = normalizeWorkspaceArtifacts(state.artifacts);
+      if (artifacts.files.length > 0 || artifacts.services.length > 0) {
+        this.#artifactsBySession.set(taskId, artifacts);
+      }
+      const autoOpened = new Set(
+        tabs
+          .filter((tab) => tab.type === "browser" && tab.payload.startsWith("file://"))
+          .map((tab) => tab.payload.slice("file://".length)),
+      );
+      if (autoOpened.size > 0) this.#autoOpenedHtmlBySession.set(taskId, autoOpened);
+
+      if (Array.isArray(state.sideSessions)) {
+        for (const item of state.sideSessions) {
+          if (!item?.row?.id || item.row.kind !== "side") continue;
+          const row = normalizeRestoredSideSession(item.row);
+          this.#sessions.set(row.id, row);
+          for (const rawTurn of Array.isArray(item.turns) ? item.turns : []) {
+            if (!rawTurn?.id || rawTurn.sessionId !== row.id) continue;
+            const turn = normalizeRestoredTurn(rawTurn);
+            this.#turns.set(turn.id, turn);
+          }
+        }
+      }
+      if (Array.isArray(state.subagents) && state.subagents.length > 0) {
+        this.#subagentsByParent.set(
+          taskId,
+          state.subagents.filter(isPersistedSubagentActivity).map((activity) => ({
+            ...activity,
+            native: activity.native ? { ...activity.native } : undefined,
+          })),
+        );
+      }
+      changed = true;
+    }
+    this.#syncVisibleSideSession(this.#sideBucket());
+    if (changed) this.#emit();
+  }
+
   /** Add a tab to the side rail. For chat/subagent tabs the caller should
    *  pre-create the SessionRow and pass the new id as `payload`. For
    *  non-session tabs, payload is the type-specific scratch state.
@@ -819,6 +795,7 @@ export class SessionStore {
     payload: string,
     label?: string,
     requestedId?: string,
+    avatarId?: SubagentAvatarId,
   ): string {
     const id = requestedId || `tab-${Math.random().toString(36).slice(2, 8)}`;
     const prevTabs = this.#sideTabsByMain.get(bucket) ?? [];
@@ -830,6 +807,7 @@ export class SessionStore {
         type,
         payload,
         label: label || defaultSideTabLabel(type, payload),
+        avatarId: avatarId ?? existing.avatarId,
       };
       this.#sideTabsByMain.set(bucket, [
         ...prevTabs.slice(0, existingIndex),
@@ -848,6 +826,7 @@ export class SessionStore {
       type,
       label: label || defaultSideTabLabel(type, payload),
       payload,
+      avatarId,
       createdAt: Date.now(),
     };
     this.#sideTabsByMain.set(bucket, [...prevTabs, tab]);
@@ -1084,8 +1063,14 @@ export class SessionStore {
    *  without firing any IPC — the actual `session.start` happens when the
    *  user submits their first prompt (see promoteDraft). Returns the new
    *  session id so the caller can navigate to /chat/$id. */
-  newDraft(): string {
+  newDraft(chosenCwd?: string): string {
+    for (const [existingId, session] of this.#sessions) {
+      if (session.status === "draft" && session.kind !== "side") {
+        this.#sessions.delete(existingId);
+      }
+    }
     const id = `sess-${Math.random().toString(36).slice(2, 10)}`;
+    const normalizedCwd = chosenCwd?.trim() || undefined;
     this.#sessions.set(id, {
       id,
       agent_id: "",
@@ -1094,6 +1079,8 @@ export class SessionStore {
       label: "",
       status: "draft",
       createdAt: Date.now(),
+      chosenCwd: normalizedCwd,
+      projectScope: normalizedCwd ? "project" : "none",
     });
     this.#activeId = id;
     this.#emit();
@@ -1155,6 +1142,8 @@ export class SessionStore {
    *  "starting…" disabled state. */
   registerStarting(id: string, agent_id: string, label: string): void {
     if (this.#sessions.has(id)) return;
+    const pendingAsks = this.#pendingAsksBeforeSession.get(id);
+    this.#pendingAsksBeforeSession.delete(id);
     this.#sessions.set(id, {
       id,
       agent_id,
@@ -1163,6 +1152,7 @@ export class SessionStore {
       label,
       status: "starting",
       createdAt: Date.now(),
+      pendingAsks,
     });
     this.#emit();
   }
@@ -1225,6 +1215,7 @@ export class SessionStore {
           activeTurnId: nextTurnId,
           queuedTurnIds: rest.length ? rest : undefined,
           status: nextTurnId ? "running" : "ready",
+          pendingAsks: undefined,
           unread: opts?.unread ? true : s.unread,
         };
       }
@@ -1247,6 +1238,42 @@ export class SessionStore {
     this.#sessions.set(id, update(prev));
   }
 
+  #applyAcpSessionMetadata(
+    sessionId: string,
+    updateType: string | undefined,
+    inner: Record<string, unknown>,
+  ): boolean {
+    if (updateType === "usage_update") {
+      const usage = normalizeSessionUsage(inner);
+      if (usage) {
+        this.#mutateSession(sessionId, (s) => ({ ...s, usage }));
+      }
+      return true;
+    }
+    if (updateType !== "session_info_update") return false;
+
+    this.#mutateSession(sessionId, (s) => {
+      const nextMeta = isPlainRecord(inner._meta)
+        ? deepMergeRecords(s.sessionInfoMeta ?? {}, inner._meta)
+        : s.sessionInfoMeta;
+      const threadStatus = readAgentThreadStatus(nextMeta);
+      return {
+        ...s,
+        label:
+          typeof inner.title === "string" && inner.title.trim()
+            ? inner.title.trim().slice(0, 500)
+            : s.label,
+        sessionUpdatedAt:
+          typeof inner.updatedAt === "string"
+            ? inner.updatedAt
+            : s.sessionUpdatedAt,
+        sessionInfoMeta: nextMeta,
+        agentThreadStatus: threadStatus ?? s.agentThreadStatus,
+      };
+    });
+    return true;
+  }
+
   #recordSubagentActivity(
     childSessionId: string,
     patch: Partial<Pick<SubagentActivity, "task" | "status" | "errorMessage">>,
@@ -1264,6 +1291,7 @@ export class SessionStore {
       parentAcpSessionId: link.parentAcpSessionId,
       childSessionId,
       viewSessionId: prev?.viewSessionId ?? childSessionId,
+      avatarId: prev?.avatarId ?? subagentAvatarId(childSessionId),
       inheritance: link.inheritance,
       task: patch.task ?? prev?.task ?? row.label,
       status: patch.status ?? prev?.status ?? "draft",
@@ -1351,6 +1379,7 @@ export class SessionStore {
       viewSessionId:
         prev?.viewSessionId ??
         `native-subagent-${Math.random().toString(36).slice(2, 10)}`,
+      avatarId: prev?.avatarId ?? subagentAvatarId(childSessionId),
       inheritance:
         update.forkContext === true
           ? "fork"
@@ -1416,6 +1445,7 @@ export class SessionStore {
       label,
       kind: "side",
       sideKind: "subagent",
+      subagentAvatarId: activity.avatarId,
       subagent: {
         parentSessionId,
         parentAcpSessionId: activity.parentAcpSessionId,
@@ -1467,15 +1497,21 @@ export class SessionStore {
         "subagent",
         viewSessionId,
         label,
+        undefined,
+        activity.avatarId,
       );
       return;
     }
 
     const tab = withoutLegacy[tabIndex]!;
-    if (tab.label !== label || withoutLegacy.length !== tabs.length) {
+    if (
+      tab.label !== label ||
+      tab.avatarId !== activity.avatarId ||
+      withoutLegacy.length !== tabs.length
+    ) {
       this.#sideTabsByMain.set(parentSessionId, [
         ...withoutLegacy.slice(0, tabIndex),
-        { ...tab, label },
+        { ...tab, label, avatarId: activity.avatarId },
         ...withoutLegacy.slice(tabIndex + 1),
       ]);
     }
@@ -1570,6 +1606,11 @@ export class SessionStore {
     }>,
   ): void {
     for (const r of rows) {
+      // A row without a title has never received a prompt. Older builds
+      // persisted these pre-start shells and revived them as duplicate
+      // "New chat" rows on every launch. Drafts are renderer-owned and
+      // intentionally ephemeral, so there is nothing useful to restore.
+      if (!r.title.trim() && !this.#isPairMember(r.id)) continue;
       if (this.#sessions.has(r.id)) {
         // Existing row — patch the persisted metadata that may have
         // changed since the in-memory copy was created. Without this
@@ -1584,6 +1625,7 @@ export class SessionStore {
           cwd: r.cwd,
           acp_session_id: r.acp_session_id || s.acp_session_id,
           label: r.title || s.label,
+          projectScope: s.projectScope,
           kind: this.#isPairMember(r.id) ? "pair" : s.kind,
           createdAt: r.created_at || s.createdAt,
           pinnedAt: r.pinned_at ?? undefined,
@@ -1629,6 +1671,15 @@ export class SessionStore {
     let order = 0;
     for (const r of rows) {
       const data = safeParse(r.data);
+      if (
+        this.#applyAcpSessionMetadata(
+          sessionId,
+          sessionUpdateType(data),
+          sessionUpdateInner(data),
+        )
+      ) {
+        continue;
+      }
       if (r.type === "user_prompt") {
         // Flush the previous turn, start a new one.
         if (current) this.#turns.set(current.id, current);
@@ -1645,6 +1696,12 @@ export class SessionStore {
           endedAt: r.ts,
         };
       } else if (current) {
+        // The prompt row marks the start boundary. Advance the persisted
+        // completion boundary with every transcript/activity event that
+        // belongs to this turn. Session-only metadata was handled above and
+        // continued, so an unrelated usage/title update cannot inflate the
+        // displayed work duration.
+        current.endedAt = Math.max(current.endedAt ?? current.startedAt, r.ts);
         // Every non-user_prompt row is a stored ACP event. Structural
         // events stay verbatim; adjacent text/thought chunks are compacted
         // into runs so long histories do not rebuild thousands of token
@@ -1666,10 +1723,15 @@ export class SessionStore {
           const parsed = parseAcpEvent(data);
           if (parsed.kind === "text") {
             current.assistantText = mergeStreamingText(current.assistantText, parsed.text);
-            this.#appendStreamEvent(current, "text", parsed.text, r.ts);
+            this.#appendStreamEvent(current, "text", parsed.text, r.ts, {
+              messageId: parsed.messageId,
+              phase: parsed.phase,
+            });
           } else if (parsed.kind === "thought") {
             current.thoughtText = mergeStreamingText(current.thoughtText, parsed.text);
-            this.#appendStreamEvent(current, "thought", parsed.text, r.ts);
+            this.#appendStreamEvent(current, "thought", parsed.text, r.ts, {
+              messageId: parsed.messageId,
+            });
           } else {
             current.events.push({ payload: data, receivedAt: r.ts });
           }
@@ -1692,7 +1754,9 @@ export class SessionStore {
     switch (ev.type) {
       case "session.ready": {
         const existing = this.#sessions.get(ev.session_id);
-        const configOptions = normalizeConfigOptions(ev.config_options);
+        const pendingBeforeReady = this.#pendingAsksBeforeSession.get(ev.session_id);
+        this.#pendingAsksBeforeSession.delete(ev.session_id);
+        const configOptions = normalizeAgentConfigOptions(ev.config_options);
         if (existing) {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
@@ -1705,6 +1769,10 @@ export class SessionStore {
             supportsSessionFork: ev.supports_session_fork ?? s.supportsSessionFork,
             status: s.activeTurnId ? "running" : "ready",
             lastError: undefined,
+            pendingAsks:
+              pendingBeforeReady?.length
+                ? [...(s.pendingAsks ?? []), ...pendingBeforeReady]
+                : s.pendingAsks,
           }));
         } else {
           this.#sessions.set(ev.session_id, {
@@ -1718,6 +1786,7 @@ export class SessionStore {
             configOptions,
             currentModeId: selectedModeIdFromConfigOptions(configOptions),
             supportsSessionFork: ev.supports_session_fork,
+            pendingAsks: pendingBeforeReady,
           });
         }
         if (!this.#activeId) this.#activeId = ev.session_id;
@@ -1742,6 +1811,10 @@ export class SessionStore {
           }));
           break;
         }
+        if (parsed.kind === "notice") {
+          this.#showNotice(ev.session_id, parsed.notice, "warning");
+          break;
+        }
         if (updateType === "current_mode_update") {
           const currentModeId =
             typeof inner.currentModeId === "string"
@@ -1761,13 +1834,18 @@ export class SessionStore {
             : Array.isArray(inner.config_options)
               ? inner.config_options
               : undefined;
-          const configOptions = normalizeConfigOptions(rawConfigOptions) ?? [];
+          const configOptions = normalizeAgentConfigOptions(rawConfigOptions) ?? [];
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
             configOptions,
             currentModeId:
               selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
           }));
+          break;
+        }
+        if (
+          this.#applyAcpSessionMetadata(ev.session_id, updateType, inner)
+        ) {
           break;
         }
         const turn = this.#turns.get(ev.turn_id);
@@ -1791,16 +1869,42 @@ export class SessionStore {
         // chunk and visibly stall on long messages. Instead we mutate the
         // turn's accumulator in place and broadcast on the stream channel,
         // which the DOM-mutating <StreamingMarkdown> consumes directly.
-        // Crucially this branch DOES NOT call `this.#emit()` — React stays
-        // asleep during the stream.
+        // React stays asleep during the stream, except for the first thought
+        // chunk: that single publish mounts the existing Reasoning block.
+        // Subsequent thought/text chunks stay on the direct stream channel.
         if (parsed.kind === "text" || parsed.kind === "thought") {
           const text = parsed.text;
           if (text.length > 0) {
+            const wasShowingThought =
+              Boolean(turn.activeThoughtMessageId) ||
+              Boolean(turn.activeThoughtSegmentText);
+            const isCodex =
+              this.#sessions.get(ev.session_id)?.agent_id === "codex-acp";
+            const thoughtMessageChanged =
+              parsed.kind === "thought" &&
+              parsed.messageId !== undefined &&
+              parsed.messageId !== turn.activeThoughtMessageId;
+            const thoughtSectionBreak =
+              parsed.kind === "thought" &&
+              isCodex &&
+              /\n{2,}/.test(text);
+            const thoughtNeedsMount =
+              parsed.kind === "thought" &&
+              !turn.activeThoughtSegmentText &&
+              !thoughtSectionBreak;
+            const shouldMountThought =
+              parsed.kind === "thought" &&
+              (turn.thoughtText.length === 0 ||
+                thoughtMessageChanged ||
+                thoughtSectionBreak ||
+                thoughtNeedsMount);
             // In-place mutate (intentional). React doesn't read this field
             // during the stream — only on turn-complete unmount-and-replace
             // — so identity stability is irrelevant here. The savings:
             // tens of thousands of avoided reconciliations per long turn.
             if (parsed.kind === "text") {
+              turn.activeThoughtMessageId = undefined;
+              turn.activeThoughtSegmentText = undefined;
               const next = mergeStreamingText(turn.assistantText, text);
               const delta = next.startsWith(turn.assistantText)
                 ? next.slice(turn.assistantText.length)
@@ -1808,6 +1912,16 @@ export class SessionStore {
               turn.assistantText = next;
               if (delta) this.#emitStream(ev.turn_id, { kind: "assistant", text: delta });
             } else {
+              if (thoughtMessageChanged || thoughtSectionBreak) {
+                turn.activeThoughtMessageId = parsed.messageId;
+                turn.activeThoughtSegmentText = "";
+              }
+              if (!thoughtSectionBreak) {
+                turn.activeThoughtSegmentText = mergeStreamingText(
+                  turn.activeThoughtSegmentText ?? "",
+                  text,
+                );
+              }
               const next = mergeStreamingText(turn.thoughtText, text);
               const delta = next.startsWith(turn.thoughtText)
                 ? next.slice(turn.thoughtText.length)
@@ -1819,15 +1933,36 @@ export class SessionStore {
             // per token. React is deliberately asleep in this branch; the
             // next structural event/turn completion publishes the compacted
             // event list.
-            this.#appendStreamEvent(turn, parsed.kind, text, Date.now());
+            this.#appendStreamEvent(turn, parsed.kind, text, Date.now(), {
+              messageId: parsed.messageId,
+              ...(parsed.kind === "text" ? { phase: parsed.phase } : {}),
+            });
+            if (
+              shouldMountThought ||
+              (parsed.kind === "text" && wasShowingThought)
+            ) {
+              // Selectors shallow-compare Turn identities. Replace this one
+              // object exactly once so the Reasoning block actually mounts;
+              // later chunks keep mutating the replacement in place.
+              this.#turns.set(ev.turn_id, { ...turn });
+              this.#emit();
+            }
             return;
           }
         }
 
         // Structural event — replace events array AND bump version so React
         // re-renders the affected turn block.
+        const nextTurn =
+          parsed.kind === "tool_call"
+            ? {
+                ...turn,
+                activeThoughtMessageId: undefined,
+                activeThoughtSegmentText: undefined,
+              }
+            : turn;
         this.#turns.set(ev.turn_id, {
-          ...turn,
+          ...nextTurn,
           events: [...turn.events, { payload: ev.event, receivedAt: Date.now() }],
         });
         if (nativeProviderForAgent(this.#sessions.get(ev.session_id)?.agent_id) === "codex") {
@@ -1896,6 +2031,13 @@ export class SessionStore {
         if (turn) {
           this.#turns.set(ev.turn_id, {
             ...turn,
+            // Streaming chunks compact into turn.events in place to avoid a
+            // React render per token. Publish a fresh array at the terminal
+            // boundary so consumers memoized by events identity reduce the
+            // trailing text that arrived after the last structural event.
+            events: [...turn.events],
+            activeThoughtMessageId: undefined,
+            activeThoughtSegmentText: undefined,
             status: "complete",
             endedAt: Date.now(),
           });
@@ -1967,6 +2109,9 @@ export class SessionStore {
           this.#sideActiveId = null;
         }
         this.#sessions.delete(ev.session_id);
+        const noticeTimer = this.#noticeTimers.get(ev.session_id);
+        if (noticeTimer) clearTimeout(noticeTimer);
+        this.#noticeTimers.delete(ev.session_id);
         this.#autoOpenedHtmlBySession.delete(ev.session_id);
         for (const [tid, turn] of this.#turns) {
           if (turn.sessionId === ev.session_id) this.#turns.delete(tid);
@@ -2197,6 +2342,8 @@ export const selectSubagentByChildId =
     childSessionId ? s.subagentByChildId(childSessionId) : null;
 export const selectTurnsFor = (sessionId: string) => (s: SessionStore) =>
   s.turnsFor(sessionId);
+export const selectAgentIdFor = (sessionId: string) => (s: SessionStore) =>
+  s.get(sessionId)?.agent_id;
 
 /** Imperative new-draft helper for routes that don't have a hook in scope. */
 export function newDraftSession(): string {
@@ -2210,93 +2357,70 @@ export function newSideDraftSession(): string {
   return sessionStore.newSideDraft();
 }
 
-function defaultSideTabLabel(type: SideTabType, payload: string): string {
-  switch (type) {
-    case "chat":
-      return "Side chat";
-    case "subagent":
-      return "子任务";
-    case "file": {
-      const trimmed = payload.replace(/\/+$/, "");
-      const last = trimmed.split("/").pop();
-      return last || "Files";
-    }
-    case "browser":
-      try {
-        const url = new URL(payload);
-        return url.hostname || "Browser";
-      } catch {
-        return "Browser";
-      }
-    case "terminal": {
-      const trimmed = payload.replace(/\/+$/, "");
-      const last = trimmed.split("/").pop();
-      return last || "Terminal";
+function normalizeSessionUsage(
+  value: Record<string, unknown>,
+): AcpSessionUsage | undefined {
+  const used = value.used;
+  const size = value.size;
+  if (
+    typeof used !== "number" ||
+    !Number.isFinite(used) ||
+    used < 0 ||
+    typeof size !== "number" ||
+    !Number.isFinite(size) ||
+    size <= 0
+  ) {
+    return undefined;
+  }
+
+  const rawCost = value.cost;
+  let cost: AcpSessionUsage["cost"];
+  if (isPlainRecord(rawCost)) {
+    const amount = rawCost.amount;
+    const currency = rawCost.currency;
+    if (
+      typeof amount === "number" &&
+      Number.isFinite(amount) &&
+      amount >= 0 &&
+      typeof currency === "string" &&
+      currency.trim()
+    ) {
+      cost = { amount, currency: currency.trim() };
     }
   }
+
+  return { used, size, ...(cost ? { cost } : {}) };
 }
 
-function isSideSessionTab(type: SideTabType): boolean {
-  return type === "chat" || type === "subagent";
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function subagentActivityLabel(activity: SubagentActivity): string {
-  const name =
-    activity.native?.nickname ||
-    activity.task ||
-    activity.native?.agentType ||
-    activity.childSessionId;
-  return name.length <= 24 ? name : name.slice(0, 23).trimEnd() + "…";
-}
-
-function nativeActivitySessionStatus(
-  status: SubagentActivity["status"],
-): SessionRow["status"] {
-  if (status === "error") return "errored";
-  if (status === "complete" || status === "cancelled") return "ready";
-  return "running";
-}
-
-function nativeActivityTurnStatus(
-  status: SubagentActivity["status"],
-): Turn["status"] {
-  if (status === "complete") return "complete";
-  if (status === "error") return "error";
-  if (status === "cancelled") return "cancelled";
-  return "running";
-}
-
-function nativeChildThreadId(update: NativeAgentUpdate): string | undefined {
-  if (!update.childId) return undefined;
-  return update.toolCallId && update.childId === `${update.provider}:${update.toolCallId}`
-    ? undefined
-    : update.childId;
-}
-
-function appendUnique(
-  values: string[] | undefined,
-  value: string | undefined,
-): string[] | undefined {
-  if (!value) return values;
-  const next = values ? [...values] : [];
-  if (!next.includes(value)) next.push(value);
+function deepMergeRecords(
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...current };
+  for (const [key, value] of Object.entries(patch)) {
+    const previous = next[key];
+    next[key] =
+      isPlainRecord(previous) && isPlainRecord(value)
+        ? deepMergeRecords(previous, value)
+        : value;
+  }
   return next;
 }
 
-function nativeProviderForAgent(agentId: string | undefined): NativeAgentProvider | undefined {
-  const normalized = (agentId ?? "").toLowerCase();
-  if (!normalized) return undefined;
-  if (normalized === "codex-acp" || normalized.includes("codex")) return "codex";
-  if (
-    normalized === "claude-acp" ||
-    normalized.includes("claude-code") ||
-    normalized.includes("claude") ||
-    normalized === "cc" ||
-    normalized.startsWith("cc-")
-  ) {
-    return "claude";
-  }
-  return undefined;
+function readAgentThreadStatus(
+  meta: Record<string, unknown> | undefined,
+): string | undefined {
+  const codex = isPlainRecord(meta?.codex) ? meta.codex : undefined;
+  const threadStatus = isPlainRecord(codex?.threadStatus)
+    ? codex.threadStatus
+    : undefined;
+  return typeof threadStatus?.type === "string"
+    ? threadStatus.type
+    : undefined;
 }
 
 function safeParse(s: string): unknown {
@@ -2305,148 +2429,6 @@ function safeParse(s: string): unknown {
   } catch {
     return null;
   }
-}
-
-function normalizeConfigOptions(
-  value: readonly unknown[] | undefined,
-): AcpSessionConfigOption[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out = value.filter(isConfigOption);
-  return out.length > 0 ? out : [];
-}
-
-function isConfigOption(value: unknown): value is AcpSessionConfigOption {
-  if (!value || typeof value !== "object") return false;
-  const obj = value as Record<string, unknown>;
-  if (typeof obj.id !== "string" || typeof obj.name !== "string") return false;
-  if (obj.category != null && typeof obj.category !== "string") return false;
-  if (obj.type === "boolean") return typeof obj.currentValue === "boolean";
-  if (obj.type !== "select") return false;
-  return typeof obj.currentValue === "string" && Array.isArray(obj.options);
-}
-
-/** Merge `incoming` into `existing` newest-first, dropping duplicates
- *  and capping at `max`. Same-value re-observations bubble to index 0
- *  (most-recent-touched wins) rather than create a duplicate entry. */
-function dedupeBubble(existing: string[], incoming: string[], max: number): string[] {
-  if (incoming.length === 0) return existing;
-  const out = [...incoming];
-  const seen = new Set(out);
-  for (const v of existing) {
-    if (seen.has(v)) continue;
-    seen.add(v);
-    out.push(v);
-    if (out.length >= max) break;
-  }
-  // Identity stability: if no actual change, return the original
-  // array reference so React shallow-equals selectors short-circuit.
-  if (out.length === existing.length && out.every((v, i) => v === existing[i])) {
-    return existing;
-  }
-  return out;
-}
-
-/** Pull file paths from a tool_call's rawInput. Walks common field
- *  names different agents use (Claude: `file_path` / `path`, Codex:
- *  `path` / `target_file`, Aider: `filename`). Best-effort — agents
- *  with custom shapes won't surface here, that's fine. */
-function extractFilePaths(rawInput: unknown): string[] {
-  if (!rawInput || typeof rawInput !== "object") return [];
-  const obj = rawInput as Record<string, unknown>;
-  const out: string[] = [];
-  const KEYS = ["path", "file_path", "filepath", "file", "target_file", "filename"];
-  for (const k of KEYS) {
-    const v = obj[k];
-    if (typeof v === "string" && v.length > 0) out.push(v);
-  }
-  // Some tools take an array of paths (e.g. MultiEdit). Recurse one
-  // level if `files` / `edits` looks like an array of objects with
-  // path-ish fields.
-  for (const k of ["files", "edits", "paths"]) {
-    const v = obj[k];
-    if (Array.isArray(v)) {
-      for (const item of v) {
-        out.push(...extractFilePaths(item));
-      }
-    }
-  }
-  return out;
-}
-
-const LOCALHOST_URL_RE = /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/[^\s)"'`<]*)?/g;
-
-/** POSIX basename. Substring after the final `/`; if there's no `/`,
- *  returns the input verbatim. Used for the side-tab label so the chip
- *  shows `index.html` instead of the full /Users/.../sess-…/index.html
- *  path. */
-function basename(p: string): string {
-  const i = p.lastIndexOf("/");
-  return i < 0 ? p : p.slice(i + 1);
-}
-
-/** Pull absolute *.html paths out of an execute tool's rawInput so we
- *  can open them in the side BrowserTab. Two shapes:
- *
- *    - codex execute: `command: ["/bin/zsh","-lc","open /abs/x.html"]`
- *      → look in `command` array for any token matching `*.html` (or
- *      `*.htm`) after stripping argv flags. We also accept the verb
- *      being the whole command string (i.e. command is a single
- *      shell-wrapped string).
- *    - generic file_write / edit of an html file: caller passes
- *      `path` / `file_path` directly. Those go through extractFilePaths
- *      already; we filter to .html here.
- *
- *  Returns absolute paths only — relative paths would have ambiguous
- *  cwd at render-time. Empty when nothing matched. */
-function extractHtmlPathsFromExecute(rawInput: unknown): string[] {
-  if (!rawInput || typeof rawInput !== "object") return [];
-  const obj = rawInput as Record<string, unknown>;
-  const out: string[] = [];
-  const cmd = obj.command;
-  let texts: string[] = [];
-  if (typeof cmd === "string") texts = [cmd];
-  else if (Array.isArray(cmd))
-    texts = cmd.filter((x): x is string => typeof x === "string");
-  for (const t of texts) {
-    // /(^|\s)(\/[^\s'"]+\.html?)(\s|$)/g — absolute path ending in
-    // .html or .htm, surrounded by whitespace or string edge.
-    const re = /(^|\s)(\/[^\s'"]+\.html?)(?=\s|$)/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(t)) !== null) {
-      out.push(m[2]!);
-    }
-  }
-  return out;
-}
-
-/** Extract localhost / dev-server URLs from any string-ish piece of
- *  a tool_call payload. Looks at the most likely fields first
- *  (rawOutput, output, stdout) and falls back to JSON-stringifying
- *  the whole object so we don't miss agents that nest output deeper. */
-function extractServiceUrls(rawOutput: unknown): string[] {
-  if (rawOutput == null) return [];
-  let text: string;
-  if (typeof rawOutput === "string") {
-    text = rawOutput;
-  } else if (typeof rawOutput === "object") {
-    const obj = rawOutput as Record<string, unknown>;
-    const direct = obj.output ?? obj.stdout ?? obj.content;
-    if (typeof direct === "string") text = direct;
-    else {
-      try {
-        text = JSON.stringify(rawOutput);
-      } catch {
-        return [];
-      }
-    }
-  } else {
-    return [];
-  }
-  const matches = text.match(LOCALHOST_URL_RE);
-  if (!matches) return [];
-  // Strip trailing punctuation that often hugs a URL in shell output
-  // ("at http://localhost:3000.", "(http://localhost:5173)").
-  return matches.map((u) => u.replace(/[.,)\];]+$/, ""));
 }
 
 /** React hook — re-renders whenever the store version bumps. Components

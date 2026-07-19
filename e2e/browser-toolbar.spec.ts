@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { injectSession, launchApp } from "./helpers";
+import { injectSession, launchApp, openBrowserPanel } from "./helpers";
 
 test("browser chrome is compact and exposes real page controls", async ({}, testInfo) => {
   const { page, cleanup } = await launchApp();
@@ -9,19 +9,16 @@ test("browser chrome is compact and exposes real page controls", async ({}, test
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-toolbar",
     });
-    if (!(await page.getByRole("button", { name: "Close side panel" }).isVisible())) {
-      await page.getByRole("button", { name: "Open side chat" }).click();
-    }
-    await page.getByRole("button", { name: /浏览器/ }).click();
+    await openBrowserPanel(page);
 
     const browser = page.locator(`[data-browser-task="${taskId}"]`);
     const tab = page.locator('button[title="New tab"]').first();
     const back = browser.getByRole("button", { name: "Back" });
     await expect(browser).toBeVisible();
     await expect(tab).toBeVisible();
-    await expect(browser.locator('input[placeholder="Enter URL or search"]')).toHaveValue(
-      "about:blank",
-    );
+    await expect(
+      browser.locator('input[placeholder="Enter URL or search"]'),
+    ).toHaveValue("about:blank#backchat-e2e");
     await expect(back).toBeVisible();
 
     const [tabBox, backBox] = await Promise.all([tab.boundingBox(), back.boundingBox()]);
@@ -71,7 +68,11 @@ test("browser chrome is compact and exposes real page controls", async ({}, test
 
     await browser.getByRole("button", { name: "Browser menu" }).click();
     await page.getByRole("menuitem", { name: "Find in page" }).click();
-    await expect(browser.getByPlaceholder("Find in page")).toBeVisible();
+    const findInput = browser.getByPlaceholder("Find in page");
+    await expect(findInput).toBeVisible();
+    await findInput.fill("backchat");
+    await page.keyboard.press("Escape");
+    await expect(findInput).toBeHidden();
 
     await browser.getByRole("button", { name: "Browser menu" }).click();
     await page.getByRole("menuitem", { name: "Passwords and autofill" }).click();
@@ -85,12 +86,31 @@ test("browser chrome is compact and exposes real page controls", async ({}, test
 
     await browser.getByRole("button", { name: "Browser menu" }).click();
     await page.getByRole("menuitem", { name: "Clear browsing data" }).click();
-    await expect(page.getByRole("dialog", { name: "Clear browsing data" })).toBeVisible();
-    await page.getByRole("button", { name: "Cancel" }).click();
+    const clearDataDialog = page.getByRole("dialog", { name: "Clear browsing data" });
+    const clearDataButton = clearDataDialog.getByRole("button", { name: "Clear data" });
+    const history = clearDataDialog.getByRole("checkbox", { name: "Browsing history" });
+    const cookies = clearDataDialog.getByRole("checkbox", { name: "Cookies and site data" });
+    const cache = clearDataDialog.getByRole("checkbox", { name: "Cached images and files" });
+    await expect(clearDataDialog).toBeVisible();
+    await expect(history).toBeChecked();
+    await expect(cookies).toBeChecked();
+    await expect(cache).toBeChecked();
+
+    await history.click();
+    await cookies.click();
+    await cache.click();
+    await expect(clearDataButton).toBeDisabled();
+
+    await history.click();
+    await expect(clearDataButton).toBeEnabled();
+    await clearDataButton.click();
+    await expect(page.getByText("Browsing data cleared")).toBeVisible();
+    await expect(clearDataDialog).toBeHidden();
 
     await browser.getByRole("button", { name: "Browser menu" }).click();
     await page.getByRole("menuitem", { name: "Browser settings" }).click();
-    await expect(page.getByRole("dialog", { name: "Browser settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Browser" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Enable built-in browser" })).toBeVisible();
   } finally {
     await cleanup();
   }

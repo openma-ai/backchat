@@ -32,6 +32,8 @@ import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "no
 import { basename, dirname, join } from "node:path";
 import { stringify as toToml } from "smol-toml";
 import { rebuildSessionIndexFromTranscriptFiles } from "./file-first-rebuild.js";
+import { queryActivityStats } from "./activity-stats.js";
+import type { ActivityStatsInfo } from "../shared/api.js";
 
 export interface PersistedSession {
   id: string;
@@ -71,6 +73,12 @@ export interface PersistedEvent {
   ts: number;
 }
 
+export interface PersistedSideWorkspace {
+  task_id: string;
+  state_json: string;
+  updated_at: number;
+}
+
 let _db: DatabaseSync | null = null;
 let _storageRoot: string | null = null;
 // Prepared statement cache — node:sqlite recommends preparing once and
@@ -92,6 +100,9 @@ let _stmts: {
   appendEvent: StatementSync;
   sessionEventCount: StatementSync;
   loadHistory: StatementSync;
+  saveSideWorkspace: StatementSync;
+  listSideWorkspaces: StatementSync;
+  deleteSideWorkspace: StatementSync;
   // Pair-chat helpers — see PersistedPairSession + pair_sessions schema.
   upsertPair: StatementSync;
   touchPair: StatementSync;
@@ -167,6 +178,17 @@ export function openSessionDb(path: string): void {
     );
     CREATE INDEX IF NOT EXISTS events_session_seq_idx
       ON events(session_id, seq);
+
+    -- Renderer-owned task workspace for the right sidebar. The JSON is
+    -- versioned and validated in the renderer; main keeps it opaque so UI
+    -- migrations do not require a SQL column migration for every tab field.
+    CREATE TABLE IF NOT EXISTS side_workspaces (
+      task_id      TEXT PRIMARY KEY,
+      state_json   TEXT NOT NULL,
+      updated_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS side_workspaces_updated_idx
+      ON side_workspaces(updated_at DESC);
 
     -- FTS5 virtual table for Cmd+K message search. Indexes user prompts
     -- + final assistant messages (the only event types with prose worth
@@ -286,6 +308,19 @@ export function openSessionDb(path: string): void {
     ),
     loadHistory: db.prepare(
       `SELECT * FROM events WHERE session_id = ? ORDER BY seq ASC`,
+    ),
+    saveSideWorkspace: db.prepare(`
+      INSERT INTO side_workspaces (task_id, state_json, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(task_id) DO UPDATE SET
+        state_json = excluded.state_json,
+        updated_at = excluded.updated_at
+    `),
+    listSideWorkspaces: db.prepare(
+      `SELECT * FROM side_workspaces ORDER BY updated_at ASC`,
+    ),
+    deleteSideWorkspace: db.prepare(
+      `DELETE FROM side_workspaces WHERE task_id = ?`,
     ),
     upsertPair: db.prepare(`
       INSERT INTO pair_sessions (id, title, workspace_cwd, created_at, last_used_at)
@@ -418,6 +453,7 @@ export function listArchivedSessions(): PersistedSession[] {
  *  layout, not the SQL store). */
 export function deleteSession(id: string): void {
   deleteSessionSourceFiles(id);
+  stmts().deleteSideWorkspace.run(id);
   stmts().deleteRow.run(id);
 }
 
@@ -439,6 +475,25 @@ export function listSessions(limit = 200): PersistedSession[] {
  *  then Chats by recency). */
 export function listSessionsForSidebar(): PersistedSession[] {
   return stmts().listForSidebar.all() as unknown as PersistedSession[];
+}
+
+// -------------------- task side workspaces --------------------
+
+export function saveSideWorkspace(row: {
+  task_id: string;
+  state_json: string;
+}): void {
+  if (!row.task_id || !row.state_json) return;
+  stmts().saveSideWorkspace.run(row.task_id, row.state_json, Date.now());
+}
+
+export function listSideWorkspaces(): PersistedSideWorkspace[] {
+  return stmts().listSideWorkspaces.all() as unknown as PersistedSideWorkspace[];
+}
+
+export function deleteSideWorkspace(task_id: string): void {
+  if (!task_id) return;
+  stmts().deleteSideWorkspace.run(task_id);
 }
 
 // -------------------- pair sessions --------------------
@@ -611,6 +666,11 @@ export function searchMessages(query: string, limit = 20): SearchHit[] {
     LIMIT ?
   `);
   return stmt.all(ftsQuery, limit) as unknown as SearchHit[];
+}
+
+export function getActivityStats(): ActivityStatsInfo {
+  if (!_db) throw new Error("session-store: openSessionDb() not called");
+  return queryActivityStats(_db);
 }
 
 function writeTranscriptEvent(

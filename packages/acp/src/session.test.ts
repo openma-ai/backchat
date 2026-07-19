@@ -422,6 +422,75 @@ describe("AcpSessionImpl", () => {
       }),
     );
   });
+
+  it("routes permission callbacks through the broker without synthesizing transcript events", async () => {
+    const permissionRequests: unknown[] = [];
+    const harness = createInMemoryAcpHarness((conn) => ({
+      async initialize() {
+        return { protocolVersion: PROTOCOL_VERSION };
+      },
+      async newSession() {
+        return { sessionId: "fresh-session" };
+      },
+      async prompt(params) {
+        await conn.requestPermission({
+          sessionId: params.sessionId,
+          toolCall: {
+            toolCallId: "tool-shell",
+            title: "Run shell command",
+            kind: "execute",
+            status: "pending",
+          },
+          options: [
+            {
+              optionId: "allow-once",
+              name: "Allow once",
+              kind: "allow_once",
+            },
+          ],
+        });
+        return { stopReason: "end_turn" };
+      },
+      async authenticate() {
+        return {};
+      },
+      async cancel() {
+        return;
+      },
+    }));
+
+    const session = new AcpSessionImpl({
+      child: harness.child,
+      id: "test-acp-session",
+      options: {
+        agent: { command: "fake-agent", cwd: "/tmp/backchat-test" },
+        mcpServers: [],
+        clientCallbacks: {
+          async requestPermission(params) {
+            permissionRequests.push(params);
+            return {
+              outcome: {
+                outcome: "selected",
+                optionId: "allow-once",
+              },
+            };
+          },
+        },
+      },
+    });
+
+    await session.init();
+    const events: unknown[] = [];
+    for await (const event of session.prompt("run it")) {
+      events.push(event);
+    }
+    await session.dispose();
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: "requestPermission" }),
+    );
+  });
 });
 
 function createInMemoryAcpHarness(toAgent: (conn: AgentSideConnection) => Agent): {

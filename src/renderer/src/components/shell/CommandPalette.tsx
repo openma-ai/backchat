@@ -128,11 +128,11 @@ export function CommandPalette() {
   };
 
   const actionNewChat = () => {
-    // Cold-create: route to home, no draft session materialized until
-    // the user actually submits a prompt. Same shape as the sidebar's
-    // "+ New chat" button.
-    sessionStore.setActive(null);
-    void navigate({ to: "/" });
+    const id = sessionStore.newDraft();
+    void navigate({
+      to: "/chat/$sessionId",
+      params: { sessionId: id },
+    });
     setOpen(false);
   };
   const actionToggleTheme = () => {

@@ -22,6 +22,12 @@ export interface SessionStartParams {
    *  userData/sessions/<session_id>/. Workspaces will pass the workspace's
    *  root_path here in Phase 4. */
   cwd?: string;
+  /** Workspace ownership is explicit for new drafts:
+   *  - managed: ignore the settings default and allocate a per-session cwd.
+   *  - project: require and use `cwd`.
+   *  - inherited: require the parent task's `cwd` for a side chat.
+   *  - omitted: resume an existing session at its persisted `cwd`. */
+  workspace_mode?: "managed" | "project" | "inherited";
   /** Provide an existing ACP-side session id to resume conversation history
    *  via `session/load`. Falls back to `session/new` when the agent doesn't
    *  advertise the loadSession capability. */
@@ -31,6 +37,26 @@ export interface SessionStartParams {
    *  inheritance mechanism, not as the whole subagent communication model. */
   fork?: { acp_session_id: string };
 }
+
+export type SessionStartResult =
+  | {
+      status: "ready";
+      session_id: string;
+      acp_session_id: string;
+      agent_id: string;
+      cwd: string;
+      config_options?: SessionConfigOption[];
+      supports_session_fork?: boolean;
+    }
+  | {
+      status: "error";
+      session_id: string;
+      message: string;
+    }
+  | {
+      status: "cancelled";
+      session_id: string;
+    };
 
 export interface PairStartParams {
   /** Stable pair id chosen by the renderer (uuid). */
@@ -211,9 +237,9 @@ export type SessionEventOut =
       type: "session.event";
       session_id: string;
       turn_id: string;
-      /** Raw ACP `SessionUpdate` (8 main variants) or a host-side synthetic
-       *  like `{ type: "requestPermission", … }`. The renderer's reducer
-       *  branches on the discriminator. */
+      /** Raw ACP `SessionUpdate` or a non-interactive host diagnostic.
+       *  Interactive client callbacks such as requestPermission use their
+       *  dedicated broker channel and never enter transcript events. */
       event: unknown;
     }
   | {

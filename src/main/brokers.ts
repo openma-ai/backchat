@@ -26,30 +26,17 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { PushChannel, InvokeChannel } from "../shared/ipc-channels.js";
+import type {
+  FsWriteAskInfo,
+  PendingBrokerAskInfo,
+  PermissionAskInfo,
+} from "../shared/api.js";
 
 // -------------------- Shared types -------------------------
-
-interface PermissionAsk {
-  sessionId: string;
-  toolCall: unknown;
-  options: Array<{ optionId: string; name: string; kind: string }>;
-}
 
 interface PermissionDecision {
   requestId: string;
   optionId: string | null;
-}
-
-interface FsWriteAsk {
-  sessionId: string;
-  path: string;
-  /** Length of the new content — keeps the IPC payload small; renderer
-   *  can ask for the diff body separately if it wants. */
-  byteSize: number;
-  /** Up-to-1KB preview of the proposed new content for the modal. */
-  newPreview: string;
-  /** Up-to-1KB preview of current contents (empty if file doesn't exist). */
-  oldPreview: string;
 }
 
 interface FsApprovalDecision {
@@ -59,6 +46,7 @@ interface FsApprovalDecision {
 
 interface PendingPermission {
   sessionId: string;
+  ask: PermissionAskInfo;
   resolve: (
     decision: { outcome: { outcome: "selected"; optionId: string } } |
               { outcome: { outcome: "cancelled" } },
@@ -67,6 +55,7 @@ interface PendingPermission {
 
 interface PendingFsWrite {
   sessionId: string;
+  ask: FsWriteAskInfo;
   path: string;
   content: string;
   resolve: (v: Record<string, never>) => void;
@@ -102,16 +91,18 @@ export function requestPermission(
   };
   return new Promise((resolve) => {
     const requestId = makeRequestId("perm");
-    pendingPermission.set(requestId, {
-      sessionId,
-      resolve: (d) => resolve(d),
-    });
-    broadcast(PushChannel.PermissionRequest, {
+    const ask: PermissionAskInfo = {
       requestId,
       sessionId,
       toolCall: p.toolCall,
-      options: p.options,
-    } satisfies PermissionAsk & { requestId: string });
+      options: p.options as PermissionAskInfo["options"],
+    };
+    pendingPermission.set(requestId, {
+      sessionId,
+      ask,
+      resolve: (d) => resolve(d),
+    });
+    broadcast(PushChannel.PermissionRequest, ask);
   });
 }
 
@@ -157,21 +148,23 @@ export function writeTextFile(
     // Outside cwd — needs approval.
     const requestId = makeRequestId("fsw");
     const oldPreview = await readFile(p.path, "utf-8").catch(() => "");
-    pendingFsWrite.set(requestId, {
-      sessionId,
-      path: p.path,
-      content: p.content,
-      resolve: (v) => resolve(v),
-      reject,
-    });
-    broadcast(PushChannel.FsWriteApproval, {
+    const ask: FsWriteAskInfo = {
       requestId,
       sessionId,
       path: p.path,
       byteSize: p.content.length,
       newPreview: p.content.slice(0, 1024),
       oldPreview: oldPreview.slice(0, 1024),
-    } satisfies FsWriteAsk & { requestId: string });
+    };
+    pendingFsWrite.set(requestId, {
+      sessionId,
+      ask,
+      path: p.path,
+      content: p.content,
+      resolve: (v) => resolve(v),
+      reject,
+    });
+    broadcast(PushChannel.FsWriteApproval, ask);
   });
 }
 
@@ -351,6 +344,19 @@ export function cancelPendingFor(sessionId: string): void {
 // -------------------- IPC registration -------------------------
 
 export function registerBrokers(): void {
+  ipcMain.handle(
+    InvokeChannel.BrokerPendingAsks,
+    (): PendingBrokerAskInfo[] => [
+      ...[...pendingPermission.values()].map((pending) => ({
+        kind: "permission" as const,
+        ask: pending.ask,
+      })),
+      ...[...pendingFsWrite.values()].map((pending) => ({
+        kind: "fsWrite" as const,
+        ask: pending.ask,
+      })),
+    ],
+  );
   ipcMain.handle(InvokeChannel.PermissionRespond, (_e, decision: PermissionDecision) => {
     const pending = pendingPermission.get(decision.requestId);
     if (!pending) return;

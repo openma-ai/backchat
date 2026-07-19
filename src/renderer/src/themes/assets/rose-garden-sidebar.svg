@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 1200">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#fffaf9"/><stop offset=".48" stop-color="#fcebed"/><stop offset="1" stop-color="#f6d9df"/>
+    </linearGradient>
+    <radialGradient id="rose" cx="38%" cy="32%" r="70%">
+      <stop stop-color="#fff6f5"/><stop offset=".5" stop-color="#efabb6"/><stop offset="1" stop-color="#c95f78"/>
+    </radialGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#9f4560" flood-opacity=".18"/></filter>
+  </defs>
+  <rect width="360" height="1200" fill="url(#panel)"/>
+  <path d="M-45 95C62 38 134 32 216 90S330 205 406 174" fill="none" stroke="#d9b073" stroke-width="2" opacity=".48"/>
+  <g opacity=".7" fill="#9eaa81">
+    <ellipse cx="54" cy="128" rx="42" ry="14" transform="rotate(-38 54 128)"/>
+    <ellipse cx="138" cy="78" rx="48" ry="16" transform="rotate(27 138 78)"/>
+    <ellipse cx="318" cy="1048" rx="46" ry="15" transform="rotate(-30 318 1048)"/>
+    <ellipse cx="246" cy="1110" rx="51" ry="16" transform="rotate(28 246 1110)"/>
+  </g>
+  <g filter="url(#shadow)">
+    <g transform="translate(-34 18)">
+      <circle cx="95" cy="96" r="66" fill="url(#rose)"/>
+      <path d="M94 45c40 13 48 48 27 75-18 23-58 29-82 2 26 5 42-5 49-23-21 2-36-12-36-31 14 10 28 8 42-23Z" fill="#f9d7dc" opacity=".78"/>
+      <circle cx="96" cy="95" r="19" fill="#c85e78" opacity=".72"/>
+    </g>
+    <g transform="translate(242 1012) scale(.88)">
+      <circle cx="95" cy="96" r="66" fill="url(#rose)"/>
+      <path d="M94 45c40 13 48 48 27 75-18 23-58 29-82 2 26 5 42-5 49-23-21 2-36-12-36-31 14 10 28 8 42-23Z" fill="#f9d7dc" opacity=".78"/>
+      <circle cx="96" cy="95" r="19" fill="#c85e78" opacity=".72"/>
+    </g>
+  </g>
+  <g fill="#d5985d" opacity=".65">
+    <path d="M306 62h5v15h15v5h-15v15h-5V82h-15v-5h15Z"/>
+    <path d="M55 988h4v12h12v4H59v12h-4v-12H43v-4h12Z"/>
+    <circle cx="289" cy="186" r="3"/><circle cx="82" cy="1082" r="3"/>
+  </g>
+  <g fill="#e5a0ad" opacity=".48">
+    <path d="M318 306c30-24 55 13 20 36-25-3-34-16-20-36Z"/>
+    <path d="M44 630c30-20 50 16 16 33-23-4-30-18-16-33Z"/>
+    <path d="M292 774c25-18 44 13 15 29-21-3-27-14-15-29Z"/>
+  </g>
+  <rect x="18" y="18" width="324" height="1164" rx="24" fill="none" stroke="#fff" stroke-opacity=".62"/>
+</svg>

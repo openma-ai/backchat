@@ -8,22 +8,10 @@
 export const InvokeChannel = {
   Ping: "app:ping",
   AgentsList: "agents:list",
-  /** Spin up a one-shot AcpSession just to read the agent's
-   *  initialize.authMethods list, then dispose. Returns a small
-   *  array of {id, name, description?} entries the Settings UI
-   *  uses to render the sign-in picker. */
-  AcpAuthMethods: "acp:authMethods",
-  /** Spin up a one-shot AcpSession and call session.authenticate()
-   *  with the chosen methodId. The agent runs its own sub-flow
-   *  (OAuth browser handoff, API-key validation, ...). Resolves
-   *  on success; rejects with the agent's raw error on failure. */
-  AcpAuthenticate: "acp:authenticate",
-  AgentProbe: "agent:probe",
   AgentInstall: "agent:install",
   AgentUpgrade: "agent:upgrade",
   AgentUninstall: "agent:uninstall",
   AgentAuthenticate: "agent:authenticate",
-  AgentSetDefault: "agent:setDefault",
   SessionStart: "session:start",
   SessionPrompt: "session:prompt",
   SessionSetConfigOption: "session:setConfigOption",
@@ -39,7 +27,11 @@ export const InvokeChannel = {
   PairSave: "pair:save",
   SessionsList: "sessions:list",
   SessionsLoadHistory: "sessions:loadHistory",
+  SideWorkspacesList: "sideWorkspaces:list",
+  SideWorkspaceSave: "sideWorkspace:save",
+  SideWorkspaceDelete: "sideWorkspace:delete",
   SessionsSearch: "sessions:search",
+  ActivityStats: "activity:stats",
   SessionsPin: "sessions:pin",
   SessionsUnpin: "sessions:unpin",
   SessionsArchive: "sessions:archive",
@@ -48,8 +40,15 @@ export const InvokeChannel = {
   SessionsDelete: "sessions:delete",
   SettingsGet: "settings:get",
   SettingsPatch: "settings:patch",
+  McpAppResolve: "mcpApp:resolve",
+  McpAppRequest: "mcpApp:request",
+  InlineVisualizationRead: "inlineVisualization:read",
+  InlineVisualizationRegisterDocument: "inlineVisualization:registerDocument",
+  InlineVisualizationWatch: "inlineVisualization:watch",
+  InlineVisualizationUnwatch: "inlineVisualization:unwatch",
   PermissionRespond: "permission:respond",
   FsApprovalRespond: "fs:approvalRespond",
+  BrokerPendingAsks: "broker:pendingAsks",
   /** User-facing terminal — distinct from the ACP-driven terminal/* family
    *  in brokers.ts (those are command-runners for agents; UiTerm is a
    *  pty-backed interactive shell shown in the bottom panel). */
@@ -97,9 +96,14 @@ export const InvokeChannel = {
    *  on in the current workspace. */
   UiFsRecent: "uiFs:recent",
   /** Open an arbitrary path with the OS-default handler
-   *  (`shell.openPath`). Used to let the user open a file from the
-   *  recent feed without us needing to ship a preview/editor. */
+   *  (`shell.openPath`). Used by the preview surface's Open in action
+   *  and as a fallback for files without an in-app preview. */
   UiFsOpenPath: "uiFs:openPath",
+  /** Reveal a file in the host file manager without opening it. */
+  UiFsRevealPath: "uiFs:revealPath",
+  /** Resolve a local file to an in-app preview, preserving the source
+   *  path as the native Open in target. */
+  UiFsResolvePreview: "uiFs:resolvePreview",
   /** Read the current git branch for a workspace dir. Returns the
    *  branch name (e.g. "main"), or null if the path isn't a git
    *  repo or the read fails. Used by the composer's branch chip. */
@@ -157,6 +161,8 @@ export const PushChannel = {
   BrowserToolTabCommand: "browserTool:tabCommand",
   /** Browser download progress for the task-scoped in-app browser. */
   BrowserDownloadsChanged: "browserData:downloadsChanged",
+  /** A watched generative-UI fragment changed on disk. */
+  InlineVisualizationChanged: "inlineVisualization:changed",
 } as const;
 
 export type InvokeChannelName = (typeof InvokeChannel)[keyof typeof InvokeChannel];

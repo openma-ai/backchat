@@ -4,15 +4,16 @@ import {
   ArrowUpFromLineIcon,
   FileIcon,
   FolderIcon,
-  GitBranchIcon,
   GlobeIcon,
   MessageSquareIcon,
   PlusIcon,
+  PuzzleIcon,
   SquareTerminalIcon,
   XIcon,
   type LucideIcon,
 } from "lucide-react";
 import { ChatView } from "@/components/chat/ChatView";
+import { SubagentAvatar } from "@/components/SubagentAvatar";
 import { FileTree } from "@/components/shell/FileTree";
 import { BrowserTab } from "@/components/shell/BrowserTab";
 import { TerminalTab } from "@/components/shell/TerminalTab";
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { previewLocalFile } from "@/lib/file-preview";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   selectActive,
@@ -53,6 +55,7 @@ import {
  *   browser    → Electron <webview>. Payload is the current URL.
  *   terminal   → pty shell (same UiTerm broker as the bottom panel).
  *                Payload is the terminalId (pre-spawned).
+ *   interactive → portal target for MCP Apps and inline visualizations.
  *
  * The tab bar mirrors BottomPanel's: chip with icon + truncated
  * label, X close on hover, `+` opens a popover to pick the type.
@@ -76,6 +79,34 @@ export function SideChatPanel() {
   const canStartSideChat = !!mainActive && mainActive.status !== "draft";
   const canForkSideChat =
     canStartSideChat && !!mainActive?.supportsSessionFork && !!mainActive?.acp_session_id;
+  const restoringTerminals = useRef(new Set<string>());
+
+  // PTY ids are process-local and cannot survive an app restart. A restored
+  // terminal tab carries only its cwd; recreate the shell lazily when its
+  // owning task's rail mounts, then swap in the fresh runtime id in place.
+  useEffect(() => {
+    const taskId = mainActive?.id;
+    if (!taskId) return;
+    for (const tab of tabs) {
+      if (tab.type !== "terminal" || !tab.needsRestore) continue;
+      if (restoringTerminals.current.has(tab.id)) continue;
+      restoringTerminals.current.add(tab.id);
+      void window.backchat.uiTermSpawn({
+        cwd: tab.terminalCwd || mainActive.cwd || undefined,
+        cols: 80,
+        rows: 24,
+      }).then(({ terminalId }) => {
+        sessionStore.patchSideTabForTask(taskId, tab.id, {
+          payload: terminalId,
+          needsRestore: false,
+        });
+      }).catch((error) => {
+        console.warn("Failed to restore side terminal", error);
+      }).finally(() => {
+        restoringTerminals.current.delete(tab.id);
+      });
+    }
+  }, [mainActive?.cwd, mainActive?.id, tabs]);
 
   useEffect(() => window.backchat.onBrowserToolTabCommand((command) => {
     if (!browserEnabled) return;
@@ -106,9 +137,7 @@ export function SideChatPanel() {
   const openSideChat = useCallback(
     async () => {
       if (!mainActive || !canStartSideChat) return;
-      const settingsCwd = settings?.default.workspace_path?.trim() || "";
       const cwd =
-        settingsCwd ||
         mainActive.cwd ||
         (await window.backchat.uiFsHome());
       const inheritance = canForkSideChat ? "fork" : "fresh";
@@ -116,7 +145,7 @@ export function SideChatPanel() {
         parentSessionId: mainActive.id,
         parentAcpSessionId: canForkSideChat ? mainActive.acp_session_id : undefined,
         inheritance,
-        agentId: mainActive.agent_id || settings?.default.agent_id || "",
+        agentId: mainActive.agent_id,
         cwd,
       });
       sessionStore.openSideTab("chat", sid, t("sideChat.title"));
@@ -125,8 +154,6 @@ export function SideChatPanel() {
       canForkSideChat,
       canStartSideChat,
       mainActive,
-      settings?.default.agent_id,
-      settings?.default.workspace_path,
       t,
     ],
   );
@@ -134,15 +161,9 @@ export function SideChatPanel() {
   const openTab = useCallback(
     async (type: SideTabType) => {
       if (type === "browser" && !browserEnabled) return;
-      // Resolve cwd for file / terminal tabs in this order:
-      //   1. settings.default.workspace_path — user preference if set.
-      //   2. active main session's cwd — this is now ALWAYS a real
-      //      path (ChatView's session start picks workspace_path or
-      //      $HOME upstream, never the old sandbox path).
-      //   3. $HOME — boring fallback when no chat is active.
-      const settingsCwd = settings?.default.workspace_path?.trim() || "";
+      // Side tools belong to the active task workspace. Home is used only
+      // when there is no active task.
       const cwd =
-        settingsCwd ||
         mainActive?.cwd ||
         (await window.backchat.uiFsHome());
       if (type === "chat") {
@@ -162,10 +183,18 @@ export function SideChatPanel() {
           cols: 80,
           rows: 24,
         });
-        sessionStore.openSideTab("terminal", terminalId, undefined);
+        const tabId = sessionStore.openSideTab(
+          "terminal",
+          terminalId,
+          deriveFileLabel(cwd),
+        );
+        sessionStore.patchSideTab(tabId, {
+          terminalCwd: cwd,
+          needsRestore: false,
+        });
       }
     },
-    [browserEnabled, mainActive?.cwd, openSideChat, settings?.default.workspace_path],
+    [browserEnabled, mainActive?.cwd, openSideChat],
   );
 
   const closeTab = useCallback((tab: SideTab) => {
@@ -287,6 +316,7 @@ export function SideChatPanel() {
                   active={browserWindow.activeTabId === tab.id}
                   visible={visible}
                   initialUrl={tab.payload}
+                  sourcePath={tab.sourcePath}
                   onUrlChange={(url) =>
                     sessionStore.patchSideTabForTask(browserWindow.taskId, tab.id, {
                       payload: url,
@@ -323,6 +353,7 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
       <FileTree
         key={tab.payload}
         rootPath={tab.payload}
+        onOpenFile={(path) => void previewLocalFile(path)}
         onRootChange={(next) =>
           sessionStore.patchSideTab(tab.id, {
             payload: next,
@@ -333,11 +364,21 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
     );
   }
   if (tab.type === "terminal") {
+    if (tab.needsRestore || !tab.payload) {
+      return (
+        <div className="flex h-full items-center justify-center text-xs text-fg-muted">
+          Restoring terminal…
+        </div>
+      );
+    }
     return (
       <div className="h-full px-3 pb-3">
         <TerminalTab key={tab.payload} terminalId={tab.payload} />
       </div>
     );
+  }
+  if (tab.type === "interactive") {
+    return <div id={`interactive-side-host-${tab.payload}`} className="h-full min-h-0" />;
   }
   return null;
 }
@@ -358,9 +399,8 @@ function EmptyState({
   //   2. Files the agent has touched in THIS chat.
   //   3. Fallback: recent files in the workspace cwd by mtime.
   // Cwd resolution mirrors openTab's:
-  //   settings.workspace_path → main session.cwd → $HOME.
+  //   main session.cwd → $HOME.
   const mainActive = useSessionStore(selectActive);
-  const settings = useSettings();
   const artifactsSelector = useMemo(
     () => selectArtifactsFor(mainActive?.id ?? null),
     [mainActive?.id],
@@ -376,10 +416,8 @@ function EmptyState({
 
   useEffect(() => {
     let cancelled = false;
-    const settingsCwd = settings?.default.workspace_path?.trim() || "";
     const resolve = async () => {
       const next =
-        settingsCwd ||
         mainActive?.cwd ||
         (await window.backchat.uiFsHome());
       if (cancelled) return;
@@ -401,7 +439,7 @@ function EmptyState({
     return () => {
       cancelled = true;
     };
-  }, [mainActive?.cwd, settings?.default.workspace_path, hasArtifacts]);
+  }, [mainActive?.cwd, hasArtifacts]);
 
   return (
     <div className="h-full overflow-y-auto px-4 pb-6">
@@ -451,7 +489,7 @@ function EmptyState({
                   hint={path}
                   icon={<FileIcon className="size-4 text-fg-subtle" />}
                   onClick={() => {
-                    openArtifactFile(path);
+                    void previewLocalFile(path);
                   }}
                 />
               </li>
@@ -488,7 +526,7 @@ function EmptyState({
                     if (entry.isDir) {
                       sessionStore.openSideTab("file", entry.path, entry.name);
                     } else {
-                      openArtifactFile(entry.path);
+                      void previewLocalFile(entry.path);
                     }
                   }}
                 />
@@ -512,21 +550,6 @@ function basename(p: string): string {
   const trimmed = p.replace(/\/+$/, "");
   const last = trimmed.split("/").pop();
   return last || p;
-}
-
-/** Open an artifact file the right way for its type. HTML/HTM goes
- *  into the sidebar BrowserTab so the user previews it inside the
- *  app — matches the auto-open behavior in session-store.#autoOpenHtml
- *  and the markdown link click handler. Everything else (images,
- *  pdfs, source files) goes through uiFsOpenPath → OS default app,
- *  because the embedded webview isn't a great viewer for those and
- *  the system app usually is. */
-function openArtifactFile(path: string): void {
-  if (/\.html?$/i.test(path)) {
-    sessionStore.openSideTab("browser", "file://" + path, basename(path));
-    return;
-  }
-  void window.backchat.uiFsOpenPath({ path });
 }
 
 function shortenServiceUrl(u: string): string {
@@ -651,7 +674,7 @@ function TabChip({
   onClose: () => void;
 }) {
   const { t } = useI18n();
-  const Icon = ICON_BY_TYPE[tab.type];
+  const Icon = tab.type === "subagent" ? null : ICON_BY_TYPE[tab.type];
   return (
     <div
       className={cn(
@@ -676,12 +699,16 @@ function TabChip({
         className="inline-flex items-center gap-1.5 truncate max-w-[160px]"
         title={tab.label}
       >
-         <Icon
-           className={cn(
-             "size-3.5 shrink-0",
-             active ? "text-fg" : "text-fg-subtle",
-           )}
-         />
+        {tab.type === "subagent" ? (
+          <SubagentAvatar avatarId={tab.avatarId} className="size-[18px]" />
+        ) : Icon ? (
+          <Icon
+            className={cn(
+              "size-3.5 shrink-0",
+              active ? "text-fg" : "text-fg-subtle",
+            )}
+          />
+        ) : null}
         {/* min-w-0 so the truncate inside the flex actually engages,
             and the label always shows even when narrow — image #95
             had chat/browser tabs reading as icon-only because the
@@ -759,12 +786,12 @@ function AddTabButton({
   );
 }
 
-const ICON_BY_TYPE: Record<SideTabType, LucideIcon> = {
+const ICON_BY_TYPE: Record<Exclude<SideTabType, "subagent">, LucideIcon> = {
   chat: MessageSquareIcon,
-  subagent: GitBranchIcon,
   file: FolderIcon,
   browser: GlobeIcon,
   terminal: SquareTerminalIcon,
+  interactive: PuzzleIcon,
 };
 
 const POPOVER_ITEMS: { type: SideTabType; labelKey: TranslationKey; icon: LucideIcon }[] = [

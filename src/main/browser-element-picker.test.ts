@@ -47,6 +47,11 @@ class FakeDebugger extends EventEmitter {
             border: [50, 80, 210, 80, 210, 128, 50, 128],
           },
         };
+      case "DOM.getNodeForLocation":
+        return {
+          backendNodeId: 42,
+          frameId: "frame-main",
+        };
       case "DOM.describeNode":
         if (this.rejectZeroDescribeDepth && params.depth === 0) {
           throw new Error("Invalid parameters");
@@ -159,7 +164,7 @@ describe("BrowserElementPickerService", () => {
     const hover = await picker.hover(target.id, { x: 25, y: 30 });
 
     expect(hover?.selector).toBe("#save");
-    expect(target.debugger.commands).not.toContainEqual(
+    expect(target.debugger.commands).toContainEqual(
       expect.objectContaining({ method: "DOM.getNodeForLocation" }),
     );
     expect(
@@ -207,9 +212,19 @@ describe("BrowserElementPickerService", () => {
     });
     expect(
       target.debugger.commands.find(
+        (command) => command.method === "DOM.getNodeForLocation",
+      )?.params,
+    ).toMatchObject({
+      x: 25,
+      y: 30,
+      includeUserAgentShadowDOM: true,
+      ignorePointerEventsNone: true,
+    });
+    expect(
+      target.debugger.commands.find(
         (command) => command.method === "DOM.describeNode",
       )?.params,
-    ).toMatchObject({ objectId: "hit-node-42" });
+    ).toMatchObject({ backendNodeId: 42 });
 
     const result = await picker.commit(target.id);
 

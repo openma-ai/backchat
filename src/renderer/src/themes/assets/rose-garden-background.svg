@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-label="Soft rose garden background">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffaf8"/>
+      <stop offset=".52" stop-color="#fff4f2"/>
+      <stop offset="1" stop-color="#f9e4e7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="60%">
+      <stop offset="0" stop-color="#fff" stop-opacity=".96"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rose" cx="38%" cy="32%" r="70%">
+      <stop offset="0" stop-color="#fff3f2"/>
+      <stop offset=".48" stop-color="#efa8b1"/>
+      <stop offset="1" stop-color="#c95f77"/>
+    </radialGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="22"/></filter>
+    <filter id="soft"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#a74861" flood-opacity=".16"/></filter>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#paper)"/>
+  <circle cx="840" cy="410" r="620" fill="url(#glow)"/>
+  <g opacity=".34" filter="url(#blur)" fill="#e88fa1">
+    <circle cx="82" cy="182" r="116"/><circle cx="1510" cy="220" r="160"/>
+    <circle cx="1430" cy="870" r="210"/><circle cx="260" cy="950" r="142"/>
+  </g>
+  <g fill="none" stroke="#9bab7c" stroke-width="6" stroke-linecap="round" opacity=".62">
+    <path d="M-20 860C150 740 176 520 305 390"/>
+    <path d="M1620 120c-154 88-202 266-304 390"/>
+  </g>
+  <g fill="#aab58c" opacity=".58">
+    <ellipse cx="90" cy="786" rx="60" ry="22" transform="rotate(-34 90 786)"/>
+    <ellipse cx="170" cy="670" rx="70" ry="24" transform="rotate(22 170 670)"/>
+    <ellipse cx="221" cy="560" rx="62" ry="22" transform="rotate(-30 221 560)"/>
+    <ellipse cx="1494" cy="212" rx="64" ry="23" transform="rotate(-28 1494 212)"/>
+    <ellipse cx="1414" cy="316" rx="72" ry="25" transform="rotate(28 1414 316)"/>
+    <ellipse cx="1354" cy="424" rx="62" ry="22" transform="rotate(-25 1354 424)"/>
+  </g>
+  <g filter="url(#soft)">
+    <g transform="translate(8 700)">
+      <circle cx="95" cy="145" r="98" fill="url(#rose)"/>
+      <path d="M95 70c54 18 66 64 38 101-23 31-77 39-108 2 34 8 56-5 65-31-28 4-49-15-50-41 20 15 38 11 55-31Z" fill="#f9d8da" opacity=".72"/>
+      <circle cx="100" cy="145" r="28" fill="#c95f77" opacity=".72"/>
+    </g>
+    <g transform="translate(1374 20) scale(.92)">
+      <circle cx="95" cy="145" r="98" fill="url(#rose)"/>
+      <path d="M95 70c54 18 66 64 38 101-23 31-77 39-108 2 34 8 56-5 65-31-28 4-49-15-50-41 20 15 38 11 55-31Z" fill="#f9d8da" opacity=".72"/>
+      <circle cx="100" cy="145" r="28" fill="#c95f77" opacity=".72"/>
+    </g>
+  </g>
+  <g fill="#e9a0ac" opacity=".5">
+    <path d="M472 178c38-35 76 13 32 45-36-3-49-20-32-45Z"/>
+    <path d="M1190 640c43-29 72 24 23 49-34-8-44-27-23-49Z"/>
+    <path d="M1030 182c30-27 61 10 26 37-29-2-40-16-26-37Z"/>
+    <path d="M454 780c34-23 58 19 19 39-27-6-35-21-19-39Z"/>
+  </g>
+  <g fill="#d59a63" opacity=".68">
+    <path d="M1260 126h8v21h21v8h-21v21h-8v-21h-21v-8h21Z"/>
+    <path d="M346 294h6v16h16v6h-16v16h-6v-16h-16v-6h16Z"/>
+    <circle cx="1150" cy="252" r="5"/><circle cx="392" cy="708" r="5"/>
+  </g>
+</svg>

@@ -42,6 +42,7 @@ vi.mock("./sql-store.js", () => ({
   appendEvent: vi.fn(),
   appendEventsTx: vi.fn(),
   archiveSession: vi.fn(),
+  setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
   touchSession: vi.fn(),
   upsertSession: vi.fn(),
@@ -179,5 +180,58 @@ describe("SessionManager prompt queue", () => {
     await second;
 
     expect(prompt).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops queued prompts and emits no turn lifecycle after disposal", async () => {
+    const send = vi.fn();
+    const firstPromptDone = deferred();
+    const prompt = vi.fn(async function* () {
+      await firstPromptDone.promise;
+    });
+    runtimeStartMock.mockResolvedValue({
+      acpSessionId: "acp-dispose-queue",
+      configOptions: [],
+      prompt,
+      setMode: vi.fn(),
+      setConfigOption: vi.fn(),
+      isAlive: vi.fn(() => true),
+      dispose: vi.fn(),
+    });
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "session-dispose-queue",
+      agent_id: "fake-agent",
+    });
+    const first = manager.prompt({
+      session_id: "session-dispose-queue",
+      turn_id: "turn-1",
+      text: "first",
+    });
+    await waitMicrotask();
+    const second = manager.prompt({
+      session_id: "session-dispose-queue",
+      turn_id: "turn-2",
+      text: "second",
+    });
+    await waitMicrotask();
+
+    await manager.dispose("session-dispose-queue");
+    send.mockClear();
+    firstPromptDone.resolve();
+    await Promise.all([first, second]);
+
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: expect.stringMatching(/^session\.(complete|error|queue_update)$/),
+      }),
+    );
   });
 });

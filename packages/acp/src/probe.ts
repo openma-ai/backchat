@@ -22,13 +22,21 @@ export interface ProbeAgentConfigOptionsOptions {
   agent: AgentSpec;
   cwd?: string;
   env?: Record<string, string | undefined>;
+  /** Bounded collection window for capability notifications that some
+   * agents publish just after session/new resolves. Absence is valid and
+   * must not consume the whole probe timeout. */
+  capabilitySettleMs?: number;
   timeoutMs?: number;
   spawner?: Spawner;
 }
 
 export interface ProbeAgentSessionConfigResult {
   configOptions: SessionConfigOption[];
+  availableCommands: unknown[];
   modes?: SessionModeState | null;
+  /** Auth fact observed by the same disposable process. Full capability
+   * inspection must not start a second auth-probe child. */
+  auth: ProbeAgentAuthStatus;
 }
 
 export interface AuthenticateAgentOptions {
@@ -87,6 +95,7 @@ export interface TerminalAuthLaunchOptions {
 }
 
 const ACP_AUTH_REQUIRED_CODE = -32000;
+const activeSetupConnections = new Set<() => Promise<void>>();
 const ACP_CLIENT_CAPABILITIES: ClientCapabilities = {
   fs: {
     readTextFile: true,
@@ -394,6 +403,16 @@ function mergedStringEnv(
   return out;
 }
 
+function mergedSpawnEnv(
+  ...envs: Array<Record<string, string | undefined> | undefined>
+): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const env of envs) {
+    Object.assign(out, env);
+  }
+  return out;
+}
+
 function envArrayToRecord(env: Array<{ name?: unknown; value?: unknown }> | undefined): Record<string, string> | undefined {
   if (!Array.isArray(env)) return undefined;
   const entries = env.filter((entry): entry is { name: string; value: string } => (
@@ -417,6 +436,22 @@ function configOptionsFromSessionUpdate(update: unknown): SessionConfigOption[] 
   const typed = update as { sessionUpdate?: unknown; configOptions?: unknown };
   if (typed.sessionUpdate !== "config_option_update" || !Array.isArray(typed.configOptions)) return null;
   return typed.configOptions.map((option) => structuredClone(option));
+}
+
+function availableCommandsFromSessionUpdate(update: unknown): unknown[] | null {
+  if (!update || typeof update !== "object") return null;
+  const typed = update as {
+    sessionUpdate?: unknown;
+    availableCommands?: unknown;
+    available_commands?: unknown;
+  };
+  if (typed.sessionUpdate !== "available_commands_update") return null;
+  const commands = Array.isArray(typed.availableCommands)
+    ? typed.availableCommands
+    : Array.isArray(typed.available_commands)
+      ? typed.available_commands
+      : null;
+  return commands?.map((command) => structuredClone(command)) ?? null;
 }
 
 function modesFromResponse(value: NewSessionResponse | { modes?: SessionModeState | null } | undefined): SessionModeState | null {
@@ -449,6 +484,24 @@ async function withTimeout<T>(
   }
 }
 
+async function waitForSignalOrTimeout(
+  signal: Promise<void>,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      signal,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function spawnAcpProbeAgent(
   options: {
     agent: AgentSpec;
@@ -465,13 +518,14 @@ async function spawnAcpProbeAgent(
   dispose: () => Promise<void>;
 }> {
   const env = mergedStringEnv(options.agent.env, options.env);
+  const spawnEnv = mergedSpawnEnv(options.agent.env, options.env);
   const diagnosticLines: string[] = [];
   const onDiagnosticLine = options.agent.onDiagnosticLine;
   const spawner = options.spawner ?? new NodeSpawner();
   const child = await spawner.spawn({
     ...options.agent,
     cwd: options.cwd,
-    env,
+    env: spawnEnv,
     onDiagnosticLine: (line) => {
       diagnosticLines.push(line);
       onDiagnosticLine?.(line);
@@ -485,13 +539,32 @@ async function spawnAcpProbeAgent(
     },
     stream,
   );
+  let disposePromise: Promise<void> | null = null;
+  const dispose = () => {
+    disposePromise ??= withTimeout(
+      child.kill(),
+      5_000,
+      "ACP setup process disposal timed out after 5000ms",
+    ).catch(() => undefined).finally(() => {
+        activeSetupConnections.delete(dispose);
+      });
+    return disposePromise;
+  };
+  activeSetupConnections.add(dispose);
   return {
     agent,
     child,
     env,
     diagnosticLines,
-    dispose: () => child.kill().catch(() => undefined),
+    dispose,
   };
+}
+
+/** App-shutdown barrier for disposable setup/auth ACP children. */
+export async function disposeAllAcpSetupProcesses(): Promise<void> {
+  await Promise.allSettled(
+    [...activeSetupConnections].map((dispose) => dispose()),
+  );
 }
 
 function initializeAcpAgent(agent: Agent): Promise<InitializeResponse> {
@@ -532,11 +605,21 @@ export async function probeAgentSessionConfig(
   await mkdir(cwd, { recursive: true });
 
   let updatedConfigOptions: SessionConfigOption[] = [];
+  let updatedAvailableCommands: unknown[] = [];
   let updatedModeId: string | null = null;
+  let resolveAvailableCommands: (() => void) | null = null;
+  const availableCommandsReady = new Promise<void>((resolve) => {
+    resolveAvailableCommands = resolve;
+  });
   const client: Client = {
     sessionUpdate: async (params) => {
       const next = configOptionsFromSessionUpdate(params.update);
       if (next) updatedConfigOptions = next;
+      const commands = availableCommandsFromSessionUpdate(params.update);
+      if (commands) {
+        updatedAvailableCommands = commands;
+        resolveAvailableCommands?.();
+      }
       const modeId = modeFromSessionUpdate(params.update);
       if (modeId) updatedModeId = modeId;
     },
@@ -550,20 +633,95 @@ export async function probeAgentSessionConfig(
     client,
   });
   const timeoutMs = options.timeoutMs ?? 15_000;
+  const capabilitySettleMs = options.capabilitySettleMs ?? 750;
   try {
     return await withTimeout(
       (async () => {
-        await initializeAcpAgent(connection.agent);
+        const initResult = await initializeAcpAgent(connection.agent);
+        const methods = supportedAuthMethods(initResult.authMethods);
+        const method = selectAuthMethod(initResult.authMethods);
+        if (!method) {
+          const declared = declaredAuthMethods(initResult.authMethods);
+          if (declared.length > 0) {
+            const unsupported = unsupportedAuthMethodTypes(declared);
+            return {
+              configOptions: [],
+              availableCommands: [],
+              auth: {
+                status: "unknown" as const,
+                message: unsupported.length > 0
+                  ? `No supported ACP auth method is available. Unsupported methods: ${unsupported.join(", ")}.`
+                  : "No supported ACP auth method is available.",
+              },
+            };
+          }
+        }
+        const methodFields = method
+          ? authMethodStatusFields(
+              method,
+              methods,
+              options.agent,
+              connection.env,
+              cwd,
+            )
+          : {};
+        if (method && isCredentialPromptAuthMethod(method)) {
+          const missing = missingCredentialVariableNames(
+            method,
+            connection.env,
+          );
+          if (missing.length > 0) {
+            return {
+              configOptions: [],
+              availableCommands: [],
+              auth: {
+                status: "needs-auth" as const,
+                ...methodFields,
+                message:
+                  missing.length === 1
+                    ? `Missing credential variable: ${missing[0]}.`
+                    : `Missing credential variables: ${missing.join(", ")}.`,
+              },
+            };
+          }
+        }
         try {
           const session = await createAcpProbeSession(connection.agent, cwd);
           const responseConfigOptions = configOptionsFromResponse(session);
           const modes = modesFromResponse(session);
+          await waitForSignalOrTimeout(
+            availableCommandsReady,
+            capabilitySettleMs,
+          );
+          await allowDiagnosticsToFlush();
+          const diagnostic = unauthenticatedDiagnostic(
+            connection.diagnosticLines,
+          );
           return {
             configOptions: responseConfigOptions.length > 0 ? responseConfigOptions : updatedConfigOptions,
+            availableCommands: updatedAvailableCommands,
             ...(modes ? { modes: updatedModeId ? { ...modes, currentModeId: updatedModeId } : modes } : {}),
+            auth: diagnostic
+              ? {
+                  status: "needs-auth" as const,
+                  ...methodFields,
+                  message: diagnostic,
+                }
+              : method
+                ? { status: "configured" as const, ...methodFields }
+                : { status: "none" as const },
           };
         } catch (error) {
-          if (isAuthRequiredError(error)) return { configOptions: [] };
+          if (isAuthRequiredError(error)) {
+            return {
+              configOptions: [],
+              availableCommands: [],
+              auth: {
+                status: "needs-auth" as const,
+                ...methodFields,
+              },
+            };
+          }
           throw error;
         }
       })(),
@@ -643,7 +801,7 @@ export async function authenticateAgent(options: AuthenticateAgentOptions): Prom
   const keepBackgroundAuthAlive = (authPromise: Promise<unknown>) => {
     keepChildAliveForBackgroundAuth = true;
     let backgroundTimer: NodeJS.Timeout | undefined = setTimeout(() => {
-      void connection.child.kill().catch(() => undefined);
+      void connection.dispose();
       backgroundTimer = undefined;
     }, backgroundAuthTimeoutMs);
     backgroundTimer.unref?.();
@@ -654,7 +812,7 @@ export async function authenticateAgent(options: AuthenticateAgentOptions): Prom
         // Browser-hosted auth may be cancelled after the browser has opened.
       } finally {
         if (backgroundTimer) clearTimeout(backgroundTimer);
-        await connection.child.kill().catch(() => undefined);
+        await connection.dispose();
       }
     })();
   };

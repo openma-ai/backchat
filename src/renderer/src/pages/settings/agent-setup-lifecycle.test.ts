@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { deriveAgentSetupState } from "./agent-setup-lifecycle";
 import type { AgentInfo } from "@shared/api";
@@ -16,6 +18,11 @@ function agent(overrides: Partial<AgentInfo>): AgentInfo {
 }
 
 describe("deriveAgentSetupState", () => {
+  it("publishes probe results to the composer agent query", () => {
+    const source = readFileSync(resolve(__dirname, "Agents.tsx"), "utf8");
+    expect(source).toContain('queryClient.setQueryData(["agents"], next)');
+  });
+
   it("routes env-var auth to credential configuration instead of sign-in", () => {
     const state = deriveAgentSetupState(agent({
       auth: {
@@ -33,7 +40,7 @@ describe("deriveAgentSetupState", () => {
     }));
 
     expect(state.statusText).toBe("Auth needed");
-    expect(state.canDefault).toBe(false);
+    expect(state.canEnable).toBe(false);
     expect(state.authAction).toEqual({
       kind: "configure",
       label: "Configure",
@@ -53,7 +60,7 @@ describe("deriveAgentSetupState", () => {
     }), { waitingForAuth: true });
 
     expect(state.statusText).toBe("Waiting for auth");
-    expect(state.canDefault).toBe(false);
+    expect(state.canEnable).toBe(false);
     expect(state.authAction).toEqual({
       kind: "sign-in",
       label: "Open again",
@@ -77,7 +84,7 @@ describe("deriveAgentSetupState", () => {
     }));
 
     expect(state.statusText).toBe("Auth needed");
-    expect(state.canDefault).toBe(false);
+    expect(state.canEnable).toBe(false);
     expect(state.authAction).toEqual({
       kind: "open-setup",
       label: "Open setup",

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#fffefd"/>
+      <stop offset="1" stop-color="#fff5f1"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="1" cy="0" r="1">
+      <stop stop-color="#ff604d" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#ff604d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="320" height="180" rx="20" fill="url(#surface)"/>
+  <rect width="320" height="180" rx="20" fill="url(#halo)"/>
+  <path d="M218 180 320 78v102z" fill="#e63227" fill-opacity=".035"/>
+</svg>

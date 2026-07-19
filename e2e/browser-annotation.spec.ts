@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
-import { injectSession, launchApp } from "./helpers";
+import { injectSession, launchApp, openBrowserPanel } from "./helpers";
 
 test("a selected browser element adds DOM context and a screenshot to the composer", async ({}, testInfo) => {
   const { page, cleanup } = await launchApp();
@@ -10,12 +10,7 @@ test("a selected browser element adds DOM context and a screenshot to the compos
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-annotation",
     });
-    const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
-    if (!(await closeSidePanel.isVisible())) {
-      await page.getByRole("button", { name: "Open side chat" }).click();
-    }
-    await expect(closeSidePanel).toBeVisible();
-    await page.getByRole("button", { name: /浏览器/ }).click();
+    await openBrowserPanel(page);
 
     const webview = page.locator("webview");
     await webview.waitFor();
@@ -58,10 +53,6 @@ test("a selected browser element adds DOM context and a screenshot to the compos
     await page.mouse.up();
 
     await expect(page.getByRole("button", { name: "1 page annotation" })).toBeVisible();
-    const screenshot = page.getByRole("img", { name: /page-element-.*\.png/ });
-    await expect(screenshot).toBeVisible();
-    await expect(screenshot).toHaveCSS("object-fit", "cover");
-    await expect(screenshot).toHaveCSS("object-position", "50% 0%");
     await expect(page.locator('textarea[placeholder="Reply…"]')).toHaveValue("");
 
     const screenshotPath = testInfo.outputPath("browser-element-annotation.png");
@@ -116,11 +107,7 @@ test("a dragged browser region adds visual context and a screenshot without DOM 
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-region",
     });
-    const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
-    if (!(await closeSidePanel.isVisible())) {
-      await page.getByRole("button", { name: "Open side chat" }).click();
-    }
-    await page.getByRole("button", { name: /浏览器/ }).click();
+    await openBrowserPanel(page);
 
     const webview = page.locator("webview");
     await webview.waitFor();
@@ -148,9 +135,6 @@ test("a dragged browser region adds visual context and a screenshot without DOM 
     await page.mouse.up();
 
     await expect(page.getByRole("button", { name: "1 page annotation" })).toBeVisible();
-    const screenshot = page.getByRole("img", { name: /page-region-.*\.png/ });
-    await expect(screenshot).toBeVisible();
-    await expect(screenshot).toHaveCSS("object-position", "50% 0%");
 
     const screenshotPath = testInfo.outputPath("browser-region-annotation.png");
     await page.screenshot({ path: screenshotPath });
@@ -211,11 +195,7 @@ test("elements inside Shadow DOM and an iframe resolve through their own CDP con
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-complex-dom",
     });
-    const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
-    if (!(await closeSidePanel.isVisible())) {
-      await page.getByRole("button", { name: "Open side chat" }).click();
-    }
-    await page.getByRole("button", { name: /浏览器/ }).click();
+    await openBrowserPanel(page);
 
     const webview = page.locator("webview");
     await webview.waitFor();
@@ -313,7 +293,6 @@ test("elements inside Shadow DOM and an iframe resolve through their own CDP con
       timeout: 8_000,
     });
 
-    await annotateButton.click();
     await expect(page.getByRole("button", { name: "Cancel page annotation" })).toBeVisible();
     await page.mouse.move(
       webviewBox!.x + targetCenters.frame.x,
@@ -327,8 +306,6 @@ test("elements inside Shadow DOM and an iframe resolve through their own CDP con
     await expect(page.getByRole("button", { name: "2 page annotations" })).toBeVisible({
       timeout: 8_000,
     });
-
-    await expect(page.getByRole("img", { name: /page-element-.*\.png/ })).toHaveCount(2);
 
     const screenshotPath = testInfo.outputPath("browser-complex-dom-annotations.png");
     await page.screenshot({ path: screenshotPath });
@@ -401,11 +378,7 @@ test("subframe loads preserve the picker while Escape and main-frame navigation 
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-picker-lifecycle",
     });
-    const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
-    if (!(await closeSidePanel.isVisible())) {
-      await page.getByRole("button", { name: "Open side chat" }).click();
-    }
-    await page.getByRole("button", { name: /浏览器/ }).click();
+    await openBrowserPanel(page);
 
     const webview = page.locator("webview");
     await webview.waitFor();

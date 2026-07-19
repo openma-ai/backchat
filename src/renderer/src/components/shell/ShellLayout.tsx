@@ -18,6 +18,7 @@ import {
   selectActive,
 } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
+import { createSideWorkspacePersistence } from "@/lib/side-workspace-persistence";
 
 const COLLAPSE_KEY = "openma:sidebar-collapsed";
 const RIGHT_KEY = "openma:right-rail-collapsed";
@@ -98,16 +99,36 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   const bottomCollapse = usePersistedCollapse(BOTTOM_KEY, true);
 
   useEffect(() => {
+    const sideWorkspacePersistence = createSideWorkspacePersistence(
+      sessionStore,
+      window.backchat,
+    );
     const off = window.backchat.onSessionEvent((e) => sessionStore.apply(e));
     void window.backchat.sessionAnnounce();
     void Promise.all([
       window.backchat.sessionsList(200),
       window.backchat.pairsList(),
-    ]).then(([sessions, pairs]) => {
+      window.backchat.sideWorkspacesList(),
+    ]).then(([sessions, pairs, sideWorkspaces]) => {
       sessionStore.seedPersisted(sessions);
       sessionStore.seedPersistedPairGroups(pairs);
+      sideWorkspacePersistence.hydrate(sideWorkspaces);
+      sideWorkspacePersistence.start();
+    }).catch((error) => {
+      console.warn("Failed to restore persisted workspace state", error);
+      // A broken workspace row must not disable persistence for the rest of
+      // the app lifetime. Start from the live store and repair on next write.
+      sideWorkspacePersistence.start();
     });
-    return off;
+    const flushBeforeUnload = () => {
+      void sideWorkspacePersistence.flush();
+    };
+    window.addEventListener("beforeunload", flushBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", flushBeforeUnload);
+      sideWorkspacePersistence.dispose();
+      off();
+    };
   }, []);
 
   useEffect(() => {
@@ -116,12 +137,8 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
     });
     const offAct = window.backchat.onMenuAction((action) => {
       if (action === "new-chat") {
-        // Cold-create: just route to home. A draft session is only
-        // materialized when the user actually submits a prompt in the
-        // home composer (see ChatView.onSubmit). This keeps Cmd+N from
-        // spraying empty draft rows into the sidebar.
-        sessionStore.setActive(null);
-        void navigate({ to: "/" });
+        const id = sessionStore.newDraft();
+        void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
       } else if (action === "command-palette") {
         // CommandPalette listens on window keydown for ⌘K — replay one.
         window.dispatchEvent(

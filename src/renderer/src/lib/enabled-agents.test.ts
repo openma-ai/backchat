@@ -4,12 +4,13 @@ import { enabledAgentIds, isAgentEnabled, isAgentRunnable } from "./enabled-agen
 
 const baseSettings: Settings = {
   default: {
-    agent_id: "",
     workspace_path: "",
     permission_mode: "ask",
     prompt_queue_enabled: true,
   },
   appearance: {
+    light_theme_id: "backchat-light",
+    dark_theme_id: "backchat-dark",
     theme: "system",
     language: "system",
     font_size: "md",
@@ -23,10 +24,6 @@ describe("enabled ACP agents", () => {
   it("only treats explicitly enabled agents as enabled", () => {
     const settings: Settings = {
       ...baseSettings,
-      default: {
-        ...baseSettings.default,
-        agent_id: "codex-acp",
-      },
       agents: [
         { id: "claude-acp", enabled: true, env: [] },
         { id: "gemini", env: [] },

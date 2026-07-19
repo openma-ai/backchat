@@ -8,7 +8,11 @@ import {
   closeApp,
   exportSessionFiles,
   launchAppWithHome,
+  openCommandPalette,
+  openPersistedSession,
   persistSessionFixture,
+  reloadRenderer,
+  waitForRunnableHarness,
 } from "./helpers";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -64,9 +68,7 @@ test.describe("user-visible storage persistence", () => {
 
     const second = await launchAppWithHome(home);
     try {
-      const restored = second.page.getByRole("button", { name: new RegExp(title) });
-      await expect(restored).toBeVisible();
-      await restored.click();
+      await openPersistedSession(second.page, title, sessionId);
 
       const transcript = second.page.getByRole("log");
       await expect(transcript.getByText(title)).toBeVisible();
@@ -94,10 +96,12 @@ test.describe("user-visible storage persistence", () => {
               agent_id: "codex-acp",
               workspace_path: workspace,
               permission_mode: "ask",
+              prompt_queue_enabled: true,
             },
             agents: [
               {
                 id: "codex-acp",
+                enabled: true,
                 command_override: nodePath,
                 args_override: [fakeAcpAgentPath],
                 env: [],
@@ -107,6 +111,8 @@ test.describe("user-visible storage persistence", () => {
         },
         { nodePath: process.execPath, fakeAcpAgentPath, workspace },
       );
+      await reloadRenderer(first.page);
+      await waitForRunnableHarness(first.page);
 
       await expect(first.page.getByText("What can I help with?")).toBeVisible();
       const composer = first.page.locator("textarea").first();
@@ -164,9 +170,7 @@ test.describe("user-visible storage persistence", () => {
 
     const second = await launchAppWithHome(home);
     try {
-      const restored = second.page.getByRole("button", { name: prompt });
-      await expect(restored).toBeVisible();
-      await restored.click();
+      await openPersistedSession(second.page, prompt, "workspace");
 
       const transcript = second.page.getByRole("log");
       await expect(transcript.getByText(prompt, { exact: true })).toBeVisible();
@@ -240,18 +244,17 @@ test.describe("user-visible storage persistence", () => {
 
     const second = await launchAppWithHome(home);
     try {
-      const firstRestored = second.page.getByRole("button", {
-        name: firstPrompt,
-        exact: true,
-      });
-      await expect(firstRestored).toBeVisible();
+      const firstRestored = await openPersistedSession(
+        second.page,
+        firstPrompt,
+        "workspace",
+      );
       const secondRestored = second.page.getByRole("button", {
         name: secondPrompt,
         exact: true,
       });
       await expect(secondRestored).toBeVisible();
 
-      await firstRestored.click();
       const transcript = second.page.getByRole("log");
       await expect(transcript.getByText(firstPrompt, { exact: true })).toBeVisible();
       await expect(
@@ -264,8 +267,7 @@ test.describe("user-visible storage persistence", () => {
         transcript.getByText(`Fake response saved for ${secondPrompt}.`),
       ).toBeVisible();
 
-      await second.page.getByRole("button", { name: "Open command palette" }).click();
-      const palette = second.page.getByRole("dialog");
+      const palette = await openCommandPalette(second.page);
       await second.page
         .getByRole("combobox", { name: "Command palette" })
         .fill("rebuild-token");
@@ -295,10 +297,12 @@ test.describe("user-visible storage persistence", () => {
               agent_id: "codex-acp",
               workspace_path: workspace,
               permission_mode: "ask",
+              prompt_queue_enabled: true,
             },
             agents: [
               {
                 id: "codex-acp",
+                enabled: true,
                 command_override: nodePath,
                 args_override: [fakeAcpAgentPath],
                 env: [],
@@ -308,6 +312,8 @@ test.describe("user-visible storage persistence", () => {
         },
         { nodePath: process.execPath, fakeAcpAgentPath, workspace },
       );
+      await reloadRenderer(first.page);
+      await waitForRunnableHarness(first.page);
 
       const composer = first.page.locator("textarea").first();
       await composer.fill(prompt);
@@ -340,7 +346,7 @@ test.describe("user-visible storage persistence", () => {
         second.page.getByRole("button", { name: prompt, exact: true }),
       ).toBeHidden();
 
-      await second.page.getByRole("button", { name: "Open command palette" }).click();
+      await openCommandPalette(second.page);
       await second.page
         .getByRole("combobox", { name: "Command palette" })
         .fill("hard-delete-rebuild-token");
@@ -370,10 +376,12 @@ test.describe("user-visible storage persistence", () => {
               agent_id: "codex-acp",
               workspace_path: workspace,
               permission_mode: "ask",
+              prompt_queue_enabled: true,
             },
             agents: [
               {
                 id: "codex-acp",
+                enabled: true,
                 command_override: nodePath,
                 args_override: [fakeAcpAgentPath],
                 env: [],
@@ -383,6 +391,8 @@ test.describe("user-visible storage persistence", () => {
         },
         { nodePath: process.execPath, fakeAcpAgentPath, workspace },
       );
+      await reloadRenderer(first.page);
+      await waitForRunnableHarness(first.page);
 
       const composer = first.page.locator("textarea").first();
       await composer.fill(prompt);
@@ -397,9 +407,7 @@ test.describe("user-visible storage persistence", () => {
 
     const second = await launchAppWithHome(home);
     try {
-      const restored = second.page.getByRole("button", { name: prompt });
-      await expect(restored).toBeVisible();
-      await restored.click();
+      await openPersistedSession(second.page, prompt, "workspace");
 
       const transcript = second.page.getByRole("log");
       await expect(transcript.getByText(prompt, { exact: true })).toBeVisible();
@@ -466,7 +474,7 @@ test.describe("user-visible storage persistence", () => {
 
     const second = await launchAppWithHome(home);
     try {
-      await second.page.getByRole("button", { name: "Open command palette" }).click();
+      await openCommandPalette(second.page);
       await second.page
         .getByRole("combobox", { name: "Command palette" })
         .fill(token);
@@ -535,7 +543,7 @@ test.describe("user-visible storage persistence", () => {
         second.page.getByRole("button", { name: title, exact: true }),
       ).toBeHidden();
 
-      await second.page.getByRole("button", { name: "Open command palette" }).click();
+      await openCommandPalette(second.page);
       await second.page
         .getByRole("combobox", { name: "Command palette" })
         .fill(token);
@@ -552,9 +560,7 @@ test.describe("user-visible storage persistence", () => {
 
     const third = await launchAppWithHome(home);
     try {
-      await expect(
-        third.page.getByRole("button", { name: title, exact: true }),
-      ).toBeVisible();
+      await openPersistedSession(third.page, title, sessionId);
     } finally {
       await third.cleanup();
     }

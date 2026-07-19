@@ -103,6 +103,7 @@ test.describe("settings agent setup lifecycle", () => {
       });
 
       await page.getByRole("link", { name: "Settings" }).click();
+      await page.getByRole("link", { name: "Agents", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
       await expect(page.getByRole("link", { name: "Back to app" })).toBeVisible();
       await expect(page.getByPlaceholder("Search settings...")).toBeVisible();
@@ -113,16 +114,21 @@ test.describe("settings agent setup lifecycle", () => {
       await expect(page.getByRole("button", { name: "Configure Env Agent credentials" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Open Terminal Agent setup" })).toBeVisible();
 
-      await page.getByRole("combobox", { name: "Auth method for Multi Agent" }).selectOption("terminal-login");
-      await page.getByRole("button", { name: "Open Multi Agent setup" }).click();
+      await page.getByRole("button", { name: "Sign in to Multi Agent" }).click();
+      await expect(page.getByText("Set up Multi Agent")).toBeVisible();
+      await page.getByRole("radio", { name: /Terminal login/ }).click();
+      await page.getByRole("button", { name: "Open terminal setup" }).click();
       await expect.poll(async () => page.evaluate(() => {
         // @ts-expect-error — test bridge typed in preload/index.ts
         return window.__backchatTest.agentSetupCalls();
       })).toContainEqual({ type: "auth", id: "multi-agent", methodId: "terminal-login" });
 
       await page.getByRole("button", { name: "Sign in to Waiting Agent" }).click();
+      await expect(page.getByText("Set up Waiting Agent")).toBeVisible();
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
       await expect(page.getByText("Waiting for auth")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Open Waiting Agent sign in again" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Continue sign in" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Check Waiting Agent auth again" })).toBeVisible();
       await expect(page.getByText("Auth configured")).toBeVisible({ timeout: 8_000 });
     } finally {

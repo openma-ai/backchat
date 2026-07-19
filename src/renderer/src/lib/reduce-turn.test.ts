@@ -1,11 +1,37 @@
 import { describe, expect, test } from "vitest";
-import { reduceTurn, sanitizeThoughtText } from "./reduce-turn";
+import { parseAcpEvent, reduceTurn, sanitizeThoughtText } from "./reduce-turn";
 
 function render(...payloads: unknown[]) {
   return reduceTurn(payloads.map((payload) => ({ payload })));
 }
 
 describe("reduceTurn ACP event compatibility", () => {
+  test("routes the Codex skill-context warning away from assistant text", () => {
+    const warning =
+      "Warning: Skill descriptions were shortened to fit the 2% skills context budget. " +
+      "Codex can still see every skill, but some descriptions are shorter.";
+    const event = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: `${warning}\n\n` },
+    };
+
+    expect(parseAcpEvent(event)).toMatchObject({
+      kind: "notice",
+      notice: warning,
+    });
+    expect(render(event).assistantText).toBe("");
+  });
+
+  test("keeps ordinary assistant warnings in the transcript", () => {
+    const text = "Warning: this migration removes the legacy table.";
+    expect(
+      parseAcpEvent({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text },
+      }),
+    ).toMatchObject({ kind: "text", text });
+  });
+
   test("drops HTML-comment placeholders from thought progress", () => {
     expect(sanitizeThoughtText("Planning\n<!-- -->\nNext")).toBe("Planning\n\nNext");
     const out = render({
@@ -45,6 +71,34 @@ describe("reduceTurn ACP event compatibility", () => {
       { kind: "assistant_text", text: "Before " },
       { kind: "tool", toolCallId: "tool-1" },
       { kind: "assistant_text", text: "after." },
+    ]);
+  });
+
+  test("preserves Codex commentary and final-answer phases in the timeline", () => {
+    const out = render(
+      {
+        sessionUpdate: "agent_message_chunk",
+        _meta: { codex: { phase: "commentary" } },
+        content: { type: "text", text: "I am checking the files." },
+      },
+      {
+        sessionUpdate: "agent_message_chunk",
+        _meta: { codex: { phase: "final_answer" } },
+        content: { type: "text", text: "Done." },
+      },
+    );
+
+    expect(out.timeline).toEqual([
+      {
+        kind: "assistant_text",
+        phase: "commentary",
+        text: "I am checking the files.",
+      },
+      {
+        kind: "assistant_text",
+        phase: "final_answer",
+        text: "Done.",
+      },
     ]);
   });
 
@@ -159,7 +213,7 @@ describe("reduceTurn ACP event compatibility", () => {
     expect(out.tools).toEqual([]);
   });
 
-  test("surfaces permission requests as pending tool calls", () => {
+  test("keeps broker permission requests out of transcript activity", () => {
     const out = render({
       type: "requestPermission",
       params: {
@@ -170,19 +224,8 @@ describe("reduceTurn ACP event compatibility", () => {
     });
 
     expect(out.notes).toEqual([]);
-    expect(out.tools).toEqual([
-      {
-        toolCallId: "permission-perm-1",
-        title: "Run shell command",
-        kind: "permission",
-        status: "pending",
-        rawInput: {
-          id: "perm-1",
-          title: "Run shell command",
-          options: [{ optionId: "allow", kind: "allow_once" }],
-        },
-      },
-    ]);
+    expect(out.tools).toEqual([]);
+    expect(out.timeline).toEqual([]);
   });
 
   test("parses ACP 0.25 plan update and removal events into visible turn state", () => {

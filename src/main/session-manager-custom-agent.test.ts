@@ -39,6 +39,7 @@ vi.mock("./sql-store.js", () => ({
   appendEvent: vi.fn(),
   appendEventsTx: vi.fn(),
   archiveSession: vi.fn(),
+  setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
   touchSession: vi.fn(),
   upsertSession: upsertSessionMock,

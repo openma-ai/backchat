@@ -1,6 +1,8 @@
 import * as React from "react";
 import { useLocation } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
+import { getThemePlugin } from "@/themes";
 
 /**
  * AppShell — three-slot stage. Left sidebar and (optional) right side-
@@ -86,12 +88,18 @@ export function AppShell({
   const { collapsed: rightCollapsed } = useRightRailCollapse();
   const { collapsed: bottomCollapsed } = useBottomBarCollapse();
   const [bottomHeight, setBottomHeight] = useBottomPanelHeight();
+  const { themeId, effective } = useTheme();
+  const themeSidebarWidth = getThemePlugin(themeId, effective).layout?.sidebarWidth ?? SIDEBAR_W;
   // Suppress slide/easing transitions while the user is dragging the
   // resize handle — without this, every move event queues a fresh
   // 280 ms animation and the cursor visibly lags the panel edge.
   const [resizing, setResizing] = React.useState(false);
-  const [sidebarWidth, setSidebarWidth] = React.useState(SIDEBAR_W);
+  const [sidebarWidth, setSidebarWidth] = React.useState(themeSidebarWidth);
   const [rightRailWidth, setRightRailWidth] = React.useState(380);
+
+  React.useEffect(() => {
+    setSidebarWidth(themeSidebarWidth);
+  }, [themeId, themeSidebarWidth]);
 
   // Where the bottom edge of the main column + the side rail sits when
   // the bottom panel is open. The panel is a floating rounded card
@@ -117,13 +125,14 @@ export function AppShell({
         "--right-rail-w": `${rightRailWidth}px`,
       } as React.CSSProperties}
     >
+      <div className="theme-app-background" aria-hidden="true" />
       {/* Left sidebar — absolute floating card. Spans full height
           regardless of bottom panel state (the bottom panel is inset
           to the main column's x-range). */}
       <aside
         className={cn(
           "absolute flex flex-col overflow-hidden transform-gpu",
-          "liquid-glass rounded-2xl",
+          "liquid-glass theme-sidebar-background rounded-2xl",
         )}
         style={{
           left: "var(--stage-inset)",

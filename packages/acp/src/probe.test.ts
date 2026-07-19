@@ -12,9 +12,14 @@ import {
   type PromptRequest,
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { authenticateAgent, probeAgentAuthStatus } from "./probe.js";
+import {
+  authenticateAgent,
+  disposeAllAcpSetupProcesses,
+  probeAgentAuthStatus,
+  probeAgentSessionConfig,
+} from "./probe.js";
 import type { ChildHandle, Spawner } from "./types.js";
 
 function makeStreamPair(): {
@@ -141,6 +146,73 @@ class UnsupportedAuthProbeAgent implements Agent {
 }
 
 describe("ACP auth probe", () => {
+  it("lets the app shutdown barrier dispose external-pending auth children", async () => {
+    const delegate = connectProbeAgent(() => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          authMethods: [{ id: "browser-login", name: "Browser login" }],
+          agentCapabilities: { promptCapabilities: {} },
+        };
+      },
+      async newSession() {
+        return { sessionId: "unused" };
+      },
+      async authenticate() {
+        return new Promise(() => undefined);
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async cancel() {
+        return undefined;
+      },
+    }));
+    const kill = vi.fn(async () => undefined);
+    const spawner: Spawner = {
+      async spawn(spec) {
+        return {
+          ...await delegate.spawn(spec),
+          kill,
+        };
+      },
+    };
+
+    await expect(authenticateAgent({
+      agent: { command: "browser-auth-agent" },
+      cwd: "/tmp/backchat-acp-background-auth-test",
+      spawner,
+      agentAuthLaunchGraceMs: 1,
+      backgroundAuthTimeoutMs: 60_000,
+    })).resolves.toEqual({ status: "started" });
+
+    await disposeAllAcpSetupProcesses();
+    expect(kill).toHaveBeenCalledOnce();
+  });
+
+  it("preserves explicit inherited-env removals when spawning a probe", async () => {
+    const delegate = connectProbeAgent(() => new AuthRequiredProbeAgent());
+    let capturedEnv: Record<string, string | undefined> | undefined;
+    const spawner: Spawner = {
+      async spawn(spec) {
+        capturedEnv = spec.env;
+        return delegate.spawn(spec);
+      },
+    };
+
+    await probeAgentAuthStatus({
+      agent: {
+        command: "fake-agent",
+        env: { ACP_PARENT_SESSION: undefined },
+      },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner,
+    });
+
+    expect(capturedEnv).toHaveProperty("ACP_PARENT_SESSION");
+    expect(capturedEnv?.ACP_PARENT_SESSION).toBeUndefined();
+  });
+
   it("reports auth_required without starting authentication", async () => {
     await expect(probeAgentAuthStatus({
       agent: { command: "fake-agent" },
@@ -215,6 +287,190 @@ describe("ACP auth probe", () => {
     })).resolves.toEqual({
       status: "unknown",
       message: "No supported ACP auth method is available. Unsupported methods: card.",
+    });
+  });
+});
+
+describe("ACP session probe", () => {
+  it("returns the auth gate from the same full capability process", async () => {
+    await expect(probeAgentSessionConfig({
+      agent: { command: "auth-required-agent" },
+      cwd: "/tmp/backchat-acp-full-auth-gate-test",
+      spawner: connectProbeAgent(() => new AuthRequiredProbeAgent()),
+      capabilitySettleMs: 10,
+    })).resolves.toMatchObject({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "needs-auth",
+        methodId: "login",
+        methodName: "Login",
+      },
+    });
+  });
+
+  it("settles without available_commands_update and preserves session config", async () => {
+    const delegate = connectProbeAgent(() => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: { promptCapabilities: {} },
+        };
+      },
+      async newSession() {
+        return {
+          sessionId: "probe-session",
+          configOptions: [{
+            id: "model",
+            name: "Model",
+            type: "select",
+            currentValue: "test-model",
+            options: [{ value: "test-model", name: "Test Model" }],
+          }],
+        } as NewSessionResponse;
+      },
+      async authenticate() {
+        return {};
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async cancel() {
+        return undefined;
+      },
+    }));
+    const kill = vi.fn(async () => undefined);
+    const spawner: Spawner = {
+      async spawn(spec) {
+        return {
+          ...await delegate.spawn(spec),
+          kill,
+        };
+      },
+    };
+
+    await expect(probeAgentSessionConfig({
+      agent: { command: "no-command-event-agent" },
+      cwd: "/tmp/backchat-acp-no-command-event-test",
+      spawner,
+      timeoutMs: 2_000,
+      capabilitySettleMs: 10,
+    })).resolves.toMatchObject({
+      configOptions: [{
+        id: "model",
+        currentValue: "test-model",
+      }],
+      availableCommands: [],
+    });
+    expect(kill).toHaveBeenCalledOnce();
+  });
+
+  it("captures available commands emitted immediately after session creation", async () => {
+    const spawner = connectProbeAgent((connection) => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: { promptCapabilities: {} },
+        };
+      },
+      async newSession() {
+        setTimeout(() => {
+          void connection.sessionUpdate({
+            sessionId: "probe-session",
+            update: {
+              sessionUpdate: "available_commands_update",
+              availableCommands: [{
+                name: "compact",
+                description: "Compact the current context",
+              }],
+            },
+          });
+        }, 0);
+        return {
+          sessionId: "probe-session",
+          configOptions: [{
+            id: "model",
+            name: "Model",
+            type: "select",
+            currentValue: "test-model",
+            options: [{ value: "test-model", name: "Test Model" }],
+          }],
+        } as NewSessionResponse;
+      },
+      async authenticate() {
+        return {};
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async cancel() {
+        return undefined;
+      },
+    }));
+
+    await expect(probeAgentSessionConfig({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-session-probe-test",
+      spawner,
+    })).resolves.toMatchObject({
+      configOptions: [{
+        id: "model",
+        currentValue: "test-model",
+      }],
+      availableCommands: [{
+        name: "compact",
+        description: "Compact the current context",
+      }],
+    });
+  });
+
+  it("waits for available commands published asynchronously after session creation", async () => {
+    const spawner = connectProbeAgent((connection) => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: { promptCapabilities: {} },
+        };
+      },
+      async newSession() {
+        setTimeout(() => {
+          void connection.sessionUpdate({
+            sessionId: "probe-session",
+            update: {
+              sessionUpdate: "available_commands_update",
+              availableCommands: [{
+                name: "review",
+                description: "Review the current workspace",
+              }],
+            },
+          });
+        }, 500);
+        return {
+          sessionId: "probe-session",
+          configOptions: [],
+        } as NewSessionResponse;
+      },
+      async authenticate() {
+        return {};
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async cancel() {
+        return undefined;
+      },
+    }));
+
+    await expect(probeAgentSessionConfig({
+      agent: { command: "slow-command-agent" },
+      cwd: "/tmp/backchat-acp-delayed-command-probe-test",
+      spawner,
+      timeoutMs: 2_000,
+    })).resolves.toMatchObject({
+      availableCommands: [{
+        name: "review",
+        description: "Review the current workspace",
+      }],
     });
   });
 });
