@@ -166,4 +166,24 @@ describe("session level GUI contract", () => {
     expect(browserTabSource).toContain("bindBrowserViewRegistration");
     expect(browserTabSource).toContain("browserViewSetActive");
   });
+
+  it("keeps the new-tab action outside the horizontally scrolling tab strip", () => {
+    const sidePanelSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/shell/SideChatPanel.tsx",
+      ),
+      "utf-8",
+    );
+    const scrollStart = sidePanelSource.indexOf("data-side-tab-scroll");
+    const actionsStart = sidePanelSource.indexOf("data-side-tab-actions");
+    const addButton = sidePanelSource.indexOf("<AddTabButton", actionsStart);
+
+    expect(scrollStart).toBeGreaterThan(-1);
+    expect(actionsStart).toBeGreaterThan(scrollStart);
+    expect(addButton).toBeGreaterThan(actionsStart);
+    expect(sidePanelSource).toContain(
+      'data-side-tab-actions className="flex shrink-0 items-center gap-1"',
+    );
+  });
 });

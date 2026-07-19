@@ -249,40 +249,49 @@ export function SideChatPanel() {
         {/* The rail selects one surface at a time. Browser surfaces are
             kept mounted below; other tab types retain their established
             mount/unmount behavior. */}
-        <div className="-mb-3 -ml-3 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto pb-3 pl-3">
-        {tabs.map((t) => (
-            <TabChip
-              key={t.id}
-              tab={t}
-              active={t.id === activeTab?.id}
-              onPick={() => sessionStore.setActiveSideTab(t.id)}
-              onClose={() => closeTab(t)}
+        <div className="-mb-3 -ml-3 flex min-w-0 flex-1 items-start gap-1 pl-3">
+          <div
+            data-side-tab-scroll
+            className="min-w-0 flex-1 overflow-x-auto pb-3"
+          >
+            <div className="flex w-max items-center gap-1">
+              {tabs.map((tab) => (
+                <TabChip
+                  key={tab.id}
+                  tab={tab}
+                  active={tab.id === activeTab?.id}
+                  onPick={() => sessionStore.setActiveSideTab(tab.id)}
+                  onClose={() => closeTab(tab)}
+                />
+              ))}
+            </div>
+          </div>
+          <div data-side-tab-actions className="flex shrink-0 items-center gap-1">
+            <AddTabButton
+              onPick={openTab}
+              browserEnabled={browserEnabled}
             />
-        ))}
-        <AddTabButton
-            onPick={openTab}
-            browserEnabled={browserEnabled}
-        />
-          {/* Promote-to-main button — only relevant for chat tabs. The
+            {/* Promote-to-main button — only relevant for chat tabs. The
               side chat is a fast scratch surface; once it's worth
               keeping, "promote" lifts it into the sidebar list as a
               real main session (kind flip + route navigate) without
               disposing the ACP child or losing scrollback. */}
-        {activeTab?.type === "chat" && (
-            <button
-              type="button"
-              onClick={promoteActive}
-              aria-label="Promote to main chat"
-              title="Promote to main chat"
-              className={cn(
-                "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
-                "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
-                "transition-colors",
-              )}
-            >
-              <ArrowUpFromLineIcon className="size-3.5" />
-            </button>
-        )}
+            {activeTab?.type === "chat" && (
+              <button
+                type="button"
+                onClick={promoteActive}
+                aria-label="Promote to main chat"
+                title="Promote to main chat"
+                className={cn(
+                  "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
+                  "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
+                  "transition-colors",
+                )}
+              >
+                <ArrowUpFromLineIcon className="size-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
