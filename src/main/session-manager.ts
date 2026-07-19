@@ -844,44 +844,12 @@ async function prepareAcpToolEnvironment(
   agentId: string,
   base: Record<string, string | undefined>,
 ): Promise<Record<string, string | undefined>> {
-  if (agentId !== "codex-acp") return base;
-  const codexBase: Record<string, string | undefined> = {
-    ...base,
-    CODEX_CONFIG: codexConfigWithoutNativeSubagents(base.CODEX_CONFIG),
-  };
-  if (codexBase.XDG_CACHE_HOME) return codexBase;
+  if (agentId !== "codex-acp" || base.XDG_CACHE_HOME) return base;
   const cacheBase = process.platform === "darwin" ? "/private/tmp" : tmpdir();
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
   const cacheRoot = join(cacheBase, `openma-acp-cache-${uid}`);
   await mkdir(join(cacheRoot, "fontconfig"), { recursive: true });
-  return { ...codexBase, XDG_CACHE_HOME: cacheRoot };
-}
-
-function codexConfigWithoutNativeSubagents(raw: string | undefined): string {
-  let config: Record<string, unknown> = {};
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        config = parsed as Record<string, unknown>;
-      }
-    } catch {
-      // An invalid adapter override cannot be forwarded safely. Keep the
-      // product-owned native-subagent policy and let Codex load the rest of
-      // its configuration from config.toml.
-    }
-  }
-  const features = config.features;
-  return JSON.stringify({
-    ...config,
-    features: {
-      ...(features && typeof features === "object" && !Array.isArray(features)
-        ? features as Record<string, unknown>
-        : {}),
-      multi_agent: false,
-      multi_agent_v2: false,
-    },
-  });
+  return { ...base, XDG_CACHE_HOME: cacheRoot };
 }
 
 function buildAcpPromptBlocks(

@@ -263,7 +263,7 @@ describe("SessionManager prompt queue", () => {
     );
   });
 
-  it("disables Codex native multi-agent tools for OpenMA sessions", async () => {
+  it("leaves Codex feature configuration under the harness owner's control", async () => {
     const fake = createControllableAcpSession();
     mocks.runtimeStart.mockClear();
     mocks.runtimeStart.mockResolvedValueOnce(fake.session);
@@ -293,8 +293,6 @@ describe("SessionManager prompt queue", () => {
       model_reasoning_effort: "high",
       features: {
         shell_tool: true,
-        multi_agent: false,
-        multi_agent_v2: false,
       },
     });
   });
