@@ -359,6 +359,35 @@ describe("SessionStore performance invariants", () => {
     expect(afterSecondSnapshot).toBe(afterFirstSnapshot);
   });
 
+  test("publishes the first assistant chunk so the streaming answer can mount", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-answer", "codex-acp", "Codex");
+    store.registerTurn("turn-answer", "sess-answer", "answer this");
+    const turnsSelector = selectTurnsFor("sess-answer");
+    const beforeSnapshot = store.snapshot(turnsSelector);
+    const beforeVersion = store.getVersion();
+    const listener = vi.fn();
+    const unsubscribe = store.subscribe(listener);
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-answer",
+      turn_id: "turn-answer",
+      event: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "First visible token" },
+      },
+    });
+
+    const afterFirstSnapshot = store.snapshot(turnsSelector);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(store.getVersion()).toBe(beforeVersion + 1);
+    expect(afterFirstSnapshot).not.toBe(beforeSnapshot);
+    expect(afterFirstSnapshot[0]?.assistantText).toBe("First visible token");
+
+    unsubscribe();
+  });
+
   test("preserves message identity and Codex phase while compacting stream chunks", () => {
     const store = new SessionStore();
     store.registerStarting("sess-phase", "codex-acp", "Codex");

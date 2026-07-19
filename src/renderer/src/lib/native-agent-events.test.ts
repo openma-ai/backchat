@@ -128,6 +128,41 @@ describe("native agent event detection", () => {
     ]);
   });
 
+  test("normalizes Codex subagent lifecycle metadata from ACP tool calls", () => {
+    expect(
+      detectNativeAgentToolEvent({
+        toolCallId: "call-start-project-map",
+        title: "Start subagent project_map",
+        kind: "other",
+        status: "completed",
+        rawInput: {
+          agentThreadId: "019f79b8-cdaa-7e82-809a-c0cf65740cd9",
+          agentPath: "/root/project_map",
+          activityKind: "started",
+        },
+        meta: {
+          codex: {
+            subagent: {
+              threadId: "019f79b8-cdaa-7e82-809a-c0cf65740cd9",
+              path: "/root/project_map",
+              activity: "started",
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        provider: "codex",
+        operation: "codex_spawn",
+        toolCallId: "call-start-project-map",
+        childId: "019f79b8-cdaa-7e82-809a-c0cf65740cd9",
+        task: "/root/project_map",
+        nickname: "project_map",
+        status: "running",
+      }),
+    ]);
+  });
+
   test("normalizes Codex CLI collab_tool_call wait states keyed by child nickname", () => {
     expect(
       detectNativeAgentRawEvent({

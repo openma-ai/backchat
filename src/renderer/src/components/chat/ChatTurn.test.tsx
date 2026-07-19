@@ -103,6 +103,7 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("lucide-brain");
     expect(html).not.toContain("<details");
     expect(html).not.toContain("bg-bg-surface");
+    expect(html).toContain("sticky top-0 z-10 bg-bg");
   });
 
   it("does not render Reasoning before an ACP thought event arrives", () => {

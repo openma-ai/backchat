@@ -52,6 +52,9 @@ export function detectNativeAgentToolEvent(
     ];
   }
 
+  const codexSubagentUpdate = detectCodexSubagentLifecycle(tool);
+  if (codexSubagentUpdate) return [codexSubagentUpdate];
+
   const name = normalizeToolName(tool.toolName ?? tool.title);
 
   if (name === "spawn_agent" || name === "spawnagent") return [detectCodexSpawn(tool)];
@@ -61,6 +64,55 @@ export function detectNativeAgentToolEvent(
 
   if (context) return detectContextualResult(tool, context);
   return [];
+}
+
+function detectCodexSubagentLifecycle(
+  tool: ToolLike,
+): NativeAgentUpdate | undefined {
+  const input = objectValue(tool.rawInput);
+  const meta = objectValue(tool.meta);
+  const codexMeta = objectValue(meta.codex);
+  const subagentMeta = objectValue(codexMeta.subagent);
+  const childId =
+    asString(subagentMeta.threadId) ??
+    asString(subagentMeta.thread_id) ??
+    asString(input.agentThreadId) ??
+    asString(input.agent_thread_id);
+  const agentPath =
+    asString(subagentMeta.path) ??
+    asString(input.agentPath) ??
+    asString(input.agent_path);
+  const activity = (
+    asString(subagentMeta.activity) ??
+    asString(input.activityKind) ??
+    asString(input.activity_kind)
+  )?.toLowerCase();
+
+  if (!childId || !activity) return undefined;
+
+  const failed = activity === "failed" || activity === "error";
+  const cancelled = activity === "cancelled" || activity === "canceled";
+  const closed = activity === "closed";
+  const complete =
+    activity === "completed" || activity === "complete" || closed;
+  const nickname = agentPath?.split("/").filter(Boolean).at(-1);
+
+  return {
+    provider: "codex",
+    operation: activity === "started" ? "codex_spawn" : "codex_wait",
+    toolCallId: tool.toolCallId,
+    childId,
+    task: agentPath,
+    nickname,
+    status: failed
+      ? "error"
+      : cancelled
+        ? "cancelled"
+        : complete
+          ? "complete"
+          : "running",
+    closed: closed || undefined,
+  };
 }
 
 export function detectNativeAgentRawEvent(event: unknown): NativeAgentUpdate[] {

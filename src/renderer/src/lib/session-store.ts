@@ -1878,6 +1878,8 @@ export class SessionStore {
             const wasShowingThought =
               Boolean(turn.activeThoughtMessageId) ||
               Boolean(turn.activeThoughtSegmentText);
+            const assistantNeedsMount =
+              parsed.kind === "text" && turn.assistantText.length === 0;
             const isCodex =
               this.#sessions.get(ev.session_id)?.agent_id === "codex-acp";
             const thoughtMessageChanged =
@@ -1939,11 +1941,13 @@ export class SessionStore {
             });
             if (
               shouldMountThought ||
+              assistantNeedsMount ||
               (parsed.kind === "text" && wasShowingThought)
             ) {
               // Selectors shallow-compare Turn identities. Replace this one
-              // object exactly once so the Reasoning block actually mounts;
-              // later chunks keep mutating the replacement in place.
+              // object exactly once so the streaming answer or Reasoning
+              // block actually mounts; later chunks keep mutating the
+              // replacement in place.
               this.#turns.set(ev.turn_id, { ...turn });
               this.#emit();
             }
