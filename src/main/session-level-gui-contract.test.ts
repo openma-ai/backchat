@@ -210,4 +210,28 @@ describe("session level GUI contract", () => {
     );
     expect(stylesSource).toContain("mask-image: linear-gradient(");
   });
+
+  it("keeps horizontal tab overflow from changing the header height", () => {
+    const sidePanelSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/shell/SideChatPanel.tsx",
+      ),
+      "utf-8",
+    );
+    const stylesSource = readFileSync(
+      resolve(__dirname, "../renderer/src/styles/index.css"),
+      "utf-8",
+    );
+
+    expect(stylesSource).toContain("scrollbar-width: none");
+    expect(stylesSource).toContain(".side-tab-scroll::-webkit-scrollbar");
+    expect(stylesSource).toContain("display: none");
+    expect(sidePanelSource).not.toContain(
+      'className="-mb-3 -ml-3 flex min-w-0 flex-1 items-start gap-1 pl-3"',
+    );
+    expect(sidePanelSource).not.toContain(
+      'className="side-tab-scroll min-w-0 flex-1 overflow-x-auto pb-3"',
+    );
+  });
 });

@@ -1140,7 +1140,16 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
 
 /* The side-rail tab strip is the only horizontally scrolling part of its
    header. Fade only the edge that still has hidden tabs; the fixed action
-   group (+ / promote) sits outside this mask and stays crisp. */
+   group (+ / promote) sits outside this mask and stays crisp. Hide its native
+   scrollbar so tab overflow never adds height to the header. */
+.side-tab-scroll {
+  scrollbar-width: none;
+}
+
+.side-tab-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 .side-tab-scroll[data-fade-left="true"][data-fade-right="false"] {
   -webkit-mask-image: linear-gradient(to right, transparent, #000 16px);
   mask-image: linear-gradient(to right, transparent, #000 16px);

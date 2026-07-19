@@ -280,14 +280,14 @@ export function SideChatPanel() {
         {/* The rail selects one surface at a time. Browser surfaces are
             kept mounted below; other tab types retain their established
             mount/unmount behavior. */}
-        <div className="-mb-3 -ml-3 flex min-w-0 flex-1 items-start gap-1 pl-3">
+        <div className="-ml-3 flex min-w-0 flex-1 items-start gap-1 pl-3">
           <div
             ref={tabScrollRef}
             data-side-tab-scroll
             data-fade-left={tabScrollFade.left}
             data-fade-right={tabScrollFade.right}
             onScroll={updateTabScrollFade}
-            className="side-tab-scroll min-w-0 flex-1 overflow-x-auto pb-3"
+            className="side-tab-scroll min-w-0 flex-1 overflow-x-auto"
           >
             <div className="flex w-max items-center gap-1">
               {tabs.map((tab) => (
