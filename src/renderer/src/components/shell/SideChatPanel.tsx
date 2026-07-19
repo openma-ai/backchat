@@ -80,6 +80,37 @@ export function SideChatPanel() {
   const canForkSideChat =
     canStartSideChat && !!mainActive?.supportsSessionFork && !!mainActive?.acp_session_id;
   const restoringTerminals = useRef(new Set<string>());
+  const tabScrollRef = useRef<HTMLDivElement>(null);
+  const [tabScrollFade, setTabScrollFade] = useState({
+    left: false,
+    right: false,
+  });
+
+  const updateTabScrollFade = useCallback(() => {
+    const scroll = tabScrollRef.current;
+    if (!scroll) return;
+    const maxScrollLeft = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
+    const next = {
+      left: scroll.scrollLeft > 1,
+      right: scroll.scrollLeft < maxScrollLeft - 1,
+    };
+    setTabScrollFade((current) =>
+      current.left === next.left && current.right === next.right
+        ? current
+        : next,
+    );
+  }, []);
+
+  useEffect(() => {
+    const scroll = tabScrollRef.current;
+    if (!scroll) return;
+    updateTabScrollFade();
+    const observer = new ResizeObserver(updateTabScrollFade);
+    observer.observe(scroll);
+    const strip = scroll.firstElementChild;
+    if (strip instanceof HTMLElement) observer.observe(strip);
+    return () => observer.disconnect();
+  }, [tabs.length, updateTabScrollFade]);
 
   // PTY ids are process-local and cannot survive an app restart. A restored
   // terminal tab carries only its cwd; recreate the shell lazily when its
@@ -251,8 +282,12 @@ export function SideChatPanel() {
             mount/unmount behavior. */}
         <div className="-mb-3 -ml-3 flex min-w-0 flex-1 items-start gap-1 pl-3">
           <div
+            ref={tabScrollRef}
             data-side-tab-scroll
-            className="min-w-0 flex-1 overflow-x-auto pb-3"
+            data-fade-left={tabScrollFade.left}
+            data-fade-right={tabScrollFade.right}
+            onScroll={updateTabScrollFade}
+            className="side-tab-scroll min-w-0 flex-1 overflow-x-auto pb-3"
           >
             <div className="flex w-max items-center gap-1">
               {tabs.map((tab) => (

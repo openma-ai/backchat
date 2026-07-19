@@ -1137,6 +1137,37 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   width: var(--chrome-size);
   height: var(--chrome-size);
 }
+
+/* The side-rail tab strip is the only horizontally scrolling part of its
+   header. Fade only the edge that still has hidden tabs; the fixed action
+   group (+ / promote) sits outside this mask and stays crisp. */
+.side-tab-scroll[data-fade-left="true"][data-fade-right="false"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 16px);
+  mask-image: linear-gradient(to right, transparent, #000 16px);
+}
+
+.side-tab-scroll[data-fade-left="false"][data-fade-right="true"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+}
+
+.side-tab-scroll[data-fade-left="true"][data-fade-right="true"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent
+  );
+}
+
 @theme {
   --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
   --font-sans: "Geist Variable", -apple-system, "Segoe UI", sans-serif;

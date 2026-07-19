@@ -186,4 +186,28 @@ describe("session level GUI contract", () => {
       'data-side-tab-actions className="flex shrink-0 items-center gap-1"',
     );
   });
+
+  it("fades only the tab-strip edges that still have hidden content", () => {
+    const sidePanelSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/shell/SideChatPanel.tsx",
+      ),
+      "utf-8",
+    );
+    const stylesSource = readFileSync(
+      resolve(__dirname, "../renderer/src/styles/index.css"),
+      "utf-8",
+    );
+
+    expect(sidePanelSource).toContain("const [tabScrollFade, setTabScrollFade]");
+    expect(sidePanelSource).toContain("new ResizeObserver(updateTabScrollFade)");
+    expect(sidePanelSource).toContain("onScroll={updateTabScrollFade}");
+    expect(sidePanelSource).toContain("data-fade-left={tabScrollFade.left}");
+    expect(sidePanelSource).toContain("data-fade-right={tabScrollFade.right}");
+    expect(stylesSource).toContain(
+      '.side-tab-scroll[data-fade-left="true"][data-fade-right="true"]',
+    );
+    expect(stylesSource).toContain("mask-image: linear-gradient(");
+  });
 });
