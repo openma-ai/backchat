@@ -1540,6 +1540,63 @@ describe("SessionStore side chats and native subagents", () => {
     });
   });
 
+  test("settles native subagent views when their parent turn completes", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-codex-thread",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-parent", "parent-session", "Start agent A");
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-start-a",
+        title: "Start subagent a",
+        kind: "other",
+        status: "completed",
+        rawInput: {
+          agentThreadId: "child-a",
+          agentPath: "/root/a",
+          activityKind: "started",
+        },
+        _meta: {
+          codex: {
+            subagent: {
+              threadId: "child-a",
+              path: "/root/a",
+              activity: "started",
+            },
+          },
+        },
+      },
+    });
+
+    const viewSessionId = store.subagentsFor("parent-session")[0]!.viewSessionId;
+    expect(store.turnsFor(viewSessionId)[0]).toMatchObject({
+      status: "running",
+    });
+
+    store.apply({
+      type: "session.complete",
+      session_id: "parent-session",
+      turn_id: "turn-parent",
+    });
+
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
+      status: "complete",
+    });
+    expect(store.get(viewSessionId)).toMatchObject({ status: "ready" });
+    expect(store.turnsFor(viewSessionId)[0]).toMatchObject({
+      status: "complete",
+    });
+  });
+
   test("keeps split Codex spawn_agent output running until wait_agent completes", () => {
     const store = new SessionStore();
     store.apply({

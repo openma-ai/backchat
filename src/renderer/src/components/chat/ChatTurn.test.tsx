@@ -1,9 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Turn } from "@/lib/session-store";
+import type { SubagentActivity, Turn } from "@/lib/session-store";
 
-const sessionMock = vi.hoisted(() => ({ agentId: "" }));
+const sessionMock = vi.hoisted(() => ({
+  agentId: "",
+  subagents: [] as SubagentActivity[],
+}));
 
 vi.mock("@/lib/i18n", () => ({
   useI18n: () => ({
@@ -21,8 +24,12 @@ vi.mock("@/lib/session-store", async (importOriginal) => {
     useSessionStore: (selector: (store: unknown) => unknown) =>
       selector({
         get: () => ({ agent_id: sessionMock.agentId }),
-        subagentsFor: () => [],
+        subagentsFor: () => sessionMock.subagents,
       }),
+    sessionStore: {
+      sideTabs: () => [],
+      openSideTabForTask: vi.fn(),
+    },
   };
 });
 
@@ -52,6 +59,7 @@ function turn(overrides: Partial<Turn>): Turn {
 describe("TurnBlock", () => {
   beforeEach(() => {
     sessionMock.agentId = "";
+    sessionMock.subagents = [];
   });
 
   it("shows the queued placeholder only while an empty turn is queued", () => {
@@ -103,7 +111,60 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("lucide-brain");
     expect(html).not.toContain("<details");
     expect(html).not.toContain("bg-bg-surface");
-    expect(html).toContain("sticky top-0 z-10 bg-bg");
+    const triggerClass = html.match(
+      /data-slot="collapsible-trigger" class="([^"]+)"/,
+    )?.[1];
+    expect(triggerClass).toContain("sticky top-0 z-10");
+    expect(triggerClass).not.toContain("bg-bg");
+    expect(triggerClass).not.toContain("py-1");
+  });
+
+  it("renders detected native subagents as links after the activity block", () => {
+    sessionMock.subagents = [
+      {
+        parentSessionId: "session-1",
+        childSessionId: "child-a",
+        viewSessionId: "native-a",
+        avatarId: "1_01",
+        inheritance: "fresh",
+        task: "/root/a",
+        status: "complete",
+        startedAt: 1,
+        updatedAt: 2,
+        native: {
+          provider: "codex",
+          toolCallId: "spawn-a",
+          childThreadId: "child-a",
+          nickname: "a",
+        },
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "spawn-a",
+                kind: "other",
+                status: "completed",
+                title: "Start subagent a",
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-subagent-links="true"');
+    expect(html).toContain('data-subagent-link="native-a"');
+    expect(html).toContain("Agent A");
+    expect(html.indexOf('data-subagent-links="true"')).toBeGreaterThan(
+      html.indexOf('data-slot="collapsible"'),
+    );
   });
 
   it("does not render Reasoning before an ACP thought event arrives", () => {

@@ -1339,6 +1339,31 @@ export class SessionStore {
     }
   }
 
+  #settleCodexSubagentsForTurn(parentSessionId: string, turn: Turn): void {
+    const toolCallIds = new Set(
+      turn.events.flatMap(({ payload }) => {
+        const parsed = parseAcpEvent(payload);
+        return parsed.kind === "tool_call" ? [parsed.tool.toolCallId] : [];
+      }),
+    );
+    const linked = (this.#subagentsByParent.get(parentSessionId) ?? []).filter(
+      (activity) =>
+        activity.status === "running" &&
+        activity.native?.provider === "codex" &&
+        activity.native.toolCallId !== undefined &&
+        toolCallIds.has(activity.native.toolCallId),
+    );
+    for (const activity of linked) {
+      this.#upsertNativeSubagentActivity(parentSessionId, {
+        provider: "codex",
+        operation: "codex_wait",
+        toolCallId: activity.native!.toolCallId,
+        childId: activity.childSessionId,
+        status: "complete",
+      });
+    }
+  }
+
   #upsertNativeSubagentActivity(parentSessionId: string, update: NativeAgentUpdate): void {
     const existingContext = update.toolCallId
       ? this.#nativeAgentContextByToolCall.get(update.toolCallId)
@@ -2045,6 +2070,7 @@ export class SessionStore {
             status: "complete",
             endedAt: Date.now(),
           });
+          this.#settleCodexSubagentsForTurn(ev.session_id, turn);
         }
         // Mark unread ONLY if the user wasn't looking at this session
         // when the turn finished — there's nothing to "notify" about

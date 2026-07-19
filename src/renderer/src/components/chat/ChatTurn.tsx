@@ -7,7 +7,9 @@ import { reduceTurn } from "@/lib/reduce-turn";
 import {
   selectAgentIdFor,
   selectSubagentsFor,
+  sessionStore,
   useSessionStore,
+  type SubagentActivity,
   type Turn,
 } from "@/lib/session-store";
 import {
@@ -78,6 +80,12 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
             })}
           />
 
+          <TurnSubagentLinks
+            turn={turn}
+            renderedToolCallIds={rendered.tools.map((tool) => tool.toolCallId)}
+            subagents={subagents}
+          />
+
           <TurnAnswer
             turn={turn}
             rendered={rendered}
@@ -102,6 +110,69 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
     </div>
   );
 });
+
+function TurnSubagentLinks({
+  turn,
+  renderedToolCallIds,
+  subagents,
+}: {
+  turn: Turn;
+  renderedToolCallIds: string[];
+  subagents: SubagentActivity[];
+}) {
+  const toolCallIds = new Set(renderedToolCallIds);
+  const linkedSubagents = subagents.filter(
+    (activity) =>
+      activity.native?.toolCallId &&
+      toolCallIds.has(activity.native.toolCallId),
+  );
+  if (linkedSubagents.length === 0) return null;
+
+  const openSubagent = (activity: SubagentActivity) => {
+    const label = subagentLinkLabel(activity);
+    const existingTab = sessionStore.sideTabs().find(
+      (tab) =>
+        tab.type === "subagent" && tab.payload === activity.viewSessionId,
+    );
+    sessionStore.openSideTabForTask(
+      turn.sessionId,
+      "subagent",
+      activity.viewSessionId,
+      activity.native?.nickname || activity.task || label,
+      existingTab?.id,
+    );
+  };
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]"
+      data-subagent-links
+    >
+      {linkedSubagents.map((activity) => {
+        const label = subagentLinkLabel(activity);
+        return (
+          <button
+            key={activity.viewSessionId}
+            type="button"
+            data-subagent-link={activity.viewSessionId}
+            className="rounded-sm text-info underline underline-offset-4 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            onClick={() => openSubagent(activity)}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function subagentLinkLabel(activity: SubagentActivity): string {
+  const label =
+    activity.native?.nickname ||
+    activity.task.split("/").filter(Boolean).at(-1) ||
+    activity.childSessionId;
+  return /^[a-z]$/i.test(label) ? `Agent ${label.toUpperCase()}` : label;
+}
 
 function StreamingPlaceholder() {
   return (
