@@ -35,6 +35,7 @@ import { SettingsMcpServers } from "@/pages/settings/McpServers";
 import { Archive as SettingsArchive } from "@/pages/settings/Archive";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
 import { SettingsActivity } from "@/pages/settings/Activity";
+import { ScheduledPage } from "@/pages/Scheduled";
 
 function RootRoute() {
   const location = useLocation();
@@ -63,6 +64,12 @@ const pairRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/pair/$pairId",
   component: PairChatPage,
+});
+
+const scheduledRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/scheduled",
+  component: ScheduledPage,
 });
 
 const settingsRoot = createRoute({
@@ -118,6 +125,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   chatRoute,
   pairRoute,
+  scheduledRoute,
   settingsRoot.addChildren([
     settingsActivity,
     settingsAgents,

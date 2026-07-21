@@ -96,6 +96,7 @@ export function AppShell({
   const [resizing, setResizing] = React.useState(false);
   const [sidebarWidth, setSidebarWidth] = React.useState(themeSidebarWidth);
   const [rightRailWidth, setRightRailWidth] = React.useState(380);
+  const hasTopbar = topbar != null;
 
   React.useEffect(() => {
     setSidebarWidth(themeSidebarWidth);
@@ -210,28 +211,30 @@ export function AppShell({
           transition: resizing ? "none" : MAIN_TR,
         }}
       >
-        <header
-          className="app-drag-region flex shrink-0 items-center gap-2"
-          style={{
-            // 50px so the items-center content (folder/label/cancel) lands
-            // at center y = 25, matching the trafficLight center (y=18+7)
-            // and the global toggle center (y=13+12). All three "top
-            // chrome" row elements share one baseline.
-            height: "50px",
-            paddingLeft: leftCollapsed
-              ? // 16 px trafficLight left + 58 px trafficLight width +
-                // chrome-gap + chrome-size (sidebar toggle) + chrome-gap.
-                // Same chrome-gap appears on the right side between the
-                // terminal toggle and the side-panel edge, so the two
-                // seams read symmetric.
-                "calc(16px + 58px + var(--chrome-gap) + var(--chrome-size) + var(--chrome-gap))"
-              : "var(--page-pl)",
-            paddingRight: "calc(var(--page-pr) / 2)",
-            transition: "padding-left 280ms cubic-bezier(0.32, 0.72, 0, 1)",
-          }}
-        >
-          {topbar}
-        </header>
+        {hasTopbar && (
+          <header
+            className="app-drag-region flex shrink-0 items-center gap-2"
+            style={{
+              // 50px so the items-center content (folder/label/cancel) lands
+              // at center y = 25, matching the trafficLight center (y=18+7)
+              // and the global toggle center (y=13+12). All three "top
+              // chrome" row elements share one baseline.
+              height: "50px",
+              paddingLeft: leftCollapsed
+                ? // 16 px trafficLight left + 58 px trafficLight width +
+                  // chrome-gap + chrome-size (sidebar toggle) + chrome-gap.
+                  // Same chrome-gap appears on the right side between the
+                  // terminal toggle and the side-panel edge, so the two
+                  // seams read symmetric.
+                  "calc(16px + 58px + var(--chrome-gap) + var(--chrome-size) + var(--chrome-gap))"
+                : "var(--page-pl)",
+              paddingRight: "calc(var(--page-pr) / 2)",
+              transition: "padding-left 280ms cubic-bezier(0.32, 0.72, 0, 1)",
+            }}
+          >
+            {topbar}
+          </header>
+        )}
         <main
           // Pages own their own scrolling (e.g. <Conversation> uses
           // use-stick-to-bottom, SettingsLayout wraps in its own
@@ -242,6 +245,7 @@ export function AppShell({
           // visible gap on the chat page. Other pages that need
           // a scrolling <main> (Settings) declare it themselves.
           className="relative min-h-0 flex-1"
+          style={{ paddingTop: hasTopbar ? undefined : "var(--stage-inset)" }}
         >
           {children}
         </main>
@@ -356,7 +360,7 @@ function ChromeToggles({
 }) {
   const location = useLocation();
   const isChatRoute = location.pathname.startsWith("/chat/");
-  if (!isChatRoute && !rightPanel && !bottomPanel) return null;
+  if (!isChatRoute) return null;
   return (
     <>
       {rightPanel && <GlobalSideChatToggle />}
@@ -376,8 +380,8 @@ function GlobalSideChatToggle() {
     <button
       type="button"
       onClick={toggle}
-      aria-label={collapsed ? "Open side chat" : "Close side chat"}
-      title={collapsed ? "Open side chat" : "Close side chat"}
+      aria-label={collapsed ? "Open side panel" : "Close side panel"}
+      title={collapsed ? "Open side panel" : "Close side panel"}
       className={cn(
         "app-no-drag fixed inline-flex size-6 items-center justify-center rounded-md z-50",
         "text-fg-subtle hover:bg-bg-surface hover:text-fg",

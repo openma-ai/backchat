@@ -182,6 +182,17 @@ describe("groupSidebarSessions", () => {
     expect(footer).not.toContain('className="pb-[var(--row-gap-y)]"');
   });
 
+  it("keeps Scheduled with the header actions instead of the settings footer", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const scheduled = source.indexOf('to="/scheduled"');
+    const conversationNav = source.indexOf("<nav", scheduled);
+    const footer = source.indexOf("{/* Footer — Settings link only.");
+
+    expect(scheduled).toBeGreaterThan(source.indexOf('data-testid="new-chat-button"'));
+    expect(scheduled).toBeLessThan(conversationNav);
+    expect(source.slice(footer)).not.toContain('to="/scheduled"');
+  });
+
   it("places the settings icon on the same horizontal track as session icons", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const footer = source.slice(source.indexOf("{/* Footer — Settings link only."));

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("session level GUI contract", () => {
-  it("does not expose native subagent creation from the right rail", () => {
+  it("offers current-task subagents in the right-rail tab picker without creating them", () => {
     const sidePanelSource = readFileSync(
       resolve(
         __dirname,
@@ -11,14 +11,26 @@ describe("session level GUI contract", () => {
       ),
       "utf-8",
     );
+    const launcherSource = readFileSync(
+      resolve(
+        __dirname,
+        "../renderer/src/components/shell/RightPanelLauncher.tsx",
+      ),
+      "utf-8",
+    );
+    const sidePanelUiSource = `${sidePanelSource}\n${launcherSource}`;
 
-    expect(sidePanelSource).toContain('labelKey: "sideChat.title"');
-    expect(sidePanelSource).toContain('sessionStore.newSideDraft({');
-    expect(sidePanelSource).toContain('openSideTab("chat"');
-    expect(sidePanelSource).not.toContain('onPickSubagent');
-    expect(sidePanelSource).not.toContain('newSideSubagentDraft');
-    expect(sidePanelSource).not.toContain('继承子任务');
-    expect(sidePanelSource).not.toContain('派发当前线程的任务');
+    expect(sidePanelUiSource).toContain("selectSubagentsFor");
+    expect(sidePanelUiSource).toContain("onPickSubagent");
+    expect(sidePanelUiSource).toContain("sessionStore.openSideTabForTask(");
+    expect(sidePanelUiSource).not.toContain('newSideSubagentDraft');
+    expect(sidePanelUiSource).toContain('t("rightPanel.currentSubagents")');
+    expect(sidePanelUiSource).toContain('t("rightPanel.outputs")');
+    expect(sidePanelUiSource).toContain('t("rightPanel.backgroundProcesses")');
+    expect(sidePanelUiSource).toContain('t("rightPanel.sources")');
+    expect(sidePanelUiSource).toContain("data-right-panel-launcher-list");
+    expect(sidePanelUiSource).toContain("data-current-subagents");
+    expect(sidePanelUiSource).not.toContain("grid grid-cols-2");
   });
 
   it("starts side chats through the side-parent fork path", () => {

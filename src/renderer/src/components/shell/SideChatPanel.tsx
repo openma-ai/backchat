@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowUpFromLineIcon,
+  ChevronDownIcon,
   FileIcon,
   FolderIcon,
   GlobeIcon,
@@ -17,6 +19,8 @@ import { SubagentAvatar } from "@/components/SubagentAvatar";
 import { FileTree } from "@/components/shell/FileTree";
 import { BrowserTab } from "@/components/shell/BrowserTab";
 import { TerminalTab } from "@/components/shell/TerminalTab";
+import { BackgroundProcessTab } from "@/components/shell/BackgroundProcessTab";
+import { RightPanelLauncher } from "@/components/shell/RightPanelLauncher";
 import { useRightRailCollapse } from "@/components/shell/AppShell";
 import { useSettings } from "@/lib/settings-store";
 import { browserSettings } from "@shared/browser-settings.js";
@@ -24,6 +28,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -33,13 +39,16 @@ import {
   selectActive,
   selectActiveSideTab,
   selectArtifactsFor,
+  selectSubagentsFor,
   selectBrowserWindows,
   selectSideTabs,
   sessionStore,
   useSessionStore,
   type SideTab,
   type SideTabType,
+  type SubagentActivity,
 } from "@/lib/session-store";
+import type { AcpTerminalInfo } from "@shared/api.js";
 
 /**
  * SideChatPanel — Codex-style right rail. Multi-tab; each tab is one
@@ -74,6 +83,22 @@ export function SideChatPanel() {
   const mainActive = useSessionStore(selectActive);
   const settings = useSettings();
   const browserEnabled = browserSettings(settings?.browser).enabled;
+  const artifactsSelector = useMemo(
+    () => selectArtifactsFor(mainActive?.id ?? null),
+    [mainActive?.id],
+  );
+  const artifacts = useSessionStore(artifactsSelector);
+  const subagentsSelector = useMemo(
+    () => selectSubagentsFor(mainActive?.id ?? null),
+    [mainActive?.id],
+  );
+  const subagents = useSessionStore(subagentsSelector);
+  const processes = useQuery({
+    queryKey: ["acp-terminals", mainActive?.id],
+    queryFn: () => window.backchat.acpTerminalsList({ sessionId: mainActive!.id }),
+    enabled: !!mainActive?.id,
+    refetchInterval: 1_500,
+  }).data ?? [];
   const { toggle: toggleRail } = useRightRailCollapse();
   const navigate = useNavigate();
   const canStartSideChat = !!mainActive && mainActive.status !== "draft";
@@ -228,6 +253,37 @@ export function SideChatPanel() {
     [browserEnabled, mainActive?.cwd, openSideChat],
   );
 
+  const openSubagent = useCallback((activity: SubagentActivity) => {
+    if (!mainActive) return;
+    const existing = tabs.find(
+      (tab) => tab.type === "subagent" && tab.payload === activity.viewSessionId,
+    );
+    const tabId = sessionStore.openSideTabForTask(
+      mainActive.id,
+      "subagent",
+      activity.viewSessionId,
+      subagentLabel(activity),
+      existing?.id,
+    );
+    sessionStore.patchSideTabForTask(mainActive.id, tabId, {
+      avatarId: activity.avatarId,
+    });
+  }, [mainActive, tabs]);
+
+  const openProcess = useCallback((process: AcpTerminalInfo) => {
+    if (!mainActive) return;
+    const existing = tabs.find(
+      (tab) => tab.type === "process" && tab.payload === process.terminalId,
+    );
+    sessionStore.openSideTabForTask(
+      mainActive.id,
+      "process",
+      process.terminalId,
+      processLabel(process),
+      existing?.id,
+    );
+  }, [mainActive, tabs]);
+
   const closeTab = useCallback((tab: SideTab) => {
     // Tear down the underlying resource before removing the tab.
     if (tab.type === "chat") {
@@ -304,7 +360,13 @@ export function SideChatPanel() {
           <div data-side-tab-actions className="flex shrink-0 items-center gap-1">
             <AddTabButton
               onPick={openTab}
+              onPickSubagent={openSubagent}
+              onPickProcess={openProcess}
               browserEnabled={browserEnabled}
+              artifacts={artifacts}
+              subagents={subagents}
+              processes={processes}
+              canStartSideChat={canStartSideChat}
             />
             {/* Promote-to-main button — only relevant for chat tabs. The
               side chat is a fast scratch surface; once it's worth
@@ -334,8 +396,13 @@ export function SideChatPanel() {
         {!activeTab && (
           <EmptyState
             onPick={openTab}
+            onPickSubagent={openSubagent}
+            onPickProcess={openProcess}
             canStartSideChat={canStartSideChat}
             browserEnabled={browserEnabled}
+            artifacts={artifacts}
+            subagents={subagents}
+            processes={processes}
           />
         )}
         {activeTab && activeTab.type !== "browser" && (
@@ -421,13 +488,22 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
       </div>
     );
   }
+  if (tab.type === "process") {
+    return <BackgroundProcessTab key={tab.payload} terminalId={tab.payload} />;
+  }
   if (tab.type === "interactive") {
     return <div id={`interactive-side-host-${tab.payload}`} className="h-full min-h-0" />;
   }
   return null;
 }
 
-function EmptyState({
+function EmptyState(props: React.ComponentProps<typeof RightPanelLauncher>) {
+  return <RightPanelLauncher {...props} />;
+}
+
+// Kept temporarily as a local fallback for older persisted snapshots. New
+// tasks always render RightPanelLauncher above.
+function LegacyEmptyState({
   onPick,
   canStartSideChat,
   browserEnabled,
@@ -487,7 +563,7 @@ function EmptyState({
 
   return (
     <div className="h-full overflow-y-auto px-4 pb-6">
-      <div className="grid grid-cols-2 auto-rows-fr gap-3 pt-2">
+      <div className="space-y-2 pt-2">
         {EMPTY_TILES.filter((tile) => browserEnabled || tile.type !== "browser").map((tile) => {
           const disabled = tile.type === "chat" && !canStartSideChat;
           return (
@@ -781,10 +857,22 @@ function TabChip({
 
 function AddTabButton({
   onPick,
+  onPickSubagent,
+  onPickProcess,
   browserEnabled,
+  artifacts,
+  subagents,
+  processes,
+  canStartSideChat,
 }: {
   onPick: (type: SideTabType) => void;
+  onPickSubagent: (activity: SubagentActivity) => void;
+  onPickProcess: (process: AcpTerminalInfo) => void;
   browserEnabled: boolean;
+  artifacts: { files: string[]; services: string[] };
+  subagents: SubagentActivity[];
+  processes: AcpTerminalInfo[];
+  canStartSideChat: boolean;
 }) {
   const { t } = useI18n();
   // Radix DropdownMenu — uses a Portal so the popover content escapes
@@ -810,21 +898,51 @@ function AddTabButton({
       <DropdownMenuContent
         align="end"
         sideOffset={4}
-        className="min-w-[180px]"
+        className="min-w-[248px]"
       >
-        {POPOVER_ITEMS.filter((item) => browserEnabled || item.type !== "browser").map((item) => {
-          const Icon = item.icon;
-          return (
-            <DropdownMenuItem
-              key={item.type}
-              onSelect={() => onPick(item.type)}
-              className="flex items-center gap-2 text-xs"
-            >
-              <Icon className="size-3.5 text-fg-subtle" />
-              <span className="flex-1">{t(item.labelKey)}</span>
-            </DropdownMenuItem>
-          );
-        })}
+        <DropdownMenuLabel>{t("rightPanel.outputs")}</DropdownMenuLabel>
+        {artifacts.files.length > 0 ? artifacts.files.slice(0, 5).map((path) => (
+          <DropdownMenuItem key={path} onSelect={() => void previewLocalFile(path)} className="flex items-center gap-2 text-xs">
+            <FileIcon className="size-3.5 text-fg-subtle" />
+            <span className="min-w-0 flex-1 truncate">{deriveFileLabel(path)}</span>
+          </DropdownMenuItem>
+        )) : (
+          <DropdownMenuItem disabled={!canStartSideChat} onSelect={() => onPick("chat")} className="flex items-center gap-2 text-xs">
+            <MessageSquareIcon className="size-3.5 text-fg-subtle" />
+            <span className="min-w-0 flex-1 truncate">{t("rightPanel.createOutput")}</span>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>{t("rightPanel.backgroundProcesses")}</DropdownMenuLabel>
+        {subagents.length > 0 && <DropdownMenuLabel className="pt-0 text-[10px]">{t("rightPanel.currentSubagents")}</DropdownMenuLabel>}
+        {subagents.map((activity) => (
+          <DropdownMenuItem key={activity.viewSessionId} onSelect={() => onPickSubagent(activity)} className="flex items-center gap-2 text-xs">
+            <SubagentAvatar avatarId={activity.avatarId} className="size-4" />
+            <span className="min-w-0 flex-1 truncate">{subagentLabel(activity)}</span>
+          </DropdownMenuItem>
+        ))}
+        {processes.map((process) => (
+          <DropdownMenuItem key={process.terminalId} onSelect={() => onPickProcess(process)} className="flex items-center gap-2 text-xs">
+            <SquareTerminalIcon className="size-3.5 text-fg-subtle" />
+            <span className="min-w-0 flex-1 truncate">{processLabel(process)}</span>
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem onSelect={() => onPick("terminal")} className="flex items-center gap-2 text-xs">
+          <SquareTerminalIcon className="size-3.5 text-fg-subtle" />
+          <span className="min-w-0 flex-1 truncate">{t("rightPanel.backgroundTerminal")}</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>{t("rightPanel.sources")}</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => onPick("file")} className="flex items-center gap-2 text-xs">
+          <FolderIcon className="size-3.5 text-fg-subtle" />
+          <span className="min-w-0 flex-1 truncate">{t("rightPanel.projectFiles")}</span>
+        </DropdownMenuItem>
+        {browserEnabled && (
+          <DropdownMenuItem onSelect={() => onPick("browser")} className="flex items-center gap-2 text-xs">
+            <GlobeIcon className="size-3.5 text-fg-subtle" />
+            <span className="min-w-0 flex-1 truncate">{t("rightPanel.website")}</span>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -835,15 +953,17 @@ const ICON_BY_TYPE: Record<Exclude<SideTabType, "subagent">, LucideIcon> = {
   file: FolderIcon,
   browser: GlobeIcon,
   terminal: SquareTerminalIcon,
+  process: SquareTerminalIcon,
   interactive: PuzzleIcon,
 };
 
-const POPOVER_ITEMS: { type: SideTabType; labelKey: TranslationKey; icon: LucideIcon }[] = [
-  { type: "file", labelKey: "sideChat.file", icon: FolderIcon },
-  { type: "chat", labelKey: "sideChat.title", icon: MessageSquareIcon },
-  { type: "browser", labelKey: "sideChat.browser", icon: GlobeIcon },
-  { type: "terminal", labelKey: "sideChat.terminal", icon: SquareTerminalIcon },
-];
+function subagentLabel(activity: SubagentActivity): string {
+  return activity.native?.nickname || activity.task || activity.native?.agentType || activity.childSessionId;
+}
+
+function processLabel(process: AcpTerminalInfo): string {
+  return [process.command, ...process.args].join(" ") || process.terminalId;
+}
 
 function deriveBrowserLabel(url: string): string {
   if (url === "about:blank") return "New tab";

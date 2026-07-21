@@ -83,6 +83,24 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.ActivityStats) as Promise<
       import("../shared/api.js").ActivityStatsInfo
     >,
+  schedulesList: () =>
+    ipcRenderer.invoke(InvokeChannel.SchedulesList) as Promise<
+      import("../shared/schedules.js").ScheduleInfo[]
+    >,
+  schedulesCreate: (p) =>
+    ipcRenderer.invoke(InvokeChannel.SchedulesCreate, p) as Promise<
+      import("../shared/schedules.js").ScheduleInfo
+    >,
+  schedulesUpdate: (p) =>
+    ipcRenderer.invoke(InvokeChannel.SchedulesUpdate, p) as Promise<
+      import("../shared/schedules.js").ScheduleInfo
+    >,
+  schedulesDelete: (p) =>
+    ipcRenderer.invoke(InvokeChannel.SchedulesDelete, p) as Promise<void>,
+  scheduleRunsList: (p) =>
+    ipcRenderer.invoke(InvokeChannel.ScheduleRunsList, p) as Promise<
+      import("../shared/schedules.js").ScheduleRunInfo[]
+    >,
   sessionsPin: (p: { session_id: string }) =>
     ipcRenderer.invoke(InvokeChannel.SessionsPin, p) as Promise<void>,
   sessionsUnpin: (p: { session_id: string }) =>
@@ -174,6 +192,16 @@ const api: BackchatApi = {
     ipcRenderer.on(PushChannel.TerminalExit, l);
     return () => ipcRenderer.removeListener(PushChannel.TerminalExit, l);
   },
+  acpTerminalsList: (p) =>
+    ipcRenderer.invoke(InvokeChannel.AcpTerminalsList, p) as Promise<
+      import("../shared/api.js").AcpTerminalInfo[]
+    >,
+  acpTerminalSnapshot: (p) =>
+    ipcRenderer.invoke(InvokeChannel.AcpTerminalSnapshot, p) as Promise<
+      import("../shared/api.js").AcpTerminalSnapshot | null
+    >,
+  acpTerminalKill: (p) =>
+    ipcRenderer.invoke(InvokeChannel.AcpTerminalKill, p) as Promise<void>,
 
   // ----- User-facing terminal (bottom panel) -----
   uiTermSpawn: (p) =>

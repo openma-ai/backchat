@@ -65,6 +65,7 @@ import {
   extractFilePaths,
   extractHtmlPathsFromExecute,
   extractServiceUrls,
+  extractToolOutputFiles,
 } from "./session-artifacts";
 import type {
   AcpAvailableCommand,
@@ -651,7 +652,7 @@ export class SessionStore {
       // the empty rail shell would restore a dead tab before chat history has
       // recreated its AppBridge.
       const sourceTabs = (this.#sideTabsByMain.get(taskId) ?? [])
-        .filter((tab) => tab.type !== "interactive");
+        .filter((tab) => tab.type !== "interactive" && tab.type !== "process");
       const artifacts = this.#artifactsBySession.get(taskId) ?? { files: [], services: [] };
       const subagents = this.#subagentsByParent.get(taskId) ?? [];
       if (sourceTabs.length === 0 && artifacts.files.length === 0 && artifacts.services.length === 0 && subagents.length === 0) {
@@ -2007,7 +2008,10 @@ export class SessionStore {
         if (parsed.kind === "tool_call") {
           const tool = parsed.tool;
           this.#ingestNativeAgentToolEvent(ev.session_id, tool);
-          const files = extractFilePaths(tool.rawInput);
+          const files = [
+            ...extractFilePaths(tool.rawInput),
+            ...extractToolOutputFiles(tool),
+          ];
           const services = extractServiceUrls(tool.rawOutput);
           this.#ingestArtifacts(ev.session_id, files, services);
           // Auto-open HTML produced/opened by the agent in the side

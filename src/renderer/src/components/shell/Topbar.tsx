@@ -54,7 +54,7 @@ export function Topbar(_props: { onCancel: () => void }) {
       agentId: active.agent_id,
       cwd,
     });
-    sessionStore.openSideTab("chat", sideId, "Side chat");
+    sessionStore.openSideTab("chat", sideId, t("sideChat.title"));
   };
 
   const archive = () => {

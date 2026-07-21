@@ -27,6 +27,11 @@
  */
 
 import { spawn as childSpawn } from "node:child_process";
+import {
+  initialSessionLifecycle,
+  reduceSessionLifecycle,
+  type SessionLifecycle,
+} from "@openma/common/session-kernel";
 import { access, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -135,6 +140,7 @@ export class SessionManager {
   #spawner = new NodeSpawner();
   #runtime = new AcpRuntimeImpl(this.#spawner);
   #sessions = new Map<string, ActiveSession>();
+  #lifecycles = new Map<string, SessionLifecycle>();
   #starting = new Map<string, Promise<SessionStartResult>>();
   #cancelledStarts = new Set<string>();
 
@@ -154,6 +160,10 @@ export class SessionManager {
     session_id: string,
     sess: Pick<ActiveSession, "acpSessionId" | "agentId" | "cwd" | "acp">,
   ): SessionStartResult {
+    this.#transition(session_id, {
+      type: "session.ready",
+      acpSessionId: sess.acpSessionId,
+    });
     const result: Extract<SessionStartResult, { status: "ready" }> = {
       status: "ready",
       session_id,
@@ -176,6 +186,7 @@ export class SessionManager {
   }
 
   #errorResult(session_id: string, message: string): SessionStartResult {
+    this.#transition(session_id, { type: "session.error", message });
     this.#send({ type: "session.error", session_id, message });
     return { status: "error", session_id, message };
   }
@@ -186,6 +197,19 @@ export class SessionManager {
 
   sessionCount(): number {
     return this.#sessions.size;
+  }
+
+  lifecycle(id: string): SessionLifecycle | undefined {
+    const state = this.#lifecycles.get(id);
+    return state ? { ...state } : undefined;
+  }
+
+  #transition(
+    id: string,
+    event: Parameters<typeof reduceSessionLifecycle>[1],
+  ): void {
+    const current = this.#lifecycles.get(id) ?? initialSessionLifecycle(id);
+    this.#lifecycles.set(id, reduceSessionLifecycle(current, event));
   }
 
   /** Re-announce alive sessions — used by the renderer's mount handshake so a
@@ -199,6 +223,7 @@ export class SessionManager {
   async start(p: SessionStartParams): Promise<SessionStartResult> {
     const inFlight = this.#starting.get(p.session_id);
     if (inFlight) return inFlight;
+    this.#transition(p.session_id, { type: "start.requested" });
     const operation = this.#startOnce(p);
     this.#starting.set(p.session_id, operation);
     try {
@@ -483,6 +508,7 @@ export class SessionManager {
   async #runPrompt(sess: ActiveSession, p: SessionPromptParams): Promise<void> {
     const promptStartedAt = Date.now();
     const ctrl = new AbortController();
+    this.#transition(p.session_id, { type: "prompt.requested", turnId: p.turn_id });
     sess.turns.set(p.turn_id, ctrl);
     let promptErr: string | null = null;
 
@@ -582,6 +608,11 @@ export class SessionManager {
       if (sess.disposed) {
         return;
       } else if (promptErr) {
+        this.#transition(p.session_id, {
+          type: "session.error",
+          turnId: p.turn_id,
+          message: promptErr,
+        });
         this.#send({
           type: "session.error",
           session_id: p.session_id,
@@ -593,23 +624,39 @@ export class SessionManager {
         !ctrl.signal.aborted &&
         !emittedVisibleOutput
       ) {
+        const message =
+          "The agent finished without a response. Its provider may have rejected or rate-limited the request. Try again or choose another model.";
+        this.#transition(p.session_id, {
+          type: "session.error",
+          turnId: p.turn_id,
+          message,
+        });
         this.#send({
           type: "session.error",
           session_id: p.session_id,
           turn_id: p.turn_id,
-          message:
-            "The agent finished without a response. Its provider may have rejected or rate-limited the request. Try again or choose another model.",
+          message,
         });
       } else {
+        this.#transition(p.session_id, {
+          type: "session.complete",
+          turnId: p.turn_id,
+        });
         this.#send({ type: "session.complete", session_id: p.session_id, turn_id: p.turn_id });
       }
     } catch (e) {
       if (sess.disposed) return;
+      const message = e instanceof Error ? e.message : String(e);
+      this.#transition(p.session_id, {
+        type: "session.error",
+        turnId: p.turn_id,
+        message,
+      });
       this.#send({
         type: "session.error",
         session_id: p.session_id,
         turn_id: p.turn_id,
-        message: e instanceof Error ? e.message : String(e),
+        message,
       });
     } finally {
       if (!loggedFirstEvent && process.env.NODE_ENV !== "test") {
@@ -651,6 +698,7 @@ export class SessionManager {
     const turn = sess.turns.get(turn_id);
     if (!turn) return;
     turn.abort();
+    this.#transition(session_id, { type: "prompt.cancelled", turnId: turn_id });
     this.#onSessionPendingWorkCancelled?.(session_id);
   }
 
@@ -662,6 +710,7 @@ export class SessionManager {
     await this.#killChild(session_id);
     if (starting) await starting.catch(() => undefined);
     if (opts?.removeCwd) await removeSessionCwd(session_id);
+    this.#transition(session_id, { type: "session.disposed" });
     // Archive (soft-delete) in the persisted store so the sidebar stops
     // showing it but the history rows stay for any future "show archived"
     // surface. Hard delete waits for an explicit user gesture.
@@ -677,6 +726,7 @@ export class SessionManager {
     }
     const starting = [...this.#starting.values()];
     const ids = [...this.#sessions.keys()];
+    for (const id of ids) this.#transition(id, { type: "session.disposed" });
     await Promise.allSettled([
       ...starting,
       ...ids.map((id) => this.#killChild(id)),

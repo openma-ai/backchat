@@ -69,6 +69,41 @@ vi.mock("./session-cwd.js", () => ({
 }));
 
 describe("SessionManager prompt queue", () => {
+  it("uses the shared lifecycle contract for local ACP sessions", async () => {
+    mocks.runtimeStart.mockClear();
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({ session_id: "sess-lifecycle", agent_id: "codex-acp" });
+    expect(manager.lifecycle("sess-lifecycle")).toMatchObject({ status: "ready" });
+
+    const prompting = manager.prompt({
+      session_id: "sess-lifecycle",
+      turn_id: "turn-lifecycle",
+      text: "run",
+    });
+    await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+    expect(manager.lifecycle("sess-lifecycle")).toMatchObject({
+      status: "running",
+      activeTurnId: "turn-lifecycle",
+    });
+
+    manager.cancel("sess-lifecycle", "turn-lifecycle");
+    expect(manager.lifecycle("sess-lifecycle")).toMatchObject({
+      status: "ready",
+      activeTurnId: undefined,
+    });
+    fake.releaseNext();
+    await prompting;
+  });
+
   it("cancels session-scoped broker work when an active turn is cancelled", async () => {
     mocks.runtimeStart.mockClear();
     const fake = createControllableAcpSession();

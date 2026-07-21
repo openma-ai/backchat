@@ -415,6 +415,10 @@ export function touchSession(id: string): void {
   writeSessionMetadata(id);
 }
 
+export function getSession(id: string): PersistedSession | null {
+  return (stmts().getSession.get(id) as unknown as PersistedSession | undefined) ?? null;
+}
+
 export function setSessionTitle(id: string, title: string): void {
   stmts().setTitle.run(title, id);
   writeSessionMetadata(id);

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import openmaLogoMarkUrl from "@/assets/openma-logo-mark.svg";
+import openmaLogoMarkUrl from "@openma/common/brand/openma-logo-mark.svg";
 
 type MarkStyle = CSSProperties & { "--openma-home-mark": string };
 

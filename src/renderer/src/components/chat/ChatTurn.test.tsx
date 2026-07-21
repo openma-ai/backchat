@@ -66,6 +66,8 @@ describe("TurnBlock", () => {
   it("shows the queued placeholder only while an empty turn is queued", () => {
     const html = renderToStaticMarkup(<TurnBlock turn={turn({})} />);
 
+    expect(html).toContain('data-session-turn-status="queued"');
+    expect(html).toContain('data-session-turn-response="true"');
     expect(html).toContain("queued");
     expect(html).not.toContain("Turn failed.");
   });

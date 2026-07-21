@@ -45,6 +45,35 @@ export function extractFilePaths(rawInput: unknown): string[] {
   return out;
 }
 
+/** Collect file outputs from standard ACP tool_call fields. Unlike the
+ * rawInput fallback above, these are explicit protocol-level declarations:
+ * locations, diff paths, and file:// resources returned as content. */
+export function extractToolOutputFiles(tool: {
+  locations?: Array<{ path?: string }>;
+  content?: Array<{
+    type?: string;
+    path?: string;
+    newText?: string;
+    content?: { type?: string; uri?: string };
+  }>;
+}): string[] {
+  const files: string[] = [];
+  for (const location of tool.locations ?? []) {
+    if (location.path) files.push(location.path);
+  }
+  for (const block of tool.content ?? []) {
+    if (block.type === "diff" && block.path) files.push(block.path);
+    const uri = block.type === "content" ? block.content?.uri : undefined;
+    if (!uri?.startsWith("file://")) continue;
+    try {
+      files.push(decodeURIComponent(new URL(uri).pathname));
+    } catch {
+      // Ignore malformed resource URIs from custom harnesses.
+    }
+  }
+  return [...new Set(files)];
+}
+
 const LOCALHOST_URL_RE = /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/[^\s)"'`<]*)?/g;
 
 /** POSIX basename. Substring after the final `/`; if there's no `/`,

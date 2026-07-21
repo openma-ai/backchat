@@ -1,6 +1,5 @@
-import { memo, useMemo, type ReactNode } from "react";
-
-import { Message, MessageContent } from "@/components/ai-elements/message";
+import { memo, useMemo } from "react";
+import { SessionTurnFrame } from "@openma/common/session-ui";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useI18n } from "@/lib/i18n";
 import { reduceTurn } from "@/lib/reduce-turn";
@@ -49,23 +48,20 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
     });
 
   return (
-    <div className="group/turn reveal-in mb-6 space-y-2" data-turn-id={turn.id}>
-      {turn.promptText && (
-        <Message from="user">
-          <MessageContent>
-            <p className="whitespace-pre-wrap">{turn.promptText}</p>
-          </MessageContent>
-        </Message>
-      )}
-
-      <div
-        data-annotatable-response
-        data-annotation-ready={!isStreaming}
-        data-source-session-id={turn.sessionId}
-        data-source-turn-id={turn.id}
-        className="min-w-0"
-      >
-        <AssistantGutter>
+    <SessionTurnFrame
+      turnId={turn.id}
+      sessionId={turn.sessionId}
+      promptText={turn.promptText}
+      status={turn.status}
+      errorMessage={turn.errorMessage}
+      errorNotice={
+        turn.status === "error" ? (
+          <StatusNotice tone="danger">
+            {turn.errorMessage ?? "Turn failed."}
+          </StatusNotice>
+        ) : undefined
+      }
+    >
           {rendered.plan.length > 0 && <TurnPlan entries={rendered.plan} />}
 
           <TurnActivity
@@ -94,20 +90,7 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
           />
 
           {!hasAnything && isStreaming && <StreamingPlaceholder />}
-          {!hasAnything && turn.status === "queued" && (
-            <p className="text-xs italic text-fg-subtle">queued</p>
-          )}
-          {turn.status === "error" && (
-            <StatusNotice tone="danger">
-              {turn.errorMessage ?? "Turn failed."}
-            </StatusNotice>
-          )}
-          {turn.status === "cancelled" && (
-            <p className="text-xs italic text-fg-subtle">cancelled</p>
-          )}
-        </AssistantGutter>
-      </div>
-    </div>
+    </SessionTurnFrame>
   );
 });
 
@@ -199,8 +182,4 @@ function StreamingPlaceholder() {
       </span>
     </p>
   );
-}
-
-function AssistantGutter({ children }: { children: ReactNode }) {
-  return <div className="min-w-0 space-y-2">{children}</div>;
 }

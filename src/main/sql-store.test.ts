@@ -6,6 +6,7 @@ import { parse as parseToml } from "smol-toml";
 import {
   appendEvent,
   archiveSession,
+  getSession,
   loadHistory,
   openSessionDb,
   pinSession,
@@ -36,6 +37,11 @@ describe("sql-store file-first write-through", () => {
       cwd: join(root, "sessions", "sess_file_first"),
       acp_session_id: "acp_file_first",
       title: "",
+    });
+    expect(getSession("sess_file_first")).toMatchObject({
+      id: "sess_file_first",
+      agent_id: "codex-acp",
+      acp_session_id: "acp_file_first",
     });
     setSessionTitleIfEmpty("sess_file_first", "File-first write-through");
     pinSession("sess_file_first", now + 1_000);

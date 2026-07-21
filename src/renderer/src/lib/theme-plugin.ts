@@ -1,40 +1,14 @@
-export const THEME_TOKEN_NAMES = [
-  "brand",
-  "brand-hover",
-  "brand-subtle",
-  "brand-fg",
-  "bg",
-  "bg-sidebar",
-  "bg-surface",
-  "bg-bubble",
-  "bg-overlay",
-  "fg",
-  "fg-muted",
-  "fg-subtle",
-  "border",
-  "border-strong",
-  "success",
-  "success-subtle",
-  "warning",
-  "warning-subtle",
-  "danger",
-  "danger-subtle",
-  "info",
-  "info-subtle",
-  "accent-violet",
-  "accent-violet-subtle",
-  "shadow-md",
-  "shadow-sm",
-  "shadow-card-soft",
-  "shadow-card-press",
-  "shadow-input-rest",
-  "shadow-chip-press",
-  "shadow-pip",
-  "ring",
-] as const;
+import {
+  COMMON_THEME_TOKEN_NAMES,
+  commonDarkTokens,
+  commonLightTokens,
+  type CommonThemeTokenName,
+  type CommonThemeTokens,
+} from "@openma/common/brand";
 
-export type ThemeTokenName = (typeof THEME_TOKEN_NAMES)[number];
-export type ThemeTokens = Record<ThemeTokenName, string>;
+export const THEME_TOKEN_NAMES = COMMON_THEME_TOKEN_NAMES;
+export type ThemeTokenName = CommonThemeTokenName;
+export type ThemeTokens = CommonThemeTokens;
 export type ThemeMode = "light" | "dark";
 export type ThemeModePreference = "system" | ThemeMode;
 export const THEME_SPEC_VERSION = 1 as const;
@@ -272,75 +246,9 @@ function validateNumber(
   }
 }
 
-const backchatLight: ThemeTokens = {
-  brand: "#f84f32",
-  "brand-hover": "oklch(0.62 0.21 36)",
-  "brand-subtle": "oklch(0.97 0.018 36)",
-  "brand-fg": "#ffffff",
-  bg: "oklch(0.995 0 0)",
-  "bg-sidebar": "oklch(0.965 0.002 95)",
-  "bg-surface": "oklch(0.982 0.001 95)",
-  "bg-bubble": "oklch(0.955 0.0015 95)",
-  "bg-overlay": "oklch(0 0 0 / 0.3)",
-  fg: "oklch(0.19 0.002 80)",
-  "fg-muted": "oklch(0.45 0.002 85)",
-  "fg-subtle": "oklch(0.52 0.002 85)",
-  border: "oklch(0.9 0.0015 95)",
-  "border-strong": "oklch(0.83 0.002 95)",
-  success: "oklch(0.6 0.18 145)",
-  "success-subtle": "oklch(0.96 0.04 145)",
-  warning: "oklch(0.7 0.16 75)",
-  "warning-subtle": "oklch(0.96 0.04 75)",
-  danger: "oklch(0.58 0.22 25)",
-  "danger-subtle": "oklch(0.96 0.04 25)",
-  info: "oklch(0.58 0.16 260)",
-  "info-subtle": "oklch(0.96 0.03 260)",
-  "accent-violet": "oklch(0.55 0.2 300)",
-  "accent-violet-subtle": "oklch(0.96 0.03 300)",
-  "shadow-md": "0 4px 12px -4px rgb(0 0 0 / 0.12)",
-  "shadow-sm": "0 1px 2px -1px rgb(0 0 0 / 0.08)",
-  "shadow-card-soft": "0 8px 24px -12px rgb(0 0 0 / 0.10), 0 2px 6px -2px rgb(0 0 0 / 0.04)",
-  "shadow-card-press": "0 2px 4px -2px rgb(0 0 0 / 0.08), 0 6px 12px -6px rgb(0 0 0 / 0.08)",
-  "shadow-input-rest": "0 1px 2px -1px rgb(0 0 0 / 0.05), 0 4px 8px -6px rgb(0 0 0 / 0.06)",
-  "shadow-chip-press": "0 1px 2px -1px rgb(0 0 0 / 0.08)",
-  "shadow-pip": "0 18px 48px -18px rgb(0 0 0 / 0.28), 0 4px 14px -6px rgb(0 0 0 / 0.16), inset 0 0 0 1px color-mix(in srgb, var(--border-strong) 65%, transparent)",
-  ring: "var(--brand)",
-};
+const backchatLight: ThemeTokens = { ...commonLightTokens };
 
-const backchatDark: ThemeTokens = {
-  brand: "oklch(0.72 0.20 36)",
-  "brand-hover": "oklch(0.78 0.20 36)",
-  "brand-subtle": "oklch(0.30 0.08 36)",
-  "brand-fg": "#1a0e09",
-  bg: "oklch(0.215 0.002 85)",
-  "bg-sidebar": "oklch(0.17 0.0015 85)",
-  "bg-surface": "oklch(0.265 0.0025 85)",
-  "bg-bubble": "oklch(0.305 0.0025 85)",
-  "bg-overlay": "oklch(0 0 0 / 0.6)",
-  fg: "oklch(0.94 0.0015 95)",
-  "fg-muted": "oklch(0.74 0.002 90)",
-  "fg-subtle": "oklch(0.69 0.002 90)",
-  border: "oklch(0.33 0.0025 85)",
-  "border-strong": "oklch(0.40 0.003 85)",
-  success: "oklch(0.76 0.16 145)",
-  "success-subtle": "oklch(0.22 0.05 145)",
-  warning: "oklch(0.8 0.14 75)",
-  "warning-subtle": "oklch(0.22 0.05 75)",
-  danger: "oklch(0.72 0.18 25)",
-  "danger-subtle": "oklch(0.22 0.05 25)",
-  info: "oklch(0.72 0.14 260)",
-  "info-subtle": "oklch(0.22 0.04 260)",
-  "accent-violet": "oklch(0.72 0.16 300)",
-  "accent-violet-subtle": "oklch(0.22 0.05 300)",
-  "shadow-md": "0 4px 12px -2px rgb(0 0 0 / 0.5)",
-  "shadow-sm": "0 1px 2px -1px rgb(0 0 0 / 0.4)",
-  "shadow-card-soft": "0 8px 24px -12px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.25)",
-  "shadow-card-press": "0 2px 4px -2px rgb(0 0 0 / 0.4), 0 6px 12px -6px rgb(0 0 0 / 0.35)",
-  "shadow-input-rest": "0 1px 2px -1px rgb(0 0 0 / 0.3), 0 4px 8px -6px rgb(0 0 0 / 0.25)",
-  "shadow-chip-press": "0 1px 2px -1px rgb(0 0 0 / 0.35)",
-  "shadow-pip": "0 20px 52px -18px rgb(0 0 0 / 0.78), 0 5px 16px -7px rgb(0 0 0 / 0.7), inset 0 0 0 1px color-mix(in srgb, var(--border-strong) 72%, transparent)",
-  ring: "var(--brand)",
-};
+const backchatDark: ThemeTokens = { ...commonDarkTokens };
 
 const workbenchLight: ThemeTokens = {
   ...backchatLight,

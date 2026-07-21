@@ -10,7 +10,7 @@ import type {
 export function defaultSideTabLabel(type: SideTabType, payload: string): string {
   switch (type) {
     case "chat":
-      return "Side chat";
+      return "Context fork";
     case "subagent":
       return "子任务";
     case "file": {
@@ -30,6 +30,8 @@ export function defaultSideTabLabel(type: SideTabType, payload: string): string 
       const last = trimmed.split("/").pop();
       return last || "Terminal";
     }
+    case "process":
+      return "Background process";
     case "interactive":
       return "Interactive";
   }

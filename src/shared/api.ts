@@ -15,6 +15,12 @@ import type {
 } from "./session-events.js";
 import type { Settings } from "./settings.js";
 import type {
+  CreateScheduleInput,
+  ScheduleInfo,
+  ScheduleRunInfo,
+  UpdateScheduleInput,
+} from "./schedules.js";
+import type {
   McpAppRequestInput,
   McpAppResolved,
   McpAppResolveInput,
@@ -205,6 +211,24 @@ export interface TerminalExitFrame {
   signal: string | null;
 }
 
+/** Agent-owned command process created through ACP terminal/create. */
+export interface AcpTerminalInfo {
+  sessionId: string;
+  terminalId: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  startedAt: number;
+  exited: boolean;
+  exitCode: number | null;
+  signal: string | null;
+}
+
+export interface AcpTerminalSnapshot extends AcpTerminalInfo {
+  output: string;
+  truncated: boolean;
+}
+
 /** A single Cmd+K search hit. Snippet uses ⁨ ⁩ Unicode invisible brackets
  *  around matched tokens (FTS5 default markers; we substitute them with
  *  <mark> at render time). */
@@ -321,6 +345,13 @@ export interface BackchatApi {
   /** Local-only activity analytics derived from the session SQLite index. */
   activityStats(): Promise<ActivityStatsInfo>;
 
+  /** Local background task schedules shared by every ACP harness. */
+  schedulesList(): Promise<ScheduleInfo[]>;
+  schedulesCreate(p: CreateScheduleInput): Promise<ScheduleInfo>;
+  schedulesUpdate(p: UpdateScheduleInput): Promise<ScheduleInfo>;
+  schedulesDelete(p: { id: string }): Promise<void>;
+  scheduleRunsList(p: { schedule_id: string }): Promise<ScheduleRunInfo[]>;
+
   /** Set/clear the "pinned to top of sidebar" flag. Pinned sessions
    *  appear in a separate section above the regular Chats list,
    *  ordered by pinned_at desc. */
@@ -384,6 +415,9 @@ export interface BackchatApi {
   /** Per-terminal live output. */
   onTerminalOutput(handler: (frame: TerminalOutputFrame) => void): () => void;
   onTerminalExit(handler: (frame: TerminalExitFrame) => void): () => void;
+  acpTerminalsList(p: { sessionId: string }): Promise<AcpTerminalInfo[]>;
+  acpTerminalSnapshot(p: { terminalId: string }): Promise<AcpTerminalSnapshot | null>;
+  acpTerminalKill(p: { terminalId: string }): Promise<void>;
 
   // ----- User-facing terminal (bottom panel) -----
 

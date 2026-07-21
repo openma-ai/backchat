@@ -17,6 +17,7 @@ import {
   Settings2Icon,
   SquarePenIcon,
   ArchiveIcon,
+  CalendarClockIcon,
   FolderIcon,
   FolderOpenIcon,
   UsersRoundIcon,
@@ -151,6 +152,7 @@ export function Sidebar() {
   };
 
   const settingsActive = location.pathname.startsWith("/settings");
+  const scheduledActive = location.pathname === "/scheduled";
   const activePairId = location.pathname.startsWith("/pair/")
     ? decodeURIComponent(location.pathname.slice("/pair/".length))
     : null;
@@ -313,6 +315,23 @@ export function Sidebar() {
             ⌘K
           </span>
         </button>
+
+        <Link
+          to="/scheduled"
+          aria-label={t("sidebar.scheduled")}
+          className={cn(
+            "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-xs",
+            scheduledActive
+              ? "liquid-glass-selected text-fg"
+              : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+          )}
+          style={{ height: "var(--row-h)" }}
+        >
+          <span className="inline-flex size-4 shrink-0 items-center justify-center">
+            <CalendarClockIcon className="size-3.5" />
+          </span>
+          <span className={labelCls}>{t("sidebar.scheduled")}</span>
+        </Link>
       </div>
 
       {/* Chats — flex-1 takes all remaining space. The scrollbar is overlay-

@@ -48,4 +48,28 @@ describe("buildAcpMcpServers", () => {
   it("omits a missing task-scoped server", () => {
     expect(buildAcpMcpServers([], undefined)).toEqual([]);
   });
+
+  it("injects every task-scoped built-in for every harness", () => {
+    const injected = buildAcpMcpServers([], [
+      {
+        id: "backchat-browser",
+        type: "http",
+        name: "Backchat Browser",
+        url: "http://127.0.0.1/browser/task-a",
+        headers: [],
+      },
+      {
+        id: "openma-schedules",
+        type: "http",
+        name: "OpenMA Schedules",
+        url: "http://127.0.0.1/schedules/task-a",
+        headers: [],
+      },
+    ]);
+
+    expect(injected.map((server) => server.id)).toEqual([
+      "backchat-browser",
+      "openma-schedules",
+    ]);
+  });
 });

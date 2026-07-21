@@ -32,6 +32,11 @@ export const InvokeChannel = {
   SideWorkspaceDelete: "sideWorkspace:delete",
   SessionsSearch: "sessions:search",
   ActivityStats: "activity:stats",
+  SchedulesList: "schedules:list",
+  SchedulesCreate: "schedules:create",
+  SchedulesUpdate: "schedules:update",
+  SchedulesDelete: "schedules:delete",
+  ScheduleRunsList: "schedules:runsList",
   SessionsPin: "sessions:pin",
   SessionsUnpin: "sessions:unpin",
   SessionsArchive: "sessions:archive",
@@ -49,6 +54,10 @@ export const InvokeChannel = {
   PermissionRespond: "permission:respond",
   FsApprovalRespond: "fs:approvalRespond",
   BrokerPendingAsks: "broker:pendingAsks",
+  /** Agent-owned ACP command terminals, distinct from interactive UiTerm. */
+  AcpTerminalsList: "acpTerminals:list",
+  AcpTerminalSnapshot: "acpTerminal:snapshot",
+  AcpTerminalKill: "acpTerminal:kill",
   /** User-facing terminal — distinct from the ACP-driven terminal/* family
    *  in brokers.ts (those are command-runners for agents; UiTerm is a
    *  pty-backed interactive shell shown in the bottom panel). */

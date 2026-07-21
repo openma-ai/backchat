@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 type ThemePluginModule = {
@@ -496,21 +497,20 @@ describe("theme plugin integration", () => {
     expect(styles).not.toContain("margin-top: 12px !important");
   });
 
-  it("uses the repository OpenMA artwork instead of an invented mark", () => {
+  it("uses the shared canonical OpenMA artwork instead of an invented mark", () => {
     const markComponent = readFileSync(
       resolve(__dirname, "../components/OpenmaHomeMark.tsx"),
       "utf8",
     );
     const markAsset = readFileSync(
-      resolve(__dirname, "../assets/openma-logo-mark.svg"),
+      fileURLToPath(import.meta.resolve("@openma/common/brand/openma-logo-mark.svg")),
       "utf8",
     );
 
-    expect(markComponent).toContain('openma-logo-mark.svg');
+    expect(markComponent).toContain('@openma/common/brand/openma-logo-mark.svg');
     expect(markComponent).not.toContain('openma-orbit-mark.svg');
-    expect(markAsset).toContain('build/icon.png');
+    expect(markAsset).toContain('viewBox="240 244 548 454"');
     expect(markAsset).toContain('M279 363');
-    expect(markAsset).not.toContain('open-managed-agents');
     expect(existsSync(resolve(__dirname, "../assets/openma-app-icon.svg"))).toBe(false);
   });
 

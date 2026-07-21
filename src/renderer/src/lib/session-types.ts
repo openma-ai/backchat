@@ -303,7 +303,7 @@ export interface TurnDeliveryMeta {
   degraded: boolean;
 }
 
-export type SideTabType = "chat" | "subagent" | "file" | "browser" | "terminal" | "interactive";
+export type SideTabType = "chat" | "subagent" | "file" | "browser" | "terminal" | "process" | "interactive";
 
 /** UI tab in the right rail. The `payload` field is type-specific — for
  *  chat it's a sessionId (matches SessionRow.id), for file it's a cwd

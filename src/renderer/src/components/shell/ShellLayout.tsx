@@ -183,7 +183,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
               ) : null
             }
             rightPanel={isChat ? <SideChatPanel /> : undefined}
-            bottomPanel={<BottomPanel />}
+            bottomPanel={isChat ? <BottomPanel /> : undefined}
           >
             {children}
             <BrokerModal />

@@ -27,6 +27,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { PushChannel, InvokeChannel } from "../shared/ipc-channels.js";
 import type {
+  AcpTerminalInfo,
+  AcpTerminalSnapshot,
   FsWriteAskInfo,
   PendingBrokerAskInfo,
   PermissionAskInfo,
@@ -187,6 +189,10 @@ function isInsideCwd(target: string, cwd: string): boolean {
 
 interface PtyRecord {
   sessionId: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  startedAt: number;
   proc: ChildProcessWithoutNullStreams;
   /** Rolling output buffer respecting outputByteLimit. */
   buf: string;
@@ -223,6 +229,10 @@ export function createTerminal(
   const terminalId = `term-${nextTerminalId++}-${Math.random().toString(36).slice(2, 6)}`;
   const rec: PtyRecord = {
     sessionId,
+    command: p.command,
+    args: [...(p.args ?? [])],
+    cwd: p.cwd ?? sessionCwd,
+    startedAt: Date.now(),
     proc,
     buf: "",
     byteLimit: p.outputByteLimit ?? 1_048_576,
@@ -268,6 +278,37 @@ export function createTerminal(
   proc.once("error", () => settle(null, null));
   ptys.set(terminalId, rec);
   return { terminalId };
+}
+
+function terminalInfo(terminalId: string, rec: PtyRecord): AcpTerminalInfo {
+  return {
+    sessionId: rec.sessionId,
+    terminalId,
+    command: rec.command,
+    args: [...rec.args],
+    cwd: rec.cwd,
+    startedAt: rec.startedAt,
+    exited: rec.exited,
+    exitCode: rec.exitCode,
+    signal: rec.exitSignal,
+  };
+}
+
+export function listTerminals(sessionId?: string): AcpTerminalInfo[] {
+  return [...ptys.entries()]
+    .filter(([, rec]) => !sessionId || rec.sessionId === sessionId)
+    .map(([terminalId, rec]) => terminalInfo(terminalId, rec))
+    .sort((a, b) => b.startedAt - a.startedAt);
+}
+
+export function terminalSnapshot(terminalId: string): AcpTerminalSnapshot | null {
+  const rec = ptys.get(terminalId);
+  if (!rec) return null;
+  return {
+    ...terminalInfo(terminalId, rec),
+    output: rec.buf,
+    truncated: rec.buf.length >= rec.byteLimit,
+  };
 }
 
 export function terminalOutput(params: unknown): unknown {

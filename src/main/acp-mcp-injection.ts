@@ -39,10 +39,13 @@ function cloneServer(server: SettingsMcpServer): AcpMcpServer {
  * user's configured servers plus task-scoped built-ins. */
 export function buildAcpMcpServers(
   configured: readonly SettingsMcpServer[],
-  taskScoped?: SettingsMcpServer,
+  taskScoped?: SettingsMcpServer | readonly SettingsMcpServer[],
 ): AcpMcpServer[] {
+  const builtIns = taskScoped
+    ? Array.isArray(taskScoped) ? taskScoped : [taskScoped]
+    : [];
   return [
     ...configured.map(cloneServer),
-    ...(taskScoped ? [cloneServer(taskScoped)] : []),
+    ...builtIns.map(cloneServer),
   ];
 }

@@ -6,7 +6,7 @@
  * `webContents.send` from the SessionManager's `Sender` callback.
  */
 
-import { BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow, ipcMain, Notification } from "electron";
 import { randomUUID } from "node:crypto";
 import { getKnownAgents } from "@open-managed-agents-desktop/acp/registry";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
@@ -32,11 +32,12 @@ import type {
   PairStartParams,
 } from "../shared/pair-events.js";
 import type { Settings, SettingsMcpServer } from "../shared/settings.js";
+import type { CreateScheduleInput, UpdateScheduleInput } from "../shared/schedules.js";
 import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { appendEventsTx, archiveSession, deleteSession, deleteSideWorkspace, getActivityStats, listArchivedSessions, listPairGroups, listSessions, listSideWorkspaces, loadHistory, pinSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchiveSession, unpinSession, upsertSession } from "./sql-store.js";
+import { appendEventsTx, archiveSession, deleteSession, deleteSideWorkspace, getActivityStats, getSession, listArchivedSessions, listPairGroups, listSessions, listSideWorkspaces, loadHistory, pinSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchiveSession, unpinSession, upsertSession } from "./sql-store.js";
 import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
@@ -47,11 +48,13 @@ import {
   cancelPendingFor,
   createTerminal,
   killTerminal,
+  listTerminals,
   readTextFile,
   registerBrokers,
   releaseTerminal,
   requestPermission,
   terminalOutput,
+  terminalSnapshot,
   waitForTerminalExit,
   writeTextFile,
 } from "./brokers.js";
@@ -79,6 +82,11 @@ import { registerSandboxDocument } from "./mcp-app-document-store.js";
 // Side-effect import: current-tab browser data, downloads, screenshots and
 // privacy controls. Each handler revalidates the guest ownership boundary.
 import "./browser-data-broker.js";
+import { ScheduleStore } from "./schedule-store.js";
+import { ScheduleEngine } from "./schedule-engine.js";
+import { ScheduledTaskExecutor } from "./scheduled-task-executor.js";
+import { ScheduleService } from "./schedule-service.js";
+import { ScheduleHarnessMcpBridge } from "./schedule-harness-mcp.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -87,9 +95,14 @@ interface RegisterDeps {
   probeCachePath?: string;
   acpBinDir: string;
   acpInstallRoot: string;
+  scheduleDbPath: string;
   browserMcpServerForTask?: (taskId: string) => unknown;
   /** Codex-compatible plugin bundle roots. Defaults to ~/.openma/plugins. */
   pluginRoots?: readonly string[];
+  /** Optional second consumer of the singleton SessionManager event stream.
+   *  OMA bridge uses this to relay cloud-owned sessions while the renderer
+   *  keeps receiving the exact same events. */
+  sessionEventSink?: (event: SessionEventOut) => void;
 }
 
 interface TestAgentSetupCall {
@@ -123,6 +136,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
   const testPromptCalls: SessionPromptParams[] = [];
   const testConfigOptionCalls: SessionSetConfigOptionParams[] = [];
+  const scheduleStore = new ScheduleStore(deps.scheduleDbPath);
+  let scheduleMcpBridge: ScheduleHarnessMcpBridge | null = null;
   let testAgentSetupFixture: TestAgentSetupFixture | null = null;
   const isSyntheticTestSession = (sessionId: string) =>
     sessionId.startsWith("e2e-") || sessionId.startsWith("sess-test-");
@@ -189,6 +204,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // channels so the renderer can wire them to independent reducers.
   const singleSink = (msg: SessionEventOut) => {
     forwardSessionEventToPet(msg);
+    deps.sessionEventSink?.(msg);
     if (msg.type !== "session.event") {
       process.stdout.write(`[session] ${msg.type} sid=${msg.session_id.slice(0, 8)}\n`);
     }
@@ -226,7 +242,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     // every spawn. ACP McpServer shape matches our SettingsMcpServer.
     resolveMcpServers: (_agentId, taskId) => buildAcpMcpServers(
       allAgentMcpServers(),
-      deps.browserMcpServerForTask?.(taskId) as SettingsMcpServer | undefined,
+      [
+        deps.browserMcpServerForTask?.(taskId) as SettingsMcpServer | undefined,
+        scheduleMcpBridge?.descriptor(taskId),
+      ].filter((server): server is SettingsMcpServer => !!server),
     ),
     resolveDefaults: () => {
       const s = settingsStore.get();
@@ -281,11 +300,57 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // session events into PairManager's reshape path.
   pairManager = new PairManager({ sessionManager, pairSink });
 
+  const scheduledTaskExecutor = new ScheduledTaskExecutor({
+    start: (input) => sessionManager.start(input),
+    prompt: (input) => sessionManager.prompt(input),
+    findSession: (sessionId) => getSession(sessionId),
+  });
+  const scheduleEngine = new ScheduleEngine({
+    store: scheduleStore,
+    execute: (schedule) => scheduledTaskExecutor.execute(schedule),
+    notify: ({ title, body, sessionId }) => {
+      if (!Notification.isSupported()) return;
+      const notification = new Notification({ title, body });
+      notification.on("click", () => {
+        const path = sessionId
+          ? `/chat/${encodeURIComponent(sessionId)}`
+          : "/scheduled";
+        const window = BrowserWindow.getFocusedWindow()
+          ?? BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+        window?.webContents.send(PushChannel.MenuNavigate, path);
+        window?.show();
+        window?.focus();
+      });
+      notification.show();
+    },
+  });
+  const scheduleService = new ScheduleService({
+    store: scheduleStore,
+    findSession: (taskId) => getSession(taskId),
+    reschedule: () => scheduleEngine.reschedule(),
+  });
+  scheduleMcpBridge = new ScheduleHarnessMcpBridge(scheduleService);
+  await scheduleMcpBridge.start();
+  scheduleEngine.start();
+
   ipcMain.handle(InvokeChannel.Ping, (_e, msg: string) => {
     const reply = `pong: ${msg}`;
     process.stdout.write(`[ipc-ping] ${reply}\n`);
     return reply;
   });
+
+  ipcMain.handle(
+    InvokeChannel.AcpTerminalsList,
+    (_e, p: { sessionId: string }) => listTerminals(p.sessionId),
+  );
+  ipcMain.handle(
+    InvokeChannel.AcpTerminalSnapshot,
+    (_e, p: { terminalId: string }) => terminalSnapshot(p.terminalId),
+  );
+  ipcMain.handle(
+    InvokeChannel.AcpTerminalKill,
+    (_e, p: { terminalId: string }) => killTerminal(p),
+  );
 
   ipcMain.handle(
     InvokeChannel.AgentsList,
@@ -527,6 +592,37 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     await agentWarmup;
     return enrichActivityStats(getActivityStats(), getKnownAgents());
   });
+  ipcMain.handle(InvokeChannel.SchedulesList, () => scheduleStore.list());
+  ipcMain.handle(
+    InvokeChannel.SchedulesCreate,
+    (_e, input: CreateScheduleInput) => {
+      const source = getSession(input.sourceSessionId);
+      if (!source) throw new Error(`Cannot schedule unknown task: ${input.sourceSessionId}`);
+      const created = scheduleStore.create({
+        ...input,
+        agentId: source.agent_id,
+        cwd: source.cwd,
+      });
+      scheduleEngine.reschedule();
+      return created;
+    },
+  );
+  ipcMain.handle(
+    InvokeChannel.SchedulesUpdate,
+    (_e, input: UpdateScheduleInput) => {
+      const updated = scheduleStore.update(input);
+      scheduleEngine.reschedule();
+      return updated;
+    },
+  );
+  ipcMain.handle(InvokeChannel.SchedulesDelete, (_e, input: { id: string }) => {
+    scheduleStore.delete(input.id);
+    scheduleEngine.reschedule();
+  });
+  ipcMain.handle(
+    InvokeChannel.ScheduleRunsList,
+    (_e, input: { schedule_id: string }) => scheduleStore.listRuns(input.schedule_id),
+  );
 
   // ---- Settings ----
   ipcMain.handle(InvokeChannel.SettingsGet, (): Settings => settingsStore.get());
@@ -730,12 +826,15 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       void mcpAppRuntime.close();
     },
     async dispose() {
+      scheduleEngine.stop();
       await Promise.allSettled([
         sessionManager.disposeAll(),
         agentSetup.dispose(),
         mcpAppRuntime.close(),
         pluginSkillsMcpBridge.stop(),
+        scheduleMcpBridge?.stop(),
       ]);
+      scheduleStore.close();
     },
   };
 }

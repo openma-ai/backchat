@@ -14,6 +14,11 @@ import { PushChannel } from "../shared/ipc-channels.js";
 import { browserHarnessMcpBridge } from "./browser-view-broker.js";
 import { resolveSandboxResource } from "./mcp-app-document-store.js";
 import { resolveAllowedLocalFilePath } from "./local-file-protocol.js";
+import { detectAll } from "@open-managed-agents-desktop/acp/registry";
+import {
+  OmaBridgeClient,
+  readOmaBridgeCredentials,
+} from "./oma-bridge.js";
 
 // Dev-only: enable CDP on port 9222 so agent-browser can drive the
 // renderer for end-to-end UI tests. No-op in production. Also skip
@@ -37,6 +42,7 @@ const showE2eWindow = process.env["BACKCHAT_E2E_VISIBLE"] === "1";
 const pendingDeepLinks: BackchatDeepLink[] = [];
 let disposeSessionsForShutdown: (() => Promise<void>) | null = null;
 let shutdownBarrierStarted = false;
+let omaBridge: OmaBridgeClient | null = null;
 
 function registerBackchatProtocolClient(): void {
   if (testHooksEnabled) return;
@@ -390,10 +396,31 @@ if (!gotLock) {
       probeCachePath: join(root, "agent-probe-cache.json"),
       acpBinDir,
       acpInstallRoot: acpRoot,
+      scheduleDbPath: join(root, "schedules.db"),
       browserMcpServerForTask: (taskId) =>
         browserHarnessMcpBridge.descriptor(taskId),
+      sessionEventSink: (event) => omaBridge?.handleSessionEvent(event),
     });
-    disposeSessionsForShutdown = () => ipcRuntime.dispose();
+    const bridgeCredentials = await readOmaBridgeCredentials();
+    if (bridgeCredentials) {
+      omaBridge = new OmaBridgeClient({
+        credentials: bridgeCredentials,
+        host: ipcRuntime.sessionManager,
+        version: `backchat/${app.getVersion()}`,
+        detectAgents: async () => (await detectAll({
+          managedBinDirs: [acpBinDir],
+        })).map((agent) => ({
+          id: agent.id,
+          binary: agent.spec.command,
+        })),
+      });
+      await omaBridge.connect();
+    }
+    disposeSessionsForShutdown = async () => {
+      omaBridge?.stop();
+      omaBridge = null;
+      await ipcRuntime.dispose();
+    };
 
     installAppMenu({
       openNewWindow: () => createWindow(),

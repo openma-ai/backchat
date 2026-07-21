@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, Outlet, useLocation } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   ArchiveIcon,
   ArrowLeftIcon,
@@ -46,6 +46,8 @@ const iconSlotClass = "flex w-4 shrink-0 items-center justify-center";
 
 export function SettingsLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const router = useRouter();
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const visibleTabs = useMemo(() => {
@@ -53,13 +55,21 @@ export function SettingsLayout() {
     if (!normalized) return TABS;
     return TABS.filter((tab) => t(tab.labelKey).toLowerCase().includes(normalized));
   }, [query, t]);
+  const backToApp = () => {
+    if (router.history.canGoBack()) {
+      router.history.back();
+      return;
+    }
+    void navigate({ to: "/" });
+  };
 
   return (
     <div className="flex h-full min-h-0 gap-[var(--stage-inset)] bg-bg-sidebar p-[var(--stage-inset)] text-fg">
       <aside className="app-drag-region liquid-glass flex w-[232px] shrink-0 flex-col rounded-2xl px-2 pb-2 pt-2">
         <div className="h-[30px]" />
-        <Link
-          to="/"
+        <button
+          type="button"
+          onClick={backToApp}
           aria-label={t("settings.backToApp")}
           className="app-no-drag mb-2 inline-flex h-7 w-fit items-center gap-2 rounded-md px-2 text-xs text-fg-subtle transition-colors hover:bg-bg-surface/55 hover:text-fg"
         >
@@ -67,7 +77,7 @@ export function SettingsLayout() {
             <ArrowLeftIcon className="size-3.5" />
           </span>
           <span>{t("settings.backToApp")}</span>
-        </Link>
+        </button>
 
         <InputGroup className="app-no-drag mb-3 h-8 rounded-lg border-border/45 bg-bg/65 shadow-chip-press">
           <InputGroupAddon className="pl-2 pr-1 text-fg-subtle">
