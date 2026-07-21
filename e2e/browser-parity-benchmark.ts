@@ -1,0 +1,298 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN,
+  DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE,
+  DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE,
+  DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE,
+  buildBrowserParityEvidencePack,
+  compareBrowserParityTracePair,
+  selectStableBrowserParityTasks,
+  type BrowserParityTrace,
+  type BrowserParityTraceComparison,
+} from "../src/shared/browser-parity-benchmark.js";
+import { readImageDimensionsFromBytes } from "../src/shared/image-dimensions.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, "..");
+const outputDir = join(repoRoot, "artifacts/browser-parity-benchmark");
+
+interface TracePairInput {
+  id: string;
+  taskId: string;
+  leftPath: string;
+  rightPath: string;
+}
+
+const tracePairs: TracePairInput[] = [
+  {
+    id: "iab-local-fixture",
+    taskId: "custom.local-fixture.basic-form",
+    leftPath: "artifacts/browser-tool-diff/codex-native-iab.json",
+    rightPath: "artifacts/browser-tool-diff/backchat-iab.json",
+  },
+  {
+    id: "chrome-local-fixture",
+    taskId: "custom.local-fixture.basic-form",
+    leftPath: "artifacts/browser-tool-diff/codex-native-chrome.json",
+    rightPath: "artifacts/browser-tool-diff/backchat-chrome.json",
+  },
+  {
+    id: "iab-miniwob-click-button",
+    taskId: "miniwob.click-button",
+    leftPath: "artifacts/browser-miniwob-diff/codex-native-iab-click-button.json",
+    rightPath: "artifacts/browser-miniwob-diff/backchat-iab-click-button.json",
+  },
+  {
+    id: "chrome-miniwob-click-button",
+    taskId: "miniwob.click-button",
+    leftPath: "artifacts/browser-miniwob-diff/codex-native-chrome-click-button.json",
+    rightPath: "artifacts/browser-miniwob-diff/backchat-chrome-click-button.json",
+  },
+  {
+    id: "iab-miniwob-enter-text",
+    taskId: "miniwob.enter-text",
+    leftPath: "artifacts/browser-miniwob-diff/codex-native-iab-enter-text.json",
+    rightPath: "artifacts/browser-miniwob-diff/backchat-iab-enter-text.json",
+  },
+  {
+    id: "chrome-miniwob-enter-text",
+    taskId: "miniwob.enter-text",
+    leftPath: "artifacts/browser-miniwob-diff/codex-native-chrome-enter-text.json",
+    rightPath: "artifacts/browser-miniwob-diff/backchat-chrome-enter-text.json",
+  },
+  {
+    id: "iab-wikipedia-selenium",
+    taskId: "webvoyager.wikipedia.selenium-search",
+    leftPath: "artifacts/browser-real-site-diff/codex-native-iab-wikipedia.json",
+    rightPath: "artifacts/browser-real-site-diff/backchat-iab-wikipedia.json",
+  },
+  {
+    id: "chrome-wikipedia-selenium",
+    taskId: "webvoyager.wikipedia.selenium-search",
+    leftPath: "artifacts/browser-real-site-diff/codex-native-chrome-wikipedia.json",
+    rightPath: "artifacts/browser-real-site-diff/backchat-chrome-wikipedia.json",
+  },
+];
+
+async function main(): Promise<void> {
+  const comparisons: BrowserParityTraceComparison[] = [];
+  const missingPairs: Array<{ id: string; missing: string[] }> = [];
+
+  for (const pair of tracePairs) {
+    const leftAbs = join(repoRoot, pair.leftPath);
+    const rightAbs = join(repoRoot, pair.rightPath);
+    const missing = [leftAbs, rightAbs].filter((candidate) => !existsSync(candidate));
+    if (missing.length > 0) {
+      missingPairs.push({ id: pair.id, missing });
+      continue;
+    }
+
+    const [left, right] = await Promise.all([
+      readTrace(leftAbs),
+      readTrace(rightAbs),
+    ]);
+    comparisons.push(compareBrowserParityTracePair({
+      id: pair.id,
+      taskId: pair.taskId,
+      left,
+      right,
+    }));
+  }
+
+  const tasks = selectStableBrowserParityTasks(DEFAULT_BROWSER_PARITY_BENCHMARK_PLAN);
+  const evidenceSources = browserParityEvidenceSources();
+  const pack = {
+    ...buildBrowserParityEvidencePack({
+      generatedAt: new Date().toISOString(),
+      tasks,
+      comparisons,
+      evidenceSources,
+    }),
+    missingPairs,
+    sources: {
+      miniwobPlusPlus: "https://github.com/Farama-Foundation/miniwob-plusplus",
+      webVoyager: "https://github.com/MinorJerry/WebVoyager",
+      onlineMind2Web: "https://github.com/OSU-NLP-Group/Online-Mind2Web",
+      browserGym: "https://github.com/ServiceNow/BrowserGym",
+    },
+  };
+
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    join(outputDir, "manifest.json"),
+    `${JSON.stringify(pack, null, 2)}\n`,
+    "utf8",
+  );
+  await writeFile(join(outputDir, "summary.md"), renderSummary(pack), "utf8");
+  console.log(`Wrote ${join(outputDir, "manifest.json")}`);
+  console.log(`Wrote ${join(outputDir, "summary.md")}`);
+  console.log(JSON.stringify(pack.summary, null, 2));
+}
+
+function browserParityEvidenceSources(): ReturnType<typeof buildBrowserParityEvidencePack>["evidenceSources"] {
+  const staticUxEvidence = [
+    "packages/browser-extension/manifest.json",
+    "packages/browser-extension/popup.html",
+    "packages/browser-extension/popup.css",
+    "packages/browser-extension/popup.js",
+    "packages/browser-extension/src/manifest.test.ts",
+    "packages/browser-extension/src/background.test.ts",
+    "src/renderer/src/pages/settings/Browser.tsx",
+    "src/renderer/src/pages/settings/browser-settings.test.ts",
+  ];
+  const visualEvidence = [
+    "artifacts/browser-plugin-gui-evidence/manifest.json",
+  ];
+
+  return [
+    DEFAULT_BROWSER_PARITY_AUTH_EVIDENCE_SOURCE,
+    DEFAULT_BROWSER_PARITY_CORE_EVIDENCE_SOURCE,
+    {
+      id: "chrome-extension-static-ux",
+      title: "Chrome extension popup, permission, and Settings Browser UX contract",
+      status: everyRepoPathExists(staticUxEvidence) ? "verified" : "missing",
+      coverage: ["extension-ux", "permissions"],
+      evidence: staticUxEvidence,
+      notes: "Covers popup/status/paused/port diagnostics, required permission display, and Backchat Settings status model.",
+    },
+    {
+      id: "browser-gui-visual-evidence",
+      title: "Browser GUI screenshot evidence manifest",
+      status: everyRepoPathExists(visualEvidence) ? "verified" : "missing",
+      coverage: ["visual-regression"],
+      evidence: visualEvidence,
+      notes: "Local screenshot manifest records IAB and Chrome extension GUI evidence; screenshots stay outside the small committed evidence pack.",
+    },
+    DEFAULT_BROWSER_PARITY_EXTENSION_INSTALLATION_EVIDENCE_SOURCE,
+  ];
+}
+
+function everyRepoPathExists(paths: string[]): boolean {
+  return paths.every((path) => existsSync(join(repoRoot, path)));
+}
+
+async function readTrace(path: string): Promise<BrowserParityTrace> {
+  const parsed = JSON.parse(await readFile(path, "utf8")) as BrowserParityTrace;
+  const screenshotPath = parsed.artifacts?.screenshot ?? stringOrNull(parsed.observations.screenshotPath);
+  if (screenshotPath) {
+    const absoluteScreenshotPath = isAbsolute(screenshotPath)
+      ? screenshotPath
+      : join(repoRoot, screenshotPath);
+    if (existsSync(absoluteScreenshotPath)) {
+      const dimensions = readImageDimensionsFromBytes(await readFile(absoluteScreenshotPath));
+      if (dimensions) {
+        parsed.observations.screenshotWidth = dimensions.width;
+        parsed.observations.screenshotHeight = dimensions.height;
+      }
+    }
+  }
+  return parsed;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function renderSummary(pack: ReturnType<typeof buildBrowserParityEvidencePack> & {
+  missingPairs: Array<{ id: string; missing: string[] }>;
+  sources: Record<string, string>;
+}): string {
+  const lines = [
+    "# Backchat Browser Parity Benchmark Evidence",
+    "",
+    `Generated: ${pack.generatedAt}`,
+    "",
+    "## Summary",
+    "",
+    `- Tasks selected: ${pack.summary.totalTasks}`,
+    `- Comparisons completed: ${pack.summary.completedComparisons}`,
+    `- Passing comparisons: ${pack.summary.passingComparisons}`,
+    `- Partial comparisons: ${pack.summary.partialComparisons}`,
+    `- Failing comparisons: ${pack.summary.failingComparisons}`,
+    `- Missing pairs: ${pack.missingPairs.length}`,
+    `- Accepted differences: ${pack.gapAudit.summary.acceptedDifferences}`,
+    `- Unexplained gaps: ${pack.gapAudit.summary.unexplainedGaps}`,
+    `- Missing required coverage: ${pack.gapAudit.summary.missingCoverage}`,
+    "",
+    "## Completed Comparisons",
+    "",
+  ];
+
+  for (const comparison of pack.comparisons) {
+    lines.push(
+      `### ${comparison.id}`,
+      "",
+      `- Task: ${comparison.taskId}`,
+      `- Surfaces: ${comparison.left.surface} vs ${comparison.right.surface}`,
+      `- Status: ${comparison.status}`,
+      `- Left screenshot: ${comparison.left.screenshot ?? "none"}`,
+      `- Right screenshot: ${comparison.right.screenshot ?? "none"}`,
+      `- Diffs: ${comparison.diffs.length === 0 ? "none" : comparison.diffs.map((diff) => diff.field).join(", ")}`,
+      "",
+    );
+  }
+
+  if (pack.parityGaps.length > 0) {
+    lines.push("## Raw Diffs", "");
+    for (const gap of pack.parityGaps) {
+      lines.push(`- ${gap.pairId} / ${gap.field}: ${String(gap.left)} vs ${String(gap.right)}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("## Gap Audit", "");
+  if (pack.gapAudit.acceptedDifferences.length > 0) {
+    lines.push("### Accepted differences", "");
+    for (const diff of pack.gapAudit.acceptedDifferences) {
+      lines.push(`- ${diff.pairId} / ${diff.field}: ${diff.category}; ${diff.reason}`);
+    }
+    lines.push("");
+  }
+  if (pack.gapAudit.unexplainedGaps.length > 0) {
+    lines.push("### Unexplained gaps", "");
+    for (const gap of pack.gapAudit.unexplainedGaps) {
+      lines.push(`- ${gap.pairId} / ${gap.field}: ${gap.reason}`);
+    }
+    lines.push("");
+  } else {
+    lines.push("### Unexplained gaps", "", "- none", "");
+  }
+  if (pack.gapAudit.missingCoverage.length > 0) {
+    lines.push("### Missing required coverage", "");
+    for (const coverage of pack.gapAudit.missingCoverage) {
+      lines.push(`- ${coverage}`);
+    }
+    lines.push("");
+  } else {
+    lines.push("### Missing required coverage", "", "- none", "");
+  }
+
+  if (pack.evidenceSources.length > 0) {
+    lines.push("## Supplemental Evidence Sources", "");
+    for (const source of pack.evidenceSources) {
+      lines.push(
+        `- ${source.id}: ${source.status}; coverage=${source.coverage.join(", ")}`,
+      );
+      if (source.notes) lines.push(`  ${source.notes}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("## Selected Task Sources", "");
+  for (const task of pack.tasks) {
+    lines.push(`- ${task.id}: ${task.source}; coverage=${task.coverage.join(", ")}`);
+  }
+  lines.push("");
+  lines.push("## Benchmark References", "");
+  for (const [name, url] of Object.entries(pack.sources)) {
+    lines.push(`- ${name}: ${url}`);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+await main();

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Backchat Browser Bridge</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="header">
+        <div>
+          <h1>Backchat Bridge</h1>
+          <p data-status>Checking connection...</p>
+        </div>
+        <button type="button" class="text-button" data-refresh>Refresh</button>
+      </header>
+
+      <section class="section" aria-label="Bridge controls">
+        <label class="toggle-row">
+          <span>
+            <strong>Allow automation</strong>
+            <small>Pause this to stop Backchat from controlling Chrome.</small>
+          </span>
+          <input type="checkbox" data-pause-toggle aria-label="Allow automation">
+        </label>
+      </section>
+
+      <section class="section" aria-label="Connection">
+        <label class="field">
+          <span>Bridge port</span>
+          <input data-port-input inputmode="numeric" autocomplete="off">
+        </label>
+        <button type="button" class="button" data-save-port>Reconnect</button>
+      </section>
+
+      <section class="section" aria-label="Diagnostics">
+        <textarea data-diagnostics readonly spellcheck="false"></textarea>
+        <button type="button" class="text-button" data-copy-diagnostics>Copy diagnostics</button>
+      </section>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

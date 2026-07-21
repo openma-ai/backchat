@@ -20,6 +20,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { SessionEventOut } from "@shared/session-events.js";
+import type { BrowserPluginStateEvent } from "@shared/browser-plugin.js";
 import { setRightRailCollapsed } from "@/lib/right-rail";
 import {
   normalizeAgentConfigOptions,
@@ -652,7 +653,11 @@ export class SessionStore {
       // the empty rail shell would restore a dead tab before chat history has
       // recreated its AppBridge.
       const sourceTabs = (this.#sideTabsByMain.get(taskId) ?? [])
-        .filter((tab) => tab.type !== "interactive" && tab.type !== "process");
+        .filter((tab) =>
+          tab.type !== "interactive" &&
+          tab.type !== "process" &&
+          tab.source?.kind !== "browser-plugin"
+        );
       const artifacts = this.#artifactsBySession.get(taskId) ?? { files: [], services: [] };
       const subagents = this.#subagentsByParent.get(taskId) ?? [];
       if (sourceTabs.length === 0 && artifacts.files.length === 0 && artifacts.services.length === 0 && subagents.length === 0) {
@@ -857,6 +862,85 @@ export class SessionStore {
     tabId?: string,
   ): string {
     return this.#openSideTabForBucket(taskId, type, payload, label, tabId);
+  }
+
+  /** Mirror visible in-app Browser plugin state into the active task's rail.
+   *  The main-process Browser service remains the source of truth; projected
+   *  tabs are intentionally excluded from persisted workspace snapshots. */
+  syncBrowserPluginState(event: BrowserPluginStateEvent): void {
+    if (event.browser.type !== "iab") return;
+
+    const bucket = this.#sideBucket();
+    if (!bucket) return;
+    const tabs = this.#sideTabsByMain.get(bucket) ?? [];
+    const isControlledForBrowser = (tab: SideTab) =>
+      tab.source?.kind === "browser-plugin" &&
+      tab.source.browserId === event.browser.id;
+
+    if (!event.visible) {
+      const nextTabs = tabs.filter((tab) => !isControlledForBrowser(tab));
+      if (nextTabs.length === tabs.length) return;
+      if (nextTabs.length === 0) this.#sideTabsByMain.delete(bucket);
+      else this.#sideTabsByMain.set(bucket, nextTabs);
+
+      const activeSideTabId = this.#activeSideTabByMain.get(bucket);
+      if (!nextTabs.some((tab) => tab.id === activeSideTabId)) {
+        const next = nextTabs.at(-1);
+        if (next) this.#activeSideTabByMain.set(bucket, next.id);
+        else this.#activeSideTabByMain.delete(bucket);
+      }
+      const activeBrowserTabId = this.#activeBrowserTabByMain.get(bucket);
+      if (!nextTabs.some((tab) => tab.id === activeBrowserTabId)) {
+        const nextBrowser = [...nextTabs]
+          .reverse()
+          .find((tab) => tab.type === "browser");
+        if (nextBrowser) this.#activeBrowserTabByMain.set(bucket, nextBrowser.id);
+        else this.#activeBrowserTabByMain.delete(bucket);
+      }
+      this.#syncVisibleSideSession(bucket);
+      this.#emit();
+      return;
+    }
+
+    const projected = event.tabs.map((browserTab) => {
+      const url = browserTab.url || "about:blank";
+      const existing = tabs.find(
+        (tab) =>
+          tab.source?.kind === "browser-plugin" &&
+          tab.source.browserId === event.browser.id &&
+          tab.source.tabId === browserTab.id,
+      );
+      return {
+        id: existing?.id ?? `tab-browser-${event.browser.id}-${browserTab.id}`,
+        type: "browser" as const,
+        label: defaultSideTabLabel("browser", url),
+        payload: url,
+        source: {
+          kind: "browser-plugin" as const,
+          browserId: event.browser.id,
+          tabId: browserTab.id,
+        },
+        createdAt: existing?.createdAt ?? Date.now(),
+      };
+    });
+
+    this.#sideTabsByMain.set(bucket, [
+      ...tabs.filter((tab) => !isControlledForBrowser(tab)),
+      ...projected,
+    ]);
+
+    const activeProjection =
+      (event.activeTabId
+        ? projected.find((tab) => tab.source.tabId === event.activeTabId)
+        : undefined) ?? projected.at(-1);
+    if (activeProjection) {
+      this.#activeSideTabByMain.set(bucket, activeProjection.id);
+      this.#activeBrowserTabByMain.set(bucket, activeProjection.id);
+      this.#syncVisibleSideSession(bucket);
+      setRightRailCollapsed(false);
+    }
+
+    this.#emit();
   }
 
   /** Update a tab's mutable fields (label rename, URL change for a

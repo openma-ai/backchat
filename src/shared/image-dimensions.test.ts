@@ -1,0 +1,42 @@
+import { describe, expect, it } from "vitest";
+
+import { readImageDimensionsFromBytes } from "./image-dimensions.js";
+
+describe("readImageDimensionsFromBytes", () => {
+  it("reads PNG IHDR width and height", () => {
+    const bytes = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x03, 0xc0,
+      0x00, 0x00, 0x02, 0x80,
+      0x08, 0x02, 0x00, 0x00, 0x00,
+    ]);
+
+    expect(readImageDimensionsFromBytes(bytes)).toEqual({ width: 960, height: 640 });
+  });
+
+  it("reads JPEG SOF width and height", () => {
+    const bytes = Uint8Array.from([
+      0xff, 0xd8,
+      0xff, 0xe0,
+      0x00, 0x04,
+      0x00, 0x00,
+      0xff, 0xc0,
+      0x00, 0x11,
+      0x08,
+      0x05, 0xa0,
+      0x0a, 0x00,
+      0x03,
+      0x01, 0x11, 0x00,
+      0x02, 0x11, 0x00,
+      0x03, 0x11, 0x00,
+    ]);
+
+    expect(readImageDimensionsFromBytes(bytes)).toEqual({ width: 2560, height: 1440 });
+  });
+
+  it("returns null for unsupported image bytes", () => {
+    expect(readImageDimensionsFromBytes(Uint8Array.from([0x00, 0x01, 0x02]))).toBeNull();
+  });
+});

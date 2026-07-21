@@ -6,6 +6,7 @@
  *   /settings                      → redirect /settings/activity
  *   /settings/activity             local activity + harness analytics
  *   /settings/agents               default-agent picker + per-agent overrides
+ *   /settings/browser              Browser plugin backend status
  *   /settings/mcp-servers          MCP server CRUD
  *   /settings/appearance           theme / font / density
  *   /settings/about                version + diagnostics

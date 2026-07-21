@@ -104,6 +104,9 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
       window.backchat,
     );
     const off = window.backchat.onSessionEvent((e) => sessionStore.apply(e));
+    const offBrowser = window.backchat.onBrowserPluginState((event) =>
+      sessionStore.syncBrowserPluginState(event)
+    );
     void window.backchat.sessionAnnounce();
     void Promise.all([
       window.backchat.sessionsList(200),
@@ -128,6 +131,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
       window.removeEventListener("beforeunload", flushBeforeUnload);
       sideWorkspacePersistence.dispose();
       off();
+      offBrowser();
     };
   }, []);
 

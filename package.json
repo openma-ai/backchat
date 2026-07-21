@@ -26,6 +26,7 @@
     "test:e2e": "electron-vite build && playwright test",
     "test:verify": "pnpm run typecheck && pnpm run test && pnpm run test:e2e:fast",
     "package": "electron-vite build && electron-builder",
+    "package:browser-extension": "tsx scripts/package-browser-extension.ts",
     "package:dir": "electron-vite build && electron-builder --dir",
     "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty"
   },

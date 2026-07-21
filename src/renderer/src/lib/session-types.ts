@@ -305,6 +305,12 @@ export interface TurnDeliveryMeta {
 
 export type SideTabType = "chat" | "subagent" | "file" | "browser" | "terminal" | "process" | "interactive";
 
+export interface SideTabSource {
+  kind: "browser-plugin";
+  browserId: string;
+  tabId: string;
+}
+
 /** UI tab in the right rail. The `payload` field is type-specific — for
  *  chat it's a sessionId (matches SessionRow.id), for file it's a cwd
  *  path, for browser it's the current URL, for terminal it's a
@@ -319,6 +325,8 @@ export interface SideTab {
    *    terminal   → cwd's last segment (matches BottomPanel) */
   label: string;
   payload: string;
+  /** Main-process browser tab mirrored into the renderer's right rail. */
+  source?: SideTabSource;
   /** Original local artifact behind a browser-renderable preview. The
    *  browser payload may point at a generated PDF/image sidecar. */
   sourcePath?: string;

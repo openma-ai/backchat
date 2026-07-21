@@ -87,6 +87,18 @@ import { ScheduleEngine } from "./schedule-engine.js";
 import { ScheduledTaskExecutor } from "./scheduled-task-executor.js";
 import { ScheduleService } from "./schedule-service.js";
 import { ScheduleHarnessMcpBridge } from "./schedule-harness-mcp.js";
+import { createBrowserPluginService } from "./browser-plugin-service.js";
+import { createElectronInAppBrowserAdapter } from "./browser-plugin-inapp-adapter.js";
+import {
+  createChromeExtensionBrowserAdapter,
+  type ChromeExtensionBridgeHealth,
+} from "./browser-plugin-extension-adapter.js";
+import { createChromeExtensionHttpBridge } from "./browser-extension-http-bridge.js";
+import { registerBrowserPluginIpc } from "./browser-plugin-ipc.js";
+import {
+  createBrowserMcpHttpServer,
+  createBrowserMcpServerConfig,
+} from "./browser-plugin-mcp.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -183,6 +195,76 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   const agentWarmup = agentSetup.warmup().catch((error) => {
     process.stderr.write(`! ACP agent warmup failed: ${error instanceof Error ? error.message : String(error)}\n`);
   });
+  const requestedChromeExtensionBridgePort = Number(
+    process.env["BACKCHAT_BROWSER_EXTENSION_PORT"] ?? "29174",
+  );
+  const preferredChromeExtensionBridgePort = Number.isFinite(
+    requestedChromeExtensionBridgePort,
+  )
+    ? requestedChromeExtensionBridgePort
+    : 29174;
+  const chromeExtensionBridge = await createChromeExtensionHttpBridge({
+    preferredPort: preferredChromeExtensionBridgePort,
+  }).catch((error) => {
+    process.stderr.write(
+      `! Chrome extension bridge failed to start: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`,
+    );
+    return null;
+  });
+  const chromeExtensionBridgeMetadataPort = chromeExtensionBridge
+    ? new URL(chromeExtensionBridge.url).port
+    : String(preferredChromeExtensionBridgePort);
+  const browserPluginService = createBrowserPluginService({
+    adapters: [
+      createElectronInAppBrowserAdapter(),
+      createChromeExtensionBrowserAdapter({
+        metadata: () => chromeExtensionBridgeMetadata(
+          chromeExtensionBridgeMetadataPort,
+          chromeExtensionBridge?.bridge.health,
+        ),
+        bridge: {
+          get registration() {
+            return chromeExtensionBridge?.bridge.registration ?? null;
+          },
+          async sendCommand(command) {
+            if (!chromeExtensionBridge) {
+              throw new Error("Chrome extension bridge is not available");
+            }
+            return chromeExtensionBridge.bridge.sendCommand(command);
+          },
+        },
+      }),
+    ],
+  });
+  registerBrowserPluginIpc(ipcMain, browserPluginService);
+  const stopBrowserPluginState = browserPluginService.onEvent((event) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(PushChannel.BrowserState, event);
+      }
+    }
+  });
+  const browserMcpHttpServer = await createBrowserMcpHttpServer({
+    service: browserPluginService,
+  }).catch((error) => {
+    process.stderr.write(
+      `! Browser MCP server failed to start: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`,
+    );
+    return null;
+  });
+  const browserPluginMcpServer: SettingsMcpServer | undefined = browserMcpHttpServer
+    ? {
+        id: "backchat-browser-plugin",
+        ...createBrowserMcpServerConfig({
+          url: browserMcpHttpServer.url,
+          token: browserMcpHttpServer.token,
+        }),
+      }
+    : undefined;
   const recordTestAgentSetupCall = (call: TestAgentSetupCall): void => {
     testAgentSetupFixture?.calls?.push(call);
   };
@@ -244,6 +326,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       allAgentMcpServers(),
       [
         deps.browserMcpServerForTask?.(taskId) as SettingsMcpServer | undefined,
+        browserPluginMcpServer,
         scheduleMcpBridge?.descriptor(taskId),
       ].filter((server): server is SettingsMcpServer => !!server),
     ),
@@ -827,14 +910,36 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     },
     async dispose() {
       scheduleEngine.stop();
+      stopBrowserPluginState();
       await Promise.allSettled([
         sessionManager.disposeAll(),
         agentSetup.dispose(),
         mcpAppRuntime.close(),
         pluginSkillsMcpBridge.stop(),
         scheduleMcpBridge?.stop(),
+        browserMcpHttpServer?.close(),
+        chromeExtensionBridge?.close(),
       ]);
       scheduleStore.close();
     },
   };
+}
+
+function chromeExtensionBridgeMetadata(
+  bridgePort: string,
+  health?: ChromeExtensionBridgeHealth,
+): Record<string, string> {
+  const metadata: Record<string, string> = {
+    bridgePort,
+    bridgeStatus: health?.status ?? "starting",
+  };
+  if (!health) return metadata;
+
+  metadata.bridgePendingCommands = String(health.pendingCommandCount);
+  metadata.bridgeQueuedCommands = String(health.queuedCommandCount);
+  if (health.lastConnectedAt) metadata.bridgeLastConnectedAt = health.lastConnectedAt;
+  if (health.lastCommandAt) metadata.bridgeLastCommandAt = health.lastCommandAt;
+  if (health.lastCommandType) metadata.bridgeLastCommandType = health.lastCommandType;
+  if (health.lastError) metadata.bridgeLastError = health.lastError;
+  return metadata;
 }
