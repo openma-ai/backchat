@@ -30,8 +30,8 @@ importers:
         specifier: workspace:*
         version: link:packages/acp-agent-setup
       '@openma/common':
-        specifier: github:openma-ai/openma-common#v0.4.0
-        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/e5e6f9e68d49e646afe38eae0b579b1ac4320c29(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
+        specifier: github:openma-ai/openma-common#86bbc8a1ee67d9944b4bc38b25af6f7b6a93e273
+        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/86bbc8a1ee67d9944b4bc38b25af6f7b6a93e273(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
       '@radix-ui/react-collapsible':
         specifier: ^1.1.12
         version: 1.1.12(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -214,8 +214,8 @@ importers:
         specifier: ^0.25.1
         version: 0.25.1(zod@4.4.3)
       '@openma/common':
-        specifier: github:openma-ai/openma-common#v0.4.0
-        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/e5e6f9e68d49e646afe38eae0b579b1ac4320c29(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
+        specifier: github:openma-ai/openma-common#86bbc8a1ee67d9944b4bc38b25af6f7b6a93e273
+        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/86bbc8a1ee67d9944b4bc38b25af6f7b6a93e273(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
       tar:
         specifier: ^7.5.16
         version: 7.5.16
@@ -1194,9 +1194,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/e5e6f9e68d49e646afe38eae0b579b1ac4320c29':
-    resolution: {tarball: https://codeload.github.com/openma-ai/openma-common/tar.gz/e5e6f9e68d49e646afe38eae0b579b1ac4320c29}
-    version: 0.4.0
+  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/86bbc8a1ee67d9944b4bc38b25af6f7b6a93e273':
+    resolution: {gitHosted: true, integrity: sha512-zbcrpITDkab7z+XiEwGk1Eav2cwaZ9x59EvHYQGQOVeExUFuUwZus/wctz8ANmgHs5ZVhZZhfQsgGKyZTqSzDQ==, tarball: https://codeload.github.com/openma-ai/openma-common/tar.gz/86bbc8a1ee67d9944b4bc38b25af6f7b6a93e273}
+    version: 0.5.0
     engines: {node: '>=20'}
     peerDependencies:
       react: '>=18'
@@ -7147,7 +7147,7 @@ snapshots:
   '@openai/codex@0.142.5-win32-x64':
     optional: true
 
-  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/e5e6f9e68d49e646afe38eae0b579b1ac4320c29(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)':
+  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/86bbc8a1ee67d9944b4bc38b25af6f7b6a93e273(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)':
     dependencies:
       '@agentclientprotocol/sdk': 0.25.1(zod@4.4.3)
     optionalDependencies:
