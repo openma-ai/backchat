@@ -27,5 +27,4 @@ Read it before any UI work. Run `/impeccable teach` to update.
 - Renderer: TanStack Router, file routes under `src/renderer/src/pages/`.
   Streaming chat uses dual-track render (streaming-markdown DOM mutation
   during stream, Streamdown React on turn complete).
-- Settings file: `~/.openma-desktop/config.toml`. SQLite db:
-  `<userData>/sessions.db`.
+- Settings file: `~/.oma/config.toml`. SQLite db: `~/.oma/sessions.db`.

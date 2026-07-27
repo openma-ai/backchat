@@ -7,8 +7,8 @@ describe("selectRecentProjectPaths", () => {
       selectRecentProjectPaths([
         { cwd: " /Users/mini/work/openma " },
         { cwd: "/Users/mini/work/openma" },
-        { cwd: "/Users/mini/.openma/sessions/sess-managed" },
-        { cwd: String.raw`C:\Users\mini\.openma\sessions\sess-managed` },
+        { cwd: "/Users/mini/.oma/sessions/sess-managed" },
+        { cwd: String.raw`C:\Users\mini\.oma\sessions\sess-managed` },
         { cwd: "" },
         { cwd: null },
         { cwd: "/Users/mini/work/second" },

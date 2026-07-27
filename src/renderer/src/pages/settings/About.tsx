@@ -13,7 +13,7 @@ export function SettingsAbout() {
         <Row label="Engine">Electron 42 · React 19 · TanStack Router</Row>
         <Row label="Protocol">Agent Client Protocol 0.23</Row>
         <Row label="Config file">
-          <span className="font-mono">~/.openma/config.toml</span>
+          <span className="font-mono">~/.oma/config.toml</span>
         </Row>
       </dl>
       <p className="max-w-2xl text-[11px] leading-5 text-fg-muted">

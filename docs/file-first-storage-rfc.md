@@ -23,7 +23,7 @@ inspect, back up, migrate, diff, repair, and evolve by agents themselves.
 
 ## Motivation
 
-Backchat currently has a mixed model under `~/.openma`:
+Backchat currently has a mixed model under `~/.oma`:
 
 - `config.toml` is hand-editable file state.
 - `sessions/<session_id>/` is a per-session working directory for agent output.
@@ -49,7 +49,7 @@ The goal is not to remove SQLite. The goal is to make SQLite rebuildable.
 Desktop startup currently wires the shared dotdir like this:
 
 ```text
-~/.openma/
+~/.oma/
   config.toml
   registry-cache.json
   sessions.db
@@ -74,7 +74,7 @@ problem is that a transcript can only be fully understood by opening SQLite.
 The proposed long-term dotdir is:
 
 ```text
-~/.openma/
+~/.oma/
   config.toml
 
   agents/
@@ -208,7 +208,7 @@ acp_session_id = "..."
 title = "Plan file-first storage"
 created_at = 1781424000000
 last_used_at = 1781427600000
-workdir = "~/.openma/sessions/workdirs/sess_..."
+workdir = "~/.oma/sessions/workdirs/sess_..."
 pair_id = ""
 ```
 
@@ -222,7 +222,7 @@ history as active, unpinned sessions.
 The storage layer should eventually support:
 
 ```text
-delete ~/.openma/indexes/sessions.db
+delete ~/.oma/indexes/sessions.db
 launch Backchat
 scan source files
 rebuild sessions, pair_sessions, messages_fts, and sidebar metadata
@@ -362,8 +362,8 @@ debugging, migration, and self-host portability.
 
 The migration should preserve:
 
-- Existing `~/.openma/config.toml`.
-- Existing `~/.openma/sessions.db` until rebuild is proven.
+- Existing `~/.oma/config.toml`.
+- Existing `~/.oma/sessions.db` until rebuild is proven.
 - Existing per-session working directories.
 - Existing ACP resume behavior.
 - Existing search and sidebar behavior.

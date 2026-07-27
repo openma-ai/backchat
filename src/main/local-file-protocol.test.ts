@@ -7,23 +7,23 @@ describe("resolveAllowedLocalFilePath", () => {
     expect(
       resolveAllowedLocalFilePath(
         localFileProtocolUrl("/Users/mini/.codex/generated_images/output.png"),
-        ["/Users/mini/.openma", "/Users/mini/.codex/generated_images"],
+        ["/Users/mini/.oma", "/Users/mini/.codex/generated_images"],
       ),
     ).toBe("/Users/mini/.codex/generated_images/output.png");
   });
 
   it("rejects traversal and sibling-prefix paths", () => {
-    const roots = ["/Users/mini/.openma"];
+    const roots = ["/Users/mini/.oma"];
 
     expect(
       resolveAllowedLocalFilePath(
-        localFileProtocolUrl("/Users/mini/.openma/../private/output.png"),
+        localFileProtocolUrl("/Users/mini/.oma/../private/output.png"),
         roots,
       ),
     ).toBeNull();
     expect(
       resolveAllowedLocalFilePath(
-        localFileProtocolUrl("/Users/mini/.openma-backup/output.png"),
+        localFileProtocolUrl("/Users/mini/.oma-backup/output.png"),
         roots,
       ),
     ).toBeNull();

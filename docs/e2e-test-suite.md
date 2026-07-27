@@ -10,7 +10,7 @@ Backchat already has Playwright/Electron smoke tests under `e2e/`, but those
 tests mostly exercise renderer behavior through synthetic push events. The next
 E2E suite should verify complete local-first flows:
 
-- A fresh app process starts with an isolated `~/.openma` root.
+- A fresh app process starts with an isolated `~/.oma` root.
 - Main-process stores write SQLite and filesystem state.
 - The renderer observes those writes through normal IPC.
 - The app can restart and restore state.
@@ -59,7 +59,7 @@ $BACKCHAT_HOME/sessions/
 $BACKCHAT_HOME/transcripts/
 ```
 
-This avoids tests reading or mutating the developer's real `~/.openma`.
+This avoids tests reading or mutating the developer's real `~/.oma`.
 
 Acceptance:
 
@@ -152,7 +152,7 @@ Flow:
 2. Ask bridge for `storageHome()`.
 3. Assert it equals the helper's temp root.
 4. Assert `config.toml` and `sessions.db` are created under that root.
-5. Assert real `~/.openma` is not touched by this test path.
+5. Assert real `~/.oma` is not touched by this test path.
 
 Why:
 
@@ -524,7 +524,7 @@ Adds:
 
 ## Guardrails
 
-- E2E tests must never touch real `~/.openma`.
+- E2E tests must never touch real `~/.oma`.
 - Default E2E tests must not require Claude, Codex, network access, or API keys.
 - Test bridge APIs must stay behind `BACKCHAT_TEST_HOOKS=1`.
 - File helpers must reject paths outside `BACKCHAT_HOME`.

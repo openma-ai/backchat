@@ -9,7 +9,7 @@ import {
 } from "./helpers";
 
 const realE2eEnabled = process.env["OPENMA_REAL_PI_COMPUTER_USE_E2E"] === "1";
-const piAcpCommand = join(homedir(), ".openma", "acp", "bin", "openma-acp-pi-acp");
+const piAcpCommand = join(homedir(), ".oma", "acp", "bin", "openma-acp-pi-acp");
 const piComputerUsePackage = join(
   homedir(),
   ".pi",

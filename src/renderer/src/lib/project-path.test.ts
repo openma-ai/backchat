@@ -4,11 +4,11 @@ import { folderName, isPerSessionFolderPath } from "./project-path";
 describe("isPerSessionFolderPath", () => {
   it("recognizes auto-allocated session folders on POSIX and Windows", () => {
     expect(
-      isPerSessionFolderPath("/Users/minimax/.openma/sessions/sess-rfwr779u"),
+      isPerSessionFolderPath("/Users/minimax/.oma/sessions/sess-rfwr779u"),
     ).toBe(true);
     expect(
       isPerSessionFolderPath(
-        String.raw`C:\Users\mini\.openma\sessions\sess-rfwr779u`,
+        String.raw`C:\Users\mini\.oma\sessions\sess-rfwr779u`,
       ),
     ).toBe(true);
   });

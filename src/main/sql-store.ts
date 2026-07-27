@@ -8,7 +8,7 @@
  * V8::External::New signature changed and ABI'd-against-N-API binaries
  * don't even compile. node:sqlite sidesteps all of this.
  *
- * Two tables in `~/.openma/sessions.db`:
+ * Two tables in `~/.oma/sessions.db`:
  *
  *   sessions      one row per chat the user has opened
  *   events        append-only log of ACP session updates for replay
@@ -55,7 +55,7 @@ export interface PersistedPairSession {
   id: string;
   title: string;
   /** When non-empty, every member of the pair spawns in this cwd. When
-   *  empty, each member gets an isolated `~/.openma/sessions/<member>/`
+   *  empty, each member gets an isolated `~/.oma/sessions/<member>/`
    *  via session-cwd's auto-allocation. */
   workspace_cwd: string;
   created_at: number;
@@ -152,7 +152,7 @@ export function openSessionDb(path: string): void {
     -- pair itself owns the user-facing title and the cwd policy:
     --   - workspace_cwd != ''  -> shared cwd, every member spawns there
     --   - workspace_cwd == ''  -> per-member cwd auto-allocated under
-    --                            ~/.openma/sessions/<sub_id>/
+    --                            ~/.oma/sessions/<sub_id>/
     -- The pair row also acts as the sidebar entry — sub-sessions are
     -- "hidden" rows that exist only to carry events for replay.
     -- "hidden" rows that exist only to carry events for replay.

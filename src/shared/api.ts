@@ -367,7 +367,7 @@ export interface BackchatApi {
    *  user can restore or hard-delete. */
   sessionsListArchived(): Promise<PersistedSessionInfo[]>;
   /** Hard-delete a session. Removes the SQL row (events cascade) and
-   *  the on-disk session dir under `~/.openma/sessions/<id>/`. Caller
+   *  the on-disk session dir under `~/.oma/sessions/<id>/`. Caller
    *  should confirm with the user first — this is irreversible. */
   sessionsDelete(p: { session_id: string }): Promise<void>;
 

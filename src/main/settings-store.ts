@@ -1,10 +1,10 @@
 /**
- * Settings store — TOML file at ~/.openma/config.toml.
+ * Settings store — TOML file at ~/.oma/config.toml.
  *
- * Lives under ~/.openma/ so that a future shared openma cli + this
- * desktop frontend can read the same hand-edited settings. The dotdir
+ * Lives under ~/.oma/ so that the OMA CLI and this desktop frontend can
+ * read the same hand-edited settings. The dotdir
  * sits next to other ACP-agent dotdirs (~/.claude, ~/.codex). SQLite
- * + per-session spawn cwds also live under ~/.openma/ now (see
+ * + per-session spawn cwds also live under ~/.oma/ now (see
  * main/index.ts setSessionRoot / openSessionDb).
  *
  * smol-toml is preferred over JSON because:

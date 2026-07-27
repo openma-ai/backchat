@@ -8,7 +8,7 @@ import { settingsStore } from "./settings-store.js";
 import { openSessionDb } from "./sql-store.js";
 import { installAppMenu, sendToFocused } from "./menu.js";
 import { disposeAllUiTerminals } from "./ui-terminal-broker.js";
-import { openmaRoot } from "./storage-root.js";
+import { migrateLegacyOpenmaRoot, openmaRoot } from "./storage-root.js";
 import { BACKCHAT_PROTOCOL, findBackchatDeepLink, parseBackchatDeepLink, type BackchatDeepLink } from "./deep-link.js";
 import { PushChannel } from "../shared/ipc-channels.js";
 import { browserHarnessMcpBridge } from "./browser-view-broker.js";
@@ -132,7 +132,7 @@ const TRAFFIC_LIGHT_DOT_PX = 12; // macOS standard window button diameter
 // main-process protocol handler streaming bytes from the on-disk file.
 //
 // Path scoping (enforced in the handler) keeps the renderer from
-// reading arbitrary user files: only `~/.openma/` and
+// reading arbitrary user files: only `~/.oma/` and
 // `~/.codex/generated_images/` resolve. Anything else returns 404.
 protocol.registerSchemesAsPrivileged([
   {
@@ -311,12 +311,23 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    try {
+      await migrateLegacyOpenmaRoot();
+    } catch (error) {
+      dialog.showErrorBox(
+        "Storage migration error",
+        `Backchat could not move its data from ~/.openma to ~/.oma:\n\n${String(error)}`,
+      );
+      app.quit();
+      return;
+    }
+
     // Wire the oma-file:// handler. Whitelist enforced here so a
     // compromised renderer can't read arbitrary user files via
     // `fetch("oma-file://local/file?path=/etc/passwd")`. Paths must live
     // under one of the allow-list roots — anything else returns 403.
     const allowRoots = [
-      join(homedir(), ".openma"),
+      openmaRoot(),
       join(homedir(), ".codex", "generated_images"),
     ];
     protocol.handle("oma-file", async (request) => {
@@ -377,10 +388,9 @@ if (!gotLock) {
       );
     }
 
-    // Shared dotdir with the future openma cli. Keeping sessions.db /
-    // sessions/ / registry-cache.json under ~/.openma/ lets the cli
-    // (when it lands) read the same conversation history rather than
-    // sitting on a Backchat-private userData island. mkdir is implicit
+    // Shared OMA dotdir. Keeping sessions.db / sessions/ /
+    // registry-cache.json under ~/.oma/ lets the CLI and Backchat use the
+    // same local agent state. mkdir is implicit
     // via SettingsStore.ensureDir() on first write; the SQL store /
     // session cwd helpers create their own subpaths on demand.
     const root = openmaRoot();
