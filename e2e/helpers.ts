@@ -52,7 +52,7 @@ export async function launchAppWithHome(
       BACKCHAT_HOME: home,
       // Skip the renderer-side persistence load so each test starts
       // with an empty sidebar (the SQLite store still mounts at
-      // ~/.openma/sessions.db; opt out of the seedPersisted call
+      // ~/.oma/sessions.db; opt out of the seedPersisted call
       // would be cleaner, but for now we just tolerate any pre-existing
       // rows — tests assert on what they inject, not on totals).
       NODE_ENV: "test",

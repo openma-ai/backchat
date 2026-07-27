@@ -245,7 +245,7 @@ describe("groupSidebarSessions", () => {
     });
     const appManaged = row({
       id: "managed",
-      cwd: "/Users/minimax/.openma/sessions/sess-rfwr779u",
+      cwd: "/Users/minimax/.oma/sessions/sess-rfwr779u",
     });
     const noCwd = row({ id: "plain", cwd: "" });
 

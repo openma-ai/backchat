@@ -9,7 +9,7 @@ import {
 } from "./helpers";
 
 const realE2eEnabled = process.env["OPENMA_REAL_CODEX_PLUGIN_E2E"] === "1";
-const codexAcpCommand = join(homedir(), ".openma", "acp", "bin", "codex-acp");
+const codexAcpCommand = join(homedir(), ".oma", "acp", "bin", "codex-acp");
 
 async function pathExists(path: string): Promise<boolean> {
   try {

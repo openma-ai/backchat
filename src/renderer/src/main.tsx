@@ -27,7 +27,7 @@ const queryClient = new QueryClient({
 });
 
 // Apply the cached selection before React paints. ThemeController reconciles
-// it with ~/.openma/config.toml as soon as settings arrive over IPC.
+// it with ~/.oma/config.toml as soon as settings arrive over IPC.
 applyStoredTheme();
 
 const root = document.getElementById("root");

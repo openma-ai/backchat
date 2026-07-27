@@ -97,7 +97,7 @@ interface RegisterDeps {
   acpInstallRoot: string;
   scheduleDbPath: string;
   browserMcpServerForTask?: (taskId: string) => unknown;
-  /** Codex-compatible plugin bundle roots. Defaults to ~/.openma/plugins. */
+  /** Codex-compatible plugin bundle roots. Defaults to ~/.oma/plugins. */
   pluginRoots?: readonly string[];
   /** Optional second consumer of the singleton SessionManager event stream.
    *  OMA bridge uses this to relay cloud-owned sessions while the renderer

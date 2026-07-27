@@ -19,7 +19,7 @@ This is the current Codex / ChatGPT plugin format. The legacy 2023
 For the first local-install surface, users place bundles at:
 
 ```text
-~/.openma/plugins/<plugin-name>/
+~/.oma/plugins/<plugin-name>/
 ```
 
 OpenMA reads the bundle at cold startup. A future Plugins settings surface can
@@ -184,7 +184,7 @@ fall back to the plugin's `.mcp.json` endpoint.
 ### Harness-native extensions
 
 Harness-native extension systems stay owned by their harness. They are not
-copied into `~/.openma/plugins` and are not rewritten as Codex plugins.
+copied into `~/.oma/plugins` and are not rewritten as Codex plugins.
 
 For example, `npm:@injaneity/pi-computer-use` is installed into Pi with
 `pi install`. A real OpenMA session reaches its registered tools through:

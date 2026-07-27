@@ -17,7 +17,7 @@ export interface PairStartParams {
   /** Optional shared workspace cwd. When set, every member spawns
    *  here (caller accepts that file writes may conflict). When
    *  omitted, each sub-session gets its own
-   *  ~/.openma/sessions/<session_id>/ via session-cwd auto-allocation. */
+   *  ~/.oma/sessions/<session_id>/ via session-cwd auto-allocation. */
   workspace_cwd?: string;
 }
 
