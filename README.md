@@ -1,14 +1,16 @@
-# Backchat
+<p align="center">
+  <img src="docs/assets/backchat-logo.png" alt="Backchat app icon" width="144" />
+</p>
 
-> A calm, local-first desktop workspace for Agent Client Protocol (ACP) agents.
+<h1 align="center">Backchat</h1>
+
+<p align="center">
+  <strong>A calm, local-first desktop workspace for Agent Client Protocol (ACP) agents.</strong>
+</p>
 
 Backchat gives developer agents a shared desktop without taking away the things
 that make each harness useful. Choose a project, choose an agent, and keep the
 conversation, tools, files, browser, and terminal in one place.
-
-<p align="center">
-  <img src="build/icon.svg" alt="Backchat" width="96" />
-</p>
 
 <p align="center">
   <img src="artifacts/theme-system/default-spec-v1.png" alt="Backchat home screen with project and agent selection" width="900" />
