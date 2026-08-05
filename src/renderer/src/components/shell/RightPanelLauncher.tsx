@@ -1,220 +1,271 @@
-import { useEffect, useState } from "react";
 import {
-  ChevronDownIcon,
+  CalendarClockIcon,
   FileIcon,
   FolderIcon,
   GlobeIcon,
+  ImageIcon,
   MessageSquareIcon,
-  PlusIcon,
   SquareTerminalIcon,
 } from "lucide-react";
 import { SubagentAvatar } from "@/components/SubagentAvatar";
 import { previewLocalFile } from "@/lib/file-preview";
 import { useI18n } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import type { AcpTerminalInfo } from "@shared/api.js";
-import { sessionStore, type SideTabType, type SubagentActivity, type WorkspaceArtifacts } from "@/lib/session-store";
+import type { ScheduleInfo } from "@shared/schedules.js";
+import type { PromptAttachment } from "@shared/session-events.js";
+import type { WorkItemSnapshot } from "@openma/common/session-events/openma";
+import {
+  sessionStore,
+  type SideTabType,
+  type SubagentActivity,
+  type WorkspaceArtifacts,
+} from "@/lib/session-store";
 
 export function RightPanelLauncher({
   onPick,
   onPickSubagent,
   onPickProcess,
+  onOpenSchedule,
   canStartSideChat,
   browserEnabled,
   artifacts,
   subagents,
+  workItems = [],
   processes,
+  schedules,
+  sourceAttachments = [],
 }: {
   onPick: (type: SideTabType) => void;
   onPickSubagent: (activity: SubagentActivity) => void;
   onPickProcess: (process: AcpTerminalInfo) => void;
+  onOpenSchedule: (schedule: ScheduleInfo) => void;
   canStartSideChat: boolean;
   browserEnabled: boolean;
   artifacts: WorkspaceArtifacts;
   subagents: SubagentActivity[];
+  /** Canonical OpenMA work items. Provider-specific subagent rows are kept as
+   *  a compatibility fallback, while this list is the source of truth for
+   *  Background/Agent slot classification. */
+  workItems?: WorkItemSnapshot[];
   processes: AcpTerminalInfo[];
+  schedules: ScheduleInfo[];
+  sourceAttachments?: PromptAttachment[];
 }) {
   const { t } = useI18n();
-  const [processesOpen, setProcessesOpen] = useState(true);
-  const [recent, setRecent] = useState<
-    { name: string; path: string; isDir: boolean; mtime: number }[]
-  >([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const cwd = async () => {
-      const path = await window.backchat.uiFsHome();
-      try {
-        const rows = await window.backchat.uiFsRecent({ path, limit: 6 });
-        if (!cancelled) setRecent(rows);
-      } catch {
-        if (!cancelled) setRecent([]);
-      }
-    };
-    void cwd();
-    return () => { cancelled = true; };
-  }, []);
+  const providerSourceRefs = artifacts.sources ?? [];
+  const sourcePaths = new Set([
+    ...sourceAttachments.map((attachment) => attachment.path),
+    ...providerSourceRefs.map((source) => source.uri),
+  ]);
+  const outputFiles = artifacts.files.filter((path) => !sourcePaths.has(path));
+  const claimedSourceUris = new Set([
+    ...sourceAttachments.map((attachment) => attachment.path),
+  ]);
+  const providerSources = providerSourceRefs.filter((source) => {
+    if (claimedSourceUris.has(source.uri)) return false;
+    claimedSourceUris.add(source.uri);
+    return source.kind === "file" || browserEnabled;
+  });
+  const hasOutputs = outputFiles.length > 0;
+  const agentWorkItems = workItems.filter((item) => item.kind === "agent");
+  const backgroundWorkItems = workItems.filter(
+    (item) => item.kind !== "agent" && item.kind !== "monitor",
+  );
+  const canonicalAgentIds = new Set(agentWorkItems.map((item) => item.id));
+  const canonicalBackgroundIds = new Set(
+    backgroundWorkItems.map((item) => item.id),
+  );
+  const processById = new Map(
+    processes.map((process) => [process.terminalId, process]),
+  );
+  const hasAgents = agentWorkItems.length > 0 || subagents.length > 0;
+  const hasBackground =
+    backgroundWorkItems.length > 0 || schedules.length > 0 || processes.length > 0;
+  const hasSources =
+    sourceAttachments.length > 0
+    || providerSources.length > 0;
 
   return (
-    <div data-right-panel-launcher-list className="h-full overflow-y-auto px-4 pb-6 pt-1">
-      <LauncherSection
-        title={t("rightPanel.outputs")}
-        action={<LauncherAction label={t("rightPanel.createOutput")} onClick={() => onPick("chat")} />}
+    <div
+      id="new-tab-page-panel"
+      role="tabpanel"
+      data-right-panel-launcher-list
+      className="h-full overflow-y-auto pb-8 pt-3"
+    >
+      <section
+        data-new-actions
+        aria-label={t("rightPanel.newTab")}
+        className="space-y-0.5 pl-2.5 pr-2"
       >
-        {artifacts.files.length > 0 ? artifacts.files.slice(0, 8).map((path) => (
-          <LauncherRow
-            key={path}
-            label={basename(path)}
-            hint={path}
-            icon={<FileIcon className="size-4" />}
-            onClick={() => void previewLocalFile(path)}
-          />
-        )) : (
-          <LauncherRow
-            label={t("rightPanel.createOutput")}
-            hint={t("rightPanel.createOutputHint")}
-            icon={<MessageSquareIcon className="size-4" />}
-            disabled={!canStartSideChat}
-            onClick={() => onPick("chat")}
+        <NewAction
+          type="chat"
+          label={t("sideChat.title")}
+          hint={t("sideChat.forkHint")}
+          icon={<MessageSquareIcon className="size-4" />}
+          disabled={!canStartSideChat}
+          onClick={() => onPick("chat")}
+        />
+        <NewAction
+          type="file"
+          label={t("sideChat.file")}
+          hint={t("sideChat.fileHint")}
+          icon={<FolderIcon className="size-4" />}
+          onClick={() => onPick("file")}
+        />
+        {browserEnabled && (
+          <NewAction
+            type="browser"
+            label={t("sideChat.browser")}
+            hint={t("sideChat.browserHint")}
+            icon={<GlobeIcon className="size-4" />}
+            onClick={() => onPick("browser")}
           />
         )}
-      </LauncherSection>
+        <NewAction
+          type="terminal"
+          label={t("sideChat.terminal")}
+          hint={t("sideChat.terminalHint")}
+          icon={<SquareTerminalIcon className="size-4" />}
+          onClick={() => onPick("terminal")}
+        />
+      </section>
 
-      <section className="border-b border-border/45 py-4" data-background-processes>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 text-left text-sm font-medium text-fg-muted"
-          onClick={() => setProcessesOpen((open) => !open)}
-          aria-expanded={processesOpen}
-        >
-          <ChevronDownIcon className={cn("size-4 transition-transform", !processesOpen && "-rotate-90")} />
-          <span>{t("rightPanel.backgroundProcesses")}</span>
-        </button>
-        {processesOpen && (
-          <div className="mt-2 space-y-0.5">
-            {subagents.length > 0 && (
-              <div className="px-2 pb-1 pt-2 text-[10px] font-medium text-fg-subtle" data-current-subagents>
-                {t("rightPanel.currentSubagents")}
-              </div>
-            )}
-            {subagents.map((activity) => (
-              <LauncherRow
-                key={activity.viewSessionId}
-                label={subagentLabel(activity)}
-                hint={activity.status}
-                icon={<SubagentAvatar avatarId={activity.avatarId} className="size-4" />}
-                onClick={() => onPickSubagent(activity)}
+      <div data-resource-list className="mt-5 space-y-4">
+        {hasOutputs && (
+          <ResourceSection category="outputs" title={t("rightPanel.outputs")}>
+            {outputFiles.slice(0, 8).map((path) => (
+              <ResourceRow
+                key={`artifact:${path}`}
+                label={basename(path)}
+                hint={path}
+                icon={<FileIcon className="size-4" />}
+                onClick={() => void previewLocalFile(path)}
               />
             ))}
-            {processes.map((process) => (
-              <LauncherRow
-                key={process.terminalId}
+          </ResourceSection>
+        )}
+
+        {hasAgents && (
+          <ResourceSection category="agents" title={t("rightPanel.agents")}>
+            {agentWorkItems.map((item) => {
+              const activity = subagents.find(
+                (candidate) => candidate.childSessionId === item.id,
+              );
+              return (
+                <ResourceRow
+                  key={`work-item:${item.id}`}
+                  label={
+                    item.title
+                    || activity?.native?.nickname
+                    || activity?.task
+                    || item.id
+                  }
+                  hint={agentResourceHint(item.status, activity)}
+                  icon={activity
+                    ? <SubagentAvatar avatarId={activity.avatarId} className="size-4" />
+                    : <MessageSquareIcon className="size-4" />}
+                  onClick={activity ? () => onPickSubagent(activity) : undefined}
+                />
+              );
+            })}
+            {subagents
+              .filter((activity) => !canonicalAgentIds.has(activity.childSessionId))
+              .map((activity) => (
+                <ResourceRow
+                  key={`subagent:${activity.viewSessionId}`}
+                  label={subagentLabel(activity)}
+                  hint={agentResourceHint(activity.status, activity)}
+                  icon={<SubagentAvatar avatarId={activity.avatarId} className="size-4" />}
+                  onClick={() => onPickSubagent(activity)}
+                />
+              ))}
+          </ResourceSection>
+        )}
+
+        {hasBackground && (
+          <ResourceSection
+            category="background"
+            title={t("rightPanel.background")}
+          >
+            {backgroundWorkItems.map((item) => {
+              const process = processById.get(item.id);
+              return (
+                <ResourceRow
+                  key={`work-item:${item.id}`}
+                  label={item.title || item.id}
+                  hint={item.status}
+                  icon={workItemIcon(item)}
+                  onClick={process ? () => onPickProcess(process) : undefined}
+                />
+              );
+            })}
+            {schedules.map((schedule) => (
+              <ResourceRow
+                key={`schedule:${schedule.id}`}
+                label={schedule.name}
+                hint={t(`scheduled.${schedule.status}` as "scheduled.active")}
+                icon={<CalendarClockIcon className="size-4" />}
+                onClick={() => onOpenSchedule(schedule)}
+              />
+            ))}
+            {processes
+              .filter((process) => !canonicalBackgroundIds.has(process.terminalId))
+              .map((process) => (
+              <ResourceRow
+                key={`process:${process.terminalId}`}
                 label={processLabel(process)}
                 hint={process.cwd}
                 icon={<SquareTerminalIcon className="size-4" />}
                 onClick={() => onPickProcess(process)}
               />
-            ))}
-            <LauncherRow
-              label={t("rightPanel.backgroundTerminal")}
-              hint={t("rightPanel.backgroundTerminalHint")}
-              icon={<SquareTerminalIcon className="size-4" />}
-              onClick={() => onPick("terminal")}
-            />
-            {browserEnabled && artifacts.services.map((url) => (
-              <LauncherRow
-                key={url}
-                label={shortenServiceUrl(url)}
-                hint={url}
-                icon={<GlobeIcon className="size-4" />}
-                onClick={() => sessionStore.openSideTab("browser", url, undefined)}
+              ))}
+          </ResourceSection>
+        )}
+
+        {hasSources && (
+          <ResourceSection category="sources" title={t("rightPanel.sources")}>
+            {sourceAttachments.map((attachment) => (
+              <ResourceRow
+                key={`attachment:${attachment.id}`}
+                label={attachment.name}
+                hint={attachment.path}
+                icon={attachment.kind === "image"
+                  ? <ImageIcon className="size-4" />
+                  : <FileIcon className="size-4" />}
+                onClick={() => void previewLocalFile(attachment.path)}
               />
             ))}
-            {subagents.length === 0 && processes.length === 0 && artifacts.services.length === 0 && (
-              <p className="px-2 py-2 text-xs text-fg-subtle">{t("rightPanel.noProcesses")}</p>
-            )}
-          </div>
+            {providerSources.map((source) => (
+              <ResourceRow
+                key={`provider-source:${source.kind}:${source.uri}`}
+                label={source.label || (source.kind === "file"
+                  ? basename(source.uri)
+                  : shortenServiceUrl(source.uri))}
+                hint={source.uri}
+                icon={source.kind === "file"
+                  ? <FileIcon className="size-4" />
+                  : <GlobeIcon className="size-4" />}
+                onClick={() => source.kind === "file"
+                  ? void previewLocalFile(source.uri)
+                  : sessionStore.openSideTab("browser", source.uri, source.label)}
+              />
+            ))}
+          </ResourceSection>
         )}
-      </section>
-
-      <LauncherSection
-        title={t("rightPanel.sources")}
-        action={<LauncherAction label={t("rightPanel.openSources")} onClick={() => onPick("file")} />}
-      >
-        <LauncherRow
-          label={t("rightPanel.projectFiles")}
-          hint={t("rightPanel.projectFilesHint")}
-          icon={<FolderIcon className="size-4" />}
-          onClick={() => onPick("file")}
-        />
-        {browserEnabled && (
-          <LauncherRow
-            label={t("rightPanel.website")}
-            hint={t("rightPanel.websiteHint")}
-            icon={<GlobeIcon className="size-4" />}
-            onClick={() => onPick("browser")}
-          />
-        )}
-        {recent.slice(0, 4).map((entry) => (
-          <LauncherRow
-            key={entry.path}
-            label={entry.name}
-            hint={entry.isDir ? t("rightPanel.directory") : t("rightPanel.file")}
-            icon={entry.isDir ? <FolderIcon className="size-4" /> : <FileIcon className="size-4" />}
-            onClick={() => entry.isDir
-              ? sessionStore.openSideTab("file", entry.path, entry.name)
-              : void previewLocalFile(entry.path)}
-          />
-        ))}
-        {recent.length === 0 && artifacts.files.length === 0 && (
-          <p className="px-2 py-2 text-xs text-fg-subtle">{t("rightPanel.noSources")}</p>
-        )}
-        <LauncherRow
-          label={t("rightPanel.viewAll")}
-          hint={t("rightPanel.viewAllHint")}
-          icon={<FolderIcon className="size-4" />}
-          onClick={() => onPick("file")}
-        />
-      </LauncherSection>
+      </div>
     </div>
   );
 }
 
-function LauncherSection({
-  title,
-  action,
-  children,
+function NewAction({
+  type,
+  label,
+  hint,
+  icon,
+  onClick,
+  disabled,
 }: {
-  title: string;
-  action: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="border-b border-border/45 py-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-fg-muted">{title}</h2>
-        {action}
-      </div>
-      <div className="mt-2 space-y-0.5">{children}</div>
-    </section>
-  );
-}
-
-function LauncherAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="inline-flex size-7 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-bg-surface/65 hover:text-fg"
-    >
-      <PlusIcon className="size-4" />
-    </button>
-  );
-}
-
-function LauncherRow({ label, hint, icon, onClick, disabled }: {
+  type: "chat" | "file" | "browser" | "terminal";
   label: string;
   hint: string;
   icon: React.ReactNode;
@@ -224,21 +275,94 @@ function LauncherRow({ label, hint, icon, onClick, disabled }: {
   return (
     <button
       type="button"
+      data-new-action={type}
+      aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-bg-surface/60 disabled:cursor-not-allowed disabled:opacity-45"
+      className="grid min-h-11 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-3 rounded-lg py-1.5 text-left text-fg transition-colors hover:bg-bg-surface/60 disabled:cursor-not-allowed disabled:opacity-45"
     >
-      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-bg-surface/65 text-fg-subtle">{icon}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium text-fg">{label}</span>
-        <span className="block truncate text-[10px] text-fg-subtle">{hint}</span>
+      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-bg-surface/65 text-fg-subtle">
+        {icon}
+      </span>
+      <span data-launcher-label className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{label}</span>
+        <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
       </span>
     </button>
   );
 }
 
+function ResourceSection({
+  category,
+  title,
+  children,
+}: {
+  category: "outputs" | "agents" | "background" | "sources";
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section data-resource-category={category} className="pl-2.5 pr-2">
+      <h2 className="ml-2 text-xs font-medium text-fg-muted">
+        {title}
+      </h2>
+      <div className="mt-1 space-y-0.5">{children}</div>
+    </section>
+  );
+}
+
+function ResourceRow({
+  label,
+  hint,
+  icon,
+  onClick,
+}: {
+  label: string;
+  hint: string;
+  icon: React.ReactNode;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={`${label}\n${hint}`}
+      onClick={onClick}
+      disabled={!onClick}
+      className="grid h-8 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-3 rounded-md text-left text-sm text-fg transition-colors hover:bg-bg-surface/60 disabled:cursor-default disabled:hover:bg-transparent"
+    >
+      <span className="inline-flex size-8 shrink-0 items-center justify-center text-fg-subtle">
+        {icon}
+      </span>
+      <span data-launcher-label className="min-w-0 flex-1 truncate">
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function workItemIcon(item: WorkItemSnapshot): React.ReactNode {
+  if (item.kind === "monitor") return <GlobeIcon className="size-4" />;
+  if (item.kind === "bash") return <SquareTerminalIcon className="size-4" />;
+  return <MessageSquareIcon className="size-4" />;
+}
+
 function subagentLabel(activity: SubagentActivity): string {
-  return activity.native?.nickname || activity.task || activity.native?.agentType || activity.childSessionId;
+  return activity.native?.nickname
+    || activity.task
+    || activity.native?.agentType
+    || activity.childSessionId;
+}
+
+function agentResourceHint(
+  status: string,
+  activity: SubagentActivity | undefined,
+): string {
+  const totalTokens =
+    activity?.native?.usage?.totalTokens
+    ?? activity?.native?.progress?.usage?.totalTokens;
+  return totalTokens === undefined
+    ? status
+    : `${status} · ${totalTokens.toLocaleString()} tokens`;
 }
 
 function processLabel(process: AcpTerminalInfo): string {

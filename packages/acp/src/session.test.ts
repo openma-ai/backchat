@@ -10,6 +10,129 @@ import { AcpSessionImpl } from "./session";
 import type { ChildHandle } from "./types";
 
 describe("AcpSessionImpl", () => {
+  it("turns a first-prompt broken pipe into an actionable process-exit error", async () => {
+    const child = createChildThatExitsOnFirstPrompt();
+    const session = new AcpSessionImpl({
+      child,
+      id: "test-first-prompt-exit",
+      options: {
+        agent: { command: "fake-agent", cwd: "/work/app" },
+        mcpServers: [],
+      },
+    });
+
+    await session.init();
+
+    const consumePrompt = async () => {
+      for await (const _event of session.prompt("hello")) {
+        // The child exits before producing a prompt event.
+      }
+    };
+
+    const error = await consumePrompt().catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(
+      "The agent process exited before it could accept the prompt",
+    );
+    expect((error as Error).message).not.toMatch(/EPIPE/i);
+    expect(session.isAlive()).toBe(false);
+    await session.dispose();
+  });
+
+  it("passes additional workspace roots through ACP session/new", async () => {
+    let newSessionRequest:
+      | {
+          cwd: string;
+          mcpServers: unknown[];
+          additionalDirectories?: string[];
+        }
+      | undefined;
+    const harness = createInMemoryAcpHarness(() => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: {
+            sessionCapabilities: { additionalDirectories: {} },
+          },
+        };
+      },
+      async newSession(params) {
+        newSessionRequest = params as typeof newSessionRequest;
+        return { sessionId: "multi-root-session" };
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async authenticate() {
+        return {};
+      },
+      async cancel() {
+        return;
+      },
+    }));
+
+    const session = new AcpSessionImpl({
+      child: harness.child,
+      id: "test-multi-root-session",
+      options: {
+        agent: { command: "fake-agent", cwd: "/work/app" },
+        mcpServers: [],
+        additionalDirectories: ["/work/docs", "/work/backend"],
+      },
+    });
+
+    await session.init();
+    expect(session.supportsAdditionalDirectories).toBe(true);
+    await session.dispose();
+
+    expect(newSessionRequest).toEqual({
+      cwd: "/work/app",
+      mcpServers: [],
+      additionalDirectories: ["/work/docs", "/work/backend"],
+    });
+  });
+
+  it("does not send additionalDirectories when the agent has not advertised support", async () => {
+    let newSessionRequest: unknown;
+    const harness = createInMemoryAcpHarness(() => ({
+      async initialize() {
+        return { protocolVersion: PROTOCOL_VERSION };
+      },
+      async newSession(params) {
+        newSessionRequest = params;
+        return { sessionId: "single-root-session" };
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async authenticate() {
+        return {};
+      },
+      async cancel() {
+        return;
+      },
+    }));
+
+    const session = new AcpSessionImpl({
+      child: harness.child,
+      id: "test-single-root-session",
+      options: {
+        agent: { command: "fake-agent", cwd: "/work/app" },
+        mcpServers: [],
+        additionalDirectories: ["/work/docs"],
+      },
+    });
+
+    await session.init();
+    expect(session.supportsAdditionalDirectories).toBe(false);
+    await session.dispose();
+
+    expect(newSessionRequest).toEqual({
+      cwd: "/work/app",
+      mcpServers: [],
+    });
+  });
+
   it("forks an existing ACP session when the unstable fork capability is advertised", async () => {
     let forkRequest:
       | { sessionId: string; cwd: string; mcpServers?: unknown[] }
@@ -522,4 +645,74 @@ function createInMemoryAcpHarness(toAgent: (conn: AgentSideConnection) => Agent)
   };
 
   return { child };
+}
+
+function createChildThatExitsOnFirstPrompt(): ChildHandle {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let stdoutController: ReadableStreamDefaultController<Uint8Array>;
+  let resolveExit!: (result: { code: number | null; signal: string | null }) => void;
+  const exited = new Promise<{ code: number | null; signal: string | null }>(
+    (resolve) => {
+      resolveExit = resolve;
+    },
+  );
+  const stdout = new ReadableStream<Uint8Array>({
+    start(controller) {
+      stdoutController = controller;
+    },
+  });
+  let buffered = "";
+  let exitedAlready = false;
+
+  const respond = (id: number | string, result: unknown) => {
+    stdoutController.enqueue(
+      encoder.encode(`${JSON.stringify({ jsonrpc: "2.0", id, result })}\n`),
+    );
+  };
+
+  return {
+    stdin: new WritableStream<Uint8Array>({
+      write(chunk) {
+        buffered += decoder.decode(chunk, { stream: true });
+        const lines = buffered.split("\n");
+        buffered = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const message = JSON.parse(line) as {
+            id?: number | string;
+            method?: string;
+          };
+          if (message.id === undefined) continue;
+          if (message.method === "initialize") {
+            respond(message.id, { protocolVersion: PROTOCOL_VERSION });
+          } else if (message.method === "session/new") {
+            respond(message.id, { sessionId: "first-prompt-exit" });
+          } else if (message.method === "session/prompt") {
+            exitedAlready = true;
+            resolveExit({ code: 1, signal: null });
+            throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+          }
+        }
+      },
+    }),
+    stdout,
+    stderr: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    }),
+    exited,
+    async kill() {
+      if (!exitedAlready) {
+        exitedAlready = true;
+        resolveExit({ code: 0, signal: "SIGTERM" });
+      }
+      try {
+        stdoutController.close();
+      } catch {
+        // The protocol stream may already have closed it.
+      }
+    },
+  };
 }

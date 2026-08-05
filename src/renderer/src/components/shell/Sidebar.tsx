@@ -20,11 +20,12 @@ import {
   CalendarClockIcon,
   FolderIcon,
   FolderOpenIcon,
+  PlusIcon,
   UsersRoundIcon,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
 import { useSettings } from "@/lib/settings-store";
@@ -42,16 +43,30 @@ import { AnimatedCollapse } from "@/components/ui/animated-collapse";
 import { useSidebarCollapse } from "@/components/shell/AppShell";
 import { folderName, projectKeyForCwd } from "@/lib/project-path";
 import { useI18n } from "@/lib/i18n";
+import { CreateProjectDialog } from "./CreateProjectDialog";
+import { RenameDialog } from "./RenameDialog";
+import type { ProjectInfo } from "@shared/projects.js";
 
 export interface SidebarProjectGroup {
   key: string;
   label: string;
   sessions: SessionRow[];
+  projectId?: string;
+  primaryRoot: string;
+  sourceFolders: string[];
 }
 
 type SidebarSectionKey = "pinned" | "pairs" | "projects" | "chats";
+type RenameTarget = {
+  kind: "session" | "pair";
+  id: string;
+  title: string;
+};
 
-export function groupSidebarSessions(sessions: SessionRow[]): {
+export function groupSidebarSessions(
+  sessions: SessionRow[],
+  savedProjects: readonly ProjectInfo[] = [],
+): {
   pinned: SessionRow[];
   projects: SidebarProjectGroup[];
   chats: SessionRow[];
@@ -59,6 +74,16 @@ export function groupSidebarSessions(sessions: SessionRow[]): {
   const pinned: SessionRow[] = [];
   const chats: SessionRow[] = [];
   const projectMap = new Map<string, SidebarProjectGroup>();
+  for (const project of savedProjects) {
+    projectMap.set(`project:${project.id}`, {
+      key: `project:${project.id}`,
+      label: project.name,
+      sessions: [],
+      projectId: project.id,
+      primaryRoot: project.primary_folder,
+      sourceFolders: project.source_folders,
+    });
+  }
 
   for (const session of sessions) {
     if (session.pinnedAt != null) {
@@ -71,7 +96,13 @@ export function groupSidebarSessions(sessions: SessionRow[]): {
       continue;
     }
 
-    const projectKey = projectKeyForCwd(session.cwd);
+    const namedProjectKey = session.projectId
+      ? `project:${session.projectId}`
+      : null;
+    const projectKey =
+      namedProjectKey && projectMap.has(namedProjectKey)
+        ? namedProjectKey
+        : projectKeyForCwd(session.cwd);
     if (!projectKey) {
       chats.push(session);
       continue;
@@ -85,6 +116,11 @@ export function groupSidebarSessions(sessions: SessionRow[]): {
         key: projectKey,
         label: folderName(projectKey),
         sessions: [session],
+        primaryRoot: session.cwd,
+        sourceFolders: [
+          session.cwd,
+          ...(session.additionalDirectories ?? []),
+        ].filter(Boolean),
       });
     }
   }
@@ -117,19 +153,30 @@ export function Sidebar() {
   const pairs = useSessionStore(selectPairs);
   const activeId = useSessionStore(selectActiveId);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const { collapsed } = useSidebarCollapse();
   // Single menu state for the whole sidebar — only one row's `…`
   // dropdown can be open at a time. Lifting this up avoids the
   // "right-click row A then row B leaves both menus open" bug.
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [openProjectKeys, setOpenProjectKeys] = useState<Set<string>>(
     () => new Set(),
   );
   const [openSectionKeys, setOpenSectionKeys] = useState<Set<SidebarSectionKey>>(
     () => new Set(["pinned", "pairs", "projects", "chats"]),
   );
-  const grouped = useMemo(() => groupSidebarSessions(sessions), [sessions]);
+  const { data: savedProjects = [] } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => window.backchat.projectsList(),
+    staleTime: 30_000,
+  });
+  const grouped = useMemo(
+    () => groupSidebarSessions(sessions, savedProjects),
+    [savedProjects, sessions],
+  );
 
   const goHome = () => {
     const id = sessionStore.newDraft();
@@ -146,8 +193,30 @@ export function Sidebar() {
     void navigate({ to: "/pair/$pairId", params: { pairId: id } });
   };
 
+  const requestRename = (target: RenameTarget) => {
+    setOpenMenuId(null);
+    setRenameTarget(target);
+  };
+
+  const submitRename = async (title: string) => {
+    if (!renameTarget) return;
+    if (renameTarget.kind === "session") {
+      await sessionStore.rename(renameTarget.id, title);
+    } else {
+      await sessionStore.renamePair(renameTarget.id, title);
+    }
+  };
+
   const onNewProjectChat = (cwd: string) => {
     const id = sessionStore.newDraft(cwd);
+    void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+  };
+
+  const onNewNamedProjectChat = (project: SidebarProjectGroup) => {
+    const id = sessionStore.newDraft({
+      projectId: project.projectId!,
+      sourceFolders: project.sourceFolders,
+    });
     void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
   };
 
@@ -345,7 +414,7 @@ export function Sidebar() {
           paddingRight: "8px",
         }}
       >
-        {sessions.length === 0 && pairs.length === 0 ? (
+        {sessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
           <div>
             <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
               {t("sidebar.chats")}
@@ -356,6 +425,14 @@ export function Sidebar() {
               className="block w-full px-2 py-2 text-left text-xs text-fg-muted hover:text-fg"
             >
               {t("sidebar.startNewChat")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateProjectOpen(true)}
+              className="flex w-full items-center gap-2 px-2 py-2 text-left text-xs text-fg-muted hover:text-fg"
+            >
+              <PlusIcon className="size-3.5" />
+              {t("project.create")}
             </button>
           </div>
         ) : (
@@ -378,6 +455,9 @@ export function Sidebar() {
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             labelCls={labelCls}
                             onSelect={() => onSelectSession(s.id)}
+                            onRename={() =>
+                              requestRename({ kind: "session", id: s.id, title: s.label })
+                            }
                             menuOpen={openMenuId === s.id}
                             onMenuOpenChange={(open) =>
                               setOpenMenuId(open ? s.id : null)
@@ -403,19 +483,37 @@ export function Sidebar() {
                             active={p.id === activePairId}
                             labelCls={labelCls}
                             onSelect={() => onSelectPair(p.id)}
+                            onRename={() =>
+                              requestRename({ kind: "pair", id: p.id, title: p.label })
+                            }
+                            menuOpen={openMenuId === `pair:${p.id}`}
+                            onMenuOpenChange={(open) =>
+                              setOpenMenuId(open ? `pair:${p.id}` : null)
+                            }
                           />
                         </li>
                       ))}
                     </ul>
                   </SidebarSection>
                 )}
-                {projects.length > 0 && (
-                  <SidebarSection
-                    title={t("sidebar.projects")}
-                    open={openSectionKeys.has("projects")}
-                    onToggle={() => toggleSection("projects")}
-                    labelCls={labelCls}
-                  >
+                <SidebarSection
+                  title={t("sidebar.projects")}
+                  open={openSectionKeys.has("projects")}
+                  onToggle={() => toggleSection("projects")}
+                  labelCls={labelCls}
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => setCreateProjectOpen(true)}
+                      aria-label={t("project.create")}
+                      title={t("project.create")}
+                      className="flex size-5 items-center justify-center rounded text-fg-subtle hover:bg-bg-surface/60 hover:text-fg"
+                    >
+                      <PlusIcon className="size-3.5" />
+                    </button>
+                  }
+                >
+                  {projects.length > 0 && (
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {projects.map((project) => {
                         const open = openProjectKeys.has(project.key);
@@ -426,7 +524,11 @@ export function Sidebar() {
                               open={open}
                               labelCls={labelCls}
                               onToggle={() => toggleProject(project.key)}
-                              onNewChat={() => onNewProjectChat(project.key)}
+                              onNewChat={() =>
+                                project.projectId
+                                  ? onNewNamedProjectChat(project)
+                                  : onNewProjectChat(project.primaryRoot)
+                              }
                               onArchiveChats={() => {
                                 project.sessions.forEach((session) =>
                                   sessionStore.archive(session.id),
@@ -448,6 +550,9 @@ export function Sidebar() {
                                       active={s.id === activeId && location.pathname.startsWith("/chat/")}
                                       labelCls={labelCls}
                                       onSelect={() => onSelectSession(s.id)}
+                                      onRename={() =>
+                                        requestRename({ kind: "session", id: s.id, title: s.label })
+                                      }
                                       menuOpen={openMenuId === s.id}
                                       onMenuOpenChange={(openMenu) =>
                                         setOpenMenuId(openMenu ? s.id : null)
@@ -461,8 +566,8 @@ export function Sidebar() {
                         );
                       })}
                     </ul>
-                  </SidebarSection>
-                )}
+                  )}
+                </SidebarSection>
                 {chats.length > 0 && (
                   <SidebarSection
                     title={t("sidebar.chats")}
@@ -479,6 +584,9 @@ export function Sidebar() {
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             labelCls={labelCls}
                             onSelect={() => onSelectSession(s.id)}
+                            onRename={() =>
+                              requestRename({ kind: "session", id: s.id, title: s.label })
+                            }
                             menuOpen={openMenuId === s.id}
                             onMenuOpenChange={(open) =>
                               setOpenMenuId(open ? s.id : null)
@@ -516,10 +624,30 @@ export function Sidebar() {
           )}
           style={{ height: "var(--row-h)" }}
         >
-          <Settings2Icon className="size-3.5 shrink-0" />
+          <span className="inline-flex size-4 shrink-0 items-center justify-center">
+            <Settings2Icon className="size-3.5" />
+          </span>
           <span className={labelCls}>{t("sidebar.settings")}</span>
         </Link>
       </div>
+      <CreateProjectDialog
+        open={createProjectOpen}
+        onOpenChange={setCreateProjectOpen}
+        onCreated={(project) => {
+          void queryClient.invalidateQueries({ queryKey: ["projects"] });
+          setOpenProjectKeys((current) =>
+            new Set(current).add(`project:${project.id}`)
+          );
+        }}
+      />
+      <RenameDialog
+        open={renameTarget !== null}
+        currentTitle={renameTarget?.title ?? ""}
+        onOpenChange={(open) => {
+          if (!open) setRenameTarget(null);
+        }}
+        onRename={submitRename}
+      />
     </div>
   );
 }
@@ -531,6 +659,7 @@ function SidebarSection({
   labelCls,
   last = false,
   children,
+  action,
 }: {
   title: string;
   open: boolean;
@@ -538,31 +667,35 @@ function SidebarSection({
   labelCls: string;
   last?: boolean;
   children: ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <section className={last ? undefined : "mb-3"}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-label={title}
-        aria-expanded={open}
-        className={cn(
-          "app-no-drag group mb-1 flex min-h-5 w-full items-center gap-1 rounded px-2 text-left",
-          "text-[11px] font-medium tracking-wider text-fg-subtle",
-          "hover:bg-bg-surface/40 hover:text-fg-muted active:bg-bg-surface/60",
-          "transition-colors duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
-        )}
-      >
-        <span className={cn("min-w-0 truncate", labelCls)}>{title}</span>
-        <ChevronRightIcon
-          aria-hidden="true"
+      <div className="mb-1 flex min-h-5 items-center">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={title}
+          aria-expanded={open}
           className={cn(
-            "size-3 shrink-0 transition-transform duration-[var(--motion-disclosure-duration)] ease-[var(--motion-disclosure-easing)]",
-            open && "rotate-90",
-            labelCls,
+            "app-no-drag group flex min-h-5 min-w-0 flex-1 items-center gap-1 rounded px-2 text-left",
+            "text-[11px] font-medium tracking-wider text-fg-subtle",
+            "hover:bg-bg-surface/40 hover:text-fg-muted active:bg-bg-surface/60",
+            "transition-colors duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
           )}
-        />
-      </button>
+        >
+          <span className={cn("min-w-0 truncate", labelCls)}>{title}</span>
+          <ChevronRightIcon
+            aria-hidden="true"
+            className={cn(
+              "size-3 shrink-0 transition-transform duration-[var(--motion-disclosure-duration)] ease-[var(--motion-disclosure-easing)]",
+              open && "rotate-90",
+              labelCls,
+            )}
+          />
+        </button>
+        <span className={cn("mr-1 shrink-0", labelCls)}>{action}</span>
+      </div>
       <AnimatedCollapse open={open}>{children}</AnimatedCollapse>
     </section>
   );
@@ -603,7 +736,7 @@ function ProjectSidebarRow({
         onClick={onToggle}
         aria-label={group.label}
         aria-expanded={open}
-        title={group.key}
+        title={group.primaryRoot || group.label}
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
         <ProjectIcon className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" />
@@ -635,8 +768,11 @@ function ProjectSidebarRow({
           >
             <DropdownMenuItem
               onSelect={() =>
-                void window.backchat.uiFsOpenPath({ path: group.key })
+                group.primaryRoot
+                  ? void window.backchat.uiFsOpenPath({ path: group.primaryRoot })
+                  : undefined
               }
+              disabled={!group.primaryRoot}
               className="flex items-center gap-2 py-1 text-xs"
             >
               <FolderOpenIcon className="size-3.5" />
@@ -671,18 +807,21 @@ function PairSidebarRow({
   active,
   labelCls,
   onSelect,
+  onRename,
+  menuOpen,
+  onMenuOpenChange,
 }: {
   row: PairRow;
   active: boolean;
   labelCls: string;
   onSelect: () => void;
+  onRename: () => void;
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-label={row.label || t("sidebar.pairChat")}
+    <div
       className={cn(
         "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
         active
@@ -692,14 +831,78 @@ function PairSidebarRow({
       )}
       style={{ height: "var(--row-h)" }}
     >
-      <UsersRoundIcon className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" />
-      <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
-        {row.label || t("sidebar.pairChat")}
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-label={row.label || t("sidebar.pairChat")}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <UsersRoundIcon className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" />
+        <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
+          {row.label || t("sidebar.pairChat")}
+        </span>
+      </button>
+      <span
+        className={cn(
+          labelCls,
+          "ml-auto inline-flex shrink-0 items-center gap-0.5 transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
+          menuOpen
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+        )}
+      >
+        {row.activeTurnId && (
+          <Loader2Icon className="size-3 shrink-0 animate-spin text-fg-subtle" />
+        )}
+        <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={t("sidebar.sessionActions")}
+              onClick={(event) => event.stopPropagation()}
+              className="flex size-4 items-center justify-center rounded text-fg-muted hover:bg-bg-surface/80 hover:text-fg"
+            >
+              <span aria-hidden="true">⋯</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
+            <DropdownMenuItem
+              onSelect={onRename}
+              className="flex items-center gap-2 py-1 text-xs"
+            >
+              <SquarePenIcon className="size-3.5" />
+              <span>{t("sidebar.rename")}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
+            <DropdownMenuItem
+              onSelect={() =>
+                row.pinnedAt != null
+                  ? sessionStore.unpinPair(row.id)
+                  : sessionStore.pinPair(row.id)
+              }
+              className="flex items-center gap-2 py-1 text-xs"
+            >
+              {row.pinnedAt != null ? (
+                <PinOffIcon className="size-3.5" />
+              ) : (
+                <PinIcon className="size-3.5" />
+              )}
+              <span>
+                {row.pinnedAt != null ? t("sidebar.unpin") : t("sidebar.pin")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
+            <DropdownMenuItem
+              onSelect={() => sessionStore.archivePair(row.id)}
+              className="flex items-center gap-2 py-1 text-xs"
+            >
+              <ArchiveIcon className="size-3.5" />
+              <span>{t("sidebar.archive")}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </span>
-      {row.activeTurnId && (
-        <Loader2Icon className="size-3 shrink-0 animate-spin text-fg-subtle" />
-      )}
-    </button>
+    </div>
   );
 }
 
@@ -716,6 +919,7 @@ function SessionRow({
   active,
   labelCls,
   onSelect,
+  onRename,
   menuOpen,
   onMenuOpenChange,
 }: {
@@ -723,6 +927,7 @@ function SessionRow({
   active: boolean;
   labelCls: string;
   onSelect: () => void;
+  onRename: () => void;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
 }) {
@@ -787,7 +992,15 @@ function SessionRow({
                     <span aria-hidden="true">⋯</span>
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
+                 <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
+                  <DropdownMenuItem
+                    onSelect={onRename}
+                    className="flex items-center gap-2 py-1 text-xs"
+                  >
+                    <SquarePenIcon className="size-3.5" />
+                    <span>{t("sidebar.rename")}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
                   <DropdownMenuItem
                     onSelect={() => (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id))}
                     className="flex items-center gap-2 py-1 text-xs"
@@ -813,6 +1026,14 @@ function SessionRow({
         <ContextMenu.Content
           className="z-50 w-fit min-w-[140px] overflow-hidden rounded-md border border-border/60 bg-popover p-1 text-popover-foreground shadow-md"
         >
+          <ContextMenu.Item
+            onSelect={onRename}
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+          >
+            <SquarePenIcon className="size-3.5" />
+            <span>{t("sidebar.rename")}</span>
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-border/60" />
           <ContextMenu.Item
             onSelect={() => (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id))}
             className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"

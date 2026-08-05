@@ -125,6 +125,7 @@ export function useChatSessionActions({
   ) => {
     const ask = active?.pendingAsks?.[0];
     if (!active || !ask) return;
+    if (ask.kind === "elicitation") return;
     const response = resolveChatAskResponse(ask, optionId, !!approve);
     if (response?.kind === "permission") {
       await window.backchat.permissionRespond(

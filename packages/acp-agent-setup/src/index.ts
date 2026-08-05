@@ -12,6 +12,7 @@ import {
   installAcpRegistryAgent,
   installManagedAdapter,
   readAcpRegistryInstallMetadata,
+  repairRelocatedAcpRegistryShim,
   uninstallAcpRegistryAgent,
   uninstallManagedAdapter,
 } from "@open-managed-agents-desktop/acp/installer";
@@ -153,12 +154,35 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   }
 
   async warmup(): Promise<void> {
+    await this.repairRelocatedRegistryShims();
     await this.collectAgentSnapshot({
       trigger: "startup",
       refreshRegistry: true,
       auth: { target: "ids", ids: [] },
       capabilities: { target: "detected" },
     });
+  }
+
+  private async repairRelocatedRegistryShims(): Promise<void> {
+    const entries = this.catalogEntries().filter(
+      (entry) => entry.installSource === "registry" && entry.registryId,
+    );
+    await Promise.all(entries.map(async (entry) => {
+      try {
+        await repairRelocatedAcpRegistryShim({
+          registryId: entry.registryId!,
+          shimName: basename(entry.spec.command),
+          binDir: this.deps.acpBinDir,
+          installRoot: this.deps.acpInstallRoot,
+        });
+      } catch (error) {
+        if (process.env.NODE_ENV !== "test") {
+          process.stderr.write(
+            `! ACP shim repair skipped for ${entry.id}: ${errorMessage(error)}\n`,
+          );
+        }
+      }
+    }));
   }
 
   async refreshEnabledAgents(): Promise<AcpAgentSetupInfo[]> {
@@ -467,6 +491,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     await loadRegistry({
       cachePath: this.deps.registryCachePath,
       forceRefresh: options.refresh === true,
+      cacheOnly: options.refresh !== true,
     }).catch(() => undefined);
   }
 

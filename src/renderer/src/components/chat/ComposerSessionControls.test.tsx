@@ -10,6 +10,7 @@ vi.mock("@/lib/i18n", () => ({
     t: (key: string) => ({
       "chat.plan": "Plan",
       "chat.planActiveHint": "Plan mode is active",
+      "chat.goalStatus": "Goal",
     })[key] ?? key,
   }),
 }));
@@ -23,48 +24,43 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 import {
+  ComposerSessionStateSlot,
   InlineComposerOptionControls,
-  PlanSessionState,
 } from "./ComposerSessionControls";
 
-describe("PlanSessionState", () => {
-  it("renders only when the collaboration mode is plan", () => {
-    const defaultHtml = renderToStaticMarkup(
-      <PlanSessionState
-        configOptions={[
-          {
-            id: "collaboration_mode",
-            name: "Collaboration mode",
-            type: "select",
-            currentValue: "default",
-            options: [
-              { value: "default", name: "Default" },
-              { value: "plan", name: "Plan" },
-            ],
-          },
-        ]}
+describe("ComposerSessionStateSlot", () => {
+  it("renders Plan Mode in the same generic slot used by Goal", () => {
+    const planHtml = renderToStaticMarkup(
+      <ComposerSessionStateSlot
+        presentation={{
+          id: "mode:claude-acp:plan",
+          kind: "plan_mode",
+          label: "Plan",
+          title: "Plan mode is active",
+          icon: "plan",
+        }}
       />,
     );
-    const planHtml = renderToStaticMarkup(
-      <PlanSessionState
-        configOptions={[
-          {
-            id: "collaboration_mode",
-            name: "Collaboration mode",
-            type: "select",
-            currentValue: "plan",
-            options: [
-              { value: "default", name: "Default" },
-              { value: "plan", name: "Plan" },
-            ],
-          },
-        ]}
+    const goalHtml = renderToStaticMarkup(
+      <ComposerSessionStateSlot
+        presentation={{
+          id: "goal:ship",
+          kind: "goal",
+          label: "Goal",
+          title: "Ship goal UI",
+          icon: "goal",
+        }}
       />,
     );
 
-    expect(defaultHtml).toBe("");
+    expect(planHtml).toContain('data-composer-session-state="true"');
+    expect(planHtml).toContain('data-session-state-kind="plan_mode"');
     expect(planHtml).toContain("Plan");
     expect(planHtml).toContain('title="Plan mode is active"');
+    expect(planHtml).toContain("lucide-lightbulb");
+    expect(goalHtml).toContain('data-session-state-kind="goal"');
+    expect(goalHtml).toContain("Goal");
+    expect(goalHtml).toContain("lucide-target");
   });
 });
 

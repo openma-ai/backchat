@@ -58,7 +58,10 @@ interface ActivePair {
    *  to the renderer once every member has acked. */
   pendingReady: Map<
     string,
-    { agent_id: string; acp_session_id?: string; cwd?: string }
+    {
+      agent_id: string;
+      ready?: Extract<SessionEventOut, { type: "session.ready" }>;
+    }
   >;
 }
 
@@ -103,26 +106,21 @@ export class PairManager {
       case "session.ready": {
         const pending = pair.pendingReady.get(msg.session_id);
         if (pending) {
-          pending.acp_session_id = msg.acp_session_id;
-          pending.cwd = msg.cwd;
+          pending.ready = msg;
         }
         // Fire pair.ready only when ALL members have acked. Avoids
         // partial-grid render while one agent is still spawning.
         const allReady = [...pair.pendingReady.values()].every(
-          (m) => m.acp_session_id !== undefined,
+          (m) => m.ready !== undefined,
         );
         if (allReady) {
           this.#pairSink({
             type: "pair.ready",
             pair_id,
             members: pair.member_session_ids.map((sid) => {
-              const m = pair.pendingReady.get(sid)!;
-              return {
-                session_id: sid,
-                agent_id: m.agent_id,
-                acp_session_id: m.acp_session_id ?? "",
-                cwd: m.cwd ?? "",
-              };
+              const ready = pair.pendingReady.get(sid)!.ready!;
+              const { type: _type, ...member } = ready;
+              return member;
             }),
           });
         }
@@ -135,25 +133,29 @@ export class PairManager {
           member_session_id: msg.session_id,
           turn_id: msg.turn_id,
           event: msg.event,
+          ...(msg.openma_event ? { openma_event: msg.openma_event } : {}),
         });
         return;
-      case "session.complete":
+      case "session.complete": {
+        const { type: _type, session_id: _sessionId, ...completion } = msg;
         this.#pairSink({
           type: "pair.complete",
           pair_id,
           member_session_id: msg.session_id,
-          turn_id: msg.turn_id,
+          ...completion,
         });
         return;
-      case "session.error":
+      }
+      case "session.error": {
+        const { type: _type, session_id: _sessionId, ...failure } = msg;
         this.#pairSink({
           type: "pair.error",
           pair_id,
           member_session_id: msg.session_id,
-          turn_id: msg.turn_id,
-          message: msg.message,
+          ...failure,
         });
         return;
+      }
       case "session.disposed":
         // One member died. We don't auto-dispose the whole pair —
         // user might still want to interact with surviving members.
@@ -164,6 +166,14 @@ export class PairManager {
           pair_id,
           member_session_id: msg.session_id,
           message: "session disposed",
+        });
+        return;
+      default:
+        this.#pairSink({
+          type: "pair.session_event",
+          pair_id,
+          member_session_id: msg.session_id,
+          session_event: msg,
         });
         return;
     }
@@ -314,7 +324,7 @@ export class PairManager {
   announcePairs(): void {
     for (const pair of this.#pairs.values()) {
       const allReady = [...pair.pendingReady.values()].every(
-        (m) => m.acp_session_id !== undefined,
+        (m) => m.ready?.acp_session_id !== undefined,
       );
       if (!allReady) continue;
       this.#pairSink({
@@ -325,8 +335,8 @@ export class PairManager {
           return {
             session_id: sid,
             agent_id: m.agent_id,
-            acp_session_id: m.acp_session_id ?? "",
-            cwd: m.cwd ?? "",
+            acp_session_id: m.ready?.acp_session_id ?? "",
+            cwd: m.ready?.cwd ?? "",
           };
         }),
       });

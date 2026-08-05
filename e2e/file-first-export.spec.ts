@@ -1,13 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { exportSessionFiles, launchApp, persistSessionFixture } from "./helpers";
+import { exportSessionFiles, persistSessionFixture } from "./helpers";
 
 test.describe("file-first transcript export", () => {
-  test("exports persisted SQLite sessions to JSONL and TOML files", async () => {
-    const { page, home, cleanup } = await launchApp();
-    try {
+  test("exports persisted SQLite sessions to JSONL and TOML files", async ({ page, home }) => {
       const sessionId = "e2e-export";
       const title = "Export this: e2e-file-first-token";
       await persistSessionFixture(page, {
@@ -64,14 +62,9 @@ test.describe("file-first transcript export", () => {
         title,
         workdir: join(home, "sessions", sessionId),
       });
-    } finally {
-      await cleanup();
-    }
   });
 
-  test("skips existing transcript files unless overwrite is set", async () => {
-    const { page, home, cleanup } = await launchApp();
-    try {
+  test("skips existing transcript files unless overwrite is set", async ({ page, home }) => {
       const sessionId = "e2e-export-overwrite";
       const title = "Export overwrite guard";
       await persistSessionFixture(page, {
@@ -109,8 +102,5 @@ test.describe("file-first transcript export", () => {
       const transcript = await readFile(exported.transcriptPath, "utf-8");
       expect(transcript).toContain('"schema_version":"backchat.session_event.v1"');
       expect(transcript).toContain("Overwrite guard completed.");
-    } finally {
-      await cleanup();
-    }
   });
 });

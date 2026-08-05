@@ -1,11 +1,8 @@
-import { expect, test } from "@playwright/test";
-import { launchApp, persistSessionFixture } from "./helpers";
+import { expect, test } from "./fixtures";
 
-test("settings activity summarizes persisted work by harness", async ({}, testInfo) => {
-  const { page, cleanup } = await launchApp();
-  try {
+test("settings activity summarizes persisted work by harness", async ({ page, bridge, capture }) => {
     await page.setViewportSize({ width: 1440, height: 960 });
-    await persistSessionFixture(page, {
+    await bridge.persistSessionFixture({
       sessionId: "activity-codex-one",
       agentId: "codex-acp",
       events: [
@@ -14,12 +11,12 @@ test("settings activity summarizes persisted work by harness", async ({}, testIn
         { type: "tool_call_update", data: { status: "completed" } },
       ],
     });
-    await persistSessionFixture(page, {
+    await bridge.persistSessionFixture({
       sessionId: "activity-codex-two",
       agentId: "codex-acp",
       events: [{ type: "user_prompt", data: { text: "Review the panel" } }],
     });
-    await persistSessionFixture(page, {
+    await bridge.persistSessionFixture({
       sessionId: "activity-claude",
       agentId: "claude-acp",
       events: [
@@ -47,13 +44,5 @@ test("settings activity summarizes persisted work by harness", async ({}, testIn
     await page.getByRole("button", { name: "Tools" }).click();
     await expect(page.getByRole("button", { name: "Tools" })).toHaveAttribute("aria-pressed", "true");
 
-    const screenshotPath = testInfo.outputPath("settings-activity.png");
-    await page.screenshot({ path: screenshotPath });
-    await testInfo.attach("settings activity", {
-      path: screenshotPath,
-      contentType: "image/png",
-    });
-  } finally {
-    await cleanup();
-  }
+    await capture("settings-activity.png", "settings activity");
 });

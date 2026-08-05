@@ -1,14 +1,13 @@
-import type {
-  NativeAgentProvider,
-  NativeAgentUpdate,
-} from "./native-agent-events";
+import type { NativeAgentUpdate } from "./native-agent-events";
 import type { SessionRow, SubagentActivity, Turn } from "./session-types";
 
 export function nativeActivitySessionStatus(
   status: SubagentActivity["status"],
 ): SessionRow["status"] {
   if (status === "error") return "errored";
-  if (status === "complete" || status === "cancelled") return "ready";
+  if (status === "complete" || status === "cancelled" || status === "unknown") {
+    return "ready";
+  }
   return "running";
 }
 export function nativeActivityTurnStatus(
@@ -17,6 +16,7 @@ export function nativeActivityTurnStatus(
   if (status === "complete") return "complete";
   if (status === "error") return "error";
   if (status === "cancelled") return "cancelled";
+  if (status === "unknown") return "unknown";
   return "running";
 }
 
@@ -35,20 +35,4 @@ export function appendUnique(
   const next = values ? [...values] : [];
   if (!next.includes(value)) next.push(value);
   return next;
-}
-
-export function nativeProviderForAgent(agentId: string | undefined): NativeAgentProvider | undefined {
-  const normalized = (agentId ?? "").toLowerCase();
-  if (!normalized) return undefined;
-  if (normalized === "codex-acp" || normalized.includes("codex")) return "codex";
-  if (
-    normalized === "claude-acp" ||
-    normalized.includes("claude-code") ||
-    normalized.includes("claude") ||
-    normalized === "cc" ||
-    normalized.startsWith("cc-")
-  ) {
-    return "claude";
-  }
-  return undefined;
 }

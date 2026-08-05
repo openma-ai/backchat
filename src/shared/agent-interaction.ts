@@ -140,7 +140,12 @@ export function decideRunningMessageDelivery({
   transport?: AgentDeliveryCapabilities;
 }): RunningMessageDeliveryDecision {
   const profile = getAgentInteractionProfile(agentId);
-  const requestedDelivery = profile.actions[intent] ?? unsupported;
+  // The negotiated transport is stronger evidence than the registry name:
+  // any ACP harness that advertises steering can honor an explicit Steer.
+  const requestedDelivery =
+    intent === "steer" && transport.llmBoundary
+      ? "llm_boundary"
+      : profile.actions[intent] ?? unsupported;
   const effectiveDelivery = resolveEffectiveDelivery(requestedDelivery, transport);
 
   return {

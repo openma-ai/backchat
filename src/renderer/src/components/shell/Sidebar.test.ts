@@ -165,6 +165,22 @@ describe("groupSidebarSessions", () => {
     expect(launcher).toContain("CheckIcon");
   });
 
+  it("exposes rename actions for sessions and pair chats", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const sessionRow = source.slice(
+      source.indexOf("function SessionRow"),
+      source.indexOf("function PairChatLauncher"),
+    );
+    const pairRow = source.slice(
+      source.indexOf("function PairSidebarRow"),
+      source.indexOf("function SessionRow"),
+    );
+
+    expect(sessionRow).toContain('t("sidebar.rename")');
+    expect(pairRow).toContain('t("sidebar.rename")');
+    expect(pairRow).toContain("<DropdownMenu");
+  });
+
   it("links the multi-Agent picker to Agent settings with the settings icon", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const launcher = source.slice(source.indexOf("function PairChatLauncher"));
@@ -198,10 +214,10 @@ describe("groupSidebarSessions", () => {
     const footer = source.slice(source.indexOf("{/* Footer — Settings link only."));
 
     expect(footer).toContain(
-      '<Settings2Icon className="size-3.5 shrink-0" />',
-    );
-    expect(footer).not.toContain(
       '<span className="inline-flex size-4 shrink-0 items-center justify-center">',
+    );
+    expect(footer).toContain(
+      '<Settings2Icon className="size-3.5" />',
     );
   });
 
@@ -245,7 +261,7 @@ describe("groupSidebarSessions", () => {
     });
     const appManaged = row({
       id: "managed",
-      cwd: "/Users/minimax/.openma/sessions/sess-rfwr779u",
+      cwd: "/Users/minimax/.oma/sessions/sess-rfwr779u",
     });
     const noCwd = row({ id: "plain", cwd: "" });
 

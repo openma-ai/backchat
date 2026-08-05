@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,7 +24,8 @@ vi.mock("@open-managed-agents-desktop/acp/registry", () => ({
   loadRegistry: vi.fn(async () => [fakeEntry]),
 }));
 
-vi.mock("@open-managed-agents-desktop/acp/installer", () => ({
+vi.mock("@open-managed-agents-desktop/acp/installer", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@open-managed-agents-desktop/acp/installer")>(),
   installAcpRegistryAgent: installAcpRegistryAgentMock,
   installManagedAdapter: vi.fn(),
   readAcpRegistryInstallMetadata: readAcpRegistryInstallMetadataMock,
@@ -284,6 +285,75 @@ describe("acp agent setup sdk", () => {
     expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
     expect(probeAgentSessionConfigMock).toHaveBeenCalledOnce();
     expect(agents[0]?.auth?.status).toBe("configured");
+  });
+
+  it("repairs a stale managed npx shim during cold start", async () => {
+    const root = join(
+      tmpdir(),
+      `sdk-repair-managed-shim-${process.pid}-${Date.now()}`,
+    );
+    const acpRoot = join(root, "acp");
+    const binDir = join(acpRoot, "bin");
+    const registryRoot = join(acpRoot, "registry", "fake-agent");
+    const packageRoot = join(
+      registryRoot,
+      "npx",
+      "node_modules",
+      "@example",
+      "fake-agent",
+    );
+    const packageBin = join(
+      registryRoot,
+      "npx",
+      "node_modules",
+      ".bin",
+      "fake-agent",
+    );
+    const shimPath = join(binDir, "fake-agent");
+    await mkdir(packageRoot, { recursive: true });
+    await mkdir(join(registryRoot, "npx", "node_modules", ".bin"), {
+      recursive: true,
+    });
+    await mkdir(binDir, { recursive: true });
+    await writeFile(
+      join(packageRoot, "package.json"),
+      JSON.stringify({ bin: { "fake-agent": "cli.js" } }),
+    );
+    await writeFile(packageBin, "#!/bin/sh\nexit 0\n");
+    await chmod(packageBin, 0o755);
+    await writeFile(
+      join(registryRoot, "install.json"),
+      JSON.stringify({
+        source: "registry",
+        registryId: "fake-agent",
+        shimName: "fake-agent",
+        version: "1.0.0",
+        installedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    await writeFile(
+      shimPath,
+      "#!/bin/sh\nset -eu\nexec '/missing/acp/registry/fake-agent/npx/node_modules/.bin/fake-agent' \"$@\"\n",
+    );
+    await chmod(shimPath, 0o755);
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: { status: "configured" },
+    });
+
+    const service = createAcpAgentSetupService({
+      acpBinDir: binDir,
+      acpInstallRoot: acpRoot,
+      registryCachePath: join(root, "registry.json"),
+    });
+
+    await service.warmup();
+
+    const repairedShim = await readFile(shimPath, "utf8");
+    expect(repairedShim).toContain(packageBin);
+    expect(repairedShim).not.toContain("/missing/");
+    await rm(root, { recursive: true, force: true });
   });
 
   it("reports a failed cold-start capability inspection as degraded instead of empty", async () => {

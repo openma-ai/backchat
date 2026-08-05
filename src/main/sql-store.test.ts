@@ -10,6 +10,7 @@ import {
   loadHistory,
   openSessionDb,
   pinSession,
+  searchMessages,
   setSessionTitleIfEmpty,
   upsertSession,
 } from "./sql-store";
@@ -111,5 +112,32 @@ describe("sql-store file-first write-through", () => {
         source: "desktop",
       },
     ]);
+
+    const canonicalEvent = {
+      schema_version: "oma.event.v1",
+      event_id: "canonical-search-event",
+      type: "agent.message_chunk",
+      session_id: "sess_file_first",
+      turn_id: "turn-search",
+      source: { kind: "harness", harness: "codex-acp", adapter: "acp" },
+      occurred_at: new Date(now).toISOString(),
+      data: { text: "canonical lookup" },
+    };
+    appendEvent("sess_file_first", "openma_event", canonicalEvent);
+    // Renderer-derived canonical events may race with a retry across the
+    // host boundary. The event id is the idempotency key and must not create
+    // a second SQL/transcript row.
+    appendEvent("sess_file_first", "openma_event", canonicalEvent);
+    expect(
+      loadHistory("sess_file_first").filter((row) => row.type === "openma_event"),
+    ).toHaveLength(1);
+    expect(searchMessages("canonical lookup")).toEqual([
+      expect.objectContaining({
+        session_id: "sess_file_first",
+        type: "openma_event",
+        snippet: expect.stringContaining("canonical"),
+      }),
+    ]);
   });
+
 });

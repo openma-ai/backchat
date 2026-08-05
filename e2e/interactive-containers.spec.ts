@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,7 +10,7 @@ import {
   registerAppTool,
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/server";
-import { injectEvent, injectSession, launchApp } from "./helpers";
+import { injectEvent, injectSession } from "./helpers";
 
 const appHtml = `<!doctype html><html><head><style>
 html,body{margin:0;background:transparent;color:#e7e7e5;font:13px system-ui}body{padding:14px}
@@ -51,12 +51,11 @@ const visualizeFragment = `<div id="performance-widget" class="viz-grid">
   <article class="card"><div class="text-small text-muted">REGION</div><div class="viz-stat-value">Asia Pacific</div><button class="btn btn-block" data-tooltip="Inspect the selected region" onclick="openai.sendFollowUpMessage({prompt:'Inspect APAC latency'})"><i data-lucide="search" aria-hidden="true"></i>Inspect latency</button></article>
 </div><output id="generation-state">initial</output><script>document.getElementById("generation-state").textContent="script-ready";</script>`;
 
-test("MCP Apps expose three containers while Visualize stays inline", async () => {
+test("MCP Apps expose three containers while Visualize stays inline", async ({ app, page, home }) => {
   const server = createServer((request, response) => void handleMcpRequest(request, response));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("MCP fixture failed to bind");
-  const { app, page, home, cleanup } = await launchApp({ language: "en" });
   try {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1440, 960));
     const workspace = join(home, "workspace");
@@ -214,7 +213,10 @@ test("MCP Apps expose three containers while Visualize stays inline", async () =
     await dockedPipOnlyApp.getByRole("button", { name: "Open picture in picture" }).click();
     await expect(page.getByRole("region", { name: "PIP timer" })).toHaveAttribute("data-pip-window", "true");
   } finally {
-    await cleanup();
+    // MCP iframe sessions keep HTTP connections alive. Close them before
+    // awaiting the fixture server callback so the test never hangs during
+    // teardown while the shared Electron fixture is still active.
+    server.closeAllConnections?.();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

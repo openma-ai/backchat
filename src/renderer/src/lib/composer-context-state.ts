@@ -76,20 +76,28 @@ export function useComposerContextState({
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
-  const pickAttachments = async () => {
-    if (disabled) return;
+  const pickAttachments = async (): Promise<PromptAttachment[]> => {
+    if (disabled) return [];
     try {
       const files = await window.backchat.uiFsPickFiles({
         defaultPath: attachmentDefaultPath,
       });
-      if (files.length === 0) return;
+      if (files.length === 0) return [];
       setAttachments((current) => mergeComposerAttachments(current, files));
       focusTextarea();
+      return files;
     } catch (error) {
       toast.error("Couldn't attach files", {
         description: error instanceof Error ? error.message : String(error),
       });
+      return [];
     }
+  };
+
+  const addAttachments = (files: PromptAttachment[]) => {
+    if (disabled || files.length === 0) return;
+    setAttachments((current) => mergeComposerAttachments(current, files));
+    focusTextarea();
   };
 
   useEffect(() => {
@@ -171,6 +179,7 @@ export function useComposerContextState({
     attachments,
     browserScreenshotNames,
     clearAttachments: () => setAttachments([]),
+    addAttachments,
     pickAttachments,
     removeAnnotation,
     removeAttachment,

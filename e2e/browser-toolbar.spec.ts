@@ -1,10 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
-import { injectSession, launchApp, openBrowserPanel } from "./helpers";
+import { injectSession, openBrowserPanel } from "./helpers";
 
-test("browser chrome is compact and exposes real page controls", async ({}, testInfo) => {
-  const { page, cleanup } = await launchApp();
-  try {
+test("browser chrome is compact and exposes real page controls", async ({ page, capture }) => {
     const taskId = await injectSession(page, {
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-toolbar",
@@ -56,12 +54,7 @@ test("browser chrome is compact and exposes real page controls", async ({}, test
       (element as HTMLElement & { getZoomFactor(): number }).getZoomFactor(),
     )).toBeGreaterThan(beforeZoom);
 
-    const menuScreenshot = testInfo.outputPath("browser-toolbar-menu.png");
-    await page.screenshot({ path: menuScreenshot });
-    await testInfo.attach("browser toolbar menu", {
-      path: menuScreenshot,
-      contentType: "image/png",
-    });
+    await capture("browser-toolbar-menu.png", "browser toolbar menu");
 
     await page.getByRole("menuitem", { name: "Capture screenshot" }).click();
     await expect(page.getByText("Screenshot saved")).toBeVisible();
@@ -111,7 +104,4 @@ test("browser chrome is compact and exposes real page controls", async ({}, test
     await page.getByRole("menuitem", { name: "Browser settings" }).click();
     await expect(page.getByRole("heading", { name: "Browser" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Enable built-in browser" })).toBeVisible();
-  } finally {
-    await cleanup();
-  }
 });

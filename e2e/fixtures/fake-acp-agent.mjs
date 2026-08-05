@@ -57,6 +57,9 @@ class FakeAcpAgent {
       await this.runInlinePreferencePlugin(params.sessionId);
       return { stopReason: "end_turn" };
     }
+    if (promptText === "cursor-plan-merge-e2e") {
+      await this.runCursorPlanMerge();
+    }
     await this.connection.sessionUpdate({
       sessionId: params.sessionId,
       update: {
@@ -68,6 +71,25 @@ class FakeAcpAgent {
       },
     });
     return { stopReason: "end_turn" };
+  }
+
+  async runCursorPlanMerge() {
+    await this.connection.extMethod("cursor/update_todos", {
+      toolCallId: "cursor-todos-replace",
+      merge: false,
+      todos: [
+        { id: "todo-1", content: "Audit inputs", status: "in_progress" },
+        { id: "todo-2", content: "Wire outputs", status: "in_progress" },
+      ],
+    });
+    await this.connection.extMethod("cursor/update_todos", {
+      toolCallId: "cursor-todos-merge",
+      merge: true,
+      todos: [
+        { id: "todo-1", content: "Audit inputs", status: "completed" },
+        { id: "todo-3", content: "Verify replay", status: "cancelled" },
+      ],
+    });
   }
 
   async runInlinePreferencePlugin(sessionId) {

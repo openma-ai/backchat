@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, Outlet, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArchiveIcon,
   ArrowLeftIcon,
@@ -16,6 +16,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { PageSurface } from "@/components/shell/PageSurface";
 import { cn } from "@/lib/utils";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 
@@ -45,9 +46,18 @@ const SECTION_LABELS: Record<SettingsTab["section"], TranslationKey> = {
 const iconSlotClass = "flex w-4 shrink-0 items-center justify-center";
 
 export function SettingsLayout() {
+  return (
+    <PageSurface>
+      <div className="w-full px-8 pb-16 pt-8">
+        <Outlet />
+      </div>
+    </PageSurface>
+  );
+}
+
+export function SettingsSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const router = useRouter();
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const visibleTabs = useMemo(() => {
@@ -56,17 +66,13 @@ export function SettingsLayout() {
     return TABS.filter((tab) => t(tab.labelKey).toLowerCase().includes(normalized));
   }, [query, t]);
   const backToApp = () => {
-    if (router.history.canGoBack()) {
-      router.history.back();
-      return;
-    }
     void navigate({ to: "/" });
   };
 
   return (
-    <div className="flex h-full min-h-0 gap-[var(--stage-inset)] bg-bg-sidebar p-[var(--stage-inset)] text-fg">
-      <aside className="app-drag-region liquid-glass flex w-[232px] shrink-0 flex-col rounded-2xl px-2 pb-2 pt-2">
-        <div className="h-[30px]" />
+    <div className="flex h-full min-h-0 flex-col text-fg">
+      <div className="app-drag-region h-[36px] shrink-0" />
+      <div className="px-2 pt-[var(--row-gap-y)]">
         <button
           type="button"
           onClick={backToApp}
@@ -90,50 +96,43 @@ export function SettingsLayout() {
             className="h-8 text-xs text-fg placeholder:text-fg-subtle md:text-xs"
           />
         </InputGroup>
+      </div>
 
-        <nav className="app-no-drag min-h-0 flex-1 overflow-y-auto">
-          {SECTION_ORDER.map((section) => {
-            const items = visibleTabs.filter((tab) => tab.section === section);
-            if (items.length === 0) return null;
-            return (
-              <div key={section} className="mb-4">
-                <div className="mb-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{t(SECTION_LABELS[section])}</div>
-                <ul className="space-y-0.5">
-                  {items.map((tab) => {
-                    const active = location.pathname === tab.to;
-                    const Icon = tab.icon;
-                    return (
-                      <li key={tab.to}>
-                        <Link
-                          to={tab.to}
-                          className={cn(
-                            "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
-                            active
-                              ? "liquid-glass-selected text-fg"
-                              : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
-                          )}
-                        >
-                          <span className={iconSlotClass}>
-                            <Icon className="size-3.5" />
-                          </span>
-                          <span>{t(tab.labelKey)}</span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })}
-        </nav>
-
-      </aside>
-
-      <main className="min-w-0 flex-1 overflow-y-auto rounded-2xl bg-bg/80 shadow-card-soft">
-        <div className="w-full px-8 pb-16 pt-8">
-          <Outlet />
-        </div>
-      </main>
+      <nav className="app-no-drag sidebar-scrollbar min-h-0 flex-1 overflow-y-auto px-2">
+        {SECTION_ORDER.map((section) => {
+          const items = visibleTabs.filter((tab) => tab.section === section);
+          if (items.length === 0) return null;
+          return (
+            <div key={section} className="mb-4">
+              <div className="mb-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{t(SECTION_LABELS[section])}</div>
+              <ul className="space-y-0.5">
+                {items.map((tab) => {
+                  const active = location.pathname === tab.to;
+                  const Icon = tab.icon;
+                  return (
+                    <li key={tab.to}>
+                      <Link
+                        to={tab.to}
+                        className={cn(
+                          "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
+                          active
+                            ? "liquid-glass-selected text-fg"
+                            : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
+                        )}
+                      >
+                        <span className={iconSlotClass}>
+                          <Icon className="size-3.5" />
+                        </span>
+                        <span>{t(tab.labelKey)}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+      </nav>
     </div>
   );
 }

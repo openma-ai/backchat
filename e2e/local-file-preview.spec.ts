@@ -1,11 +1,10 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { injectEvent, injectSession, launchApp } from "./helpers";
+import { enableAgent, injectEvent, injectSession } from "./helpers";
 
-test("generated documents preview in app and keep native Open in actions", async () => {
-  const { page, home, cleanup } = await launchApp();
-  try {
+test("generated documents preview in app and keep native Open in actions", async ({ page, home }) => {
+    await enableAgent(page, "codex-acp");
     const workspace = join(home, "document-preview");
     const sourcePath = join(workspace, "未命名文档.docx");
     const previewPath = join(workspace, "docx_render_final", "未命名文档.pdf");
@@ -40,7 +39,4 @@ test("generated documents preview in app and keep native Open in actions", async
     await preview.locator(`button[aria-label="Open ${sourcePath}"]`).click();
     await expect(page.getByText("Default app", { exact: true })).toBeVisible();
     await expect(page.getByText("Show in Finder", { exact: true })).toBeVisible();
-  } finally {
-    await cleanup();
-  }
 });

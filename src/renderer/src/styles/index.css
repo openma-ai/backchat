@@ -32,11 +32,6 @@
     0 16px 40px -12px rgb(0 0 0 / 0.22);
 }
 
-/* Liquid-glass-aware selected row — heavier than the sidebar's own
-   glass so the row reads as a solid pebble sitting ON TOP of the
-   glass surface, not a tint inside it. Own backdrop-filter brightens
-   the lensing locally; thicker top rim + deeper bottom rim sells the
-   shape; outer drop pushes it forward in z. */
 /* Liquid-glass-aware selected row — sits on top of the .liquid-glass
    sidebar. No own backdrop-filter — restacking blur on top of the
    sidebar's blur(48px) doubles the per-frame paint cost without
@@ -98,19 +93,24 @@ html.dark[data-window-resizing="true"] .liquid-glass {
   background: color-mix(in srgb, var(--bg-surface) 70%, var(--bg-sidebar));
 }
 
-/* Composer-only override of .liquid-glass's drop shadow. The composer
-   is the one liquid-glass card sitting directly above the bottom
-   terminal panel — its 16/40 px far drop lands on the stage gap
-   between the two cards and reads as a horizontal band (image #12).
-   Keep all 4 inset rims (those are the glass material itself), drop
-   only the far drop. Dark mode left alone — the drop reads correctly
-   on a dark stage. */
+/* Shared composer material override of .liquid-glass's far drop. The card
+   and its transient command/mention surfaces use the same inset rims and
+   geometry; only the far drop is removed so it does not create a band in
+   the gap above the bottom terminal panel. */
 .composer-card {
   box-shadow:
     inset 0 1px 0 0 color-mix(in srgb, #ffffff 85%, transparent),
     inset 0 0 0 1px color-mix(in srgb, #ffffff 8%, transparent),
     inset 0 -1px 0 0 color-mix(in srgb, #ffffff 22%, transparent),
     0 1px 3px 0 rgb(0 0 0 / 0.05);
+}
+
+.composer-radius {
+  border-radius: var(--composer-radius);
+}
+
+.composer-progress-cap-viewport {
+  border-radius: var(--composer-radius) var(--composer-radius) 0 0;
 }
 
 /* Suggestion cards fill the composer instead of immediately submitting.
@@ -152,52 +152,86 @@ html.dark[data-window-resizing="true"] .liquid-glass {
 
 /* Slash commands are a small capability palette, not an unstructured dump.
    Native commands stay first; skills form a separate, capped section until
-   the user filters. The panel is opaque so command copy remains legible over
-   conversation content and the right rail. */
+   the user filters. Its material intentionally reuses the composer glass
+   tokens so this transient surface feels attached to the composer. */
+.composer-action-panel {
+  max-height: min(360px, calc(100vh - 220px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 1rem;
+  color: var(--fg);
+}
+
+.composer-progress-panel {
+  margin-bottom: 0;
+}
+
+.activity-disclosure-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: left;
+}
+
+.activity-disclosure-row:hover {
+  background: color-mix(in srgb, var(--bg-surface) 40%, transparent);
+}
+
+.activity-disclosure-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 40%, transparent);
+  outline-offset: 1px;
+}
+
 .slash-command-panel {
   max-height: min(360px, calc(100vh - 220px));
   margin-bottom: 8px;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 6px;
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
+  border-radius: 1rem;
   color: var(--fg);
-  background: color-mix(in srgb, var(--bg-surface) 94%, var(--bg));
-  box-shadow:
-    0 14px 36px rgb(0 0 0 / 0.22),
-    inset 0 1px 0 rgb(255 255 255 / 0.04);
-  animation: slash-command-panel-in var(--dur-slow) var(--ease-quart) both;
+}
+
+/* Menus are siblings of the composer card in its full-width shell, so their
+   outer edge is exactly the same edge as the composer card. */
+.composer-overlay-panel {
+  left: 0;
+  right: 0;
 }
 
 .slash-command-section + .slash-command-section {
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid var(--border);
 }
 
 .slash-command-section-label {
   display: flex;
-  height: 24px;
+  height: 28px;
   align-items: center;
   gap: 6px;
-  padding-inline: 8px;
+  padding-inline: 12px;
   color: var(--fg-subtle);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
 }
 
 .slash-command-item {
   display: grid;
   width: 100%;
   min-width: 0;
-  grid-template-columns: 28px minmax(0, 1fr) 18px;
+  min-height: var(--command-row-h);
+  grid-template-columns: 28px minmax(0, 1.1fr) minmax(160px, 1.45fr) 18px;
   align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
+  gap: 12px;
+  padding: 6px 10px;
   border-radius: 9px;
   color: var(--fg-muted);
   text-align: left;
@@ -219,13 +253,17 @@ html.dark[data-window-resizing="true"] .liquid-glass {
 
 .slash-command-icon {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--fg-subtle);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  color: var(--fg-muted);
+}
+
+.slash-command-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
 }
 
 .slash-command-token {
@@ -260,13 +298,15 @@ html.dark[data-window-resizing="true"] .liquid-glass {
   min-width: 0;
   overflow: hidden;
   color: var(--fg-subtle);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .slash-command-enter {
+  grid-column: 4;
   color: var(--fg-subtle);
   opacity: 0;
   transform: translateX(-2px);
@@ -292,23 +332,106 @@ html.dark[data-window-resizing="true"] .liquid-glass {
   line-height: 16px;
 }
 
-@keyframes slash-command-panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.99);
+@media (max-width: 760px) {
+  .slash-command-item {
+    grid-template-columns: 28px minmax(0, 1fr) 18px;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+
+  .slash-command-description {
+    display: none;
+  }
+
+  .slash-command-enter {
+    grid-column: 3;
   }
 }
 
+.session-mention-panel {
+  max-height: min(360px, calc(100vh - 220px));
+  margin-bottom: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 1rem;
+  color: var(--fg);
+}
+
+.session-mention-section-label {
+  display: flex;
+  height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding-inline: 8px;
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.session-mention-item {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 28px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  color: var(--fg-muted);
+  text-align: left;
+  transition:
+    color var(--dur-fast) var(--ease-snap),
+    background-color var(--dur-fast) var(--ease-snap);
+}
+
+.session-mention-item:hover,
+.session-mention-item[aria-selected="true"] {
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.session-mention-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.session-mention-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--info) 30%, var(--border));
+  border-radius: 8px;
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 8%, var(--bg));
+}
+
+.session-mention-enter {
+  color: var(--fg-subtle);
+  opacity: 0;
+  transform: translateX(-2px);
+  transition:
+    opacity var(--dur-fast) var(--ease-snap),
+    transform var(--dur-fast) var(--ease-quart);
+}
+
+.session-mention-item:hover .session-mention-enter,
+.session-mention-item:focus-visible .session-mention-enter,
+.session-mention-item[aria-selected="true"] .session-mention-enter {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* These menus appear in the composer's working surface. Avoid a transient
+   opacity/scale state that would make their material and measured edge differ
+   from the composer during the first frame after opening. */
 @media (prefers-reduced-motion: reduce) {
-  .slash-command-panel {
-    animation: none;
-  }
   .slash-command-item,
-  .slash-command-enter {
+  .slash-command-enter,
+  .session-mention-item,
+  .session-mention-enter {
     transition: none;
   }
 }
@@ -1026,6 +1149,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --dur-slow: 220ms;
   --motion-disclosure-duration: var(--dur-slow);
   --motion-disclosure-easing: var(--ease-soft);
+  --composer-radius: 1rem;
 
   /* ---------- Spatial tokens (taste-saas) ----------
      Wireless: every visible alignment lives in tokens, not in per-component
@@ -1042,6 +1166,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
        --row-h            28px — every dense row: sidebar nav row,
                           toolbar chip, settings tab. Single height,
                           single source of truth.
+       --command-row-h    40px — compact command palette rows; keeps the
+                          24px icon and one-line description readable.
        --row-gap-y        8px — gap between an outer container's top edge
                           and its first child row. Used by sidebar's
                           first nav row AND by the card's first content
@@ -1055,6 +1181,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --traffic-light-w: 78px;
   --top-row-h: 38px;
   --row-h: 28px;
+  --command-row-h: 40px;
   --row-gap-y: 8px;
   /* Stage inset = the gray band between the cards and the viewport
      edges. Claude Desktop / Cursor run ~6px — tight enough that the
@@ -1105,6 +1232,17 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
      still wider than the 4-px button inner padding (size-6
      children get px-1 = 2 each side) so hits don't bleed. */
   --chrome-gap: 6px;
+  /* The sidebar toggle's x coordinate mixes native titlebar geometry with
+     renderer zoom compensation. Both the button and collapsed header content
+     consume this exact anchor so their gap cannot drift at 100% or 115%. */
+  --sidebar-toggle-left: calc(30px + 60px / var(--zoom, 1));
+  --chrome-history-left: calc(
+    var(--sidebar-toggle-left) + var(--chrome-size) + var(--chrome-gap)
+  );
+  --left-chrome-end: calc(
+    var(--chrome-history-left) + var(--chrome-size) + 4px + var(--chrome-size)
+  );
+  --chrome-title-gap: 12px;
 
   /* Side-chat panel width — Codex-style side conversation rail. Sized
      wider than a Linear properties rail because it hosts a full chat
@@ -1260,11 +1398,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
 /* ---------- Base typography ---------- */
 body {
   font-family: var(--font-sans);
-  /* Bumped from 0.875rem (14) to 0.9375rem (15) — gives the whole UI
-     one more pixel of breathing without crossing into the "reading
-     blog post" feel of 16. text-sm now reads as proper body, text-xs
-     as a clear secondary tier instead of "is this readable?". */
-  font-size: 0.9375rem;
+  /* The BrowserWindow owns whole-UI scaling. Keep the base type tier stable
+     so the default 1.15 zoom does not double-enlarge body copy. */
+  font-size: 0.875rem;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -1370,7 +1506,9 @@ body,
   background: color-mix(in srgb, var(--fg) 45%, transparent);
 }
 
-/* Chat scroller — Codex-style short pill.
+/* Primary content scroller — Codex-style short pill. App pages and chat
+   timelines share this exact treatment so route changes never swap between
+   native full-height bars and the product's compact scrollbar vocabulary.
    Two parallel rules:
    1. Standards `scrollbar-width` / `scrollbar-color` for the
       overlay-style pill that macOS Chromium draws natively.
@@ -1382,17 +1520,21 @@ body,
       the thumb gives a fat short pill; the transparent
       border insets it from the track edge so it visually
       floats in the middle. */
+.app-scrollbar,
 .chat-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--fg) 30%, transparent) transparent;
 }
+.app-scrollbar::-webkit-scrollbar,
 .chat-scrollbar::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
+.app-scrollbar::-webkit-scrollbar-track,
 .chat-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+.app-scrollbar::-webkit-scrollbar-thumb,
 .chat-scrollbar::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--fg) 30%, transparent);
   border-radius: 9999px;
@@ -1405,6 +1547,7 @@ body,
   min-height: 40px;
   max-height: 50%;
 }
+.app-scrollbar::-webkit-scrollbar-thumb:hover,
 .chat-scrollbar::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--fg) 50%, transparent);
   background-clip: padding-box;
@@ -1571,6 +1714,49 @@ body,
 
 .animated-collapse[data-state="open"] > .animated-collapse-inner {
   transform: translateY(0);
+}
+
+/* Activity disclosures use keyframes instead of a transition so Radix keeps
+   the content mounted for the full exit animation, then removes it only after
+   the grid track has reached zero. This avoids the old two-stage close where
+   text faded first and the transcript jumped on the final unmount frame. */
+@keyframes reasoning-collapse-open {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+@keyframes reasoning-collapse-closed {
+  from {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+.reasoning-collapse {
+  display: grid;
+}
+
+.reasoning-collapse[data-state="open"] {
+  animation: reasoning-collapse-open var(--motion-disclosure-duration) var(--motion-disclosure-easing) both;
+}
+
+.reasoning-collapse[data-state="closed"] {
+  animation: reasoning-collapse-closed var(--motion-disclosure-duration) var(--motion-disclosure-easing) both;
+}
+
+.reasoning-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* The side conversation lives on a glass surface, where the default

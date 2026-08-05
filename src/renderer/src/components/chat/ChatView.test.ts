@@ -95,6 +95,49 @@ describe("canSubmitComposer", () => {
   });
 });
 
+describe("transcript projection", () => {
+  it("does not duplicate queued user turns above the queue surface", () => {
+    const filterQueuedTurns = (
+      chatViewModule as unknown as {
+        filterQueuedTurns?: <T extends { status: string }>(turns: T[]) => T[];
+      }
+    ).filterQueuedTurns;
+
+    expect(filterQueuedTurns).toBeTypeOf("function");
+    if (!filterQueuedTurns) return;
+
+    expect(
+      filterQueuedTurns([
+        { id: "active", status: "running" },
+        { id: "queued-1", status: "queued" },
+        { id: "queued-2", status: "queued" },
+        { id: "complete", status: "complete" },
+      ]),
+    ).toEqual([
+      { id: "active", status: "running" },
+      { id: "complete", status: "complete" },
+    ]);
+  });
+});
+
+describe("provider queue projection", () => {
+  it("uses the larger provider queue depth in the existing queued placeholder", () => {
+    const effectiveQueuedTurnCount = (
+      chatViewModule as unknown as {
+        effectiveQueuedTurnCount?: (
+          localQueueDepth: number,
+          providerQueueDepth: number | undefined,
+        ) => number;
+      }
+    ).effectiveQueuedTurnCount;
+
+    expect(effectiveQueuedTurnCount).toBeTypeOf("function");
+    if (!effectiveQueuedTurnCount) return;
+    expect(effectiveQueuedTurnCount(1, 3)).toBe(3);
+    expect(effectiveQueuedTurnCount(2, undefined)).toBe(2);
+  });
+});
+
 describe("home suggestions", () => {
   it("keeps the welcome logo and suggestions for a started session with no turns", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
@@ -465,7 +508,7 @@ describe("slash command presentation", () => {
       "utf8",
     );
 
-    expect(source).toContain("<PlanSessionState");
+    expect(source).toContain("<ComposerSessionStateSlot");
     expect(source).toContain("useComposerHarnessState");
     expect(harnessSource).toContain("withSessionStateCommands");
     expect(source).toContain('from "./ComposerSessionControls"');
@@ -489,8 +532,10 @@ describe("new task submission", () => {
 
     expect(source).toContain("active?.chosenCwd");
     expect(submissionSource).toContain("resolveProjectScopedPickedCwd(");
+    expect(submissionSource).toContain("resolveWorkspaceMode(");
+    expect(submissionSource).toContain("!!startCwd");
     expect(submissionSource).toContain(
-      "resolveWorkspaceMode(target.projectScope, isSide)",
+      "additional_directories: target.additionalDirectories",
     );
     expect(submissionSource).not.toContain("defaultWorkspacePath");
   });

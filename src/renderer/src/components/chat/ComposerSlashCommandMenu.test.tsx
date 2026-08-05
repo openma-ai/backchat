@@ -53,10 +53,14 @@ describe("ComposerSlashCommandMenu", () => {
     );
 
     expect(html).toContain('role="listbox"');
-    expect(html).toContain(">Commands<");
+    expect(html).not.toContain(">Commands<");
     expect(html).toContain(">Skills<");
     expect(html).toContain(">/compact<");
     expect(html).toContain(">/skill:review<");
+    expect(html).toContain('data-command-icon="compact"');
+    expect(html).not.toContain("lucide-slash");
+    expect(html).toContain("lucide-box");
+    expect(html).not.toContain("lucide-sparkles");
     expect(html).toContain("optional focus");
     expect(html).toContain('aria-selected="false"');
     expect(html).toContain('aria-selected="true"');

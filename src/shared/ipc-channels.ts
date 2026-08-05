@@ -14,6 +14,8 @@ export const InvokeChannel = {
   AgentAuthenticate: "agent:authenticate",
   SessionStart: "session:start",
   SessionPrompt: "session:prompt",
+  SessionUpdatePromptQueue: "session:updatePromptQueue",
+  SessionRunCommand: "session:runCommand",
   SessionSetConfigOption: "session:setConfigOption",
   SessionCancel: "session:cancel",
   SessionDispose: "session:dispose",
@@ -25,8 +27,17 @@ export const InvokeChannel = {
   PairReleaseMember: "pair:releaseMember",
   PairsList: "pairs:list",
   PairSave: "pair:save",
+  PairsPin: "pairs:pin",
+  PairsUnpin: "pairs:unpin",
+  PairsArchive: "pairs:archive",
+  PairsUnarchive: "pairs:unarchive",
+  ProjectsList: "projects:list",
+  ProjectSave: "project:save",
+  ProjectDelete: "project:delete",
   SessionsList: "sessions:list",
+  SessionsRename: "sessions:rename",
   SessionsLoadHistory: "sessions:loadHistory",
+  SessionPersistCanonicalEvent: "session:persistCanonicalEvent",
   SideWorkspacesList: "sideWorkspaces:list",
   SideWorkspaceSave: "sideWorkspace:save",
   SideWorkspaceDelete: "sideWorkspace:delete",
@@ -52,6 +63,7 @@ export const InvokeChannel = {
   InlineVisualizationWatch: "inlineVisualization:watch",
   InlineVisualizationUnwatch: "inlineVisualization:unwatch",
   PermissionRespond: "permission:respond",
+  ElicitationRespond: "elicitation:respond",
   FsApprovalRespond: "fs:approvalRespond",
   BrokerPendingAsks: "broker:pendingAsks",
   /** Agent-owned ACP command terminals, distinct from interactive UiTerm. */
@@ -93,9 +105,12 @@ export const InvokeChannel = {
   /** Native "Choose folder" picker. Returns the picked absolute
    *  path, or null if the user cancelled. */
   UiFsPickDir: "uiFs:pickDir",
+  UiFsPickDirs: "uiFs:pickDirs",
   /** Native file picker for prompt attachments. Returns selected
    *  images/files with metadata and small image preview data. */
   UiFsPickFiles: "uiFs:pickFiles",
+  /** Search files below a workspace root for composer @-mentions. */
+  UiFsSearchFiles: "uiFs:searchFiles",
   /** Persist a renderer-generated PNG (for example a browser element
    *  annotation) and return it as an ordinary prompt attachment. */
   UiFsSaveCapture: "uiFs:saveCapture",
@@ -178,8 +193,10 @@ export const InvokeChannel = {
   TestPersistSessionFixture: "__test:persistSessionFixture",
   TestExportSessionFiles: "__test:exportSessionFiles",
   TestReadSessionPrompts: "__test:readSessionPrompts",
+  TestReadSessionCommands: "__test:readSessionCommands",
   TestReadSessionConfigOptions: "__test:readSessionConfigOptions",
   TestSetPickedFiles: "__test:setPickedFiles",
+  TestSetPickedDirs: "__test:setPickedDirs",
   TestSetAgentSetupFixture: "__test:setAgentSetupFixture",
   TestAgentSetupCalls: "__test:agentSetupCalls",
   TestBrowserTool: "__test:browserTool",
@@ -197,6 +214,8 @@ export const PushChannel = {
   /** Permission ask from a running ACP child. Renderer surfaces a modal,
    *  user picks → PermissionRespond invoke routes the decision back. */
   PermissionRequest: "permission:request",
+  /** ACP form elicitation normalized by the main adapter into typed fields. */
+  ElicitationRequest: "elicitation:request",
   /** Out-of-cwd file write request — same pattern. Renderer shows a
    *  diff/approval modal, replies via FsApprovalRespond. */
   FsWriteApproval: "fs:writeApproval",

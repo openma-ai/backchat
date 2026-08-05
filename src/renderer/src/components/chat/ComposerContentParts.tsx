@@ -1,12 +1,16 @@
 import { useLayoutEffect, type RefObject } from "react";
-import { BoxIcon, FileTextIcon, XIcon } from "lucide-react";
+import { AtSignIcon, BoxIcon, FileTextIcon, XIcon } from "lucide-react";
 
-import type { PromptAttachment } from "@shared/session-events.js";
+import type {
+  PromptAttachment,
+  PromptSessionReference,
+} from "@shared/session-events.js";
 import { attachmentExtensionLabel } from "@/lib/composer-attachments";
 import { skillCommandLabel } from "@/lib/composer-slash-commands";
 import type { HomeSuggestionTemplate } from "@/lib/home-suggestion-flow";
 import type { AcpAvailableCommand } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 export function SuggestionTemplateEditor({
   inputRef,
@@ -90,14 +94,18 @@ export function SuggestionTemplateEditor({
 export function AttachmentPreviewStrip({
   attachments,
   browserScreenshotNames,
+  hiddenAttachmentIds,
   onRemove,
 }: {
   attachments: PromptAttachment[];
   browserScreenshotNames: ReadonlySet<string>;
+  hiddenAttachmentIds?: ReadonlySet<string>;
   onRemove: (id: string) => void;
 }) {
   const visibleAttachments = attachments.filter(
-    (attachment) => !browserScreenshotNames.has(attachment.name),
+    (attachment) =>
+      !browserScreenshotNames.has(attachment.name) &&
+      !hiddenAttachmentIds?.has(attachment.id),
   );
   if (visibleAttachments.length === 0) return null;
 
@@ -153,6 +161,106 @@ export function AttachmentPreviewStrip({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** File mentions are represented as inline composer blocks, just like
+ * session references. The attachment remains in the prompt payload; this
+ * strip only changes how it is presented while composing. */
+export function MentionedFileStrip({
+  attachments,
+  onOpen,
+  onRemove,
+}: {
+  attachments: PromptAttachment[];
+  onOpen: (attachment: PromptAttachment) => void;
+  onRemove: (id: string) => void;
+}) {
+  if (attachments.length === 0) return null;
+  return (
+    <div
+      className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-1.5"
+      aria-label="Mentioned files"
+    >
+      {attachments.map((attachment) => (
+        <span
+          key={attachment.id}
+          className={cn(
+            "inline-flex h-7 max-w-full items-center rounded-lg",
+            "bg-info/10 text-xs font-medium text-info ring-1 ring-info/25",
+          )}
+        >
+          <button
+            type="button"
+            aria-label={`Open ${attachment.name}`}
+            title={attachment.path}
+            onClick={() => onOpen(attachment)}
+            className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-l-lg pl-2 pr-1 hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+          >
+            <FileTextIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 truncate">{attachment.name}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Remove ${attachment.name}`}
+            title={`Remove ${attachment.name}`}
+            onClick={() => onRemove(attachment.id)}
+            className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+          >
+            <XIcon className="size-3 opacity-70" aria-hidden="true" />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function SessionReferenceStrip({
+  references,
+  onOpen,
+  onRemove,
+}: {
+  references: PromptSessionReference[];
+  onOpen: (sessionId: string) => void;
+  onRemove: (sessionId: string) => void;
+}) {
+  const { t } = useI18n();
+  if (references.length === 0) return null;
+  return (
+    <div
+      className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-1.5"
+      aria-label={t("chat.referencedSessions")}
+    >
+      {references.map((reference) => (
+        <span
+          key={reference.session_id}
+          className={cn(
+            "inline-flex h-7 max-w-full items-center rounded-lg",
+            "bg-info/10 text-xs font-medium text-info ring-1 ring-info/25",
+          )}
+        >
+          <button
+            type="button"
+            aria-label={`${t("chat.openSessionReference")}: ${reference.title}`}
+            title={`${t("chat.openSessionReference")}: ${reference.title}`}
+            onClick={() => onOpen(reference.session_id)}
+            className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-l-lg pl-2 pr-1 hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+          >
+            <AtSignIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 truncate">{reference.title}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={`${t("chat.removeSessionReference")}: ${reference.title}`}
+            title={`${t("chat.removeSessionReference")}: ${reference.title}`}
+            onClick={() => onRemove(reference.session_id)}
+            className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+          >
+            <XIcon className="size-3 opacity-70" aria-hidden="true" />
+          </button>
+        </span>
+      ))}
     </div>
   );
 }

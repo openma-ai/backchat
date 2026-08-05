@@ -1,3 +1,105 @@
+import type { WorkspaceSourceRef } from "./session-types";
+import type { OpenMAEvent } from "@openma/common/session-events/openma";
+
+function workspaceSourceForUri(
+  uri: string,
+  label?: string,
+): WorkspaceSourceRef | undefined {
+  if (/^https?:\/\//i.test(uri)) {
+    return { kind: "web", uri, ...(label ? { label } : {}) };
+  }
+  if (uri.startsWith("file://")) {
+    try {
+      return {
+        kind: "file",
+        uri: decodeURIComponent(new URL(uri).pathname),
+        ...(label ? { label } : {}),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+  return uri.startsWith("/")
+    ? { kind: "file", uri, ...(label ? { label } : {}) }
+    : undefined;
+}
+
+/** Project explicit URI-bearing canonical message content into the existing
+ * Sources slot. This consumes OpenMA events only: ACP ContentBlock parsing
+ * stays in the ACP bridge, and provider `_meta` never reaches GUI logic. */
+export function extractCanonicalContentSources(
+  event: OpenMAEvent,
+): WorkspaceSourceRef[] {
+  if (
+    event.type !== "user.message"
+    && event.type !== "agent.message"
+    && event.type !== "agent.message_chunk"
+    && event.type !== "agent.thinking"
+  ) {
+    return [];
+  }
+  if (!event.data || typeof event.data !== "object") return [];
+  const content = (event.data as Record<string, unknown>).content;
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    return [];
+  }
+  const block = content as Record<string, unknown>;
+  const resource =
+    block.resource && typeof block.resource === "object" && !Array.isArray(block.resource)
+      ? block.resource as Record<string, unknown>
+      : undefined;
+  const uri =
+    typeof block.uri === "string"
+      ? block.uri
+      : typeof resource?.uri === "string"
+        ? resource.uri
+        : undefined;
+  if (!uri) return [];
+  const label =
+    typeof block.title === "string" && block.title.length > 0
+      ? block.title
+      : typeof block.name === "string" && block.name.length > 0
+        ? block.name
+        : undefined;
+  const source = workspaceSourceForUri(uri, label);
+  return source ? [source] : [];
+}
+
+/** Extract explicit resource citations from standard ACP Tool content. Tool
+ * locations and diffs intentionally stay out: they do not prove source or
+ * output provenance. */
+export function extractToolContentSources(tool: {
+  content?: Array<{
+    type?: string;
+    content?: {
+      type?: string;
+      uri?: string;
+      title?: string;
+      name?: string;
+      resource?: { uri?: string };
+    };
+  }>;
+}): WorkspaceSourceRef[] {
+  const sources: WorkspaceSourceRef[] = [];
+  const seen = new Set<string>();
+  for (const wrapper of tool.content ?? []) {
+    if (wrapper.type !== "content" || !wrapper.content) continue;
+    const content = wrapper.content;
+    const uri = content.uri ?? content.resource?.uri;
+    if (!uri) continue;
+    const source = workspaceSourceForUri(
+      uri,
+      content.title ?? content.name,
+    );
+    if (!source) continue;
+    const key = `${source.kind}:${source.uri}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    sources.push(source);
+  }
+  return sources;
+}
+
 /** Merge `incoming` into `existing` newest-first, dropping duplicates
  *  and capping at `max`. Same-value re-observations bubble to index 0
  *  (most-recent-touched wins) rather than create a duplicate entry. */
@@ -18,6 +120,34 @@ export function dedupeBubble(existing: string[], incoming: string[], max: number
   }
   return out;
 }
+
+/** Source equivalent of dedupeBubble, keyed by provenance kind + URI. */
+export function dedupeSourceRefs(
+  existing: WorkspaceSourceRef[],
+  incoming: WorkspaceSourceRef[],
+  max: number,
+): WorkspaceSourceRef[] {
+  if (incoming.length === 0) return existing;
+  const out = [...incoming];
+  const seen = new Set(out.map((source) => `${source.kind}:${source.uri}`));
+  for (const source of existing) {
+    const key = `${source.kind}:${source.uri}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(source);
+    if (out.length >= max) break;
+  }
+  if (
+    out.length === existing.length
+    && out.every((source, index) =>
+      source.kind === existing[index]?.kind
+      && source.uri === existing[index]?.uri
+      && source.label === existing[index]?.label)
+  ) {
+    return existing;
+  }
+  return out;
+}
 /** Pull file paths from a tool_call's rawInput. Walks common field
  *  names different agents use (Claude: `file_path` / `path`, Codex:
  *  `path` / `target_file`, Aider: `filename`). Best-effort — agents
@@ -26,7 +156,15 @@ export function extractFilePaths(rawInput: unknown): string[] {
   if (!rawInput || typeof rawInput !== "object") return [];
   const obj = rawInput as Record<string, unknown>;
   const out: string[] = [];
-  const KEYS = ["path", "file_path", "filepath", "file", "target_file", "filename"];
+  const KEYS = [
+    "path",
+    "filePath",
+    "file_path",
+    "filepath",
+    "file",
+    "target_file",
+    "filename",
+  ];
   for (const k of KEYS) {
     const v = obj[k];
     if (typeof v === "string" && v.length > 0) out.push(v);
@@ -45,9 +183,10 @@ export function extractFilePaths(rawInput: unknown): string[] {
   return out;
 }
 
-/** Collect file outputs from standard ACP tool_call fields. Unlike the
- * rawInput fallback above, these are explicit protocol-level declarations:
- * locations, diff paths, and file:// resources returned as content. */
+/** Collect file-shaped locations/resources from ACP tool-call fields.
+ * ACP defines `locations` as places a tool accessed or modified, not as
+ * user-facing outputs. Callers must apply provider-specific provenance
+ * before presenting any of these paths as an Output. */
 export function extractToolOutputFiles(tool: {
   locations?: Array<{ path?: string }>;
   content?: Array<{
@@ -62,7 +201,6 @@ export function extractToolOutputFiles(tool: {
     if (location.path) files.push(location.path);
   }
   for (const block of tool.content ?? []) {
-    if (block.type === "diff" && block.path) files.push(block.path);
     const uri = block.type === "content" ? block.content?.uri : undefined;
     if (!uri?.startsWith("file://")) continue;
     try {
@@ -72,6 +210,70 @@ export function extractToolOutputFiles(tool: {
     }
   }
   return [...new Set(files)];
+}
+
+const DELIVERABLE_EXTENSIONS = new Set([
+  // Documents, presentations, and tabular data.
+  "csv", "doc", "docx", "htm", "html", "odp", "ods", "odt", "pdf",
+  "ppt", "pptx", "rtf", "tsv", "xls", "xlsx",
+  // Images.
+  "avif", "bmp", "gif", "heic", "ico", "jpeg", "jpg", "png", "svg",
+  "tif", "tiff", "webp",
+  // Audio and video.
+  "aac", "avi", "flac", "m4a", "m4v", "mkv", "mov", "mp3", "mp4",
+  "ogg", "opus", "wav", "webm",
+]);
+
+/** Files useful as direct New-tab deliverables. Source code, configs, logs,
+ *  patches, and intermediate build files deliberately stay out. */
+export function isDeliverableOutputPath(path: string): boolean {
+  const cleanPath = path.split(/[?#]/, 1)[0] ?? path;
+  const extension = cleanPath.match(/\.([^.\\/]+)$/)?.[1]?.toLowerCase();
+  return extension ? DELIVERABLE_EXTENSIONS.has(extension) : false;
+}
+
+/**
+ * Parse Codex's explicit artifact directive from assistant text.
+ *
+ * The Codex desktop client treats an omitted `purpose` as an output and
+ * accepts `purpose="source"` for a referenced input. Keep that provider
+ * convention here, outside the provider-neutral session store.
+ */
+export function extractCodexFileCitations(text: string): {
+  outputs: string[];
+  sources: string[];
+} {
+  const outputs: string[] = [];
+  const sources: string[] = [];
+  const directive = /:{1,3}codex-file-citation\s*\{([^}]*)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = directive.exec(text)) !== null) {
+    const attributes = parseDirectiveAttributes(match[1] ?? "");
+    const path = attributes.path?.trim();
+    const purpose = attributes.purpose?.trim();
+    if (!path || (purpose && purpose !== "output" && purpose !== "source")) {
+      continue;
+    }
+    if (purpose === "source") {
+      sources.push(path);
+    } else if (isDeliverableOutputPath(path)) {
+      outputs.push(path);
+    }
+  }
+  return {
+    outputs: [...new Set(outputs)],
+    sources: [...new Set(sources)],
+  };
+}
+
+function parseDirectiveAttributes(input: string): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const attribute = /([a-zA-Z_][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  let match: RegExpExecArray | null;
+  while ((match = attribute.exec(input)) !== null) {
+    attributes[match[1]!] = match[2] ?? match[3] ?? "";
+  }
+  return attributes;
 }
 
 const LOCALHOST_URL_RE = /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/[^\s)"'`<]*)?/g;

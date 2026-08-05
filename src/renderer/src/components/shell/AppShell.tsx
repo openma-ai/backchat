@@ -1,6 +1,8 @@
 import * as React from "react";
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useRouter } from "@tanstack/react-router";
+import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
 import { getThemePlugin } from "@/themes";
 
@@ -30,6 +32,8 @@ const MIN_RAIL_W = 200;
 const MAX_RAIL_W = 560;
 const SIDEBAR_TR =
   "transform 280ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms cubic-bezier(0.32, 0.72, 0, 1), bottom 280ms cubic-bezier(0.32, 0.72, 0, 1)";
+const RIGHT_RAIL_TR =
+  `${SIDEBAR_TR}, width 280ms cubic-bezier(0.32, 0.72, 0, 1)`;
 const MAIN_TR =
   "padding-left 280ms cubic-bezier(0.32, 0.72, 0, 1), padding-right 280ms cubic-bezier(0.32, 0.72, 0, 1), padding-bottom 280ms cubic-bezier(0.32, 0.72, 0, 1)";
 const BOTTOM_TR =
@@ -56,6 +60,24 @@ export const RightRailCollapseContext = React.createContext<{
 
 export function useRightRailCollapse() {
   return React.useContext(RightRailCollapseContext);
+}
+
+export const RightRailExpansionContext = React.createContext<{
+  expanded: boolean;
+  mainSelected: boolean;
+  setExpanded: (value: boolean) => void;
+  selectMain: () => void;
+  selectPanel: () => void;
+}>({
+  expanded: false,
+  mainSelected: false,
+  setExpanded: () => {},
+  selectMain: () => {},
+  selectPanel: () => {},
+});
+
+export function useRightRailExpansion() {
+  return React.useContext(RightRailExpansionContext);
 }
 
 export const BottomBarCollapseContext = React.createContext<{
@@ -86,6 +108,8 @@ export function AppShell({
   useWindowResizePerformanceMode();
   const { collapsed: leftCollapsed } = useSidebarCollapse();
   const { collapsed: rightCollapsed } = useRightRailCollapse();
+  const { expanded: rightExpanded, mainSelected: expandedMainSelected } =
+    useRightRailExpansion();
   const { collapsed: bottomCollapsed } = useBottomBarCollapse();
   const [bottomHeight, setBottomHeight] = useBottomPanelHeight();
   const { themeId, effective } = useTheme();
@@ -113,6 +137,9 @@ export function AppShell({
   const bottomReservation = bottomCollapsed || !bottomPanel
     ? "var(--stage-inset)"
     : "calc(var(--bottom-panel-h) + var(--stage-inset) * 2)";
+  const expandedRailWidth = leftCollapsed
+    ? "calc(100% - var(--stage-inset) * 2)"
+    : `calc(100% - ${sidebarWidth}px - var(--stage-inset) * 2)`;
 
   return (
     <div
@@ -163,26 +190,37 @@ export function AppShell({
         <aside
           className={cn(
             "absolute flex flex-col overflow-hidden transform-gpu",
-            "liquid-glass rounded-2xl",
+            !rightExpanded && "liquid-glass",
+            rightExpanded && !expandedMainSelected && "bg-bg-sidebar",
+            "rounded-2xl",
           )}
+          data-right-panel-expanded={rightExpanded}
+          data-expanded-surface={expandedMainSelected ? "main" : "panel"}
           style={{
             right: "var(--stage-inset)",
             top: "var(--stage-inset)",
-            bottom: bottomReservation,
-            width: `${rightRailWidth}px`,
+            bottom: expandedMainSelected
+              ? "auto"
+              : rightExpanded
+                ? "var(--stage-inset)"
+                : bottomReservation,
+            height: expandedMainSelected ? "var(--top-row-h)" : undefined,
+            width: rightExpanded ? expandedRailWidth : `${rightRailWidth}px`,
             transform: rightCollapsed
               ? `translateX(calc(100% + var(--stage-inset))) scale(0.96)`
               : "translateX(0) scale(1)",
             opacity: rightCollapsed ? 0 : 1,
             transformOrigin: "right center",
-            transition: resizing ? "none" : SIDEBAR_TR,
+            transition: resizing ? "none" : RIGHT_RAIL_TR,
             pointerEvents: rightCollapsed ? "none" : "auto",
-            zIndex: 20,
+            zIndex: rightExpanded ? 30 : 20,
           }}
           aria-hidden={rightCollapsed}
         >
           {rightPanel}
-          <RailResizer side="left" width={rightRailWidth} onResize={setRightRailWidth} onResizingChange={setResizing} />
+          {!rightExpanded && (
+            <RailResizer side="left" width={rightRailWidth} onResize={setRightRailWidth} onResizingChange={setResizing} />
+          )}
         </aside>
       )}
 
@@ -204,16 +242,19 @@ export function AppShell({
           paddingLeft: leftCollapsed
             ? "var(--stage-inset)"
             : `calc(${sidebarWidth}px + var(--stage-inset))`,
-          paddingRight: rightCollapsed || !rightPanel
+          paddingRight: rightExpanded || rightCollapsed || !rightPanel
             ? "var(--stage-inset)"
             : `calc(${rightRailWidth}px + var(--stage-inset))`,
-          paddingBottom: bottomReservation,
+          paddingBottom: rightExpanded ? "var(--stage-inset)" : bottomReservation,
           transition: resizing ? "none" : MAIN_TR,
         }}
       >
         {hasTopbar && (
           <header
-            className="app-drag-region flex shrink-0 items-center gap-2"
+            className={cn(
+              "flex shrink-0 items-center gap-2",
+              !rightExpanded && "app-drag-region",
+            )}
             style={{
               // 50px so the items-center content (folder/label/cancel) lands
               // at center y = 25, matching the trafficLight center (y=18+7)
@@ -221,12 +262,9 @@ export function AppShell({
               // chrome" row elements share one baseline.
               height: "50px",
               paddingLeft: leftCollapsed
-                ? // 16 px trafficLight left + 58 px trafficLight width +
-                  // chrome-gap + chrome-size (sidebar toggle) + chrome-gap.
-                  // Same chrome-gap appears on the right side between the
-                  // terminal toggle and the side-panel edge, so the two
-                  // seams read symmetric.
-                  "calc(16px + 58px + var(--chrome-gap) + var(--chrome-size) + var(--chrome-gap))"
+                ? // Keep collapsed topbar content clear of the persistent
+                  // sidebar, back, and forward chrome controls.
+                  "calc(var(--left-chrome-end) + var(--chrome-title-gap))"
                 : "var(--page-pl)",
               paddingRight: "calc(var(--page-pr) / 2)",
               transition: "padding-left 280ms cubic-bezier(0.32, 0.72, 0, 1)",
@@ -272,19 +310,19 @@ export function AppShell({
             right: "var(--stage-inset)",
             bottom: "var(--stage-inset)",
             height: "var(--bottom-panel-h)",
-            transform: bottomCollapsed
+            transform: bottomCollapsed || rightExpanded
               ? `translateY(calc(100% + var(--stage-inset))) scale(0.98)`
               : "translateY(0) scale(1)",
-            opacity: bottomCollapsed ? 0 : 1,
+            opacity: bottomCollapsed || rightExpanded ? 0 : 1,
             transformOrigin: "center bottom",
             transition: resizing
               ? "none"
               : BOTTOM_TR +
                 ", left 280ms cubic-bezier(0.32, 0.72, 0, 1)",
-            pointerEvents: bottomCollapsed ? "none" : "auto",
+            pointerEvents: bottomCollapsed || rightExpanded ? "none" : "auto",
             zIndex: 18,
           }}
-          aria-hidden={bottomCollapsed}
+          aria-hidden={bottomCollapsed || rightExpanded}
         >
           {/* Drag handle — sits on the panel's top edge. 6 px tall hit
               zone, invisible by default, faint highlight on hover. Drag
@@ -301,6 +339,7 @@ export function AppShell({
           Constant screen position across collapsed/open, so toggling
           doesn't make the icon jump. */}
       <GlobalSidebarToggle />
+      <GlobalHistoryControls />
       {/* Right-rail / bottom-panel toggles only show inside a chat
           context. On `/` (no active chat) + on /settings the user
           hasn't picked anything to talk about yet, and the side / bottom
@@ -433,11 +472,9 @@ function GlobalSidebarToggle() {
         "transition-colors",
       )}
       style={{
-        // Toggle x must stay at chrome_x = 30*z + 60 (trafficLight right
-        // edge + 8px gap). Since `fixed` renderer px multiply by zoom to
-        // get chrome px, the renderer left = chrome_x / z = 30 + 60/z.
-        // Falls back to 90 (z=1 case) if --zoom isn't set yet.
-        left: "calc(30px + 60px / var(--zoom, 1))",
+        // Shared with the collapsed header's padding-left so the title begins
+        // exactly chrome-title-gap after this button at every zoom level.
+        left: "var(--sidebar-toggle-left)",
         top: "var(--chrome-top)",
       }}
     >
@@ -458,15 +495,77 @@ function GlobalSidebarToggle() {
   );
 }
 
+type ChromeHistory = {
+  canGoBack: () => boolean;
+  length: number;
+  location: { state: { __TSR_index: number } };
+  back: () => void;
+  forward: () => void;
+};
+
+export function getHistoryNavigationState(history: ChromeHistory) {
+  const currentIndex = history.location.state.__TSR_index;
+  return {
+    canGoBack: history.canGoBack(),
+    canGoForward: currentIndex < history.length - 1,
+  };
+}
+
+function GlobalHistoryControls() {
+  const router = useRouter();
+  const { t } = useI18n();
+  // Subscribe the control to route changes so the disabled states track the
+  // current memory-history index after push, replace, back, and forward.
+  useLocation();
+  const { canGoBack, canGoForward } = getHistoryNavigationState(router.history);
+  const buttonClass = cn(
+    "app-no-drag inline-flex size-6 items-center justify-center rounded-md",
+    "text-fg-subtle hover:bg-bg-surface hover:text-fg",
+    "transition-colors disabled:pointer-events-none disabled:opacity-35",
+  );
+
+  return (
+    <div
+      className="app-no-drag fixed z-50 flex items-center gap-1"
+      style={{
+        left: "var(--chrome-history-left)",
+        top: "var(--chrome-top)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => router.history.back()}
+        disabled={!canGoBack}
+        aria-label={t("chrome.back")}
+        title={t("chrome.back")}
+        className={buttonClass}
+      >
+        <ArrowLeftIcon className="size-4" strokeWidth={1.5} />
+      </button>
+      <button
+        type="button"
+        onClick={() => router.history.forward()}
+        disabled={!canGoForward}
+        aria-label={t("chrome.forward")}
+        title={t("chrome.forward")}
+        className={buttonClass}
+      >
+        <ArrowRightIcon className="size-4" strokeWidth={1.5} />
+      </button>
+    </div>
+  );
+}
+
 function GlobalTerminalToggle({ hasRightPanel }: { hasRightPanel: boolean }) {
   const { collapsed, toggle } = useBottomBarCollapse();
   const { collapsed: rightCollapsed } = useRightRailCollapse();
+  const { expanded: rightExpanded } = useRightRailExpansion();
   // Symmetric with the side-chat toggle: render only when the bottom
   // panel is collapsed. When expanded, BottomPanel.tsx renders its
   // own "X" in the header which closes the panel (== toggle to
   // collapsed). One re-open affordance, one close affordance, never
   // both at once.
-  if (!collapsed) return null;
+  if (!collapsed || rightExpanded) return null;
   // Park to the LEFT of the side-chat toggle / panel. Two states:
   //   - side panel OPEN: terminal toggle's right edge sits
   //     `var(--chrome-gap)` from the panel's left edge — matches the

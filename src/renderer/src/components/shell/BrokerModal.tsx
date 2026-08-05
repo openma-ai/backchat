@@ -26,6 +26,8 @@ import {
   type BrokerAsk,
 } from "@/lib/session-store";
 import { getSettings } from "@/lib/settings-store";
+import { ElicitationAskForm } from "@/components/chat/ElicitationAskForm";
+import type { ElicitationResponseInfo } from "@shared/api.js";
 
 function autoPickPermission(
   ask: Extract<BrokerAsk, { kind: "permission" }>["ask"],
@@ -75,6 +77,9 @@ export function BrokerModal() {
       }
       sessionStore.enqueueAsk(ask.sessionId, { kind: "fsWrite", ask });
     });
+    const offElicitation = window.backchat.onElicitationRequest((ask) => {
+      sessionStore.enqueueAsk(ask.sessionId, { kind: "elicitation", ask });
+    });
     void window.backchat.brokerPendingAsks().then((asks) => {
       for (const pending of asks) {
         sessionStore.enqueueAsk(pending.ask.sessionId, pending);
@@ -82,16 +87,26 @@ export function BrokerModal() {
     });
     return () => {
       offPermission();
+      offElicitation();
       offWrite();
     };
   }, []);
 
   const resolve = useCallback(
-    async (optionId: string | null, approve?: boolean) => {
+    async (
+      optionId: string | null,
+      approve?: boolean,
+      elicitation?: ElicitationResponseInfo,
+    ) => {
       if (!current) return;
       const requestId = current.ask.ask.requestId;
       if (current.ask.kind === "permission") {
         await window.backchat.permissionRespond(requestId, optionId);
+      } else if (current.ask.kind === "elicitation") {
+        await window.backchat.elicitationRespond(
+          requestId,
+          elicitation ?? { action: "cancel" },
+        );
       } else {
         await window.backchat.fsApprovalRespond(requestId, !!approve);
       }
@@ -102,6 +117,10 @@ export function BrokerModal() {
 
   const dismiss = useCallback(() => {
     if (!current) return;
+    if (current.ask.kind === "elicitation") {
+      void resolve(null, undefined, { action: "cancel" });
+      return;
+    }
     const decision = resolveAskDismissal(current.ask);
     void resolve(decision.optionId, decision.approve);
   }, [current, resolve]);
@@ -134,7 +153,11 @@ export function ApprovalPrompt({
   onResolve,
 }: {
   ask: BrokerAsk;
-  onResolve: (optionId: string | null, approve?: boolean) => void | Promise<void>;
+  onResolve: (
+    optionId: string | null,
+    approve?: boolean,
+    elicitation?: ElicitationResponseInfo,
+  ) => void | Promise<void>;
 }) {
   if (ask.kind === "fsWrite") {
     return (
@@ -165,7 +188,58 @@ export function ApprovalPrompt({
     );
   }
 
-  const presentation = permissionPresentation(ask.ask.toolCall);
+  if (ask.kind === "elicitation") {
+    if (ask.ask.mode === "url") {
+      const host = elicitationUrlHost(ask.ask.url);
+      return (
+        <>
+          <DialogHeader className="border-b border-border/60 p-4">
+            <DialogTitle>{ask.ask.message}</DialogTitle>
+            <DialogDescription>
+              This agent wants to open an external page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 p-4 text-xs text-fg-muted">
+            <p>Review the full target before continuing.</p>
+            <pre className="max-h-32 overflow-auto rounded-lg bg-bg-surface/60 p-3 font-mono text-[11px] whitespace-pre-wrap break-all">
+              {ask.ask.url}
+            </pre>
+          </div>
+          <DialogFooter className="p-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void onResolve(null, undefined, { action: "decline" })}
+            >
+              Decline
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void onResolve(null, undefined, { action: "accept" })}
+            >
+              Open {host}
+            </Button>
+          </DialogFooter>
+        </>
+      );
+    }
+    return (
+      <>
+        <DialogHeader className="border-b border-border/60 p-4">
+          <DialogTitle>{ask.ask.message}</DialogTitle>
+          <DialogDescription>
+            This agent is waiting for structured input.
+          </DialogDescription>
+        </DialogHeader>
+        <ElicitationAskForm
+          ask={ask.ask}
+          onSubmit={(response) => onResolve(null, undefined, response)}
+        />
+      </>
+    );
+  }
+
+  const presentation = ask.ask.presentation;
   return (
     <>
       <DialogHeader className="border-b border-border/60 p-4">
@@ -206,35 +280,10 @@ export function ApprovalPrompt({
   );
 }
 
-function permissionPresentation(toolCall: unknown): {
-  title: string;
-  reason?: string;
-  command?: string;
-} {
-  const tool = record(toolCall);
-  const rawInput = record(tool.rawInput ?? tool.raw_input);
-  const codexParams = record(record(record(tool._meta).codex).params);
-  return {
-    title:
-      stringValue(tool.title) ??
-      stringValue(codexParams.title) ??
-      "Approve this action?",
-    reason:
-      stringValue(codexParams.reason) ??
-      stringValue(rawInput.reason),
-    command:
-      stringValue(codexParams.command) ??
-      stringValue(rawInput.command) ??
-      stringValue(rawInput.cmd),
-  };
-}
-
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
+function elicitationUrlHost(url: string): string {
+  try {
+    return new URL(url).host || "external page";
+  } catch {
+    return "external page";
+  }
 }

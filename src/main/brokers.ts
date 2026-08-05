@@ -21,7 +21,7 @@
  * "cancelled" shape so the agent unwinds cleanly.
  */
 
-import { BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow, ipcMain, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
@@ -29,10 +29,19 @@ import { PushChannel, InvokeChannel } from "../shared/ipc-channels.js";
 import type {
   AcpTerminalInfo,
   AcpTerminalSnapshot,
+  ElicitationAskInfo,
+  ElicitationFieldInfo,
+  ElicitationFormRequestInfo,
+  ElicitationFormResponseInfo,
+  ElicitationResponseInfo,
+  ElicitationUrlRequestInfo,
+  ElicitationUrlResponseInfo,
   FsWriteAskInfo,
   PendingBrokerAskInfo,
   PermissionAskInfo,
 } from "../shared/api.js";
+import type { SessionEventOut } from "../shared/session-events.js";
+import { permissionPresentationForHarness } from "./acp-client-callback-adapters.js";
 
 // -------------------- Shared types -------------------------
 
@@ -45,6 +54,8 @@ interface FsApprovalDecision {
   requestId: string;
   approved: boolean;
 }
+
+type ElicitationDecision = ElicitationResponseInfo & { requestId: string };
 
 interface PendingPermission {
   sessionId: string;
@@ -64,9 +75,16 @@ interface PendingFsWrite {
   reject: (e: Error) => void;
 }
 
+interface PendingElicitation {
+  sessionId: string;
+  ask: ElicitationAskInfo;
+  resolve: (response: ElicitationResponseInfo) => void;
+}
+
 // -------------------- Pending registries -------------------------
 
 const pendingPermission = new Map<string, PendingPermission>();
+const pendingElicitation = new Map<string, PendingElicitation>();
 const pendingFsWrite = new Map<string, PendingFsWrite>();
 let nextRequestId = 1;
 function makeRequestId(prefix: string): string {
@@ -79,6 +97,19 @@ function broadcast(channel: string, payload: unknown): void {
   }
 }
 
+let brokerSessionEventSink:
+  | ((event: SessionEventOut) => void)
+  | undefined;
+
+/** Connect reverse-callback lifecycles to the ordinary session event sink.
+ * The broker remains usable without a renderer (tests/headless consumers),
+ * while the desktop wires this once during IPC startup. */
+export function setBrokerSessionEventSink(
+  sink: ((event: SessionEventOut) => void) | undefined,
+): void {
+  brokerSessionEventSink = sink;
+}
+
 // -------------------- Permission broker -------------------------
 
 /** Called by AcpSessionImpl's Client.requestPermission. Returns the
@@ -86,6 +117,7 @@ function broadcast(channel: string, payload: unknown): void {
 export function requestPermission(
   sessionId: string,
   params: unknown,
+  agentId?: string,
 ): Promise<unknown> {
   const p = params as {
     options: Array<{ optionId: string; name: string; kind: string }>;
@@ -97,6 +129,7 @@ export function requestPermission(
       requestId,
       sessionId,
       toolCall: p.toolCall,
+      presentation: permissionPresentationForHarness(agentId, p.toolCall),
       options: p.options as PermissionAskInfo["options"],
     };
     pendingPermission.set(requestId, {
@@ -105,6 +138,46 @@ export function requestPermission(
       resolve: (d) => resolve(d),
     });
     broadcast(PushChannel.PermissionRequest, ask);
+  });
+}
+
+export function requestElicitationForm(
+  sessionId: string,
+  request: ElicitationFormRequestInfo,
+): Promise<ElicitationFormResponseInfo> {
+  return new Promise((resolve) => {
+    const requestId = makeRequestId("elicit");
+    const ask: ElicitationAskInfo = {
+      requestId,
+      sessionId,
+      message: request.message,
+      fields: request.fields,
+    };
+    pendingElicitation.set(requestId, {
+      sessionId,
+      ask,
+      resolve: (response) => resolve(response as ElicitationFormResponseInfo),
+    });
+    broadcast(PushChannel.ElicitationRequest, ask);
+  });
+}
+
+export function requestElicitationUrl(
+  sessionId: string,
+  request: ElicitationUrlRequestInfo,
+): Promise<ElicitationUrlResponseInfo> {
+  return new Promise((resolve) => {
+    const requestId = makeRequestId("elicit-url");
+    const ask: ElicitationAskInfo = {
+      requestId,
+      sessionId,
+      mode: "url",
+      message: request.message,
+      elicitationId: request.elicitationId,
+      url: request.url,
+    };
+    pendingElicitation.set(requestId, { sessionId, ask, resolve });
+    broadcast(PushChannel.ElicitationRequest, ask);
   });
 }
 
@@ -131,11 +204,12 @@ export async function readTextFile(params: unknown): Promise<unknown> {
  */
 export function writeTextFile(
   sessionId: string,
-  sessionCwd: string,
+  sessionRoots: string | readonly string[],
   params: unknown,
 ): Promise<unknown> {
   const p = params as { path: string; content: string };
-  const insideCwd = isInsideCwd(p.path, sessionCwd);
+  const roots = typeof sessionRoots === "string" ? [sessionRoots] : sessionRoots;
+  const insideCwd = roots.some((root) => isInsideCwd(p.path, root));
   return new Promise(async (resolve, reject) => {
     if (insideCwd) {
       try {
@@ -200,6 +274,8 @@ interface PtyRecord {
   exited: boolean;
   exitCode: number | null;
   exitSignal: string | null;
+  eventSeq: number;
+  terminationReason?: "user_kill" | "released" | "session_disposed";
   /** Promise resolvers for in-flight waitForTerminalExit. */
   waiters: Array<(v: { exitCode: number | null; signal: string | null }) => void>;
 }
@@ -239,7 +315,21 @@ export function createTerminal(
     exited: false,
     exitCode: null,
     exitSignal: null,
+    eventSeq: 0,
     waiters: [],
+  };
+  const emitLifecycle = (
+    phase: Extract<SessionEventOut, { type: "session.background_process" }>["phase"],
+    patch: Partial<Extract<SessionEventOut, { type: "session.background_process" }>> = {},
+  ) => {
+    brokerSessionEventSink?.({
+      type: "session.background_process",
+      session_id: sessionId,
+      process_id: terminalId,
+      seq: ++rec.eventSeq,
+      phase,
+      ...patch,
+    });
   };
   const appendChunk = (data: Buffer | string) => {
     const text = typeof data === "string" ? data : data.toString("utf-8");
@@ -255,10 +345,15 @@ export function createTerminal(
       rec.buf = rec.buf.slice(cut);
     }
     broadcast(PushChannel.TerminalOutput, { sessionId, terminalId, chunk: text });
+    emitLifecycle("output", { output: text });
   };
   proc.stdout.on("data", appendChunk);
   proc.stderr.on("data", appendChunk);
-  const settle = (code: number | null, signal: NodeJS.Signals | null) => {
+  const settle = (
+    code: number | null,
+    signal: NodeJS.Signals | null,
+    error?: string,
+  ) => {
     if (rec.exited) return;
     rec.exited = true;
     rec.exitCode = code;
@@ -269,14 +364,37 @@ export function createTerminal(
       exitCode: rec.exitCode,
       signal: rec.exitSignal,
     });
+    const outcome = {
+      exit_code: rec.exitCode,
+      signal: rec.exitSignal,
+    };
+    if (rec.terminationReason === "user_kill") {
+      emitLifecycle("killed", { ...outcome, reason: "user_kill" });
+    } else if (rec.terminationReason) {
+      emitLifecycle("terminated", {
+        ...outcome,
+        reason: rec.terminationReason,
+      });
+    } else if (code === 0 && signal === null) {
+      emitLifecycle("completed", outcome);
+    } else if (signal !== null) {
+      emitLifecycle("terminated", { ...outcome, reason: "process_signal" });
+    } else {
+      emitLifecycle("failed", { ...outcome, ...(error ? { error } : {}) });
+    }
     for (const w of rec.waiters) {
       w({ exitCode: rec.exitCode, signal: rec.exitSignal });
     }
     rec.waiters = [];
   };
   proc.once("exit", settle);
-  proc.once("error", () => settle(null, null));
+  proc.once("error", (error) => settle(null, null, error.message));
   ptys.set(terminalId, rec);
+  emitLifecycle("started", {
+    command: rec.command,
+    args: [...rec.args],
+    cwd: rec.cwd,
+  });
   return { terminalId };
 }
 
@@ -340,6 +458,7 @@ export function killTerminal(params: unknown): void {
   const p = params as { terminalId: string };
   const rec = ptys.get(p.terminalId);
   if (!rec || rec.exited) return;
+  rec.terminationReason = "user_kill";
   try {
     rec.proc.kill("SIGTERM");
   } catch {
@@ -351,6 +470,7 @@ export function releaseTerminal(params: unknown): void {
   const p = params as { terminalId: string };
   const rec = ptys.get(p.terminalId);
   if (rec) {
+    if (!rec.exited) rec.terminationReason = "released";
     try {
       rec.proc.kill("SIGTERM");
     } catch { /* gone */ }
@@ -368,6 +488,12 @@ export function cancelPendingFor(sessionId: string): void {
       pendingPermission.delete(id);
     }
   }
+  for (const [id, pending] of pendingElicitation) {
+    if (pending.sessionId === sessionId) {
+      pending.resolve({ action: "cancel" });
+      pendingElicitation.delete(id);
+    }
+  }
   for (const [id, p] of pendingFsWrite) {
     if (p.sessionId === sessionId) {
       p.reject(new Error("session disposed"));
@@ -376,6 +502,7 @@ export function cancelPendingFor(sessionId: string): void {
   }
   for (const [id, rec] of ptys) {
     if (rec.sessionId === sessionId) {
+      rec.terminationReason = "session_disposed";
       try { rec.proc.kill("SIGTERM"); } catch { /* gone */ }
       ptys.delete(id);
     }
@@ -392,6 +519,10 @@ export function registerBrokers(): void {
         kind: "permission" as const,
         ask: pending.ask,
       })),
+      ...[...pendingElicitation.values()].map((pending) => ({
+        kind: "elicitation" as const,
+        ask: pending.ask,
+      })),
       ...[...pendingFsWrite.values()].map((pending) => ({
         kind: "fsWrite" as const,
         ask: pending.ask,
@@ -402,6 +533,13 @@ export function registerBrokers(): void {
     const pending = pendingPermission.get(decision.requestId);
     if (!pending) return;
     pendingPermission.delete(decision.requestId);
+    brokerSessionEventSink?.({
+      type: "session.permission_response",
+      session_id: pending.sessionId,
+      request_id: decision.requestId,
+      option_id: decision.optionId,
+      outcome: decision.optionId == null ? "cancelled" : "selected",
+    });
     if (decision.optionId == null) {
       pending.resolve({ outcome: { outcome: "cancelled" } });
     } else {
@@ -409,6 +547,42 @@ export function registerBrokers(): void {
         outcome: { outcome: "selected", optionId: decision.optionId },
       });
     }
+  });
+  ipcMain.handle(InvokeChannel.ElicitationRespond, async (_e, decision: ElicitationDecision) => {
+    const pending = pendingElicitation.get(decision.requestId);
+    if (!pending) return;
+    pendingElicitation.delete(decision.requestId);
+    let response: ElicitationResponseInfo = pending.ask.mode === "url"
+      ? validatedElicitationUrlResponse(decision)
+      : validatedElicitationResponse(pending.ask.fields, decision);
+    if (pending.ask.mode === "url" && response.action === "accept") {
+      try {
+        await shell.openExternal(pending.ask.url);
+      } catch {
+        response = { action: "decline" };
+      }
+    }
+    brokerSessionEventSink?.({
+      type: "session.elicitation_response",
+      session_id: pending.sessionId,
+      request_id: decision.requestId,
+      action: response.action,
+      ...(response.action === "accept" && "content" in response
+        ? {
+            content: response.content as Record<
+              string,
+              string | number | boolean | string[]
+            >,
+          }
+        : {}),
+      ...(pending.ask.mode === "url"
+        ? {
+            mode: "url" as const,
+            elicitation_id: pending.ask.elicitationId,
+          }
+        : {}),
+    });
+    pending.resolve(response);
   });
   ipcMain.handle(
     InvokeChannel.FsApprovalRespond,
@@ -429,4 +603,73 @@ export function registerBrokers(): void {
       }
     },
   );
+}
+
+function validatedElicitationResponse(
+  fields: readonly ElicitationFieldInfo[],
+  decision: ElicitationDecision,
+): ElicitationFormResponseInfo {
+  if (decision.action === "decline" || decision.action === "cancel") {
+    return { action: decision.action };
+  }
+  if (decision.action !== "accept") return { action: "decline" };
+  if (!("content" in decision) || !decision.content || typeof decision.content !== "object") {
+    return { action: "decline" };
+  }
+  const content: Record<string, string | number | boolean | string[]> = {};
+  for (const field of fields) {
+    const value = decision.content[field.name];
+    if (value === undefined) {
+      if (field.required) return { action: "decline" };
+      continue;
+    }
+    if (!validElicitationFieldValue(field, value)) return { action: "decline" };
+    content[field.name] = value;
+  }
+  return { action: "accept", content };
+}
+
+function validatedElicitationUrlResponse(
+  decision: ElicitationDecision,
+): ElicitationUrlResponseInfo {
+  if (decision.action === "accept") return { action: "accept" };
+  if (decision.action === "cancel") return { action: "cancel" };
+  return { action: "decline" };
+}
+
+function validElicitationFieldValue(
+  field: ElicitationFieldInfo,
+  value: string | number | boolean | string[],
+): boolean {
+  if (field.type === "text") {
+    if (typeof value !== "string") return false;
+    if (field.minLength !== undefined && value.length < field.minLength) return false;
+    if (field.maxLength !== undefined && value.length > field.maxLength) return false;
+    if (field.pattern) {
+      try {
+        if (!new RegExp(field.pattern).test(value)) return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (field.type === "number") {
+    return typeof value === "number"
+      && Number.isFinite(value)
+      && (!field.integer || Number.isInteger(value))
+      && (field.minimum === undefined || value >= field.minimum)
+      && (field.maximum === undefined || value <= field.maximum);
+  }
+  if (field.type === "boolean") return typeof value === "boolean";
+  if (field.type === "select") {
+    return typeof value === "string"
+      && field.options.some((option) => option.value === value);
+  }
+  return Array.isArray(value)
+    && value.every((item) =>
+      typeof item === "string"
+      && field.options.some((option) => option.value === item))
+    && (field.minItems === undefined || value.length >= field.minItems)
+    && (field.maxItems === undefined || value.length <= field.maxItems);
 }

@@ -32,6 +32,7 @@ export function buildComposerSubmitText({
 
 export type ComposerEmptyBackspaceTarget =
   | "skill"
+  | "session-reference"
   | "attachment"
   | "annotation";
 
@@ -41,15 +42,18 @@ export function resolveComposerEmptyBackspace({
   hasSelectedSkill,
   attachmentCount,
   annotationCount,
+  sessionReferenceCount = 0,
 }: {
   key: string;
   text: string;
   hasSelectedSkill: boolean;
   attachmentCount: number;
   annotationCount: number;
+  sessionReferenceCount?: number;
 }): ComposerEmptyBackspaceTarget | null {
   if (key !== "Backspace" || text.length > 0) return null;
   if (hasSelectedSkill) return "skill";
+  if (sessionReferenceCount > 0) return "session-reference";
   if (attachmentCount > 0) return "attachment";
   if (annotationCount > 0) return "annotation";
   return null;
@@ -57,6 +61,7 @@ export function resolveComposerEmptyBackspace({
 
 export type ComposerKeyAction =
   | "remove-skill"
+  | "remove-session-reference"
   | "remove-attachment"
   | "remove-annotation"
   | "slash-next"
@@ -71,6 +76,7 @@ export function resolveComposerKeyAction({
   hasSelectedSkill,
   attachmentCount,
   annotationCount,
+  sessionReferenceCount = 0,
   slashPickerOpen,
   hasSlashSelection,
   shiftKey,
@@ -81,6 +87,7 @@ export function resolveComposerKeyAction({
   hasSelectedSkill: boolean;
   attachmentCount: number;
   annotationCount: number;
+  sessionReferenceCount?: number;
   slashPickerOpen: boolean;
   hasSlashSelection: boolean;
   shiftKey: boolean;
@@ -92,6 +99,7 @@ export function resolveComposerKeyAction({
     hasSelectedSkill,
     attachmentCount,
     annotationCount,
+    sessionReferenceCount,
   });
   if (backspaceTarget) return `remove-${backspaceTarget}`;
 
@@ -118,12 +126,14 @@ export function canSubmitComposer({
   text,
   attachments,
   annotations,
+  sessionReferenceCount = 0,
   disabled,
   actionDisabled,
 }: {
   text: string;
   attachments?: PromptAttachment[];
   annotations?: PromptAnnotation[];
+  sessionReferenceCount?: number;
   disabled: boolean;
   running?: boolean;
   actionDisabled?: boolean;
@@ -135,6 +145,7 @@ export function canSubmitComposer({
       text.trim().length > 0
       || (attachments?.length ?? 0) > 0
       || (annotations?.length ?? 0) > 0
+      || sessionReferenceCount > 0
     )
   );
 }
@@ -143,6 +154,7 @@ export function derivePromptDisplayText(
   text: string,
   attachments: PromptAttachment[],
   annotationCount = 0,
+  sessionReferenceCount = 0,
 ): string {
   if (text.trim().length > 0) return text;
   if (attachments.length === 0 && annotationCount > 0) {
@@ -150,7 +162,14 @@ export function derivePromptDisplayText(
       ? "[1 annotation]"
       : `[${annotationCount} annotations]`;
   }
-  if (attachments.length === 0) return text;
+  if (attachments.length === 0) {
+    if (sessionReferenceCount > 0) {
+      return sessionReferenceCount === 1
+        ? "[1 referenced session]"
+        : `[${sessionReferenceCount} referenced sessions]`;
+    }
+    return text;
+  }
   if (attachments.length === 1) {
     const attachment = attachments[0]!;
     return `[Attached ${attachment.kind}: ${attachment.name}]`;

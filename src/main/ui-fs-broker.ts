@@ -44,7 +44,23 @@ function trueHome(): string {
 
 const MAX_INLINE_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;
+const MAX_FILE_MENTION_RESULTS = 20;
+const MAX_FILE_MENTION_VISITS = 2_000;
+const MAX_FILE_MENTION_DEPTH = 8;
+const FILE_MENTION_IGNORED_DIRS = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".next",
+  ".turbo",
+  ".cache",
+  "node_modules",
+  "dist",
+  "out",
+  "build",
+]);
 let testPickedFiles: PromptAttachment[] | null = null;
+let testPickedDirs: string[] | null = null;
 
 function cloneAttachment(a: PromptAttachment): PromptAttachment {
   return { ...a };
@@ -137,6 +153,24 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
+  InvokeChannel.UiFsPickDirs,
+  async (e, p: { defaultPath?: string } = {}): Promise<string[]> => {
+    if (process.env["BACKCHAT_TEST_HOOKS"] === "1" && testPickedDirs) {
+      const directories = [...testPickedDirs];
+      testPickedDirs = null;
+      return directories;
+    }
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const result = await dialog.showOpenDialog(win ?? undefined!, {
+      properties: ["openDirectory", "createDirectory", "multiSelections"],
+      defaultPath: p.defaultPath || trueHome(),
+      buttonLabel: "Add folders",
+    });
+    return result.canceled ? [] : result.filePaths;
+  },
+);
+
+ipcMain.handle(
   InvokeChannel.UiFsPickFiles,
   async (e, p: { defaultPath?: string } = {}): Promise<PromptAttachment[]> => {
     if (process.env["BACKCHAT_TEST_HOOKS"] === "1" && testPickedFiles) {
@@ -159,6 +193,73 @@ ipcMain.handle(
     if (result.canceled || result.filePaths.length === 0) return [];
     const rows = await Promise.all(result.filePaths.slice(0, 10).map(toPromptAttachment));
     return rows.filter((row): row is PromptAttachment => row !== null);
+  },
+);
+
+ipcMain.handle(
+  InvokeChannel.UiFsSearchFiles,
+  async (
+    _e,
+    p: { path: string; query?: string; limit?: number },
+  ): Promise<PromptAttachment[]> => {
+    const root = p?.path?.trim();
+    if (!root) return [];
+    const query = (p.query ?? "").trim().toLocaleLowerCase();
+    const limit = Math.min(
+      Math.max(1, p.limit ?? MAX_FILE_MENTION_RESULTS),
+      MAX_FILE_MENTION_RESULTS,
+    );
+    const rootStat = await stat(root).catch(() => null);
+    if (!rootStat?.isDirectory()) return [];
+
+    const queue: Array<{ path: string; relative: string; depth: number }> = [
+      { path: root, relative: "", depth: 0 },
+    ];
+    const hits: Array<{ path: string; relative: string; name: string }> = [];
+    let visited = 0;
+    while (queue.length > 0 && visited < MAX_FILE_MENTION_VISITS && hits.length < limit * 4) {
+      const current = queue.shift()!;
+      visited += 1;
+      const entries = await readdir(current.path, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (entry.name.startsWith(".") && FILE_MENTION_IGNORED_DIRS.has(entry.name)) {
+          continue;
+        }
+        const relative = current.relative
+          ? `${current.relative}/${entry.name}`
+          : entry.name;
+        const fullPath = join(current.path, entry.name);
+        if (entry.isDirectory()) {
+          if (
+            current.depth < MAX_FILE_MENTION_DEPTH &&
+            !FILE_MENTION_IGNORED_DIRS.has(entry.name)
+          ) {
+            queue.push({
+              path: fullPath,
+              relative,
+              depth: current.depth + 1,
+            });
+          }
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        if (!query || relative.toLocaleLowerCase().includes(query)) {
+          hits.push({ path: fullPath, relative, name: entry.name });
+        }
+      }
+    }
+
+    hits.sort((a, b) => {
+      const aName = a.name.toLocaleLowerCase();
+      const bName = b.name.toLocaleLowerCase();
+      const aPrefix = query && aName.startsWith(query) ? 0 : 1;
+      const bPrefix = query && bName.startsWith(query) ? 0 : 1;
+      return aPrefix - bPrefix || a.relative.localeCompare(b.relative);
+    });
+    const attachments = await Promise.all(
+      hits.slice(0, limit).map((hit) => toPromptAttachment(hit.path)),
+    );
+    return attachments.filter((attachment): attachment is PromptAttachment => attachment !== null);
   },
 );
 
@@ -208,6 +309,12 @@ if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
     InvokeChannel.TestSetPickedFiles,
     (_e, files: PromptAttachment[]): void => {
       testPickedFiles = files.map(cloneAttachment);
+    },
+  );
+  ipcMain.handle(
+    InvokeChannel.TestSetPickedDirs,
+    (_e, directories: string[]): void => {
+      testPickedDirs = [...directories];
     },
   );
 }

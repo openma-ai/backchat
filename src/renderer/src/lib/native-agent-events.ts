@@ -1,19 +1,76 @@
 import type { ToolEntry } from "./reduce-turn";
 
-export type NativeAgentProvider = "codex" | "claude";
+export type NativeAgentProvider =
+  | "codex"
+  | "claude"
+  | "opencode"
+  | "kilo"
+  | "cursor"
+  | "pi";
 
-export type NativeAgentStatus = "running" | "complete" | "error" | "cancelled";
+export type NativeAgentStatus =
+  | "running"
+  | "complete"
+  | "error"
+  | "cancelled"
+  | "unknown";
+export type NativeAgentTranscriptKind =
+  | "text"
+  | "thought"
+  | "content"
+  | "tool"
+  | "usage";
+
+export interface NativeAgentUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedReadTokens?: number;
+  cachedWriteTokens?: number;
+  totalTokens: number;
+}
+
+export interface NativeAgentProgress {
+  kind: "subagent_progress" | "subagent_retry";
+  elapsedTimeSeconds?: number;
+  subagentType?: string;
+  description?: string;
+  lastToolName?: string;
+  summary?: string;
+  usage?: {
+    totalTokens: number;
+    toolUses: number;
+    durationMs: number;
+  };
+  retry?: Record<string, unknown>;
+}
+
+export interface NativeAgentTranscriptUpdate {
+  provider: NativeAgentProvider;
+  parentToolUseId: string;
+  kind: NativeAgentTranscriptKind;
+  text?: string;
+  content?: unknown;
+  contentChannel?: "message" | "thought";
+  messageId?: string;
+  toolCallId?: string;
+  toolName?: string;
+  usage?: NativeAgentUsage;
+  payload: unknown;
+}
 export type NativeAgentOperation =
   | "codex_spawn"
   | "codex_wait"
   | "codex_close"
-  | "claude_agent";
+  | "claude_agent"
+  | "subagent_spawn";
 
 export interface NativeAgentContext {
   provider: NativeAgentProvider;
   toolCallId: string;
   childId: string;
   operation?: NativeAgentOperation;
+  task?: string;
+  agentType?: string;
 }
 
 export interface NativeAgentUpdate {
@@ -28,9 +85,12 @@ export interface NativeAgentUpdate {
   status?: NativeAgentStatus;
   result?: string;
   errorMessage?: string;
+  reason?: string;
   closed?: boolean;
   childToolCallId?: string;
   childToolName?: string;
+  usage?: NativeAgentUsage;
+  progress?: NativeAgentProgress;
 }
 
 type ToolLike = Partial<ToolEntry> & { toolCallId: string };
@@ -39,7 +99,23 @@ export function detectNativeAgentToolEvent(
   tool: ToolLike,
   context?: NativeAgentContext,
 ): NativeAgentUpdate[] {
-  if (tool.parentToolUseId && context) {
+  if (context?.provider === "codex") {
+    return detectCodexNativeAgentToolEvent(tool, context);
+  }
+  if (context?.provider === "claude") {
+    return detectClaudeCodeNativeAgentToolEvent(tool, context);
+  }
+  const codexUpdates = detectCodexNativeAgentToolEvent(tool);
+  return codexUpdates.length > 0
+    ? codexUpdates
+    : detectClaudeCodeNativeAgentToolEvent(tool);
+}
+
+export function detectCodexNativeAgentToolEvent(
+  tool: ToolLike,
+  context?: NativeAgentContext,
+): NativeAgentUpdate[] {
+  if (tool.parentToolUseId && context?.provider === "codex") {
     return [
       {
         provider: context.provider,
@@ -55,14 +131,134 @@ export function detectNativeAgentToolEvent(
   const codexSubagentUpdate = detectCodexSubagentLifecycle(tool);
   if (codexSubagentUpdate) return [codexSubagentUpdate];
 
-  const name = normalizeToolName(tool.toolName ?? tool.title);
+  const meta = objectValue(tool.meta);
+  const codexMeta = objectValue(meta.codex);
+  const collaborationMeta = objectValue(codexMeta.collaboration);
+  const name = normalizeToolName(
+    collaborationMeta.tool ?? tool.toolName ?? tool.title,
+  );
 
   if (name === "spawn_agent" || name === "spawnagent") return [detectCodexSpawn(tool)];
   if (name === "wait_agent" || name === "wait") return detectCodexWait(tool);
   if (name === "close_agent" || name === "closeagent") return [detectCodexClose(tool)];
-  if (name === "task" || name === "agent") return [detectClaudeSpawn(tool, name)];
 
-  if (context) return detectContextualResult(tool, context);
+  if (context?.provider === "codex") return detectContextualResult(tool, context);
+  return [];
+}
+
+export function detectClaudeCodeNativeAgentToolEvent(
+  tool: ToolLike,
+  context?: NativeAgentContext,
+): NativeAgentUpdate[] {
+  if (tool.parentToolUseId && context?.provider === "claude") {
+    return [
+      {
+        provider: context.provider,
+        operation: context.operation,
+        toolCallId: context.toolCallId,
+        childId: context.childId,
+        childToolCallId: tool.toolCallId,
+        childToolName: asString(tool.toolName) ?? asString(tool.title),
+      },
+    ];
+  }
+
+  const name = normalizeToolName(tool.toolName ?? tool.title);
+  if (name === "task" || name === "agent") {
+    const progress = detectClaudeProgress(tool, context);
+    if (progress) return [progress];
+    const update = detectClaudeSpawn(tool, name, context);
+    if (!update.usage) return [update];
+    const { usage, ...lifecycle } = update;
+    return [
+      lifecycle,
+      {
+        provider: update.provider,
+        operation: update.operation,
+        toolCallId: update.toolCallId,
+        childId: update.childId,
+        usage,
+      },
+    ];
+  }
+  if (context?.provider === "claude") return detectContextualResult(tool, context);
+  return [];
+}
+
+export function detectClaudeCodeNativeAgentTranscript(
+  event: unknown,
+): NativeAgentTranscriptUpdate[] {
+  const inner = unwrapEvent(event);
+  const meta = objectValue(inner._meta);
+  const claudeMeta = objectValue(meta.claudeCode);
+  const parentToolUseId =
+    asString(claudeMeta.parentToolUseId) ??
+    asString(inner.parentToolUseId) ??
+    asString(inner.parent_tool_use_id);
+  if (!parentToolUseId) return [];
+
+  const update = asString(inner.sessionUpdate) ?? asString(inner.type);
+  if (update === "agent_message_chunk" || update === "agent_thought_chunk") {
+    const content = objectValue(inner.content);
+    const text =
+      asString(content.text) ??
+      asString(inner.text) ??
+      asString(inner.delta) ??
+      asString(inner.content);
+    if (!text) {
+      return inner.content && typeof inner.content === "object"
+        ? [{
+            provider: "claude",
+            parentToolUseId,
+            kind: "content",
+            content: inner.content,
+            contentChannel:
+              update === "agent_thought_chunk" ? "thought" : "message",
+            messageId: asString(inner.messageId) ?? asString(inner.message_id),
+            payload: event,
+          }]
+        : [];
+    }
+    return [{
+      provider: "claude",
+      parentToolUseId,
+      kind: update === "agent_thought_chunk" ? "thought" : "text",
+      text,
+      messageId: asString(inner.messageId) ?? asString(inner.message_id),
+      payload: event,
+    }];
+  }
+
+  if (update === "tool_call" || update === "tool_call_update") {
+    const toolCallId =
+      asString(inner.toolCallId) ??
+      asString(inner.tool_call_id) ??
+      asString(inner.id);
+    if (!toolCallId) return [];
+    return [{
+      provider: "claude",
+      parentToolUseId,
+      kind: "tool",
+      toolCallId,
+      toolName:
+        asString(claudeMeta.toolName) ??
+        asString(inner.toolName) ??
+        asString(inner.tool_name) ??
+        asString(inner.title),
+      payload: event,
+    }];
+  }
+
+  const usage = nativeAgentUsage(inner.usage ?? inner._usage);
+  if (update === "usage_update" && usage) {
+    return [{
+      provider: "claude",
+      parentToolUseId,
+      kind: "usage",
+      usage,
+      payload: event,
+    }];
+  }
   return [];
 }
 
@@ -91,7 +287,10 @@ function detectCodexSubagentLifecycle(
   if (!childId || !activity) return undefined;
 
   const failed = activity === "failed" || activity === "error";
-  const cancelled = activity === "cancelled" || activity === "canceled";
+  const cancelled =
+    activity === "cancelled"
+    || activity === "canceled"
+    || (activity === "interrupted" && tool.status === "completed");
   const closed = activity === "closed";
   const complete =
     activity === "completed" || activity === "complete" || closed;
@@ -116,6 +315,10 @@ function detectCodexSubagentLifecycle(
 }
 
 export function detectNativeAgentRawEvent(event: unknown): NativeAgentUpdate[] {
+  return detectCodexNativeAgentRawEvent(event);
+}
+
+export function detectCodexNativeAgentRawEvent(event: unknown): NativeAgentUpdate[] {
   const inner = unwrapEvent(event);
   if (inner.type !== "collab_tool_call") return [];
   const tool = normalizeToolName(asString(inner.tool));
@@ -244,27 +447,101 @@ function detectCodexClose(tool: ToolLike): NativeAgentUpdate {
   };
 }
 
-function detectClaudeSpawn(tool: ToolLike, name: "task" | "agent"): NativeAgentUpdate {
+function detectClaudeSpawn(
+  tool: ToolLike,
+  name: "task" | "agent",
+  context?: NativeAgentContext,
+): NativeAgentUpdate {
   const input = objectValue(tool.rawInput);
+  const response = claudeToolResponse(tool);
   const failed = isFailed(tool.status);
+  const claudeMeta = objectValue(objectValue(tool.meta).claudeCode);
+  const nonExecutionKind = asString(claudeMeta.nonExecutionKind);
+  const userFeedback = asString(claudeMeta.userFeedback);
+  const cancelled = failed && nonExecutionKind !== undefined;
+  const asyncLaunch = isClaudeAsyncLaunch(tool);
+  const complete =
+    !asyncLaunch
+    && (tool.status === "completed" || asString(response.status) === "completed");
+  const usage = nativeAgentUsage({
+    ...objectValue(response.usage),
+    ...(response.totalTokens !== undefined ? { totalTokens: response.totalTokens } : {}),
+  });
   return {
     provider: "claude",
     operation: "claude_agent",
     toolCallId: tool.toolCallId,
-    childId: structuredChildIdFromMeta(tool) ?? fallbackChildId("claude", tool.toolCallId),
+    childId:
+      structuredChildIdFromMeta(tool)
+      ?? context?.childId
+      ?? fallbackChildId("claude", tool.toolCallId),
     task:
       asString(input.description) ??
       asString(input.activeForm) ??
       asString(input.prompt) ??
       asString(input.message) ??
+      asString(response.description) ??
+      asString(response.prompt) ??
+      context?.task ??
       name,
     agentType:
       asString(input.subagent_type) ??
       asString(input.agent_type) ??
-      asString(input.agentType),
-    status: failed ? "error" : "running",
-    errorMessage: failed ? stringResult(tool.rawOutput) : undefined,
+      asString(input.agentType) ??
+      asString(response.agentType) ??
+      asString(response.agent_type) ??
+      context?.agentType,
+    status: cancelled
+      ? "cancelled"
+      : failed
+        ? "error"
+        : complete
+          ? "complete"
+          : "running",
+    result: complete
+      ? stringResult(response.content) ?? stringResult(tool.rawOutput)
+      : undefined,
+    errorMessage: failed
+      ? userFeedback ?? stringResult(tool.rawOutput)
+      : undefined,
+    reason: cancelled ? nonExecutionKind : undefined,
+    usage,
   };
+}
+
+function detectClaudeProgress(
+  tool: ToolLike,
+  context?: NativeAgentContext,
+): NativeAgentUpdate | undefined {
+  const response = claudeToolResponse(tool);
+  const retry = objectValue(response.subagentRetry);
+  const elapsedTimeSeconds = asNumber(response.elapsedTimeSeconds);
+  const subagentType = asString(response.subagentType);
+  if (
+    Object.keys(retry).length === 0
+    && elapsedTimeSeconds === undefined
+    && subagentType === undefined
+  ) return undefined;
+  return {
+    provider: "claude",
+    operation: "claude_agent",
+    toolCallId: tool.toolCallId,
+    childId:
+      structuredChildIdFromMeta(tool)
+      ?? context?.childId
+      ?? fallbackChildId("claude", tool.toolCallId),
+    progress: {
+      kind: Object.keys(retry).length > 0 ? "subagent_retry" : "subagent_progress",
+      ...(elapsedTimeSeconds !== undefined ? { elapsedTimeSeconds } : {}),
+      ...(subagentType ? { subagentType } : {}),
+      ...(Object.keys(retry).length > 0 ? { retry } : {}),
+    },
+  };
+}
+
+function claudeToolResponse(tool: ToolLike): Record<string, unknown> {
+  const meta = objectValue(tool.meta);
+  return objectValue(objectValue(meta.claudeCode).toolResponse);
 }
 
 function detectContextualResult(
@@ -377,7 +654,7 @@ function fallbackChildId(provider: NativeAgentProvider, toolCallId: string): str
 function structuredChildIdFromMeta(tool: ToolLike): string | undefined {
   const meta = objectValue(tool.meta);
   const claudeMeta = objectValue(meta.claudeCode);
-  const toolResponse = objectValue(claudeMeta.toolResponse);
+  const toolResponse = claudeToolResponse(tool);
   return (
     asString(toolResponse.agentId) ??
     asString(toolResponse.agent_id) ??
@@ -387,9 +664,7 @@ function structuredChildIdFromMeta(tool: ToolLike): string | undefined {
 }
 
 function isClaudeAsyncLaunch(tool: ToolLike): boolean {
-  const meta = objectValue(tool.meta);
-  const claudeMeta = objectValue(meta.claudeCode);
-  const toolResponse = objectValue(claudeMeta.toolResponse);
+  const toolResponse = claudeToolResponse(tool);
   return (
     asBoolean(toolResponse.isAsync) === true ||
     asString(toolResponse.status) === "async_launched"
@@ -478,4 +753,34 @@ function structuredChildId(value: unknown): string | undefined {
 
 function isFailed(status: unknown): boolean {
   return status === "failed" || status === "error";
+}
+
+function nativeAgentUsage(value: unknown): NativeAgentUsage | undefined {
+  const usage = objectValue(value);
+  const inputTokens =
+    asNumber(usage.inputTokens) ?? asNumber(usage.input_tokens);
+  const outputTokens =
+    asNumber(usage.outputTokens) ?? asNumber(usage.output_tokens);
+  if (inputTokens === undefined || outputTokens === undefined) return undefined;
+  const cachedReadTokens =
+    asNumber(usage.cachedReadTokens) ?? asNumber(usage.cache_read_input_tokens);
+  const cachedWriteTokens =
+    asNumber(usage.cachedWriteTokens) ?? asNumber(usage.cache_creation_input_tokens);
+  const totalTokens =
+    asNumber(usage.totalTokens) ??
+    asNumber(usage.total_tokens) ??
+    inputTokens + outputTokens + (cachedReadTokens ?? 0) + (cachedWriteTokens ?? 0);
+  return {
+    inputTokens,
+    outputTokens,
+    ...(cachedReadTokens !== undefined ? { cachedReadTokens } : {}),
+    ...(cachedWriteTokens !== undefined ? { cachedWriteTokens } : {}),
+    totalTokens,
+  };
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
 }

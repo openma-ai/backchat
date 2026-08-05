@@ -1,7 +1,7 @@
 /**
- * Session bookkeeping under the shared ~/.openma/ dotdir.
+ * Session bookkeeping under the shared ~/.oma/ dotdir.
  *
- *   ~/.openma/
+ *   ~/.oma/
  *     sessions/
  *       <sessionId>/   ← spawn cwd for the ACP child unless caller overrides.
  *
@@ -10,8 +10,8 @@
  * (e.g. claude-acp under ~/.claude/projects/<cwd-hash>/) line up. Removing
  * the cwd is reserved for an explicit "delete session" gesture.
  *
- * Same root will be shared by a future openma cli so both frontends see
- * the same per-session spawn dirs.
+ * The OMA CLI and Backchat share this root and the same per-session spawn
+ * directories.
  */
 
 import { mkdir, rm, writeFile } from "node:fs/promises";

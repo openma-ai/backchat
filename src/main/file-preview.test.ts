@@ -41,4 +41,20 @@ describe("resolveLocalFilePreview", () => {
       kind: "document",
     });
   });
+
+  it.each([
+    [".html", "web"],
+    [".csv", "text"],
+  ] as const)("directly previews %s outputs in the task sidebar", async (extension, kind) => {
+    const root = await mkdtemp(join(tmpdir(), "openma-file-preview-"));
+    temporaryRoots.push(root);
+    const sourcePath = join(root, `output${extension}`);
+    await writeFile(sourcePath, "preview");
+
+    await expect(resolveLocalFilePreview(sourcePath)).resolves.toEqual({
+      sourcePath,
+      previewPath: sourcePath,
+      kind,
+    });
+  });
 });

@@ -8,6 +8,7 @@
 
 import { BrowserWindow, ipcMain, Notification } from "electron";
 import { randomUUID } from "node:crypto";
+import type { OpenMAEvent } from "@openma/common/session-events/openma";
 import { getKnownAgents } from "@open-managed-agents-desktop/acp/registry";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
 import type {
@@ -20,9 +21,12 @@ import type {
   PersistedSideWorkspaceInfo,
   SideWorkspaceSaveParams,
 } from "../shared/api.js";
+import type { ProjectInfo, ProjectSaveParams } from "../shared/projects.js";
 import type {
   SessionEventOut,
   SessionPromptParams,
+  SessionPromptQueueCommandParams,
+  SessionRunCommandParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
 } from "../shared/session-events.js";
@@ -37,13 +41,18 @@ import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { appendEventsTx, archiveSession, deleteSession, deleteSideWorkspace, getActivityStats, getSession, listArchivedSessions, listPairGroups, listSessions, listSideWorkspaces, loadHistory, pinSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchiveSession, unpinSession, upsertSession } from "./sql-store.js";
+import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, pinPairSession, pinSession, renameSession, savePairGroup, saveProject, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
+import type { PersistedSession } from "./sql-store.js";
 import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
 import { openmaRoot } from "./storage-root.js";
 import { forwardSessionEventToPet } from "./pet-hook-bridge.js";
-import { join } from "node:path";
+import {
+  createSessionEventEnricher,
+  latestPersistedOpenMAEventSequence,
+} from "./session-event-enricher.js";
+import { isAbsolute, join } from "node:path";
 import {
   cancelPendingFor,
   createTerminal,
@@ -52,7 +61,10 @@ import {
   readTextFile,
   registerBrokers,
   releaseTerminal,
+  requestElicitationForm,
+  requestElicitationUrl,
   requestPermission,
+  setBrokerSessionEventSink,
   terminalOutput,
   terminalSnapshot,
   waitForTerminalExit,
@@ -99,6 +111,8 @@ import {
   createBrowserMcpHttpServer,
   createBrowserMcpServerConfig,
 } from "./browser-plugin-mcp.js";
+import { SessionHistoryMcpBridge } from "./session-history-mcp.js";
+import { formatSessionHistory } from "./session-history-tool.js";
 
 interface RegisterDeps {
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
@@ -109,7 +123,7 @@ interface RegisterDeps {
   acpInstallRoot: string;
   scheduleDbPath: string;
   browserMcpServerForTask?: (taskId: string) => unknown;
-  /** Codex-compatible plugin bundle roots. Defaults to ~/.openma/plugins. */
+  /** Codex-compatible plugin bundle roots. Defaults to ~/.oma/plugins. */
   pluginRoots?: readonly string[];
   /** Optional second consumer of the singleton SessionManager event stream.
    *  OMA bridge uses this to relay cloud-owned sessions while the renderer
@@ -144,9 +158,21 @@ export interface RegisteredIpcRuntime {
   dispose(): Promise<void>;
 }
 
+function withProjectDirectories(session: PersistedSession): PersistedSessionInfo {
+  const project = session.project_id ? getProject(session.project_id) : null;
+  return {
+    ...session,
+    project_id: session.project_id ?? null,
+    additional_directories: project
+      ? project.source_folders.filter((folder) => folder !== session.cwd)
+      : [],
+  };
+}
+
 export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRuntime> {
   const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
   const testPromptCalls: SessionPromptParams[] = [];
+  const testCommandCalls: SessionRunCommandParams[] = [];
   const testConfigOptionCalls: SessionSetConfigOptionParams[] = [];
   const scheduleStore = new ScheduleStore(deps.scheduleDbPath);
   let scheduleMcpBridge: ScheduleHarnessMcpBridge | null = null;
@@ -175,6 +201,46 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     () => pluginRuntime.skills(),
   );
   await pluginSkillsMcpBridge.start();
+  const sessionHistoryMcpBridge = new SessionHistoryMcpBridge({
+    list: async (taskId, input) => {
+      const query = input.query?.trim().toLocaleLowerCase() ?? "";
+      const limit = Math.min(100, Math.max(1, input.limit ?? 20));
+      const sessions = listSessions(200)
+        .filter((session) => session.id !== taskId)
+        .filter((session) => {
+          if (!query) return true;
+          return [session.title, session.id, session.agent_id].some((value) =>
+            value.toLocaleLowerCase().includes(query),
+          );
+        })
+        .slice(0, limit)
+        .map((session) => ({
+          id: session.id,
+          title: session.title || session.id,
+          agent_id: session.agent_id,
+          last_used_at: session.last_used_at,
+        }));
+      return { sessions };
+    },
+    read: async (taskId, input) => {
+      if (input.session_id === taskId) {
+        throw new Error("Use the current conversation context instead of reading the current session");
+      }
+      const session = getSession(input.session_id);
+      if (!session) throw new Error(`Unknown OpenMA session: ${input.session_id}`);
+      return formatSessionHistory(
+        {
+          id: session.id,
+          title: session.title || session.id,
+          agent_id: session.agent_id,
+          cwd: session.cwd,
+        },
+        loadHistory(session.id),
+        input,
+      );
+    },
+  });
+  await sessionHistoryMcpBridge.start();
   const allConfiguredMcpServers = (): SettingsMcpServer[] =>
     pluginRuntime.withConfiguredMcpServers(settingsStore.get().mcp_servers);
   const allAgentMcpServers = (): SettingsMcpServer[] => [
@@ -192,9 +258,12 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     watch.close();
     inlineVisualizationWatches.delete(watchId);
   };
-  const agentWarmup = agentSetup.warmup().catch((error) => {
-    process.stderr.write(`! ACP agent warmup failed: ${error instanceof Error ? error.message : String(error)}\n`);
-  });
+  const agentWarmup =
+    testHooksEnabled && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1"
+      ? Promise.resolve()
+      : agentSetup.warmup().catch((error) => {
+          process.stderr.write(`! ACP agent warmup failed: ${error instanceof Error ? error.message : String(error)}\n`);
+        });
   const requestedChromeExtensionBridgePort = Number(
     process.env["BACKCHAT_BROWSER_EXTENSION_PORT"] ?? "29174",
   );
@@ -284,16 +353,22 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // Two outbound sinks: single-session events and pair events. Both
   // ultimately broadcast to all browser windows, just on distinct
   // channels so the renderer can wire them to independent reducers.
-  const singleSink = (msg: SessionEventOut) => {
-    forwardSessionEventToPet(msg);
-    deps.sessionEventSink?.(msg);
-    if (msg.type !== "session.event") {
-      process.stdout.write(`[session] ${msg.type} sid=${msg.session_id.slice(0, 8)}\n`);
+  const enrichSessionEvent = createSessionEventEnricher(
+    () => new Date().toISOString(),
+    (event) => appendEvent(event.session_id, "openma_event", event),
+    (sessionId) => latestPersistedOpenMAEventSequence(loadHistory(sessionId)),
+  );
+  const publishSingle = (enriched: SessionEventOut) => {
+    forwardSessionEventToPet(enriched);
+    deps.sessionEventSink?.(enriched);
+    if (enriched.type !== "session.event") {
+      process.stdout.write(`[session] ${enriched.type} sid=${enriched.session_id.slice(0, 8)}\n`);
     }
     for (const w of BrowserWindow.getAllWindows()) {
-      if (!w.isDestroyed()) w.webContents.send(PushChannel.SessionEvent, msg);
+      if (!w.isDestroyed()) w.webContents.send(PushChannel.SessionEvent, enriched);
     }
   };
+  setBrokerSessionEventSink((msg) => publishSingle(enrichSessionEvent(msg)));
   const pairSink = (msg: PairEventOut) => {
     if (msg.type !== "pair.event") {
       process.stdout.write(`[pair] ${msg.type} pid=${msg.pair_id.slice(0, 8)}\n`);
@@ -311,8 +386,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // before any pair is registered.
   let pairManager: PairManager | null = null;
   const send = (msg: SessionEventOut) => {
-    if (pairManager && pairManager.routeOrPassthrough(msg)) return;
-    singleSink(msg);
+    const enriched = enrichSessionEvent(msg);
+    if (pairManager && pairManager.routeOrPassthrough(enriched)) return;
+    publishSingle(enriched);
   };
 
   const sessionManager = new SessionManager({
@@ -328,6 +404,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         deps.browserMcpServerForTask?.(taskId) as SettingsMcpServer | undefined,
         browserPluginMcpServer,
         scheduleMcpBridge?.descriptor(taskId),
+        sessionHistoryMcpBridge.descriptor(taskId),
       ].filter((server): server is SettingsMcpServer => !!server),
     ),
     resolveDefaults: () => {
@@ -361,12 +438,16 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     // request/response schema at runtime; the vendored acp package's
     // ClientCallbacks type narrows on the SDK types. We trust the
     // brokers to follow the schema (smoke-tested against claude-acp).
-    buildCallbacks: (sessionId, sessionCwd) => ({
+    buildCallbacks: (sessionId, sessionCwd, additionalDirectories, agentId) => ({
       requestPermission: (params) =>
-        requestPermission(sessionId, params) as never,
+        requestPermission(sessionId, params, agentId) as never,
       readTextFile: (params) => readTextFile(params) as never,
       writeTextFile: (params) =>
-        writeTextFile(sessionId, sessionCwd, params) as never,
+        writeTextFile(
+          sessionId,
+          [sessionCwd, ...additionalDirectories],
+          params,
+        ) as never,
       createTerminal: async (params) =>
         createTerminal(sessionId, sessionCwd, params) as never,
       terminalOutput: async (params) => terminalOutput(params) as never,
@@ -375,6 +456,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         waitForTerminalExit(params) as never,
       killTerminal: async (params) => killTerminal(params) as never,
     }),
+    requestElicitationForm: (request) =>
+      requestElicitationForm(request.sessionId, request),
+    requestElicitationUrl: (request) =>
+      requestElicitationUrl(request.sessionId, request),
   });
   sessionManager.setOnSessionPendingWorkCancelled(cancelPendingFor);
 
@@ -490,6 +575,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         acp_session_id: p.resume?.acp_session_id ?? `acp-${p.session_id}`,
         agent_id: p.agent_id,
         cwd: p.cwd ?? "/tmp/backchat-test",
+        additional_directories: p.additional_directories,
+        project_id: p.project_id,
       };
       send({
         type: "session.ready",
@@ -497,6 +584,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         acp_session_id: result.acp_session_id,
         agent_id: result.agent_id,
         cwd: result.cwd,
+        additional_directories: result.additional_directories,
+        project_id: result.project_id,
       });
       return result;
     }
@@ -514,6 +603,20 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     }
     return sessionManager.prompt(p);
   });
+  ipcMain.handle(
+    InvokeChannel.SessionUpdatePromptQueue,
+    (_e, p: SessionPromptQueueCommandParams) => sessionManager.updatePromptQueue(p),
+  );
+  ipcMain.handle(
+    InvokeChannel.SessionRunCommand,
+    (_e, p: SessionRunCommandParams) => {
+      if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
+        testCommandCalls.push(p);
+        return;
+      }
+      return sessionManager.runCommand(p);
+    },
+  );
   ipcMain.handle(
     InvokeChannel.SessionSetConfigOption,
     (_e, p: SessionSetConfigOptionParams) => {
@@ -594,10 +697,13 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         cwd: member.cwd,
         acp_session_id: member.acp_session_id,
         title: member.title,
+        title_manually_set: member.title_manually_set,
         last_used_at: member.last_used_at,
         created_at: member.created_at,
         archived_at: member.archived_at,
         pinned_at: member.pinned_at,
+        project_id: member.project_id ?? null,
+        additional_directories: [],
       })),
     })),
   );
@@ -613,9 +719,50 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       })),
     }),
   );
+  ipcMain.handle(InvokeChannel.PairsPin, (_e, p: { pair_id: string }) =>
+    pinPairSession(p.pair_id));
+  ipcMain.handle(InvokeChannel.PairsUnpin, (_e, p: { pair_id: string }) =>
+    unpinPairSession(p.pair_id));
+  ipcMain.handle(InvokeChannel.PairsArchive, (_e, p: { pair_id: string }) =>
+    archivePairSession(p.pair_id));
+  ipcMain.handle(InvokeChannel.PairsUnarchive, (_e, p: { pair_id: string }) =>
+    unarchivePairSession(p.pair_id));
+
+  ipcMain.handle(InvokeChannel.ProjectsList, (): ProjectInfo[] => listProjects());
+  ipcMain.handle(
+    InvokeChannel.ProjectSave,
+    (_e, p: ProjectSaveParams): ProjectInfo => {
+      if (!p.project_id.trim()) throw new Error("Project id is required");
+      if (!p.name.trim()) throw new Error("Project name is required");
+      const sourceFolders = p.source_folders.map((folder) => folder.trim());
+      const invalidFolder = sourceFolders.find(
+        (folder) => folder && !isAbsolute(folder),
+      );
+      if (invalidFolder) {
+        throw new Error(`Project source folders must be absolute: ${invalidFolder}`);
+      }
+      return saveProject({
+        id: p.project_id,
+        name: p.name,
+        source_folders: sourceFolders,
+        primary_folder: p.primary_folder,
+      });
+    },
+  );
+  ipcMain.handle(
+    InvokeChannel.ProjectDelete,
+    (_e, p: { project_id: string }): void => deleteProject(p.project_id),
+  );
 
   ipcMain.handle(InvokeChannel.SessionsList, (_e, limit?: number):
-    PersistedSessionInfo[] => listSessions(limit));
+    PersistedSessionInfo[] => listSessions(limit).map(withProjectDirectories));
+  ipcMain.handle(
+    InvokeChannel.SessionsRename,
+    (_e, p: { session_id: string; title: string }): void => {
+      if (!p.session_id.trim()) throw new Error("Session id is required");
+      renameSession(p.session_id, p.title);
+    },
+  );
   ipcMain.handle(InvokeChannel.SessionsPin, (_e, p: { session_id: string }) =>
     pinSession(p.session_id));
   ipcMain.handle(InvokeChannel.SessionsUnpin, (_e, p: { session_id: string }) =>
@@ -624,7 +771,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     archiveSession(p.session_id));
   ipcMain.handle(InvokeChannel.SessionsUnarchive, (_e, p: { session_id: string }) =>
     unarchiveSession(p.session_id));
-  ipcMain.handle(InvokeChannel.SessionsListArchived, () => listArchivedSessions());
+  ipcMain.handle(
+    InvokeChannel.SessionsListArchived,
+    () => listArchivedSessions().map(withProjectDirectories),
+  );
   // Hard delete: drop the SQL row (events cascade) AND the on-disk
   // session dir. Order matters — wipe the dir first so a partial
   // failure leaves the row to retry from; if we deleted the row
@@ -654,6 +804,21 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   ipcMain.handle(
     InvokeChannel.SessionsLoadHistory,
     (_e, sessionId: string): PersistedEventInfo[] => loadHistory(sessionId),
+  );
+  ipcMain.handle(
+    InvokeChannel.SessionPersistCanonicalEvent,
+    (_e, event: OpenMAEvent): void => {
+      if (
+        !event
+        || event.schema_version !== "oma.event.v1"
+        || typeof event.event_id !== "string"
+        || typeof event.session_id !== "string"
+        || typeof event.type !== "string"
+      ) {
+        throw new Error("invalid OpenMA canonical event");
+      }
+      appendEvent(event.session_id, "openma_event", event);
+    },
   );
   ipcMain.handle(
     InvokeChannel.SideWorkspacesList,
@@ -843,6 +1008,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     ipcMain.handle(InvokeChannel.TestReadSessionPrompts, () =>
       testPromptCalls.map((p) => ({ ...p })),
     );
+    ipcMain.handle(InvokeChannel.TestReadSessionCommands, () =>
+      testCommandCalls.map((p) => ({ ...p })),
+    );
     ipcMain.handle(InvokeChannel.TestReadSessionConfigOptions, () =>
       testConfigOptionCalls.map((p) => ({ ...p })),
     );
@@ -919,6 +1087,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         scheduleMcpBridge?.stop(),
         browserMcpHttpServer?.close(),
         chromeExtensionBridge?.close(),
+        sessionHistoryMcpBridge.stop(),
       ]);
       scheduleStore.close();
     },

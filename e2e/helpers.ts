@@ -1,6 +1,8 @@
 /**
- * Shared Playwright + Electron launch helpers. Every spec imports
- * `launchApp` to get a fresh Electron process. The helper:
+ * Shared Playwright + Electron launch helpers. The fixture in `fixtures.ts`
+ * uses these helpers to give every test a fresh Electron process. Specs that
+ * need a custom home or a deliberate relaunch can call `launchAppWithHome`
+ * directly. The helper:
  *   - points electron at the built main bundle (./out/main/index.js)
  *   - sets BACKCHAT_TEST_HOOKS=1 so main/preload register test IPC
  *   - returns the ElectronApplication + first BrowserWindow Page
@@ -20,6 +22,12 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  TestBridge,
+  type ExportSessionFilesResult,
+  type PersistedSessionFixture,
+} from "./test-bridge";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
 
@@ -29,10 +37,19 @@ export async function launchApp(options: { language?: "en" | "zh-CN" } = {}): Pr
   home: string;
   cleanup: () => Promise<void>;
 }> {
-  return launchAppWithHome(
-    await mkdtemp(join(tmpdir(), "backchat-e2e-")),
-    options,
-  );
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const home = await mkdtemp(join(tmpdir(), "backchat-e2e-"));
+    try {
+      return await launchAppWithHome(home, options);
+    } catch (error) {
+      lastError = error;
+      if (process.env["BACKCHAT_KEEP_E2E_HOME"] !== "1") {
+        await rm(home, { recursive: true, force: true });
+      }
+    }
+  }
+  throw lastError ?? new Error("Electron E2E launch failed");
 }
 
 export async function launchAppWithHome(
@@ -49,10 +66,13 @@ export async function launchAppWithHome(
     env: {
       ...process.env,
       BACKCHAT_TEST_HOOKS: "1",
+      // Live ACP capability probes are useful in production, but they make
+      // relaunch/persistence E2Es depend on a configured agent process.
+      BACKCHAT_E2E_SKIP_AGENT_WARMUP: "1",
       BACKCHAT_HOME: home,
       // Skip the renderer-side persistence load so each test starts
       // with an empty sidebar (the SQLite store still mounts at
-      // ~/.openma/sessions.db; opt out of the seedPersisted call
+      // ~/.oma/sessions.db; opt out of the seedPersisted call
       // would be cleaner, but for now we just tolerate any pre-existing
       // rows — tests assert on what they inject, not on totals).
       NODE_ENV: "test",
@@ -62,9 +82,7 @@ export async function launchAppWithHome(
   try {
     // Wait on a locale-independent marker, then force English for the legacy
     // E2E suite unless a localization test explicitly requests Chinese.
-    await page.getByTestId("new-chat-button").waitFor({
-      timeout: 30_000,
-    });
+    await waitForRendererReady(page);
     await page.evaluate(async (language) => {
       const current = await window.backchat.settingsGet();
       await window.backchat.settingsPatch({
@@ -126,7 +144,40 @@ export async function closeApp(app: ElectronApplication): Promise<void> {
  * themselves; direct E2E setup intentionally bypasses that UI lifecycle. */
 export async function reloadRenderer(page: Page): Promise<void> {
   await page.reload();
-  await page.getByTestId("new-chat-button").waitFor({ timeout: 30_000 });
+  await waitForRendererReady(page);
+}
+
+/** Enable one agent override and reload so renderer-owned settings queries
+ * observe it. Fresh E2E homes intentionally start with no enabled agents. */
+export async function enableAgent(page: Page, agentId: string): Promise<void> {
+  const changed = await page.evaluate(async (id) => {
+    const current = await window.backchat.settingsGet();
+    const existing = current.agents.find((agent) => agent.id === id);
+    if (existing?.enabled) return false;
+    await window.backchat.settingsPatch({
+      agents: existing
+        ? current.agents.map((agent) => (
+            agent.id === id ? { ...agent, enabled: true } : agent
+          ))
+        : [...current.agents, { id, enabled: true, env: [] }],
+    });
+    return true;
+  }, agentId);
+  if (changed) await reloadRenderer(page);
+}
+
+/** Electron can occasionally create its first window before the renderer has
+ * mounted after a DB rebuild. One bounded reload keeps startup assertions
+ * deterministic while still failing when the renderer cannot boot. */
+async function waitForRendererReady(page: Page): Promise<void> {
+  const marker = page.getByTestId("new-chat-button");
+  try {
+    await marker.waitFor({ timeout: 15_000 });
+  } catch (error) {
+    if (page.isClosed()) throw error;
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 15_000 });
+    await marker.waitFor({ timeout: 15_000 });
+  }
 }
 
 /** Open a persisted session through the same collapsed project grouping users
@@ -134,17 +185,28 @@ export async function reloadRenderer(page: Page): Promise<void> {
 export async function openPersistedSession(
   page: Page,
   title: string,
-  projectLabel: string,
+  projectLabel?: string,
 ): Promise<Locator> {
   const navigation = page.getByRole("navigation");
-  const project = navigation.getByRole("button", {
-    name: projectLabel,
-    exact: true,
-  });
-  if ((await project.getAttribute("aria-expanded")) !== "true") {
-    await project.click();
-  }
   const session = navigation.getByRole("button", { name: title, exact: true });
+  if (!(await session.isVisible())) {
+    if (projectLabel) {
+      const project = navigation.getByRole("button", {
+        name: projectLabel,
+        exact: true,
+      });
+      if (await project.isVisible()) await project.click();
+    }
+  }
+  if (!(await session.isVisible())) {
+    // Project labels are presentation data (and managed sessions use a
+    // generated cwd), so fall back to expanding every collapsed project.
+    const collapsedProjects = navigation.locator('button[aria-expanded="false"]');
+    for (let index = 0; index < await collapsedProjects.count(); index += 1) {
+      await collapsedProjects.nth(index).click();
+      if (await session.isVisible()) break;
+    }
+  }
   await session.waitFor({ state: "visible" });
   await session.click();
   return session;
@@ -160,10 +222,17 @@ export async function openCommandPalette(page: Page): Promise<Locator> {
 export async function openBrowserPanel(page: Page): Promise<void> {
   const closeSidePanel = page.getByRole("button", { name: "Close side panel" });
   if (!(await closeSidePanel.isVisible())) {
-    await page.getByRole("button", { name: "Open side chat" }).click();
+    await page.getByRole("button", { name: "Open side panel" }).click();
   }
   await closeSidePanel.waitFor({ state: "visible" });
-  await page.getByRole("button", { name: /^Browser\b/ }).click();
+  const browserTab = page.getByRole("button", { name: /^Browser\b/ }).first();
+  if (await browserTab.isVisible()) {
+    await browserTab.click();
+  } else {
+    // The empty side panel now exposes browser as the user-facing
+    // “Website” quick tile; an existing tab still uses the Browser label.
+    await page.getByRole("button", { name: /^Website\b/ }).click();
+  }
   const browser = page.locator('[data-browser-visible="true"]');
   await browser.waitFor({ state: "visible" });
   const webview = browser.locator("webview");
@@ -192,22 +261,16 @@ export async function waitForRunnableHarness(page: Page): Promise<Locator> {
  *  pane. Returns the session id we synthesized. */
 export async function injectSession(
   page: Page,
-  opts: { agentId?: string; cwd?: string } = {},
+  opts: { sessionId?: string; agentId?: string; cwd?: string } = {},
 ): Promise<string> {
-  const sessionId = `e2e-${Math.random().toString(36).slice(2, 8)}`;
+  const sessionId = opts.sessionId ?? `e2e-${Math.random().toString(36).slice(2, 8)}`;
   const agentId = opts.agentId ?? "claude-acp";
   const cwd = opts.cwd ?? "/tmp/backchat-test";
-  await page.evaluate(
-    async ({ sessionId, agentId, cwd }) => {
-      // @ts-expect-error — test bridge typed in preload/index.ts
-      await window.__backchatTest.injectSessionRow({
-        session_id: sessionId,
-        agent_id: agentId,
-        cwd,
-      });
-    },
-    { sessionId, agentId, cwd },
-  );
+  await new TestBridge(page).injectSessionRow({
+    session_id: sessionId,
+    agent_id: agentId,
+    cwd,
+  });
   const sessionButton = page.getByRole("button", {
     name: `${agentId} · ${sessionId.slice(0, 6)}`,
   });
@@ -230,44 +293,45 @@ export async function injectEvent(
   page: Page,
   msg: { type: string; [k: string]: unknown },
 ): Promise<void> {
-  await page.evaluate(async (m) => {
-    // @ts-expect-error — test bridge
-    await window.__backchatTest.injectSessionEvent(m);
-  }, msg);
+  await new TestBridge(page).injectSessionEvent(msg);
+}
+
+export type AvailableCommandFixture = {
+  name: string;
+  description?: string;
+  input?: { hint?: string };
+  kind?: string;
+};
+
+/** Seed the active session's slash-command catalogue through the ACP-shaped
+ * event bridge. Keeping this setup in one helper makes slash E2Es resilient
+ * when the event envelope changes. */
+export async function injectAvailableCommands(
+  page: Page,
+  sessionId: string,
+  availableCommands: AvailableCommandFixture[],
+): Promise<void> {
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: "e2e-command-catalogue",
+    event: {
+      sessionUpdate: "available_commands_update",
+      availableCommands,
+    },
+  });
 }
 
 export async function persistSessionFixture(
   page: Page,
-  fixture: {
-    sessionId: string;
-    agentId?: string;
-    cwd?: string;
-    acpSessionId?: string;
-    title?: string;
-    events: Array<{ type: string; data: unknown; ts?: number }>;
-  },
+  fixture: PersistedSessionFixture,
 ): Promise<void> {
-  await page.evaluate(async (p) => {
-    // @ts-expect-error — test bridge
-    await window.__backchatTest.persistSessionFixture(p);
-  }, fixture);
+  await new TestBridge(page).persistSessionFixture(fixture);
 }
 
 export async function exportSessionFiles(
   page: Page,
   opts: { overwrite?: boolean } = {},
-): Promise<{
-  sessions: Array<{
-    sessionId: string;
-    eventCount: number;
-    transcriptPath: string;
-    metadataPath: string;
-    skipped: boolean;
-  }>;
-  pairs: Array<{ pairId: string; metadataPath: string; skipped: boolean }>;
-}> {
-  return page.evaluate(async (p) => {
-    // @ts-expect-error — test bridge
-    return window.__backchatTest.exportSessionFiles(p);
-  }, opts);
+): Promise<ExportSessionFilesResult> {
+  return new TestBridge(page).exportSessionFiles(opts);
 }

@@ -1,12 +1,17 @@
 import { expect, test } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
+import { CLAUDE_AGENT_ACP_0_64_2_FIXTURE } from "../src/renderer/src/lib/fixtures/harness-events/claude-agent-acp-0.64.2";
+import { KILO_7_4_20_FIXTURE } from "../src/renderer/src/lib/fixtures/harness-events/kilo-7.4.20";
+import { OPENCODE_1_18_13_FIXTURE } from "../src/renderer/src/lib/fixtures/harness-events/opencode-1.18.13";
 import {
   closeApp,
+  enableAgent,
   exportSessionFiles,
+  injectEvent,
   launchAppWithHome,
   openCommandPalette,
   openPersistedSession,
@@ -157,24 +162,377 @@ test.describe("user-visible storage persistence", () => {
       string,
       unknown
     >;
+    const workdir = String(metadata.workdir ?? "");
     expect(metadata).toMatchObject({
       schema_version: "backchat.session_meta.v1",
       agent_id: "codex-acp",
       title: prompt,
-      workdir: workspace,
       pair_id: "",
     });
+    expect(workdir).toMatch(/[\\/]sessions[\\/]/);
     expect(typeof metadata.session_id).toBe("string");
     expect(typeof metadata.created_at).toBe("number");
     expect(typeof metadata.last_used_at).toBe("number");
 
     const second = await launchAppWithHome(home);
     try {
-      await openPersistedSession(second.page, prompt, "workspace");
+      await openPersistedSession(second.page, prompt, basename(workdir));
 
       const transcript = second.page.getByRole("log");
       await expect(transcript.getByText(prompt, { exact: true })).toBeVisible();
       await expect(transcript.getByText(response)).toBeVisible();
+    } finally {
+      await second.cleanup();
+    }
+  });
+
+  test("replays Cursor todo merge semantics through SQL after relaunch", async () => {
+    const home = await test.info().outputPath("home");
+    const workspace = join(home, "workspace");
+    const prompt = "cursor-plan-merge-e2e";
+    await mkdir(workspace, { recursive: true });
+
+    let sessionId = "";
+    const first = await launchAppWithHome(home);
+    try {
+      await first.page.evaluate(
+        async ({ nodePath, fakeAcpAgentPath, workspace }) => {
+          // @ts-expect-error — test setup uses the public settings IPC.
+          await window.backchat.settingsPatch({
+            default: {
+              agent_id: "cursor",
+              workspace_path: workspace,
+              permission_mode: "ask",
+              prompt_queue_enabled: true,
+            },
+            agents: [
+              {
+                id: "cursor",
+                enabled: true,
+                command_override: nodePath,
+                args_override: [fakeAcpAgentPath],
+                env: [],
+              },
+            ],
+          });
+        },
+        { nodePath: process.execPath, fakeAcpAgentPath, workspace },
+      );
+      await reloadRenderer(first.page);
+      await waitForRunnableHarness(first.page);
+
+      const composer = first.page.locator("textarea").first();
+      await composer.fill(prompt);
+      await composer.press("Enter");
+      await expect(
+        first.page.getByRole("log").getByText(`Fake response saved for ${prompt}.`),
+      ).toBeVisible();
+
+      const plan = first.page.locator('[data-plan-activity="true"]');
+      await expect(plan).toBeVisible();
+      await expect(plan.getByRole("button")).toContainText("2 / 3");
+      await plan.getByRole("button").click();
+      await expect(plan.locator("li").filter({ hasText: "Audit inputs" })).toBeVisible();
+      const runningTask = plan.locator("li").filter({ hasText: "Wire outputs" });
+      await expect(runningTask).toBeVisible();
+      await expect(plan.locator("li").filter({ hasText: "Verify replay" })).toBeVisible();
+      await expect(runningTask).toHaveAttribute("data-task-status", "in_progress");
+
+      const sessions = await first.page.evaluate(() => window.backchat.sessionsList());
+      sessionId = sessions.find((session) => session.title === prompt)?.id ?? "";
+      expect(sessionId).not.toBe("");
+      await expect.poll(() => first.page.evaluate(async (id) => {
+        const rows = await window.backchat.sessionsLoadHistory(id);
+        return rows.some((row) => {
+          if (row.type !== "openma_event") return false;
+          try {
+            const event = JSON.parse(row.data);
+            return event.type === "plan.updated"
+              && event.data?.plan_id === "cursor-todos"
+              && event.data?.update_mode === "merge"
+              && event.data?.entries?.[0]?.id === "todo-1";
+          } catch {
+            return false;
+          }
+        });
+      }, sessionId)).toBe(true);
+    } finally {
+      await closeApp(first.app);
+    }
+
+    const second = await launchAppWithHome(home);
+    try {
+      await openPersistedSession(second.page, prompt, "workspace");
+      const plan = second.page.locator('[data-plan-activity="true"]');
+      await expect(plan.getByRole("button")).toContainText("2 / 3");
+      await plan.getByRole("button").click();
+      await expect(plan.locator("li").filter({ hasText: "Audit inputs" })).toBeVisible();
+      await expect(plan.locator("li").filter({ hasText: "Wire outputs" })).toBeVisible();
+      await expect(plan.locator("li").filter({ hasText: "Verify replay" })).toBeVisible();
+    } finally {
+      await second.cleanup();
+    }
+  });
+
+  test("replays OpenCode-family todowrite snapshots through canonical SQL after relaunch", async () => {
+    const home = await test.info().outputPath("home");
+    const workspace = join(home, "workspace");
+    await mkdir(workspace, { recursive: true });
+    const cases = [
+      {
+        agentId: "opencode",
+        sessionId: "e2e-opencode-todowrite-replay",
+        title: "OpenCode todowrite replay",
+        event: OPENCODE_1_18_13_FIXTURE.events.todoWriteStarted,
+      },
+      {
+        agentId: "kilo",
+        sessionId: "e2e-kilo-todowrite-replay",
+        title: "Kilo todowrite replay",
+        event: KILO_7_4_20_FIXTURE.events.todoWriteStarted,
+      },
+    ] as const;
+
+    const first = await launchAppWithHome(home);
+    try {
+      for (const item of cases) {
+        await persistSessionFixture(first.page, {
+          sessionId: item.sessionId,
+          agentId: item.agentId,
+          cwd: workspace,
+          acpSessionId: `acp-${item.sessionId}`,
+          title: item.title,
+          events: [{ type: "user_prompt", data: { text: "update tasks" } }],
+        });
+      }
+      await reloadRenderer(first.page);
+
+      for (const item of cases) {
+        await openPersistedSession(first.page, item.title, "workspace");
+        await injectEvent(first.page, {
+          type: "session.event",
+          session_id: item.sessionId,
+          turn_id: `turn-${item.sessionId}`,
+          event: item.event,
+        });
+
+        const plan = first.page.locator('[data-plan-activity="true"]');
+        await expect(plan.getByRole("button")).toContainText("1 / 2");
+        await expect.poll(() => first.page.evaluate(async (id) => {
+          const rows = await window.backchat.sessionsLoadHistory(id);
+          return rows.some((row) => {
+            if (row.type !== "openma_event") return false;
+            try {
+              const event = JSON.parse(row.data);
+              return event.type === "plan.updated"
+                && event.data?.update_mode === "replace"
+                && event.data?.entries?.[1]?.content === "Persist canonical plan";
+            } catch {
+              return false;
+            }
+          });
+        }, item.sessionId)).toBe(true);
+      }
+    } finally {
+      await closeApp(first.app);
+    }
+
+    const second = await launchAppWithHome(home);
+    try {
+      for (const item of cases) {
+        await openPersistedSession(second.page, item.title, "workspace");
+        const plan = second.page.locator('[data-plan-activity="true"]');
+        await expect(plan.getByRole("button")).toContainText("1 / 2");
+        await plan.getByRole("button").click();
+        await expect(
+          plan.locator("li").filter({ hasText: "Persist canonical plan" }),
+        ).toHaveAttribute("data-task-status", "in_progress");
+      }
+    } finally {
+      await second.cleanup();
+    }
+  });
+
+  test("replays a correlated Monitor event through SQL after relaunch", async () => {
+    const home = await test.info().outputPath("home");
+    const workspace = join(home, "workspace");
+    const sessionId = "e2e-canonical-monitor-replay";
+    const title = "Persistent Monitor activity";
+    await mkdir(workspace, { recursive: true });
+
+    const first = await launchAppWithHome(home);
+    try {
+      await persistSessionFixture(first.page, {
+        sessionId,
+        agentId: "claude-acp",
+        cwd: workspace,
+        acpSessionId: "",
+        title,
+        events: [{ type: "user_prompt", data: { text: "watch production" } }],
+      });
+      await reloadRenderer(first.page);
+      await openPersistedSession(first.page, title, "workspace");
+
+      await injectEvent(first.page, {
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: "",
+        event: {
+          type: "acp.extension_notification",
+          method: "_claude/sdkMessage",
+          params: {
+            sessionId: "acp-canonical-monitor-replay",
+            message: {
+              type: "user",
+              origin: { kind: "task-notification" },
+              message: {
+                role: "user",
+                content:
+                  "<task-notification>\n"
+                  + "<task-id>persistent-monitor-1</task-id>\n"
+                  + "<summary>Monitor event: \"production alerts\"</summary>\n"
+                  + "<event>latency threshold crossed</event>\n"
+                  + "</task-notification>",
+              },
+            },
+          },
+        },
+      });
+
+      await expect(
+        first.page.locator('[data-activity-module="monitor"]'),
+      ).toHaveAttribute("aria-label", "Monitor: 1 event");
+      await expect.poll(() => first.page.evaluate(async (id) => {
+        const rows = await window.backchat.sessionsLoadHistory(id);
+        return rows.some((row) => {
+          if (row.type !== "openma_event") return false;
+          try {
+            const event = JSON.parse(row.data);
+            return event.type === "monitor.event"
+              && event.work_item_id === "persistent-monitor-1";
+          } catch {
+            return false;
+          }
+        });
+      }, sessionId)).toBe(true);
+    } finally {
+      await closeApp(first.app);
+    }
+
+    const second = await launchAppWithHome(home);
+    try {
+      await openPersistedSession(second.page, title, "workspace");
+      const monitor = second.page.locator('[data-activity-module="monitor"]');
+      await expect(monitor).toHaveAttribute("aria-label", "Monitor: 1 event");
+      await monitor.click();
+      await expect(second.page.getByText("production alerts", { exact: true })).toBeVisible();
+      await expect(
+        second.page.getByText("latency threshold crossed", { exact: true }),
+      ).toBeVisible();
+    } finally {
+      await second.cleanup();
+    }
+  });
+
+  test("replays Claude Monitor and native Agent lifecycle through SQL after relaunch", async () => {
+    const home = await test.info().outputPath("home");
+    const workspace = join(home, "workspace");
+    const sessionId = "e2e-claude-runtime-replay";
+    const turnId = "turn-claude-runtime-replay";
+    const title = "Claude runtime lifecycle replay";
+    await mkdir(workspace, { recursive: true });
+
+    const first = await launchAppWithHome(home);
+    try {
+      await enableAgent(first.page, "claude-acp");
+      await persistSessionFixture(first.page, {
+        sessionId,
+        agentId: "claude-acp",
+        cwd: workspace,
+        acpSessionId: "acp-claude-runtime-replay",
+        title,
+        events: [{ type: "user_prompt", data: { text: "delegate and watch" } }],
+      });
+      await reloadRenderer(first.page);
+      await openPersistedSession(first.page, title, "workspace");
+
+      const events = [
+        // Plugin-created Monitor has no ordinary Monitor tool result. Its
+        // generic local_bash task becomes identifiable on the first delivery.
+        CLAUDE_AGENT_ACP_0_64_2_FIXTURE.events.monitorTaskStarted,
+        CLAUDE_AGENT_ACP_0_64_2_FIXTURE.events.monitorDelivery,
+        CLAUDE_AGENT_ACP_0_64_2_FIXTURE.events.monitorTaskCompleted,
+        CLAUDE_AGENT_ACP_0_64_2_FIXTURE.events.subagentTaskStarted,
+        CLAUDE_AGENT_ACP_0_64_2_FIXTURE.events.subagentTaskProgress,
+        CLAUDE_AGENT_ACP_0_64_2_FIXTURE.events.subagentMessage,
+        CLAUDE_AGENT_ACP_0_64_2_FIXTURE.events.subagentTaskCompleted,
+      ];
+      for (const event of events) {
+        await injectEvent(first.page, {
+          type: "session.event",
+          session_id: sessionId,
+          turn_id: turnId,
+          event,
+        });
+      }
+
+      await expect(
+        first.page.locator('[data-activity-module="monitor"]'),
+      ).toHaveAttribute("aria-label", "Monitor: 1 completed · 1 event");
+      await expect.poll(() => first.page.evaluate(async (id) => {
+        const rows = await window.backchat.sessionsLoadHistory(id);
+        return rows.flatMap((row) => {
+          if (row.type !== "openma_event") return [];
+          try {
+            const event = JSON.parse(row.data);
+            return [{ type: event.type, workItemId: event.work_item_id }];
+          } catch {
+            return [];
+          }
+        });
+      }, sessionId)).toEqual(expect.arrayContaining([
+        { type: "work_item.started", workItemId: "monitor-task-9" },
+        { type: "work_item.classified", workItemId: "monitor-task-9" },
+        { type: "monitor.event", workItemId: "monitor-task-9" },
+        { type: "work_item.completed", workItemId: "monitor-task-9" },
+        { type: "work_item.started", workItemId: "agent-task-42" },
+        { type: "work_item.progress", workItemId: "agent-task-42" },
+        { type: "agent.message_chunk", workItemId: "agent-task-42" },
+        { type: "work_item.completed", workItemId: "agent-task-42" },
+      ]));
+    } finally {
+      await closeApp(first.app);
+    }
+
+    const second = await launchAppWithHome(home);
+    try {
+      await openPersistedSession(second.page, title, "workspace");
+      await expect(
+        second.page.locator('[data-activity-module="monitor"]'),
+      ).toHaveAttribute("aria-label", "Monitor: 1 completed · 1 event");
+
+      const agentRow = second.page
+        .locator('[data-resource-category="agents"]')
+        .getByRole("button", { name: "Audit renderer event handling" });
+      if (!(await agentRow.isVisible())) {
+        const openSidePanel = second.page.getByRole("button", {
+          name: "Open side panel",
+        });
+        if (await openSidePanel.isVisible()) await openSidePanel.click();
+        const newTab = second.page.getByRole("button", {
+          name: "New tab",
+          exact: true,
+        });
+        if (await newTab.isVisible()) await newTab.click();
+      }
+      await expect(agentRow).toHaveAttribute(
+        "title",
+        "Audit renderer event handling\ncompleted · 1,234 tokens",
+      );
+      await agentRow.click();
+      await expect(
+        second.page.getByText("Child located the canonical boundary.", { exact: true }),
+      ).toBeVisible();
     } finally {
       await second.cleanup();
     }
@@ -407,7 +765,10 @@ test.describe("user-visible storage persistence", () => {
 
     const second = await launchAppWithHome(home);
     try {
-      await openPersistedSession(second.page, prompt, "workspace");
+      const metadataFiles = await findFiles(join(home, "transcripts"), ".meta.toml");
+      expect(metadataFiles).toHaveLength(1);
+      const metadata = parseToml(await readFile(metadataFiles[0]!, "utf-8")) as Record<string, unknown>;
+      await openPersistedSession(second.page, prompt, basename(String(metadata.workdir)));
 
       const transcript = second.page.getByRole("log");
       await expect(transcript.getByText(prompt, { exact: true })).toBeVisible();
@@ -423,18 +784,14 @@ test.describe("user-visible storage persistence", () => {
     const first = await launchAppWithHome(home);
     try {
       await first.page.getByRole("button", { name: "New chat", exact: true }).click();
-      await expect(
-        first.page.getByText(/What can I help with\?|Pick a default agent/),
-      ).toBeVisible();
+      await expect(first.page.getByRole("heading", { name: "Pick an agent" })).toBeVisible();
     } finally {
       await closeApp(first.app);
     }
 
     const second = await launchAppWithHome(home);
     try {
-      await expect(
-        second.page.getByText(/What can I help with\?|Pick a default agent/),
-      ).toBeVisible();
+      await expect(second.page.getByRole("heading", { name: "Pick an agent" })).toBeVisible();
       await expect(
         second.page.getByRole("navigation").getByRole("listitem"),
       ).toHaveCount(0);

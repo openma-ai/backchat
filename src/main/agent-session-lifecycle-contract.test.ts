@@ -23,7 +23,8 @@ describe("agent and session lifecycle contract", () => {
       ipc.indexOf("InvokeChannel.AgentInstall"),
     );
 
-    expect(ipc).toContain("const agentWarmup = agentSetup.warmup()");
+    expect(ipc).toContain("agentSetup.warmup()");
+    expect(ipc).toContain('process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"]');
     expect(listHandler).toContain("await agentWarmup");
   });
 
@@ -35,7 +36,6 @@ describe("agent and session lifecycle contract", () => {
       setup.lastIndexOf("  async authenticateAgent("),
       setup.indexOf("private async refreshRegistry("),
     );
-
     expect(settings).toContain('input.type === "refresh"');
     expect(settings).toContain("agentsList({ refresh: true })");
     expect(settings).toContain('agentsList({ readiness: "snapshot" })');

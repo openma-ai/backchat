@@ -957,7 +957,7 @@ export function BrowserTab({
           partition="memory:browser"
           // allowFileAccess=yes — without this, file:// navigation
           // silently fails. Agents commonly write artifacts under
-          // ~/.openma/sessions/<sid>/ and we auto-open them; the user
+          // ~/.oma/sessions/<sid>/ and we auto-open them; the user
           // explicitly trusted the agent's output, so granting file
           // access for in-app preview matches expectation. Network/web
           // content still goes through the standard partition sandbox.

@@ -24,12 +24,14 @@ describe("session level GUI contract", () => {
     expect(sidePanelUiSource).toContain("onPickSubagent");
     expect(sidePanelUiSource).toContain("sessionStore.openSideTabForTask(");
     expect(sidePanelUiSource).not.toContain('newSideSubagentDraft');
-    expect(sidePanelUiSource).toContain('t("rightPanel.currentSubagents")');
+    expect(sidePanelUiSource).toContain('t("sideChat.title")');
     expect(sidePanelUiSource).toContain('t("rightPanel.outputs")');
-    expect(sidePanelUiSource).toContain('t("rightPanel.backgroundProcesses")');
+    expect(sidePanelUiSource).toContain('t("rightPanel.background")');
     expect(sidePanelUiSource).toContain('t("rightPanel.sources")');
     expect(sidePanelUiSource).toContain("data-right-panel-launcher-list");
-    expect(sidePanelUiSource).toContain("data-current-subagents");
+    expect(sidePanelUiSource).toContain("data-new-actions");
+    expect(sidePanelUiSource).toContain("data-resource-list");
+    expect(sidePanelUiSource).toContain("data-resource-category");
     expect(sidePanelUiSource).not.toContain("grid grid-cols-2");
   });
 
@@ -138,18 +140,21 @@ describe("session level GUI contract", () => {
       resolve(__dirname, "../renderer/src/lib/session-store.ts"),
       "utf-8",
     );
+    const adapterSource = readFileSync(
+      resolve(__dirname, "../renderer/src/lib/agent-runtime-adapters.ts"),
+      "utf-8",
+    );
     const nativeSource = readFileSync(
       resolve(__dirname, "../renderer/src/lib/native-agent-events.ts"),
       "utf-8",
     );
-    const activitySource = readFileSync(
-      resolve(__dirname, "../renderer/src/lib/session-native-activity.ts"),
-      "utf-8",
-    );
 
-    expect(storeSource).toContain("nativeProviderForAgent");
-    expect(activitySource).toContain('normalized === "codex-acp"');
-    expect(activitySource).toContain('normalized === "claude-acp"');
+    expect(storeSource).toContain("resolveAgentRuntimeAdapter");
+    expect(storeSource).not.toContain("nativeProviderForAgent");
+    expect(adapterSource).toContain("codexRuntimeAdapter");
+    expect(adapterSource).toContain("claudeCodeRuntimeAdapter");
+    expect(adapterSource).toContain('normalized === "codex-acp"');
+    expect(adapterSource).toContain('normalized === "claude-acp"');
     expect(nativeSource).toContain('name === "spawn_agent"');
     expect(nativeSource).toContain('name === "task" || name === "agent"');
     expect(nativeSource).not.toContain("agentId:");
@@ -189,7 +194,10 @@ describe("session level GUI contract", () => {
     );
     const scrollStart = sidePanelSource.indexOf("data-side-tab-scroll");
     const actionsStart = sidePanelSource.indexOf("data-side-tab-actions");
-    const addButton = sidePanelSource.indexOf("<AddTabButton", actionsStart);
+    const addButton = sidePanelSource.indexOf(
+      'aria-label={t("rightPanel.newTab")}',
+      actionsStart,
+    );
 
     expect(scrollStart).toBeGreaterThan(-1);
     expect(actionsStart).toBeGreaterThan(scrollStart);

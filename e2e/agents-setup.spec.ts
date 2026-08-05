@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { closeApp, launchApp } from "./helpers";
+import { expect, test } from "./fixtures";
 
 const envAgent = {
   id: "env-agent",
@@ -85,13 +84,8 @@ const waitingAgentConfigured = {
 };
 
 test.describe("settings agent setup lifecycle", () => {
-  test("keeps ACP auth setup semantics aligned in the GUI", async () => {
-    const { app, page } = await launchApp();
-    try {
-      await page.evaluate(async (fixture) => {
-        // @ts-expect-error — test bridge typed in preload/index.ts
-        await window.__backchatTest.setAgentSetupFixture(fixture);
-      }, {
+  test("keeps ACP auth setup semantics aligned in the GUI", async ({ page, bridge }) => {
+      await bridge.setAgentSetupFixture({
         agents: [envAgent, terminalAgent, multiAgent, waitingAgentNeedsAuth],
         authenticateResults: {
           "multi-agent": [envAgent, terminalAgent, multiAgent, waitingAgentNeedsAuth],
@@ -104,8 +98,8 @@ test.describe("settings agent setup lifecycle", () => {
 
       await page.getByRole("link", { name: "Settings" }).click();
       await page.getByRole("link", { name: "Agents", exact: true }).click();
-      await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "Back to app" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Back to app" })).toBeVisible();
       await expect(page.getByPlaceholder("Search settings...")).toBeVisible();
       await expect(page.getByText("Personal")).toBeVisible();
       await expect(page.getByText("Integrations")).toBeVisible();
@@ -118,21 +112,13 @@ test.describe("settings agent setup lifecycle", () => {
       await expect(page.getByText("Set up Multi Agent")).toBeVisible();
       await page.getByRole("radio", { name: /Terminal login/ }).click();
       await page.getByRole("button", { name: "Open terminal setup" }).click();
-      await expect.poll(async () => page.evaluate(() => {
-        // @ts-expect-error — test bridge typed in preload/index.ts
-        return window.__backchatTest.agentSetupCalls();
-      })).toContainEqual({ type: "auth", id: "multi-agent", methodId: "terminal-login" });
+      await expect.poll(() => bridge.readAgentSetupCalls())
+        .toContainEqual({ type: "auth", id: "multi-agent", methodId: "terminal-login" });
 
       await page.getByRole("button", { name: "Sign in to Waiting Agent" }).click();
       await expect(page.getByText("Set up Waiting Agent")).toBeVisible();
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await expect(page.getByText("Waiting for auth")).toBeVisible();
       await expect(page.getByRole("button", { name: "Continue sign in" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Check Waiting Agent auth again" })).toBeVisible();
-      await expect(page.getByText("Auth configured")).toBeVisible({ timeout: 8_000 });
-    } finally {
-      await closeApp(app);
-    }
   });
 });

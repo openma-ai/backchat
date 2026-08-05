@@ -4,7 +4,7 @@
  * the schema directly so type drift between the two is caught when the
  * schema changes (the structural shape here would no longer line up).
  *
- * Stored at ~/.openma/config.toml. See settings-store.ts for
+ * Stored at ~/.oma/config.toml. See settings-store.ts for
  * the full rationale (TOML over JSON, home dir over userData, etc).
  */
 

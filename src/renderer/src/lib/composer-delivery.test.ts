@@ -30,6 +30,18 @@ describe("describeRunningMessageAction", () => {
     expect(action.title).toContain("Steer is not available");
   });
 
+  it("uses the live session steering capability without a harness allowlist", () => {
+    const action = describeRunningMessageAction({
+      agentId: "custom-acp-agent",
+      intent: "steer",
+      supportsSteering: true,
+    });
+
+    expect(action.label).toBe("Steer");
+    expect(action.decision.effectiveDelivery).toBe("llm_boundary");
+    expect(action.decision.degraded).toBe(false);
+  });
+
   it("marks default Hermes interrupt as unavailable over generic ACP", () => {
     const action = describeRunningMessageAction({
       agentId: "hermes",

@@ -3,6 +3,8 @@ import { XIcon } from "lucide-react";
 import { resolveAskDismissal } from "@/lib/composer-ask-decision";
 import type { BrokerAsk } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
+import type { ElicitationResponseInfo } from "@shared/api.js";
+import { ElicitationAskForm } from "./ElicitationAskForm";
 
 export function InlineAskPanel({
   ask,
@@ -12,9 +14,14 @@ export function InlineAskPanel({
   onResolve: (
     optionId: string | null,
     approve?: boolean,
+    elicitation?: ElicitationResponseInfo,
   ) => void | Promise<void>;
 }) {
   const dismiss = () => {
+    if (ask.kind === "elicitation") {
+      void onResolve(null, undefined, { action: "cancel" });
+      return;
+    }
     const resolution = resolveAskDismissal(ask);
     if (resolution.approve === undefined) {
       void onResolve(resolution.optionId);
@@ -35,12 +42,12 @@ export function InlineAskPanel({
 
   if (ask.kind === "permission") {
     const permission = ask.ask;
-    const tool = permission.toolCall as
-      | { title?: string; kind?: string }
-      | undefined;
-    const title = tool?.title ?? "Approve this action?";
     return (
-      <AskSheet title={title} meta={tool?.kind} onClose={dismiss}>
+      <AskSheet
+        title={permission.presentation.title}
+        meta={permission.presentation.kind}
+        onClose={dismiss}
+      >
         {permission.options.map((option) => {
           const isPrimary =
             option.kind === "allow_once" || option.kind === "allow_always";
@@ -54,6 +61,33 @@ export function InlineAskPanel({
             />
           );
         })}
+      </AskSheet>
+    );
+  }
+
+  if (ask.kind === "elicitation") {
+    if (ask.ask.mode === "url") {
+      return (
+        <AskSheet title={ask.ask.message} meta={ask.ask.url} onClose={dismiss}>
+          <AskOption
+            label={`Open ${elicitationUrlHost(ask.ask.url)}`}
+            tone="primary"
+            onClick={() => void onResolve(null, undefined, { action: "accept" })}
+          />
+          <AskOption
+            label="Decline"
+            tone="neutral"
+            onClick={() => void onResolve(null, undefined, { action: "decline" })}
+          />
+        </AskSheet>
+      );
+    }
+    return (
+      <AskSheet title={ask.ask.message} onClose={dismiss}>
+        <ElicitationAskForm
+          ask={ask.ask}
+          onSubmit={(response) => onResolve(null, undefined, response)}
+        />
       </AskSheet>
     );
   }
@@ -78,6 +112,14 @@ export function InlineAskPanel({
       />
     </AskSheet>
   );
+}
+
+function elicitationUrlHost(url: string): string {
+  try {
+    return new URL(url).host || "external page";
+  } catch {
+    return "external page";
+  }
 }
 
 function AskSheet({

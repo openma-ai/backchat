@@ -127,11 +127,31 @@ describe("bindBrowserWebviewEvents", () => {
     });
   });
 
+  it("converts a remote page favicon into a renderer-safe data URL", async () => {
+    const webview = new FakeWebview();
+    webview.faviconUrl = "data:image/x-icon;base64,converted-icon";
+    const onPageMeta = vi.fn();
+
+    bindBrowserWebviewEvents(webview, callbacks({ onPageMeta }));
+    webview.emit("page-favicon-updated", {
+      favicons: ["https://example.test/favicon.ico"],
+    });
+
+    await vi.waitFor(() => {
+      expect(onPageMeta).toHaveBeenCalledWith({
+        faviconUrl: "data:image/x-icon;base64,converted-icon",
+      });
+    });
+    expect(onPageMeta).not.toHaveBeenCalledWith({
+      faviconUrl: "https://example.test/favicon.ico",
+    });
+  });
+
   it("publishes ready state and caches the frame on DOM ready", async () => {
     const webview = new FakeWebview();
     webview.url = "https://example.test/ready";
     webview.zoomFactor = 1.25;
-    webview.faviconUrl = "https://example.test/icon.png";
+    webview.faviconUrl = "data:image/png;base64,ready-icon";
     const onDomReady = vi.fn();
     const onPageMeta = vi.fn();
     const onCacheFrame = vi.fn();
@@ -149,7 +169,7 @@ describe("bindBrowserWebviewEvents", () => {
     expect(onCacheFrame).toHaveBeenCalledOnce();
     await vi.waitFor(() => {
       expect(onPageMeta).toHaveBeenCalledWith({
-        faviconUrl: "https://example.test/icon.png",
+        faviconUrl: "data:image/png;base64,ready-icon",
       });
     });
   });

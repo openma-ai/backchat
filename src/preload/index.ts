@@ -9,11 +9,14 @@ import type { AgentInfo, BackchatApi } from "../shared/api.js";
 import type {
   SessionEventOut,
   SessionPromptParams,
+  SessionPromptQueueCommandParams,
+  SessionRunCommandParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
 } from "../shared/session-events.js";
 import type { Settings } from "../shared/settings.js";
+import type { OpenMAEvent } from "@openma/common/session-events/openma";
 
 const api: BackchatApi = {
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
@@ -32,6 +35,10 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.SessionStart, p) as Promise<SessionStartResult>,
   sessionPrompt: (p: SessionPromptParams) =>
     ipcRenderer.invoke(InvokeChannel.SessionPrompt, p) as Promise<void>,
+  sessionUpdatePromptQueue: (p: SessionPromptQueueCommandParams) =>
+    ipcRenderer.invoke(InvokeChannel.SessionUpdatePromptQueue, p) as Promise<void>,
+  sessionRunCommand: (p: SessionRunCommandParams) =>
+    ipcRenderer.invoke(InvokeChannel.SessionRunCommand, p) as Promise<void>,
   sessionSetConfigOption: (p: SessionSetConfigOptionParams) =>
     ipcRenderer.invoke(InvokeChannel.SessionSetConfigOption, p) as Promise<void>,
   sessionCancel: (p) =>
@@ -52,6 +59,20 @@ const api: BackchatApi = {
       import("../shared/api.js").PersistedPairInfo[]
     >,
   pairSave: (p) => ipcRenderer.invoke(InvokeChannel.PairSave, p) as Promise<void>,
+  pairsPin: (p) => ipcRenderer.invoke(InvokeChannel.PairsPin, p) as Promise<void>,
+  pairsUnpin: (p) => ipcRenderer.invoke(InvokeChannel.PairsUnpin, p) as Promise<void>,
+  pairsArchive: (p) => ipcRenderer.invoke(InvokeChannel.PairsArchive, p) as Promise<void>,
+  pairsUnarchive: (p) => ipcRenderer.invoke(InvokeChannel.PairsUnarchive, p) as Promise<void>,
+  projectsList: () =>
+    ipcRenderer.invoke(InvokeChannel.ProjectsList) as Promise<
+      import("../shared/projects.js").ProjectInfo[]
+    >,
+  projectSave: (p) =>
+    ipcRenderer.invoke(InvokeChannel.ProjectSave, p) as Promise<
+      import("../shared/projects.js").ProjectInfo
+    >,
+  projectDelete: (p) =>
+    ipcRenderer.invoke(InvokeChannel.ProjectDelete, p) as Promise<void>,
   onPairEvent: (handler) => {
     const l = (_e: IpcRendererEvent, ev: import("../shared/pair-events.js").PairEventOut) =>
       handler(ev);
@@ -63,10 +84,14 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.SessionsList, limit) as Promise<
       import("../shared/api.js").PersistedSessionInfo[]
     >,
+  sessionsRename: (p) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsRename, p) as Promise<void>,
   sessionsLoadHistory: (sessionId) =>
     ipcRenderer.invoke(InvokeChannel.SessionsLoadHistory, sessionId) as Promise<
       import("../shared/api.js").PersistedEventInfo[]
     >,
+  sessionPersistCanonicalEvent: (event: OpenMAEvent) =>
+    ipcRenderer.invoke(InvokeChannel.SessionPersistCanonicalEvent, event) as Promise<void>,
   sideWorkspacesList: () =>
     ipcRenderer.invoke(InvokeChannel.SideWorkspacesList) as Promise<
       import("../shared/api.js").PersistedSideWorkspaceInfo[]
@@ -162,6 +187,17 @@ const api: BackchatApi = {
   },
   permissionRespond: (requestId, optionId) =>
     ipcRenderer.invoke(InvokeChannel.PermissionRespond, { requestId, optionId }) as Promise<void>,
+  onElicitationRequest: (handler) => {
+    const l = (_e: IpcRendererEvent, ask: import("../shared/api.js").ElicitationAskInfo) =>
+      handler(ask);
+    ipcRenderer.on(PushChannel.ElicitationRequest, l);
+    return () => ipcRenderer.removeListener(PushChannel.ElicitationRequest, l);
+  },
+  elicitationRespond: (requestId, response) =>
+    ipcRenderer.invoke(InvokeChannel.ElicitationRespond, {
+      requestId,
+      ...response,
+    }) as Promise<void>,
   brokerPendingAsks: () =>
     ipcRenderer.invoke(InvokeChannel.BrokerPendingAsks) as Promise<
       import("../shared/api.js").PendingBrokerAskInfo[]
@@ -294,8 +330,14 @@ const api: BackchatApi = {
   uiFsHome: () => ipcRenderer.invoke(InvokeChannel.UiFsHome) as Promise<string>,
   uiFsPickDir: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsPickDir, p ?? {}) as Promise<string | null>,
+  uiFsPickDirs: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsPickDirs, p ?? {}) as Promise<string[]>,
   uiFsPickFiles: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsPickFiles, p ?? {}) as Promise<
+      import("../shared/session-events.js").PromptAttachment[]
+    >,
+  uiFsSearchFiles: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsSearchFiles, p) as Promise<
       import("../shared/session-events.js").PromptAttachment[]
     >,
   uiFsSaveCapture: (p) =>
@@ -511,12 +553,18 @@ if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
       ipcRenderer.invoke(InvokeChannel.TestExportSessionFiles, p ?? {}),
     readSessionPrompts: () =>
       ipcRenderer.invoke(InvokeChannel.TestReadSessionPrompts) as Promise<SessionPromptParams[]>,
+    readSessionCommands: () =>
+      ipcRenderer.invoke(InvokeChannel.TestReadSessionCommands) as Promise<
+        SessionRunCommandParams[]
+      >,
     readSessionConfigOptions: () =>
       ipcRenderer.invoke(InvokeChannel.TestReadSessionConfigOptions) as Promise<
         SessionSetConfigOptionParams[]
       >,
     setPickedFiles: (files: import("../shared/session-events.js").PromptAttachment[]) =>
       ipcRenderer.invoke(InvokeChannel.TestSetPickedFiles, files),
+    setPickedDirs: (directories: string[]) =>
+      ipcRenderer.invoke(InvokeChannel.TestSetPickedDirs, directories),
     setAgentSetupFixture: (fixture: unknown) =>
       ipcRenderer.invoke(InvokeChannel.TestSetAgentSetupFixture, fixture),
     agentSetupCalls: () =>
