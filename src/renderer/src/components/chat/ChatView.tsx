@@ -8,6 +8,7 @@ import {
 } from "react";
 import { BugIcon, SendIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import {
   Conversation,
   ConversationContent,
@@ -19,13 +20,18 @@ import { StatusNotice } from "@/components/ui/status-notice";
 import { cn } from "@/lib/utils";
 import {
   selectActive,
+  selectOpenMAEventsFor,
   selectSideActive,
   selectTurnsFor,
+  selectWorkItemsFor,
   sessionStore,
   useSessionStore,
 } from "@/lib/session-store";
 import { useSettings } from "@/lib/settings-store";
 import { useI18n } from "@/lib/i18n";
+import { goalProgressPresentation } from "@/lib/goal-progress";
+import { composerProgressCallbacksForSessionCapabilities } from "@/lib/composer-progress-adapters";
+import { composerActivityModulesForSession } from "@/lib/composer-activity-dock";
 import { useTheme } from "@/lib/theme";
 import { resolveThemeText } from "@/lib/theme-plugin";
 import { getThemePlugin } from "@/themes";
@@ -47,6 +53,7 @@ import { useHomeSuggestionState } from "@/lib/home-suggestion-state";
 import { useChatSessionActions } from "@/lib/chat-session-actions";
 import { Composer } from "./Composer";
 import { ComposerNotice } from "./ComposerNotice";
+import { ComposerProgress } from "./ComposerProgress";
 
 export {
   buildSlashCommandSections,
@@ -67,6 +74,25 @@ export type {
   HomeSuggestionEvent,
   HomeSuggestionPhase,
 } from "@/lib/home-suggestion-flow";
+
+/** Pending prompts already have a single visual home in ComposerProgress.
+ * Keep them out of the transcript until the main process promotes one to an
+ * active turn, otherwise the same user message appears twice. */
+export function filterQueuedTurns<T extends { status: string }>(
+  turns: readonly T[],
+): T[] {
+  return turns.filter((turn) => turn.status !== "queued");
+}
+
+/** Provider queue depth is display-only; local queued prompts remain the
+ * editable source. Reuse the existing placeholder count without hiding a
+ * larger queue observed inside the harness. */
+export function effectiveQueuedTurnCount(
+  localQueueDepth: number,
+  providerQueueDepth: number | undefined,
+): number {
+  return Math.max(localQueueDepth, providerQueueDepth ?? 0);
+}
 
 /**
  * ChatView — the right pane.
@@ -106,6 +132,20 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     [active?.id],
   );
   const turns = useSessionStore(turnsSelector);
+  const workItemsSelector = useMemo(
+    () => selectWorkItemsFor(active?.id),
+    [active?.id],
+  );
+  const workItems = useSessionStore(workItemsSelector);
+  const openmaEventsSelector = useMemo(
+    () => selectOpenMAEventsFor(active?.id),
+    [active?.id],
+  );
+  const openmaEvents = useSessionStore(openmaEventsSelector);
+  const transcriptTurns = useMemo(
+    () => filterQueuedTurns(turns),
+    [turns],
+  );
   const settings = useSettings();
   const navigate = useNavigate();
   const isNativeSubagent = active?.sideKind === "subagent";
@@ -161,7 +201,10 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   // session.event arriving lets the user fire a second prompt and
   // collapse the conversation order.
   const hasActiveTurn = !!active?.activeTurnId;
-  const queuedTurnCount = active?.queuedTurnIds?.length ?? 0;
+  const queuedTurnCount = effectiveQueuedTurnCount(
+    active?.queuedTurnIds?.length ?? 0,
+    active?.providerQueueDepth,
+  );
   const boundComposerAgentId =
     active && active.status !== "draft" ? active.agent_id : undefined;
   const composer = (
@@ -179,6 +222,8 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       lockedAgentId={active && active.status !== "draft" ? active.agent_id : null}
       pickedAgentId={pickedAgentId}
       suggestionDraft={suggestionDraft}
+      goal={active?.goal}
+      currentModeId={active?.currentModeId}
       onUserInput={syncHomeSuggestionsForUserInput}
       onPickAgent={setPickedAgentId}
       configOptions={active?.configOptions}
@@ -193,9 +238,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             : active.status === "errored"
               ? t("chat.sessionErrored")
               : active.status === "running" || hasActiveTurn
-                ? queuedTurnCount > 0
+              ? queuedTurnCount > 0
                   ? `${queuedTurnCount} queued…`
                   : t("chat.addToQueue")
+                : isEmpty
+                  ? homeComposerPlaceholder
                 : t("chat.reply")
       }
       onSubmit={onSubmit}
@@ -214,6 +261,100 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         onDismiss={() => sessionStore.dismissNotice(active.id, active.notice?.id)}
       />
     ) : null;
+  const progressPresentation = active?.goal
+    ? goalProgressPresentation(active.goal, {
+        active: t("chat.goalActive"),
+        paused: t("chat.goalPaused"),
+        complete: t("chat.goalComplete"),
+        blocked: t("chat.goalBlocked"),
+        fallback: t("chat.goalStatus"),
+      })
+    : undefined;
+  const progressCallbacks =
+    active && progressPresentation
+      ? composerProgressCallbacksForSessionCapabilities(
+          {
+            sessionId: active.id,
+            activeTurnId: active.activeTurnId,
+            progressKind: progressPresentation.kind,
+            status: progressPresentation.status,
+            availableCommands: active.availableCommands,
+          },
+          {
+            cancelTurn: (input) => window.backchat.sessionCancel(input),
+            runCommand: async (input) => {
+              try {
+                await window.backchat.sessionRunCommand(input);
+              } catch (error) {
+                toast.error("Could not update progress", {
+                  description:
+                    error instanceof Error ? error.message : String(error),
+                });
+                throw error;
+              }
+            },
+          },
+        )
+      : undefined;
+  const showPromptQueue = settings?.default.prompt_queue_enabled !== false;
+  const queuedPrompts = showPromptQueue ? active?.queuedPrompts ?? [] : [];
+  const activityModules = useMemo(
+    () => composerActivityModulesForSession({
+      agentId: active?.agent_id,
+      turns,
+      workItems,
+      openmaEvents,
+      labels: {
+        plan: t("chat.plan"),
+        monitor: t("chat.monitor"),
+        background: t("rightPanel.background"),
+        running: t("chat.activityRunning"),
+        completed: t("chat.activityCompleted"),
+        event: t("chat.activityEvent"),
+        events: t("chat.activityEvents"),
+      },
+    }),
+    [active?.agent_id, openmaEvents, t, turns, workItems],
+  );
+  const queueCallbacks =
+    active && showPromptQueue
+      ? {
+          update: (turnId: string, text: string) =>
+            window.backchat.sessionUpdatePromptQueue({
+              session_id: active.id,
+              action: "update",
+              turn_id: turnId,
+              text,
+            }),
+          remove: (turnId: string) =>
+            window.backchat.sessionUpdatePromptQueue({
+              session_id: active.id,
+              action: "remove",
+              turn_id: turnId,
+            }),
+          reorder: (turnIds: string[]) =>
+            window.backchat.sessionUpdatePromptQueue({
+              session_id: active.id,
+              action: "reorder",
+              turn_ids: turnIds,
+            }),
+          steer: (turnId: string) =>
+            window.backchat.sessionUpdatePromptQueue({
+              session_id: active.id,
+              action: "steer",
+              turn_id: turnId,
+            }),
+        }
+      : undefined;
+  const composerProgress = (
+    <ComposerProgress
+      presentation={progressPresentation}
+      callbacks={progressCallbacks}
+      activityModules={activityModules}
+      queuedPrompts={queuedPrompts}
+      queueCallbacks={queueCallbacks}
+    />
+  );
 
   // Project controls exist only while drafting. Once the session starts,
   // workspace ownership is locked and does not become ambient header chrome.
@@ -307,6 +448,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             )}
             {chipRow}
             {composerNotice}
+            {composerProgress}
             {composer}
           </div>
           {!isSide && <div className="home-corner-decoration" aria-hidden="true" />}
@@ -335,7 +477,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
                   className={CHAT_TURN_FRAME_CLASS}
                   data-chat-column="turns"
                 >
-                  {turns.map((turn) => <TurnBlock key={turn.id} turn={turn} />)}
+                  {transcriptTurns.map((turn) => <TurnBlock key={turn.id} turn={turn} />)}
                 </div>
                 <ResponseAnnotationController
                   scopeRef={transcriptRef}
@@ -345,7 +487,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
               </MarkdownCwdProvider>
             </ConversationContent>
             <ConversationScrollButton />
-            {!isSide && <ConversationTimeline turns={turns} />}
+            {!isSide && <ConversationTimeline turns={transcriptTurns} />}
           </Conversation>
           <div
             data-chat-column="composer"
@@ -356,6 +498,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
           >
             {chipRow}
             {composerNotice}
+            {composerProgress}
             {composer}
           </div>
         </>

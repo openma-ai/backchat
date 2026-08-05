@@ -1,8 +1,14 @@
 import { memo, useMemo } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { AtSignIcon } from "lucide-react";
 import { SessionTurnFrame } from "@openma/common/session-ui";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useI18n } from "@/lib/i18n";
-import { reduceTurn } from "@/lib/reduce-turn";
+import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
+import {
+  latestPlanDocumentForEvents,
+  latestTaskListForTurns,
+} from "@/lib/session-plan";
 import {
   selectAgentIdFor,
   selectSubagentsFor,
@@ -18,7 +24,8 @@ import {
 import { useMarkdownCwd } from "./ChatMarkdown";
 import { TurnAnswer } from "./TurnAnswer";
 import { TurnActivity } from "./TurnActivity";
-import { TurnPlan } from "./TurnPlan";
+import { PlanDocumentActivity } from "./PlanDocumentActivity";
+import { TaskListActivity } from "./TaskListActivity";
 
 export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
   const { t } = useI18n();
@@ -34,11 +41,36 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
     [turn.sessionId],
   );
   const agentId = useSessionStore(agentIdSelector);
+  const planDocument = useMemo(
+    () => latestPlanDocumentForEvents(turn.events, agentId),
+    [agentId, turn.events],
+  );
+  const activityRendered = useMemo<TurnRender>(() => {
+    if (!planDocument?.sourceToolCallId) return rendered;
+    const sourceToolCallId = planDocument.sourceToolCallId;
+    return {
+      ...rendered,
+      tools: rendered.tools.filter(
+        (tool) => tool.toolCallId !== sourceToolCallId,
+      ),
+      timeline: rendered.timeline.filter(
+        (item) =>
+          item.kind !== "tool" || item.toolCallId !== sourceToolCallId,
+      ),
+    };
+  }, [planDocument?.sourceToolCallId, rendered]);
+  const taskPlanEntries = useMemo(() => {
+    const entries = latestTaskListForTurns(agentId, [turn]);
+    return planDocument
+      ? entries.filter((entry) => entry.content !== planDocument.markdown)
+      : entries;
+  }, [agentId, planDocument, turn]);
   const isStreaming = turn.status === "running";
   const hasVisibleContent =
     turn.assistantText.length > 0 ||
-    rendered.tools.length > 0 ||
-    rendered.plan.length > 0;
+    activityRendered.tools.length > 0 ||
+    taskPlanEntries.length > 0 ||
+    !!planDocument;
   const hasAnything =
     hasVisibleContent ||
     shouldShowTransientThought({
@@ -46,27 +78,46 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
       thoughtText: turn.thoughtText,
       hasVisibleContent,
     });
+  const hasSessionReferences = (turn.sessionReferences?.length ?? 0) > 0;
 
   return (
-    <SessionTurnFrame
-      turnId={turn.id}
-      sessionId={turn.sessionId}
-      promptText={turn.promptText}
-      status={turn.status}
-      errorMessage={turn.errorMessage}
-      errorNotice={
-        turn.status === "error" ? (
-          <StatusNotice tone="danger">
-            {turn.errorMessage ?? "Turn failed."}
-          </StatusNotice>
-        ) : undefined
-      }
-    >
-          {rendered.plan.length > 0 && <TurnPlan entries={rendered.plan} />}
+    <>
+      {hasSessionReferences && <ReferencedSessionPrompt turn={turn} />}
+      <SessionTurnFrame
+        turnId={turn.id}
+        sessionId={turn.sessionId}
+        promptText={hasSessionReferences ? undefined : turn.promptText}
+        status={turn.status}
+        errorMessage={turn.errorMessage}
+        className="!mb-8 !space-y-4 [&_[data-session-turn-prompt]>div]:!px-3 [&_[data-session-turn-prompt]>div]:!py-2"
+        errorNotice={
+          turn.status === "error" ? (
+            <StatusNotice tone="danger">
+              {turn.errorMessage ?? "Turn failed."}
+            </StatusNotice>
+          ) : undefined
+        }
+      >
+          {planDocument && (
+            <PlanDocumentActivity
+              document={planDocument}
+              cwd={cwd}
+              sessionId={turn.sessionId}
+            />
+          )}
+
+          {taskPlanEntries.length > 0 && (
+            <TaskListActivity
+              items={taskPlanEntries.map((entry) => ({
+                label: entry.content,
+                status: entry.status,
+              }))}
+            />
+          )}
 
           <TurnActivity
             turn={turn}
-            rendered={rendered}
+            rendered={activityRendered}
             subagents={subagents}
             agentId={agentId}
             isStreaming={isStreaming}
@@ -78,7 +129,9 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
 
           <TurnSubagentLinks
             turn={turn}
-            renderedToolCallIds={rendered.tools.map((tool) => tool.toolCallId)}
+            renderedToolCallIds={activityRendered.tools.map(
+              (tool) => tool.toolCallId,
+            )}
             subagents={subagents}
           />
 
@@ -90,9 +143,48 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
           />
 
           {!hasAnything && isStreaming && <StreamingPlaceholder />}
-    </SessionTurnFrame>
+      </SessionTurnFrame>
+    </>
   );
 });
+
+function ReferencedSessionPrompt({ turn }: { turn: Turn }) {
+  const navigate = useNavigate();
+  const { t } = useI18n();
+  const references = turn.sessionReferences ?? [];
+
+  return (
+    <div
+      className="group is-user mb-2 ml-auto flex w-full max-w-[95%] flex-col items-end gap-2"
+      data-session-turn-prompt="true"
+    >
+      <div className="ml-auto flex w-fit min-w-0 max-w-full flex-wrap items-center gap-1.5 overflow-hidden rounded-lg bg-secondary px-4 py-3 text-sm text-foreground">
+        {references.map((reference) => (
+          <button
+            key={reference.session_id}
+            type="button"
+            data-session-reference={reference.session_id}
+            aria-label={`${t("chat.openSessionReference")}: ${reference.title}`}
+            title={`${t("chat.openSessionReference")}: ${reference.title}`}
+            onClick={() => {
+              void navigate({
+                to: "/chat/$sessionId",
+                params: { sessionId: reference.session_id },
+              });
+            }}
+            className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg bg-info/10 px-2 text-xs font-medium text-info ring-1 ring-info/25 hover:bg-info/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+          >
+            <AtSignIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 truncate">{reference.title}</span>
+          </button>
+        ))}
+        {turn.promptText && (
+          <p className="whitespace-pre-wrap">{turn.promptText}</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function TurnSubagentLinks({
   turn,

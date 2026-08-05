@@ -22,7 +22,6 @@ import {
   createRouter,
   Outlet,
   redirect,
-  useLocation,
 } from "@tanstack/react-router";
 import { ChatPage } from "@/pages/ChatPage";
 import { PairChatPage } from "@/pages/PairChatPage";
@@ -38,10 +37,11 @@ import { SettingsActivity } from "@/pages/settings/Activity";
 import { ScheduledPage } from "@/pages/Scheduled";
 
 function RootRoute() {
-  const location = useLocation();
-  const outlet = <Outlet />;
-  if (location.pathname.startsWith("/settings")) return outlet;
-  return <ShellLayout>{outlet}</ShellLayout>;
+  return (
+    <ShellLayout>
+      <Outlet />
+    </ShellLayout>
+  );
 }
 
 const rootRoute = createRootRoute({

@@ -17,7 +17,10 @@
 
 import { useEffect, useMemo } from "react";
 import { useParams } from "@tanstack/react-router";
-import type { PromptAttachment } from "@shared/session-events.js";
+import type {
+  PromptAttachment,
+  PromptSessionReference,
+} from "@shared/session-events.js";
 import { Composer } from "./ChatView";
 import { MarkdownCwdProvider } from "./ChatMarkdown";
 import { TurnBlock } from "./ChatTurn";
@@ -185,8 +188,9 @@ function PairComposer({ pair }: { pair: PairRow }) {
   const submit = async (
     text: string,
     attachments: PromptAttachment[] = [],
+    sessionReferences: PromptSessionReference[] = [],
   ) => {
-    const displayText = derivePairPromptDisplayText(text, attachments);
+    const displayText = derivePairPromptDisplayText(text, attachments, sessionReferences.length);
     if (!displayText || locked) return;
     // Pair chat is a renderer grouping over ordinary sessions. Start
     // each member through the normal session API, then prompt each
@@ -209,7 +213,12 @@ function PairComposer({ pair }: { pair: PairRow }) {
         if (startResult.status !== "ready") return;
       }
     }
-    const targets = sessionStore.registerPairTurn(pair.id, displayText);
+    const targets = sessionStore.registerPairTurn(
+      pair.id,
+      displayText,
+      sessionReferences,
+      attachments,
+    );
     if (!targets) return;
     await Promise.allSettled(
       targets.map((target) =>
@@ -218,6 +227,7 @@ function PairComposer({ pair }: { pair: PairRow }) {
           turn_id: target.turn_id,
           text,
           ...(attachments.length > 0 ? { attachments } : {}),
+          ...(sessionReferences.length > 0 ? { session_references: sessionReferences } : {}),
         }),
       ),
     );
@@ -240,7 +250,15 @@ function PairComposer({ pair }: { pair: PairRow }) {
           locked ? "等所有 agent 完成…" : `同时发送给 ${memberCount} 个 agent…`
         }
         attachmentDefaultPath={members.find((m) => m.cwd)?.cwd}
-        onSubmit={(text, attachments) => void submit(text, attachments)}
+        onSubmit={(
+          text,
+          attachments,
+          _intent,
+          _configOverrides,
+          _selectedAgentId,
+          _annotations,
+          sessionReferences,
+        ) => void submit(text, attachments, sessionReferences)}
         onCancel={() => {
           if (!pair.memberTurnIds) return;
           for (const [session_id, turn_id] of Object.entries(pair.memberTurnIds)) {
@@ -255,7 +273,13 @@ function PairComposer({ pair }: { pair: PairRow }) {
 function derivePairPromptDisplayText(
   text: string,
   attachments: PromptAttachment[],
+  sessionReferenceCount = 0,
 ): string {
+  if (!text.trim() && attachments.length === 0 && sessionReferenceCount > 0) {
+    return sessionReferenceCount === 1
+      ? "[1 referenced session]"
+      : `[${sessionReferenceCount} referenced sessions]`;
+  }
   if (attachments.length === 0) return text.trim();
   if (text.trim().length > 0) return text;
   if (attachments.length === 1) {

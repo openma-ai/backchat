@@ -17,7 +17,7 @@ function snapshot(taskId: string, label: string): TaskSideWorkspaceSnapshot {
       }],
       activeTabId: `${taskId}-browser`,
       activeBrowserTabId: `${taskId}-browser`,
-      artifacts: { files: [], services: [] },
+      artifacts: { files: [], services: [], sources: [] },
       sideSessions: [],
       subagents: [],
     },

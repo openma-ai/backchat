@@ -6,6 +6,7 @@ import type { PromptAttachment } from "@shared/session-events.js";
 import type { AcpAvailableCommand } from "@/lib/session-store";
 import {
   AttachmentPreviewStrip,
+  MentionedFileStrip,
   SkillCommandChip,
   SuggestionTemplateEditor,
 } from "./ComposerContentParts";
@@ -78,6 +79,21 @@ describe("AttachmentPreviewStrip", () => {
     expect(html).toContain("notes.md");
     expect(html).toContain('aria-label="Remove notes.md"');
     expect(html).toContain(">md<");
+  });
+
+  it("renders @-mentioned files as inline removable blocks", () => {
+    const file = attachment({ id: "mentioned", name: "package.json" });
+    const html = renderToStaticMarkup(
+      <MentionedFileStrip
+        attachments={[file]}
+        onOpen={() => undefined}
+        onRemove={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Open package.json"');
+    expect(html).toContain('aria-label="Remove package.json"');
+    expect(html).toContain("package.json");
   });
 });
 

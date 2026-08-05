@@ -30,6 +30,20 @@ export interface PairPromptParams {
   text: string;
 }
 
+import type { SessionEventOut } from "./session-events.js";
+
+type SessionReadyEvent = Extract<SessionEventOut, { type: "session.ready" }>;
+type SessionCompleteEvent = Extract<SessionEventOut, { type: "session.complete" }>;
+type SessionErrorEvent = Extract<SessionEventOut, { type: "session.error" }>;
+type PairPassthroughSessionEvent = Exclude<
+  SessionEventOut,
+  | SessionReadyEvent
+  | Extract<SessionEventOut, { type: "session.event" }>
+  | SessionCompleteEvent
+  | SessionErrorEvent
+  | Extract<SessionEventOut, { type: "session.disposed" }>
+>;
+
 /** Outbound (main → renderer) pair-chat events. Pushed on a dedicated
  *  IPC channel so single-chat code never has to filter them out. */
 export type PairEventOut =
@@ -38,12 +52,7 @@ export type PairEventOut =
       pair_id: string;
       /** Each member's per-session ready info, in the order they were
        *  started. Index matches PairStartParams.members. */
-      members: Array<{
-        session_id: string;
-        agent_id: string;
-        acp_session_id: string;
-        cwd: string;
-      }>;
+      members: Array<Omit<SessionReadyEvent, "type">>;
     }
   | {
       type: "pair.event";
@@ -52,18 +61,22 @@ export type PairEventOut =
       member_session_id: string;
       turn_id: string;
       event: unknown;
+      openma_event?: SessionEventOut["openma_event"];
     }
-  | {
+  | ({
       type: "pair.complete";
       pair_id: string;
       member_session_id: string;
-      turn_id: string;
-    }
-  | {
+    } & Omit<SessionCompleteEvent, "type" | "session_id">)
+  | ({
       type: "pair.error";
       pair_id: string;
       member_session_id: string;
-      turn_id?: string;
-      message: string;
+    } & Omit<SessionErrorEvent, "type" | "session_id">)
+  | {
+      type: "pair.session_event";
+      pair_id: string;
+      member_session_id: string;
+      session_event: PairPassthroughSessionEvent;
     }
   | { type: "pair.disposed"; pair_id: string };

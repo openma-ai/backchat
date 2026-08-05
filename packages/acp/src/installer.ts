@@ -310,6 +310,60 @@ export async function readAcpRegistryInstallMetadata(options: {
   }
 }
 
+/**
+ * Rebuild a managed shim whose installed command moved together with the ACP
+ * install root. The command is derived from its registry-relative suffix, so
+ * no previous storage location is read or treated as a fallback.
+ */
+export async function repairRelocatedAcpRegistryShim(options: {
+  registryId: string;
+  shimName: string;
+  binDir: string;
+  installRoot?: string;
+}): Promise<boolean> {
+  const installRoot = resolve(options.installRoot ?? options.binDir);
+  const metadata = await readAcpRegistryInstallMetadata(options);
+  if (!metadata || metadata.shimName !== options.shimName) return false;
+
+  const shimPath = join(options.binDir, options.shimName);
+  const shim = await readFile(shimPath, "utf8").catch(() => "");
+  const commandMatch = shim.match(/^exec '([^'\r\n]+)'/m);
+  const currentCommand = commandMatch?.[1];
+  if (!currentCommand) return false;
+  if (await access(currentCommand).then(() => true, () => false)) return false;
+
+  const registrySuffix = join(
+    "registry",
+    sanitizePathComponent(options.registryId),
+  );
+  const marker = `${registrySuffix}/`;
+  const normalizedCommand = currentCommand.replace(/\\/g, "/");
+  const markerIndex = normalizedCommand.lastIndexOf(`/${marker}`);
+  if (markerIndex < 0) return false;
+
+  const relativeCommand = normalizedCommand.slice(markerIndex + 1);
+  const repairedCommand = resolve(installRoot, relativeCommand);
+  const relativeToRoot = relative(installRoot, repairedCommand);
+  if (
+    relativeToRoot.startsWith("..")
+    || isAbsolute(relativeToRoot)
+    || !(await access(repairedCommand).then(() => true, () => false))
+  ) {
+    return false;
+  }
+
+  const repairedShim = shim.replace(
+    shellQuote(currentCommand),
+    shellQuote(repairedCommand),
+  );
+  if (repairedShim === shim) return false;
+  const stagedPath = `${shimPath}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(stagedPath, repairedShim, "utf8");
+  await chmod(stagedPath, 0o755);
+  await rename(stagedPath, shimPath);
+  return true;
+}
+
 function verifySha256(bytes: Buffer, expected: string | undefined): void {
   if (!expected) return;
   const normalized = expected.startsWith("sha256:") ? expected.slice("sha256:".length) : expected;

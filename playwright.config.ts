@@ -13,6 +13,8 @@ export default defineConfig({
   fullyParallel: false, // electron app per test — keep them serial
   reporter: process.env["CI"] ? "github" : "list",
   workers: 1,
-  timeout: 30_000,
+  // Persistence scenarios intentionally launch the app more than once. Give
+  // fixture setup/teardown room without weakening individual locator waits.
+  timeout: 60_000,
   expect: { timeout: 5_000 },
 });

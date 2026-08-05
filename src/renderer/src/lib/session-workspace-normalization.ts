@@ -18,6 +18,11 @@ export function defaultSideTabLabel(type: SideTabType, payload: string): string 
       const last = trimmed.split("/").pop();
       return last || "Files";
     }
+    case "artifact": {
+      const trimmed = payload.replace(/\/+$/, "");
+      const last = trimmed.split("/").pop();
+      return last || "File";
+    }
     case "browser":
       try {
         const url = new URL(payload);
@@ -32,6 +37,8 @@ export function defaultSideTabLabel(type: SideTabType, payload: string): string 
     }
     case "process":
       return "Background process";
+    case "schedule":
+      return "Scheduled task";
     case "interactive":
       return "Interactive";
   }
@@ -44,8 +51,10 @@ const SIDE_TAB_TYPES = new Set<SideTabType>([
   "chat",
   "subagent",
   "file",
+  "artifact",
   "browser",
   "terminal",
+  "schedule",
   "interactive",
 ]);
 
@@ -72,6 +81,18 @@ export function normalizeWorkspaceArtifacts(value: unknown): WorkspaceArtifacts 
       : [],
     services: Array.isArray(input.services)
       ? input.services.filter((item): item is string => typeof item === "string").slice(0, 50)
+      : [],
+    sources: Array.isArray(input.sources)
+      ? input.sources
+          .filter(
+            (item): item is WorkspaceArtifacts["sources"][number] =>
+              !!item
+              && typeof item === "object"
+              && ((item as { kind?: unknown }).kind === "file"
+                || (item as { kind?: unknown }).kind === "web")
+              && typeof (item as { uri?: unknown }).uri === "string",
+          )
+          .slice(0, 50)
       : [],
   };
 }

@@ -9,6 +9,7 @@ import {
   type SubagentActivity,
 } from "./session-store";
 import { reduceTurn } from "./reduce-turn";
+import { createOpenMAEvent } from "@openma/common/session-events/openma";
 
 describe("session store module boundaries", () => {
   test("keeps public data contracts in a dedicated type module", () => {
@@ -40,7 +41,18 @@ describe("session store module boundaries", () => {
 
     expect(source).toContain('from "./session-native-activity"');
     expect(source).not.toContain("function nativeActivityTurnStatus(");
-    expect(source).not.toContain("function nativeProviderForAgent(");
+    expect(source).not.toContain("function resolveAgentRuntimeAdapter(");
+  });
+
+  test("depends on the runtime adapter contract instead of provider detectors", () => {
+    const source = readFileSync(resolve(__dirname, "session-store.ts"), "utf8");
+
+    expect(source).toContain('from "./agent-runtime-adapters"');
+    expect(source).toContain("resolveAgentRuntimeAdapter");
+    expect(source).toContain("genericAcpRuntimeAdapter");
+    expect(source).not.toContain("detectNativeAgentToolEvent");
+    expect(source).not.toContain("detectNativeAgentRawEvent");
+    expect(source).not.toContain("nativeProviderForAgent");
   });
 });
 
@@ -68,6 +80,30 @@ const initialConfig: AcpSessionConfigOption[] = [
 ];
 
 describe("SessionStore replay", () => {
+  test("restores prompt attachments as task sources", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-attachments";
+    const attachment = {
+      id: "attachment-1",
+      name: "reference.png",
+      path: "/tmp/reference.png",
+      uri: "file:///tmp/reference.png",
+      kind: "image" as const,
+      mimeType: "image/png",
+    };
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "Use this image", attachments: [attachment] }),
+        ts: 1000,
+      },
+    ]);
+
+    expect(store.turnsFor(sessionId)[0]?.attachments).toEqual([attachment]);
+  });
+
   test("restores the latest session metadata and usage from history", () => {
     const store = new SessionStore();
     store.apply({
@@ -171,9 +207,551 @@ describe("SessionStore replay", () => {
       endedAt: 4_600,
     });
   });
+
+  test("replays canonical transcript once and ignores duplicate raw evidence rows", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-canonical-transcript";
+    const turnId = "turn-replay-canonical-transcript";
+    const rawEvent = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "once" },
+    };
+    const canonical = createOpenMAEvent({
+      event_id: "canonical-message-once",
+      type: "agent.message_chunk",
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "harness", harness: "claude-acp", adapter: "acp" },
+      occurred_at: "2026-08-05T00:00:01.000Z",
+      seq: 2,
+      data: { text: "once" },
+      raw: {
+        kind: "raw",
+        source: "acp",
+        method: "session/update",
+        event_type: "agent_message_chunk",
+        payload: rawEvent,
+        received_at: "2026-08-05T00:00:01.000Z",
+        reason: "unknown",
+      },
+    });
+    const promptData = { text: "replay this", attachments: undefined };
+    const canonicalPrompt = createOpenMAEvent({
+      event_id: "canonical-prompt-once",
+      type: "user.message",
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "user" },
+      occurred_at: "2026-08-05T00:00:00.500Z",
+      data: { ...promptData, input_kind: "prompt" },
+      raw: {
+        kind: "raw",
+        source: "transport",
+        event_type: "user_prompt",
+        payload: promptData,
+        received_at: "2026-08-05T00:00:00.500Z",
+        reason: "unknown",
+      },
+    });
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "replay this" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify(canonicalPrompt),
+        ts: 1_500,
+      },
+      {
+        seq: 3,
+        type: "openma_event",
+        data: JSON.stringify(canonical),
+        ts: 2_000,
+      },
+      {
+        seq: 4,
+        type: "agent_message_chunk",
+        data: JSON.stringify(rawEvent),
+        ts: 3_000,
+      },
+    ]);
+
+    expect(store.openmaEventsFor(sessionId)).toEqual([canonicalPrompt, canonical]);
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      promptText: "replay this",
+      assistantText: "once",
+      endedAt: 2_000,
+    });
+  });
+
+  test("replays canonical work items and session facts into existing GUI slots", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-canonical-facts";
+    const turnId = "turn-replay-canonical-facts";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-canonical-facts",
+      agent_id: "pi-acp",
+      cwd: "/tmp/project",
+    });
+    const base = {
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "harness" as const, harness: "pi-acp", adapter: "acp" },
+      occurred_at: "2026-08-05T00:00:01.000Z",
+    };
+    const event = (
+      event_id: string,
+      type: "work_item.started" | "work_item.completed" | "command_catalog.updated" | "usage.updated" | "system.notice" | "agent.message_chunk",
+      data: Record<string, unknown>,
+    ) => createOpenMAEvent({
+      ...base,
+      event_id,
+      type,
+      data,
+      ...(type.startsWith("work_item.") ? { work_item_id: "work-start" } : {}),
+    });
+    const sessionStarted = createOpenMAEvent({
+      event_id: "session-started-replay",
+      type: "session.started",
+      session_id: sessionId,
+      source: base.source,
+      occurred_at: "2026-08-05T00:00:00.000Z",
+      data: {
+        acp_session_id: "acp-replay-canonical-facts",
+        agent_id: "pi-acp",
+        cwd: "/tmp/project",
+        config_options: initialConfig,
+        capabilities: {
+          session_fork: true,
+          steering: true,
+        },
+      },
+    });
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "openma_event",
+        data: JSON.stringify(sessionStarted),
+        ts: 500,
+      },
+      {
+        seq: 2,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "run background work" }),
+        ts: 1_000,
+      },
+      {
+        seq: 3,
+        type: "openma_event",
+        data: JSON.stringify(event("work-start", "work_item.started", {
+          kind: "bash",
+          title: "Background Bash",
+          command: "pnpm test",
+        })),
+        ts: 2_000,
+      },
+      {
+        seq: 4,
+        type: "openma_event",
+        data: JSON.stringify(event("commands", "command_catalog.updated", {
+          commands: [{ name: "review", description: "Review changes" }],
+        })),
+        ts: 3_000,
+      },
+      {
+        seq: 5,
+        type: "openma_event",
+        data: JSON.stringify(event("usage", "usage.updated", { used: 12, size: 100 })),
+        ts: 4_000,
+      },
+      {
+        seq: 6,
+        type: "openma_event",
+        data: JSON.stringify(event("notice", "system.notice", {
+          message: "Background task finished",
+          tone: "warning",
+        })),
+        ts: 5_000,
+      },
+      {
+        seq: 7,
+        type: "openma_event",
+        data: JSON.stringify(event("work-complete", "work_item.completed", {
+          kind: "bash",
+          result: { exit_code: 0 },
+        })),
+        ts: 6_000,
+      },
+    ]);
+
+    expect(store.workItemsFor(sessionId)).toEqual([
+      expect.objectContaining({
+        id: "work-start",
+        kind: "bash",
+        status: "completed",
+        title: "Background Bash",
+        result: { exit_code: 0 },
+      }),
+    ]);
+    expect(store.get(sessionId)).toMatchObject({
+      supportsSessionFork: true,
+      supportsSteering: true,
+      configOptions: initialConfig,
+      currentModeId: "code",
+      availableCommands: [{ name: "review", description: "Review changes" }],
+      usage: { used: 12, size: 100 },
+      notice: expect.objectContaining({ message: "Background task finished" }),
+    });
+  });
+
+  test("replays a canonical turn error into the existing turn error slot", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-canonical-error";
+    const turnId = "turn-replay-canonical-error";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-canonical-error",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "fail this turn" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify(createOpenMAEvent({
+          event_id: "canonical-turn-error",
+          type: "session.error",
+          session_id: sessionId,
+          turn_id: turnId,
+          source: { kind: "harness", harness: "claude-acp", adapter: "acp" },
+          occurred_at: "2026-08-05T00:00:02.000Z",
+          data: { message: "provider rejected the prompt" },
+        })),
+        ts: 2_000,
+      },
+    ]);
+
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      status: "error",
+      errorMessage: "provider rejected the prompt",
+      endedAt: 2_000,
+    });
+  });
+
+  test("lets a persisted turn terminal supersede an earlier provider running level", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-provider-running";
+    const turnId = "turn-replay-provider-running";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-provider-running",
+      agent_id: "pi-acp",
+      cwd: "/tmp/project",
+    });
+    const base = {
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "harness" as const, harness: "pi-acp", adapter: "pi" },
+    };
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "Run the audit" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify(createOpenMAEvent({
+          ...base,
+          event_id: "provider-running-before-terminal",
+          type: "session.running",
+          occurred_at: "2026-08-05T00:00:01.000Z",
+          data: { queue_depth: 1 },
+        })),
+        ts: 2_000,
+      },
+      {
+        seq: 3,
+        type: "openma_event",
+        data: JSON.stringify(createOpenMAEvent({
+          ...base,
+          event_id: "host-turn-terminal",
+          type: "turn.completed",
+          occurred_at: "2026-08-05T00:00:02.000Z",
+          data: { stop_reason: "end_turn" },
+        })),
+        ts: 3_000,
+      },
+    ]);
+
+    expect(store.get(sessionId)?.status).toBe("ready");
+    expect(store.turnsFor(sessionId)[0]?.status).toBe("complete");
+  });
+
+  test("preserves provider queue depth across canonical running and idle levels", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-pi-provider-queue";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-pi-provider-queue",
+      agent_id: "pi-acp",
+      cwd: "/tmp/project",
+    });
+    const applyLevel = (type: "session.running" | "session.idle", depth: number) => {
+      const event = createOpenMAEvent({
+        event_id: `${type}-${depth}`,
+        session_id: sessionId,
+        source: { kind: "harness", harness: "pi-acp", adapter: "pi" },
+        occurred_at: "2026-08-05T00:00:00.000Z",
+        type,
+        data: { queue_depth: depth },
+      });
+      store.apply({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: "turn-pi-provider-queue",
+        event,
+        openma_event: event,
+      });
+    };
+
+    applyLevel("session.running", 2);
+    expect(store.get(sessionId)).toMatchObject({
+      status: "running",
+      providerQueueDepth: 2,
+    });
+
+    applyLevel("session.idle", 0);
+    expect(store.get(sessionId)).toMatchObject({
+      status: "ready",
+      providerQueueDepth: 0,
+    });
+  });
+
+  test("replays canonical native Agent lifecycle and nested transcript into the Agents view", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-native-agent";
+    const turnId = "turn-replay-native-agent";
+    const childId = "claude-child-replay";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-native-agent",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+    const base = {
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "harness" as const, harness: "claude", adapter: "claude" },
+    };
+    const event = (
+      event_id: string,
+      type: "work_item.started" | "agent.message_chunk" | "usage.updated" | "work_item.completed",
+      data: Record<string, unknown>,
+      occurred_at: string,
+    ) => createOpenMAEvent({
+      ...base,
+      event_id,
+      type,
+      occurred_at,
+      work_item_id: childId,
+      parent_id: "task-parent-replay",
+      data,
+    });
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "delegate this" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify(event(
+          "native-start-replay",
+          "work_item.started",
+          { kind: "agent", title: "Inspect the repository" },
+          "2026-08-05T00:00:01.000Z",
+        )),
+        ts: 2_000,
+      },
+      {
+        seq: 3,
+        type: "openma_event",
+        data: JSON.stringify(event(
+          "native-message-replay",
+          "agent.message_chunk",
+          { text: "Child found the boundary." },
+          "2026-08-05T00:00:02.000Z",
+        )),
+        ts: 3_000,
+      },
+      {
+        seq: 4,
+        type: "openma_event",
+        data: JSON.stringify(event(
+          "native-usage-replay",
+          "usage.updated",
+          { input_tokens: 12, output_tokens: 8, total_tokens: 20 },
+          "2026-08-05T00:00:03.000Z",
+        )),
+        ts: 4_000,
+      },
+      {
+        seq: 5,
+        type: "openma_event",
+        data: JSON.stringify(event(
+          "native-complete-replay",
+          "work_item.completed",
+          { result: "done" },
+          "2026-08-05T00:00:04.000Z",
+        )),
+        ts: 5_000,
+      },
+    ]);
+
+    const activity = store.subagentsFor(sessionId)[0]!;
+    expect(activity).toMatchObject({
+      childSessionId: childId,
+      task: "Inspect the repository",
+      status: "complete",
+      native: {
+        usage: {
+          inputTokens: 12,
+          outputTokens: 8,
+          totalTokens: 20,
+        },
+      },
+    });
+    expect(store.turnsFor(activity.viewSessionId)[0]).toMatchObject({
+      assistantText: "Child found the boundary.",
+    });
+  });
+
+  test("replays total-only native Agent progress usage without inventing a token split", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-native-progress";
+    const childId = "claude-child-progress";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-native-progress",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+
+    const canonical = (
+      eventId: string,
+      type: "work_item.started" | "work_item.progress",
+      data: Record<string, unknown>,
+    ) => createOpenMAEvent({
+      event_id: eventId,
+      type,
+      session_id: sessionId,
+      turn_id: "turn-replay-native-progress",
+      work_item_id: childId,
+      parent_id: "task-parent-progress",
+      source: { kind: "harness", harness: "claude", adapter: "claude" },
+      occurred_at: "2026-08-05T00:00:00.000Z",
+      data,
+    });
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "openma_event",
+        data: JSON.stringify(canonical(
+          "native-progress-start",
+          "work_item.started",
+          { kind: "agent", title: "Inspect token accounting" },
+        )),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify(canonical(
+          "native-progress-usage",
+          "work_item.progress",
+          {
+            output: {
+              kind: "subagent_progress",
+              usage: { totalTokens: 901, toolUses: 4, durationMs: 1_250 },
+            },
+          },
+        )),
+        ts: 2_000,
+      },
+    ]);
+
+    expect(store.subagentsFor(sessionId)[0]).toMatchObject({
+      childSessionId: childId,
+      native: {
+        progress: {
+          usage: { totalTokens: 901, toolUses: 4, durationMs: 1_250 },
+        },
+      },
+    });
+    expect(store.subagentsFor(sessionId)[0]?.native?.usage).toBeUndefined();
+  });
 });
 
 describe("SessionStore performance invariants", () => {
+  test("keeps prompt attachments on a live optimistic turn", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-attachments", "codex-acp", "Attachments");
+    const attachment = {
+      id: "attachment-1",
+      name: "reference.png",
+      path: "/tmp/reference.png",
+      uri: "file:///tmp/reference.png",
+      kind: "image" as const,
+      mimeType: "image/png",
+    };
+    const registerWithAttachments = store.registerTurn.bind(store) as (
+      turnId: string,
+      sessionId: string,
+      promptText: string,
+      delivery: undefined,
+      sessionReferences: [],
+      attachments: typeof attachment[],
+    ) => void;
+
+    registerWithAttachments(
+      "turn-attachments",
+      "sess-attachments",
+      "Use this image",
+      undefined,
+      [],
+      [attachment],
+    );
+
+    expect(store.turnsFor("sess-attachments")[0]?.attachments).toEqual([attachment]);
+  });
+
   test("shows Codex skill-context warnings as expiring session notices", async () => {
     vi.useFakeTimers();
     try {
@@ -365,6 +943,7 @@ describe("SessionStore performance invariants", () => {
     store.registerTurn("turn-answer", "sess-answer", "answer this");
     const turnsSelector = selectTurnsFor("sess-answer");
     const beforeSnapshot = store.snapshot(turnsSelector);
+    const beforeEvents = beforeSnapshot[0]!.events;
     const beforeVersion = store.getVersion();
     const listener = vi.fn();
     const unsubscribe = store.subscribe(listener);
@@ -383,6 +962,13 @@ describe("SessionStore performance invariants", () => {
     expect(listener).toHaveBeenCalledOnce();
     expect(store.getVersion()).toBe(beforeVersion + 1);
     expect(afterFirstSnapshot).not.toBe(beforeSnapshot);
+    expect(afterFirstSnapshot[0]?.events).not.toBe(beforeEvents);
+    expect(reduceTurn(afterFirstSnapshot[0]!.events).timeline).toEqual([
+      expect.objectContaining({
+        kind: "assistant_text",
+        text: "First visible token",
+      }),
+    ]);
     expect(afterFirstSnapshot[0]?.assistantText).toBe("First visible token");
 
     unsubscribe();
@@ -411,7 +997,7 @@ describe("SessionStore performance invariants", () => {
     expect(event?.payload).toMatchObject({
       sessionUpdate: "agent_message_chunk",
       messageId: "msg-commentary",
-      _meta: { codex: { phase: "commentary" } },
+      phase: "commentary",
       content: { type: "text", text: "Checking files" },
     });
   });
@@ -473,13 +1059,17 @@ describe("SessionStore task side workspace persistence", () => {
       session_id: "task-a",
       turn_id: "turn-a",
       event: {
-        sessionUpdate: "tool_call",
-        toolCallId: "write-a",
-        title: "Write file",
-        status: "completed",
-        rawInput: { path: "/repo-a/index.html" },
-        rawOutput: "Preview: http://localhost:4173",
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: ':codex-file-citation{path="/repo-a/index.html" purpose="output"}',
+        },
       },
+    });
+    source.apply({
+      type: "session.complete",
+      session_id: "task-a",
+      turn_id: "turn-a",
     });
     source.openSideTabForTask(
       "task-a",
@@ -533,7 +1123,7 @@ describe("SessionStore task side workspace persistence", () => {
         activeBrowserTabId: "browser-a",
         artifacts: {
           files: expect.arrayContaining(["/repo-a/index.html"]),
-          services: expect.arrayContaining(["http://localhost:4173"]),
+          services: [],
         },
       },
     });
@@ -571,7 +1161,7 @@ describe("SessionStore task side workspace persistence", () => {
     expect(restored.browserWindows()[0]?.activeTabId).toBe("browser-a");
     expect(restored.artifactsFor("task-a")).toMatchObject({
       files: expect.arrayContaining(["/repo-a/index.html"]),
-      services: expect.arrayContaining(["http://localhost:4173"]),
+      services: [],
     });
 
     const child = restored.subagentsFor("task-a")[0]!;
@@ -841,6 +1431,196 @@ describe("SessionStore ACP session metadata", () => {
     });
     expect(store.turnsFor("sess-info")).toEqual([]);
   });
+
+  test("stores Codex goal updates as session state and clears them", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-goal",
+      acp_session_id: "acp-goal",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-goal",
+      turn_id: "",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          codex: {
+            goal: {
+              objective: "Ship goal progress UI",
+              status: "active",
+              tokenBudget: 40_000,
+            },
+          },
+        },
+      },
+    });
+
+    expect(store.get("sess-goal")?.goal).toEqual({
+      objective: "Ship goal progress UI",
+      status: "active",
+      tokenBudget: 40_000,
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-goal",
+      turn_id: "",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: { codex: { goal: null } },
+      },
+    });
+
+    expect(store.get("sess-goal")?.goal).toBeUndefined();
+  });
+
+  test.each(["complete", "completed"])(
+    "removes a goal from session state when the agent reports it %s",
+    (terminalStatus) => {
+      const store = new SessionStore();
+      store.apply({
+        type: "session.ready",
+        session_id: "sess-completed-goal",
+        acp_session_id: "acp-completed-goal",
+        agent_id: "codex-acp",
+        cwd: "/tmp/project",
+      });
+
+      store.apply({
+        type: "session.event",
+        session_id: "sess-completed-goal",
+        turn_id: "",
+        event: {
+          sessionUpdate: "session_info_update",
+          _meta: {
+            codex: {
+              goal: {
+                objective: "Finish the Goal lifecycle",
+                status: "active",
+              },
+            },
+          },
+        },
+      });
+      expect(store.get("sess-completed-goal")?.goal?.status).toBe("active");
+
+      store.apply({
+        type: "session.event",
+        session_id: "sess-completed-goal",
+        turn_id: "",
+        event: {
+          sessionUpdate: "session_info_update",
+          _meta: {
+            codex: {
+              goal: {
+                objective: "Finish the Goal lifecycle",
+                status: terminalStatus,
+                timeUsedSeconds: 72,
+              },
+            },
+          },
+        },
+      });
+
+      expect(store.get("sess-completed-goal")?.goal).toBeUndefined();
+    },
+  );
+
+  test("does not infer Goal semantics for an unadapted harness", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-generic-goal",
+      acp_session_id: "acp-generic-goal",
+      agent_id: "other-acp",
+      cwd: "/tmp/project",
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-generic-goal",
+      turn_id: "",
+      event: {
+        sessionUpdate: "session_info_update",
+        goal: {
+          objective: "Keep the contract portable",
+          status: "paused",
+        },
+      },
+    });
+
+    expect(store.get("sess-generic-goal")?.goal).toBeUndefined();
+  });
+
+  test("consumes normalized Goal updates without knowing the harness event shape", () => {
+    const store = new SessionStore({
+      readSessionGoalUpdate: ({ agentId, meta }) => {
+        if (agentId !== "example-harness") return undefined;
+        const progress = meta?.["example.com/progress"] as
+          | { objectiveText?: unknown; lifecycleState?: unknown }
+          | undefined;
+        if (
+          typeof progress?.objectiveText !== "string" ||
+          typeof progress.lifecycleState !== "string"
+        ) {
+          return undefined;
+        }
+        return {
+          objective: progress.objectiveText,
+          status: progress.lifecycleState,
+        };
+      },
+    });
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-namespaced-goal",
+      acp_session_id: "acp-namespaced-goal",
+      agent_id: "example-harness",
+      cwd: "/tmp/project",
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-namespaced-goal",
+      turn_id: "",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          "example.com/progress": {
+            objectiveText: "Keep Goal harness-neutral",
+            lifecycleState: "active",
+          },
+        },
+      },
+    });
+
+    expect(store.get("sess-namespaced-goal")?.goal).toEqual({
+      objective: "Keep Goal harness-neutral",
+      status: "active",
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-namespaced-goal",
+      turn_id: "",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          "example.com/progress": {
+            objectiveText: "Keep Goal harness-neutral",
+            lifecycleState: "completed",
+          },
+        },
+      },
+    });
+
+    expect(store.get("sess-namespaced-goal")?.goal).toBeUndefined();
+  });
 });
 
 describe("SessionStore project drafts", () => {
@@ -868,6 +1648,22 @@ describe("SessionStore project drafts", () => {
     });
   });
 
+  test("binds a named project and preserves secondary workspace roots", () => {
+    const store = new SessionStore();
+
+    const id = store.newDraft({
+      projectId: "proj-workspace",
+      sourceFolders: ["/work/app", "/work/docs", "/work/backend"],
+    });
+
+    expect(store.get(id)).toMatchObject({
+      chosenCwd: "/work/app",
+      projectId: "proj-workspace",
+      additionalDirectories: ["/work/docs", "/work/backend"],
+      projectScope: "project",
+    });
+  });
+
   test("does not restore untitled pre-prompt shells as ghost chats", () => {
     const store = new SessionStore();
 
@@ -888,6 +1684,141 @@ describe("SessionStore project drafts", () => {
 });
 
 describe("SessionStore event reducers", () => {
+  test("registers explicit Codex output citations when the turn completes", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-codex-output",
+      acp_session_id: "acp-codex-output",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn("turn-codex-output", "sess-codex-output", "make a deck");
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-output",
+      turn_id: "turn-codex-output",
+      event: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: ':codex-file-citation{path="/tmp/project/deck.pptx"}',
+        },
+      },
+    });
+
+    expect(store.artifactsFor("sess-codex-output").files).toEqual([]);
+
+    store.apply({
+      type: "session.complete",
+      session_id: "sess-codex-output",
+      turn_id: "turn-codex-output",
+    });
+
+    expect(store.artifactsFor("sess-codex-output")).toMatchObject({
+      files: ["/tmp/project/deck.pptx"],
+      sources: [],
+    });
+  });
+
+  test("normalizes Codex opened pages and Claude Code WebFetch as web sources", () => {
+    const store = new SessionStore();
+    for (const [sessionId, agentId] of [
+      ["sess-codex-source", "codex-acp"],
+      ["sess-cc-source", "claude-acp"],
+    ] as const) {
+      store.apply({
+        type: "session.ready",
+        session_id: sessionId,
+        acp_session_id: `acp-${sessionId}`,
+        agent_id: agentId,
+        cwd: "/tmp/project",
+      });
+      store.registerTurn(`turn-${sessionId}`, sessionId, "read the reference");
+    }
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-source",
+      turn_id: "turn-sess-codex-source",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "codex-open",
+        title: "Open page: https://example.com/codex",
+        kind: "search",
+        status: "completed",
+        rawInput: {
+          action: {
+            type: "openPage",
+            url: "https://example.com/codex",
+          },
+        },
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-cc-source",
+      turn_id: "turn-sess-cc-source",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "cc-fetch",
+        title: "Fetch https://example.com/claude",
+        toolName: "WebFetch",
+        kind: "fetch",
+        status: "pending",
+        rawInput: { url: "https://example.com/claude" },
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-cc-source",
+      turn_id: "turn-sess-cc-source",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "cc-fetch",
+        status: "completed",
+        _meta: { claudeCode: { toolName: "WebFetch" } },
+        rawOutput: [{ type: "web_fetch_result", url: "https://example.com/claude" }],
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-cc-source",
+      turn_id: "turn-sess-cc-source",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "cc-write",
+        title: "Write deliverable.pdf",
+        kind: "edit",
+        status: "pending",
+        rawInput: { file_path: "/tmp/project/deliverable.pdf" },
+        _meta: { claudeCode: { toolName: "Write" } },
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-cc-source",
+      turn_id: "turn-sess-cc-source",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "cc-write",
+        status: "completed",
+        _meta: { claudeCode: { toolName: "Write" } },
+      },
+    });
+
+    expect(store.artifactsFor("sess-codex-source").sources).toEqual([
+      { kind: "web", uri: "https://example.com/codex" },
+    ]);
+    expect(store.artifactsFor("sess-cc-source").sources).toEqual([
+      { kind: "web", uri: "https://example.com/claude" },
+    ]);
+    expect(store.artifactsFor("sess-cc-source").files).toEqual([
+      "/tmp/project/deliverable.pdf",
+    ]);
+  });
+
   test("accepts wrapped ACP chunk events on the streaming accumulators", () => {
     const store = new SessionStore();
     store.apply({
@@ -1039,6 +1970,83 @@ describe("SessionStore slash commands", () => {
 });
 
 describe("SessionStore prompt queue state", () => {
+  test("keeps the active turn running while Stop is only requested", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-cancel-requested";
+    store.registerStarting(sessionId, "codex-acp", "Stop request test");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-cancel-requested",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-active", sessionId, "keep running until acknowledged");
+
+    store.apply({
+      type: "session.cancel_requested",
+      session_id: sessionId,
+      turn_id: "turn-active",
+    });
+
+    expect(store.get(sessionId)?.activeTurnId).toBe("turn-active");
+    expect(store.get(sessionId)?.status).toBe("running");
+    expect(store.turnsFor(sessionId)[0]?.status).toBe("running");
+  });
+
+  test("settles an acknowledged Stop as cancelled and clears the active turn", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-cancelled";
+    store.registerStarting(sessionId, "claude-acp", "Stop acknowledgement test");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-cancelled",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-cancelled", sessionId, "stop this turn");
+
+    store.apply({
+      type: "session.cancelled",
+      session_id: sessionId,
+      turn_id: "turn-cancelled",
+    });
+
+    expect(store.turnsFor(sessionId)[0]?.status).toBe("cancelled");
+    expect(store.turnsFor(sessionId)[0]?.endedAt).toEqual(expect.any(Number));
+    expect(store.get(sessionId)?.activeTurnId).toBeUndefined();
+    expect(store.get(sessionId)?.status).toBe("ready");
+  });
+
+  test("promotes the next FIFO turn after the active turn is cancelled", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-cancel-fifo";
+    store.registerStarting(sessionId, "codex-acp", "Stop FIFO test");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-cancel-fifo",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-cancelled", sessionId, "first");
+    store.registerTurn("turn-next", sessionId, "second");
+
+    store.apply({
+      type: "session.cancelled",
+      session_id: sessionId,
+      turn_id: "turn-cancelled",
+    });
+
+    expect(store.get(sessionId)?.activeTurnId).toBe("turn-next");
+    expect(store.get(sessionId)?.queuedTurnIds).toBeUndefined();
+    expect(store.turnsFor(sessionId).map((turn) => turn.status)).toEqual([
+      "cancelled",
+      "running",
+    ]);
+  });
+
   test("deduplicates broker asks and clears them when the active turn terminates", () => {
     const store = new SessionStore();
     const sessionId = "sess-broker-lifecycle";
@@ -1057,6 +2065,7 @@ describe("SessionStore prompt queue state", () => {
         requestId: "permission-1",
         sessionId,
         toolCall: { title: "Run command" },
+        presentation: { title: "Run command" },
         options: [
           {
             optionId: "cancel",
@@ -1088,6 +2097,7 @@ describe("SessionStore prompt queue state", () => {
         requestId: "permission-before-ready",
         sessionId,
         toolCall: { title: "Run command" },
+        presentation: { title: "Run command" },
         options: [
           {
             optionId: "allow",
@@ -1218,9 +2228,196 @@ describe("SessionStore prompt queue state", () => {
       { turn_id: "turn-next", text: "next", created_at: 123 },
     ]);
   });
+
+  test("uses queue snapshots to edit, reorder, and remove optimistic queued turns", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-managed-queue";
+    store.registerStarting(sessionId, "codex-acp", "Managed queue test");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-managed-queue",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-active", sessionId, "first");
+    store.registerTurn("turn-two", sessionId, "old two");
+    store.registerTurn("turn-three", sessionId, "old three");
+
+    store.apply({
+      type: "session.queue_update",
+      session_id: sessionId,
+      mode: "single",
+      active_turn_id: "turn-active",
+      queued: [
+        { turn_id: "turn-three", text: "edited three", created_at: 3 },
+        { turn_id: "turn-two", text: "edited two", created_at: 2 },
+      ],
+    });
+
+    expect(store.get(sessionId)?.queuedTurnIds).toEqual([
+      "turn-three",
+      "turn-two",
+    ]);
+    expect(
+      store.turnsFor(sessionId).map((turn) => [turn.id, turn.promptText]),
+    ).toEqual([
+      ["turn-active", "first"],
+      ["turn-two", "edited two"],
+      ["turn-three", "edited three"],
+    ]);
+
+    store.apply({
+      type: "session.queue_update",
+      session_id: sessionId,
+      mode: "single",
+      active_turn_id: "turn-active",
+      queued: [
+        { turn_id: "turn-three", text: "edited three", created_at: 3 },
+      ],
+    });
+
+    expect(store.get(sessionId)?.queuedTurnIds).toEqual(["turn-three"]);
+    expect(store.turnsFor(sessionId).map((turn) => turn.id)).toEqual([
+      "turn-active",
+      "turn-three",
+    ]);
+  });
+
+  test("keeps a steered queue turn visible as running while it is removed from FIFO", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-steering-queue";
+    store.registerStarting(sessionId, "codex-acp", "Steering queue test");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-steering-queue",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-active", sessionId, "first");
+    store.registerTurn("turn-steer", sessionId, "steer me");
+    store.registerTurn("turn-three", sessionId, "third");
+
+    store.apply({
+      type: "session.queue_update",
+      session_id: sessionId,
+      mode: "single",
+      active_turn_id: "turn-active",
+      queued: [{ turn_id: "turn-three", text: "third", created_at: 3 }],
+      steering_turn_ids: ["turn-steer"],
+    });
+
+    expect(store.get(sessionId)?.queuedTurnIds).toEqual(["turn-three"]);
+    expect(store.turnsFor(sessionId).map((turn) => [turn.id, turn.status])).toEqual([
+      ["turn-active", "running"],
+      ["turn-steer", "running"],
+      ["turn-three", "queued"],
+    ]);
+  });
+
+  test("settles an injected steering input without completing the active turn", () => {
+    const store = new SessionStore();
+    const sessionId = "steering-input-session";
+    store.registerStarting(sessionId, "claude-acp", "Steering input");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-steering-input",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+      supports_steering: true,
+    });
+    store.registerTurn("turn-active", sessionId, "first");
+    store.apply({
+      type: "session.queue_update",
+      session_id: sessionId,
+      mode: "single",
+      active_turn_id: "turn-active",
+      queued: [],
+    });
+    store.registerTurn("turn-steer", sessionId, "change direction", {
+      intent: "steer",
+      requestedDelivery: "llm_boundary",
+      effectiveDelivery: "llm_boundary",
+      degraded: false,
+    });
+
+    store.apply({
+      type: "session.steering",
+      session_id: sessionId,
+      turn_id: "turn-steer",
+      active_turn_id: "turn-active",
+      text: "change direction",
+      requested_delivery: "llm_boundary",
+      effective_delivery: "llm_boundary",
+      outcome: "injected",
+    });
+
+    expect(store.turnsFor(sessionId).map((turn) => [turn.id, turn.status])).toEqual([
+      ["turn-active", "running"],
+      ["turn-steer", "complete"],
+    ]);
+    expect(store.get(sessionId)).toMatchObject({
+      status: "running",
+      activeTurnId: "turn-active",
+    });
+  });
+
+  test("keeps a steering input running when the adapter started a new turn", () => {
+    const store = new SessionStore();
+    const sessionId = "steering-new-turn-session";
+    store.registerStarting(sessionId, "codex-acp", "Steering new turn");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-steering-new-turn",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      supports_steering: true,
+    });
+    store.registerTurn("turn-steer", sessionId, "continue after the race", {
+      intent: "steer",
+      requestedDelivery: "llm_boundary",
+      effectiveDelivery: "llm_boundary",
+      degraded: false,
+    });
+
+    store.apply({
+      type: "session.steering",
+      session_id: sessionId,
+      turn_id: "turn-steer",
+      active_turn_id: "turn-previous",
+      text: "continue after the race",
+      requested_delivery: "llm_boundary",
+      effective_delivery: "llm_boundary",
+      outcome: "startedNewTurn",
+    });
+
+    expect(store.turnsFor(sessionId)[0]?.status).toBe("running");
+    expect(store.get(sessionId)).toMatchObject({
+      status: "running",
+      activeTurnId: "turn-steer",
+    });
+  });
 });
 
 describe("SessionStore side chats and native subagents", () => {
+  test("stores steering capability from session.ready events", () => {
+    const store = new SessionStore();
+
+    store.apply({
+      type: "session.ready",
+      session_id: "steering-session",
+      acp_session_id: "steering-acp",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+      supports_steering: true,
+    });
+
+    expect(store.get("steering-session")?.supportsSteering).toBe(true);
+  });
+
   test("stores fork capability from session.ready events", () => {
     const store = new SessionStore();
 
@@ -1435,6 +2632,14 @@ describe("SessionStore side chats and native subagents", () => {
         }),
       }),
     ]);
+    expect(store.workItemsFor("parent-session")).toMatchObject([
+      {
+        id: "codex-child-thread",
+        kind: "agent",
+        status: "running",
+        title: "Review the auth boundary",
+      },
+    ]);
 
     const spawned = store.subagentsFor("parent-session")[0]!;
     expect(spawned.avatarId).toEqual(expect.any(String));
@@ -1499,6 +2704,13 @@ describe("SessionStore side chats and native subagents", () => {
         result: "CHILD_OK",
       },
     });
+    expect(store.workItemsFor("parent-session")).toMatchObject([
+      {
+        id: "codex-child-thread",
+        status: "completed",
+        result: "CHILD_OK",
+      },
+    ]);
     expect(
       (store.subagentsFor("parent-session")[0] as SubagentActivity & {
         viewSessionId?: string;
@@ -1540,7 +2752,149 @@ describe("SessionStore side chats and native subagents", () => {
     });
   });
 
-  test("settles native subagent views when their parent turn completes", () => {
+  test("routes Claude nested transcript into the existing native subagent view", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "claude-parent",
+      acp_session_id: "claude-thread",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-parent", "claude-parent", "Ask Claude to investigate");
+
+    store.apply({
+      type: "session.event",
+      session_id: "claude-parent",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "task-parent",
+        toolName: "Task",
+        status: "in_progress",
+        rawInput: { description: "Inspect the auth boundary" },
+        _meta: {
+          claudeCode: {
+            subagent: true,
+            toolResponse: { agentId: "claude-child" },
+          },
+        },
+      },
+    });
+
+    store.apply({
+      type: "session.event",
+      session_id: "claude-parent",
+      turn_id: "turn-parent",
+      event: {
+        sessionUpdate: "agent_message_chunk",
+        _meta: { claudeCode: { parentToolUseId: "task-parent" } },
+        content: { type: "text", text: "Child found the boundary." },
+      },
+    });
+
+    const activity = store.subagentsFor("claude-parent")[0]!;
+    expect(store.turnsFor("claude-parent")[0]?.assistantText).toBe("");
+    expect(store.turnsFor(activity.viewSessionId)[0]).toMatchObject({
+      assistantText: "Child found the boundary.",
+      status: "running",
+      events: [
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            sessionUpdate: "agent_message_chunk",
+          }),
+        }),
+      ],
+    });
+  });
+
+  test("attributes Claude AgentOutput usage to the existing child work item", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "claude-usage-parent",
+      acp_session_id: "claude-usage-thread",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn(
+      "turn-usage-parent",
+      "claude-usage-parent",
+      "Ask Claude to inspect usage",
+    );
+    store.apply({
+      type: "session.event",
+      session_id: "claude-usage-parent",
+      turn_id: "turn-usage-parent",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "task-usage-parent",
+        toolName: "Task",
+        status: "in_progress",
+        rawInput: { description: "Inspect token accounting" },
+        _meta: {
+          claudeCode: {
+            subagent: true,
+            toolResponse: { agentId: "claude-usage-child" },
+          },
+        },
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "claude-usage-parent",
+      turn_id: "turn-usage-parent",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "task-usage-parent",
+        title: "Agent",
+        status: "completed",
+        _meta: {
+          claudeCode: {
+            toolName: "Agent",
+            toolResponse: {
+              status: "completed",
+              agentId: "claude-usage-child",
+              agentType: "Explore",
+              content: [{ type: "text", text: "Usage audit complete." }],
+              totalTokens: 24,
+              usage: {
+                input_tokens: 12,
+                output_tokens: 8,
+                cache_read_input_tokens: 3,
+                cache_creation_input_tokens: 1,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(store.subagentsFor("claude-usage-parent")[0]).toMatchObject({
+      childSessionId: "claude-usage-child",
+      status: "complete",
+      native: {
+        usage: {
+          inputTokens: 12,
+          outputTokens: 8,
+          cachedReadTokens: 3,
+          cachedWriteTokens: 1,
+          totalTokens: 24,
+        },
+      },
+    });
+    expect(store.openmaEventsFor("claude-usage-parent")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "usage.updated",
+          work_item_id: "claude-usage-child",
+          parent_id: "task-usage-parent",
+        }),
+      ]),
+    );
+  });
+
+  test("marks native subagent views unknown when their parent turn lacks a child terminal", () => {
     const store = new SessionStore();
     store.apply({
       type: "session.ready",
@@ -1589,12 +2943,20 @@ describe("SessionStore side chats and native subagents", () => {
     });
 
     expect(store.subagentsFor("parent-session")[0]).toMatchObject({
-      status: "complete",
+      status: "unknown",
     });
     expect(store.get(viewSessionId)).toMatchObject({ status: "ready" });
     expect(store.turnsFor(viewSessionId)[0]).toMatchObject({
-      status: "complete",
+      status: "unknown",
     });
+    expect(store.workItemsFor("parent-session")).toEqual([
+      expect.objectContaining({
+        id: "child-a",
+        status: "unknown",
+        missing_terminal: true,
+        reason: "parent_turn_completed",
+      }),
+    ]);
   });
 
   test("keeps split Codex spawn_agent output running until wait_agent completes", () => {
@@ -1687,7 +3049,7 @@ describe("SessionStore side chats and native subagents", () => {
     });
   });
 
-  test("tracks explicit Codex spawnAgent tool invocations for generic agent ids", () => {
+  test("does not treat Codex-shaped tools from unknown agents as Codex events", () => {
     const store = new SessionStore();
     store.apply({
       type: "session.ready",
@@ -1719,24 +3081,211 @@ describe("SessionStore side chats and native subagents", () => {
       },
     });
 
-    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
-      childSessionId: "codex-child-thread",
-      inheritance: "fork",
-      task: "Explore the architecture",
-      status: "running",
-      native: {
-        provider: "codex",
-        childThreadId: "codex-child-thread",
-        nickname: "Jason",
-      },
-    });
-    expect(store.sideTabs()).toEqual([
-      expect.objectContaining({
-        type: "subagent",
-        label: "Jason",
-      }),
-    ]);
+    expect(store.subagentsFor("parent-session")).toEqual([]);
+    expect(store.sideTabs()).toEqual([]);
   });
+
+  test.each([
+    ["OpenCode", "opencode", "opencode"],
+    ["Kilo", "kilo", "kilo"],
+  ])(
+    "tracks %s foreground Task from provisional id through reidentification and completion",
+    (_name, agentId, provider) => {
+      const store = new SessionStore();
+      const parentId = `${agentId}-foreground-parent`;
+      const turnId = `${agentId}-foreground-turn`;
+      const toolCallId = `${agentId}-foreground-task-call`;
+      store.apply({
+        type: "session.ready",
+        session_id: parentId,
+        acp_session_id: `${agentId}-acp-parent`,
+        agent_id: agentId,
+        cwd: "/repo",
+      });
+      store.registerTurn(turnId, parentId, "Run a foreground audit");
+
+      store.apply({
+        type: "session.event",
+        session_id: parentId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "tool_call",
+          toolCallId,
+          title: "Audit source handling",
+          kind: "think",
+          status: "pending",
+          rawInput: {
+            description: "Audit source handling",
+            prompt: "Inspect the source pipeline",
+            subagent_type: "explore",
+            background: false,
+          },
+        },
+      });
+
+      expect(store.subagentsFor(parentId)).toEqual([
+        expect.objectContaining({
+          childSessionId: `${provider}:${toolCallId}`,
+          status: "running",
+        }),
+      ]);
+
+      store.apply({
+        type: "session.event",
+        session_id: parentId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "tool_call_update",
+          toolCallId,
+          status: "completed",
+          rawOutput: {
+            output:
+              `<task id="${agentId}-foreground-child" state="completed">`
+              + "<task_result>Audit passed.</task_result></task>",
+            metadata: {
+              parentSessionId: `${agentId}-acp-parent`,
+              sessionId: `${agentId}-foreground-child`,
+            },
+          },
+        },
+      });
+
+      expect(store.subagentsFor(parentId)).toEqual([
+        expect.objectContaining({
+          childSessionId: `${agentId}-foreground-child`,
+          status: "complete",
+          native: expect.objectContaining({
+            provider,
+            toolCallId,
+            childThreadId: `${agentId}-foreground-child`,
+            result: "Audit passed.",
+          }),
+        }),
+      ]);
+      expect(store.workItemsFor(parentId)).toEqual([
+        expect.objectContaining({
+          id: `${agentId}-foreground-child`,
+          status: "completed",
+          result: "Audit passed.",
+        }),
+      ]);
+      expect(
+        store.openmaEventsFor(parentId).map((event) => event.type),
+      ).toEqual([
+        "work_item.started",
+        "work_item.reidentified",
+        "work_item.completed",
+      ]);
+    },
+  );
+
+  test.each([
+    ["OpenCode", "opencode", "opencode"],
+    ["Kilo", "kilo", "kilo"],
+  ])(
+    "tracks %s background Task lifecycle through its runtime adapter",
+    (_name, agentId, provider) => {
+      const store = new SessionStore();
+      store.apply({
+        type: "session.ready",
+        session_id: `${agentId}-parent`,
+        acp_session_id: `${agentId}-acp-parent`,
+        agent_id: agentId,
+        cwd: "/repo",
+      });
+      store.registerTurn(
+        `${agentId}-turn`,
+        `${agentId}-parent`,
+        "Start a background audit",
+      );
+
+      store.apply({
+        type: "session.event",
+        session_id: `${agentId}-parent`,
+        turn_id: `${agentId}-turn`,
+        event: {
+          sessionUpdate: "tool_call",
+          toolCallId: `${agentId}-task-call`,
+          title: "Audit source handling",
+          kind: "think",
+          status: "pending",
+          rawInput: {
+            description: "Audit source handling",
+            prompt: "Inspect the source pipeline",
+            subagent_type: "explore",
+            background: true,
+          },
+        },
+      });
+      store.apply({
+        type: "session.event",
+        session_id: `${agentId}-parent`,
+        turn_id: `${agentId}-turn`,
+        event: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: `${agentId}-task-call`,
+          status: "completed",
+          rawOutput: {
+            output:
+              `<task id="${agentId}-child" state="running">`
+              + "<task_result>Working</task_result></task>",
+            metadata: {
+              parentSessionId: `${agentId}-acp-parent`,
+              sessionId: `${agentId}-child`,
+              background: true,
+              jobId: `${agentId}-child`,
+            },
+          },
+        },
+      });
+
+      expect(store.subagentsFor(`${agentId}-parent`)).toEqual([
+        expect.objectContaining({
+          childSessionId: `${agentId}-child`,
+          task: "Audit source handling",
+          status: "running",
+          native: expect.objectContaining({
+            provider,
+            toolCallId: `${agentId}-task-call`,
+            childThreadId: `${agentId}-child`,
+            agentType: "explore",
+          }),
+        }),
+      ]);
+
+      for (const text of [
+        `<task id="${agentId}-child" state="comp`,
+        'leted"><summary>Background task completed: Audit source handling</summary>',
+        "<task_result>Audit passed.</task_result></task>",
+      ]) {
+        store.apply({
+          type: "session.event",
+          session_id: `${agentId}-parent`,
+          turn_id: `${agentId}-turn`,
+          event: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text },
+          },
+        });
+      }
+      store.apply({
+        type: "session.complete",
+        session_id: `${agentId}-parent`,
+        turn_id: `${agentId}-turn`,
+      });
+
+      expect(store.subagentsFor(`${agentId}-parent`)).toEqual([
+        expect.objectContaining({
+          childSessionId: `${agentId}-child`,
+          status: "complete",
+          native: expect.objectContaining({
+            provider,
+            result: "Audit passed.",
+          }),
+        }),
+      ]);
+    },
+  );
 
   test("tracks Claude Code Task tool invocations as native subagent activity", () => {
     const store = new SessionStore();
@@ -1869,6 +3418,126 @@ describe("SessionStore side chats and native subagents", () => {
     });
   });
 
+  test("reidentifies the provisional Claude Agent work item when agentId arrives", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "claude-reidentify-parent",
+      acp_session_id: "claude-reidentify-acp",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn(
+      "claude-reidentify-turn",
+      "claude-reidentify-parent",
+      "Start an async agent",
+    );
+    store.apply({
+      type: "session.event",
+      session_id: "claude-reidentify-parent",
+      turn_id: "claude-reidentify-turn",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "toolu-async-agent",
+        status: "pending",
+        rawInput: { description: "Audit adapters" },
+        _meta: { claudeCode: { toolName: "Agent", subagent: true } },
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "claude-reidentify-parent",
+      turn_id: "claude-reidentify-turn",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "toolu-async-agent",
+        status: "completed",
+        _meta: {
+          claudeCode: {
+            toolName: "Agent",
+            toolResponse: {
+              isAsync: true,
+              status: "async_launched",
+              agentId: "claude-agent-1",
+            },
+          },
+        },
+      },
+    });
+
+    expect(store.workItemsFor("claude-reidentify-parent")).toEqual([
+      expect.objectContaining({
+        id: "claude-agent-1",
+        kind: "agent",
+        title: "Audit adapters",
+        status: "running",
+      }),
+    ]);
+  });
+
+  test("marks a Claude async Agent unknown when its parent turn has no terminal event", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "claude-missing-terminal-parent",
+      acp_session_id: "claude-missing-terminal-acp",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn(
+      "claude-missing-terminal-turn",
+      "claude-missing-terminal-parent",
+      "Start an async agent",
+    );
+    store.apply({
+      type: "session.event",
+      session_id: "claude-missing-terminal-parent",
+      turn_id: "claude-missing-terminal-turn",
+      event: {
+        sessionUpdate: "tool_call",
+        toolCallId: "toolu-missing-terminal",
+        status: "pending",
+        rawInput: { description: "Monitor the build" },
+        _meta: { claudeCode: { toolName: "Agent", subagent: true } },
+      },
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "claude-missing-terminal-parent",
+      turn_id: "claude-missing-terminal-turn",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "toolu-missing-terminal",
+        status: "completed",
+        _meta: {
+          claudeCode: {
+            toolName: "Agent",
+            toolResponse: {
+              isAsync: true,
+              status: "async_launched",
+              agentId: "claude-agent-missing-terminal",
+            },
+          },
+        },
+      },
+    });
+
+    store.apply({
+      type: "session.complete",
+      session_id: "claude-missing-terminal-parent",
+      turn_id: "claude-missing-terminal-turn",
+    });
+
+    expect(store.workItemsFor("claude-missing-terminal-parent")).toEqual([
+      expect.objectContaining({
+        id: "claude-agent-missing-terminal",
+        status: "unknown",
+        reason: "parent_turn_completed",
+        missing_terminal: true,
+      }),
+    ]);
+  });
+
   test("does not infer native subagents from non-native tool names", () => {
     const store = new SessionStore();
     store.apply({
@@ -1900,6 +3569,61 @@ describe("SessionStore side chats and native subagents", () => {
 });
 
 describe("SessionStore pair chat grouping", () => {
+  test("renames a session locally and persists the new title", async () => {
+    const rename = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("window", { backchat: { sessionsRename: rename } });
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "rename-session",
+      acp_session_id: "acp-rename-session",
+      agent_id: "codex-acp",
+      cwd: "/tmp/rename-session",
+    });
+
+    await store.rename("rename-session", "Renamed task");
+
+    expect(store.get("rename-session")?.label).toBe("Renamed task");
+    expect(rename).toHaveBeenCalledWith({
+      session_id: "rename-session",
+      title: "Renamed task",
+    });
+  });
+
+  test("renames a pair and persists the wrapper title", async () => {
+    const pairSave = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("window", { backchat: { pairSave } });
+    const store = new SessionStore();
+    const pairId = store.newDraftPair(["pair-test-codex", "pair-test-claude"]);
+
+    await store.renamePair(pairId, "Renamed pair");
+
+    expect(store.pair(pairId)?.label).toBe("Renamed pair");
+    expect(pairSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pair_id: pairId, title: "Renamed pair" }),
+    );
+  });
+
+  test("keeps pinned pairs first and removes archived pairs from the list", () => {
+    vi.stubGlobal("window", {
+      backchat: {
+        pairSave: vi.fn().mockResolvedValue(undefined),
+        pairsPin: vi.fn().mockResolvedValue(undefined),
+        pairsArchive: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const store = new SessionStore();
+    const first = store.newDraftPair(["pair-first-a", "pair-first-b"]);
+    const second = store.newDraftPair(["pair-second-a", "pair-second-b"]);
+    store.pair(second)!.lastUsedAt += 1_000;
+
+    store.pinPair(first);
+
+    expect(store.pairList().map((pair) => pair.id)).toEqual([first, second]);
+    store.archivePair(first);
+    expect(store.pairList().map((pair) => pair.id)).toEqual([second]);
+  });
+
   test("creates one normal turn per pair member for a shared prompt", () => {
     const store = new SessionStore();
     const pairId = store.newDraftPair([

@@ -15,8 +15,7 @@ export async function previewLocalFile(path: string): Promise<void> {
       sessionStore.patchSideTab(tabId, { sourcePath: preview.sourcePath });
       return;
     }
-    const error = await window.backchat.uiFsOpenPath({ path });
-    if (error) throw new Error(error);
+    sessionStore.openSideTab("artifact", path, markdownFileLabel(path));
   } catch (error) {
     toast.error("Couldn't open file", {
       description: `${path}\n\n${error instanceof Error ? error.message : String(error)}`,

@@ -21,6 +21,48 @@ export interface BrowserWebviewEventCallbacks {
   onCacheFrame(): void;
 }
 
+const FAVICON_MAX_BYTES = 256 * 1024;
+
+function publishBrowserFavicon(
+  webview: BrowserWebviewEventSource,
+  callbacks: BrowserWebviewEventCallbacks,
+  faviconUrl: string,
+): void {
+  if (/^data:image\//i.test(faviconUrl)) {
+    callbacks.onPageMeta({ faviconUrl });
+    return;
+  }
+  if (!/^https?:/i.test(faviconUrl)) return;
+
+  const source = JSON.stringify(faviconUrl);
+  void webview.executeJavaScript<string | null>(`
+    (async () => {
+      try {
+        const response = await fetch(${source}, { credentials: "include" });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        if (blob.size <= 0 || blob.size > ${FAVICON_MAX_BYTES}) return null;
+        const type = blob.type.startsWith("image/") ? blob.type : "image/x-icon";
+        const safeBlob = blob.type === type ? blob : new Blob([blob], { type });
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(
+            typeof reader.result === "string" ? reader.result : null
+          );
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(safeBlob);
+        });
+      } catch {
+        return null;
+      }
+    })()
+  `).then((dataUrl) => {
+    if (dataUrl && /^data:image\//i.test(dataUrl)) {
+      callbacks.onPageMeta({ faviconUrl: dataUrl });
+    }
+  }).catch(() => undefined);
+}
+
 export function bindBrowserWebviewEvents(
   webview: BrowserWebviewEventSource,
   callbacks: BrowserWebviewEventCallbacks,
@@ -40,7 +82,7 @@ export function bindBrowserWebviewEvents(
     const faviconUrl = (
       event as Event & { favicons?: string[] }
     ).favicons?.find((candidate) => /^(https?|data):/i.test(candidate));
-    if (faviconUrl) callbacks.onPageMeta({ faviconUrl });
+    if (faviconUrl) publishBrowserFavicon(webview, callbacks, faviconUrl);
   };
   const onDomReady = () => {
     callbacks.onDomReady({
@@ -50,9 +92,7 @@ export function bindBrowserWebviewEvents(
     void webview.executeJavaScript<string | null>(
       "document.querySelector('link[rel~=\"icon\"], link[rel=\"shortcut icon\"]')?.href ?? null",
     ).then((faviconUrl) => {
-      if (faviconUrl && /^(https?|data):/i.test(faviconUrl)) {
-        callbacks.onPageMeta({ faviconUrl });
-      }
+      if (faviconUrl) publishBrowserFavicon(webview, callbacks, faviconUrl);
     }).catch(() => undefined);
     callbacks.onCacheFrame();
   };

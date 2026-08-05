@@ -2,8 +2,15 @@ import type {
   AgentMessageDelivery,
   AgentMessageIntent,
 } from "@shared/agent-interaction.js";
+import type {
+  PromptAttachment,
+  PromptSessionReference,
+} from "@shared/session-events.js";
 import type { AcpSessionConfigOption } from "./session-config-options";
-import type { NativeAgentProvider } from "./native-agent-events";
+import type {
+  NativeAgentProgress,
+  NativeAgentProvider,
+} from "./native-agent-events";
 import type { SubagentAvatarId } from "./subagent-avatar";
 
 export interface SessionRow {
@@ -14,6 +21,8 @@ export interface SessionRow {
   /** UI label. Phase 3 derives from agent + short id; Phase 4 lets the user
    *  rename, persisting to SQLite. */
   label: string;
+  /** True after the user explicitly renames the session. */
+  titleManuallySet?: boolean;
   /** Which surface owns this session.
    *    "main" → appears in the sidebar list, drives `/chat/$id`. Default.
    *    "side" → lives only in the side-chat rail. Filtered out of the
@@ -43,6 +52,9 @@ export interface SessionRow {
   /** Whether the live ACP agent advertised the unstable session/fork
    *  capability. This gates inherited subagent startup only. */
   supportsSessionFork?: boolean;
+  /** Whether the live ACP initialize response negotiated `_session/steering`.
+   * This is session-scoped capability evidence, never inferred from agent id. */
+  supportsSteering?: boolean;
   /** Lifecycle:
    *    "draft"     → empty session, no IPC fired yet.
    *    "persisted" → loaded from disk; ACP child NOT spawned (spawns
@@ -75,6 +87,10 @@ export interface SessionRow {
    *  this field is no longer consulted (the ACP child has already
    *  spawned with whatever path won). */
   chosenCwd?: string;
+  /** Durable project container selected for this task. */
+  projectId?: string;
+  /** ACP secondary roots; cwd/chosenCwd remains the primary folder. */
+  additionalDirectories?: string[];
   /** Explicit ownership chosen at draft creation. This prevents a global
    *  New chat from inheriting the current/default project through ambient
    *  composer state. Project scope is only entered by a project `+` action
@@ -102,6 +118,12 @@ export interface SessionRow {
   sessionUpdatedAt?: string;
   sessionInfoMeta?: Record<string, unknown>;
   agentThreadStatus?: string;
+  /** Latest provider-owned queue depth when a harness emits one. This is
+   * read-only observability, separate from OpenMA's editable prompt queue. */
+  providerQueueDepth?: number;
+  /** Latest persistent goal snapshot. Kept session-scoped so it can render
+   * above the composer while plan entries remain turn-scoped. */
+  goal?: SessionGoal;
   /** Set when a turn completes (or errors) while this session is NOT
    *  the active one — gives the sidebar an "unread" affordance so the
    *  user can scan which background chats have new results. Cleared
@@ -149,8 +171,20 @@ export interface SessionNotice {
   expiresAt: number;
 }
 
+/** Normalized Goal state emitted by a harness-specific adapter. Goal is not an
+ * ACP v1 semantic; each harness integration must map its confirmed extension
+ * contract into this type explicitly. */
+export interface SessionGoal {
+  objective: string;
+  status: string;
+  tokenBudget?: number;
+  tokensUsed?: number;
+  timeUsedSeconds?: number;
+}
+
 export type BrokerAsk =
   | { kind: "permission"; ask: import("@shared/api.js").PermissionAskInfo }
+  | { kind: "elicitation"; ask: import("@shared/api.js").ElicitationAskInfo }
   | { kind: "fsWrite"; ask: import("@shared/api.js").FsWriteAskInfo };
 
 /** A pair-chat — fans a single user prompt out to N agents. Members
@@ -167,6 +201,10 @@ export interface PairRow {
   /** Wall-clock of last activity — sidebar sort. */
   lastUsedAt: number;
   createdAt: number;
+  /** Wall-clock ms the user pinned this pair. */
+  pinnedAt?: number;
+  /** Wall-clock ms when this pair was archived. */
+  archivedAt?: number;
   /** A pair-wide active turn id locks all members' composers
    *  simultaneously: a new prompt only enables once every member has
    *  finished the current turn. Cleared when the LAST member completes. */
@@ -206,7 +244,7 @@ export interface SubagentActivity {
   avatarId: SubagentAvatarId;
   inheritance: SubagentInheritance;
   task: string;
-  status: "draft" | "running" | "complete" | "error" | "cancelled";
+  status: "draft" | "running" | "complete" | "error" | "cancelled" | "unknown";
   startedAt: number;
   updatedAt: number;
   errorMessage?: string;
@@ -223,6 +261,17 @@ export interface NativeSubagentMetadata {
   result?: string;
   closed?: boolean;
   childToolCallIds?: string[];
+  /** Provider progress is intentionally separate from billed usage. Claude's
+   *  SDK task_progress reports only a running total, tool count, and duration;
+   *  it does not expose an input/output token split. */
+  progress?: NativeAgentProgress;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedReadTokens?: number;
+    cachedWriteTokens?: number;
+    totalTokens: number;
+  };
 }
 
 export interface PairTurnTarget {
@@ -275,6 +324,10 @@ export interface Turn {
   id: string;
   sessionId: string;
   promptText: string;
+  /** User-provided files/images are task sources. Persist metadata only so
+   * the Task tab can restore them without duplicating inline image data. */
+  attachments?: PromptAttachment[];
+  sessionReferences?: PromptSessionReference[];
   events: TurnEvent[];
   /** Accumulated assistant text. The streaming channel pushes deltas into a
    *  DOM-mutating renderer; this string is the SAME content but kept in JS
@@ -286,7 +339,7 @@ export interface Turn {
    * These fields track that tail without changing the persisted raw stream. */
   activeThoughtMessageId?: string;
   activeThoughtSegmentText?: string;
-  status: "queued" | "running" | "complete" | "error" | "cancelled";
+  status: "queued" | "running" | "complete" | "error" | "cancelled" | "unknown";
   promptIntent?: AgentMessageIntent;
   requestedDelivery?: AgentMessageDelivery;
   effectiveDelivery?: AgentMessageDelivery;
@@ -303,12 +356,22 @@ export interface TurnDeliveryMeta {
   degraded: boolean;
 }
 
-export type SideTabType = "chat" | "subagent" | "file" | "browser" | "terminal" | "process" | "interactive";
+export type SideTabType =
+  | "chat"
+  | "subagent"
+  | "file"
+  | "artifact"
+  | "browser"
+  | "terminal"
+  | "process"
+  | "schedule"
+  | "interactive";
 
 /** UI tab in the right rail. The `payload` field is type-specific — for
  *  chat it's a sessionId (matches SessionRow.id), for file it's a cwd
- *  path, for browser it's the current URL, for terminal it's a
- *  pty terminalId allocated by UiTermSpawn. */
+ *  path, for artifact it's a local file path, for browser it's the current
+ *  URL, for terminal it's a pty terminalId, and for schedule it's the
+ *  registered schedule id. */
 export interface SideTab {
   id: string;
   type: SideTabType;
@@ -343,17 +406,25 @@ export interface TaskBrowserWindow {
   activeTabId: string | null;
 }
 
-/** Things the agent has produced in a conversation — drives the side
- *  panel's "推荐" feed. Files and services kept as ordered, deduped
- *  arrays (newest at index 0). Capped at 50 each so a runaway turn
- *  can't bloat the store. */
+/** Provider-normalized task resources. Runtime adapters distinguish explicit
+ *  deliverables from referenced inputs; the UI never infers provenance from
+ *  generic ACP locations or diffs. Arrays are newest-first and capped at 50. */
 export interface WorkspaceArtifacts {
-  /** Absolute file paths the agent has read / written / edited. */
+  /** User-facing deliverables explicitly registered by the provider adapter. */
   files: string[];
-  /** localhost / 127.0.0.1 URLs observed in tool output — the dev
-   *  servers the agent has spun up. URL includes the port; same URL
-   *  re-observed bubbles to the top, doesn't duplicate. */
+  /** Legacy persisted local-service observations. Sites are deliberately not
+   *  rendered in Outputs; retain the field only for snapshot compatibility. */
   services: string[];
+  /** Narrow source set: provider-confirmed fetched pages or explicit file
+   *  source citations. User uploads are merged by the host UI and win. */
+  sources: WorkspaceSourceRef[];
+}
+
+export interface WorkspaceSourceRef {
+  kind: "file" | "web";
+  /** Absolute file path or HTTP(S) URL. */
+  uri: string;
+  label?: string;
 }
 
 export interface SideSessionSnapshot {

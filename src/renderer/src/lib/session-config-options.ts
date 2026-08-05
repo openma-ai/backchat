@@ -39,6 +39,71 @@ export type AcpSessionConfigOption =
       currentValue: boolean;
     };
 
+export interface LegacyAcpSessionModeState {
+  currentModeId: string;
+  availableModes: Array<{
+    id: string;
+    name: string;
+    description?: string | null;
+  }>;
+}
+
+/** Project ACP v1's compatibility-only `modes` shape into the existing mode
+ * config slot. Callers must prefer native `configOptions` when both exist. */
+export function configOptionFromLegacySessionModes(
+  value: unknown,
+): AcpSessionConfigOption | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.currentModeId !== "string"
+    || !record.currentModeId.trim()
+    || !Array.isArray(record.availableModes)
+  ) {
+    return undefined;
+  }
+  const options = record.availableModes.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const mode = candidate as Record<string, unknown>;
+    if (
+      typeof mode.id !== "string"
+      || !mode.id.trim()
+      || typeof mode.name !== "string"
+      || !mode.name.trim()
+    ) {
+      return [];
+    }
+    return [{
+      value: mode.id,
+      name: mode.name,
+      ...(typeof mode.description === "string"
+        ? { description: mode.description }
+        : {}),
+    }];
+  });
+  if (options.length === 0) return undefined;
+  return {
+    id: "mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue: record.currentModeId,
+    options,
+  };
+}
+
+export function withSelectedSessionMode(
+  options: AcpSessionConfigOption[] | undefined,
+  currentModeId: string,
+): AcpSessionConfigOption[] | undefined {
+  return options?.map((option) =>
+    option.type === "select"
+    && (option.category === "mode" || option.id === "mode")
+      ? { ...option, currentValue: currentModeId }
+      : option,
+  );
+}
+
 export function normalizeAgentConfigOptions(
   value: unknown,
 ): AcpSessionConfigOption[] | undefined {

@@ -132,7 +132,7 @@ export function ToolRow({
         onClick={hasBody ? handleSummaryClick : undefined}
         aria-expanded={open}
         className={cn(
-          "flex w-full items-center gap-1.5 rounded text-left text-[13px]",
+          "activity-disclosure-row",
           hasBody ? "cursor-pointer hover:bg-bg-surface/40" : "cursor-default",
         )}
       >

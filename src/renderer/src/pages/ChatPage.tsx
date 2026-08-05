@@ -80,6 +80,8 @@ export function prewarmSessionOnOpen(row: SessionRow | undefined): boolean {
     session_id: row.id,
     agent_id: row.agent_id,
     cwd: row.cwd || undefined,
+    additional_directories: row.additionalDirectories,
+    project_id: row.projectId,
     resume: { acp_session_id: row.acp_session_id },
   });
   return true;

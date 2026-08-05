@@ -125,6 +125,38 @@ describe("reduceTurn ACP event compatibility", () => {
     expect(out.timeline).toEqual([{ kind: "tool", toolCallId: "tool-2" }]);
   });
 
+  test("stops rendering an unfinished tool as running after canonical cancellation", () => {
+    const out = render(
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-cancelled",
+        title: "Long-running command",
+        status: "in_progress",
+      },
+      {
+        schema_version: "oma.event.v1",
+        event_id: "tool-cancelled-by-client",
+        type: "tool.cancelled",
+        session_id: "sess-tool-cancelled",
+        turn_id: "turn-tool-cancelled",
+        source: { kind: "openma", adapter: "acp-client" },
+        occurred_at: "2026-08-05T00:00:00.000Z",
+        data: {
+          tool_call_id: "tool-cancelled",
+          status: "cancelled",
+          reason: "user_stop",
+        },
+      },
+    );
+
+    expect(out.tools).toEqual([
+      expect.objectContaining({
+        toolCallId: "tool-cancelled",
+        status: "cancelled",
+      }),
+    ]);
+  });
+
   test("preserves ACP _meta extension fields from tool calls", () => {
     const out = render({
       sessionUpdate: "tool_call",
@@ -228,7 +260,7 @@ describe("reduceTurn ACP event compatibility", () => {
     expect(out.timeline).toEqual([]);
   });
 
-  test("parses ACP 0.25 plan update and removal events into visible turn state", () => {
+  test("keeps an anonymous plan when a removal targets a different identified plan", () => {
     const out = render(
       {
         sessionUpdate: "plan_update",
@@ -252,6 +284,6 @@ describe("reduceTurn ACP event compatibility", () => {
       { content: "Inspect files", status: "completed", priority: "high" },
       { content: "Patch reducer", status: "in_progress", priority: "medium" },
     ]);
-    expect(out.notes).toEqual(["Plan removed: plan-1"]);
+    expect(out.notes).toEqual([]);
   });
 });

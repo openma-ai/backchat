@@ -72,6 +72,28 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("Turn failed.");
   });
 
+  it("separates chat messages while keeping the user bubble compact", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          promptText: "A compact prompt",
+          assistantText: "A clearly separated response",
+          status: "complete",
+        })}
+      />,
+    );
+    const turnClass = html.match(/<article class="([^"]+)"/)?.[1] ?? "";
+
+    expect(turnClass).toContain("!mb-8");
+    expect(turnClass).toContain("!space-y-4");
+    expect(turnClass).toContain(
+      "[&amp;_[data-session-turn-prompt]&gt;div]:!px-3",
+    );
+    expect(turnClass).toContain(
+      "[&amp;_[data-session-turn-prompt]&gt;div]:!py-2",
+    );
+  });
+
   it("renders the broker error message for a failed turn", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
@@ -553,4 +575,100 @@ describe("TurnBlock", () => {
     expect(html).toContain(thought);
     expect(html).toContain("Harness commentary.");
   });
+
+  it("renders a Markdown plan document outside the task-list surface", () => {
+    const markdown = "# Release plan\n\n1. Prepare\n2. Ship";
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "plan_update",
+                plan: {
+                  id: "plan-1",
+                  title: "Release plan",
+                  content: { markdown },
+                },
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-plan-document="true"');
+    expect(html).toContain("Release plan");
+    expect(html).not.toContain('data-plan-activity="true"');
+  });
+
+  it("renders Claude ExitPlanMode as a Markdown plan without a duplicate tool row", () => {
+    sessionMock.agentId = "claude-acp";
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "exit-plan-1",
+                title: "Ready to code?",
+                rawInput: {
+                  plan: "# Ship the feature\n\n1. Inspect\n2. Implement",
+                },
+                _meta: {
+                  claudeCode: { toolName: "ExitPlanMode" },
+                },
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-plan-document="true"');
+    expect(html).toContain("Ship the feature");
+    expect(html).not.toContain("Ready to code?");
+  });
+
+  it.each(["opencode", "kilo"])(
+    "renders the canonical %s todo snapshot through the shared task-list GUI",
+    (agentId) => {
+      sessionMock.agentId = agentId;
+      const html = renderToStaticMarkup(
+        <TurnBlock
+          turn={turn({
+            status: "complete",
+            events: [
+              {
+                payload: {
+                  schema_version: "oma.event.v1",
+                  type: "plan.updated",
+                  data: {
+                    representation: "items",
+                    plan_id: "todo-1",
+                    update_mode: "replace",
+                    entries: [
+                      { content: "Inspect ACP", status: "completed" },
+                      { content: "Adapt UI", status: "in_progress" },
+                    ],
+                  },
+                },
+                receivedAt: 1,
+              },
+            ],
+          })}
+        />,
+      );
+
+      expect(html).toContain('data-plan-activity="true"');
+      expect(html).toContain("Inspect ACP");
+      expect(html).toContain("Adapt UI");
+      expect(html).toContain("1 / 2");
+    },
+  );
 });

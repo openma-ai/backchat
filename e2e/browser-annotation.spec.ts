@@ -1,11 +1,9 @@
 import { access } from "node:fs/promises";
 
-import { expect, test } from "@playwright/test";
-import { injectSession, launchApp, openBrowserPanel } from "./helpers";
+import { expect, test } from "./fixtures";
+import { injectSession, openBrowserPanel } from "./helpers";
 
-test("a selected browser element adds DOM context and a screenshot to the composer", async ({}, testInfo) => {
-  const { page, cleanup } = await launchApp();
-  try {
+test("a selected browser element adds DOM context and a screenshot to the composer", async ({ page, bridge, capture }, testInfo) => {
     const sessionId = await injectSession(page, {
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-annotation",
@@ -55,28 +53,11 @@ test("a selected browser element adds DOM context and a screenshot to the compos
     await expect(page.getByRole("button", { name: "1 page annotation" })).toBeVisible();
     await expect(page.locator('textarea[placeholder="Reply…"]')).toHaveValue("");
 
-    const screenshotPath = testInfo.outputPath("browser-element-annotation.png");
-    await page.screenshot({ path: screenshotPath });
-    await testInfo.attach("browser element annotation", {
-      path: screenshotPath,
-      contentType: "image/png",
-    });
+    await capture("browser-element-annotation.png", "browser element annotation");
 
     await page.locator('textarea[placeholder="Reply…"]').press("Enter");
-    await expect
-      .poll(() =>
-        page.evaluate(() =>
-          // @ts-expect-error -- test bridge
-          window.__backchatTest.readSessionPrompts().then(
-            (items: unknown[]) => items.length,
-          ),
-        ),
-      )
-      .toBe(1);
-    const [prompt] = await page.evaluate(() =>
-      // @ts-expect-error -- test bridge
-      window.__backchatTest.readSessionPrompts(),
-    );
+    await expect.poll(async () => (await bridge.readSessionPrompts()).length).toBe(1);
+    const [prompt] = await bridge.readSessionPrompts();
     expect(prompt.session_id).toBe(sessionId);
     expect(prompt.attachments).toHaveLength(1);
     expect(prompt.annotations).toMatchObject([
@@ -95,14 +76,9 @@ test("a selected browser element adds DOM context and a screenshot to the compos
       path: prompt.attachments[0].path,
       contentType: "image/png",
     });
-  } finally {
-    await cleanup();
-  }
 });
 
-test("a dragged browser region adds visual context and a screenshot without DOM metadata", async ({}, testInfo) => {
-  const { app, page, cleanup } = await launchApp();
-  try {
+test("a dragged browser region adds visual context and a screenshot without DOM metadata", async ({ app, page, bridge, capture }, testInfo) => {
     const sessionId = await injectSession(page, {
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-region",
@@ -136,28 +112,11 @@ test("a dragged browser region adds visual context and a screenshot without DOM 
 
     await expect(page.getByRole("button", { name: "1 page annotation" })).toBeVisible();
 
-    const screenshotPath = testInfo.outputPath("browser-region-annotation.png");
-    await page.screenshot({ path: screenshotPath });
-    await testInfo.attach("browser region annotation", {
-      path: screenshotPath,
-      contentType: "image/png",
-    });
+    await capture("browser-region-annotation.png", "browser region annotation");
 
     await page.locator('textarea[placeholder="Reply…"]').press("Enter");
-    await expect
-      .poll(() =>
-        page.evaluate(() =>
-          // @ts-expect-error -- test bridge
-          window.__backchatTest.readSessionPrompts().then(
-            (items: unknown[]) => items.length,
-          ),
-        ),
-      )
-      .toBe(1);
-    const [prompt] = await page.evaluate(() =>
-      // @ts-expect-error -- test bridge
-      window.__backchatTest.readSessionPrompts(),
-    );
+    await expect.poll(async () => (await bridge.readSessionPrompts()).length).toBe(1);
+    const [prompt] = await bridge.readSessionPrompts();
     expect(prompt.session_id).toBe(sessionId);
     expect(prompt.attachments).toHaveLength(1);
     expect(prompt.annotations).toMatchObject([
@@ -183,14 +142,9 @@ test("a dragged browser region adds visual context and a screenshot without DOM 
       path: prompt.attachments[0].path,
       contentType: "image/png",
     });
-  } finally {
-    await cleanup();
-  }
 });
 
-test("elements inside Shadow DOM and an iframe resolve through their own CDP contexts", async ({}, testInfo) => {
-  const { app, page, cleanup } = await launchApp();
-  try {
+test("elements inside Shadow DOM and an iframe resolve through their own CDP contexts", async ({ app, page, bridge, capture }, testInfo) => {
     await injectSession(page, {
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-complex-dom",
@@ -307,28 +261,11 @@ test("elements inside Shadow DOM and an iframe resolve through their own CDP con
       timeout: 8_000,
     });
 
-    const screenshotPath = testInfo.outputPath("browser-complex-dom-annotations.png");
-    await page.screenshot({ path: screenshotPath });
-    await testInfo.attach("browser complex DOM annotations", {
-      path: screenshotPath,
-      contentType: "image/png",
-    });
+    await capture("browser-complex-dom-annotations.png", "browser complex DOM annotations");
 
     await page.locator('textarea[placeholder="Reply…"]').press("Enter");
-    await expect
-      .poll(() =>
-        page.evaluate(() =>
-          // @ts-expect-error -- test bridge
-          window.__backchatTest.readSessionPrompts().then(
-            (items: unknown[]) => items.length,
-          ),
-        ),
-      )
-      .toBe(1);
-    const [prompt] = await page.evaluate(() =>
-      // @ts-expect-error -- test bridge
-      window.__backchatTest.readSessionPrompts(),
-    );
+    await expect.poll(async () => (await bridge.readSessionPrompts()).length).toBe(1);
+    const [prompt] = await bridge.readSessionPrompts();
     expect(prompt.attachments).toHaveLength(2);
     expect(prompt.annotations).toMatchObject([
       {
@@ -366,14 +303,9 @@ test("elements inside Shadow DOM and an iframe resolve through their own CDP con
       prompt.attachments.map((attachment: { path: string }) => attachment.path),
     );
     expect(bottomPixels.every((pixel) => Math.max(...pixel) > 100)).toBe(true);
-  } finally {
-    await cleanup();
-  }
 });
 
-test("subframe loads preserve the picker while Escape and main-frame navigation cancel it", async () => {
-  const { page, cleanup } = await launchApp();
-  try {
+test("subframe loads preserve the picker while Escape and main-frame navigation cancel it", async ({ page }) => {
     await injectSession(page, {
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-picker-lifecycle",
@@ -418,7 +350,4 @@ test("subframe loads preserve the picker while Escape and main-frame navigation 
     });
     await expect(page.locator("[data-browser-annotation-overlay]")).toHaveCount(0);
     await expect(annotateButton).toBeEnabled();
-  } finally {
-    await cleanup();
-  }
 });

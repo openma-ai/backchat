@@ -14,5 +14,5 @@ allowBuilds:
   electron-winstaller: true
 
 minimumReleaseAgeExclude:
-  - '@agentclientprotocol/claude-agent-acp@0.55.0'
+  - '@agentclientprotocol/claude-agent-acp@0.64.2'
   - '@agentclientprotocol/codex-acp@1.1.0'

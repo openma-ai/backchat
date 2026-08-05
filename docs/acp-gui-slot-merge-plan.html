@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenMA ACP 事件与 GUI 槽位合并计划</title>
+</head>
+<body>
+  <main>
+    <h1>OpenMA ACP 事件与 GUI 槽位合并计划</h1>
+    <p>目标：在不改变 GUI 结构的情况下，尽量覆盖 ACP 官方输入/输出和各 harness adapter metadata，统一经过 ACP / ACP 扩展 → per-harness ACP adapter → OpenMA canonical event → 现有 GUI 槽位。GUI 不解析 harness _meta；无法证明终态时使用 unknown 或 work_item.missing_terminal，不猜完成。</p>
+
+    <h2>版本基线</h2>
+    <table border="1" cellspacing="0" cellpadding="6">
+      <tr><th>组件</th><th>版本</th><th>核查说明</th></tr>
+      <tr><td>ACP SDK</td><td>1.3.0</td><td>官方 v1 文档和本地 schema/types</td></tr>
+      <tr><td>Claude ACP</td><td>0.64.2</td><td>实际依赖 Claude Agent SDK 0.3.220</td></tr>
+      <tr><td>Claude Agent SDK</td><td>0.3.222</td><td>npm 最新版本，Claude ACP 尚未升级</td></tr>
+      <tr><td>Codex ACP</td><td>1.1.9</td><td>本地 adapter 和 metadata</td></tr>
+      <tr><td>Pi ACP</td><td>0.0.33</td><td>本地 adapter 和 metadata</td></tr>
+      <tr><td>Kimi Code</td><td>1.49.0</td><td>Kimi ACP 文档和 notification 格式</td></tr>
+      <tr><td>OpenCode</td><td>1.18.13</td><td>2026-08-05 registry 最新；Task/ACP source 已核</td></tr>
+      <tr><td>Kilo</td><td>7.4.20</td><td>2026-08-05 registry 最新；Task/ACP source 已核</td></tr>
+      <tr><td>Cursor</td><td>2026.07.23</td><td>Cursor ACP 扩展</td></tr>
+    </table>
+
+    <h2>当前实现状态</h2>
+    <p>canonical event 已在 main → renderer 传输、SQL persistence 和 SessionStore replay 中作为事实源；旧 raw ACP rows 仅作兼容证据并按 fingerprint 去重。renderer 派生的 native Agent、nested transcript、child usage 与 Monitor delivery 通过 host persistence API 回写 SQL，并已有 Electron 退出后重启 replay 回归。Codex commentary/final_answer 已提升为中立 canonical data.phase，threadStatus/goal 由 Codex adapter 解释，GUI 不读取 _meta.codex。Cursor 2026.07.23 的 create_plan 已同时投影 Markdown 与 todos，update_todos 的 replace/merge 由 canonical update_mode 和 stable entry id 处理；OpenCode 1.18.13 / Kilo 7.4.20 虽不发 ACP Plan，但其精确 todowrite tool 的 typed rawInput.todos 完整快照已由 per-harness adapter 转成 replace-only plan.updated。两条链路都已覆盖 host → SQL → restart replay，GUI 不解析 harness raw metadata。Claude Monitor 是长期事件订阅器：command stdout 行或 WebSocket 文本帧形成异步 delivery。Monitor tool result 的 taskId 是直接身份；WebSocket Monitor 的 SDK task type 为 monitor_ws，可直接分类；command Monitor 与后台 Bash 都先显示为 local_bash，但真实 user-role XML delivery 带稳定 task-id，可将同 ID work item 以 work_item.classified 收敛为 Monitor。快照缺席只产生可逆 missing_terminal，不猜完成。TaskOutput 自 Claude Code 2.1.83 起已 deprecated，仍保持普通 Tool。剩余 gap 是 command Monitor 首次 delivery 前的短暂歧义、没有 direct GUI Stop，以及尚无 Desktop editor owner 的 NES/document。</p>
+    <p>elicitation/create、可选 elicitation/complete、session/resume、session/list/delete/close/logout 按当前官方文档为稳定能力；plan_update/plan_removed、session/fork、providers、NES/document、MCP-over-ACP 仍是实验或不稳定能力。兼容边界也接受 ACP v2 draft 的 complete user_message、agent_message、agent_thought 和 running/idle state_update，并投影到现有聊天、思考和 session 状态槽位；v2 agent-owned terminal update 暂保留 raw。</p>
+
+    <h2>分层</h2>
+    <table border="1" cellspacing="0" cellpadding="6">
+      <tr><th>层</th><th>职责</th><th>边界</th></tr>
+      <tr><td>ACP / ACP 扩展</td><td>标准方法、session/update、reverse callback、扩展 request/notification、_meta</td><td>不决定 Background、Agents 或 Monitor 语义</td></tr>
+      <tr><td>per-harness ACP adapter</td><td>读取 capability 和结构化 metadata，翻译输入命令和输出生命周期，保留 raw/vendor</td><td>不依赖 React，不按 GUI 名称判断工具</td></tr>
+      <tr><td>OpenMA canonical event</td><td>oma.event.v1 envelope、关联、顺序、生命周期、幂等 reducer</td><td>唯一跨 harness 语义协议；canonical 已持久化，旧 raw 只作兼容证据</td></tr>
+      <tr><td>GUI</td><td>把 canonical event 投影到聊天、Activity Dock、Agents、Background、Command、Permission、Usage、Notice</td><td>不读取 harness _meta</td></tr>
+    </table>
+
+    <h2>GUI 槽位</h2>
+    <table border="1" cellspacing="0" cellpadding="6">
+      <tr><th>槽位</th><th>统一语义</th><th>典型事件</th></tr>
+      <tr><td>主聊天</td><td>用户、agent、thinking 文本和结构化内容</td><td>user.message、agent.message_chunk、agent.thinking</td></tr>
+      <tr><td>Turn</td><td>主回合排队、运行和终态</td><td>turn.queued、turn.completed、turn.failed、turn.cancelled</td></tr>
+      <tr><td>Tool</td><td>工具输入、进度、输出、错误和 client-side cancellation</td><td>tool.started、tool.progress、tool.completed、tool.failed、tool.cancelled</td></tr>
+      <tr><td>Plan/task-list</td><td>聊天内计划，不是后台执行</td><td>plan.updated、plan.completed、plan.removed</td></tr>
+      <tr><td>Activity Dock</td><td>一个 pill shell 内的独立 Plan、Monitor、Background 模块；最多直显三个</td><td>plan.*、monitor.event、work_item.*</td></tr>
+      <tr><td>Agents</td><td>native/嵌套 agent 层级、transcript、child usage</td><td>work_item.*、work_item.reidentified、usage.updated</td></tr>
+      <tr><td>Background</td><td>可独立观察的 agent、bash、other work item；Monitor 不进入右栏 generic Background</td><td>work_item.started/progress/output/completed/failed/cancelled/killed/terminated</td></tr>
+      <tr><td>Command</td><td>available command catalog 和 prompt invocation</td><td>command_catalog.updated</td></tr>
+      <tr><td>Mode/config</td><td>mode、model、配置选项</td><td>capability.updated、session.started data</td></tr>
+      <tr><td>Usage/context</td><td>session 或 child 的 token/context 计量</td><td>usage.updated</td></tr>
+      <tr><td>Permission/elicitation</td><td>agent 反向请求用户决定；typed form 与 URL consent 复用现有 ask sheet</td><td>user.permission_response、user.elicitation_response、callback.requested/completed/failed/notification</td></tr>
+      <tr><td>Notice</td><td>短暂系统提示，复用现有 composer notice</td><td>system.notice</td></tr>
+      <tr><td>Raw/vendor</td><td>已识别但未统一或完全未知的记录</td><td>vendor.event、raw.event</td></tr>
+    </table>
+
+    <h2>输入表</h2>
+    <p>输入包括 OpenMA 发给 harness 的命令，也包括 harness 通过 reverse RPC 发给 OpenMA 的请求。</p>
+    <table border="1" cellspacing="0" cellpadding="6">
+      <tr><th>输入</th><th>ACP 官方</th><th>稳定性</th><th>adapter 扩展</th><th>Common</th><th>OpenMA event/command</th><th>GUI 槽位</th><th>harness 填槽情况</th><th>缺口</th></tr>
+      <tr><td>initialize capability</td><td>是</td><td>稳定</td><td>各 harness _meta 能力证据</td><td>完整保存</td><td>session.started、capability.updated</td><td>Session、Mode、Commands、Usage</td><td>Claude/Codex/Cursor/Pi/OpenCode/Kilo/Kimi 已填</td><td>未知 _meta 只保留 raw</td></tr>
+      <tr><td>session/new</td><td>是</td><td>稳定</td><td>Pi setup response metadata</td><td>已支持；additionalDirectories 有 capability gate</td><td>session.started</td><td>Session、Workspace</td><td>七个 harness 已填</td><td>setup metadata 与 canonical 均可持久化和 replay</td></tr>
+      <tr><td>session/load/resume</td><td>是</td><td>稳定</td><td>setup response _meta</td><td>已支持，resume 优先</td><td>session.started</td><td>Session、历史恢复</td><td>七个当前版本均声明 loadSession；Claude/Codex/OpenCode/Kilo/Kimi 声明 resume，Cursor/Pi 仅 fallback</td><td>fallback 到 load/new 不伪造 provider resume 成功</td></tr>
+      <tr><td>session/fork</td><td>是</td><td>实验</td><td>provider fork metadata</td><td>已支持 capability gate</td><td>session.started</td><td>Side chat</td><td>Claude/OpenCode/Kilo 已填；Codex/Cursor/Pi/Kimi 当前版本未声明 fork</td><td>fork 是 context seed，不等于 native subagent</td></tr>
+      <tr><td>session/prompt</td><td>是</td><td>稳定</td><td>available command 选择转 prompt</td><td>文本、图片、content block 已支持</td><td>user.message</td><td>主聊天、Turn</td><td>七个 harness 已填</td><td>跨 harness typed command 尚未定义</td></tr>
+      <tr><td>session/cancel</td><td>是</td><td>稳定</td><td>TaskStop、close、terminal kill</td><td>单次 cancel；立即取消未结束 tool；继续接收晚到 update；cancelled stopReason 落 cancelled 终态</td><td>user.interrupt、tool.cancelled、turn.cancelled</td><td>Stop、Tool</td><td>Codex/Pi/OpenCode/Kilo 已填；Claude 部分</td><td>tool.cancelled 是 client 派生语义，不是 ACP wire ToolCallStatus；Claude Background Bash canStop=false</td></tr>
+      <tr><td>_session/steering</td><td>否</td><td>实验扩展</td><td>Claude/Codex meta negotiation</td><td>已支持 outcome；成功和降级路径复用一个 canonical input identity</td><td>user.message</td><td>Composer、Turn</td><td>Claude/Codex 已填，其余未填</td><td>不是 subagent 定向消息</td></tr>
+      <tr><td>set_mode/config_option</td><td>是</td><td>稳定</td><td>mode/config metadata</td><td>已支持 select/boolean</td><td>capability.updated</td><td>Mode/config</td><td>Claude/Codex/Pi/OpenCode/Kilo/Kimi 已填；Cursor 部分</td><td>无 capability 不显示控制</td></tr>
+      <tr><td>session/list</td><td>是</td><td>稳定</td><td>provider session metadata</td><td>Common API 已支持；Desktop 未接</td><td>尚无 canonical input command</td><td>无；本地 sidebar 是 OpenMA SQL session list</td><td>七个 harness 均未接 GUI</td><td>不能把本地 session list 当 provider session/list</td></tr>
+      <tr><td>session/delete</td><td>是</td><td>稳定</td><td>—</td><td>Common API 已支持；Desktop delete 只删除本地 session</td><td>尚无 provider delete canonical input</td><td>本地 Session list（不同语义）</td><td>七个 harness 均未接 provider delete</td><td>provider delete 不等同 GUI archive/delete</td></tr>
+      <tr><td>session/close</td><td>是</td><td>稳定</td><td>—</td><td>dispose 按 capability 优先调用 close，失败后仍 kill child</td><td>session.terminated</td><td>Session lifecycle</td><td>Claude/Codex/OpenCode/Kilo 已填；Cursor/Pi/Kimi 当前版本未声明 close</td><td>只声明实际协商到的 close</td></tr>
+      <tr><td>logout/providers</td><td>是</td><td>稳定/实验</td><td>provider selection metadata</td><td>Common API 已支持；Desktop 未暴露 command</td><td>尚无 canonical input fact</td><td>Auth/config 尚未接 provider control</td><td>七个 harness 均未接 GUI</td><td>保留 capability 不等于已调用 API</td></tr>
+      <tr><td>available command selection</td><td>否（OpenMA command）</td><td>OpenMA 稳定</td><td>catalog 参数转 prompt；Codex _meta.commandAction 是展示/adapter 行为提示</td><td>host 记录选择事实</td><td>user.message，input_kind=command，保留 command/args</td><td>Command palette；不新增聊天气泡</td><td>七个 harness 已填</td><td>ACP wire 仍是文本 prompt，不伪造 command RPC；例如 /plan 由 Codex adapter 收到 prompt 后调用 setConfigOption，GUI 不绕过 ACP</td></tr>
+      <tr><td>permission response</td><td>是</td><td>稳定</td><td>provider permission metadata</td><td>main/per-harness callback adapter 先归一 title/kind/reason/command，broker 再交给 GUI；原 tool metadata 仅作 callback/raw 证据</td><td>user.permission_response、callback.completed</td><td>Permission</td><td>七个 harness 已填</td><td>GUI 不读取或写入 provider _meta</td></tr>
+      <tr><td>fs/terminal callback response</td><td>是</td><td>稳定</td><td>path policy、terminal lifecycle</td><td>broker 已支持</td><td>callback.*、work_item.*</td><td>File、Terminal、Background bash</td><td>七个 harness 部分或已填</td><td>foreground terminal 不自动升级 Background</td></tr>
+      <tr><td>elicitation response / complete notification</td><td>是</td><td>稳定</td><td>form schema、URL、elicitation/complete</td><td>六类 form field 已按 schema 校验；URL 显示完整 target/host，consent 后外部打开；complete 按 outstanding id 去重</td><td>user.elicitation_response、callback.*</td><td>Permission/elicitation</td><td>七个 harness 部分适配</td><td>OpenMA form/URL 生命周期已填；各 harness 是否发出请求仍依赖自身实现</td></tr>
+      <tr><td>MCP/extension callback</td><td>扩展</td><td>实验/扩展机制</td><td>generic method/notification</td><td>request/response/error/notification 已保留</td><td>callback.*、vendor.event、raw.event</td><td>MCP/raw inspector</td><td>Claude/Codex 部分；其余 raw</td><td>没有结构化语义时不强行投影</td></tr>
+      <tr><td>NES/document command</td><td>扩展</td><td>实验</td><td>nes/* request、document/* notification</td><td>Common typed API 已支持；Desktop 没有 facade/IPC</td><td>尚无 canonical input fact</td><td>File/Source 未接 editor lifecycle</td><td>七个 harness 均未接 GUI</td><td>这是 client→agent API，不伪造成 reverse callback</td></tr>
+      <tr><td>Claude SendMessage to child</td><td>否</td><td>无公开协议</td><td>Claude Code 内部 tool</td><td>不支持</td><td>不生成 input event</td><td>无</td><td>所有 harness 不适用</td><td>不能把主 session steering 冒充定向 subagent 输入</td></tr>
+    </table>
+
+    <h2>输出表</h2>
+    <table border="1" cellspacing="0" cellpadding="6">
+      <tr><th>输出</th><th>ACP 官方</th><th>稳定性</th><th>adapter 扩展</th><th>Common</th><th>OpenMA canonical</th><th>GUI 槽位</th><th>harness 填槽情况</th><th>缺口</th></tr>
+      <tr><td>agent_message_chunk</td><td>是</td><td>稳定</td><td>Pi notify、Claude parentToolUseId、Codex phase</td><td>文本/content/message id 已支持；Codex commentary/final_answer 已提升为 canonical data.phase</td><td>agent.message_chunk 或 system.notice</td><td>主聊天、Notice、Agents</td><td>七个 harness 已填</td><td>GUI 不读取 _meta.codex；相同 chunk 由 main seq 保证 event id 唯一</td></tr>
+      <tr><td>ACP v2 user_message / agent_message / agent_thought / state_update</td><td>是（v2 draft）</td><td>draft</td><td>complete message upsert、content replacement、messageId、running/idle state</td><td>content block、message id 与 session state 已归一</td><td>user.message、agent.message、agent.thinking、session.running/idle</td><td>主聊天、Thinking、Agents、Session</td><td>各 harness 部分</td><td>v1 transport 默认不协商 v2；agent-owned terminal update 暂保留 raw</td></tr>
+      <tr><td>agent_thought_chunk</td><td>是</td><td>稳定</td><td>nested thinking metadata</td><td>已支持并保留 raw</td><td>agent.thinking</td><td>主聊天 thinking、Agents transcript</td><td>Claude/Codex/Pi 已填；其余标准填</td><td>未知 thought 扩展进入 raw</td></tr>
+      <tr><td>tool_call/update</td><td>是</td><td>稳定</td><td>Claude/Codex/terminal/OpenCode/Kilo metadata</td><td>已合并 logical tool；Stop 后晚到 update 继续接收</td><td>tool.started/progress/completed/failed；client Stop 另发 tool.cancelled</td><td>Tool</td><td>七个 harness 已填</td><td>cancelled 不伪造成 ACP wire status；工具名不决定 Background</td></tr>
+      <tr><td>plan / plan_update / plan_removed</td><td>是/扩展</td><td>稳定/实验</td><td>harness plan metadata</td><td>已支持 items/markdown 与 raw</td><td>plan.updated/completed/removed</td><td>Plan/task-list</td><td>Claude、Codex、Kimi 发出标准 Plan；Cursor 通过扩展填槽；Pi、OpenCode、Kilo 当前版本不发 Plan；实验 plan_update/removed 仍逐 harness 部分</td><td>不计入 Background；支持 ACP Plan 不等于 harness 实际发出</td></tr>
+      <tr><td>Cursor create_plan / update_todos</td><td>否</td><td>Cursor 2026.07.23 扩展</td><td>Markdown + todos + optional phases；stable todo id + merge</td><td>文档与 task-list 同时投影；replace/merge 由 canonical reducer 处理</td><td>plan.updated + update_mode</td><td>Plan document、task-list</td><td>Cursor 已填</td><td>phases 留在 raw，不新增 phase 分组布局</td></tr>
+      <tr><td>OpenCode/Kilo todowrite</td><td>否（普通 ACP tool transport）</td><td>harness 版本语义</td><td>精确 tool identity + typed rawInput.todos 完整快照</td><td>per-harness adapter 归一为 replace；GUI 只消费 canonical Plan</td><td>plan.updated + update_mode:replace</td><td>task-list</td><td>OpenCode、Kilo 已填</td><td>不宣称 harness 发 ACP Plan；相似 tool 不识别；已覆盖 SQL/restart replay</td></tr>
+      <tr><td>available_commands_update</td><td>是</td><td>稳定</td><td>harness command catalog</td><td>已替换保存</td><td>command_catalog.updated</td><td>Command palette</td><td>七个 harness 已填</td><td>命令执行仍走 prompt</td></tr>
+      <tr><td>mode/config update</td><td>是</td><td>稳定</td><td>legacy mode/config metadata</td><td>已支持</td><td>capability.updated</td><td>Mode/config</td><td>Claude/Codex/Pi/OpenCode/Kilo/Kimi 已填；Cursor 部分</td><td>capability gate 不能省略</td></tr>
+      <tr><td>usage_update</td><td>是</td><td>稳定</td><td>child usage、cost metadata</td><td>parent/child 已分开</td><td>usage.updated</td><td>Usage、Agents</td><td>Claude、Codex 已填；OpenCode、Kilo 发 parent usage；Cursor、Pi、Kimi 当前版本不发 usage</td><td>Claude terminal-only child total/tool-count/duration 进入 child progress；没有结构化 usage 就显示缺失，不估算</td></tr>
+      <tr><td>session_info_update/status</td><td>是</td><td>稳定</td><td>Codex goal/thread status、Pi running/queueDepth</td><td>通用层合并 metadata；Codex/Pi 各自 adapter 解释 provider 状态</td><td>session.running/idle、capability.updated</td><td>Session status、Goal、Notice；Pi queued placeholder</td><td>Codex、Pi 已填；Claude、Cursor 只有 title metadata；OpenCode、Kilo、Kimi 当前版本不发 session_info_update</td><td>GUI 不读取 provider _meta；remote running 不能覆盖本地 turn terminal；provider queue 不进入可编辑 prompt queue</td></tr>
+      <tr><td>Claude Agent/Task lifecycle</td><td>否</td><td>Claude adapter + opt-in raw SDK extension</td><td>toolResponse agentId、usage、progress、parentToolUseId、_claude/sdkMessage</td><td>已支持 Agent side view、nested transcript 与可证明 terminal</td><td>work_item.*、agent.*、usage.updated</td><td>Agents、Background agent</td><td>Claude 已填</td><td>不是 ACP 标准 lifecycle；缺失终态保持 unknown</td></tr>
+      <tr><td>Codex child/collaboration</td><td>否</td><td>Codex adapter extension</td><td>collaboration/subagent metadata、child thread</td><td>已支持 spawn/wait/close/goal/usage</td><td>work_item.*、work_item.reidentified</td><td>Agents、Background agent</td><td>Codex 已填</td><td>不宣称 ACP 原生 subagent lifecycle</td></tr>
+      <tr><td>OpenCode/Kilo foreground Task</td><td>否</td><td>harness adapter extension</td><td>Task input schema、rawOutput child session metadata</td><td>已支持 provisional、reidentify、complete/error</td><td>work_item.started/reidentified/completed/failed</td><td>Agents</td><td>OpenCode、Kilo 已填</td><td>必须有完整 Task input schema；相似 think tool 不识别</td></tr>
+      <tr><td>OpenCode/Kilo background Task</td><td>否</td><td>harness adapter extension</td><td>background:true、rawOutput parent/session/model/jobId、synthetic task XML</td><td>tool return 只证明 running；live ACP 不转发 synthetic user terminal，父 turn 后落 missing_terminal；load/replay 的 audience:[assistant] user chunk 可恢复 definitive terminal</td><td>work_item.started/reidentified/missing_terminal/completed/failed</td><td>Agents、Background agent</td><td>OpenCode、Kilo 部分适配</td><td>不从后续 assistant 自然语言猜终态；Kilo resumable hint 仅保留为原始 error</td></tr>
+      <tr><td>Kimi background notification</td><td>否</td><td>Kimi extension</td><td>固定 notification 文本中的 Task ID/Status/Description/Terminal reason/Exit code/Failure reason</td><td>turn 内或 idle 均按 session scope 做 terminal-only 解析，保留 missing_start</td><td>work_item.completed/failed/killed</td><td>Background agent</td><td>Kimi 部分适配</td><td>无结构化 start/progress/kind，不把普通 task 猜成 agent 或 bash</td></tr>
+      <tr><td>Claude nested transcript</td><td>否</td><td>Claude ACP extension</td><td>subagent-transcript capability、parentToolUseId</td><td>text/thinking/tool/content/usage 已归属 child</td><td>agent.message_chunk、agent.thinking、tool.progress、usage.updated</td><td>Agents transcript</td><td>Claude 已填</td><td>GUI 不直接读取 `_meta`</td></tr>
+      <tr><td>terminal output/exit</td><td>是</td><td>稳定</td><td>terminal metadata 和 reverse callback</td><td>输出、exit code、signal、kill 已支持</td><td>work_item.output/completed/failed/killed</td><td>Terminal、Background bash</td><td>七个 harness 部分或已填</td><td>普通 Bash 仍是 Tool，除非有后台证据</td></tr>
+      <tr><td>Claude Monitor</td><td>否</td><td>Claude ACP 0.64.2 raw SDK 扩展；实际 SDK 0.3.220，已核 0.3.222</td><td>Monitor toolResponse.taskId 是直接身份；command Monitor 为 local_bash；WebSocket Monitor 为 monitor_ws；user delivery XML 带 task-id/summary/event</td><td>tool result 或 monitor_ws 直接分类；delivery 的结构化 task id 将同 ID generic local_bash 以 work_item.classified 收敛；不按 description 猜关联</td><td>work_item.*（含 classified/missing_terminal）+ monitor.event</td><td>Activity Dock Monitor；原 Tool 仍保留；plugin command Monitor 首次 delivery 前暂在 generic Background，之后归入 Monitor</td><td>Claude 已填（无 direct Stop）</td><td>canStop=false；缺口是首次 delivery 前的短暂歧义与无 direct Stop</td></tr>
+      <tr><td>Claude TaskOutput</td><td>否</td><td>Claude SDK tool；自 Claude Code 2.1.83 deprecated</td><td>查询/等待既有 task output</td><td>只保留普通 Tool call/result</td><td>tool.*</td><td>Tool</td><td>Claude 已填</td><td>不创建 Monitor/Background 生命周期；优先读取 task output file</td></tr>
+      <tr><td>Claude SDK task lifecycle / task_notification</td><td>否</td><td>opt-in Claude ACP 扩展</td><td>默认内部消费；配置后发 _claude/sdkMessage</td><td>解析 task_started/task_updated/task_progress/task_notification/background_tasks_changed；level 按 REPLACE 修复丢失 start，absence 只产生可逆 missing_terminal；有 subagent_type 才进入 native Agent</td><td>work_item.*；Monitor user delivery 另为 session-scoped monitor.event</td><td>Agents、Activity Dock Monitor/Background</td><td>Claude 部分适配</td><td>total-only usage 留在 progress payload；level 与 edge 顺序未定义，不能从 absence 猜终态；不是 ACP 标准 session/update</td></tr>
+      <tr><td>callback lifecycle</td><td>是</td><td>稳定</td><td>permission/fs/terminal/elicitation 与 MCP/extension callbacks</td><td>callback request/response/error/notification 已归一</td><td>callback.*</td><td>Permission、Terminal、File、MCP</td><td>Claude/Codex 已填；其余部分</td><td>NES/document client commands 不混入 callback；未知 category 进 extension/raw</td></tr>
+      <tr><td>unknown extension</td><td>是（扩展 envelope）</td><td>稳定扩展机制</td><td>namespace/method/payload</td><td>generic extension 已保留</td><td>vendor.event 或 raw.event</td><td>Raw/vendor inspector</td><td>七个 harness 已保留</td><td>不能自动占用 Background/Monitor/Agents</td></tr>
+    </table>
+
+    <h2>明确的剩余 gap</h2>
+    <ol>
+      <li>canonical event 已在 main → renderer 传输、SQL persistence 和 SessionStore replay 中作为事实源；旧 raw ACP rows 仅作兼容证据，并按 fingerprint 去重。renderer 派生 native Agent/transcript/usage 通过 host persistence API 回写。</li>
+      <li>Claude ACP 0.64.2 默认不把 SDK task lifecycle 转成标准 ACP session/update，但可通过 emitRawSDKMessages 以 _claude/sdkMessage opt-in。OpenMA 已下沉可证明的 edge/level 字段；background_tasks_changed 按 REPLACE 处理，缺席只表示 missing_terminal，晚到 task_notification 才能给出 definitive terminal。</li>
+      <li>Claude Monitor 是长期事件订阅器：命令 stdout 行或 WebSocket 文本帧成为异步 delivery，注入 Claude 并可能触发自主响应。Monitor tool result 的 taskId 是直接身份；WebSocket Monitor 的 monitor_ws 可直接分类；plugin command Monitor 的 local_bash 在首次 delivery 前保持 generic，但 delivery XML 的稳定 task-id 会完成结构化关联。TaskOutput 已 deprecated 且仍是普通查询 Tool。Monitor 尚无 direct GUI Stop。</li>
+      <li>Pi 0.0.33 是 npm 当前最新；notify 的 warning/error 已投影为 system.notice，info 仍保留 agent message；provider running/queueDepth 已进入 session status 与现有只读 queued placeholder。</li>
+      <li>OpenCode/Kilo foreground Task 已补齐；todowrite 完整快照已通过 per-harness adapter → canonical Plan → task-list，并通过 SQL/restart replay。background tool return 只证明 running。当前 live ACP emitter 不转发 synthetic user terminal，所以父 turn 结束后显示 missing_terminal；只有 load/replay 中带 audience:[assistant] 的 synthetic user envelope 能恢复 definitive terminal。</li>
+      <li>available command invocation、permission response 和 steering 已补 canonical 输入事实；adapter 预附事件由 main boundary 补 seq，canonical seq 也已跨 desktop 重启续写。</li>
+      <li>Stop/tool cancellation、terminal metadata bookend、晚到 update、cancelled PromptResponse 与 Plan update 可见性已有回归；Cursor stable-id todo merge 与 OpenCode/Kilo todowrite replace 已覆盖 host → SQL → Electron restart replay；一次 Stop 不会重复发送 session/cancel。</li>
+      <li>NES/document 目前只有 Common client API；Desktop 没有 editor owner/facade/IPC，所以不伪造 callback/raw 或 GUI 已适配状态。</li>
+    </ol>
+
+    <h2>验收命令</h2>
+    <pre>cd /Users/minimax/oos-proj/openma/openma-common
+pnpm verify
+
+cd /Users/minimax/oos-proj/openma/openma-desktop
+pnpm typecheck
+pnpm test
+pnpm build</pre>
+
+    <p>完整逐行输入/输出矩阵位于同目录的 acp-harness-input-output-matrix.md；本文与 HTML 版只使用文字表格，不把颜色、tag 或形状作为语义。</p>
+  </main>
+</body>
+</html>

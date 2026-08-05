@@ -69,6 +69,7 @@ describe("chat submission decisions", () => {
   it("maps draft ownership to an explicit main-process workspace policy", () => {
     expect(resolveWorkspaceMode("none")).toBe("managed");
     expect(resolveWorkspaceMode("project")).toBe("project");
+    expect(resolveWorkspaceMode("project", false, false)).toBe("managed");
     expect(resolveWorkspaceMode(undefined, true)).toBe("inherited");
     expect(resolveWorkspaceMode(undefined)).toBeUndefined();
   });

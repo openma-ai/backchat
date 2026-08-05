@@ -29,6 +29,9 @@ conversation, tools, files, browser, and terminal in one place.
 - **Project-scoped context.** Sessions are grouped by their working directory,
   so files, terminals, browser state, and conversations stay attached to the
   project where the work happened.
+- **Projects can span related folders.** One primary folder supplies the chat
+  cwd, Git context, and project instructions; secondary folders extend the
+  agent's file scope through ACP `additionalDirectories`.
 - **Tools that stay in the flow.** Configure MCP servers once and use them from
   every session. Open a browser, inspect files, start a terminal, attach images,
   and render interactive MCP Apps without leaving the conversation.

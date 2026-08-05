@@ -11,13 +11,15 @@
  * Two tables in `~/.oma/sessions.db`:
  *
  *   sessions      one row per chat the user has opened
- *   events        append-only log of ACP session updates for replay
+ *   events        append-only log of OpenMA canonical envelopes for replay;
+ *                 legacy ACP rows remain readable during migration
  *
  * Why two tables, not one JSON blob: chat history grows unbounded and
  * single-row updates would force a full re-serialize on every chunk. The
  * events table lets us append-only and replay by session_id ORDER BY seq
  * — same shape openma uses for its main event log (see packages/event-log
- * in the OSS repo).
+ * in the OSS repo). Canonical rows use type `openma_event`; the envelope's
+ * optional `raw` field retains ACP/adapter evidence for compatibility.
  *
  * Persistence model:
  *   - SQLite remains the hot UI index for sidebar, replay, and FTS.
@@ -29,11 +31,15 @@
 
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 import { stringify as toToml } from "smol-toml";
 import { rebuildSessionIndexFromTranscriptFiles } from "./file-first-rebuild.js";
 import { queryActivityStats } from "./activity-stats.js";
 import type { ActivityStatsInfo } from "../shared/api.js";
+import {
+  normalizeProjectFolders,
+  type ProjectInfo,
+} from "../shared/projects.js";
 
 export interface PersistedSession {
   id: string;
@@ -41,10 +47,15 @@ export interface PersistedSession {
   cwd: string;
   acp_session_id: string;
   title: string;
+  /** 1 when the user explicitly renamed the session; agent-provided title
+   *  updates must not overwrite it. */
+  title_manually_set: number;
   last_used_at: number;
   created_at: number;
   archived_at: number | null;
   pinned_at: number | null;
+  /** Durable project container. Null for standalone and legacy cwd-only chats. */
+  project_id: string | null;
   /** When this session is a sub-member of a pair-chat, the wrapper pair
    *  row's id. Sidebar lists hide rows with `pair_id != null` and shows
    *  the pair row instead. */
@@ -68,7 +79,7 @@ export interface PersistedEvent {
   seq: number;
   session_id: string;
   type: string;
-  /** JSON-serialized payload — parse at the read site. */
+  /** JSON-serialized legacy payload or an OpenMA canonical envelope. */
   data: string;
   ts: number;
 }
@@ -89,6 +100,7 @@ let _stmts: {
   upsert: StatementSync;
   touch: StatementSync;
   setTitle: StatementSync;
+  renameTitle: StatementSync;
   archive: StatementSync;
   unarchive: StatementSync;
   pin: StatementSync;
@@ -98,15 +110,25 @@ let _stmts: {
   listForSidebar: StatementSync;
   deleteRow: StatementSync;
   appendEvent: StatementSync;
+  canonicalEventExists: StatementSync;
   sessionEventCount: StatementSync;
   loadHistory: StatementSync;
   saveSideWorkspace: StatementSync;
   listSideWorkspaces: StatementSync;
   deleteSideWorkspace: StatementSync;
+  saveProject: StatementSync;
+  getProject: StatementSync;
+  listProjects: StatementSync;
+  unlinkProjectSessions: StatementSync;
+  deleteProject: StatementSync;
   // Pair-chat helpers — see PersistedPairSession + pair_sessions schema.
   upsertPair: StatementSync;
   touchPair: StatementSync;
   setPairTitleIfEmpty: StatementSync;
+  pinPair: StatementSync;
+  unpinPair: StatementSync;
+  archivePair: StatementSync;
+  unarchivePair: StatementSync;
   getPair: StatementSync;
   listPairs: StatementSync;
   listPairMembers: StatementSync;
@@ -134,11 +156,13 @@ export function openSessionDb(path: string): void {
       cwd           TEXT NOT NULL,
       acp_session_id TEXT NOT NULL DEFAULT '',
       title         TEXT NOT NULL DEFAULT '',
+      title_manually_set INTEGER NOT NULL DEFAULT 0,
       last_used_at  INTEGER NOT NULL,
       created_at    INTEGER NOT NULL,
       archived_at   INTEGER,
       pinned_at     INTEGER,
-      pair_id       TEXT
+      pair_id       TEXT,
+      project_id    TEXT
     );
     CREATE INDEX IF NOT EXISTS sessions_last_used_idx
       ON sessions(archived_at, last_used_at DESC);
@@ -190,6 +214,20 @@ export function openSessionDb(path: string): void {
     CREATE INDEX IF NOT EXISTS side_workspaces_updated_idx
       ON side_workspaces(updated_at DESC);
 
+    -- A project is a durable container independent of its chats. Roots are
+    -- ordered so the first path remains the primary cwd while the remaining
+    -- paths become ACP additionalDirectories.
+    CREATE TABLE IF NOT EXISTS projects (
+      id                   TEXT PRIMARY KEY,
+      name                 TEXT NOT NULL,
+      source_folders_json  TEXT NOT NULL DEFAULT '[]',
+      primary_folder       TEXT NOT NULL DEFAULT '',
+      created_at           INTEGER NOT NULL,
+      updated_at           INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS projects_updated_idx
+      ON projects(updated_at DESC);
+
     -- FTS5 virtual table for Cmd+K message search. Indexes user prompts
     -- + final assistant messages (the only event types with prose worth
     -- searching). Triggers below keep it in sync on every event insert /
@@ -217,6 +255,23 @@ export function openSessionDb(path: string): void {
       VALUES (new.session_id, new.seq, new.type, new.ts, json_extract(new.data, '$.text'));
     END;
 
+    -- Canonical rows keep the OpenMA envelope in the data column; index their
+    -- provider-neutral text without making the renderer understand SQL.
+    -- This separate trigger is additive so existing databases retain the
+    -- legacy trigger above during the migration window.
+    CREATE TRIGGER IF NOT EXISTS events_ai_fts_openma AFTER INSERT ON events
+    WHEN new.type = 'openma_event'
+      AND json_extract(new.data, '$.type') IN (
+        'agent.message',
+        'agent.message_chunk',
+        'agent.thinking'
+      )
+      AND json_extract(new.data, '$.data.text') IS NOT NULL
+    BEGIN
+      INSERT INTO messages_fts(session_id, seq, type, ts, text)
+      VALUES (new.session_id, new.seq, new.type, new.ts, json_extract(new.data, '$.data.text'));
+    END;
+
     -- Drop FTS rows when a session is removed (events CASCADE-delete via
     -- the FK; this trigger keeps FTS aligned). messages_fts is a virtual
     -- table so no FK; manual cleanup.
@@ -240,11 +295,19 @@ export function openSessionDb(path: string): void {
   if (!sessionCols.has("pair_id")) {
     db.exec(`ALTER TABLE sessions ADD COLUMN pair_id TEXT`);
   }
+  if (!sessionCols.has("project_id")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN project_id TEXT`);
+  }
+  if (!sessionCols.has("title_manually_set")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN title_manually_set INTEGER NOT NULL DEFAULT 0`);
+  }
   db.exec(`
     CREATE INDEX IF NOT EXISTS sessions_pinned_idx
       ON sessions(archived_at, pinned_at DESC);
     CREATE INDEX IF NOT EXISTS sessions_pair_idx
       ON sessions(pair_id);
+    CREATE INDEX IF NOT EXISTS sessions_project_idx
+      ON sessions(project_id);
   `);
 
   _db = db;
@@ -252,8 +315,11 @@ export function openSessionDb(path: string): void {
   _stmts = {
     getSession: db.prepare(`SELECT * FROM sessions WHERE id = ?`),
     upsert: db.prepare(`
-      INSERT INTO sessions (id, agent_id, cwd, acp_session_id, title, last_used_at, created_at, pair_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (
+        id, agent_id, cwd, acp_session_id, title, last_used_at, created_at,
+        pair_id, project_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         agent_id       = excluded.agent_id,
         cwd            = excluded.cwd,
@@ -261,13 +327,20 @@ export function openSessionDb(path: string): void {
                               THEN excluded.acp_session_id
                               ELSE sessions.acp_session_id END,
         title          = CASE WHEN excluded.title != ''
+                              AND sessions.title_manually_set = 0
                               THEN excluded.title
                               ELSE sessions.title END,
         last_used_at   = excluded.last_used_at,
-        pair_id        = COALESCE(excluded.pair_id, sessions.pair_id)
+        pair_id        = COALESCE(excluded.pair_id, sessions.pair_id),
+        project_id     = COALESCE(excluded.project_id, sessions.project_id)
     `),
     touch: db.prepare(`UPDATE sessions SET last_used_at = ? WHERE id = ?`),
-    setTitle: db.prepare(`UPDATE sessions SET title = ? WHERE id = ?`),
+    setTitle: db.prepare(
+      `UPDATE sessions SET title = ? WHERE id = ? AND title_manually_set = 0`,
+    ),
+    renameTitle: db.prepare(
+      `UPDATE sessions SET title = ?, title_manually_set = 1 WHERE id = ?`,
+    ),
     archive: db.prepare(`UPDATE sessions SET archived_at = ? WHERE id = ?`),
     unarchive: db.prepare(`UPDATE sessions SET archived_at = NULL WHERE id = ?`),
     pin: db.prepare(`UPDATE sessions SET pinned_at = ? WHERE id = ?`),
@@ -303,6 +376,14 @@ export function openSessionDb(path: string): void {
     appendEvent: db.prepare(
       `INSERT INTO events (session_id, type, data, ts) VALUES (?, ?, ?, ?)`,
     ),
+    canonicalEventExists: db.prepare(`
+      SELECT 1 AS found
+      FROM events
+      WHERE session_id = ?
+        AND type = 'openma_event'
+        AND json_extract(data, '$.event_id') = ?
+      LIMIT 1
+    `),
     sessionEventCount: db.prepare(
       `SELECT COUNT(*) AS count FROM events WHERE session_id = ?`,
     ),
@@ -322,6 +403,23 @@ export function openSessionDb(path: string): void {
     deleteSideWorkspace: db.prepare(
       `DELETE FROM side_workspaces WHERE task_id = ?`,
     ),
+    saveProject: db.prepare(`
+      INSERT INTO projects (
+        id, name, source_folders_json, primary_folder, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        source_folders_json = excluded.source_folders_json,
+        primary_folder = excluded.primary_folder,
+        updated_at = excluded.updated_at
+    `),
+    getProject: db.prepare(`SELECT * FROM projects WHERE id = ?`),
+    listProjects: db.prepare(`SELECT * FROM projects ORDER BY updated_at DESC`),
+    unlinkProjectSessions: db.prepare(
+      `UPDATE sessions SET project_id = NULL WHERE project_id = ?`,
+    ),
+    deleteProject: db.prepare(`DELETE FROM projects WHERE id = ?`),
     upsertPair: db.prepare(`
       INSERT INTO pair_sessions (id, title, workspace_cwd, created_at, last_used_at)
       VALUES (?, ?, ?, ?, ?)
@@ -336,6 +434,10 @@ export function openSessionDb(path: string): void {
     setPairTitleIfEmpty: db.prepare(
       `UPDATE pair_sessions SET title = ? WHERE id = ? AND (title IS NULL OR title = '')`,
     ),
+    pinPair: db.prepare(`UPDATE pair_sessions SET pinned_at = ? WHERE id = ?`),
+    unpinPair: db.prepare(`UPDATE pair_sessions SET pinned_at = NULL WHERE id = ?`),
+    archivePair: db.prepare(`UPDATE pair_sessions SET archived_at = ? WHERE id = ?`),
+    unarchivePair: db.prepare(`UPDATE pair_sessions SET archived_at = NULL WHERE id = ?`),
     getPair: db.prepare(`SELECT * FROM pair_sessions WHERE id = ?`),
     listPairs: db.prepare(`
       SELECT * FROM pair_sessions
@@ -348,6 +450,17 @@ export function openSessionDb(path: string): void {
   };
 
   rebuildSessionIndexFromTranscriptFiles(db, _storageRoot);
+
+  const migratedLegacyPaths = migrateLegacyManagedSessionPaths(
+    db,
+    _storageRoot,
+  );
+  for (const sessionId of migratedLegacyPaths.sessionIds) {
+    writeSessionMetadata(sessionId);
+  }
+  for (const pairId of migratedLegacyPaths.pairIds) {
+    writePairSessionMetadata(pairId);
+  }
 
   // One-time backfill: any session row that ended up with an empty title
   // (sessions created before setSessionTitleIfEmpty shipped) gets seeded
@@ -378,6 +491,85 @@ export function openSessionDb(path: string): void {
   `);
 }
 
+function migrateLegacyManagedSessionPaths(
+  db: DatabaseSync,
+  storageRoot: string,
+): { sessionIds: string[]; pairIds: string[] } {
+  if (basename(storageRoot) !== ".oma") {
+    return { sessionIds: [], pairIds: [] };
+  }
+
+  const legacySessionRoot = join(dirname(storageRoot), ".openma", "sessions");
+  const currentSessionRoot = join(storageRoot, "sessions");
+  const replaceManagedPath = (value: string): string => {
+    if (value === legacySessionRoot) return currentSessionRoot;
+    const legacyPrefix = legacySessionRoot + sep;
+    if (!value.startsWith(legacyPrefix)) return value;
+    return join(currentSessionRoot, value.slice(legacyPrefix.length));
+  };
+
+  const migratedSessionIds: string[] = [];
+  const migratedPairIds: string[] = [];
+  const updateSession = db.prepare(`UPDATE sessions SET cwd = ? WHERE id = ?`);
+  const updatePair = db.prepare(
+    `UPDATE pair_sessions SET workspace_cwd = ? WHERE id = ?`,
+  );
+  const updateSideWorkspace = db.prepare(
+    `UPDATE side_workspaces SET state_json = ? WHERE task_id = ?`,
+  );
+
+  db.exec("BEGIN");
+  try {
+    const sessions = db.prepare(`SELECT id, cwd FROM sessions`).all() as Array<{
+      id: string;
+      cwd: string;
+    }>;
+    for (const session of sessions) {
+      const cwd = replaceManagedPath(session.cwd);
+      if (cwd === session.cwd) continue;
+      updateSession.run(cwd, session.id);
+      migratedSessionIds.push(session.id);
+    }
+
+    const pairs = db.prepare(
+      `SELECT id, workspace_cwd FROM pair_sessions`,
+    ).all() as Array<{ id: string; workspace_cwd: string }>;
+    for (const pair of pairs) {
+      const cwd = replaceManagedPath(pair.workspace_cwd);
+      if (cwd === pair.workspace_cwd) continue;
+      updatePair.run(cwd, pair.id);
+      migratedPairIds.push(pair.id);
+    }
+
+    const sideWorkspaces = db.prepare(
+      `SELECT task_id, state_json FROM side_workspaces`,
+    ).all() as Array<{ task_id: string; state_json: string }>;
+    for (const workspace of sideWorkspaces) {
+      try {
+        const parsed = JSON.parse(workspace.state_json) as unknown;
+        const migrated = JSON.stringify(parsed, (_key, value: unknown) =>
+          typeof value === "string" ? replaceManagedPath(value) : value
+        );
+        if (migrated !== workspace.state_json) {
+          updateSideWorkspace.run(migrated, workspace.task_id);
+        }
+      } catch {
+        // The renderer validates this opaque JSON separately. A malformed
+        // snapshot is left untouched so this path migration cannot erase it.
+      }
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  return {
+    sessionIds: migratedSessionIds,
+    pairIds: migratedPairIds,
+  };
+}
+
 function stmts() {
   if (!_stmts) throw new Error("session-store: openSessionDb() not called");
   return _stmts;
@@ -395,6 +587,7 @@ export function upsertSession(row: {
   /** Set when this session is a sub-member of a pair-chat. Hidden from
    *  sidebar; reached only via the parent pair's grid view. */
   pair_id?: string | null;
+  project_id?: string | null;
 }): void {
   const now = Date.now();
   stmts().upsert.run(
@@ -406,6 +599,7 @@ export function upsertSession(row: {
     row.last_used_at ?? now,
     now,
     row.pair_id ?? null,
+    row.project_id ?? null,
   );
   writeSessionMetadata(row.id);
 }
@@ -421,6 +615,15 @@ export function getSession(id: string): PersistedSession | null {
 
 export function setSessionTitle(id: string, title: string): void {
   stmts().setTitle.run(title, id);
+  writeSessionMetadata(id);
+}
+
+/** Persist a title explicitly chosen by the user. Future agent metadata
+ *  updates are ignored for this row so a manual rename remains stable. */
+export function renameSession(id: string, title: string): void {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("Session title is required");
+  stmts().renameTitle.run(trimmed.slice(0, 500), id);
   writeSessionMetadata(id);
 }
 
@@ -500,6 +703,76 @@ export function deleteSideWorkspace(task_id: string): void {
   stmts().deleteSideWorkspace.run(task_id);
 }
 
+// -------------------- projects --------------------
+
+type PersistedProjectSqlRow = {
+  id: string;
+  name: string;
+  source_folders_json: string;
+  primary_folder: string;
+  created_at: number;
+  updated_at: number;
+};
+
+function projectFromSql(row: PersistedProjectSqlRow): ProjectInfo {
+  let sourceFolders: string[] = [];
+  try {
+    const parsed = JSON.parse(row.source_folders_json);
+    if (Array.isArray(parsed)) {
+      sourceFolders = parsed.filter((value): value is string =>
+        typeof value === "string"
+      );
+    }
+  } catch {
+    sourceFolders = [];
+  }
+  const normalized = normalizeProjectFolders({
+    source_folders: sourceFolders,
+    primary_folder: row.primary_folder,
+  });
+  return {
+    id: row.id,
+    name: row.name,
+    ...normalized,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function saveProject(row: {
+  id: string;
+  name: string;
+  source_folders: string[];
+  primary_folder?: string;
+}): ProjectInfo {
+  const normalized = normalizeProjectFolders(row);
+  const now = Date.now();
+  stmts().saveProject.run(
+    row.id,
+    row.name.trim(),
+    JSON.stringify(normalized.source_folders),
+    normalized.primary_folder,
+    now,
+    now,
+  );
+  return getProject(row.id)!;
+}
+
+export function getProject(id: string): ProjectInfo | null {
+  const row = stmts().getProject.get(id) as PersistedProjectSqlRow | undefined;
+  return row ? projectFromSql(row) : null;
+}
+
+export function listProjects(): ProjectInfo[] {
+  return (stmts().listProjects.all() as PersistedProjectSqlRow[])
+    .map(projectFromSql);
+}
+
+export function deleteProject(id: string): void {
+  stmts().unlinkProjectSessions.run(id);
+  stmts().deleteProject.run(id);
+}
+
 // -------------------- pair sessions --------------------
 
 /** Create or rename a pair-chat wrapper row. The pair carries the
@@ -526,6 +799,26 @@ export function touchPairSession(id: string): void {
 export function setPairTitleIfEmpty(id: string, title: string): void {
   if (!title) return;
   stmts().setPairTitleIfEmpty.run(title, id);
+  writePairSessionMetadata(id);
+}
+
+export function pinPairSession(id: string, at: number = Date.now()): void {
+  stmts().pinPair.run(at, id);
+  writePairSessionMetadata(id);
+}
+
+export function unpinPairSession(id: string): void {
+  stmts().unpinPair.run(id);
+  writePairSessionMetadata(id);
+}
+
+export function archivePairSession(id: string): void {
+  stmts().archivePair.run(Date.now(), id);
+  writePairSessionMetadata(id);
+}
+
+export function unarchivePairSession(id: string): void {
+  stmts().unarchivePair.run(id);
   writePairSessionMetadata(id);
 }
 
@@ -584,6 +877,20 @@ export function appendEvent(
   data: unknown,
 ): void {
   const s = stmts();
+  if (
+    type === "openma_event"
+    && data !== null
+    && typeof data === "object"
+    && !Array.isArray(data)
+  ) {
+    const eventId = (data as { event_id?: unknown }).event_id;
+    if (
+      typeof eventId === "string"
+      && s.canonicalEventExists.get(session_id, eventId)
+    ) {
+      return;
+    }
+  }
   const ts = Date.now();
   s.appendEvent.run(session_id, type, JSON.stringify(data), ts);
   const row = s.sessionEventCount.get(session_id) as { count: number | bigint };
@@ -718,9 +1025,11 @@ function writeSessionMetadata(sessionId: string): void {
       agent_id: session.agent_id,
       acp_session_id: session.acp_session_id,
       title: session.title,
+      title_manually_set: session.title_manually_set,
       created_at: session.created_at,
       last_used_at: session.last_used_at,
       pair_id: session.pair_id ?? "",
+      project_id: session.project_id ?? "",
       workdir: session.cwd,
     }) + "\n",
     "utf-8",

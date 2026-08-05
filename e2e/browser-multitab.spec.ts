@@ -1,20 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
-import { injectSession, launchApp, openBrowserPanel } from "./helpers";
-
-async function browserTool<T>(
-  page: Page,
-  taskId: string,
-  name: string,
-  args: Record<string, unknown> = {},
-): Promise<T> {
-  return page.evaluate(
-    ({ taskId, name, args }) =>
-      // @ts-expect-error -- test-only preload bridge
-      window.__backchatTest.browserTool({ taskId, name, args }),
-    { taskId, name, args },
-  );
-}
+import { enableAgent, injectSession, openBrowserPanel } from "./helpers";
 
 async function executeGuest<T>(root: ReturnType<Page["locator"]>, code: string): Promise<T> {
   return root.locator("webview").evaluate(
@@ -32,10 +19,9 @@ async function guestId(root: ReturnType<Page["locator"]>): Promise<number> {
   );
 }
 
-test("each task owns a persistent multi-tab in-app browser window", async ({}, testInfo) => {
+test("each task owns a persistent multi-tab in-app browser window", async ({ page, bridge, capture }) => {
   test.setTimeout(90_000);
-  const { page, cleanup } = await launchApp();
-  try {
+    await enableAgent(page, "codex-acp");
     const taskA = await injectSession(page, {
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-window-a",
@@ -46,10 +32,10 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
     await expect(taskARoots).toHaveCount(1);
     const firstRoot = taskARoots.nth(0);
     await expect(firstRoot).toHaveAttribute("data-browser-visible", "true");
-    await expect.poll(() => browserTool(page, taskA, "browser_tabs", { action: "list" })).toMatchObject({
+    await expect.poll(() => bridge.browserTool(taskA, "browser_tabs", { action: "list" })).toMatchObject({
       tabs: [expect.objectContaining({ active: true })],
     });
-    await browserTool(page, taskA, "browser_navigate", {
+    await bridge.browserTool(taskA, "browser_navigate", {
       url: "about:blank#first-workspace",
     });
     await executeGuest(firstRoot, `(() => {
@@ -62,10 +48,10 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
     await expect(page.locator('button[title="First workspace"]')).toBeVisible();
     const firstGuestId = await guestId(firstRoot);
 
-    const opened = await browserTool<{
+    const opened = await bridge.browserTool<{
       active_tab_id: string;
       tabs: Array<{ tab_id: string; active: boolean }>;
-    }>(page, taskA, "browser_tabs", {
+    }>(taskA, "browser_tabs", {
       action: "new",
       url: "about:blank#second-workspace",
     });
@@ -86,22 +72,18 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
     const firstTabId = opened.tabs.find((tab) => !tab.active)!.tab_id;
     await page.locator('button[title="First workspace"]').click();
     await expect(firstRoot).toHaveAttribute("data-browser-visible", "true");
-    await expect.poll(() => browserTool(page, taskA, "browser_tabs", { action: "list" })).toMatchObject({
+    await expect.poll(() => bridge.browserTool(taskA, "browser_tabs", { action: "list" })).toMatchObject({
       active_tab_id: firstTabId,
     });
     expect(await guestId(firstRoot)).toBe(firstGuestId);
     await expect(executeGuest(firstRoot, `document.querySelector('#draft').value`)).resolves.toBe("alpha");
-    await expect(browserTool(page, taskA, "browser_get_text")).resolves.toContain("First tab");
-    await browserTool(page, taskA, "browser_click", { selector: "#increment" });
+    await expect(bridge.browserTool(taskA, "browser_get_text")).resolves.toContain("First tab");
+    await bridge.browserTool(taskA, "browser_click", { selector: "#increment" });
     await expect(executeGuest(firstRoot, `window.__clicks`)).resolves.toBe(1);
-    const screenshot = await browserTool<{ data: string }>(
-      page,
-      taskA,
-      "browser_screenshot",
-    );
+    const screenshot = await bridge.browserTool<{ data: string }>(taskA, "browser_screenshot");
     expect(screenshot.data.length).toBeGreaterThan(100);
 
-    await browserTool(page, taskA, "browser_tabs", {
+    await bridge.browserTool(taskA, "browser_tabs", {
       action: "select",
       tab_id: opened.active_tab_id,
     });
@@ -114,7 +96,7 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
     await openBrowserPanel(page);
     const taskBRoot = page.locator(`[data-browser-task="${taskB}"]`);
     await expect(taskBRoot).toHaveCount(1);
-    await browserTool(page, taskB, "browser_navigate", {
+    await bridge.browserTool(taskB, "browser_navigate", {
       url: "about:blank#task-b-browser",
     });
     await executeGuest(taskBRoot, `(() => {
@@ -126,10 +108,10 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
     await expect(page.locator("webview")).toHaveCount(3);
     expect(await guestId(firstRoot)).toBe(firstGuestId);
     expect(await guestId(secondRoot)).toBe(secondGuestId);
-    await expect(browserTool(page, taskA, "browser_tabs", { action: "list" })).resolves.toMatchObject({
+    await expect(bridge.browserTool(taskA, "browser_tabs", { action: "list" })).resolves.toMatchObject({
       tabs: [{}, {}],
     });
-    await expect(browserTool(page, taskB, "browser_tabs", { action: "list" })).resolves.toMatchObject({
+    await expect(bridge.browserTool(taskB, "browser_tabs", { action: "list" })).resolves.toMatchObject({
       tabs: [{}],
     });
 
@@ -139,13 +121,5 @@ test("each task owns a persistent multi-tab in-app browser window", async ({}, t
     await expect(secondRoot).toHaveAttribute("data-browser-visible", "true");
     await expect(executeGuest(secondRoot, `document.querySelector('#draft').value`)).resolves.toBe("beta");
 
-    const screenshotPath = testInfo.outputPath("task-browser-multitab.png");
-    await page.screenshot({ path: screenshotPath });
-    await testInfo.attach("task-scoped multi-tab browser", {
-      path: screenshotPath,
-      contentType: "image/png",
-    });
-  } finally {
-    await cleanup();
-  }
+    await capture("task-browser-multitab.png", "task-scoped multi-tab browser");
 });

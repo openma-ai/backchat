@@ -3,11 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowUpFromLineIcon,
-  ChevronDownIcon,
+  CalendarClockIcon,
   FileIcon,
   FolderIcon,
   GlobeIcon,
+  Maximize2Icon,
   MessageSquareIcon,
+  Minimize2Icon,
   PlusIcon,
   PuzzleIcon,
   SquareTerminalIcon,
@@ -20,18 +22,16 @@ import { FileTree } from "@/components/shell/FileTree";
 import { BrowserTab } from "@/components/shell/BrowserTab";
 import { TerminalTab } from "@/components/shell/TerminalTab";
 import { BackgroundProcessTab } from "@/components/shell/BackgroundProcessTab";
+import { ArtifactTab } from "@/components/shell/ArtifactTab";
+import { ScheduledTaskTab } from "@/components/shell/ScheduledTaskTab";
 import { RightPanelLauncher } from "@/components/shell/RightPanelLauncher";
-import { useRightRailCollapse } from "@/components/shell/AppShell";
+import {
+  useRightRailCollapse,
+  useRightRailExpansion,
+  useSidebarCollapse,
+} from "@/components/shell/AppShell";
 import { useSettings } from "@/lib/settings-store";
 import { browserSettings } from "@shared/browser-settings.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { previewLocalFile } from "@/lib/file-preview";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -40,8 +40,10 @@ import {
   selectActiveSideTab,
   selectArtifactsFor,
   selectSubagentsFor,
+  selectWorkItemsFor,
   selectBrowserWindows,
   selectSideTabs,
+  selectTurnsFor,
   sessionStore,
   useSessionStore,
   type SideTab,
@@ -49,6 +51,7 @@ import {
   type SubagentActivity,
 } from "@/lib/session-store";
 import type { AcpTerminalInfo } from "@shared/api.js";
+import type { ScheduleInfo } from "@shared/schedules.js";
 
 /**
  * SideChatPanel — Codex-style right rail. Multi-tab; each tab is one
@@ -67,7 +70,8 @@ import type { AcpTerminalInfo } from "@shared/api.js";
  *   interactive → portal target for MCP Apps and inline visualizations.
  *
  * The tab bar mirrors BottomPanel's: chip with icon + truncated
- * label, X close on hover, `+` opens a popover to pick the type.
+ * label and X close on hover. `+` clears the selection to show the
+ * New tab launcher as content; the launcher itself is not a tab.
  *
  * Toggle position: the rail's collapse toggle sits at the viewport
  * top-right when collapsed (only way to re-open) and inside the
@@ -93,13 +97,47 @@ export function SideChatPanel() {
     [mainActive?.id],
   );
   const subagents = useSessionStore(subagentsSelector);
+  const workItemsSelector = useMemo(
+    () => selectWorkItemsFor(mainActive?.id ?? null),
+    [mainActive?.id],
+  );
+  const workItems = useSessionStore(workItemsSelector);
+  const turnsSelector = useMemo(
+    () => selectTurnsFor(mainActive?.id ?? ""),
+    [mainActive?.id],
+  );
+  const taskTurns = useSessionStore(turnsSelector);
+  const sourceAttachments = useMemo(
+    () => [...new Map(
+      taskTurns
+        .flatMap((turn) => turn.attachments ?? [])
+        .map((attachment) => [attachment.path, attachment]),
+    ).values()],
+    [taskTurns],
+  );
   const processes = useQuery({
     queryKey: ["acp-terminals", mainActive?.id],
     queryFn: () => window.backchat.acpTerminalsList({ sessionId: mainActive!.id }),
     enabled: !!mainActive?.id,
     refetchInterval: 1_500,
   }).data ?? [];
+  const schedules = (useQuery({
+    queryKey: ["schedules", mainActive?.id],
+    queryFn: () => window.backchat.schedulesList(),
+    enabled: !!mainActive?.id,
+    refetchInterval: 2_000,
+  }).data ?? []).filter(
+    (schedule) => schedule.sourceSessionId === mainActive?.id,
+  );
   const { toggle: toggleRail } = useRightRailCollapse();
+  const { collapsed: leftSidebarCollapsed } = useSidebarCollapse();
+  const {
+    expanded,
+    mainSelected,
+    setExpanded,
+    selectMain,
+    selectPanel,
+  } = useRightRailExpansion();
   const navigate = useNavigate();
   const canStartSideChat = !!mainActive && mainActive.status !== "draft";
   const canForkSideChat =
@@ -255,34 +293,30 @@ export function SideChatPanel() {
 
   const openSubagent = useCallback((activity: SubagentActivity) => {
     if (!mainActive) return;
-    const existing = tabs.find(
-      (tab) => tab.type === "subagent" && tab.payload === activity.viewSessionId,
-    );
     const tabId = sessionStore.openSideTabForTask(
       mainActive.id,
       "subagent",
       activity.viewSessionId,
       subagentLabel(activity),
-      existing?.id,
     );
     sessionStore.patchSideTabForTask(mainActive.id, tabId, {
       avatarId: activity.avatarId,
     });
-  }, [mainActive, tabs]);
+  }, [mainActive]);
 
   const openProcess = useCallback((process: AcpTerminalInfo) => {
     if (!mainActive) return;
-    const existing = tabs.find(
-      (tab) => tab.type === "process" && tab.payload === process.terminalId,
-    );
     sessionStore.openSideTabForTask(
       mainActive.id,
       "process",
       process.terminalId,
       processLabel(process),
-      existing?.id,
     );
-  }, [mainActive, tabs]);
+  }, [mainActive]);
+
+  const openSchedule = useCallback((schedule: ScheduleInfo) => {
+    sessionStore.openSideTab("schedule", schedule.id, schedule.name);
+  }, []);
 
   const closeTab = useCallback((tab: SideTab) => {
     // Tear down the underlying resource before removing the tab.
@@ -293,50 +327,66 @@ export function SideChatPanel() {
     }
     sessionStore.closeSideTab(tab.id);
   }, []);
+  const closeRail = useCallback(() => {
+    setExpanded(false);
+    toggleRail();
+  }, [setExpanded, toggleRail]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-transparent">
+    <div
+      data-expanded-main-selected={expanded && mainSelected}
+      className="flex h-full min-h-0 flex-col bg-transparent"
+    >
       {/* Header geometry aligned to the fixed top-right toggles via the
-          shared --chrome-* tokens:
-            stage-inset (6) + border (1) + pt-1.5 (6) + size-6/2 (12) = 25
-          which equals chrome-top (13) + chrome-size/2 (12) = 25.
-          px-3 (12) + border (1) = 13 ≈ chrome-gap (16) on the inside
-          edge — close enough that the in-panel button and the fixed
-          terminal toggle outside read as mirrored across the seam. */}
-      <div className="shrink-0 flex items-center gap-[var(--chrome-gap)] bg-transparent pl-3 pr-[var(--chrome-gap)] pt-1.5 pb-2">
-        {/* Collapse rail button — image #13: lives inside the panel's
-            top-left when expanded. Mirrors the left sidebar toggle's
-            position + icon family. */}
-        <button
-          type="button"
-          onClick={toggleRail}
-          aria-label="Close side panel"
-          title="Close side panel"
-          className={cn(
-            "app-no-drag relative z-20 inline-flex size-6 shrink-0 items-center justify-center rounded-md",
-            "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
-            "transition-colors",
-          )}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="2" y="3" width="12" height="10" rx="1.5" />
-            <line x1="10" y1="3" x2="10" y2="13" />
-          </svg>
-        </button>
-
+          shared --chrome-* tokens. The geometry is covered by the right-panel
+          E2E so zoom changes cannot silently separate the three controls. */}
+      <div
+        data-header-clears-left-chrome={expanded && leftSidebarCollapsed}
+        className={cn(
+          "app-no-drag pointer-events-auto shrink-0 flex h-[var(--top-row-h)] items-start gap-[var(--chrome-gap)] pl-3 pr-[var(--chrome-gap)]",
+          expanded ? "bg-bg-sidebar" : "bg-transparent",
+        )}
+        style={{
+          paddingTop: "calc(var(--chrome-top) - var(--stage-inset))",
+          paddingLeft: expanded && leftSidebarCollapsed
+            ? "calc(var(--left-chrome-end) + var(--chrome-title-gap) - var(--stage-inset))"
+            : undefined,
+        }}
+      >
         {/* The rail selects one surface at a time. Browser surfaces are
             kept mounted below; other tab types retain their established
             mount/unmount behavior. */}
-        <div className="-ml-3 flex min-w-0 flex-1 items-start gap-1 pl-3">
+        <div
+          role="tablist"
+          aria-label={t("rightPanel.tabs")}
+          className="flex min-w-0 flex-1 items-center gap-1"
+        >
+          {expanded && mainActive && (
+            <>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mainSelected}
+                data-pinned-main-session="true"
+                onClick={selectMain}
+                title={mainActive.label}
+                className={cn(
+                  "inline-flex h-[var(--row-h)] max-w-48 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs",
+                  mainSelected
+                    ? "liquid-glass-selected text-fg"
+                    : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+                  "transition-colors",
+                )}
+              >
+                <MessageSquareIcon className="size-3.5 shrink-0 text-fg-subtle" />
+                <span className="truncate">{mainActive.label}</span>
+              </button>
+              <span
+                aria-hidden="true"
+                className="mx-1 h-[var(--row-h)] w-px shrink-0 bg-border"
+              />
+            </>
+          )}
           <div
             ref={tabScrollRef}
             data-side-tab-scroll
@@ -350,49 +400,101 @@ export function SideChatPanel() {
                 <TabChip
                   key={tab.id}
                   tab={tab}
-                  active={tab.id === activeTab?.id}
-                  onPick={() => sessionStore.setActiveSideTab(tab.id)}
+                  active={!mainSelected && tab.id === activeTab?.id}
+                  onPick={() => {
+                    selectPanel();
+                    sessionStore.setActiveSideTab(tab.id);
+                  }}
                   onClose={() => closeTab(tab)}
                 />
               ))}
             </div>
           </div>
-          <div data-side-tab-actions className="flex shrink-0 items-center gap-1">
-            <AddTabButton
-              onPick={openTab}
-              onPickSubagent={openSubagent}
-              onPickProcess={openProcess}
-              browserEnabled={browserEnabled}
-              artifacts={artifacts}
-              subagents={subagents}
-              processes={processes}
-              canStartSideChat={canStartSideChat}
-            />
-            {/* Promote-to-main button — only relevant for chat tabs. The
+        </div>
+        <div data-side-tab-actions className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            aria-label={t("rightPanel.newTab")}
+            title={t("rightPanel.newTab")}
+            onClick={() => {
+              selectPanel();
+              sessionStore.setActiveSideTab(null);
+            }}
+            className="app-no-drag inline-flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-bg-surface/60 hover:text-fg"
+          >
+            <PlusIcon className="size-3.5" />
+          </button>
+          {/* Promote-to-main button — only relevant for chat tabs. The
               side chat is a fast scratch surface; once it's worth
               keeping, "promote" lifts it into the sidebar list as a
               real main session (kind flip + route navigate) without
               disposing the ACP child or losing scrollback. */}
-            {activeTab?.type === "chat" && (
-              <button
-                type="button"
-                onClick={promoteActive}
-                aria-label="Promote to main chat"
-                title="Promote to main chat"
-                className={cn(
-                  "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
-                  "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
-                  "transition-colors",
-                )}
-              >
-                <ArrowUpFromLineIcon className="size-3.5" />
-              </button>
+          {activeTab?.type === "chat" && (
+            <button
+              type="button"
+              onClick={promoteActive}
+              aria-label={t("sideChat.promote")}
+              title={t("sideChat.promote")}
+              className={cn(
+                "app-no-drag inline-flex size-6 shrink-0 items-center justify-center rounded-md",
+                "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
+                "transition-colors",
+              )}
+            >
+              <ArrowUpFromLineIcon className="size-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label={t(expanded ? "sideChat.restoreSplitView" : "sideChat.expandPanel")}
+            title={t(expanded ? "sideChat.restoreSplitView" : "sideChat.expandPanel")}
+            onClick={() => setExpanded(!expanded)}
+            className="app-no-drag inline-flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-bg-surface/60 hover:text-fg"
+          >
+            {expanded ? (
+              <Minimize2Icon className="size-3.5" />
+            ) : (
+              <Maximize2Icon className="size-3.5" />
             )}
-          </div>
+          </button>
+          {!expanded && (
+            <button
+              type="button"
+              onClick={closeRail}
+              aria-label={t("sideChat.closePanel")}
+              title={t("sideChat.closePanel")}
+              className={cn(
+                "app-no-drag relative z-20 inline-flex size-6 shrink-0 items-center justify-center rounded-md",
+                "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
+                "transition-colors",
+              )}
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="2" y="3" width="12" height="10" rx="1.5" />
+                <line x1="10" y1="3" x2="10" y2="13" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="relative flex-1 min-h-0">
+      <div
+        aria-hidden={expanded && mainSelected}
+        data-panel-content-hidden={expanded && mainSelected}
+        className={cn(
+          "relative flex-1 min-h-0",
+          expanded && mainSelected && "invisible pointer-events-none",
+        )}
+      >
         {!activeTab && (
           <EmptyState
             onPick={openTab}
@@ -402,11 +504,19 @@ export function SideChatPanel() {
             browserEnabled={browserEnabled}
             artifacts={artifacts}
             subagents={subagents}
+            workItems={workItems}
             processes={processes}
+            schedules={schedules}
+            sourceAttachments={sourceAttachments}
+            onOpenSchedule={openSchedule}
           />
         )}
         {activeTab && activeTab.type !== "browser" && (
-          <ActiveTabBody tab={activeTab} />
+          <ActiveTabBody
+            tab={activeTab}
+            schedules={schedules}
+            onManageSchedules={() => void navigate({ to: "/scheduled" })}
+          />
         )}
         {browserWindows.flatMap((browserWindow) =>
           browserWindow.tabs.map((tab) => {
@@ -451,7 +561,15 @@ export function SideChatPanel() {
   );
 }
 
-function ActiveTabBody({ tab }: { tab: SideTab }) {
+function ActiveTabBody({
+  tab,
+  schedules,
+  onManageSchedules,
+}: {
+  tab: SideTab;
+  schedules: ScheduleInfo[];
+  onManageSchedules: () => void;
+}) {
   // Switch on tab.type. Each branch is a discrete component. The key
   // prop on the ChatView (for chat tabs) makes React unmount + remount
   // on tab swap so the streaming-markdown channel re-attaches to the
@@ -474,6 +592,9 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
       />
     );
   }
+  if (tab.type === "artifact") {
+    return <ArtifactTab key={tab.payload} path={tab.payload} />;
+  }
   if (tab.type === "terminal") {
     if (tab.needsRestore || !tab.payload) {
       return (
@@ -490,6 +611,16 @@ function ActiveTabBody({ tab }: { tab: SideTab }) {
   }
   if (tab.type === "process") {
     return <BackgroundProcessTab key={tab.payload} terminalId={tab.payload} />;
+  }
+  if (tab.type === "schedule") {
+    const schedule = schedules.find((candidate) => candidate.id === tab.payload);
+    return schedule ? (
+      <ScheduledTaskTab schedule={schedule} onManage={onManageSchedules} />
+    ) : (
+      <div className="flex h-full items-center justify-center px-6 text-center text-xs text-fg-muted">
+        This registered task is no longer available.
+      </div>
+    );
   }
   if (tab.type === "interactive") {
     return <div id={`interactive-side-host-${tab.payload}`} className="h-full min-h-0" />;
@@ -526,8 +657,7 @@ function LegacyEmptyState({
     [mainActive?.id],
   );
   const artifacts = useSessionStore(artifactsSelector);
-  const hasArtifacts =
-    artifacts.files.length > 0 || (browserEnabled && artifacts.services.length > 0);
+  const hasArtifacts = artifacts.files.length > 0;
 
   const [recent, setRecent] = useState<
     { name: string; path: string; isDir: boolean; mtime: number }[]
@@ -576,27 +706,6 @@ function LegacyEmptyState({
           );
         })}
       </div>
-
-      {browserEnabled && artifacts.services.length > 0 && (
-        <section className="mt-6">
-          <div className="mb-2 text-xs font-medium text-fg select-none">正在跑的服务</div>
-          <ul className="space-y-1">
-            {artifacts.services.slice(0, 6).map((url) => (
-              <li key={url}>
-                <RecentRow
-                  label={shortenServiceUrl(url)}
-                  hint={url}
-                  icon={<GlobeIcon className="size-4 text-fg-subtle" />}
-                  onClick={() => {
-                    // Open a browser tab anchored on this dev server.
-                    sessionStore.openSideTab("browser", url, undefined);
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       {artifacts.files.length > 0 && (
         <section className="mt-6">
@@ -798,7 +907,7 @@ function TabChip({
   return (
     <div
       className={cn(
-        "group inline-flex shrink-0 items-center gap-1.5 rounded-md pl-2 pr-1 text-xs select-none",
+        "group relative inline-flex h-[var(--row-h)] w-32 shrink-0 items-center rounded-md pl-2 pr-1 text-xs select-none",
         // Active tab: filled surface + crisp text + subtle inset
         // border so the chip reads as "lifted" from the bar even on
         // first glance. Inactive: transparent until hover, with the
@@ -811,16 +920,22 @@ function TabChip({
           : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
         "transition-colors",
       )}
-      style={{ height: "26px" }}
     >
       <button
         type="button"
+        role="tab"
+        aria-selected={active}
         onClick={onPick}
-        className="inline-flex items-center gap-1.5 truncate max-w-[160px]"
+        className={cn(
+          "inline-flex min-w-0 flex-1 items-center gap-1.5 truncate",
+          active ? "pr-4" : "group-hover:pr-4",
+        )}
         title={tab.label}
       >
         {tab.type === "subagent" ? (
           <SubagentAvatar avatarId={tab.avatarId} className="size-[18px]" />
+        ) : tab.type === "browser" ? (
+          <BrowserTabFavicon tab={tab} active={active} />
         ) : Icon ? (
           <Icon
             className={cn(
@@ -840,11 +955,13 @@ function TabChip({
         onClick={onClose}
         aria-label={t("sideChat.closeTab")}
         className={cn(
-          "inline-flex size-4 items-center justify-center rounded",
+          "absolute right-1 top-1/2 inline-flex size-4 -translate-y-1/2 items-center justify-center rounded",
           // Always visible on the active tab (so the user can always
           // close it without hovering first); reveal on hover for
           // inactive ones.
-          active ? "opacity-60" : "opacity-0 group-hover:opacity-60",
+          active
+            ? "opacity-60"
+            : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-60",
           "hover:bg-bg-surface hover:opacity-100",
           "transition-opacity",
         )}
@@ -855,105 +972,42 @@ function TabChip({
   );
 }
 
-function AddTabButton({
-  onPick,
-  onPickSubagent,
-  onPickProcess,
-  browserEnabled,
-  artifacts,
-  subagents,
-  processes,
-  canStartSideChat,
-}: {
-  onPick: (type: SideTabType) => void;
-  onPickSubagent: (activity: SubagentActivity) => void;
-  onPickProcess: (process: AcpTerminalInfo) => void;
-  browserEnabled: boolean;
-  artifacts: { files: string[]; services: string[] };
-  subagents: SubagentActivity[];
-  processes: AcpTerminalInfo[];
-  canStartSideChat: boolean;
-}) {
-  const { t } = useI18n();
-  // Radix DropdownMenu — uses a Portal so the popover content escapes
-  // any overflow-hidden ancestor (the side panel `<aside>` is one),
-  // and handles click-outside + focus return for us. Replaced a
-  // hand-rolled state + fixed catcher that fought stacking contexts.
+function BrowserTabFavicon({ tab, active }: { tab: SideTab; active: boolean }) {
+  const faviconUrl = tab.faviconUrl;
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => setFailed(false), [faviconUrl]);
+
+  if (!faviconUrl || !/^data:image\//i.test(faviconUrl) || failed) {
+    return (
+      <GlobeIcon
+        className={cn(
+          "size-3.5 shrink-0",
+          active ? "text-fg" : "text-fg-subtle",
+        )}
+      />
+    );
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={t("sideChat.newTab")}
-          title={t("sideChat.newTab")}
-            className={cn(
-            "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
-            "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
-            "transition-colors",
-          )}
-        >
-          <PlusIcon className="size-3.5" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        sideOffset={4}
-        className="min-w-[248px]"
-      >
-        <DropdownMenuLabel>{t("rightPanel.outputs")}</DropdownMenuLabel>
-        {artifacts.files.length > 0 ? artifacts.files.slice(0, 5).map((path) => (
-          <DropdownMenuItem key={path} onSelect={() => void previewLocalFile(path)} className="flex items-center gap-2 text-xs">
-            <FileIcon className="size-3.5 text-fg-subtle" />
-            <span className="min-w-0 flex-1 truncate">{deriveFileLabel(path)}</span>
-          </DropdownMenuItem>
-        )) : (
-          <DropdownMenuItem disabled={!canStartSideChat} onSelect={() => onPick("chat")} className="flex items-center gap-2 text-xs">
-            <MessageSquareIcon className="size-3.5 text-fg-subtle" />
-            <span className="min-w-0 flex-1 truncate">{t("rightPanel.createOutput")}</span>
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("rightPanel.backgroundProcesses")}</DropdownMenuLabel>
-        {subagents.length > 0 && <DropdownMenuLabel className="pt-0 text-[10px]">{t("rightPanel.currentSubagents")}</DropdownMenuLabel>}
-        {subagents.map((activity) => (
-          <DropdownMenuItem key={activity.viewSessionId} onSelect={() => onPickSubagent(activity)} className="flex items-center gap-2 text-xs">
-            <SubagentAvatar avatarId={activity.avatarId} className="size-4" />
-            <span className="min-w-0 flex-1 truncate">{subagentLabel(activity)}</span>
-          </DropdownMenuItem>
-        ))}
-        {processes.map((process) => (
-          <DropdownMenuItem key={process.terminalId} onSelect={() => onPickProcess(process)} className="flex items-center gap-2 text-xs">
-            <SquareTerminalIcon className="size-3.5 text-fg-subtle" />
-            <span className="min-w-0 flex-1 truncate">{processLabel(process)}</span>
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuItem onSelect={() => onPick("terminal")} className="flex items-center gap-2 text-xs">
-          <SquareTerminalIcon className="size-3.5 text-fg-subtle" />
-          <span className="min-w-0 flex-1 truncate">{t("rightPanel.backgroundTerminal")}</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("rightPanel.sources")}</DropdownMenuLabel>
-        <DropdownMenuItem onSelect={() => onPick("file")} className="flex items-center gap-2 text-xs">
-          <FolderIcon className="size-3.5 text-fg-subtle" />
-          <span className="min-w-0 flex-1 truncate">{t("rightPanel.projectFiles")}</span>
-        </DropdownMenuItem>
-        {browserEnabled && (
-          <DropdownMenuItem onSelect={() => onPick("browser")} className="flex items-center gap-2 text-xs">
-            <GlobeIcon className="size-3.5 text-fg-subtle" />
-            <span className="min-w-0 flex-1 truncate">{t("rightPanel.website")}</span>
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <img
+      src={faviconUrl}
+      alt=""
+      aria-hidden="true"
+      onError={() => setFailed(true)}
+      className="size-3.5 shrink-0 rounded-[2px] object-contain"
+    />
   );
 }
 
 const ICON_BY_TYPE: Record<Exclude<SideTabType, "subagent">, LucideIcon> = {
   chat: MessageSquareIcon,
   file: FolderIcon,
+  artifact: FileIcon,
   browser: GlobeIcon,
   terminal: SquareTerminalIcon,
   process: SquareTerminalIcon,
+  schedule: CalendarClockIcon,
   interactive: PuzzleIcon,
 };
 
@@ -971,16 +1025,6 @@ function deriveBrowserLabel(url: string): string {
     return new URL(url).hostname;
   } catch {
     return "Browser";
-  }
-}
-
-function faviconFallback(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    return `${parsed.origin}/favicon.ico`;
-  } catch {
-    return null;
   }
 }
 

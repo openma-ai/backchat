@@ -6,8 +6,11 @@ import {
 } from "@openma/common/acp-runtime";
 
 describe("desktop ACP package", () => {
-  it("re-exports the shared ACP runtime core", () => {
-    expect(LocalRuntime).toBe(SharedRuntime);
-    expect(LocalSession).toBe(SharedSession);
+  it("layers the ACP 1.1 multi-root transport over the shared runtime core", () => {
+    expect(LocalRuntime).not.toBe(SharedRuntime);
+    expect(LocalSession).not.toBe(SharedSession);
+    expect(Object.getPrototypeOf(LocalSession.prototype)).toBe(
+      SharedSession.prototype,
+    );
   });
 });

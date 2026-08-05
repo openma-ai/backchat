@@ -6,6 +6,7 @@ import {
   PinOffIcon,
 } from "lucide-react";
 import { useMemo } from "react";
+import { useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   DropdownMenu,
@@ -23,6 +24,7 @@ import type { SessionRow } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { RenameDialog } from "./RenameDialog";
 
 /**
  * Single-chat chrome is deliberately sparse: task title + one actions
@@ -35,6 +37,7 @@ export function Topbar(_props: { onCancel: () => void }) {
   const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
+  const [renameOpen, setRenameOpen] = useState(false);
   const isChat = location.pathname.startsWith("/chat/");
   if (!active || !isChat) return null;
 
@@ -83,7 +86,10 @@ export function Topbar(_props: { onCancel: () => void }) {
             <MoreHorizontalIcon className="size-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" sideOffset={6} className="min-w-[164px]">
+         <DropdownMenuContent align="start" sideOffset={6} className="min-w-[164px]">
+          <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
+            <span>{t("sidebar.rename")}</span>
+          </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => (
               pinned
@@ -107,9 +113,15 @@ export function Topbar(_props: { onCancel: () => void }) {
             <ArchiveIcon className="size-3.5" />
             <span>{t("sidebar.archive")}</span>
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+         </DropdownMenuContent>
+       </DropdownMenu>
+       <RenameDialog
+         open={renameOpen}
+         currentTitle={active.label}
+         onOpenChange={setRenameOpen}
+         onRename={(title) => sessionStore.rename(active.id, title)}
+       />
+     </div>
   );
 }
 

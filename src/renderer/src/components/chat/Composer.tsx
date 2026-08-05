@@ -1,11 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import type { PromptAnnotation, PromptAttachment } from "@shared/session-events.js";
+import type {
+  PromptAnnotation,
+  PromptAttachment,
+  PromptSessionReference,
+} from "@shared/session-events.js";
 import type { AgentMessageIntent } from "@shared/agent-interaction.js";
 import type { AcpSessionConfigOption } from "@/lib/session-config-options";
-import type { AcpAvailableCommand } from "@/lib/session-store";
+import type { SessionGoal } from "@/lib/session-types";
+import {
+  selectSessions,
+  useSessionStore,
+  type AcpAvailableCommand,
+} from "@/lib/session-store";
 import { useI18n } from "@/lib/i18n";
 import { removeSuggestionTemplateSlot, type ComposerSuggestionDraft } from "@/lib/home-suggestion-flow";
 import { AgentIcon } from "@/components/AgentIcon";
@@ -16,12 +25,34 @@ import { isSkillSlashCommand } from "@/lib/composer-slash-commands";
 import { promptAnnotationStore } from "@/lib/prompt-annotations";
 import { useComposerContextState } from "@/lib/composer-context-state";
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
-import { InlineComposerOptionControls, PermissionModeChip, PlanSessionState, SessionRunChip } from "./ComposerSessionControls";
-import { AttachmentPreviewStrip, SkillCommandChip, SuggestionTemplateEditor } from "./ComposerContentParts";
+import { ComposerSessionStateSlot, InlineComposerOptionControls, PermissionModeChip, SessionRunChip } from "./ComposerSessionControls";
+import {
+  goalSessionStatePresentation,
+  selectComposerSessionStatePresentation,
+} from "@/lib/composer-session-state";
+import { planModeSessionStatePresentation } from "@/lib/plan-mode-session-state";
+import {
+  AttachmentPreviewStrip,
+  MentionedFileStrip,
+  SessionReferenceStrip,
+  SkillCommandChip,
+  SuggestionTemplateEditor,
+} from "./ComposerContentParts";
 import { ComposerSlashCommandMenu } from "./ComposerSlashCommandMenu";
 import { useComposerSuggestionState } from "@/lib/composer-suggestion-state";
 import { useComposerHarnessState } from "@/lib/composer-harness-state";
 import { useComposerSlashState } from "@/lib/composer-slash-state";
+import {
+  filterSessionMentionCandidates,
+  filterFileMentionCandidates,
+  consumeSessionMention,
+  createBrowseFileMentionCandidate,
+  resolveSessionMention,
+  type ComposerMentionCandidate,
+  type FileMentionCandidate,
+  type SessionMentionCandidate,
+} from "@/lib/composer-mentions";
+import { ComposerSessionMentionMenu } from "./ComposerSessionMentionMenu";
 
 export function Composer({
   sessionId,
@@ -36,6 +67,8 @@ export function Composer({
   lockedAgentId,
   pickedAgentId,
   suggestionDraft,
+  goal,
+  currentModeId,
   onUserInput = () => undefined,
   configOptions,
   onPickAgent,
@@ -55,6 +88,8 @@ export function Composer({
   lockedAgentId: string | null;
   pickedAgentId: string | null;
   suggestionDraft?: ComposerSuggestionDraft | null;
+  goal?: SessionGoal;
+  currentModeId?: string;
   onUserInput?: (hasContent: boolean) => void;
   configOptions?: AcpSessionConfigOption[];
   onPickAgent: (agentId: string) => void;
@@ -66,15 +101,84 @@ export function Composer({
     configOverrides?: Record<string, string | boolean>,
     selectedAgentId?: string,
     annotations?: PromptAnnotation[],
+    sessionReferences?: PromptSessionReference[],
   ) => void;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
   const [text, setText] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [dismissedMentionText, setDismissedMentionText] = useState<string | null>(null);
+  const [mentionPickerIndex, setMentionPickerIndex] = useState(0);
+  const [fileMentionCandidates, setFileMentionCandidates] = useState<FileMentionCandidate[]>([]);
+  const [mentionedFileAttachmentIds, setMentionedFileAttachmentIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [sessionReferences, setSessionReferences] = useState<PromptSessionReference[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const persistedSessions = useSessionStore(selectSessions);
+  const supportsSteering = sessionId
+    ? persistedSessions.find((session) => session.id === sessionId)?.supportsSteering
+    : false;
+  const mentionCandidates = useMemo<SessionMentionCandidate[]>(
+    () => persistedSessions.map((session) => ({
+      id: session.id,
+      label: session.label || session.id,
+      agentId: session.agent_id,
+    })),
+    [persistedSessions],
+  );
+  const mentionMatch = useMemo(
+    () => resolveSessionMention(text, caret),
+    [caret, text],
+  );
+  useEffect(() => {
+    if (!mentionMatch || dismissedMentionText === text || !attachmentDefaultPath) {
+      setFileMentionCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    void window.backchat.uiFsSearchFiles({
+      path: attachmentDefaultPath,
+      query: mentionMatch.query,
+      limit: 8,
+    }).then((files) => {
+      if (cancelled) return;
+      setFileMentionCandidates(files.map((attachment) => ({
+        kind: "file" as const,
+        id: attachment.id,
+        label: attachment.name,
+        path: attachment.path,
+        attachment,
+      })));
+    }).catch(() => {
+      if (!cancelled) setFileMentionCandidates([]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [attachmentDefaultPath, dismissedMentionText, mentionMatch?.end, mentionMatch?.query, mentionMatch?.start, text]);
+  const visibleMentionCandidates = useMemo(
+    (): ComposerMentionCandidate[] => mentionMatch && dismissedMentionText !== text
+      ? [
+          ...[
+            ...filterSessionMentionCandidates(
+              mentionCandidates,
+              sessionId,
+              mentionMatch.query,
+            ).map((candidate) => ({ ...candidate, kind: "session" as const })),
+            ...filterFileMentionCandidates(fileMentionCandidates, mentionMatch.query),
+          ].slice(0, 7),
+          createBrowseFileMentionCandidate(),
+        ]
+      : [],
+    [dismissedMentionText, fileMentionCandidates, mentionCandidates, mentionMatch, sessionId, text],
+  );
+  const showMentionPicker = visibleMentionCandidates.length > 0;
   const {
     annotations,
     attachments,
+    addAttachments,
     browserScreenshotNames,
     clearAttachments,
     pickAttachments,
@@ -112,7 +216,31 @@ export function Composer({
     configOptions,
     availableCommands,
     running,
+    supportsSteering,
   });
+  const composerSessionState = selectComposerSessionStatePresentation([
+    {
+      priority: 10,
+      presentation: planModeSessionStatePresentation(
+        {
+          agentId: currentAgentId,
+          currentModeId,
+          configOptions: effectiveConfigOptions,
+        },
+        {
+          label: t("chat.plan"),
+          title: t("chat.planActiveHint"),
+        },
+      ),
+    },
+    {
+      priority: 20,
+      presentation: goalSessionStatePresentation(
+        goal,
+        t("chat.goalStatus"),
+      ),
+    },
+  ]);
   const {
     clearDismissal,
     clearSelectedSkill,
@@ -166,6 +294,19 @@ export function Composer({
     if (!disabled) taRef.current?.focus();
   }, [disabled]);
 
+  useEffect(() => {
+    setText("");
+    setCaret(0);
+    setSessionReferences([]);
+    setMentionedFileAttachmentIds(new Set());
+    setDismissedMentionText(null);
+    setMentionPickerIndex(0);
+  }, [sessionId]);
+
+  useEffect(() => {
+    setMentionPickerIndex(0);
+  }, [mentionMatch?.query, visibleMentionCandidates.length]);
+
   const insertCommand = (cmd: AcpAvailableCommand) => {
     // Replace whatever `/foo` token the user was typing with `/name `
     // (trailing space) so the next keystroke goes into the argument.
@@ -213,6 +354,72 @@ export function Composer({
     clearDismissal();
   };
 
+  const pickMention = async (
+    selected: ComposerMentionCandidate,
+    currentCaret: number,
+  ) => {
+    if (selected.kind === "browse") {
+      const files = await pickAttachments();
+      if (files.length === 0) return;
+      const inserted = consumeSessionMention(text, currentCaret);
+      setText(inserted.text);
+      setCaret(inserted.caret);
+      setDismissedMentionText(null);
+      setMentionedFileAttachmentIds((current) => new Set([
+        ...current,
+        ...files.map((file) => file.id),
+      ]));
+      onUserInput(true);
+      requestAnimationFrame(() => {
+        taRef.current?.focus();
+        taRef.current?.setSelectionRange(inserted.caret, inserted.caret);
+      });
+      return;
+    }
+    const inserted = consumeSessionMention(text, currentCaret);
+    setText(inserted.text);
+    setCaret(inserted.caret);
+    setDismissedMentionText(null);
+    if (selected.kind === "file") {
+      setMentionedFileAttachmentIds((current) => new Set(current).add(selected.attachment.id));
+      addAttachments([selected.attachment]);
+    } else {
+      setSessionReferences((current) =>
+        current.some((reference) => reference.session_id === selected.id)
+          ? current
+          : [...current, { session_id: selected.id, title: selected.label }],
+      );
+    }
+    onUserInput(true);
+    requestAnimationFrame(() => {
+      taRef.current?.focus();
+      taRef.current?.setSelectionRange(inserted.caret, inserted.caret);
+    });
+  };
+
+  const removeComposerAttachment = (attachmentId: string) => {
+    setMentionedFileAttachmentIds((current) => {
+      if (!current.has(attachmentId)) return current;
+      const next = new Set(current);
+      next.delete(attachmentId);
+      return next;
+    });
+    removeAttachment(attachmentId);
+  };
+
+  const removeLastComposerAttachment = () => {
+    const last = attachments.at(-1);
+    if (last) {
+      setMentionedFileAttachmentIds((current) => {
+        if (!current.has(last.id)) return current;
+        const next = new Set(current);
+        next.delete(last.id);
+        return next;
+      });
+    }
+    removeLastAttachment();
+  };
+
   const removeTemplateField = () => {
     if (!suggestionTemplate) return;
     const replacement = removeSuggestionTemplateSlot(
@@ -240,7 +447,10 @@ export function Composer({
   const submitComposer = (intent: AgentMessageIntent = primaryIntent) => {
     const t = submitText;
     const hasContent =
-      t.trim().length > 0 || attachments.length > 0 || annotations.length > 0;
+      t.trim().length > 0 ||
+      attachments.length > 0 ||
+      annotations.length > 0 ||
+      sessionReferences.length > 0;
     if (hasContent && !hasHarnessSetup) {
       notifyNoHarnessSetup();
       return;
@@ -249,12 +459,14 @@ export function Composer({
       ? describeRunningMessageAction({
           agentId: currentAgentId,
           intent,
+          supportsSteering,
         })
       : null;
     if (!canSubmitComposer({
       text: t,
       attachments,
       annotations,
+      sessionReferenceCount: sessionReferences.length,
       disabled: !!disabled,
       running,
       actionDisabled: action?.disabled || !hasHarnessSetup,
@@ -266,12 +478,15 @@ export function Composer({
       draftConfigValues,
       currentEnabledAgent?.id,
       annotations,
+      sessionReferences,
     );
     rememberCurrentRun();
     setText("");
     setSuggestionTemplate(null);
     setSuggestionSlotValue("");
     clearAttachments();
+    setMentionedFileAttachmentIds(new Set());
+    setSessionReferences([]);
     clearSelectedSkill();
     clearDismissal();
     if (sessionId) promptAnnotationStore.clear(sessionId);
@@ -281,6 +496,7 @@ export function Composer({
     text: submitText,
     attachments,
     annotations,
+    sessionReferenceCount: sessionReferences.length,
     disabled: !!disabled,
     running,
     actionDisabled: primaryRunningAction?.disabled || !hasHarnessSetup,
@@ -288,8 +504,11 @@ export function Composer({
 
   return (
     <div
-      data-suggestion-fill-active={suggestionFillActive ? "true" : undefined}
-      className={cn(
+      className="relative w-full"
+    >
+      <div
+        data-suggestion-fill-active={suggestionFillActive ? "true" : undefined}
+        className={cn(
         // Liquid-glass material — matches sidebar / side-chat rail /
         // side-chat composer. Three of the four floating cards in this
         // shell are liquid-glass; making the main composer match keeps
@@ -303,11 +522,11 @@ export function Composer({
         // composer and the bottom terminal panel and reads as a
         // visible horizontal band (image #12). Inset rims (the glass
         // tells) are preserved.
-        "relative flex flex-col gap-2 rounded-2xl px-3 py-3 liquid-glass composer-card",
-        "transition-shadow",
-        suggestionFillActive && "composer-suggestion-fill suggestion-fill-active",
-      )}
-    >
+        "composer-radius relative flex flex-col gap-2 px-3 py-3 liquid-glass composer-card",
+          "transition-shadow",
+          suggestionFillActive && "composer-suggestion-fill suggestion-fill-active",
+        )}
+      >
       <div className="flex min-h-[60px] w-full flex-col items-start gap-2 px-1">
         {selectedSkillCommand && (
           <SkillCommandChip
@@ -322,7 +541,8 @@ export function Composer({
           <AttachmentPreviewStrip
             attachments={attachments}
             browserScreenshotNames={browserScreenshotNames}
-            onRemove={removeAttachment}
+            hiddenAttachmentIds={mentionedFileAttachmentIds}
+            onRemove={removeComposerAttachment}
           />
         )}
         {annotations.length > 0 && (
@@ -346,20 +566,80 @@ export function Composer({
             onSubmit={() => submitComposer()}
           />
         ) : (
-          <textarea
-            ref={taRef}
-            value={text}
-            onChange={(e) => {
+          <div
+            data-slot="composer-inline-content"
+            className="flex min-h-[60px] w-full flex-wrap items-start gap-1.5"
+          >
+            <SessionReferenceStrip
+              references={sessionReferences}
+              onOpen={(sessionIdToOpen) => {
+                void navigate({
+                  to: "/chat/$sessionId",
+                  params: { sessionId: sessionIdToOpen },
+                });
+              }}
+              onRemove={(sessionIdToRemove) => {
+                setSessionReferences((current) =>
+                  current.filter((reference) => reference.session_id !== sessionIdToRemove));
+                requestAnimationFrame(() => taRef.current?.focus());
+              }}
+            />
+            <MentionedFileStrip
+              attachments={attachments.filter((attachment) => mentionedFileAttachmentIds.has(attachment.id))}
+              onOpen={(attachment) => {
+                void window.backchat.uiFsOpenPath({ path: attachment.path });
+              }}
+              onRemove={removeComposerAttachment}
+            />
+            <textarea
+              ref={taRef}
+              value={text}
+              onChange={(e) => {
               const nextText = e.target.value;
+              const nextCaret = e.target.selectionStart ?? nextText.length;
               cancelSuggestionFill();
               onUserInput(nextText.trim().length > 0
                 || !!selectedSkillCommand
                 || attachments.length > 0
               || annotations.length > 0);
-              setText(nextText);
-              clearDismissal();
-            }}
-            onKeyDown={(e) => {
+                setText(nextText);
+                setCaret(nextCaret);
+                setDismissedMentionText(null);
+                clearDismissal();
+              }}
+              onClick={(e) => setCaret(e.currentTarget.selectionStart ?? text.length)}
+              onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? text.length)}
+              onKeyDown={(e) => {
+              const currentCaret = e.currentTarget.selectionStart ?? text.length;
+              const currentMention = resolveSessionMention(text, currentCaret);
+              if (showMentionPicker && currentMention) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setMentionPickerIndex((current) => {
+                    const offset = e.key === "ArrowDown" ? 1 : -1;
+                    const count = visibleMentionCandidates.length;
+                    return count > 0 ? (current + offset + count) % count : 0;
+                  });
+                  return;
+                }
+                if (
+                  (e.key === "Enter" || e.key === "Tab") &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
+                  const selected = visibleMentionCandidates[mentionPickerIndex];
+                  if (selected) {
+                    e.preventDefault();
+                    void pickMention(selected, currentCaret);
+                    return;
+                  }
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setDismissedMentionText(text);
+                  return;
+                }
+              }
               const highlightedSlashCommand =
                 visibleSlashCommands[pickerIndex];
               const action = resolveComposerKeyAction({
@@ -368,6 +648,7 @@ export function Composer({
                 hasSelectedSkill: !!selectedSkillCommand,
                 attachmentCount: attachments.length,
                 annotationCount: annotations.length,
+                sessionReferenceCount: sessionReferences.length,
                 slashPickerOpen: showPicker,
                 hasSlashSelection: !!highlightedSlashCommand,
                 shiftKey: e.shiftKey,
@@ -381,7 +662,11 @@ export function Composer({
                   return;
                 case "remove-attachment":
                   e.preventDefault();
-                  removeLastAttachment();
+                  removeLastComposerAttachment();
+                  return;
+                case "remove-session-reference":
+                  e.preventDefault();
+                  setSessionReferences((current) => current.slice(0, -1));
                   return;
                 case "remove-annotation":
                   e.preventDefault();
@@ -411,34 +696,22 @@ export function Composer({
                   return;
               }
             }}
-            placeholder={selectedSkillCommand ? t("chat.addInstructions") : placeholder}
-            disabled={!!disabled}
-            rows={1}
-            className={cn(
-              // Bigger min-h so the empty composer has presence (Codex / Claude
-              // Desktop both run ~3 lines of breathing in the textarea row).
-              selectedSkillCommand ? "min-h-[28px]" : "min-h-[60px]",
-              "max-h-[240px] w-full resize-none bg-transparent text-sm leading-7 text-fg outline-none",
-              "placeholder:text-fg-subtle",
-              "[field-sizing:content]",
-            )}
-          />
+              placeholder={selectedSkillCommand ? t("chat.addInstructions") : placeholder}
+              disabled={!!disabled}
+              rows={1}
+              className={cn(
+                selectedSkillCommand ? "min-h-[28px]" : "min-h-[60px]",
+                sessionReferences.length > 0 || mentionedFileAttachmentIds.size > 0
+                  ? "min-w-[12rem] flex-[1_1_12rem]"
+                  : "w-full",
+                "max-h-[240px] resize-none bg-transparent text-sm leading-7 text-fg outline-none",
+                "placeholder:text-fg-subtle",
+                "[field-sizing:content]",
+              )}
+            />
+          </div>
         )}
       </div>
-
-      {/* Slash command picker — floats above the composer's top edge.
-          Only renders when the textarea contents are a `/`-prefixed
-          token and the agent has declared `availableCommands` via ACP.
-          Keyboard nav is wired into the textarea's onKeyDown above; this
-          surface is mouse-only fallback. */}
-      {showPicker && (
-        <ComposerSlashCommandMenu
-          sections={slashCommandSections}
-          selectedIndex={pickerIndex}
-          onHighlight={setPickerIndex}
-          onPick={pickCommand}
-        />
-      )}
 
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
@@ -466,7 +739,7 @@ export function Composer({
               setDraftConfigValues((prev) => ({ ...prev, [configId]: value }));
             }}
           />
-          <PlanSessionState configOptions={effectiveConfigOptions} />
+          <ComposerSessionStateSlot presentation={composerSessionState} />
           <InlineComposerOptionControls
             disabled={!!running}
             configOptions={effectiveConfigOptions}
@@ -566,6 +839,31 @@ export function Composer({
           </button>
         </div>
       </div>
+      </div>
+
+      {/* These transient surfaces are siblings of the composer card, not
+          children of its padded content box. Their containing block is
+          therefore the exact same width as the card, so the outer edges and
+          material remain aligned at every viewport size. */}
+      {showPicker && (
+        <ComposerSlashCommandMenu
+          sections={slashCommandSections}
+          selectedIndex={pickerIndex}
+          onHighlight={setPickerIndex}
+          onPick={pickCommand}
+        />
+      )}
+      {showMentionPicker && (
+        <ComposerSessionMentionMenu
+          candidates={visibleMentionCandidates}
+          selectedIndex={mentionPickerIndex}
+          onHighlight={setMentionPickerIndex}
+          onPick={(selected) => {
+            const currentCaret = taRef.current?.selectionStart ?? text.length;
+            void pickMention(selected, currentCaret);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   MonitorIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
+  TargetIcon,
   TerminalIcon,
   WrenchIcon,
   ZapIcon,
@@ -31,12 +32,12 @@ import {
   buildRunMenuConfigOptionSections,
   configModeOptionPresentation,
   findModeConfigOption,
-  findSelectConfigOption,
   flattenSelectOptions,
   selectedConfigOptionLabel,
   type AcpSessionConfigOption,
 } from "@/lib/session-config-options";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
 
@@ -504,21 +505,23 @@ function sessionModeIcon(value: string): LucideIcon {
   return ShieldCheckIcon;
 }
 
-export function PlanSessionState({
-  configOptions,
+export function ComposerSessionStateSlot({
+  presentation,
 }: {
-  configOptions?: AcpSessionConfigOption[];
+  presentation?: ComposerSessionStatePresentation;
 }) {
-  const { t } = useI18n();
-  const option = findSelectConfigOption(configOptions, "collaboration_mode");
-  if (!option || option.currentValue !== "plan") return null;
+  if (!presentation) return null;
+  const Icon =
+    presentation.icon === "plan" ? LightbulbIcon : TargetIcon;
   return (
     <span
+      data-composer-session-state="true"
+      data-session-state-kind={presentation.kind}
       className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-fg-muted"
-      title={t("chat.planActiveHint")}
+      title={presentation.title}
     >
-      <LightbulbIcon className="size-3.5" />
-      <span>{t("chat.plan")}</span>
+      <Icon className="size-3.5" aria-hidden="true" />
+      <span>{presentation.label}</span>
     </span>
   );
 }

@@ -11,6 +11,7 @@
  *   Renderer → Main (request/response, ipcMain.handle)
  *     session.start    { session_id, agent_id, cwd?, resume? }
  *     session.prompt   { session_id, turn_id, text }
+ *     session.runCommand { session_id, command, args? }
  *     session.cancel   { session_id, turn_id }
  *     session.dispose  { session_id }
  *
@@ -27,11 +28,13 @@
  */
 
 import { spawn as childSpawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   initialSessionLifecycle,
   reduceSessionLifecycle,
   type SessionLifecycle,
 } from "@openma/common/session-kernel";
+import { createOpenMAEvent } from "@openma/common/session-events/openma";
 import { access, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -45,16 +48,29 @@ import {
 } from "@open-managed-agents-desktop/acp";
 import { NodeSpawner } from "@open-managed-agents-desktop/acp/node-spawner";
 import { resolveKnownAgent, type KnownAgentEntry } from "@open-managed-agents-desktop/acp/registry";
+import {
+  sessionUpdateInner,
+  sessionUpdateType,
+} from "@openma/common/session-events/acp";
 import type {
+  AcpPromptUsage,
   PromptAnnotation,
   PromptAttachment,
   SessionConfigOption,
   SessionEventOut,
   SessionPromptParams,
+  SessionPromptQueueCommandParams,
+  SessionRunCommandParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
 } from "../shared/session-events.js";
+import type {
+  ElicitationFormRequestInfo,
+  ElicitationFormResponseInfo,
+  ElicitationUrlRequestInfo,
+  ElicitationUrlResponseInfo,
+} from "../shared/api.js";
 import { extractAcpSystemNotice } from "../shared/acp-system-notices.js";
 import type { AgentMessageDelivery } from "../shared/agent-interaction.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
@@ -66,6 +82,11 @@ import {
   touchSession,
   upsertSession,
 } from "./sql-store.js";
+import { composePromptContext } from "./session-prompt-context.js";
+import { desktopCliPath } from "./cli-path.js";
+import { logAppEvent } from "./app-log.js";
+import { extensionRequestHandlerForHarness } from "./acp-extension-adapters.js";
+import { elicitationCallbackForSession } from "./acp-client-callback-adapters.js";
 
 export type Sender = (msg: SessionEventOut) => void;
 
@@ -75,11 +96,23 @@ interface ActiveSession {
   acpSessionId: string;
   agentId: string;
   cwd: string;
+  additionalDirectories: string[];
+  projectId?: string;
   /** Live turns keyed by turn_id. abort() cancels the ACP request and unwinds
    *  the prompt() async iterator. */
   turns: Map<string, AbortController>;
-  promptQueue: Promise<void>;
+  /** Client-side view of ACP tools that have not reported a wire terminal
+   * status yet, grouped by the OpenMA turn that owns them. */
+  openToolCallsByTurn: Map<string, Set<string>>;
   activePromptTurnId: string | null;
+  /** Queue turns explicitly promoted to concurrent ACP prompts by Steer. */
+  steeringPromptTurnIds: Set<string>;
+  /** A vendor steering extension may start a full turn after the host-owned
+   * prompt has already unwound. Its ACP updates then arrive through the
+   * runtime's out-of-band callback until the harness adapter observes a
+   * wire-level terminal fact. */
+  outOfBandSteeringTurn: OutOfBandSteeringTurn | null;
+  pendingOutOfBandSteeringUpdates: unknown[];
   queuedPrompts: QueuedPrompt[];
   promptQueueEnabled: boolean;
   /** Main-process timestamp used only for start→prompt latency diagnostics. */
@@ -87,10 +120,25 @@ interface ActiveSession {
   disposed: boolean;
 }
 
-interface QueuedPrompt {
+interface OutOfBandSteeringTurn {
   turnId: string;
-  text: string;
+  completion: Promise<void>;
+  resolveCompletion: () => void;
+  cancelRequested: boolean;
+  sawActivity: boolean;
+  settled: boolean;
+}
+
+interface QueuedPrompt {
+  params: SessionPromptParams;
+  options: RunPromptOptions;
   createdAt: number;
+  completion: Promise<void>;
+  resolveCompletion: () => void;
+}
+
+interface RunPromptOptions {
+  persistUserPrompt?: boolean;
 }
 
 export interface SessionManagerDeps {
@@ -106,7 +154,21 @@ export interface SessionManagerDeps {
    *  given session_id so brokers know which window to dispatch to. The
    *  spawn cwd is passed so the fs broker can scope "inside cwd → auto
    *  allow" without re-deriving the path. */
-  buildCallbacks: (sessionId: string, sessionCwd: string) => ClientCallbacks;
+  buildCallbacks: (
+    sessionId: string,
+    sessionCwd: string,
+    additionalDirectories: readonly string[],
+    agentId: string,
+  ) => ClientCallbacks;
+  /** OpenMA's existing approval/elicitation slot for typed ACP form input. */
+  requestElicitationForm?: (
+    request: ElicitationFormRequestInfo,
+  ) => Promise<ElicitationFormResponseInfo>;
+  /** URL-mode elicitation reuses the same blocking ask slot, but the main
+   * broker owns opening the target after explicit user consent. */
+  requestElicitationUrl?: (
+    request: ElicitationUrlRequestInfo,
+  ) => Promise<ElicitationUrlResponseInfo>;
   /** Settings-driven runtime preferences consulted by `start()`.
    *
    *  `agentOverride` lets per-agent config (custom command, extra env)
@@ -135,6 +197,8 @@ export class SessionManager {
   #send: Sender;
   #resolveMcpServers: SessionManagerDeps["resolveMcpServers"];
   #buildCallbacks: SessionManagerDeps["buildCallbacks"];
+  #requestElicitationForm: SessionManagerDeps["requestElicitationForm"];
+  #requestElicitationUrl: SessionManagerDeps["requestElicitationUrl"];
   #resolveDefaults: SessionManagerDeps["resolveDefaults"];
   #resolveAgentOverride: SessionManagerDeps["resolveAgentOverride"];
   #spawner = new NodeSpawner();
@@ -148,6 +212,8 @@ export class SessionManager {
     this.#send = deps.send;
     this.#resolveMcpServers = deps.resolveMcpServers;
     this.#buildCallbacks = deps.buildCallbacks;
+    this.#requestElicitationForm = deps.requestElicitationForm;
+    this.#requestElicitationUrl = deps.requestElicitationUrl;
     this.#resolveDefaults = deps.resolveDefaults;
     this.#resolveAgentOverride = deps.resolveAgentOverride;
   }
@@ -158,7 +224,10 @@ export class SessionManager {
 
   #readyResult(
     session_id: string,
-    sess: Pick<ActiveSession, "acpSessionId" | "agentId" | "cwd" | "acp">,
+    sess: Pick<
+      ActiveSession,
+      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "acp"
+    >,
   ): SessionStartResult {
     this.#transition(session_id, {
       type: "session.ready",
@@ -170,8 +239,25 @@ export class SessionManager {
       acp_session_id: sess.acpSessionId,
       agent_id: sess.agentId,
       cwd: sess.cwd,
+      additional_directories: sess.additionalDirectories,
+      project_id: sess.projectId,
       config_options: [...sess.acp.configOptions],
+      modes: sess.acp.modes ?? undefined,
+      protocol_version: sess.acp.protocolVersion ?? undefined,
+      agent_info: sess.acp.agentInfo ?? undefined,
+      agent_capabilities: sess.acp.agentCapabilities,
+      initialize_meta: sess.acp.initializeMeta,
+      session_setup_meta: sess.acp.sessionSetupMeta,
       supports_session_fork: sess.acp.supportsSessionFork,
+      supports_session_list: sess.acp.supportsSessionList,
+      supports_session_delete: sess.acp.supportsSessionDelete,
+      supports_session_resume: sess.acp.supportsSessionResume,
+      supports_session_close: sess.acp.supportsSessionClose,
+      supports_additional_directories: sess.acp.supportsAdditionalDirectories,
+      supports_logout: sess.acp.supportsLogout,
+      supports_providers: sess.acp.supportsProviders,
+      supports_nes: sess.acp.supportsNes,
+      supports_steering: sess.acp.supportsSteering,
     };
     this.#send({
       type: "session.ready",
@@ -179,8 +265,25 @@ export class SessionManager {
       acp_session_id: result.acp_session_id,
       agent_id: result.agent_id,
       cwd: result.cwd,
+      additional_directories: result.additional_directories,
+      project_id: result.project_id,
       config_options: result.config_options,
+      modes: result.modes,
+      protocol_version: result.protocol_version,
+      agent_info: result.agent_info,
+      agent_capabilities: result.agent_capabilities,
+      initialize_meta: result.initialize_meta,
+      session_setup_meta: result.session_setup_meta,
       supports_session_fork: result.supports_session_fork,
+      supports_session_list: result.supports_session_list,
+      supports_session_delete: result.supports_session_delete,
+      supports_session_resume: result.supports_session_resume,
+      supports_session_close: result.supports_session_close,
+      supports_additional_directories: result.supports_additional_directories,
+      supports_logout: result.supports_logout,
+      supports_providers: result.supports_providers,
+      supports_nes: result.supports_nes,
+      supports_steering: result.supports_steering,
     });
     return result;
   }
@@ -217,6 +320,7 @@ export class SessionManager {
   announceAll(): void {
     for (const [session_id, sess] of this.#sessions) {
       this.#readyResult(session_id, sess);
+      this.#sendPromptQueueUpdate(sess);
     }
   }
 
@@ -241,7 +345,9 @@ export class SessionManager {
     // Idempotent re-ack.
     const existing = this.#sessions.get(p.session_id);
     if (existing) {
-      return this.#readyResult(p.session_id, existing);
+      const result = this.#readyResult(p.session_id, existing);
+      this.#sendPromptQueueUpdate(existing);
+      return result;
     }
 
     // Agent selection belongs to the renderer's recent-run preference. The
@@ -313,6 +419,20 @@ export class SessionManager {
       agent.id,
       agentEnv,
     );
+    const additionalDirectories: string[] = [];
+    const seenDirectories = new Set([sessionCwd]);
+    for (const rawDirectory of p.additional_directories ?? []) {
+      const directory = rawDirectory.trim();
+      if (!directory || seenDirectories.has(directory)) continue;
+      if (!isAbsolute(directory)) {
+        return this.#errorResult(
+          p.session_id,
+          `additional workspace directory must be absolute: ${directory}`,
+        );
+      }
+      seenDirectories.add(directory);
+      additionalDirectories.push(directory);
+    }
     if (process.env.NODE_ENV !== "test") {
       process.stderr.write(
         `[session-cwd] sid=${p.session_id.slice(0, 12)} mode=${p.workspace_mode ?? "managed-fallback"} requested=${p.cwd ?? "(none)"} resolved=${sessionCwd}\n`,
@@ -323,37 +443,109 @@ export class SessionManager {
       if (this.#cancelledStarts.has(p.session_id)) {
         return { status: "cancelled", session_id: p.session_id };
       }
+      let activeForOutOfBandUpdates: ActiveSession | undefined;
+      const pendingOutOfBandUpdates: unknown[] = [];
+      const clientCallbacks = this.#buildCallbacks(
+        p.session_id,
+        sessionCwd,
+        additionalDirectories,
+        agent.id,
+      );
+      const extensionRequest = extensionRequestHandlerForHarness({
+        agentId: agent.id,
+        sessionId: p.session_id,
+        requestPermission: clientCallbacks.requestPermission,
+      });
+      const harnessCreateElicitation = clientCallbacks.createElicitation;
+      const createElicitation = harnessCreateElicitation
+        ?? elicitationCallbackForSession({
+          sessionId: p.session_id,
+          requestPermission: clientCallbacks.requestPermission,
+          requestForm: this.#requestElicitationForm,
+          requestUrl: this.#requestElicitationUrl,
+        });
+      const supportsFormElicitation = Boolean(
+        this.#requestElicitationForm || clientCallbacks.requestPermission,
+      );
+      const supportsUrlElicitation = Boolean(this.#requestElicitationUrl);
+      const runtimeCallbacks: ClientCallbacks = {
+        ...clientCallbacks,
+        ...(createElicitation ? { createElicitation } : {}),
+        ...(extensionRequest ? { extensionRequest } : {}),
+      };
       const runtimeStartedAt = Date.now();
+      logAppEvent("acp.session.start", {
+        session_id: p.session_id,
+        agent_id: agent.id,
+        command,
+        cwd: sessionCwd,
+      });
       const acpSession = await this.#runtime.start({
         agent: {
           command,
           args,
           cwd: sessionCwd,
           env: runtimeAgentEnv,
+          onDiagnosticLine: (line) => {
+            logAppEvent("acp.process.diagnostic", {
+              session_id: p.session_id,
+              agent_id: agent.id,
+              line: sanitizeDiagnosticLine(line),
+            });
+          },
         },
         mcpServers: this.#resolveMcpServers(agent.id, p.session_id) as never,
+        additionalDirectories,
+        ...(sessionRequestMetaForHarness(agent.id)
+          ? { sessionRequestMeta: sessionRequestMetaForHarness(agent.id) }
+          : {}),
         resumeAcpSessionId: p.resume?.acp_session_id,
         forkFromAcpSessionId: p.fork?.acp_session_id,
-        clientCallbacks: this.#buildCallbacks(p.session_id, sessionCwd),
+        ...(!harnessCreateElicitation && createElicitation
+          ? {
+              clientElicitationCapabilities: {
+                ...(supportsFormElicitation ? { form: {} } : {}),
+                ...(supportsUrlElicitation ? { url: {} } : {}),
+              },
+            }
+          : {}),
+        clientCallbacks: runtimeCallbacks,
+        onOutOfBandSessionUpdate: (update) => {
+          if (activeForOutOfBandUpdates) {
+            this.#handleOutOfBandSessionUpdate(activeForOutOfBandUpdates, update);
+          } else {
+            pendingOutOfBandUpdates.push(update);
+          }
+        },
       });
       if (this.#cancelledStarts.has(p.session_id)) {
         await Promise.resolve(acpSession.dispose()).catch(() => undefined);
         return { status: "cancelled", session_id: p.session_id };
       }
-      this.#sessions.set(p.session_id, {
+      const activeSession: ActiveSession = {
         id: p.session_id,
         acp: acpSession,
         acpSessionId: acpSession.acpSessionId,
         agentId: agent.id,
         cwd: sessionCwd,
+        additionalDirectories,
+        projectId: p.project_id?.trim() || undefined,
         turns: new Map(),
-        promptQueue: Promise.resolve(),
+        openToolCallsByTurn: new Map(),
         activePromptTurnId: null,
+        steeringPromptTurnIds: new Set(),
+        outOfBandSteeringTurn: null,
+        pendingOutOfBandSteeringUpdates: [],
         queuedPrompts: [],
         promptQueueEnabled: defaults.promptQueueEnabled !== false,
         readyAt: Date.now(),
         disposed: false,
-      });
+      };
+      activeForOutOfBandUpdates = activeSession;
+      this.#sessions.set(p.session_id, activeSession);
+      for (const update of pendingOutOfBandUpdates) {
+        this.#handleOutOfBandSessionUpdate(activeSession, update);
+      }
       // Persist the session shell — title stays empty for now, the renderer
       // can later derive it from the first user prompt or let the user
       // rename. ACP session id is captured so we can pass it back as
@@ -364,6 +556,7 @@ export class SessionManager {
         cwd: sessionCwd,
         acp_session_id: acpSession.acpSessionId,
         last_used_at: Date.now(),
+        project_id: p.project_id?.trim() || null,
       });
       const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
@@ -372,6 +565,13 @@ export class SessionManager {
         process.stderr.write(
           `[session-latency] sid=${p.session_id.slice(0, 12)} agent=${agent.id} start_ready_ms=${readyAt - startRequestedAt} prepare_ms=${runtimeStartedAt - startRequestedAt} runtime_ms=${readyAt - runtimeStartedAt}\n`,
         );
+        logAppEvent("acp.session.ready", {
+          session_id: p.session_id,
+          agent_id: agent.id,
+          total_ms: readyAt - startRequestedAt,
+          prepare_ms: runtimeStartedAt - startRequestedAt,
+          runtime_ms: readyAt - runtimeStartedAt,
+        });
       }
       const active = this.#sessions.get(p.session_id);
       if (active) {
@@ -387,6 +587,12 @@ export class SessionManager {
       if (this.#cancelledStarts.has(p.session_id)) {
         return { status: "cancelled", session_id: p.session_id };
       }
+      logAppEvent("acp.session.start_error", {
+        session_id: p.session_id,
+        agent_id: p.agent_id,
+        total_ms: Date.now() - startRequestedAt,
+        error: formatErrorChain(e),
+      });
       return this.#errorResult(
         p.session_id,
         e instanceof Error ? e.message : String(e),
@@ -405,6 +611,15 @@ export class SessionManager {
       });
       return;
     }
+    const requestedDelivery = p.requested_delivery ?? p.effective_delivery;
+    if (
+      requestedDelivery === "llm_boundary"
+      && sess.activePromptTurnId !== null
+      && sess.acp.supportsSteering
+      && sess.steeringPromptTurnIds.size === 0
+    ) {
+      return this.#steerPrompt(sess, p, sess.activePromptTurnId);
+    }
     if (process.env.NODE_ENV !== "test") {
       process.stderr.write(
         `[session-latency] sid=${p.session_id.slice(0, 12)} turn=${p.turn_id.slice(0, 12)} agent=${sess.agentId} ready_to_prompt_ms=${Date.now() - sess.readyAt}\n`,
@@ -422,7 +637,6 @@ export class SessionManager {
       return;
     }
 
-    const requestedDelivery = p.requested_delivery ?? p.effective_delivery;
     const prompt = {
       ...p,
       effective_delivery: effectiveDelivery,
@@ -433,62 +647,426 @@ export class SessionManager {
     return this.#dispatchPrompt(sess, prompt);
   }
 
-  #dispatchPrompt(sess: ActiveSession, p: SessionPromptParams): Promise<void> {
-    const wasBusy = this.#promptBusy(sess);
-    if (wasBusy) {
-      this.#queuePrompt(sess, p);
+  #recordSteeringInput(
+    p: SessionPromptParams,
+    activeTurnId: string,
+    displayText: string,
+    outcome: Awaited<ReturnType<AcpSession["steer"]>>,
+    effectiveDelivery: AgentMessageDelivery,
+    deliveryDegraded: boolean,
+    error?: string,
+  ) {
+    const steeringData = {
+      text: displayText,
+      attachments: stripAttachmentData(p.attachments),
+      annotations: p.annotations,
+      session_references: p.session_references,
+      delivery: {
+        prompt_intent: p.prompt_intent,
+        requested_delivery: "llm_boundary" as const,
+        effective_delivery: effectiveDelivery,
+        delivery_degraded: deliveryDegraded,
+        outcome,
+        active_turn_id: activeTurnId,
+        ...(error ? { error } : {}),
+      },
+    };
+    const event = createOpenMAEvent({
+      event_id: `user-message:${p.session_id}:${p.turn_id}`,
+      type: "user.message",
+      session_id: p.session_id,
+      turn_id: p.turn_id,
+      source: { kind: "user" },
+      occurred_at: new Date().toISOString(),
+      data: {
+        text: displayText,
+        attachments: steeringData.attachments,
+        annotations: steeringData.annotations,
+        session_references: steeringData.session_references,
+        input_kind: "steering",
+        active_turn_id: activeTurnId,
+        prompt_intent: p.prompt_intent,
+        requested_delivery: "llm_boundary",
+        effective_delivery: effectiveDelivery,
+        delivery_degraded: deliveryDegraded,
+        outcome,
+        ...(error ? { error } : {}),
+      },
+      raw: {
+        kind: "raw",
+        source: "transport",
+        event_type: "user_prompt",
+        payload: steeringData,
+        received_at: new Date().toISOString(),
+        reason: "unknown",
+      },
+    });
+    appendEvent(p.session_id, "user_prompt", steeringData);
+    touchSession(p.session_id);
+    return event;
+  }
+
+  async #steerPrompt(
+    sess: ActiveSession,
+    p: SessionPromptParams,
+    activeTurnId: string,
+  ): Promise<void> {
+    if (sess.disposed) return;
+    sess.steeringPromptTurnIds.add(p.turn_id);
+    this.#sendPromptQueueUpdate(sess);
+    const promptBlocks = buildAcpPromptBlocks(p, sess.acp.promptCapabilities);
+    const displayText = derivePromptDisplayText(
+      p.text,
+      p.attachments,
+      p.annotations?.length ?? 0,
+      p.session_references?.length ?? 0,
+    );
+    let outcome: Awaited<ReturnType<AcpSession["steer"]>>;
+    try {
+      outcome = await sess.acp.steer(promptBlocks);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const steeringInputEvent = this.#recordSteeringInput(
+        p,
+        activeTurnId,
+        displayText,
+        "failed",
+        "turn_end",
+        true,
+        message,
+      );
+      this.#send({
+        type: "session.steering",
+        session_id: p.session_id,
+        turn_id: p.turn_id,
+        active_turn_id: activeTurnId,
+        text: displayText,
+        content: promptBlocks,
+        prompt_intent: p.prompt_intent,
+        requested_delivery: "llm_boundary",
+        effective_delivery: "turn_end",
+        delivery_degraded: true,
+        outcome: "failed",
+        error: message,
+        openma_event: steeringInputEvent,
+      });
+      this.#flushUnclaimedOutOfBandUpdates(sess);
+      sess.steeringPromptTurnIds.delete(p.turn_id);
+      const completion = this.#dispatchPrompt(sess, {
+        ...p,
+        effective_delivery: "turn_end",
+        delivery_degraded: true,
+      }, { persistUserPrompt: false });
+      this.#drainPromptQueue(sess);
+      this.#sendPromptQueueUpdate(sess);
+      return completion;
+    }
+    if (outcome === "promptRequired" || outcome === "failed") {
+      const steeringInputEvent = this.#recordSteeringInput(
+        p,
+        activeTurnId,
+        displayText,
+        outcome,
+        "turn_end",
+        true,
+      );
+      this.#send({
+        type: "session.steering",
+        session_id: p.session_id,
+        turn_id: p.turn_id,
+        active_turn_id: activeTurnId,
+        text: displayText,
+        content: promptBlocks,
+        prompt_intent: p.prompt_intent,
+        requested_delivery: "llm_boundary",
+        effective_delivery: "turn_end",
+        delivery_degraded: true,
+        outcome,
+        openma_event: steeringInputEvent,
+      });
+      this.#flushUnclaimedOutOfBandUpdates(sess);
+      sess.steeringPromptTurnIds.delete(p.turn_id);
+      const completion = this.#dispatchPrompt(sess, {
+        ...p,
+        effective_delivery: "turn_end",
+        delivery_degraded: true,
+      }, { persistUserPrompt: false });
+      this.#drainPromptQueue(sess);
+      this.#sendPromptQueueUpdate(sess);
+      return completion;
+    }
+    if (outcome !== "injected" && outcome !== "startedNewTurn") {
+      this.#flushUnclaimedOutOfBandUpdates(sess);
+      sess.steeringPromptTurnIds.delete(p.turn_id);
+      this.#drainPromptQueue(sess);
+      this.#sendPromptQueueUpdate(sess);
+      return;
+    }
+
+    const steeringInputEvent = this.#recordSteeringInput(
+      p,
+      activeTurnId,
+      displayText,
+      outcome,
+      "llm_boundary",
+      p.delivery_degraded ?? false,
+    );
+    this.#send({
+      type: "session.steering",
+      session_id: p.session_id,
+      turn_id: p.turn_id,
+      active_turn_id: activeTurnId,
+      text: displayText,
+      content: promptBlocks,
+      prompt_intent: p.prompt_intent,
+      requested_delivery: "llm_boundary",
+      effective_delivery: "llm_boundary",
+      delivery_degraded: p.delivery_degraded ?? false,
+      outcome,
+      openma_event: steeringInputEvent,
+    });
+
+    if (outcome === "startedNewTurn") {
+      let resolveCompletion!: () => void;
+      const completion = new Promise<void>((resolve) => {
+        resolveCompletion = resolve;
+      });
+      const outOfBandTurn: OutOfBandSteeringTurn = {
+        turnId: p.turn_id,
+        completion,
+        resolveCompletion,
+        cancelRequested: false,
+        sawActivity: false,
+        settled: false,
+      };
+      sess.outOfBandSteeringTurn = outOfBandTurn;
+      this.#sendPromptQueueUpdate(sess);
+      const pending = sess.pendingOutOfBandSteeringUpdates.splice(0);
+      for (const update of pending) {
+        this.#handleOutOfBandSessionUpdate(sess, update);
+      }
+      // `startedNewTurn` is returned only after the adapter's turn-start
+      // callback fires. Mark that wire-confirmed start after replaying any
+      // buffered status from the previous turn, so a stale leading `idle`
+      // cannot terminate this new turn.
+      if (!outOfBandTurn.settled) outOfBandTurn.sawActivity = true;
+      await completion;
+      if (sess.outOfBandSteeringTurn === outOfBandTurn) {
+        sess.outOfBandSteeringTurn = null;
+      }
     } else {
-      sess.activePromptTurnId = p.turn_id;
+      this.#flushUnclaimedOutOfBandUpdates(sess);
+    }
+
+    sess.steeringPromptTurnIds.delete(p.turn_id);
+    if (!sess.disposed) {
+      this.#drainPromptQueue(sess);
       this.#sendPromptQueueUpdate(sess);
     }
-    const run = async () => {
-      if (sess.disposed) return;
-      if (wasBusy) {
-        sess.queuedPrompts = sess.queuedPrompts.filter((prompt) => prompt.turnId !== p.turn_id);
-        sess.activePromptTurnId = p.turn_id;
-        if (!sess.disposed) this.#sendPromptQueueUpdate(sess);
-      }
-      try {
-        await this.#runPrompt(sess, p);
-      } finally {
-        if (sess.activePromptTurnId === p.turn_id) {
-          sess.activePromptTurnId = null;
-        }
-        this.#sendPromptQueueUpdate(sess);
-      }
-    };
-    sess.promptQueue = sess.promptQueue.then(run, run);
-    return sess.promptQueue;
+  }
+
+  async runCommand(p: SessionRunCommandParams): Promise<void> {
+    const sess = this.#sessions.get(p.session_id);
+    if (!sess) throw new Error("no such session");
+    const command = p.command.trim().toLowerCase();
+    const args = p.args?.trim() ?? "";
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(command)) {
+      throw new Error("invalid ACP command");
+    }
+    if (/[\r\n]/.test(args)) throw new Error("invalid ACP command arguments");
+    const turnId = `control-${randomUUID()}`;
+    const text = `/${command}${args ? ` ${args}` : ""}`;
+    this.#send({
+      type: "session.command_invoked",
+      session_id: p.session_id,
+      turn_id: turnId,
+      command,
+      ...(args ? { args } : {}),
+      text,
+    });
+    return this.#dispatchPrompt(
+      sess,
+      {
+        session_id: p.session_id,
+        turn_id: turnId,
+        text,
+      },
+      { persistUserPrompt: false },
+    );
+  }
+
+  #dispatchPrompt(
+    sess: ActiveSession,
+    p: SessionPromptParams,
+    options: RunPromptOptions = {},
+  ): Promise<void> {
+    if (this.#promptBusy(sess)) {
+      return this.#queuePrompt(sess, p, options);
+    }
+    return this.#executePrompt(sess, p, options);
   }
 
   #promptBusy(sess: ActiveSession): boolean {
-    return sess.activePromptTurnId !== null || sess.queuedPrompts.length > 0;
+    return (
+      sess.activePromptTurnId !== null
+      || sess.queuedPrompts.length > 0
+      || sess.steeringPromptTurnIds.size > 0
+    );
   }
 
-  #queuePrompt(sess: ActiveSession, p: SessionPromptParams): void {
-    const existing = sess.queuedPrompts.find((prompt) => prompt.turnId === p.turn_id);
+  #queuePrompt(
+    sess: ActiveSession,
+    p: SessionPromptParams,
+    options: RunPromptOptions,
+  ): Promise<void> {
+    const existing = sess.queuedPrompts.find(
+      (prompt) => prompt.params.turn_id === p.turn_id,
+    );
     if (existing) {
-      existing.text = p.text;
+      existing.params = p;
+      existing.options = options;
+      this.#sendPromptQueueUpdate(sess);
+      return existing.completion;
     } else {
+      let resolveCompletion!: () => void;
+      const completion = new Promise<void>((resolve) => {
+        resolveCompletion = resolve;
+      });
       sess.queuedPrompts.push({
-        turnId: p.turn_id,
-        text: p.text,
+        params: p,
+        options,
         createdAt: Date.now(),
+        completion,
+        resolveCompletion,
+      });
+    }
+    this.#sendPromptQueueUpdate(sess);
+    return sess.queuedPrompts.at(-1)!.completion;
+  }
+
+  async #executePrompt(
+    sess: ActiveSession,
+    p: SessionPromptParams,
+    options: RunPromptOptions,
+  ): Promise<void> {
+    if (sess.disposed) return;
+    sess.activePromptTurnId = p.turn_id;
+    this.#sendPromptQueueUpdate(sess);
+    try {
+      await this.#runPrompt(sess, p, options);
+    } finally {
+      if (sess.activePromptTurnId === p.turn_id) {
+        sess.activePromptTurnId = null;
+      }
+      if (!sess.disposed) {
+        this.#drainPromptQueue(sess);
+        if (sess.activePromptTurnId === null) this.#sendPromptQueueUpdate(sess);
+      }
+    }
+  }
+
+  #drainPromptQueue(sess: ActiveSession): boolean {
+    if (
+      sess.disposed
+      || sess.activePromptTurnId !== null
+      || sess.steeringPromptTurnIds.size > 0
+    ) return false;
+    const next = sess.queuedPrompts.shift();
+    if (!next) return false;
+    void this.#executePrompt(sess, next.params, next.options).finally(
+      next.resolveCompletion,
+    );
+    return true;
+  }
+
+  updatePromptQueue(p: SessionPromptQueueCommandParams): void {
+    const sess = this.#sessions.get(p.session_id);
+    if (!sess) throw new Error("no such session");
+
+    if (p.action === "steer") {
+      this.#steerQueuedPrompt(sess, p.turn_id);
+      return;
+    }
+    if (p.action === "clear") {
+      for (const prompt of sess.queuedPrompts) prompt.resolveCompletion();
+      sess.queuedPrompts = [];
+    } else if (p.action === "remove") {
+      for (const prompt of sess.queuedPrompts) {
+        if (prompt.params.turn_id === p.turn_id) prompt.resolveCompletion();
+      }
+      sess.queuedPrompts = sess.queuedPrompts.filter(
+        (prompt) => prompt.params.turn_id !== p.turn_id,
+      );
+    } else if (p.action === "update") {
+      const text = p.text.trim();
+      if (!text) throw new Error("queued prompt text is required");
+      const queued = sess.queuedPrompts.find(
+        (prompt) => prompt.params.turn_id === p.turn_id,
+      );
+      if (queued) queued.params = { ...queued.params, text };
+    } else {
+      const order = new Map<string, number>();
+      for (const [index, turnId] of p.turn_ids.entries()) {
+        if (!order.has(turnId)) order.set(turnId, index);
+      }
+      sess.queuedPrompts = [...sess.queuedPrompts].sort((left, right) => {
+        const leftIndex = order.get(left.params.turn_id);
+        const rightIndex = order.get(right.params.turn_id);
+        if (leftIndex === undefined && rightIndex === undefined) {
+          return left.createdAt - right.createdAt;
+        }
+        if (leftIndex === undefined) return 1;
+        if (rightIndex === undefined) return -1;
+        return leftIndex - rightIndex;
       });
     }
     this.#sendPromptQueueUpdate(sess);
   }
 
+  /** Inject one FIFO item into the active ACP turn through the negotiated
+   * steering extension. Never emulate steering with a concurrent prompt. */
+  #steerQueuedPrompt(sess: ActiveSession, turnId: string): void {
+    const index = sess.queuedPrompts.findIndex(
+      (prompt) => prompt.params.turn_id === turnId,
+    );
+    if (
+      index < 0
+      || sess.steeringPromptTurnIds.has(turnId)
+      || !sess.acp.supportsSteering
+      || sess.activePromptTurnId === null
+    ) return;
+    const [queued] = sess.queuedPrompts.splice(index, 1);
+    if (!queued) return;
+    void this.#steerPrompt(sess, {
+      ...queued.params,
+      prompt_intent: "steer",
+      requested_delivery: "llm_boundary",
+      effective_delivery: "llm_boundary",
+      delivery_degraded: false,
+    }, sess.activePromptTurnId)
+      .finally(() => {
+        queued.resolveCompletion();
+      });
+  }
+
   #sendPromptQueueUpdate(sess: ActiveSession): void {
     if (sess.disposed) return;
+    const activeTurnId =
+      sess.activePromptTurnId ?? sess.outOfBandSteeringTurn?.turnId ?? null;
+    const steeringTurnIds = [...sess.steeringPromptTurnIds].filter(
+      (turnId) => turnId !== activeTurnId,
+    );
     this.#send({
       type: "session.queue_update",
       session_id: sess.id,
       mode: "single",
-      active_turn_id: sess.activePromptTurnId,
+      active_turn_id: activeTurnId,
+      ...(steeringTurnIds.length > 0
+        ? { steering_turn_ids: steeringTurnIds }
+        : {}),
       queued: sess.queuedPrompts.map((prompt) => ({
-        turn_id: prompt.turnId,
-        text: prompt.text,
+        turn_id: prompt.params.turn_id,
+        text: prompt.params.text,
         created_at: prompt.createdAt,
       })),
     });
@@ -505,7 +1083,145 @@ export class SessionManager {
     }
   }
 
-  async #runPrompt(sess: ActiveSession, p: SessionPromptParams): Promise<void> {
+  #handleOutOfBandSessionUpdate(sess: ActiveSession, event: unknown): void {
+    if (sess.disposed) return;
+    const turn = sess.outOfBandSteeringTurn;
+    if (turn && !turn.settled) {
+      this.#forwardOutOfBandTurnUpdate(sess, turn.turnId, event);
+      if (isHarnessTurnActivity(sess.agentId, event)) {
+        turn.sawActivity = true;
+      }
+      if (turn.sawActivity && isHarnessTurnIdle(sess.agentId, event)) {
+        turn.settled = true;
+        if (turn.cancelRequested) {
+          appendEvent(sess.id, "turn_cancelled", { turn_id: turn.turnId });
+          this.#send({
+            type: "session.cancelled",
+            session_id: sess.id,
+            turn_id: turn.turnId,
+          });
+        } else {
+          this.#send({
+            type: "session.complete",
+            session_id: sess.id,
+            turn_id: turn.turnId,
+          });
+        }
+        turn.resolveCompletion();
+      }
+      return;
+    }
+
+    if (
+      sess.steeringPromptTurnIds.size > 0
+      && sess.activePromptTurnId === null
+    ) {
+      sess.pendingOutOfBandSteeringUpdates.push(event);
+      return;
+    }
+
+    this.#send({
+      type: "session.event",
+      session_id: sess.id,
+      turn_id: "",
+      event,
+    });
+  }
+
+  #forwardOutOfBandTurnUpdate(
+    sess: ActiveSession,
+    turnId: string,
+    event: unknown,
+  ): void {
+    const update = event as { sessionUpdate?: string } | null;
+    if (update?.sessionUpdate === "session_info_update") {
+      const title = (event as { title?: unknown }).title;
+      if (typeof title === "string" && title.trim()) {
+        setSessionTitle(sess.id, title.trim().slice(0, 500));
+      }
+    }
+    this.#trackOpenToolCall(sess, turnId, event);
+    this.#send({
+      type: "session.event",
+      session_id: sess.id,
+      turn_id: turnId,
+      event,
+    });
+  }
+
+  #trackOpenToolCall(
+    sess: ActiveSession,
+    turnId: string,
+    event: unknown,
+  ): void {
+    const updateType = sessionUpdateType(event);
+    if (updateType !== "tool_call" && updateType !== "tool_call_update") return;
+    const inner = sessionUpdateInner(event);
+    const toolCallId =
+      typeof inner.toolCallId === "string"
+        ? inner.toolCallId
+        : typeof inner.tool_call_id === "string"
+          ? inner.tool_call_id
+          : typeof inner.id === "string"
+            ? inner.id
+            : undefined;
+    if (!toolCallId) return;
+    const status = typeof inner.status === "string"
+      ? inner.status.toLowerCase()
+      : undefined;
+    const meta = eventRecord(inner._meta);
+    const terminalExit = eventRecord(meta?.terminal_exit);
+    const hasTerminalExit =
+      typeof terminalExit?.exit_code === "number"
+      || typeof terminalExit?.exitCode === "number"
+      || (
+        typeof terminalExit?.signal === "string"
+        && terminalExit.signal.length > 0
+      );
+    const calls = sess.openToolCallsByTurn.get(turnId) ?? new Set<string>();
+    if (
+      status === "completed"
+      || status === "failed"
+      || status === "cancelled"
+      || status === "canceled"
+      || hasTerminalExit
+    ) {
+      calls.delete(toolCallId);
+    } else {
+      calls.add(toolCallId);
+    }
+    if (calls.size > 0) sess.openToolCallsByTurn.set(turnId, calls);
+    else sess.openToolCallsByTurn.delete(turnId);
+  }
+
+  #preemptivelyCancelOpenTools(sess: ActiveSession, turnId: string): void {
+    for (const toolCallId of sess.openToolCallsByTurn.get(turnId) ?? []) {
+      this.#send({
+        type: "session.tool_cancelled",
+        session_id: sess.id,
+        turn_id: turnId,
+        tool_call_id: toolCallId,
+        reason: "user_stop",
+      });
+    }
+  }
+
+  #flushUnclaimedOutOfBandUpdates(sess: ActiveSession): void {
+    for (const event of sess.pendingOutOfBandSteeringUpdates.splice(0)) {
+      this.#send({
+        type: "session.event",
+        session_id: sess.id,
+        turn_id: "",
+        event,
+      });
+    }
+  }
+
+  async #runPrompt(
+    sess: ActiveSession,
+    p: SessionPromptParams,
+    options: RunPromptOptions,
+  ): Promise<void> {
     const promptStartedAt = Date.now();
     const ctrl = new AbortController();
     this.#transition(p.session_id, { type: "prompt.requested", turnId: p.turn_id });
@@ -529,28 +1245,67 @@ export class SessionManager {
     let thoughtText = "";
     let emittedVisibleOutput = false;
     let loggedFirstEvent = false;
+    let promptResponse: Record<string, unknown> | undefined;
     const observedEventTypes = new Set<string>();
     // Persist the user prompt up front — even if the turn errors halfway,
     // we want the user's message in the log for replay.
-    const displayText = derivePromptDisplayText(p.text, p.attachments, p.annotations?.length ?? 0);
-    appendEvent(p.session_id, "user_prompt", {
-      text: displayText,
-      attachments: stripAttachmentData(p.attachments),
-      annotations: p.annotations,
-    });
-    // First prompt seeds the session title — without this, sidebar rows
-    // for reload-restored sessions fall back to "agent · slug" and look
-    // identical to each other. derivePromptLabel matches the renderer's
-    // logic in ChatView.deriveLabel.
-    setSessionTitleIfEmpty(p.session_id, derivePromptLabel(displayText));
+    const displayText = derivePromptDisplayText(
+      p.text,
+      p.attachments,
+      p.annotations?.length ?? 0,
+      p.session_references?.length ?? 0,
+    );
+    if (options.persistUserPrompt !== false) {
+      const promptData = {
+        text: displayText,
+        attachments: stripAttachmentData(p.attachments),
+        annotations: p.annotations,
+        session_references: p.session_references,
+      };
+      appendEvent(p.session_id, "user_prompt", promptData);
+      appendEvent(
+        p.session_id,
+        "openma_event",
+        createOpenMAEvent({
+          event_id: `user-message:${p.session_id}:${p.turn_id}`,
+          type: "user.message",
+          session_id: p.session_id,
+          turn_id: p.turn_id,
+          source: { kind: "user" },
+          occurred_at: new Date().toISOString(),
+          data: {
+            ...promptData,
+            input_kind: "prompt",
+          },
+          raw: {
+            kind: "raw",
+            source: "transport",
+            event_type: "user_prompt",
+            payload: promptData,
+            received_at: new Date().toISOString(),
+            reason: "unknown",
+          },
+        }),
+      );
+      // First prompt seeds the session title — without this, sidebar rows
+      // for reload-restored sessions fall back to "agent · slug" and look
+      // identical to each other. derivePromptLabel matches the renderer's
+      // logic in ChatView.deriveLabel.
+      setSessionTitleIfEmpty(p.session_id, derivePromptLabel(displayText));
+    }
     touchSession(p.session_id);
 
     try {
       const promptBlocks = buildAcpPromptBlocks(p, sess.acp.promptCapabilities);
       for await (const ev of sess.acp.prompt(promptBlocks, { abortSignal: ctrl.signal })) {
-        if (ctrl.signal.aborted || sess.disposed) break;
+        if (sess.disposed) break;
         const t = (ev as { type?: string } | null | undefined)?.type;
-        if (t === "promptComplete") continue;
+        if (t === "promptComplete") {
+          promptResponse = eventRecord(
+            (ev as { response?: unknown }).response,
+          );
+          continue;
+        }
         if (t === "promptError") {
           promptErr = (ev as { error?: string }).error ?? "ACP prompt error (no message)";
           continue;
@@ -565,6 +1320,7 @@ export class SessionManager {
         }
         const ev2 = ev as { sessionUpdate?: string; content?: { type?: string; text?: string } } | null;
         const tag = ev2?.sessionUpdate;
+        this.#trackOpenToolCall(sess, p.turn_id, ev);
         if (tag === "session_info_update") {
           const title = (ev as { title?: unknown }).title;
           if (typeof title === "string" && title.trim()) {
@@ -583,12 +1339,12 @@ export class SessionManager {
             }
           }
         }
-        // Persist every ACP update, including future adapter events outside
-        // the protocol shape this client currently understands. Boundary
-        // rows retain the raw payload for gradual compatibility work.
+        // Classify every ACP update, including future adapter events outside
+        // the protocol shape this client currently understands. Persistence
+        // happens after canonical enrichment at the main-process boundary so
+        // one update cannot become both a raw row and a canonical row.
         const persistenceType = acpEventPersistenceType(ev);
         if (persistenceType) {
-          appendEvent(p.session_id, persistenceType, ev);
           if (!observedEventTypes.has(persistenceType)) {
             observedEventTypes.add(persistenceType);
             if (process.env.NODE_ENV !== "test") {
@@ -605,8 +1361,33 @@ export class SessionManager {
           event: ev,
         });
       }
+      const stopReason = typeof promptResponse?.stopReason === "string"
+        ? promptResponse.stopReason
+        : undefined;
       if (sess.disposed) {
         return;
+      } else if (ctrl.signal.aborted) {
+        appendEvent(p.session_id, "turn_cancelled", {
+          turn_id: p.turn_id,
+        });
+        this.#send({
+          type: "session.cancelled",
+          session_id: p.session_id,
+          turn_id: p.turn_id,
+        });
+      } else if (stopReason === "cancelled") {
+        appendEvent(p.session_id, "turn_cancelled", {
+          turn_id: p.turn_id,
+        });
+        this.#transition(p.session_id, {
+          type: "prompt.cancelled",
+          turnId: p.turn_id,
+        });
+        this.#send({
+          type: "session.cancelled",
+          session_id: p.session_id,
+          turn_id: p.turn_id,
+        });
       } else if (promptErr) {
         this.#transition(p.session_id, {
           type: "session.error",
@@ -642,22 +1423,42 @@ export class SessionManager {
           type: "session.complete",
           turnId: p.turn_id,
         });
-        this.#send({ type: "session.complete", session_id: p.session_id, turn_id: p.turn_id });
+        const usage = promptUsage(promptResponse?.usage);
+        const meta = eventRecord(promptResponse?._meta);
+        this.#send({
+          type: "session.complete",
+          session_id: p.session_id,
+          turn_id: p.turn_id,
+          ...(stopReason ? { stop_reason: stopReason } : {}),
+          ...(usage ? { usage } : {}),
+          ...(meta ? { meta } : {}),
+        });
       }
     } catch (e) {
       if (sess.disposed) return;
-      const message = e instanceof Error ? e.message : String(e);
-      this.#transition(p.session_id, {
-        type: "session.error",
-        turnId: p.turn_id,
-        message,
-      });
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        turn_id: p.turn_id,
-        message,
-      });
+      if (ctrl.signal.aborted) {
+        appendEvent(p.session_id, "turn_cancelled", {
+          turn_id: p.turn_id,
+        });
+        this.#send({
+          type: "session.cancelled",
+          session_id: p.session_id,
+          turn_id: p.turn_id,
+        });
+      } else {
+        const message = e instanceof Error ? e.message : String(e);
+        this.#transition(p.session_id, {
+          type: "session.error",
+          turnId: p.turn_id,
+          message,
+        });
+        this.#send({
+          type: "session.error",
+          session_id: p.session_id,
+          turn_id: p.turn_id,
+          message,
+        });
+      }
     } finally {
       if (!loggedFirstEvent && process.env.NODE_ENV !== "test") {
         process.stderr.write(
@@ -665,6 +1466,7 @@ export class SessionManager {
         );
       }
       sess.turns.delete(p.turn_id);
+      sess.openToolCallsByTurn.delete(p.turn_id);
       // thoughtText/assistantText accumulators are still maintained for
       // any in-process consumer; nothing reads them right now but we
       // keep the strings so the variable surface stays meaningful.
@@ -679,6 +1481,26 @@ export class SessionManager {
     const sess = this.#sessions.get(p.session_id);
     if (!sess) {
       throw new Error("no such session");
+    }
+    const usesLegacyModeContract =
+      p.config_id === "mode"
+      && typeof p.value === "string"
+      && !sess.acp.configOptions.some((option) => option.id === p.config_id)
+      && Boolean(
+        sess.acp.modes?.availableModes.some((mode) => mode.id === p.value),
+      );
+    if (usesLegacyModeContract) {
+      await sess.acp.setMode(p.value as string);
+      this.#send({
+        type: "session.event",
+        session_id: p.session_id,
+        turn_id: "",
+        event: {
+          sessionUpdate: "current_mode_update",
+          currentModeId: p.value,
+        },
+      });
+      return;
     }
     const configOptions = await sess.acp.setConfigOption(p.config_id, p.value);
     this.#send({
@@ -696,7 +1518,31 @@ export class SessionManager {
     const sess = this.#sessions.get(session_id);
     if (!sess) return;
     const turn = sess.turns.get(turn_id);
-    if (!turn) return;
+    if (!turn) {
+      const outOfBandTurn = sess.outOfBandSteeringTurn;
+      if (
+        !outOfBandTurn
+        || outOfBandTurn.turnId !== turn_id
+        || outOfBandTurn.settled
+        || outOfBandTurn.cancelRequested
+      ) return;
+      outOfBandTurn.cancelRequested = true;
+      this.#send({
+        type: "session.cancel_requested",
+        session_id,
+        turn_id,
+      });
+      this.#preemptivelyCancelOpenTools(sess, turn_id);
+      void sess.acp.cancelCurrentTurn().catch(() => {});
+      this.#onSessionPendingWorkCancelled?.(session_id);
+      return;
+    }
+    this.#send({
+      type: "session.cancel_requested",
+      session_id,
+      turn_id,
+    });
+    this.#preemptivelyCancelOpenTools(sess, turn_id);
     turn.abort();
     this.#transition(session_id, { type: "prompt.cancelled", turnId: turn_id });
     this.#onSessionPendingWorkCancelled?.(session_id);
@@ -737,6 +1583,7 @@ export class SessionManager {
     const sess = this.#sessions.get(session_id);
     if (!sess) return;
     sess.disposed = true;
+    for (const prompt of sess.queuedPrompts) prompt.resolveCompletion();
     sess.queuedPrompts = [];
     for (const ctrl of sess.turns.values()) ctrl.abort();
     await Promise.resolve(sess.acp.dispose()).catch(() => undefined);
@@ -771,6 +1618,49 @@ export class SessionManager {
   }
 }
 
+function sessionRequestMetaForHarness(
+  agentId: string,
+): Record<string, unknown> | undefined {
+  const normalized = agentId.trim().toLowerCase();
+  if (
+    normalized !== "claude-acp"
+    && !normalized.includes("claude-code")
+  ) {
+    return undefined;
+  }
+  return {
+    claudeCode: {
+      emitRawSDKMessages: [
+        { type: "system", subtype: "task_started" },
+        { type: "system", subtype: "task_updated" },
+        { type: "system", subtype: "task_progress" },
+        { type: "system", subtype: "task_notification" },
+        { type: "system", subtype: "background_tasks_changed" },
+        { type: "user", origin: "task-notification" },
+      ],
+    },
+  };
+}
+
+function formatErrorChain(error: unknown): string {
+  const messages: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current != null; depth += 1) {
+    const message = current instanceof Error ? current.message : String(current);
+    if (message && messages.at(-1) !== message) messages.push(message);
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return messages.join(" <- ").slice(0, 4_000);
+}
+
+function sanitizeDiagnosticLine(line: string): string {
+  return line
+    .replace(/\bBearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "sk-[redacted]")
+    .replace(/\b(api[_-]?key|token|secret)\s*[=:]\s*\S+/gi, "$1=[redacted]")
+    .slice(0, 4_000);
+}
+
 function isUserVisibleAcpEvent(
   event:
     | {
@@ -783,7 +1673,10 @@ function isUserVisibleAcpEvent(
   if (tag === "agent_message_chunk" || tag === "agent_thought_chunk") {
     return event?.content?.type === "text" && (event.content.text?.length ?? 0) > 0;
   }
-  return tag === "tool_call" || tag === "tool_call_update" || tag === "plan";
+  return tag === "tool_call"
+    || tag === "tool_call_update"
+    || tag === "plan"
+    || tag === "plan_update";
 }
 
 const KNOWN_ACP_SESSION_UPDATES = new Set([
@@ -894,12 +1787,13 @@ async function prepareAcpToolEnvironment(
   agentId: string,
   base: Record<string, string | undefined>,
 ): Promise<Record<string, string | undefined>> {
-  if (agentId !== "codex-acp" || base.XDG_CACHE_HOME) return base;
+  const withPath = { ...base, PATH: desktopCliPath() };
+  if (agentId !== "codex-acp" || base.XDG_CACHE_HOME) return withPath;
   const cacheBase = process.platform === "darwin" ? "/private/tmp" : tmpdir();
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
   const cacheRoot = join(cacheBase, `openma-acp-cache-${uid}`);
   await mkdir(join(cacheRoot, "fontconfig"), { recursive: true });
-  return { ...base, XDG_CACHE_HOME: cacheRoot };
+  return { ...withPath, XDG_CACHE_HOME: cacheRoot };
 }
 
 function buildAcpPromptBlocks(
@@ -942,7 +1836,11 @@ function composeAnnotatedPromptText(p: SessionPromptParams): string {
   const annotations = (p.annotations ?? []).filter(
     (annotation) => annotation.text.trim().length > 0,
   );
-  if (annotations.length === 0) return p.text;
+  const promptWithSessions = composePromptContext({
+    text: p.text,
+    sessionReferences: p.session_references,
+  });
+  if (annotations.length === 0) return promptWithSessions;
 
   const numberedAnnotations = annotations.map((annotation, index) => ({
     annotation,
@@ -987,7 +1885,9 @@ function composeAnnotatedPromptText(p: SessionPromptParams): string {
   }
 
   const context = sections.join("\n\n");
-  return p.text.trim().length > 0 ? `${context}\n\n${p.text}` : context;
+  return promptWithSessions.trim().length > 0
+    ? `${context}\n\n${promptWithSessions}`
+    : context;
 }
 
 function formatBrowserComment(annotation: PromptAnnotation, index: number): string {
@@ -1049,6 +1949,64 @@ function browserTargetLabel(element: NonNullable<PromptAnnotation["browser"]>): 
   return element.tag_name;
 }
 
+const CODEX_TURN_ACTIVITY_UPDATES = new Set([
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+  "plan",
+  "plan_update",
+  "usage_update",
+]);
+
+function eventRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object"
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function promptUsage(value: unknown): AcpPromptUsage | undefined {
+  const usage = eventRecord(value);
+  if (
+    typeof usage?.totalTokens !== "number"
+    || typeof usage.inputTokens !== "number"
+    || typeof usage.outputTokens !== "number"
+  ) {
+    return undefined;
+  }
+  return usage as unknown as AcpPromptUsage;
+}
+
+function outOfBandUpdateRecord(event: unknown): Record<string, unknown> {
+  const outer = eventRecord(event) ?? {};
+  return eventRecord(outer.update) ?? outer;
+}
+
+function codexThreadStatus(event: unknown): string | undefined {
+  const update = outOfBandUpdateRecord(event);
+  if (update.sessionUpdate !== "session_info_update") return undefined;
+  const meta = eventRecord(update._meta);
+  const codex = eventRecord(meta?.codex);
+  const threadStatus = eventRecord(codex?.threadStatus);
+  return typeof threadStatus?.type === "string"
+    ? threadStatus.type.toLowerCase()
+    : undefined;
+}
+
+/** Per-harness adapter boundary for an extension-owned turn. Common keeps
+ * the update raw; only the Codex adapter interprets its vendor status meta. */
+function isHarnessTurnActivity(agentId: string, event: unknown): boolean {
+  if (agentId !== "codex-acp") return false;
+  if (codexThreadStatus(event) === "active") return true;
+  const updateType = outOfBandUpdateRecord(event).sessionUpdate;
+  return typeof updateType === "string"
+    && CODEX_TURN_ACTIVITY_UPDATES.has(updateType);
+}
+
+function isHarnessTurnIdle(agentId: string, event: unknown): boolean {
+  return agentId === "codex-acp" && codexThreadStatus(event) === "idle";
+}
+
 function normalizeAcpPromptDelivery(p: SessionPromptParams): AgentMessageDelivery {
   const requested = p.requested_delivery ?? p.effective_delivery ?? "turn_end";
   if (requested === "turn_end") return "turn_end";
@@ -1069,12 +2027,20 @@ function derivePromptDisplayText(
   text: string,
   attachments: PromptAttachment[] | undefined,
   annotationCount = 0,
+  sessionReferenceCount = 0,
 ): string {
   if (text.trim().length > 0) return text;
   if (!attachments?.length && annotationCount > 0) {
     return annotationCount === 1 ? "[1 annotation]" : `[${annotationCount} annotations]`;
   }
-  if (!attachments?.length) return text;
+  if (!attachments?.length) {
+    if (sessionReferenceCount > 0) {
+      return sessionReferenceCount === 1
+        ? "[1 referenced session]"
+        : `[${sessionReferenceCount} referenced sessions]`;
+    }
+    return text;
+  }
   if (attachments.length === 1) {
     const a = attachments[0]!;
     return `[Attached ${a.kind}: ${a.name}]`;

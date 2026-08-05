@@ -166,21 +166,20 @@ This state may live in SQLite, JSON cache files, memory, or temp dirs.
 
 ## Session JSONL
 
-Backchat should write one JSON object per line. Each line is a persisted event
-envelope:
+Backchat should write one JSON object per line. Each line is an OpenMA
+`StoredEvent` envelope and uses the canonical OpenMA `SessionEvent` type names:
 
 ```json
-{"schema_version":"backchat.session_event.v1","seq":1,"type":"user_prompt","ts":1781424000000,"data":{"text":"Plan file-first storage."}}
-{"schema_version":"backchat.session_event.v1","seq":2,"type":"agent_message","ts":1781424005000,"data":{"text":"Here is a plan..."}}
+{"seq":1,"type":"user.message","ts":"2026-08-04T10:00:00.000Z","data":{"content":[{"type":"text","text":"Plan file-first storage."}]}}
+{"seq":2,"type":"agent.message","ts":"2026-08-04T10:00:05.000Z","data":{"content":[{"type":"text","text":"Here is a plan..."}]}}
 ```
 
 Required fields:
 
-- `schema_version`: currently `backchat.session_event.v1`.
 - `seq`: monotonic integer within the session file.
-- `type`: existing Backchat event type, such as `user_prompt` or
-  `agent_message`.
-- `ts`: Unix epoch milliseconds.
+- `type`: canonical OpenMA `SessionEvent` discriminator, such as
+  `user.message` or `agent.message`.
+- `ts`: canonical event timestamp.
 - `data`: event-specific JSON payload.
 
 Optional fields:
@@ -191,10 +190,12 @@ Optional fields:
 - `acp_session_id`: when the event needs to preserve upstream ACP identity.
 - `source`: `desktop`, `cli`, `import`, or `repair`.
 
-Backchat can continue to project ACP-specific events into its current
-`user_prompt`, `agent_message`, `agent_thought`, `tool_call`, and
-`tool_call_update` vocabulary. Server-side OMA trajectories can keep their
-existing `user.message`, `agent.message`, and `agent.tool_use` names.
+The desktop transport may still wrap an event in `SessionEventOut`, but that
+is only a main-process → renderer envelope. It must not create a second event
+vocabulary. `backchat.session_event.v1` remains a legacy export identifier
+during migration; new persistence and adapters use the OpenMA `SessionEvent`
+vocabulary. Trajectory exports continue to use the `oma.trajectory.v1`
+envelope.
 
 ## Session Metadata
 
@@ -387,8 +388,8 @@ transcript files in the same directory without a clear namespace.
 
 - Should working directories eventually move from `sessions/<session_id>/` to
   `sessions/workdirs/<session_id>/`, or stay where they are?
-- Should session JSONL use Backchat's current event names or the OMA
-  `SessionEvent` vocabulary everywhere?
+- **Resolved (2026-08-04):** session JSONL and GUI-facing event streams use the
+  OMA `SessionEvent` vocabulary everywhere; `SessionEventOut` is transport only.
 - Should memory be a generic JSONL log, a set of Markdown notes, or both?
 - Should `registry-cache.json` move under `cache/` to make its derived nature
   obvious?

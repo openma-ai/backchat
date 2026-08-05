@@ -8,7 +8,7 @@ import { settingsStore } from "./settings-store.js";
 import { openSessionDb } from "./sql-store.js";
 import { installAppMenu, sendToFocused } from "./menu.js";
 import { disposeAllUiTerminals } from "./ui-terminal-broker.js";
-import { migrateLegacyOpenmaRoot, openmaRoot } from "./storage-root.js";
+import { openmaRoot } from "./storage-root.js";
 import { BACKCHAT_PROTOCOL, findBackchatDeepLink, parseBackchatDeepLink, type BackchatDeepLink } from "./deep-link.js";
 import { PushChannel } from "../shared/ipc-channels.js";
 import { browserHarnessMcpBridge } from "./browser-view-broker.js";
@@ -19,6 +19,16 @@ import {
   OmaBridgeClient,
   readOmaBridgeCredentials,
 } from "./oma-bridge.js";
+import { desktopCliPath } from "./cli-path.js";
+import { configureAppLog, logAppEvent } from "./app-log.js";
+
+// Chromium's OSCrypt otherwise initializes the macOS system credential store
+// even though Backchat does not persist browser credentials. Its documented
+// mock backend keeps the in-memory browser partition out of the system store
+// and prevents native credential-store prompts.
+if (process.platform === "darwin") {
+  app.commandLine.appendSwitch("use-mock-keychain");
+}
 
 // Dev-only: enable CDP on port 9222 so agent-browser can drive the
 // renderer for end-to-end UI tests. No-op in production. Also skip
@@ -121,6 +131,7 @@ function drainPendingDeepLinks(): void {
 const TOGGLE_TOP_PX = 12;        // CSS `top` on toggle (var(--chrome-top))
 const TOGGLE_SIZE_PX = 28;       // size-6 = 28px (after the .size-6 override)
 const TRAFFIC_LIGHT_DOT_PX = 12; // macOS standard window button diameter
+const DEFAULT_UI_ZOOM_FACTOR = 1.15;
 
 // Privileged custom protocol for serving local filesystem assets to the
 // renderer. The dev renderer runs on `http://localhost:5173` and the
@@ -218,9 +229,18 @@ function createWindow(): BrowserWindow {
   windows.add(win);
   win.on("closed", () => windows.delete(win));
 
-  // Initial trafficLight sync + on focus (covers reload). zoom-changed
-  // event only fires on ctrl+wheel — the menu's Zoom In/Out items call
-  // syncTrafficLight explicitly (see menu.ts).
+  // Electron resets a pre-navigation zoom assignment on the first load, so
+  // apply the default once the renderer exists. Later reloads retain the
+  // user's View-menu zoom instead of forcing the default again.
+  win.webContents.once("did-finish-load", () => {
+    // Start one existing View → Zoom In step above Electron's actual size.
+    // This scales the complete UI (including rem- and fixed-pixel controls)
+    // instead of selectively increasing body copy and leaving chrome behind.
+    void win.webContents.setZoomFactor(DEFAULT_UI_ZOOM_FACTOR);
+    syncTrafficLight(win);
+  });
+  // TrafficLight sync on subsequent reloads. zoom-changed only fires on
+  // ctrl+wheel — menu Zoom In/Out calls sync explicitly (see menu.ts).
   win.webContents.on("did-finish-load", () => syncTrafficLight(win));
   win.on("focus", () => syncTrafficLight(win));
 
@@ -311,17 +331,6 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
-    try {
-      await migrateLegacyOpenmaRoot();
-    } catch (error) {
-      dialog.showErrorBox(
-        "Storage migration error",
-        `Backchat could not move its data from ~/.openma to ~/.oma:\n\n${String(error)}`,
-      );
-      app.quit();
-      return;
-    }
-
     // Wire the oma-file:// handler. Whitelist enforced here so a
     // compromised renderer can't read arbitrary user files via
     // `fetch("oma-file://local/file?path=/etc/passwd")`. Paths must live
@@ -394,10 +403,18 @@ if (!gotLock) {
     // via SettingsStore.ensureDir() on first write; the SQL store /
     // session cwd helpers create their own subpaths on demand.
     const root = openmaRoot();
+    configureAppLog(root);
     const acpRoot = join(root, "acp");
     const acpBinDir = join(acpRoot, "bin");
     process.env.OPENMA_ACP_BIN_DIR = acpBinDir;
-    process.env.PATH = [acpBinDir, process.env.PATH].filter(Boolean).join(delimiter);
+    process.env.PATH = [acpBinDir, desktopCliPath()].filter(Boolean).join(delimiter);
+    logAppEvent("app.startup", {
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      storage_root: root,
+      cli_path: process.env.PATH,
+    });
     setSessionRoot(join(root, "sessions"));
     openSessionDb(join(root, "sessions.db"));
     await browserHarnessMcpBridge.start();

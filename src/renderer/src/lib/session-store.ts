@@ -19,25 +19,55 @@
  */
 
 import { useSyncExternalStore } from "react";
-import type { SessionEventOut } from "@shared/session-events.js";
+import type {
+  PromptAttachment,
+  PromptSessionReference,
+  SessionEventOut,
+} from "@shared/session-events.js";
+import {
+  createOpenMAEvent,
+  reduceWorkItems,
+  type OpenMAEvent,
+  type WorkItemSnapshot,
+} from "@openma/common/session-events/openma";
 import { setRightRailCollapsed } from "@/lib/right-rail";
 import {
+  configOptionFromLegacySessionModes,
   normalizeAgentConfigOptions,
   selectedModeIdFromConfigOptions,
+  withSelectedSessionMode,
   type AcpSessionConfigOption,
 } from "./session-config-options";
 import {
   mergeStreamingText,
   parseAcpEvent,
+  reduceTurn,
   sessionUpdateInner,
   sessionUpdateType,
 } from "./reduce-turn";
-import {
-  detectNativeAgentRawEvent,
-  detectNativeAgentToolEvent,
-  type NativeAgentContext,
-  type NativeAgentUpdate,
+import type {
+  NativeAgentContext,
+  NativeAgentProvider,
+  NativeAgentTranscriptUpdate,
+  NativeAgentUpdate,
 } from "./native-agent-events";
+import {
+  genericAcpRuntimeAdapter,
+  readSessionGoalUpdateFromAgentAdapter,
+  resolveAgentRuntimeAdapter,
+  runtimeAdapterForProvider,
+  type RuntimeBackgroundWorkItemLevel,
+  type RuntimeWorkItemUpdate,
+  type SessionGoalUpdateReader,
+} from "./agent-runtime-adapters";
+import {
+  nativeAgentReidentifiedToOpenMAEvent,
+  nativeAgentTranscriptToOpenMAEvent,
+  nativeAgentUpdateToOpenMAEvent,
+  runtimeMonitorEventToOpenMAEvent,
+  runtimePlanUpdateToOpenMAEvent,
+  runtimeWorkItemUpdateToOpenMAEvents,
+} from "@shared/openma-event.js";
 import {
   subagentAvatarId,
   type SubagentAvatarId,
@@ -47,7 +77,6 @@ import {
   nativeActivitySessionStatus,
   nativeActivityTurnStatus,
   nativeChildThreadId,
-  nativeProviderForAgent,
 } from "./session-native-activity";
 import {
   defaultSideTabLabel,
@@ -62,10 +91,9 @@ import {
 import {
   basename,
   dedupeBubble,
-  extractFilePaths,
+  dedupeSourceRefs,
+  extractCanonicalContentSources,
   extractHtmlPathsFromExecute,
-  extractServiceUrls,
-  extractToolOutputFiles,
 } from "./session-artifacts";
 import type {
   AcpAvailableCommand,
@@ -79,6 +107,7 @@ import type {
   SideTab,
   SideTabType,
   SideWorkspaceStateV1,
+  SessionGoal,
   StreamDelta,
   StreamSubscriber,
   SubagentActivity,
@@ -88,13 +117,20 @@ import type {
   Turn,
   TurnDeliveryMeta,
   WorkspaceArtifacts,
+  WorkspaceSourceRef,
 } from "./session-types";
 
 export type { AcpSessionConfigOption } from "./session-config-options";
 export type * from "./session-types";
 
+export interface SessionStoreDependencies {
+  readSessionGoalUpdate?: SessionGoalUpdateReader;
+}
+
 export class SessionStore {
   static readonly NOTICE_DURATION_MS = 10_000;
+
+  #readSessionGoalUpdate: SessionGoalUpdateReader;
 
   #sessions = new Map<string, SessionRow>();
   /** Blocking broker asks can arrive before session.ready during reload.
@@ -127,12 +163,9 @@ export class SessionStore {
   #sideTabsByMain = new Map<string | null, SideTab[]>();
   #activeSideTabByMain = new Map<string | null, string | null>();
   #activeBrowserTabByMain = new Map<string | null, string>();
-  /** Collected workspace artifacts per main session. Updated lazily
-   *  from the session.event stream: file paths from tool_call rawInput,
-   *  localhost URLs from tool_call rawOutput. Used by the side panel's
-   *  EmptyState 推荐 feed to surface what the agent has actually
-   *  touched in this conversation. Stored as ordered arrays so a tail
-   *  read shows the most recent items first. */
+  /** Provider-normalized outputs and explicit sources per main session.
+   *  Runtime adapters own provider tool-name and metadata interpretation;
+   *  this store only persists their normalized observations. */
   #artifactsBySession = new Map<string, WorkspaceArtifacts>();
   /** Per-session set of html paths we've already auto-opened in the
    *  side BrowserTab. Without this, every `tool_call_update` reflow
@@ -143,6 +176,9 @@ export class SessionStore {
    *  communication surface: fork only seeds context, while this map tracks
    *  task assignment, progress, completion and errors. */
   #subagentsByParent = new Map<string, SubagentActivity[]>();
+  /** Canonical OpenMA event stream received alongside the legacy ACP
+   *  transport envelope. This is the migration seam for GUI projections. */
+  #openmaEventsBySession = new Map<string, OpenMAEvent[]>();
   #nativeAgentContextByToolCall = new Map<
     string,
     NativeAgentContext & { parentSessionId: string }
@@ -166,6 +202,12 @@ export class SessionStore {
    *  div and React stays asleep. */
   #streamSubscribers = new Map<string, Set<StreamSubscriber>>();
   #noticeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(dependencies: SessionStoreDependencies = {}) {
+    this.#readSessionGoalUpdate =
+      dependencies.readSessionGoalUpdate ??
+      readSessionGoalUpdateFromAgentAdapter;
+  }
 
   subscribe = (l: () => void): (() => void) => {
     this.#listeners.add(l);
@@ -236,9 +278,7 @@ export class SessionStore {
           ...(metadata?.messageId
             ? { messageId: metadata.messageId }
             : {}),
-          ...(metadata?.phase
-            ? { _meta: { codex: { phase: metadata.phase } } }
-            : {}),
+          ...(metadata?.phase ? { phase: metadata.phase } : {}),
           content: { type: "text", text: merged },
         },
         receivedAt: last!.receivedAt,
@@ -250,9 +290,7 @@ export class SessionStore {
         sessionUpdate:
           kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
         ...(metadata?.messageId ? { messageId: metadata.messageId } : {}),
-        ...(metadata?.phase
-          ? { _meta: { codex: { phase: metadata.phase } } }
-          : {}),
+        ...(metadata?.phase ? { phase: metadata.phase } : {}),
         content: { type: "text", text },
       },
       receivedAt,
@@ -362,6 +400,415 @@ export class SessionStore {
     );
   }
 
+  openmaEventsFor(sessionId: string): OpenMAEvent[] {
+    return [...(this.#openmaEventsBySession.get(sessionId) ?? [])];
+  }
+
+  workItemsFor(sessionId: string): WorkItemSnapshot[] {
+    return [...reduceWorkItems(this.#openmaEventsBySession.get(sessionId) ?? []).items.values()];
+  }
+
+  #ingestOpenMAEvent(
+    event: OpenMAEvent,
+    options: { persist?: boolean } = {},
+  ): boolean {
+    const events = this.#openmaEventsBySession.get(event.session_id) ?? [];
+    if (events.some((existing) => existing.event_id === event.event_id)) return false;
+    this.#openmaEventsBySession.set(event.session_id, [...events, event]);
+    if (options.persist) {
+      const persist =
+        typeof window !== "undefined"
+          ? window.backchat?.sessionPersistCanonicalEvent
+          : undefined;
+      if (persist) {
+        void persist(event).catch((error: unknown) => {
+          console.warn("Failed to persist renderer-derived canonical event", error);
+        });
+      }
+    }
+    return true;
+  }
+
+  #applyCanonicalSessionProjection(event: OpenMAEvent): boolean {
+    if (!event.data || typeof event.data !== "object") return false;
+    const data = event.data as Record<string, unknown>;
+    if (event.type === "session.started") {
+      const configOptions =
+        normalizeAgentConfigOptions(data.config_options)
+        ?? (() => {
+          const legacyMode = configOptionFromLegacySessionModes(data.modes);
+          return legacyMode ? [legacyMode] : undefined;
+        })();
+      const capabilities = isPlainRecord(data.capabilities)
+        ? data.capabilities
+        : {};
+      this.#mutateSession(event.session_id, (session) => ({
+        ...session,
+        acp_session_id:
+          typeof data.acp_session_id === "string"
+            ? data.acp_session_id
+            : session.acp_session_id,
+        agent_id:
+          typeof data.agent_id === "string"
+            ? data.agent_id
+            : session.agent_id,
+        cwd: typeof data.cwd === "string" ? data.cwd : session.cwd,
+        projectId:
+          typeof data.project_id === "string"
+            ? data.project_id
+            : session.projectId,
+        additionalDirectories: Array.isArray(data.additional_directories)
+          ? data.additional_directories.filter(
+              (value): value is string => typeof value === "string",
+            )
+          : session.additionalDirectories,
+        configOptions: configOptions ?? session.configOptions,
+        currentModeId:
+          selectedModeIdFromConfigOptions(configOptions)
+          ?? session.currentModeId,
+        supportsSessionFork:
+          typeof capabilities.session_fork === "boolean"
+            ? capabilities.session_fork
+            : session.supportsSessionFork,
+        supportsSteering:
+          typeof capabilities.steering === "boolean"
+            ? capabilities.steering
+            : session.supportsSteering,
+      }));
+      return true;
+    }
+    if (event.type === "command_catalog.updated") {
+      this.#mutateSession(event.session_id, (session) => ({
+        ...session,
+        availableCommands: Array.isArray(data.commands)
+          ? data.commands as AcpAvailableCommand[]
+          : [],
+      }));
+      return true;
+    }
+    if (event.type === "usage.updated") {
+      // Child-correlated usage belongs to the WorkItem registry and native
+      // Agent side view, never to the parent session context meter.
+      if (event.work_item_id) return true;
+      const usage = normalizeSessionUsage(data);
+      if (usage) {
+        this.#mutateSession(event.session_id, (session) => ({ ...session, usage }));
+      }
+      return true;
+    }
+    if (event.type === "system.notice") {
+      if (typeof data.message === "string" && data.message.trim()) {
+        this.#showNotice(event.session_id, data.message.trim(), "warning");
+      }
+      return true;
+    }
+    if (event.type === "session.running") {
+      const threadStatus = isPlainRecord(data.thread_status)
+        && typeof data.thread_status.type === "string"
+          ? data.thread_status.type
+          : undefined;
+      const providerError = isPlainRecord(data.provider_error)
+        ? data.provider_error
+        : undefined;
+      const providerQueueDepth =
+        typeof data.queue_depth === "number"
+        && Number.isFinite(data.queue_depth)
+        && data.queue_depth >= 0
+          ? data.queue_depth
+          : undefined;
+      this.#mutateSession(event.session_id, (session) => ({
+        ...session,
+        status: "running",
+        agentThreadStatus: threadStatus ?? session.agentThreadStatus,
+        providerQueueDepth:
+          providerQueueDepth ?? session.providerQueueDepth,
+      }));
+      if (providerError && typeof providerError.message === "string") {
+        this.#showNotice(event.session_id, providerError.message, "warning");
+      }
+      return true;
+    }
+    if (event.type === "session.idle") {
+      const threadStatus = isPlainRecord(data.thread_status)
+        && typeof data.thread_status.type === "string"
+          ? data.thread_status.type
+          : undefined;
+      const providerQueueDepth =
+        typeof data.queue_depth === "number"
+        && Number.isFinite(data.queue_depth)
+        && data.queue_depth >= 0
+          ? data.queue_depth
+          : undefined;
+      this.#mutateSession(event.session_id, (session) => ({
+        ...session,
+        status: "ready",
+        agentThreadStatus: threadStatus ?? session.agentThreadStatus,
+        providerQueueDepth:
+          providerQueueDepth ?? session.providerQueueDepth,
+      }));
+      return true;
+    }
+    if (event.type === "session.terminated") {
+      this.#mutateSession(event.session_id, (session) => ({
+        ...session,
+        status: "disposed",
+        activeTurnId: undefined,
+      }));
+      return true;
+    }
+    if (event.type === "session.error") {
+      const message =
+        typeof data.message === "string"
+          ? data.message
+          : isPlainRecord(data.provider_error)
+            && typeof data.provider_error.message === "string"
+              ? data.provider_error.message
+              : "Agent session failed";
+      this.#mutateSession(event.session_id, (session) => ({
+        ...session,
+        status: "errored",
+        lastError: message,
+      }));
+      return true;
+    }
+    if (event.type !== "capability.updated") return false;
+    if (typeof data.session_archived === "boolean") {
+      this.#mutateSession(event.session_id, (session) => ({
+        ...session,
+        archivedAt: data.session_archived ? Date.now() : undefined,
+      }));
+      return true;
+    }
+    const updateType =
+      typeof data.sessionUpdate === "string"
+        ? data.sessionUpdate
+        : typeof data.session_update === "string"
+          ? data.session_update
+          : undefined;
+    if (updateType === "config_option_update") {
+      const rawConfigOptions = Array.isArray(data.configOptions)
+        ? data.configOptions
+        : Array.isArray(data.config_options)
+          ? data.config_options
+          : undefined;
+      const configOptions = normalizeAgentConfigOptions(rawConfigOptions) ?? [];
+      this.#mutateSession(event.session_id, (session) => ({
+        ...session,
+        configOptions,
+        currentModeId:
+          selectedModeIdFromConfigOptions(configOptions) ?? session.currentModeId,
+      }));
+      return true;
+    }
+    if (updateType === "session_info_update") {
+      return this.#applyAcpSessionMetadata(
+        event.session_id,
+        updateType,
+        data,
+      );
+    }
+    if (updateType !== "current_mode_update") return false;
+    const currentModeId =
+      typeof data.currentModeId === "string"
+        ? data.currentModeId
+        : typeof data.current_mode_id === "string"
+          ? data.current_mode_id
+          : undefined;
+    if (!currentModeId) return false;
+    this.#mutateSession(event.session_id, (session) => ({
+      ...session,
+      currentModeId,
+      configOptions: withSelectedSessionMode(
+        session.configOptions,
+        currentModeId,
+      ),
+    }));
+    return true;
+  }
+
+  #canonicalNativeProvider(event: OpenMAEvent): NativeAgentProvider {
+    const harness = event.source.harness?.toLowerCase() ?? "";
+    if (harness.includes("codex")) return "codex";
+    if (harness.includes("opencode")) return "opencode";
+    if (harness.includes("kilo")) return "kilo";
+    if (harness.includes("cursor")) return "cursor";
+    if (harness.includes("pi")) return "pi";
+    return "claude";
+  }
+
+  #replayCanonicalNativeLifecycle(event: OpenMAEvent): boolean {
+    if (!event.work_item_id) return false;
+    const data = isPlainRecord(event.data) ? event.data : {};
+    const existing = this.subagentByChildId(event.work_item_id);
+    const kind = typeof data.kind === "string" ? data.kind : undefined;
+    if (event.type === "work_item.started") {
+      if (kind !== "agent") return false;
+      this.#upsertNativeSubagentActivity(event.session_id, {
+        provider: this.#canonicalNativeProvider(event),
+        operation: "subagent_spawn",
+        toolCallId: event.parent_id,
+        childId: event.work_item_id,
+        task: typeof data.title === "string" ? data.title : undefined,
+        status: "running",
+      });
+      return true;
+    }
+    if (
+      event.type === "work_item.completed"
+      || event.type === "work_item.failed"
+      || event.type === "work_item.cancelled"
+      || event.type === "work_item.killed"
+      || event.type === "work_item.terminated"
+      || event.type === "work_item.missing_terminal"
+    ) {
+      if (!existing && kind !== "agent") return false;
+      const status =
+        event.type === "work_item.completed"
+          ? "complete"
+          : event.type === "work_item.missing_terminal"
+            ? "unknown"
+            : event.type === "work_item.cancelled"
+              ? "cancelled"
+              : event.type === "work_item.failed"
+                ? "error"
+                : "complete";
+      this.#upsertNativeSubagentActivity(event.session_id, {
+        provider: this.#canonicalNativeProvider(event),
+        operation: "subagent_spawn",
+        toolCallId: event.parent_id,
+        childId: event.work_item_id,
+        status,
+        result:
+          typeof data.result === "string" ? data.result : undefined,
+        errorMessage:
+          typeof data.error === "string" ? data.error : undefined,
+        reason: typeof data.reason === "string" ? data.reason : undefined,
+      });
+      return true;
+    }
+    if (event.type === "usage.updated" && existing) {
+      const inputTokens = numberValue(data.input_tokens ?? data.inputTokens);
+      const outputTokens = numberValue(data.output_tokens ?? data.outputTokens);
+      const totalTokens = numberValue(data.total_tokens ?? data.totalTokens)
+        ?? ((inputTokens ?? 0) + (outputTokens ?? 0));
+      if (inputTokens === undefined || outputTokens === undefined) return true;
+      this.#upsertNativeSubagentActivity(event.session_id, {
+        provider: this.#canonicalNativeProvider(event),
+        toolCallId: event.parent_id,
+        childId: event.work_item_id,
+        usage: {
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          ...(numberValue(data.cache_read_input_tokens ?? data.cachedReadTokens) !== undefined
+            ? { cachedReadTokens: numberValue(data.cache_read_input_tokens ?? data.cachedReadTokens) }
+            : {}),
+          ...(numberValue(data.cache_creation_input_tokens ?? data.cachedWriteTokens) !== undefined
+            ? { cachedWriteTokens: numberValue(data.cache_creation_input_tokens ?? data.cachedWriteTokens) }
+            : {}),
+        },
+      });
+      return true;
+    }
+    if (event.type === "work_item.progress" && existing) {
+      const output = isPlainRecord(data.output) ? data.output : undefined;
+      const progressKind =
+        output?.kind === "subagent_progress" || output?.kind === "subagent_retry"
+          ? output.kind
+          : undefined;
+      if (!output || !progressKind) return true;
+      const rawUsage = isPlainRecord(output.usage) ? output.usage : undefined;
+      const totalTokens = numberValue(rawUsage?.totalTokens ?? rawUsage?.total_tokens);
+      const toolUses = numberValue(rawUsage?.toolUses ?? rawUsage?.tool_uses);
+      const durationMs = numberValue(rawUsage?.durationMs ?? rawUsage?.duration_ms);
+      this.#upsertNativeSubagentActivity(event.session_id, {
+        provider: this.#canonicalNativeProvider(event),
+        toolCallId: event.parent_id,
+        childId: event.work_item_id,
+        progress: {
+          kind: progressKind,
+          ...(numberValue(output.elapsedTimeSeconds) !== undefined
+            ? { elapsedTimeSeconds: numberValue(output.elapsedTimeSeconds) }
+            : {}),
+          ...(typeof output.subagentType === "string"
+            ? { subagentType: output.subagentType }
+            : {}),
+          ...(typeof output.description === "string"
+            ? { description: output.description }
+            : {}),
+          ...(typeof output.lastToolName === "string"
+            ? { lastToolName: output.lastToolName }
+            : {}),
+          ...(typeof output.summary === "string" ? { summary: output.summary } : {}),
+          ...(totalTokens !== undefined
+            && toolUses !== undefined
+            && durationMs !== undefined
+            ? { usage: { totalTokens, toolUses, durationMs } }
+            : {}),
+          ...(isPlainRecord(output.retry) ? { retry: output.retry } : {}),
+        },
+      });
+      return true;
+    }
+    return false;
+  }
+
+  #replayCanonicalNativeTranscript(event: OpenMAEvent, receivedAt: number): boolean {
+    if (!event.work_item_id || !event.parent_id) return false;
+    if (
+      event.type !== "agent.message"
+      && event.type !== "agent.message_chunk"
+      && event.type !== "agent.thinking"
+      && event.type !== "tool.started"
+      && event.type !== "tool.progress"
+      && event.type !== "tool.completed"
+      && event.type !== "tool.failed"
+      && event.type !== "tool.cancelled"
+    ) return false;
+
+    let activity = this.subagentByChildId(event.work_item_id);
+    if (!activity) {
+      this.#upsertNativeSubagentActivity(event.session_id, {
+        provider: this.#canonicalNativeProvider(event),
+        operation: "subagent_spawn",
+        toolCallId: event.parent_id,
+        childId: event.work_item_id,
+        status: "running",
+      });
+      activity = this.subagentByChildId(event.work_item_id);
+    }
+    if (!activity) return true;
+    const childTurnId = `${activity.viewSessionId}:turn`;
+    const previous = this.#turns.get(childTurnId);
+    const turn: Turn = previous ?? {
+      id: childTurnId,
+      sessionId: activity.viewSessionId,
+      promptText: activity.task,
+      events: [],
+      assistantText: "",
+      thoughtText: "",
+      status: "running",
+      startedAt: receivedAt,
+    };
+    const parsed = parseAcpEvent(event);
+    if (parsed.kind === "text") {
+      turn.assistantText = mergeStreamingText(turn.assistantText, parsed.text);
+      this.#appendStreamEvent(turn, "text", parsed.text, receivedAt, {
+        messageId: parsed.messageId,
+        phase: parsed.phase,
+      });
+    } else if (parsed.kind === "thought") {
+      turn.thoughtText = mergeStreamingText(turn.thoughtText, parsed.text);
+      this.#appendStreamEvent(turn, "thought", parsed.text, receivedAt, {
+        messageId: parsed.messageId,
+      });
+    } else {
+      turn.events.push({ payload: event, receivedAt });
+    }
+    this.#turns.set(childTurnId, { ...turn, events: [...turn.events] });
+    return true;
+  }
+
   subagentByChildId(childSessionId: string): SubagentActivity | null {
     for (const list of this.#subagentsByParent.values()) {
       const match = list.find((activity) => activity.childSessionId === childSessionId);
@@ -416,6 +863,8 @@ export class SessionStore {
       ...s,
       chosenCwd: normalizedCwd,
       projectScope: normalizedCwd ? "project" : "none",
+      projectId: undefined,
+      additionalDirectories: undefined,
     }));
     this.#emit();
   }
@@ -500,6 +949,22 @@ export class SessionStore {
   }
 
   // -------- Pin / archive --------
+
+  /** Rename a user-facing session and persist the explicit override. */
+  async rename(sessionId: string, title: string): Promise<void> {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    await window.backchat.sessionsRename({
+      session_id: sessionId,
+      title: trimmed,
+    });
+    this.#mutateSession(sessionId, (s) => ({
+      ...s,
+      label: trimmed.slice(0, 500),
+      titleManuallySet: true,
+    }));
+    this.#emit();
+  }
 
   /** Mark a session as pinned with the current wall-clock. The
    *  sidebar splits Pinned + Chats sections; this row moves to
@@ -653,9 +1118,13 @@ export class SessionStore {
       // recreated its AppBridge.
       const sourceTabs = (this.#sideTabsByMain.get(taskId) ?? [])
         .filter((tab) => tab.type !== "interactive" && tab.type !== "process");
-      const artifacts = this.#artifactsBySession.get(taskId) ?? { files: [], services: [] };
+      const artifacts = this.#artifactsBySession.get(taskId) ?? {
+        files: [],
+        services: [],
+        sources: [],
+      };
       const subagents = this.#subagentsByParent.get(taskId) ?? [];
-      if (sourceTabs.length === 0 && artifacts.files.length === 0 && artifacts.services.length === 0 && subagents.length === 0) {
+      if (sourceTabs.length === 0 && artifacts.files.length === 0 && artifacts.services.length === 0 && artifacts.sources.length === 0 && subagents.length === 0) {
         return [];
       }
 
@@ -695,6 +1164,7 @@ export class SessionStore {
           artifacts: {
             files: [...artifacts.files],
             services: [...artifacts.services],
+            sources: artifacts.sources.map((source) => ({ ...source })),
           },
           sideSessions,
           subagents: subagents.map((activity) => ({
@@ -749,7 +1219,7 @@ export class SessionStore {
       }
 
       const artifacts = normalizeWorkspaceArtifacts(state.artifacts);
-      if (artifacts.files.length > 0 || artifacts.services.length > 0) {
+      if (artifacts.files.length > 0 || artifacts.services.length > 0 || artifacts.sources.length > 0) {
         this.#artifactsBySession.set(taskId, artifacts);
       }
       const autoOpened = new Set(
@@ -996,32 +1466,44 @@ export class SessionStore {
     return sessionId;
   }
 
-  // -------- Workspace artifacts (推荐 feed) --------
+  // -------- Normalized workspace resources --------
 
   artifactsFor(sessionId: string): WorkspaceArtifacts {
-    return this.#artifactsBySession.get(sessionId) ?? { files: [], services: [] };
+    return this.#artifactsBySession.get(sessionId) ?? {
+      files: [],
+      services: [],
+      sources: [],
+    };
   }
 
-  /** Merge new file paths + service URLs into the session's
-   *  artifacts. Newest-first ordering; re-observed entries bubble to
-   *  the top. Capped at 50 each to bound memory in long runs. */
+  /** Merge provider-normalized outputs and sources into the session index.
+   *  Newest-first ordering; re-observed entries bubble to the top. */
   #ingestArtifacts(
     sessionId: string,
     files: string[],
     services: string[],
+    sources: WorkspaceSourceRef[] = [],
   ): void {
-    if (files.length === 0 && services.length === 0) return;
+    if (files.length === 0 && services.length === 0 && sources.length === 0) return;
     const prev = this.#artifactsBySession.get(sessionId) ?? {
       files: [],
       services: [],
+      sources: [],
     };
     const nextFiles = files.length > 0 ? dedupeBubble(prev.files, files, 50) : prev.files;
     const nextServices =
       services.length > 0 ? dedupeBubble(prev.services, services, 50) : prev.services;
-    if (nextFiles === prev.files && nextServices === prev.services) return;
+    const nextSources =
+      sources.length > 0 ? dedupeSourceRefs(prev.sources, sources, 50) : prev.sources;
+    if (
+      nextFiles === prev.files
+      && nextServices === prev.services
+      && nextSources === prev.sources
+    ) return;
     this.#artifactsBySession.set(sessionId, {
       files: nextFiles,
       services: nextServices,
+      sources: nextSources,
     });
   }
 
@@ -1064,14 +1546,31 @@ export class SessionStore {
    *  without firing any IPC — the actual `session.start` happens when the
    *  user submits their first prompt (see promoteDraft). Returns the new
    *  session id so the caller can navigate to /chat/$id. */
-  newDraft(chosenCwd?: string): string {
+  newDraft(
+    chosenCwd?: string | {
+      projectId: string;
+      sourceFolders: string[];
+    },
+  ): string {
     for (const [existingId, session] of this.#sessions) {
       if (session.status === "draft" && session.kind !== "side") {
         this.#sessions.delete(existingId);
       }
     }
     const id = `sess-${Math.random().toString(36).slice(2, 10)}`;
-    const normalizedCwd = chosenCwd?.trim() || undefined;
+    const project =
+      typeof chosenCwd === "object" && chosenCwd !== null
+        ? chosenCwd
+        : undefined;
+    const roots = project
+      ? [...new Set(
+          project.sourceFolders.map((folder) => folder.trim()).filter(Boolean),
+        )]
+      : [];
+    const normalizedCwd =
+      typeof chosenCwd === "string"
+        ? chosenCwd.trim() || undefined
+        : roots[0] || undefined;
     this.#sessions.set(id, {
       id,
       agent_id: "",
@@ -1081,7 +1580,9 @@ export class SessionStore {
       status: "draft",
       createdAt: Date.now(),
       chosenCwd: normalizedCwd,
-      projectScope: normalizedCwd ? "project" : "none",
+      projectId: project?.projectId.trim() || undefined,
+      additionalDirectories: roots.length > 1 ? roots.slice(1) : undefined,
+      projectScope: project || normalizedCwd ? "project" : "none",
     });
     this.#activeId = id;
     this.#emit();
@@ -1165,6 +1666,8 @@ export class SessionStore {
     sessionId: string,
     promptText: string,
     delivery?: TurnDeliveryMeta,
+    sessionReferences: PromptSessionReference[] = [],
+    attachments: PromptAttachment[] = [],
   ): void {
     const row = this.#sessions.get(sessionId);
     const isQueued = !!row?.activeTurnId;
@@ -1172,6 +1675,12 @@ export class SessionStore {
       id: turnId,
       sessionId,
       promptText,
+      attachments: attachments.length > 0
+        ? attachments.map(({ data: _data, ...attachment }) => attachment)
+        : undefined,
+      sessionReferences: sessionReferences.length > 0
+        ? sessionReferences
+        : undefined,
       events: [],
       assistantText: "",
       thoughtText: "",
@@ -1257,11 +1766,23 @@ export class SessionStore {
       const nextMeta = isPlainRecord(inner._meta)
         ? deepMergeRecords(s.sessionInfoMeta ?? {}, inner._meta)
         : s.sessionInfoMeta;
-      const threadStatus = readAgentThreadStatus(nextMeta);
+      const adapter =
+        resolveAgentRuntimeAdapter(s.agent_id) ?? genericAcpRuntimeAdapter;
+      const threadStatus = adapter.sessionThreadStatusUpdate({
+        update: inner,
+        meta: nextMeta,
+      });
+      const goal = activeSessionGoalUpdate(
+        this.#readSessionGoalUpdate({
+          agentId: s.agent_id,
+          update: inner,
+          meta: nextMeta,
+        }),
+      );
       return {
         ...s,
         label:
-          typeof inner.title === "string" && inner.title.trim()
+          !s.titleManuallySet && typeof inner.title === "string" && inner.title.trim()
             ? inner.title.trim().slice(0, 500)
             : s.label,
         sessionUpdatedAt:
@@ -1270,6 +1791,11 @@ export class SessionStore {
             : s.sessionUpdatedAt,
         sessionInfoMeta: nextMeta,
         agentThreadStatus: threadStatus ?? s.agentThreadStatus,
+        ...(goal === undefined
+          ? {}
+          : goal === null
+            ? { goal: undefined }
+            : { goal }),
       };
     });
     return true;
@@ -1314,10 +1840,13 @@ export class SessionStore {
   #ingestNativeAgentToolEvent(
     parentSessionId: string,
     tool: { toolCallId: string; parentToolUseId?: string },
+    logicalTool?: { toolCallId: string; parentToolUseId?: string },
+    turnId?: string,
   ): void {
-    const expectedProvider = nativeProviderForAgent(
+    const adapter = resolveAgentRuntimeAdapter(
       this.#sessions.get(parentSessionId)?.agent_id,
     );
+    if (!adapter) return;
     const context =
       this.#nativeAgentContextByToolCall.get(tool.toolCallId) ??
       (tool.parentToolUseId
@@ -1325,22 +1854,144 @@ export class SessionStore {
         : undefined);
     const sameParentContext =
       context?.parentSessionId === parentSessionId ? context : undefined;
-    const updates = detectNativeAgentToolEvent(tool, sameParentContext);
     this.#ingestNativeAgentUpdates(
       parentSessionId,
-      expectedProvider
-        ? updates.filter((update) => update.provider === expectedProvider)
-        : updates.filter((update) => update.provider === "codex"),
+      adapter.nativeAgentToolUpdates(tool, sameParentContext, logicalTool),
+      { turnId },
     );
   }
 
-  #ingestNativeAgentUpdates(parentSessionId: string, updates: NativeAgentUpdate[]): void {
+  #ingestNativeAgentUpdates(
+    parentSessionId: string,
+    updates: NativeAgentUpdate[],
+    options: { turnId?: string; emitCanonical?: boolean } = {},
+  ): void {
     for (const update of updates) {
+      const previousContext = update.toolCallId
+        ? this.#nativeAgentContextByToolCall.get(update.toolCallId)
+        : undefined;
+      if (options.emitCanonical !== false) {
+        const occurredAt = new Date().toISOString();
+        if (
+          previousContext?.parentSessionId === parentSessionId
+          && update.childId
+          && previousContext.childId !== update.childId
+        ) {
+          this.#ingestOpenMAEvent(nativeAgentReidentifiedToOpenMAEvent({
+            provider: update.provider,
+            previousChildId: previousContext.childId,
+            childId: update.childId,
+            toolCallId: update.toolCallId,
+          }, {
+            sessionId: parentSessionId,
+            ...(options.turnId ? { turnId: options.turnId } : {}),
+            occurredAt,
+            adapter: update.provider,
+          }), { persist: true });
+        }
+        const event = nativeAgentUpdateToOpenMAEvent(update, {
+          sessionId: parentSessionId,
+          ...(options.turnId ? { turnId: options.turnId } : {}),
+          occurredAt,
+          adapter: update.provider,
+        });
+        if (event) this.#ingestOpenMAEvent(event, { persist: true });
+      }
       this.#upsertNativeSubagentActivity(parentSessionId, update);
     }
   }
 
-  #settleCodexSubagentsForTurn(parentSessionId: string, turn: Turn): void {
+  #ingestNativeAgentTranscript(
+    parentSessionId: string,
+    updates: NativeAgentTranscriptUpdate[],
+    turnId?: string,
+  ): void {
+    for (const update of updates) {
+      const context = this.#nativeAgentContextByToolCall.get(
+        update.parentToolUseId,
+      );
+      const childId =
+        context?.childId ?? `${update.provider}:${update.parentToolUseId}`;
+      const lifecycle: NativeAgentUpdate = {
+        provider: update.provider,
+        operation: "claude_agent",
+        toolCallId: update.parentToolUseId,
+        childId,
+        status: "running",
+        ...(update.usage ? { usage: update.usage } : {}),
+        ...(update.kind === "tool" && update.toolCallId
+          ? {
+              childToolCallId: update.toolCallId,
+              childToolName: update.toolName,
+            }
+          : {}),
+      };
+      const transcriptEvent = nativeAgentTranscriptToOpenMAEvent(update, {
+        sessionId: parentSessionId,
+        ...(turnId ? { turnId } : {}),
+        childId,
+        occurredAt: new Date().toISOString(),
+        adapter: update.provider,
+      });
+      if (transcriptEvent) {
+        this.#ingestOpenMAEvent(transcriptEvent, { persist: true });
+      }
+      this.#ingestNativeAgentUpdates(parentSessionId, [lifecycle], {
+        turnId,
+      });
+
+      const activity = (this.#subagentsByParent.get(parentSessionId) ?? []).find(
+        (candidate) =>
+          candidate.childSessionId === childId ||
+          candidate.native?.toolCallId === update.parentToolUseId,
+      );
+      if (!activity) continue;
+
+      const childTurnId = `${activity.viewSessionId}:turn`;
+      const previous = this.#turns.get(childTurnId);
+      const now = Date.now();
+      const next: Turn = previous ?? {
+        id: childTurnId,
+        sessionId: activity.viewSessionId,
+        promptText: activity.task,
+        events: [],
+        assistantText: "",
+        thoughtText: "",
+        status: "running",
+        startedAt: now,
+      };
+      next.status = "running";
+      next.endedAt = undefined;
+      if (update.kind === "text" && update.text) {
+        next.assistantText = mergeStreamingText(next.assistantText, update.text);
+        this.#appendStreamEvent(next, "text", update.text, now, {
+          messageId: update.messageId,
+        });
+      } else if (update.kind === "thought" && update.text) {
+        next.thoughtText = mergeStreamingText(next.thoughtText, update.text);
+        this.#appendStreamEvent(next, "thought", update.text, now, {
+          messageId: update.messageId,
+        });
+      } else if (update.kind === "tool") {
+        next.events = [
+          ...next.events,
+          { payload: update.payload, receivedAt: now },
+        ];
+      } else if (update.kind === "content" && transcriptEvent) {
+        next.events = [
+          ...next.events,
+          { payload: transcriptEvent, receivedAt: now },
+        ];
+      }
+      this.#turns.set(childTurnId, {
+        ...next,
+        events: [...next.events],
+      });
+      this.#syncNativeSubagentView(parentSessionId, activity);
+    }
+  }
+
+  #settleNativeSubagentsForTurn(parentSessionId: string, turn: Turn): void {
     const toolCallIds = new Set(
       turn.events.flatMap(({ payload }) => {
         const parsed = parseAcpEvent(payload);
@@ -1350,18 +2001,155 @@ export class SessionStore {
     const linked = (this.#subagentsByParent.get(parentSessionId) ?? []).filter(
       (activity) =>
         activity.status === "running" &&
-        activity.native?.provider === "codex" &&
+        activity.native !== undefined &&
+        runtimeAdapterForProvider(activity.native.provider)
+          ?.settleNativeAgentOnParentTurnComplete !== false &&
         activity.native.toolCallId !== undefined &&
         toolCallIds.has(activity.native.toolCallId),
     );
     for (const activity of linked) {
-      this.#upsertNativeSubagentActivity(parentSessionId, {
-        provider: "codex",
-        operation: "codex_wait",
-        toolCallId: activity.native!.toolCallId,
-        childId: activity.childSessionId,
-        status: "complete",
-      });
+      const provider = activity.native!.provider;
+      const policy = runtimeAdapterForProvider(provider)
+        ?.settleNativeAgentOnParentTurnComplete;
+      if (policy === "missing_terminal") {
+        this.#ingestNativeAgentUpdates(parentSessionId, [{
+          provider,
+          toolCallId: activity.native!.toolCallId,
+          childId: activity.childSessionId,
+          status: "unknown",
+        }], { turnId: turn.id });
+      } else {
+        this.#ingestNativeAgentUpdates(parentSessionId, [{
+          provider,
+          toolCallId: activity.native!.toolCallId,
+          childId: activity.childSessionId,
+          status: "complete",
+        }], { turnId: turn.id });
+      }
+    }
+  }
+
+  #settleBackgroundWorkItemsForTurn(sessionId: string, turn: Turn): void {
+    const toolCallIds = new Set(
+      turn.events.flatMap(({ payload }) => {
+        const parsed = parseAcpEvent(payload);
+        return parsed.kind === "tool_call" ? [parsed.tool.toolCallId] : [];
+      }),
+    );
+    const events = this.#openmaEventsBySession.get(sessionId) ?? [];
+    const items = reduceWorkItems(events).items;
+    const runningBashStarts = events.filter((event) => {
+      if (
+        event.type !== "work_item.started"
+        || event.turn_id !== turn.id
+        || !event.work_item_id
+        || !event.parent_id
+        || !toolCallIds.has(event.parent_id)
+      ) {
+        return false;
+      }
+      const data = isPlainRecord(event.data) ? event.data : {};
+      return data.kind === "bash";
+    });
+
+    for (const started of runningBashStarts) {
+      const workItemId = started.work_item_id!;
+      if (items.get(workItemId)?.status !== "running") continue;
+      this.#ingestOpenMAEvent(createOpenMAEvent({
+        event_id: `runtime-work-item-missing-terminal:${sessionId}:${turn.id}:${workItemId}`,
+        session_id: sessionId,
+        turn_id: turn.id,
+        work_item_id: workItemId,
+        parent_id: started.parent_id,
+        source: started.source,
+        occurred_at: new Date().toISOString(),
+        type: "work_item.missing_terminal",
+        data: { reason: "parent_turn_completed" },
+      }), { persist: true });
+    }
+  }
+
+  #reconcileBackgroundWorkItemLevel(
+    sessionId: string,
+    turnId: string,
+    adapter: string,
+    level: RuntimeBackgroundWorkItemLevel,
+  ): void {
+    const liveTaskIds = new Set(level.liveTaskIds);
+    const existingById = new Map(
+      this.workItemsFor(sessionId).map((item) => [item.id, item]),
+    );
+    for (const update of level.liveWorkItems) {
+      const existing = existingById.get(update.id);
+      if (existing && existing.status !== "unknown") continue;
+      this.#ingestOpenMAEvent(createOpenMAEvent({
+        event_id: `runtime-background-level-live:${sessionId}:${level.eventId}:${update.id}`,
+        session_id: sessionId,
+        ...(turnId ? { turn_id: turnId } : {}),
+        work_item_id: update.id,
+        source: { kind: "harness", harness: adapter, adapter },
+        occurred_at: new Date().toISOString(),
+        type: "work_item.started",
+        data: {
+          kind: update.kind,
+          ...(update.title ? { title: update.title } : {}),
+          ...(update.canStop !== undefined ? { can_stop: update.canStop } : {}),
+        },
+      }), { persist: true });
+    }
+    for (const item of this.workItemsFor(sessionId)) {
+      if (
+        item.kind === "agent"
+        || item.status !== "running"
+        || liveTaskIds.has(item.id)
+      ) {
+        continue;
+      }
+      this.#ingestOpenMAEvent(createOpenMAEvent({
+        event_id: `runtime-background-level-missing:${sessionId}:${level.eventId}:${item.id}`,
+        session_id: sessionId,
+        ...(turnId ? { turn_id: turnId } : {}),
+        work_item_id: item.id,
+        source: { kind: "harness", harness: adapter, adapter },
+        occurred_at: new Date().toISOString(),
+        type: "work_item.missing_terminal",
+        data: { reason: "absent_from_background_level" },
+      }), { persist: true });
+    }
+  }
+
+  #ingestRuntimeWorkItemUpdate(
+    sessionId: string,
+    turnId: string,
+    adapter: string,
+    update: RuntimeWorkItemUpdate,
+  ): void {
+    const existing = this.workItemsFor(sessionId).find(
+      (item) => item.id === update.id,
+    );
+    // Claude's terminal task_notification carries a stable task_id but no
+    // task kind. Preserve the kind established by an earlier structured
+    // lifecycle edge; do not classify an uncorrelated terminal notification.
+    const correlated =
+      update.kind === "other"
+      && existing
+      && (
+        existing.kind === "agent"
+        || existing.kind === "bash"
+        || existing.kind === "monitor"
+      )
+        ? { ...update, kind: existing.kind }
+        : update;
+    for (const event of runtimeWorkItemUpdateToOpenMAEvents(correlated, {
+      sessionId,
+      turnId,
+      occurredAt: new Date().toISOString(),
+      adapter,
+    })) {
+      this.#ingestOpenMAEvent(event, { persist: true });
+      if (correlated.kind === "agent") {
+        this.#replayCanonicalNativeLifecycle(event);
+      }
     }
   }
 
@@ -1393,6 +2181,8 @@ export class SessionStore {
       forkContext: update.forkContext ?? prev?.native?.forkContext,
       result: update.result ?? prev?.native?.result,
       closed: update.closed ?? prev?.native?.closed,
+      progress: update.progress ?? prev?.native?.progress,
+      usage: update.usage ?? prev?.native?.usage,
       childToolCallIds: appendUnique(
         prev?.native?.childToolCallIds,
         update.childToolCallId,
@@ -1437,6 +2227,8 @@ export class SessionStore {
         toolCallId: update.toolCallId,
         childId: childSessionId,
         parentSessionId,
+        task: update.task ?? prev?.task,
+        agentType: update.agentType ?? prev?.native?.agentType,
       });
     }
   }
@@ -1489,7 +2281,7 @@ export class SessionStore {
       promptText: activity.task,
       events: previousTurn?.events ?? [],
       assistantText:
-        activity.native?.result ?? previousTurn?.assistantText ?? "",
+        previousTurn?.assistantText || activity.native?.result || "",
       thoughtText: previousTurn?.thoughtText ?? "",
       status: turnStatus,
       errorMessage: activity.errorMessage,
@@ -1579,6 +2371,8 @@ export class SessionStore {
         members: r.members.map((m) => m.id),
         lastUsedAt: r.last_used_at || prev?.lastUsedAt || Date.now(),
         createdAt: r.created_at || prev?.createdAt || Date.now(),
+        pinnedAt: r.pinned_at ?? undefined,
+        archivedAt: r.archived_at ?? undefined,
         activeTurnId: prev?.activeTurnId,
         memberTurnIds: prev?.memberTurnIds,
         pendingMembers: prev?.pendingMembers,
@@ -1625,10 +2419,13 @@ export class SessionStore {
       cwd: string;
       acp_session_id: string;
       title: string;
+      title_manually_set?: number;
       last_used_at: number;
       created_at: number;
       pinned_at?: number | null;
       archived_at?: number | null;
+      project_id?: string | null;
+      additional_directories?: string[];
     }>,
   ): void {
     for (const r of rows) {
@@ -1649,8 +2446,12 @@ export class SessionStore {
           ...s,
           agent_id: r.agent_id,
           cwd: r.cwd,
+          projectId: r.project_id ?? s.projectId,
+          additionalDirectories:
+            r.additional_directories ?? s.additionalDirectories,
           acp_session_id: r.acp_session_id || s.acp_session_id,
           label: r.title || s.label,
+          titleManuallySet: r.title_manually_set === 1 || s.titleManuallySet,
           projectScope: s.projectScope,
           kind: this.#isPairMember(r.id) ? "pair" : s.kind,
           createdAt: r.created_at || s.createdAt,
@@ -1663,8 +2464,11 @@ export class SessionStore {
         id: r.id,
         agent_id: r.agent_id,
         cwd: r.cwd,
+        projectId: r.project_id ?? undefined,
+        additionalDirectories: r.additional_directories,
         acp_session_id: r.acp_session_id,
         label: r.title || "New chat",
+        titleManuallySet: r.title_manually_set === 1,
         kind: this.#isPairMember(r.id) ? "pair" : undefined,
         status: "ready",
         createdAt: r.created_at,
@@ -1693,10 +2497,175 @@ export class SessionStore {
       (t) => t.sessionId === sessionId,
     );
     if (hasTurns) return;
+
+    // New rows contain the canonical envelope as the fact source. The
+    // envelope's `raw` field is compatibility evidence, not a second event
+    // to replay. Pre-scan it so a mixed history from the migration window can
+    // skip a legacy raw row even when that row appears before its canonical
+    // counterpart in SQL order.
+    const prepared = rows.map((row) => {
+      const data = safeParse(row.data);
+      return {
+        row,
+        data,
+        canonical: parsePersistedOpenMAEvent(data),
+      };
+    });
+    const canonicalRawEvidence = new Set(
+      prepared
+        .map(({ canonical }) => canonical?.raw?.payload)
+        .filter((payload): payload is unknown => payload !== undefined)
+        .map(persistedEventFingerprint),
+    );
+    const canonicalByRawEvidence = new Map<string, OpenMAEvent>();
+    for (const { canonical } of prepared) {
+      if (!canonical?.raw?.payload) continue;
+      const key = persistedEventFingerprint(canonical.raw.payload);
+      const previous = canonicalByRawEvidence.get(key);
+      // Renderer-derived native transcript events carry work_item_id and
+      // are richer than the main ACP projection of the same wire payload.
+      if (!previous || (!previous.work_item_id && canonical.work_item_id)) {
+        canonicalByRawEvidence.set(key, canonical);
+      }
+    }
+
     let current: Turn | null = null;
     let order = 0;
-    for (const r of rows) {
-      const data = safeParse(r.data);
+    for (const { row: r, data, canonical } of prepared) {
+      if (canonical) {
+        const canonicalRaw = canonical.raw?.payload;
+        if (
+          canonicalRaw !== undefined
+          && canonicalByRawEvidence.get(persistedEventFingerprint(canonicalRaw))?.event_id
+            !== canonical.event_id
+        ) {
+          continue;
+        }
+        this.#ingestOpenMAEvent(canonical);
+        this.#applyCanonicalSessionProjection(canonical);
+
+        // Native harness events (for example Claude subagent lifecycle and
+        // nested transcript projections) are already normalized into the
+        // canonical stream with a work-item correlation. Rehydrate those
+        // records into the existing Agents view before falling through to
+        // the parent-turn projection; otherwise replay would silently drop
+        // the child activity while still retaining the SQL evidence.
+        if (this.#replayCanonicalNativeLifecycle(canonical)) continue;
+        if (this.#replayCanonicalNativeTranscript(canonical, r.ts)) continue;
+
+        if (canonical.type === "user.message") {
+          const input = isPlainRecord(canonical.data)
+            ? canonical.data
+            : {};
+          const inputKind = input.input_kind;
+          if (inputKind === "prompt" || inputKind === "steering") {
+            if (current) this.#turns.set(current.id, current);
+            const tid = `replay-${sessionId}-${order++}`;
+            current = {
+              id: tid,
+              sessionId,
+              promptText: typeof input.text === "string" ? input.text : "",
+              attachments: Array.isArray(input.attachments)
+                ? input.attachments as PromptAttachment[]
+                : undefined,
+              sessionReferences: Array.isArray(input.session_references)
+                ? input.session_references as PromptSessionReference[]
+                : undefined,
+              events: [],
+              assistantText: "",
+              thoughtText: "",
+              status: "complete",
+              startedAt: r.ts,
+              endedAt: r.ts,
+            };
+          }
+          continue;
+        }
+
+        if (!current) continue;
+        current.endedAt = Math.max(current.endedAt ?? current.startedAt, r.ts);
+        if (canonical.type === "turn.completed") {
+          current.status = "complete";
+          // A provider-owned session.running fact can precede the host-owned
+          // turn terminal in the persisted stream (Pi reports exactly this).
+          // Replay must respect the later terminal just like the live reducer,
+          // otherwise a restart leaves the session permanently "running".
+          this.#mutateSession(sessionId, (session) => ({
+            ...session,
+            status: "ready",
+            activeTurnId: undefined,
+            lastError: undefined,
+          }));
+          continue;
+        }
+        if (canonical.type === "turn.cancelled") {
+          current.status = "cancelled";
+          continue;
+        }
+        if (canonical.type === "turn.failed") {
+          current.status = "error";
+          const errorData = isPlainRecord(canonical.data)
+            ? canonical.data
+            : undefined;
+          current.errorMessage =
+            typeof errorData?.message === "string"
+              ? errorData.message
+              : current.errorMessage;
+          continue;
+        }
+        if (canonical.type === "session.error" && canonical.turn_id) {
+          current.status = "error";
+          const errorData = isPlainRecord(canonical.data)
+            ? canonical.data
+            : undefined;
+          current.errorMessage =
+            typeof errorData?.message === "string"
+              ? errorData.message
+              : current.errorMessage;
+          continue;
+        }
+
+        // Content and structural transcript facts are kept in the existing
+        // Turn event list. The reducer already understands the canonical
+        // envelope, so replay does not need to reconstruct an ACP payload.
+        const parsedCanonical = parseAcpEvent(canonical);
+        if (parsedCanonical.kind === "text") {
+          current.assistantText = mergeStreamingText(
+            current.assistantText,
+            parsedCanonical.text,
+          );
+          this.#appendStreamEvent(current, "text", parsedCanonical.text, r.ts, {
+            messageId: parsedCanonical.messageId,
+            phase: parsedCanonical.phase,
+          });
+        } else if (parsedCanonical.kind === "thought") {
+          current.thoughtText = mergeStreamingText(
+            current.thoughtText,
+            parsedCanonical.text,
+          );
+          this.#appendStreamEvent(current, "thought", parsedCanonical.text, r.ts, {
+            messageId: parsedCanonical.messageId,
+          });
+        } else if (
+          canonical.type === "tool.started"
+          || canonical.type === "tool.progress"
+          || canonical.type === "tool.completed"
+          || canonical.type === "tool.failed"
+          || canonical.type === "tool.cancelled"
+          || canonical.type === "plan.updated"
+          || canonical.type === "plan.completed"
+          || canonical.type === "plan.removed"
+        ) {
+          current.events.push({ payload: canonical, receivedAt: r.ts });
+        }
+        continue;
+      }
+
+      // A legacy raw row that is already retained inside a canonical
+      // envelope is evidence only. Replaying it would duplicate text and
+      // tools in the transcript.
+      if (canonicalRawEvidence.has(persistedEventFingerprint(data))) continue;
+
       if (
         this.#applyAcpSessionMetadata(
           sessionId,
@@ -1714,6 +2683,12 @@ export class SessionStore {
           id: tid,
           sessionId,
           promptText: (data as { text?: string })?.text ?? "",
+          attachments: (
+            data as { attachments?: PromptAttachment[] }
+          )?.attachments,
+          sessionReferences: (
+            data as { session_references?: PromptSessionReference[] }
+          )?.session_references,
           events: [],
           assistantText: "",
           thoughtText: "",
@@ -1743,9 +2718,8 @@ export class SessionStore {
           current.thoughtText += text;
           this.#appendStreamEvent(current, "thought", text, r.ts);
         } else {
-          // New persisted chunks are stored as the raw ACP event under
-          // each row's `data`. They already have sessionUpdate /
-          // content fields, so reduceTurn consumes them directly.
+        // Legacy persisted chunks are stored as the raw ACP event under each
+        // row's `data`. They remain supported for pre-canonical histories.
           const parsed = parseAcpEvent(data);
           if (parsed.kind === "text") {
             current.assistantText = mergeStreamingText(current.assistantText, parsed.text);
@@ -1777,22 +2751,41 @@ export class SessionStore {
   // though the underlying `.status` flipped.
 
   apply(ev: SessionEventOut): void {
+    if (ev.openma_event) this.#ingestOpenMAEvent(ev.openma_event);
     switch (ev.type) {
       case "session.ready": {
         const existing = this.#sessions.get(ev.session_id);
         const pendingBeforeReady = this.#pendingAsksBeforeSession.get(ev.session_id);
         this.#pendingAsksBeforeSession.delete(ev.session_id);
-        const configOptions = normalizeAgentConfigOptions(ev.config_options);
+        const canonicalStart =
+          ev.openma_event?.type === "session.started"
+          && ev.openma_event.data
+          && typeof ev.openma_event.data === "object"
+            ? ev.openma_event.data as Record<string, unknown>
+            : undefined;
+        const configOptions =
+          normalizeAgentConfigOptions(canonicalStart?.config_options)
+          ?? normalizeAgentConfigOptions(ev.config_options)
+          ?? (() => {
+            const legacyMode = configOptionFromLegacySessionModes(
+              canonicalStart?.modes ?? ev.modes,
+            );
+            return legacyMode ? [legacyMode] : undefined;
+          })();
         if (existing) {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
             acp_session_id: ev.acp_session_id,
             agent_id: ev.agent_id,
             cwd: ev.cwd,
+            projectId: ev.project_id ?? s.projectId,
+            additionalDirectories:
+              ev.additional_directories ?? s.additionalDirectories,
             configOptions: configOptions ?? s.configOptions,
             currentModeId:
               selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
             supportsSessionFork: ev.supports_session_fork ?? s.supportsSessionFork,
+            supportsSteering: ev.supports_steering ?? s.supportsSteering,
             status: s.activeTurnId ? "running" : "ready",
             lastError: undefined,
             pendingAsks:
@@ -1805,6 +2798,8 @@ export class SessionStore {
             id: ev.session_id,
             agent_id: ev.agent_id,
             cwd: ev.cwd,
+            projectId: ev.project_id,
+            additionalDirectories: ev.additional_directories,
             acp_session_id: ev.acp_session_id,
             label: `${ev.agent_id} · ${ev.session_id.slice(0, 6)}`,
             status: "ready",
@@ -1812,6 +2807,7 @@ export class SessionStore {
             configOptions,
             currentModeId: selectedModeIdFromConfigOptions(configOptions),
             supportsSessionFork: ev.supports_session_fork,
+            supportsSteering: ev.supports_steering,
             pendingAsks: pendingBeforeReady,
           });
         }
@@ -1819,6 +2815,12 @@ export class SessionStore {
         break;
       }
       case "session.event": {
+        if (
+          ev.openma_event
+          && this.#applyCanonicalSessionProjection(ev.openma_event)
+        ) {
+          break;
+        }
         // Some ACP session updates are session-scoped, not turn-scoped —
         // available_commands_update declares the agent's slash command
         // catalog, current_mode_update names the agent's active mode.
@@ -1827,9 +2829,40 @@ export class SessionStore {
         // session.new). Branch on these before the turn-lookup path so
         // we don't synthesize an empty turn just to hold a session-level
         // payload.
+        const canonicalTurnEvent =
+          ev.openma_event
+          && (
+            ev.openma_event.type === "tool.started"
+            || ev.openma_event.type === "tool.progress"
+            || ev.openma_event.type === "tool.completed"
+            || ev.openma_event.type === "tool.failed"
+            || ev.openma_event.type === "tool.cancelled"
+            || ev.openma_event.type === "agent.message"
+            || ev.openma_event.type === "agent.message_chunk"
+            || ev.openma_event.type === "agent.thinking"
+            || ev.openma_event.type === "plan.updated"
+            || ev.openma_event.type === "plan.completed"
+            || ev.openma_event.type === "plan.removed"
+          )
+            ? ev.openma_event
+            : undefined;
+        const semanticEvent = canonicalTurnEvent ?? ev.event;
+        if (ev.openma_event) {
+          const canonicalSources = extractCanonicalContentSources(
+            ev.openma_event,
+          );
+          if (canonicalSources.length > 0) {
+            this.#ingestArtifacts(
+              ev.session_id,
+              [],
+              [],
+              canonicalSources,
+            );
+          }
+        }
         const inner = sessionUpdateInner(ev.event);
         const updateType = sessionUpdateType(ev.event);
-        const parsed = parseAcpEvent(ev.event);
+        const parsed = parseAcpEvent(semanticEvent);
         if (parsed.kind === "commands") {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
@@ -1851,6 +2884,9 @@ export class SessionStore {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
             currentModeId,
+            configOptions: currentModeId
+              ? withSelectedSessionMode(s.configOptions, currentModeId)
+              : s.configOptions,
           }));
           break;
         }
@@ -1869,24 +2905,54 @@ export class SessionStore {
           }));
           break;
         }
+        const runtimeAdapter = resolveAgentRuntimeAdapter(
+          this.#sessions.get(ev.session_id)?.agent_id,
+        );
+        const nestedTranscript = runtimeAdapter?.nativeAgentTranscriptUpdates(
+          ev.event,
+        ) ?? [];
+        if (nestedTranscript.length > 0) {
+          this.#ingestNativeAgentTranscript(
+            ev.session_id,
+            nestedTranscript,
+            ev.turn_id,
+          );
+          // A child-correlated usage update belongs to the native work item,
+          // not to the parent session usage snapshot. The same rule keeps
+          // nested text/thought/tool updates out of the parent transcript.
+          break;
+        }
         if (
           this.#applyAcpSessionMetadata(ev.session_id, updateType, inner)
         ) {
           break;
         }
-        const turn = this.#turns.get(ev.turn_id);
+        for (const monitorEvent of runtimeAdapter?.monitorRawEvents?.(
+          ev.event,
+        ) ?? []) {
+          this.#ingestOpenMAEvent(runtimeMonitorEventToOpenMAEvent(
+            monitorEvent,
+            {
+              sessionId: ev.session_id,
+              turnId: ev.turn_id || undefined,
+              occurredAt: new Date().toISOString(),
+              adapter: runtimeAdapter!.provider,
+            },
+          ), { persist: true });
+        }
+        let turn = this.#turns.get(ev.turn_id);
         if (!turn) {
-          this.#turns.set(ev.turn_id, {
+          turn = {
             id: ev.turn_id,
             sessionId: ev.session_id,
             promptText: "",
-            events: [{ payload: ev.event, receivedAt: Date.now() }],
+            events: [],
             assistantText: "",
             thoughtText: "",
             status: "running",
             startedAt: Date.now(),
-          });
-          break;
+          };
+          this.#turns.set(ev.turn_id, turn);
         }
 
         // Fast path for streaming text — bypass React. assistant_message_chunk
@@ -1965,6 +3031,18 @@ export class SessionStore {
               messageId: parsed.messageId,
               ...(parsed.kind === "text" ? { phase: parsed.phase } : {}),
             });
+            if (parsed.kind === "text" && runtimeAdapter?.assistantBackgroundWorkItemUpdates) {
+              for (const update of runtimeAdapter.assistantBackgroundWorkItemUpdates(text)) {
+                for (const event of runtimeWorkItemUpdateToOpenMAEvents(update, {
+                  sessionId: ev.session_id,
+                  turnId: ev.turn_id,
+                  occurredAt: new Date().toISOString(),
+                  adapter: runtimeAdapter.provider,
+                })) {
+                  this.#ingestOpenMAEvent(event, { persist: true });
+                }
+              }
+            }
             if (
               shouldMountThought ||
               assistantNeedsMount ||
@@ -1974,9 +3052,13 @@ export class SessionStore {
               // object exactly once so the streaming answer or Reasoning
               // block actually mounts; later chunks keep mutating the
               // replacement in place.
-              this.#turns.set(ev.turn_id, { ...turn });
+              this.#turns.set(ev.turn_id, {
+                ...turn,
+                events: [...turn.events],
+              });
               this.#emit();
             }
+            if (ev.openma_event) this.#emit();
             return;
           }
         }
@@ -1993,27 +3075,107 @@ export class SessionStore {
             : turn;
         this.#turns.set(ev.turn_id, {
           ...nextTurn,
-          events: [...turn.events, { payload: ev.event, receivedAt: Date.now() }],
+          events: [...turn.events, { payload: semanticEvent, receivedAt: Date.now() }],
         });
-        if (nativeProviderForAgent(this.#sessions.get(ev.session_id)?.agent_id) === "codex") {
+        if (runtimeAdapter) {
+          const backgroundLevel = runtimeAdapter.backgroundWorkItemLevel?.(
+            ev.event,
+          );
+          if (backgroundLevel) {
+            this.#reconcileBackgroundWorkItemLevel(
+              ev.session_id,
+              ev.turn_id,
+              runtimeAdapter.provider,
+              backgroundLevel,
+            );
+          }
           this.#ingestNativeAgentUpdates(
             ev.session_id,
-            detectNativeAgentRawEvent(ev.event),
+            runtimeAdapter.nativeAgentRawUpdates(ev.event),
+            { turnId: ev.turn_id },
           );
+          for (const update of runtimeAdapter.backgroundWorkItemRawUpdates?.(
+            ev.event,
+          ) ?? []) {
+            this.#ingestRuntimeWorkItemUpdate(
+              ev.session_id,
+              ev.turn_id,
+              runtimeAdapter.provider,
+              update,
+            );
+          }
+          const rawArtifacts = runtimeAdapter.rawWorkspaceArtifacts?.(ev.event);
+          if (rawArtifacts) {
+            this.#ingestArtifacts(
+              ev.session_id,
+              rawArtifacts.outputs.files,
+              rawArtifacts.outputs.services,
+              rawArtifacts.sources,
+            );
+          }
         }
-        // Sniff tool_call payloads for workspace artifacts: file paths
-        // from rawInput, localhost service URLs from rawOutput. These
-        // feed the side panel's 推荐 tile so the user can jump to
-        // whatever the agent just touched.
+        // Ask the active runtime adapter to normalize this tool event into
+        // New-tab outputs, explicit sources, and background activity.
         if (parsed.kind === "tool_call") {
-          const tool = parsed.tool;
-          this.#ingestNativeAgentToolEvent(ev.session_id, tool);
-          const files = [
-            ...extractFilePaths(tool.rawInput),
-            ...extractToolOutputFiles(tool),
-          ];
-          const services = extractServiceUrls(tool.rawOutput);
-          this.#ingestArtifacts(ev.session_id, files, services);
+          // ACP tool_call_update is a patch. In particular, Claude Code's
+          // completed update retains the tool name but omits the raw input
+          // URL/path from the initial tool_call. Normalize only after
+          // reducing the turn so provider adapters receive the complete
+          // logical tool event.
+          const tool = reduceTurn(
+            this.#turns.get(ev.turn_id)?.events ?? [],
+          ).tools.find(
+            (candidate) => candidate.toolCallId === parsed.tool.toolCallId,
+          ) ?? parsed.tool;
+          // Native lifecycle patches are intentionally interpreted in their
+          // original provider shape. A bare Claude agent.tool_result means
+          // "settle the existing Task context"; reattaching the initial
+          // Agent tool name would make it look like a second spawn.
+          this.#ingestNativeAgentToolEvent(
+            ev.session_id,
+            parsed.tool,
+            tool,
+            ev.turn_id,
+          );
+          const workItemAdapter = runtimeAdapter ?? genericAcpRuntimeAdapter;
+          for (const update of workItemAdapter.planToolUpdates(tool)) {
+            const planEvent = runtimePlanUpdateToOpenMAEvent(update, {
+              sessionId: ev.session_id,
+              turnId: ev.turn_id,
+              occurredAt: new Date().toISOString(),
+              adapter: workItemAdapter.provider,
+            });
+            if (this.#ingestOpenMAEvent(planEvent, { persist: true })) {
+              const currentTurn = this.#turns.get(ev.turn_id);
+              if (currentTurn) {
+                this.#turns.set(ev.turn_id, {
+                  ...currentTurn,
+                  events: [
+                    ...currentTurn.events,
+                    { payload: planEvent, receivedAt: Date.now() },
+                  ],
+                });
+              }
+            }
+          }
+          for (const update of workItemAdapter.backgroundWorkItemToolUpdates(
+            parsed.tool,
+            tool,
+          )) {
+            for (const event of runtimeWorkItemUpdateToOpenMAEvents(update, {
+              sessionId: ev.session_id,
+              turnId: ev.turn_id,
+              occurredAt: new Date().toISOString(),
+              adapter: workItemAdapter.provider,
+            })) {
+              this.#ingestOpenMAEvent(event, { persist: true });
+            }
+          }
+          const { outputs, sources } = (
+            runtimeAdapter ?? genericAcpRuntimeAdapter
+          ).workspaceArtifacts(tool);
+          const { files, services } = outputs;
+          this.#ingestArtifacts(ev.session_id, files, services, sources);
           // Auto-open HTML produced/opened by the agent in the side
           // BrowserTab. Two trigger shapes:
           //   - execute tool with `open /abs/x.html` in the command
@@ -2056,12 +3218,101 @@ export class SessionStore {
             result: ev.result,
             errorMessage: ev.error_message,
           },
-        ]);
+        ], { emitCanonical: !ev.openma_event });
+        break;
+      }
+      case "session.steering": {
+        if (ev.outcome === "injected") {
+          const turn = this.#turns.get(ev.turn_id);
+          if (turn) {
+            this.#turns.set(ev.turn_id, {
+              ...turn,
+              status: "complete",
+              effectiveDelivery: ev.effective_delivery,
+              deliveryDegraded: ev.delivery_degraded ?? false,
+              endedAt: Date.now(),
+            });
+          }
+          this.#advanceAfterTurn(ev.session_id, ev.turn_id);
+        } else if (ev.outcome === "startedNewTurn") {
+          this.#markTurnRunning(ev.turn_id);
+          this.#mutateSession(ev.session_id, (session) => {
+            const queuedTurnIds = (session.queuedTurnIds ?? []).filter(
+              (turnId) => turnId !== ev.turn_id,
+            );
+            const queuedPrompts = session.queuedPrompts?.filter(
+              (prompt) => prompt.turn_id !== ev.turn_id,
+            );
+            return {
+              ...session,
+              activeTurnId: ev.turn_id,
+              queuedTurnIds: queuedTurnIds.length > 0 ? queuedTurnIds : undefined,
+              queuedPrompts,
+              status: "running",
+            };
+          });
+        }
+        break;
+      }
+      case "session.tool_cancelled": {
+        const turn = this.#turns.get(ev.turn_id);
+        if (turn) {
+          turn.events.push({
+            payload: ev.openma_event ?? {
+              schema_version: "oma.event.v1",
+              event_id: `tool-cancelled:${ev.session_id}:${ev.turn_id}:${ev.tool_call_id}`,
+              type: "tool.cancelled",
+              session_id: ev.session_id,
+              turn_id: ev.turn_id,
+              source: { kind: "openma", adapter: "acp-client" },
+              occurred_at: new Date().toISOString(),
+              data: {
+                tool_call_id: ev.tool_call_id,
+                status: "cancelled",
+                reason: ev.reason,
+              },
+            },
+            receivedAt: Date.now(),
+          });
+        }
+        break;
+      }
+      case "session.cancelled": {
+        const turn = this.#turns.get(ev.turn_id);
+        if (turn) {
+          this.#turns.set(ev.turn_id, {
+            ...turn,
+            status: "cancelled",
+            endedAt: Date.now(),
+          });
+        }
+        this.#advanceAfterTurn(ev.session_id, ev.turn_id);
         break;
       }
       case "session.complete": {
         const turn = this.#turns.get(ev.turn_id);
         if (turn) {
+          const runtimeAdapter = resolveAgentRuntimeAdapter(
+            this.#sessions.get(ev.session_id)?.agent_id,
+          );
+          if (runtimeAdapter?.assistantNativeAgentUpdates) {
+            this.#ingestNativeAgentUpdates(
+              ev.session_id,
+              runtimeAdapter.assistantNativeAgentUpdates(turn.assistantText),
+              { turnId: ev.turn_id },
+            );
+          }
+          const assistantArtifacts = runtimeAdapter?.assistantArtifacts?.(
+            turn.assistantText,
+          );
+          if (assistantArtifacts) {
+            this.#ingestArtifacts(
+              ev.session_id,
+              assistantArtifacts.outputs.files,
+              assistantArtifacts.outputs.services,
+              assistantArtifacts.sources,
+            );
+          }
           this.#turns.set(ev.turn_id, {
             ...turn,
             // Streaming chunks compact into turn.events in place to avoid a
@@ -2074,7 +3325,8 @@ export class SessionStore {
             status: "complete",
             endedAt: Date.now(),
           });
-          this.#settleCodexSubagentsForTurn(ev.session_id, turn);
+          this.#settleNativeSubagentsForTurn(ev.session_id, turn);
+          this.#settleBackgroundWorkItemsForTurn(ev.session_id, turn);
         }
         // Mark unread ONLY if the user wasn't looking at this session
         // when the turn finished — there's nothing to "notify" about
@@ -2089,11 +3341,50 @@ export class SessionStore {
         break;
       }
       case "session.queue_update": {
+        const nextQueuedIds = ev.queued.map((prompt) => prompt.turn_id);
+        const nextQueued = new Set(nextQueuedIds);
+        const steeringTurnIds = ev.steering_turn_ids ?? [];
+        const steeringTurns = new Set(steeringTurnIds);
+        const previous = this.#sessions.get(ev.session_id);
+        const previousQueued = new Set(
+          previous?.queuedTurnIds ?? previous?.queuedPrompts?.map((prompt) => prompt.turn_id) ?? [],
+        );
+        for (const turnId of previousQueued) {
+          if (
+            nextQueued.has(turnId)
+            || steeringTurns.has(turnId)
+            || turnId === ev.active_turn_id
+          ) continue;
+          const turn = this.#turns.get(turnId);
+          if (turn?.sessionId === ev.session_id && turn.status === "queued") {
+            this.#turns.delete(turnId);
+          }
+        }
+        for (const turnId of steeringTurnIds) {
+          this.#markTurnRunning(turnId);
+        }
+        for (const prompt of ev.queued) {
+          const turn = this.#turns.get(prompt.turn_id);
+          if (turn?.sessionId === ev.session_id) {
+            this.#turns.set(prompt.turn_id, {
+              ...turn,
+              promptText: prompt.text,
+              status: "queued",
+            });
+          }
+        }
+        this.#markTurnRunning(ev.active_turn_id ?? undefined);
         this.#mutateSession(ev.session_id, (s) => ({
           ...s,
           activeTurnId: ev.active_turn_id ?? undefined,
+          queuedTurnIds: nextQueuedIds.length ? nextQueuedIds : undefined,
           queuedPrompts: ev.queued,
-          status: ev.active_turn_id ? "running" : s.status === "running" ? "ready" : s.status,
+          status: ev.active_turn_id
+            || steeringTurnIds.length > 0
+            ? "running"
+            : s.status === "running"
+              ? "ready"
+              : s.status,
         }));
         break;
       }
@@ -2143,6 +3434,7 @@ export class SessionStore {
           this.#sideActiveId = null;
         }
         this.#sessions.delete(ev.session_id);
+        this.#openmaEventsBySession.delete(ev.session_id);
         const noticeTimer = this.#noticeTimers.get(ev.session_id);
         if (noticeTimer) clearTimeout(noticeTimer);
         this.#noticeTimers.delete(ev.session_id);
@@ -2160,11 +3452,50 @@ export class SessionStore {
 
   /** All pairs in display order (most-recent first). */
   pairList(): PairRow[] {
-    return [...this.#pairs.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+    return [...this.#pairs.values()]
+      .filter((pair) => pair.archivedAt == null)
+      .sort((a, b) => {
+        const pinnedDelta = Number(b.pinnedAt != null) - Number(a.pinnedAt != null);
+        return pinnedDelta || b.lastUsedAt - a.lastUsedAt;
+      });
   }
 
   pair(id: string): PairRow | null {
     return this.#pairs.get(id) ?? null;
+  }
+
+  /** Rename a pair-chat wrapper and persist its title through pairSave. */
+  async renamePair(pairId: string, title: string): Promise<void> {
+    const pair = this.#pairs.get(pairId);
+    const trimmed = title.trim();
+    if (!pair || !trimmed) return;
+    pair.label = trimmed.slice(0, 500);
+    this.#persistPair(pair);
+    this.#emit();
+  }
+
+  pinPair(pairId: string): void {
+    const pair = this.#pairs.get(pairId);
+    if (!pair) return;
+    pair.pinnedAt = Date.now();
+    void window.backchat.pairsPin({ pair_id: pairId });
+    this.#emit();
+  }
+
+  unpinPair(pairId: string): void {
+    const pair = this.#pairs.get(pairId);
+    if (!pair) return;
+    pair.pinnedAt = undefined;
+    void window.backchat.pairsUnpin({ pair_id: pairId });
+    this.#emit();
+  }
+
+  archivePair(pairId: string): void {
+    const pair = this.#pairs.get(pairId);
+    if (!pair) return;
+    pair.archivedAt = Date.now();
+    void window.backchat.pairsArchive({ pair_id: pairId });
+    this.#emit();
   }
 
   /** Mint a fresh draft pair from the renderer. Doesn't fire IPC yet —
@@ -2212,10 +3543,7 @@ export class SessionStore {
         for (const m of ev.members) {
           this.apply({
             type: "session.ready",
-            session_id: m.session_id,
-            acp_session_id: m.acp_session_id,
-            agent_id: m.agent_id,
-            cwd: m.cwd,
+            ...m,
           });
           // Hide the just-materialized member behind the pair sidebar row.
           this.#mutateSession(m.session_id, (s) => ({ ...s, kind: "pair" }));
@@ -2246,27 +3574,50 @@ export class SessionStore {
           session_id: ev.member_session_id,
           turn_id: ev.turn_id,
           event: ev.event,
+          openma_event: ev.openma_event,
         });
         return;
       }
       case "pair.complete": {
+        const {
+          type: _type,
+          pair_id: _pairId,
+          member_session_id: memberSessionId,
+          ...completion
+        } = ev;
         this.apply({
           type: "session.complete",
-          session_id: ev.member_session_id,
-          turn_id: ev.turn_id,
+          session_id: memberSessionId,
+          ...completion,
         });
         this.#dropPairPending(ev.pair_id, ev.member_session_id);
         return;
       }
       case "pair.error": {
+        const {
+          type: _type,
+          pair_id: _pairId,
+          member_session_id: memberSessionId,
+          ...failure
+        } = ev;
         this.apply({
           type: "session.error",
-          session_id: ev.member_session_id,
-          turn_id: ev.turn_id,
-          message: ev.message,
+          session_id: memberSessionId,
+          ...failure,
         });
         if (ev.member_session_id) {
           this.#dropPairPending(ev.pair_id, ev.member_session_id);
+        }
+        return;
+      }
+      case "pair.session_event": {
+        this.apply(ev.session_event);
+        if (ev.session_event.type === "session.cancelled") {
+          this.#dropPairPending(
+            ev.pair_id,
+            ev.member_session_id,
+            ev.session_event.turn_id,
+          );
         }
         return;
       }
@@ -2311,7 +3662,12 @@ export class SessionStore {
   /** Register a fan-out turn — paint the same user prompt under every
    *  member immediately, lock the pair composer, then return one
    *  ordinary session turn id per member. */
-  registerPairTurn(pair_id: string, text: string): PairTurnTarget[] | null {
+  registerPairTurn(
+    pair_id: string,
+    text: string,
+    sessionReferences: PromptSessionReference[] = [],
+    attachments: PromptAttachment[] = [],
+  ): PairTurnTarget[] | null {
     const pair = this.#pairs.get(pair_id);
     if (!pair) return null;
     const groupTurnId = `pairturn-${Math.random().toString(36).slice(2, 10)}`;
@@ -2321,7 +3677,16 @@ export class SessionStore {
     }));
     for (const sid of pair.members) {
       const target = targets.find((t) => t.session_id === sid);
-      if (target) this.registerTurn(target.turn_id, sid, text);
+      if (target) {
+        this.registerTurn(
+          target.turn_id,
+          sid,
+          text,
+          undefined,
+          sessionReferences,
+          attachments,
+        );
+      }
     }
     pair.activeTurnId = groupTurnId;
     pair.pendingMembers = new Set(pair.members);
@@ -2367,10 +3732,18 @@ export const selectActiveSideTab = (s: SessionStore) => s.activeSideTab();
 export const selectBrowserWindows = (s: SessionStore) => s.browserWindows();
 export const selectArtifactsFor =
   (sessionId: string | null | undefined) => (s: SessionStore) =>
-    sessionId ? s.artifactsFor(sessionId) : { files: [], services: [] };
+    sessionId
+      ? s.artifactsFor(sessionId)
+      : { files: [], services: [], sources: [] };
 export const selectSubagentsFor =
   (sessionId: string | null | undefined) => (s: SessionStore) =>
     sessionId ? s.subagentsFor(sessionId) : [];
+export const selectWorkItemsFor =
+  (sessionId: string | null | undefined) => (s: SessionStore) =>
+    sessionId ? s.workItemsFor(sessionId) : [];
+export const selectOpenMAEventsFor =
+  (sessionId: string | null | undefined) => (s: SessionStore) =>
+    sessionId ? s.openmaEventsFor(sessionId) : [];
 export const selectSubagentByChildId =
   (childSessionId: string | null | undefined) => (s: SessionStore) =>
     childSessionId ? s.subagentByChildId(childSessionId) : null;
@@ -2430,6 +3803,12 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
 function deepMergeRecords(
   current: Record<string, unknown>,
   patch: Record<string, unknown>,
@@ -2445,16 +3824,12 @@ function deepMergeRecords(
   return next;
 }
 
-function readAgentThreadStatus(
-  meta: Record<string, unknown> | undefined,
-): string | undefined {
-  const codex = isPlainRecord(meta?.codex) ? meta.codex : undefined;
-  const threadStatus = isPlainRecord(codex?.threadStatus)
-    ? codex.threadStatus
-    : undefined;
-  return typeof threadStatus?.type === "string"
-    ? threadStatus.type
-    : undefined;
+function activeSessionGoalUpdate(
+  update: SessionGoal | null | undefined,
+): SessionGoal | null | undefined {
+  if (!update) return update;
+  const status = update.status.trim().toLowerCase();
+  return status === "complete" || status === "completed" ? null : update;
 }
 
 function safeParse(s: string): unknown {
@@ -2462,6 +3837,31 @@ function safeParse(s: string): unknown {
     return JSON.parse(s);
   } catch {
     return null;
+  }
+}
+
+function parsePersistedOpenMAEvent(value: unknown): OpenMAEvent | null {
+  if (!isPlainRecord(value)) return null;
+  if (
+    value.schema_version !== "oma.event.v1"
+    || typeof value.event_id !== "string"
+    || typeof value.type !== "string"
+    || typeof value.session_id !== "string"
+    || typeof value.occurred_at !== "string"
+    || !isPlainRecord(value.source)
+    || typeof value.source.kind !== "string"
+    || !("data" in value)
+  ) {
+    return null;
+  }
+  return value as unknown as OpenMAEvent;
+}
+
+function persistedEventFingerprint(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
   }
 }
 

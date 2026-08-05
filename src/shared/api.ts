@@ -9,6 +9,8 @@ import type {
   PromptAttachment,
   SessionEventOut,
   SessionPromptParams,
+  SessionPromptQueueCommandParams,
+  SessionRunCommandParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
@@ -42,6 +44,8 @@ import type {
   BrowserDownloadInfo,
   BrowserWebContentsInput,
 } from "./browser-data.js";
+import type { ProjectInfo, ProjectSaveParams } from "./projects.js";
+import type { OpenMAEvent } from "@openma/common/session-events/openma";
 
 export interface AgentInfo {
   id: string;
@@ -110,12 +114,16 @@ export interface PersistedSessionInfo {
   cwd: string;
   acp_session_id: string;
   title: string;
+  title_manually_set: number;
   last_used_at: number;
   created_at: number;
   archived_at: number | null;
   /** Wall-clock ms the user pinned this row, or null when not pinned.
    *  Older db files (pre-pin) have the column present but null. */
   pinned_at: number | null;
+  project_id: string | null;
+  /** Current project roots excluding this session's cwd. */
+  additional_directories: string[];
 }
 
 /** Public shape of one persisted event. `data` is JSON-encoded text — the
@@ -171,8 +179,16 @@ export interface PairSaveParams {
 export interface PermissionAskInfo {
   requestId: string;
   sessionId: string;
-  /** Opaque ACP ToolCallUpdate — we render `title` / `kind` / `rawInput`. */
+  /** Opaque ACP ToolCallUpdate retained as callback evidence. GUI code must
+   *  consume `presentation`, never inspect provider metadata here. */
   toolCall: unknown;
+  /** Harness-neutral fields normalized at the main/per-harness boundary. */
+  presentation: {
+    title: string;
+    kind?: string;
+    reason?: string;
+    command?: string;
+  };
   options: Array<{
     optionId: string;
     name: string;
@@ -180,6 +196,88 @@ export interface PermissionAskInfo {
     kind: "allow_once" | "allow_always" | "reject_once" | "reject_always";
   }>;
 }
+
+export interface ElicitationFieldBase {
+  name: string;
+  title: string;
+  description?: string;
+  required: boolean;
+}
+
+export type ElicitationFieldInfo =
+  | (ElicitationFieldBase & {
+      type: "text";
+      minLength?: number;
+      maxLength?: number;
+      pattern?: string;
+      format?: "email" | "uri" | "date" | "date-time";
+      defaultValue?: string;
+    })
+  | (ElicitationFieldBase & {
+      type: "number";
+      integer: boolean;
+      minimum?: number;
+      maximum?: number;
+      defaultValue?: number;
+    })
+  | (ElicitationFieldBase & {
+      type: "boolean";
+      defaultValue?: boolean;
+    })
+  | (ElicitationFieldBase & {
+      type: "select";
+      options: Array<{ value: string; label: string; description?: string }>;
+      defaultValue?: string;
+    })
+  | (ElicitationFieldBase & {
+      type: "multiselect";
+      options: Array<{ value: string; label: string; description?: string }>;
+      minItems?: number;
+      maxItems?: number;
+      defaultValue?: string[];
+    });
+
+export interface ElicitationFormRequestInfo {
+  sessionId: string;
+  message: string;
+  fields: ElicitationFieldInfo[];
+}
+
+export type ElicitationFormResponseInfo =
+  | {
+      action: "accept";
+      content: Record<string, string | number | boolean | string[]>;
+    }
+  | { action: "decline" | "cancel" };
+
+export interface ElicitationUrlRequestInfo {
+  sessionId: string;
+  message: string;
+  /** Opaque ACP identifier used only to correlate a later
+   * `elicitation/complete` notification. */
+  elicitationId: string;
+  url: string;
+}
+
+export type ElicitationUrlResponseInfo =
+  | { action: "accept" }
+  | { action: "decline" | "cancel" };
+
+export type ElicitationResponseInfo =
+  | ElicitationFormResponseInfo
+  | ElicitationUrlResponseInfo;
+
+export type ElicitationFormAskInfo = ElicitationFormRequestInfo & {
+  requestId: string;
+  mode?: "form";
+};
+
+export type ElicitationUrlAskInfo = ElicitationUrlRequestInfo & {
+  requestId: string;
+  mode: "url";
+};
+
+export type ElicitationAskInfo = ElicitationFormAskInfo | ElicitationUrlAskInfo;
 
 /** Outbound write-approval ask for out-of-cwd writes. Shown with a tiny
  *  diff preview in the modal. */
@@ -196,6 +294,7 @@ export interface FsWriteAskInfo {
 
 export type PendingBrokerAskInfo =
   | { kind: "permission"; ask: PermissionAskInfo }
+  | { kind: "elicitation"; ask: ElicitationAskInfo }
   | { kind: "fsWrite"; ask: FsWriteAskInfo };
 
 export interface TerminalOutputFrame {
@@ -298,6 +397,8 @@ export interface BackchatApi {
 
   sessionStart(p: SessionStartParams): Promise<SessionStartResult>;
   sessionPrompt(p: SessionPromptParams): Promise<void>;
+  sessionUpdatePromptQueue(p: SessionPromptQueueCommandParams): Promise<void>;
+  sessionRunCommand(p: SessionRunCommandParams): Promise<void>;
   sessionSetConfigOption(p: SessionSetConfigOptionParams): Promise<void>;
   sessionCancel(p: { session_id: string; turn_id: string }): Promise<void>;
   sessionDispose(p: { session_id: string; remove_cwd?: boolean }): Promise<void>;
@@ -324,15 +425,29 @@ export interface BackchatApi {
    *  ordinary sessions for renderer layout/sidebar purposes. */
   pairsList(): Promise<PersistedPairInfo[]>;
   pairSave(p: PairSaveParams): Promise<void>;
+  pairsPin(p: { pair_id: string }): Promise<void>;
+  pairsUnpin(p: { pair_id: string }): Promise<void>;
+  pairsArchive(p: { pair_id: string }): Promise<void>;
+  pairsUnarchive(p: { pair_id: string }): Promise<void>;
+
+  projectsList(): Promise<ProjectInfo[]>;
+  projectSave(p: ProjectSaveParams): Promise<ProjectInfo>;
+  projectDelete(p: { project_id: string }): Promise<void>;
 
   /** List persisted sessions (most-recent first, archived hidden). Used by
    *  the renderer on boot to rebuild the sidebar from disk before any
    *  live session.ready arrives. */
   sessionsList(limit?: number): Promise<PersistedSessionInfo[]>;
+  sessionsRename(p: { session_id: string; title: string }): Promise<void>;
 
   /** Replay the event log for a persisted session, in seq order. Renderer
    *  feeds these back into its in-memory store to reconstruct turns. */
   sessionsLoadHistory(sessionId: string): Promise<PersistedEventInfo[]>;
+
+  /** Persist a canonical event synthesized by a renderer-side adapter. Main
+   * remains the SQL owner; this is used for native Agent/Task observations
+   * derived after the ACP payload reaches the store. */
+  sessionPersistCanonicalEvent(event: OpenMAEvent): Promise<void>;
 
   /** Durable right-rail UI/workspace state, one opaque JSON document per task. */
   sideWorkspacesList(): Promise<PersistedSideWorkspaceInfo[]>;
@@ -404,6 +519,11 @@ export interface BackchatApi {
    *  for cancel). */
   onPermissionRequest(handler: (ask: PermissionAskInfo) => void): () => void;
   permissionRespond(requestId: string, optionId: string | null): Promise<void>;
+  onElicitationRequest(handler: (ask: ElicitationAskInfo) => void): () => void;
+  elicitationRespond(
+    requestId: string,
+    response: ElicitationResponseInfo,
+  ): Promise<void>;
   /** Snapshot of unresolved broker asks. Used after renderer reload so a
    *  blocking approval cannot be lost between IPC subscription lifetimes. */
   brokerPendingAsks(): Promise<PendingBrokerAskInfo[]>;
@@ -502,11 +622,16 @@ export interface BackchatApi {
   /** Open the native "Choose folder" dialog. Returns the picked
    *  absolute path, or null if the user cancelled. */
   uiFsPickDir(p?: { defaultPath?: string }): Promise<string | null>;
+  /** Open a native multi-directory picker. */
+  uiFsPickDirs(p?: { defaultPath?: string }): Promise<string[]>;
 
   /** Open the native file picker for prompt attachments. Returns an
    *  empty array when cancelled. Image entries include base64 `data`
    *  when small enough for preview / ACP image blocks. */
   uiFsPickFiles(p?: { defaultPath?: string }): Promise<PromptAttachment[]>;
+
+  /** Search files below a workspace root for composer @-mentions. */
+  uiFsSearchFiles(p: { path: string; query?: string; limit?: number }): Promise<PromptAttachment[]>;
 
   /** Persist an in-app PNG capture under the local Backchat data root and
    *  return a fully populated image attachment, including inline base64. */

@@ -17,13 +17,22 @@ export interface RunningMessageActionDescription {
 export function describeRunningMessageAction({
   agentId,
   intent,
-  transport = GENERIC_ACP_DELIVERY_CAPABILITIES,
+  transport,
+  supportsSteering = false,
 }: {
   agentId: string | null | undefined;
   intent: AgentMessageIntent;
   transport?: AgentDeliveryCapabilities;
+  supportsSteering?: boolean;
 }): RunningMessageActionDescription {
-  const decision = decideRunningMessageDelivery({ agentId, intent, transport });
+  const decision = decideRunningMessageDelivery({
+    agentId,
+    intent,
+    transport: transport ?? {
+      ...GENERIC_ACP_DELIVERY_CAPABILITIES,
+      llmBoundary: supportsSteering,
+    },
+  });
   const disabled = decision.effectiveDelivery === "unsupported";
   const label = labelForDecision(decision);
   return {

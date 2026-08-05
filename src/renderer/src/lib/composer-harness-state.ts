@@ -92,6 +92,7 @@ export function useComposerHarnessState({
   configOptions,
   availableCommands,
   running,
+  supportsSteering,
 }: {
   sessionAgentId?: string;
   lockedAgentId: string | null;
@@ -100,6 +101,7 @@ export function useComposerHarnessState({
   configOptions?: AcpSessionConfigOption[];
   availableCommands?: AcpAvailableCommand[];
   running: boolean | undefined;
+  supportsSteering?: boolean;
 }) {
   const [draftConfigValues, setDraftConfigValues] = useState<
     Record<string, string | boolean>
@@ -174,6 +176,7 @@ export function useComposerHarnessState({
     ? describeRunningMessageAction({
         agentId: harness.currentAgentId,
         intent: "submit",
+        supportsSteering,
       })
     : null;
   const primaryIntent: AgentMessageIntent =
@@ -182,6 +185,7 @@ export function useComposerHarnessState({
     ? describeRunningMessageAction({
         agentId: harness.currentAgentId,
         intent: primaryIntent,
+        supportsSteering,
       })
     : null;
 

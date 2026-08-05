@@ -80,6 +80,14 @@ describe("composer prompt presentation", () => {
       attachmentCount: 2,
       annotationCount: 1,
     })).toBeNull();
+    expect(resolveComposerEmptyBackspace({
+      key: "Backspace",
+      text: "",
+      hasSelectedSkill: false,
+      attachmentCount: 0,
+      annotationCount: 0,
+      sessionReferenceCount: 2,
+    })).toBe("session-reference");
   });
 
   it("routes slash-picker keys before ordinary composer submission", () => {
@@ -88,6 +96,7 @@ describe("composer prompt presentation", () => {
       hasSelectedSkill: false,
       attachmentCount: 0,
       annotationCount: 0,
+      sessionReferenceCount: 0,
       slashPickerOpen: true,
       hasSlashSelection: true,
       shiftKey: false,
@@ -179,6 +188,11 @@ describe("composer prompt presentation", () => {
       disabled: false,
     })).toBe(true);
     expect(canSubmitComposer({
+      text: "",
+      sessionReferenceCount: 1,
+      disabled: false,
+    })).toBe(true);
+    expect(canSubmitComposer({
       text: "hello",
       disabled: true,
     })).toBe(false);
@@ -187,6 +201,7 @@ describe("composer prompt presentation", () => {
   it("uses visible placeholders for prompts that only contain context", () => {
     expect(derivePromptDisplayText("", [], 1)).toBe("[1 annotation]");
     expect(derivePromptDisplayText("", [], 2)).toBe("[2 annotations]");
+    expect(derivePromptDisplayText("", [], 0, 1)).toBe("[1 referenced session]");
     expect(derivePromptDisplayText("", [imageAttachment])).toBe(
       "[Attached image: screenshot.png]",
     );

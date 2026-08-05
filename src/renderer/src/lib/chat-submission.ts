@@ -5,6 +5,7 @@ import type { AgentMessageIntent } from "@shared/agent-interaction.js";
 import type {
   PromptAnnotation,
   PromptAttachment,
+  PromptSessionReference,
   SessionStartParams,
 } from "@shared/session-events.js";
 import { describeRunningMessageAction } from "./composer-delivery";
@@ -65,10 +66,11 @@ export function resolveProjectScopedPickedCwd(
 export function resolveWorkspaceMode(
   projectScope: SessionRow["projectScope"],
   isSide = false,
+  hasProjectCwd = true,
 ): SessionStartParams["workspace_mode"] {
   if (isSide) return "inherited";
   if (projectScope === "none") return "managed";
-  if (projectScope === "project") return "project";
+  if (projectScope === "project") return hasProjectCwd ? "project" : "managed";
   return undefined;
 }
 
@@ -107,12 +109,13 @@ export function useChatSubmission({
   const navigate = useNavigate();
 
   const resolveRunningDeliveryMeta = (
-    agentId: string | undefined,
+    session: Pick<SessionRow, "agent_id" | "supportsSteering">,
     intent: AgentMessageIntent,
   ): TurnDeliveryMeta | null => {
     const action = describeRunningMessageAction({
-      agentId,
+      agentId: session.agent_id,
       intent,
+      supportsSteering: session.supportsSteering,
     });
     if (action.disabled) {
       toast.error(`${action.label} is not available`, {
@@ -135,6 +138,7 @@ export function useChatSubmission({
     configOverrides: Record<string, string | boolean> = {},
     selectedAgentId?: string,
     annotations: PromptAnnotation[] = [],
+    sessionReferences: PromptSessionReference[] = [],
   ) => {
     // Resolve from the live store so a fast submit after navigation cannot
     // reuse the previous session captured by a render closure.
@@ -173,7 +177,7 @@ export function useChatSubmission({
     const isRunningTarget =
       target.status === "running" || !!target.activeTurnId;
     const delivery = isRunningTarget
-      ? resolveRunningDeliveryMeta(target.agent_id, intent)
+      ? resolveRunningDeliveryMeta(target, intent)
       : chatIdleDeliveryMeta(intent);
     if (!delivery) return;
 
@@ -184,8 +188,16 @@ export function useChatSubmission({
       text,
       attachments,
       annotations.length,
+      sessionReferences.length,
     );
-    sessionStore.registerTurn(turnId, target.id, displayText, delivery);
+    sessionStore.registerTurn(
+      turnId,
+      target.id,
+      displayText,
+      delivery,
+      sessionReferences,
+      attachments,
+    );
 
     if (target.status === "draft") {
       sessionStore.promoteDraft(
@@ -194,18 +206,25 @@ export function useChatSubmission({
         deriveChatLabel(displayText),
       );
       const parentLink = target.sideParent ?? target.subagent;
+      const startCwd = resolveChatStartCwd({
+        pickedCwd: resolveProjectScopedPickedCwd(
+          target.projectScope,
+          pickedCwd,
+        ),
+        chosenCwd: target.chosenCwd,
+        sessionCwd: target.cwd,
+      });
       const startResult = await window.backchat.sessionStart({
         session_id: target.id,
         agent_id: draftAgentId,
-        workspace_mode: resolveWorkspaceMode(target.projectScope, isSide),
-        cwd: resolveChatStartCwd({
-          pickedCwd: resolveProjectScopedPickedCwd(
-            target.projectScope,
-            pickedCwd,
-          ),
-          chosenCwd: target.chosenCwd,
-          sessionCwd: target.cwd,
-        }),
+        workspace_mode: resolveWorkspaceMode(
+          target.projectScope,
+          isSide,
+          !!startCwd,
+        ),
+        cwd: startCwd,
+        additional_directories: target.additionalDirectories,
+        project_id: target.projectId,
         fork: resolveChatFork(parentLink),
       });
       if (startResult.status !== "ready") return;
@@ -229,6 +248,8 @@ export function useChatSubmission({
         session_id: target.id,
         agent_id: target.agent_id,
         cwd: target.cwd || undefined,
+        additional_directories: target.additionalDirectories,
+        project_id: target.projectId,
         resume: target.acp_session_id
           ? { acp_session_id: target.acp_session_id }
           : undefined,
@@ -242,6 +263,7 @@ export function useChatSubmission({
       text,
       ...(attachments.length > 0 ? { attachments } : {}),
       ...(annotations.length > 0 ? { annotations } : {}),
+      ...(sessionReferences.length > 0 ? { session_references: sessionReferences } : {}),
       prompt_intent: delivery.intent,
       requested_delivery: delivery.requestedDelivery,
       effective_delivery: delivery.effectiveDelivery,

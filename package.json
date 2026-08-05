@@ -16,7 +16,8 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e:fast": "electron-vite build && playwright test e2e/smoke.spec.ts e2e/storage.spec.ts e2e/file-first-export.spec.ts",
+    "test:e2e:composer": "electron-vite build && playwright test e2e/composer.spec.ts e2e/composer-slash.spec.ts e2e/composer-config.spec.ts",
+    "test:e2e:fast": "electron-vite build && playwright test e2e/smoke.spec.ts e2e/composer.spec.ts e2e/composer-slash.spec.ts e2e/composer-config.spec.ts e2e/storage.spec.ts e2e/file-first-export.spec.ts",
     "test:e2e:real:codex-plugin": "electron-vite build && OPENMA_REAL_CODEX_PLUGIN_E2E=1 playwright test e2e/codex-plugin.real.spec.ts",
     "test:e2e:real:harness-tools": "electron-vite build && OPENMA_REAL_CODEX_PLUGIN_E2E=1 OPENMA_REAL_PI_COMPUTER_USE_E2E=1 playwright test e2e/codex-plugin.real.spec.ts e2e/pi-computer-use.real.spec.ts",
     "test:e2e:real:pi-computer-use": "electron-vite build && OPENMA_REAL_PI_COMPUTER_USE_E2E=1 playwright test e2e/pi-computer-use.real.spec.ts",
@@ -65,8 +66,8 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.55.0",
-    "@agentclientprotocol/codex-acp": "1.1.0",
+    "@agentclientprotocol/claude-agent-acp": "0.64.2",
+    "@agentclientprotocol/codex-acp": "1.1.9",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.100.14",

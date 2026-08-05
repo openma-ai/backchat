@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageSurface } from "@/components/shell/PageSurface";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { buildScheduleTrigger, type ScheduleTriggerDraft } from "@/lib/scheduled-page-model";
@@ -197,7 +198,7 @@ export function ScheduledPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto rounded-2xl bg-bg/80 shadow-card-soft">
+    <PageSurface>
       <div className="w-full px-8 pb-16 pt-8">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -281,7 +282,7 @@ export function ScheduledPage() {
           )}
         </section>
       </div>
-    </div>
+    </PageSurface>
   );
 }
 

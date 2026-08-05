@@ -1,8 +1,49 @@
-import { CornerDownLeftIcon, SlashIcon, ZapIcon } from "lucide-react";
+import {
+  ArrowRightFromLineIcon,
+  BoxIcon,
+  CircleGaugeIcon,
+  CommandIcon,
+  CornerDownLeftIcon,
+  FilePlus2Icon,
+  GaugeIcon,
+  LightbulbIcon,
+  MessageCirclePlusIcon,
+  MessageSquareTextIcon,
+  PawPrintIcon,
+  PlugZapIcon,
+  TargetIcon,
+  type LucideIcon,
+} from "lucide-react";
 
 import { useI18n } from "@/lib/i18n";
 import type { SlashCommandSection } from "@/lib/composer-slash-commands";
 import type { AcpAvailableCommand } from "@/lib/session-store";
+
+const COMMAND_ICONS: Record<string, LucideIcon> = {
+  compact: CircleGaugeIcon,
+  continue: ArrowRightFromLineIcon,
+  "continue-in-new-chat": ArrowRightFromLineIcon,
+  feedback: MessageSquareTextIcon,
+  goal: TargetIcon,
+  init: FilePlus2Icon,
+  mcp: PlugZapIcon,
+  new: MessageCirclePlusIcon,
+  "new-chat": MessageCirclePlusIcon,
+  pet: PawPrintIcon,
+  plan: LightbulbIcon,
+  "plan-mode": LightbulbIcon,
+  side: MessageCirclePlusIcon,
+  status: GaugeIcon,
+};
+
+function commandIconFor(
+  command: AcpAvailableCommand,
+  sectionKind: "commands" | "skills",
+): LucideIcon {
+  if (sectionKind === "skills") return BoxIcon;
+  const normalizedName = command.name.trim().toLowerCase();
+  return COMMAND_ICONS[normalizedName] ?? CommandIcon;
+}
 
 export function ComposerSlashCommandMenu({
   sections,
@@ -20,7 +61,7 @@ export function ComposerSlashCommandMenu({
 
   return (
     <div
-      className="slash-command-panel absolute left-3 right-3 bottom-full z-30"
+      className="composer-action-panel slash-command-panel composer-overlay-panel liquid-glass composer-card absolute bottom-full z-30"
       role="listbox"
       aria-label={t("chat.slashCommands")}
     >
@@ -30,20 +71,14 @@ export function ComposerSlashCommandMenu({
           className="slash-command-section"
           role="presentation"
         >
-          <div className="slash-command-section-label" aria-hidden="true">
-            {section.kind === "skills" ? (
-              <ZapIcon className="size-3" />
-            ) : (
-              <SlashIcon className="size-3" />
-            )}
-            <span>
-              {section.kind === "skills"
-                ? t("chat.skills")
-                : t("chat.commands")}
-            </span>
-          </div>
+          {section.kind === "skills" && (
+            <div className="slash-command-section-label" aria-hidden="true">
+              <span>{t("chat.skills")}</span>
+            </div>
+          )}
           {section.commands.map((command) => {
             const index = visibleCommands.indexOf(command);
+            const CommandIconComponent = commandIconFor(command, section.kind);
             return (
               <button
                 key={command.name}
@@ -55,30 +90,31 @@ export function ComposerSlashCommandMenu({
                 onClick={() => onPick(command)}
                 className="slash-command-item"
               >
-                <span className="slash-command-icon" aria-hidden="true">
-                  {section.kind === "skills" ? (
-                    <ZapIcon className="size-3.5" />
-                  ) : (
-                    <SlashIcon className="size-3.5" />
-                  )}
+                <span
+                  className="slash-command-icon"
+                  data-command-icon={command.name}
+                  aria-hidden="true"
+                >
+                  <CommandIconComponent className="size-4" />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <code className="slash-command-token">
-                      {`/${command.name}`}
-                    </code>
-                    {command.input?.hint && (
-                      <span className="slash-command-hint">
-                        {command.input.hint}
-                      </span>
-                    )}
-                  </span>
-                  {command.description && (
-                    <span className="slash-command-description">
-                      {command.description}
+                <span className="slash-command-main">
+                  <code className="slash-command-token">
+                    {`/${command.name}`}
+                  </code>
+                  {command.input?.hint && (
+                    <span className="slash-command-hint">
+                      {command.input.hint}
                     </span>
                   )}
                 </span>
+                {command.description && (
+                  <span
+                    className="slash-command-description"
+                    title={command.description}
+                  >
+                    {command.description}
+                  </span>
+                )}
                 <CornerDownLeftIcon
                   className="slash-command-enter size-3.5"
                   aria-hidden="true"

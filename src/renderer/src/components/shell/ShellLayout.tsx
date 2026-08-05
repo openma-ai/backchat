@@ -4,6 +4,7 @@ import {
   AppShell,
   SidebarCollapseContext,
   RightRailCollapseContext,
+  RightRailExpansionContext,
   BottomBarCollapseContext,
 } from "@/components/shell/AppShell";
 import { bindRightRailSetter } from "@/lib/right-rail";
@@ -18,7 +19,9 @@ import {
   selectActive,
 } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
+import { useSettings } from "@/lib/settings-store";
 import { createSideWorkspacePersistence } from "@/lib/side-workspace-persistence";
+import { SettingsSidebar } from "@/pages/settings/SettingsLayout";
 
 const COLLAPSE_KEY = "openma:sidebar-collapsed";
 const RIGHT_KEY = "openma:right-rail-collapsed";
@@ -71,6 +74,68 @@ function usePersistedCollapse(key: string, initial = false) {
   return { collapsed, toggle, set };
 }
 
+type RightRailExpansionState = {
+  expanded: boolean;
+  mainSelected: boolean;
+};
+
+const DEFAULT_RIGHT_RAIL_EXPANSION: RightRailExpansionState = {
+  expanded: false,
+  mainSelected: false,
+};
+
+function useRightRailExpansionState(sessionId: string | null) {
+  const [states, setStates] = useState<Map<string, RightRailExpansionState>>(
+    () => new Map(),
+  );
+  const current = sessionId
+    ? states.get(sessionId) ?? DEFAULT_RIGHT_RAIL_EXPANSION
+    : DEFAULT_RIGHT_RAIL_EXPANSION;
+  const update = useCallback(
+    (updater: (previous: RightRailExpansionState) => RightRailExpansionState) => {
+      if (!sessionId) return;
+      setStates((previousStates) => {
+        const previous = previousStates.get(sessionId)
+          ?? DEFAULT_RIGHT_RAIL_EXPANSION;
+        const nextState = updater(previous);
+        if (
+          nextState.expanded === previous.expanded
+          && nextState.mainSelected === previous.mainSelected
+        ) {
+          return previousStates;
+        }
+        const nextStates = new Map(previousStates);
+        if (!nextState.expanded && !nextState.mainSelected) {
+          nextStates.delete(sessionId);
+        } else {
+          nextStates.set(sessionId, nextState);
+        }
+        return nextStates;
+      });
+    },
+    [sessionId],
+  );
+  const setExpanded = useCallback((value: boolean) => {
+    update((previous) => ({
+      expanded: value,
+      mainSelected: value ? previous.mainSelected : false,
+    }));
+  }, [update]);
+  const selectMain = useCallback(() => {
+    update((previous) => ({ ...previous, mainSelected: true }));
+  }, [update]);
+  const selectPanel = useCallback(() => {
+    update((previous) => ({ ...previous, mainSelected: false }));
+  }, [update]);
+  return {
+    expanded: current.expanded,
+    mainSelected: current.expanded && current.mainSelected,
+    setExpanded,
+    selectMain,
+    selectPanel,
+  };
+}
+
 /**
  * ShellLayout — root-route layout that wires sidebar + topbar around the
  * routed page. The previous design had ChatView own its own composer / state;
@@ -91,10 +156,19 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   // AppShell header slot as normal chat, but renders only logo marks.
   const isChat = location.pathname.startsWith("/chat/");
   const isPair = location.pathname.startsWith("/pair/");
+  const isSettings = location.pathname.startsWith("/settings");
+  const settings = useSettings();
+  const hasEnabledAgent =
+    settings?.agents.some((agent) => agent.enabled) ?? false;
+  const hasTaskChrome = isChat && hasEnabledAgent;
+  const activeSession = useSessionStore(selectActive);
   const sidebarCollapse = usePersistedCollapse(COLLAPSE_KEY);
   // Side chat starts collapsed — users opt in via the rail toggle so
   // a first-launch window doesn't show two empty chat surfaces.
   const rightCollapse = usePersistedCollapse(RIGHT_KEY, true);
+  const rightExpansion = useRightRailExpansionState(
+    isChat ? activeSession?.id ?? null : null,
+  );
   // Bottom terminal panel — opt-in for the same reason.
   const bottomCollapse = usePersistedCollapse(BOTTOM_KEY, true);
 
@@ -162,8 +236,6 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  void useSessionStore(selectActive);
-
   // Expose the right-rail collapse setter to module-level imperative
   // callers so non-React code (session store auto-open, plain click
   // handlers) can ensure the panel is visible before pushing a tab.
@@ -172,24 +244,26 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarCollapseContext.Provider value={sidebarCollapse}>
       <RightRailCollapseContext.Provider value={rightCollapse}>
-        <BottomBarCollapseContext.Provider value={bottomCollapse}>
-          <AppShell
-            sidebar={<Sidebar />}
-            topbar={
-              isChat ? (
-                <Topbar onCancel={cancelActive} />
-              ) : isPair ? (
-                <PairTopbar />
-              ) : null
-            }
-            rightPanel={isChat ? <SideChatPanel /> : undefined}
-            bottomPanel={isChat ? <BottomPanel /> : undefined}
-          >
-            {children}
-            <BrokerModal />
-            <CommandPalette />
-          </AppShell>
-        </BottomBarCollapseContext.Provider>
+        <RightRailExpansionContext.Provider value={rightExpansion}>
+          <BottomBarCollapseContext.Provider value={bottomCollapse}>
+            <AppShell
+              sidebar={isSettings ? <SettingsSidebar /> : <Sidebar />}
+              topbar={
+                isChat ? (
+                  <Topbar onCancel={cancelActive} />
+                ) : isPair ? (
+                  <PairTopbar />
+                ) : null
+              }
+              rightPanel={hasTaskChrome ? <SideChatPanel /> : undefined}
+              bottomPanel={hasTaskChrome ? <BottomPanel /> : undefined}
+            >
+              {children}
+              <BrokerModal />
+              <CommandPalette />
+            </AppShell>
+          </BottomBarCollapseContext.Provider>
+        </RightRailExpansionContext.Provider>
       </RightRailCollapseContext.Provider>
     </SidebarCollapseContext.Provider>
   );

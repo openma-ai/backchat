@@ -23,7 +23,7 @@ describe("single-chat topbar contract", () => {
     expect(singleChatTopbar).toContain("sessionStore.pin(active.id)");
     expect(singleChatTopbar).toContain("sessionStore.archive(active.id)");
     expect(singleChatTopbar).toContain("sessionStore.newSideDraft");
-    expect(singleChatTopbar).not.toContain("Rename");
+    expect(singleChatTopbar).toContain('t("sidebar.rename")');
     expect(singleChatTopbar).not.toContain("TBD");
   });
 });

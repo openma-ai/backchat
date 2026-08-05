@@ -220,18 +220,24 @@ export type ReasoningContentProps = ComponentProps<
 };
 
 export const ReasoningContent = memo(
-  ({ className, children, ...props }: ReasoningContentProps) => (
-    <CollapsibleContent
-      className={cn(
-        "mt-2 text-[13px] leading-6",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-fg-muted outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </CollapsibleContent>
-  )
+  ({ className, children, ...props }: ReasoningContentProps) => {
+    const { isOpen } = useReasoning();
+
+    return (
+      <CollapsibleContent
+        aria-hidden={isOpen ? undefined : true}
+        inert={isOpen ? undefined : true}
+        className="reasoning-collapse text-fg-muted outline-none"
+        {...props}
+      >
+        <div className="reasoning-collapse-inner">
+          <div className={cn("pt-2 text-[13px] leading-6", className)}>
+            {children}
+          </div>
+        </div>
+      </CollapsibleContent>
+    );
+  }
 );
 
 Reasoning.displayName = "Reasoning";

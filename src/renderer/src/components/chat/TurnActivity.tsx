@@ -75,7 +75,7 @@ export function TurnActivity({
           )}
         />
       )}
-      <ReasoningContent className={cn("space-y-1", isStreaming && "mt-0")}>
+      <ReasoningContent className={cn("space-y-1", isStreaming && "pt-0")}>
         {rendered.timeline.map((item, index) => {
           if (item.kind === "assistant_text") {
             const prefix = assistantPrefix;

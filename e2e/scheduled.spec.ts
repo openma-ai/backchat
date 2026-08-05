@@ -1,10 +1,7 @@
-import { expect, test } from "@playwright/test";
-import { launchApp, persistSessionFixture } from "./helpers";
+import { expect, test } from "./fixtures";
 
-test("creates and manages a one-time scheduled task", async ({}, testInfo) => {
-  const { page, cleanup } = await launchApp();
-  try {
-    await persistSessionFixture(page, {
+test("creates and manages a one-time scheduled task", async ({ page, bridge, capture }) => {
+    await bridge.persistSessionFixture({
       sessionId: "schedule-source-task",
       agentId: "codex-acp",
       cwd: "/tmp/openma-scheduled-e2e",
@@ -23,10 +20,5 @@ test("creates and manages a one-time scheduled task", async ({}, testInfo) => {
 
     await expect(page.getByText("Wake up reminder", { exact: true })).toBeVisible();
     await expect(page.getByText("Active", { exact: true }).last()).toBeVisible();
-    const screenshotPath = testInfo.outputPath("scheduled-page.png");
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    await testInfo.attach("scheduled page", { path: screenshotPath, contentType: "image/png" });
-  } finally {
-    await cleanup();
-  }
+    await capture("scheduled-page.png", "scheduled page", true);
 });

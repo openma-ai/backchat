@@ -2,12 +2,11 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 describe("settings sidebar", () => {
-  it("returns to the actual app route instead of forcing the home route", async () => {
+  it("returns directly to the app home instead of traversing history", async () => {
     const source = await readFile(new URL("./SettingsLayout.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("router.history.canGoBack()");
-    expect(source).toContain("router.history.back()");
-    expect(source).not.toContain('to="/"');
+    expect(source).toContain('navigate({ to: "/" })');
+    expect(source).not.toContain("router.history.back()");
   });
 
   it("does not render the legacy chat settings footer", async () => {
