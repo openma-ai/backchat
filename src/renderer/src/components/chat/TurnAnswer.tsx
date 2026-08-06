@@ -26,7 +26,7 @@ export function TurnAnswer({
     <>
       {timeline}
       {!isStreaming && !hasAssistantTimeline && turn.assistantText && (
-        <div className="min-w-0">
+        <div className="min-w-0" data-session-turn-answer="true">
           <StreamdownText
             className={ASSISTANT_MARKDOWN_CLASS}
             text={turn.assistantText}
@@ -62,7 +62,11 @@ function renderAnswerTimeline(
     if (item.phase === "commentary") return null;
     if (index === liveTailIndex) {
       return (
-        <div key={`answer-${index}`} className="min-w-0">
+        <div
+          key={`answer-${index}`}
+          className="min-w-0"
+          data-session-turn-answer="true"
+        >
           <StreamingMarkdown
             turnId={turn.id}
             kind="assistant"
@@ -73,7 +77,11 @@ function renderAnswerTimeline(
       );
     }
     return (
-      <div key={`answer-${index}`} className="min-w-0">
+      <div
+        key={`answer-${index}`}
+        className="min-w-0"
+        data-session-turn-answer="true"
+      >
         <StreamdownText
           className={ASSISTANT_MARKDOWN_CLASS}
           text={item.text}

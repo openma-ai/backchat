@@ -36,11 +36,37 @@ export function latestPersistedOpenMAEventSequence(
   return latest;
 }
 
+const NEVER_PERSIST_EVENT_TYPES = new Set([
+  "session.started",
+  "turn.queued",
+]);
+
+const TURN_SCOPED_RUNTIME_EVENT_TYPES = new Set([
+  "command_catalog.updated",
+  "config.updated",
+  "capability.updated",
+  "session.running",
+  "session.idle",
+  "usage.updated",
+  "raw.event",
+  "vendor.event",
+]);
+
+/** Runtime snapshots are forwarded live but never appended to chat history.
+ * Durable conversation facts remain replayable. Unknown raw/vendor updates
+ * are retained only when they belong to a concrete turn. */
+export function shouldPersistSessionEvent(
+  event: NonNullable<SessionEventOut["openma_event"]>,
+): boolean {
+  if (NEVER_PERSIST_EVENT_TYPES.has(event.type)) return false;
+  if (TURN_SCOPED_RUNTIME_EVENT_TYPES.has(event.type)) {
+    return typeof event.turn_id === "string" && event.turn_id.length > 0;
+  }
+  return true;
+}
+
 export function createSessionEventEnricher(
   now: () => string,
-  persistEvent?: (
-    event: NonNullable<SessionEventOut["openma_event"]>,
-  ) => void,
   initialSequenceForSession: (sessionId: string) => number = () => 0,
 ): (message: SessionEventOut) => SessionEventOut {
   const harnessBySessionId = new Map<string, string>();
@@ -81,8 +107,6 @@ export function createSessionEventEnricher(
           },
         }
       : attached;
-
-    if (enriched.openma_event) persistEvent?.(enriched.openma_event);
 
     if (message.type === "session.disposed") {
       harnessBySessionId.delete(message.session_id);

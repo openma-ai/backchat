@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { expect, test } from "./fixtures";
 
 import { injectSession } from "./helpers";
@@ -145,7 +147,7 @@ test.describe("composer mentions and attachments", () => {
       expect(prompt.attachments).toEqual([
         expect.objectContaining({
           name: "package.json",
-          path: expect.stringMatching(/openma-desktop[\\/]package\.json$/),
+          path: resolve(process.cwd(), "package.json"),
         }),
       ]);
   });

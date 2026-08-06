@@ -1,14 +1,48 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createSessionEventEnricher } from "./session-event-enricher.js";
+import {
+  createSessionEventEnricher,
+  shouldPersistSessionEvent,
+} from "./session-event-enricher.js";
 import * as sessionEventEnricherModule from "./session-event-enricher.js";
 
 describe("session event canonical enricher", () => {
-  it("hands one canonical ACP envelope with raw evidence to the persistence boundary", () => {
-    const persist = vi.fn();
+  it("keeps startup snapshots ephemeral but retains ACP updates that occurred in a turn", () => {
+    const ephemeral = [
+      "session.started",
+      "command_catalog.updated",
+      "config.updated",
+      "capability.updated",
+      "session.running",
+      "session.idle",
+      "turn.queued",
+    ];
+    for (const type of ephemeral) {
+      expect(shouldPersistSessionEvent({ type } as never)).toBe(false);
+    }
+    expect(shouldPersistSessionEvent({
+      type: "command_catalog.updated",
+      turn_id: "turn-live",
+    } as never)).toBe(true);
+    expect(shouldPersistSessionEvent({
+      type: "usage.updated",
+      turn_id: "turn-live",
+    } as never)).toBe(true);
+    for (const type of [
+      "user.message",
+      "agent.message_chunk",
+      "agent.thinking",
+      "tool.started",
+      "turn.completed",
+      "session.error",
+    ]) {
+      expect(shouldPersistSessionEvent({ type } as never)).toBe(true);
+    }
+  });
+
+  it("hands one canonical ACP envelope with raw evidence to the delivery boundary", () => {
     const enrich = createSessionEventEnricher(
       () => "2026-08-05T00:00:00.000Z",
-      persist,
     );
 
     const result = enrich({
@@ -21,8 +55,6 @@ describe("session event canonical enricher", () => {
       },
     });
 
-    expect(persist).toHaveBeenCalledTimes(1);
-    expect(persist).toHaveBeenCalledWith(result.openma_event);
     expect(result.openma_event).toMatchObject({
       schema: "oma.event.v1",
       type: "agent.message_chunk",
@@ -95,11 +127,31 @@ describe("session event canonical enricher", () => {
     expect([first?.seq, second?.seq]).toEqual([2, 3]);
   });
 
+  it("keeps canonical ids bounded when ACP updates contain large extension metadata", () => {
+    const enrich = createSessionEventEnricher(() => "2026-08-05T00:00:00.000Z");
+    const result = enrich({
+      type: "session.event",
+      session_id: "sess-large-meta",
+      turn_id: "turn-large-meta",
+      event: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "done" },
+        _meta: { claudeCode: { providerPayload: "x".repeat(50_000) } },
+      },
+    });
+
+    expect(result.openma_event?.event_id.length).toBeLessThanOrEqual(256);
+    expect(result.openma_event?.raw).toMatchObject({
+      payload: {
+        _meta: { claudeCode: { providerPayload: "x".repeat(50_000) } },
+      },
+    });
+  });
+
   it("continues canonical sequence numbers after a desktop restart", () => {
     const initialSequence = vi.fn(() => 41);
     const enrich = createSessionEventEnricher(
       () => "2026-08-05T00:00:00.000Z",
-      undefined,
       initialSequence,
     );
 
@@ -152,7 +204,6 @@ describe("session event canonical enricher", () => {
   it("advances past a higher sequence attached by a harness adapter", () => {
     const enrich = createSessionEventEnricher(
       () => "2026-08-05T00:00:00.000Z",
-      undefined,
       () => 4,
     );
     const adapterEvent = {

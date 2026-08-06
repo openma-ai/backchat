@@ -128,6 +128,15 @@ function validateManifest(manifest, { requireAllFinalLive = true } = {}) {
     }
   }
 
+  if (requireAllFinalLive) {
+    const replayCell = cells.find((cell) => cell.status === "pass-replay");
+    if (replayCell) {
+      throw new Error(
+        `Accepted report requires LIVE-E2E for supported cells; replay evidence is not acceptance: ${replayCell.feature} × ${replayCell.harness}`,
+      );
+    }
+  }
+
   return { features, harnesses, cells };
 }
 

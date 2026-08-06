@@ -907,8 +907,22 @@ function stablePayload(value: unknown): string {
   }
 }
 
+function payloadFingerprint(value: unknown): string {
+  const payload = stablePayload(value);
+  let high = 0x811c9dc5;
+  let low = 0x9e3779b9;
+  for (let index = 0; index < payload.length; index += 1) {
+    const code = payload.charCodeAt(index);
+    high = Math.imul(high ^ code, 0x01000193);
+    low = Math.imul(low ^ code, 0x85ebca6b);
+  }
+  return `${(high >>> 0).toString(16).padStart(8, "0")}${
+    (low >>> 0).toString(16).padStart(8, "0")
+  }`;
+}
+
 function transportEventId(prefix: string, value: unknown): string {
-  return `${prefix}:${stablePayload(value)}`;
+  return `${prefix}:payload:${payloadFingerprint(value)}`;
 }
 
 function canonicalEventBase(

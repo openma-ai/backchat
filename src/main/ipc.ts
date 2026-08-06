@@ -55,6 +55,8 @@ import {
   hasOpenMAEventSchema,
   latestPersistedOpenMAEventSequence,
 } from "./session-event-enricher.js";
+import { logAppEvent } from "./app-log.js";
+import { deliverSessionEvent } from "./session-event-delivery.js";
 import { isAbsolute, join } from "node:path";
 import {
   cancelPendingFor,
@@ -359,7 +361,6 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // channels so the renderer can wire them to independent reducers.
   const enrichSessionEvent = createSessionEventEnricher(
     () => new Date().toISOString(),
-    (event) => appendEvent(event.session_id, "openma_event", event),
     (sessionId) => latestPersistedOpenMAEventSequence(loadHistory(sessionId)),
   );
   const publishSingle = (enriched: SessionEventOut) => {
@@ -372,7 +373,28 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       if (!w.isDestroyed()) w.webContents.send(PushChannel.SessionEvent, enriched);
     }
   };
-  setBrokerSessionEventSink((msg) => publishSingle(enrichSessionEvent(msg)));
+  const persistCanonicalSessionEvent = (
+    event: NonNullable<SessionEventOut["openma_event"]>,
+  ): void => appendEvent(event.session_id, "openma_event", event);
+  const logSessionPersistError = (
+    error: unknown,
+    event: NonNullable<SessionEventOut["openma_event"]>,
+  ): void => {
+      logAppEvent("session.event.persist_error", {
+        session_id: event.session_id,
+        event_id: event.event_id,
+        event_type: event.type,
+        error: error instanceof Error ? error.message : String(error),
+      });
+  };
+  setBrokerSessionEventSink((msg) => {
+    const enriched = enrichSessionEvent(msg);
+    deliverSessionEvent(enriched, {
+      publish: publishSingle,
+      persist: persistCanonicalSessionEvent,
+      onPersistError: logSessionPersistError,
+    });
+  });
   const pairSink = (msg: PairEventOut) => {
     if (msg.type !== "pair.event") {
       process.stdout.write(`[pair] ${msg.type} pid=${msg.pair_id.slice(0, 8)}\n`);
@@ -391,8 +413,14 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   let pairManager: PairManager | null = null;
   const send = (msg: SessionEventOut) => {
     const enriched = enrichSessionEvent(msg);
-    if (pairManager && pairManager.routeOrPassthrough(enriched)) return;
-    publishSingle(enriched);
+    deliverSessionEvent(enriched, {
+      publish: (message) => {
+        const routed = pairManager?.routeOrPassthrough(message) ?? false;
+        if (!routed) publishSingle(message);
+      },
+      persist: persistCanonicalSessionEvent,
+      onPersistError: logSessionPersistError,
+    });
   };
   const resolveInstalledAgentVersion = async (
     agentId: string,

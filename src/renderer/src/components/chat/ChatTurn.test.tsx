@@ -94,6 +94,20 @@ describe("TurnBlock", () => {
     );
   });
 
+  it("marks assistant answer content separately from reasoning activity", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          assistantText: "FINAL_ANSWER_MARKER",
+          thoughtText: "Thinking about FINAL_ANSWER_MARKER",
+          status: "complete",
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-session-turn-answer="true"');
+  });
+
   it("renders the broker error message for a failed turn", () => {
     const html = renderToStaticMarkup(
       <TurnBlock

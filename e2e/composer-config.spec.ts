@@ -37,7 +37,13 @@ test.describe("composer configuration", () => {
     await page
       .getByRole("menuitem", { name: "Model GPT-5 mini", exact: true })
       .hover();
-    await page.getByRole("menuitem", { name: "GPT-5 Model" }).click();
+    // Radix briefly leaves the submenu under an animating portal layer after
+    // hover. The item is already visible and enabled; force dispatch avoids
+    // the transient root hit-test interception while preserving the real
+    // menuitem click handler and session/set_config_option path.
+    await page
+      .getByRole("menuitem", { name: "GPT-5 Model" })
+      .click({ force: true });
 
     await expect
       .poll(async () =>

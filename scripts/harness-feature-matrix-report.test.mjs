@@ -11,6 +11,7 @@ import {
   publishHarnessFeatureMatrixReport,
   validateHarnessFeatureMatrixArtifacts,
 } from "./publish-harness-feature-matrix-report.mjs";
+import { syncHarnessLiveEvidence } from "./sync-harness-live-evidence.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const harnesses = [
@@ -31,11 +32,9 @@ function strictCell(feature, harness, overrides = {}) {
     feature,
     harness,
     harnessVersion: "1.0.0",
-    status: feature === "output.final-response" ? "pass-live" : "pass-replay",
-    verificationMode: feature === "output.final-response" ? "live" : "replay",
-    trigger: feature === "output.final-response"
-      ? "Sent a real prompt through the configured harness process"
-      : "Replayed captured harness trace trace-001",
+    status: "pass-live",
+    verificationMode: "live",
+    trigger: "Clicked the real Electron GUI and observed the harness response",
     provider: harness === "Codex" ? "Codex default" : "DeepSeek Anthropic",
     model: harness === "Codex" ? "runtime-default" : "deepseek-v4-flash",
     runAt: "2026-08-06T00:00:00.000Z",
@@ -85,6 +84,59 @@ test("the strict harness report generator exists", () => {
   assert.equal(existsSync(resolve(scriptsDir, "generate-harness-feature-matrix-report.mjs")), true);
 });
 
+test("refreshes final-response cells from the latest answer-only live evidence", async () => {
+  const root = await mkdtemp(resolve(tmpdir(), "backchat-live-evidence-"));
+  try {
+    const manifest = strictManifest();
+    for (const cell of manifest.cells) {
+      if (cell.feature === "output.final-response") {
+        cell.assertion.observed = "stale whole-turn transcript";
+      }
+    }
+    await mkdir(resolve(root, "live-gui"), { recursive: true });
+    await writeFile(
+      resolve(root, "manifest.json"),
+      JSON.stringify(manifest),
+      "utf8",
+    );
+    for (const harness of harnesses) {
+      const marker = `LIVE_${harness.replaceAll(" ", "_").toUpperCase()}`;
+      const evidence = strictCell("output.final-response", harness, {
+        assertion: {
+          selector: '[data-session-turn-answer="true"]',
+          expected: `Visible assistant answer equals ${marker}`,
+          observed: marker,
+          result: "passed",
+          targetVisible: true,
+          withinScreenshot: true,
+        },
+      });
+      await writeFile(
+        resolve(root, "live-gui", `${harness}-final-response.json`),
+        JSON.stringify(evidence),
+        "utf8",
+      );
+    }
+
+    const refreshed = await syncHarnessLiveEvidence(root);
+
+    const finalCells = refreshed.cells.filter(
+      (cell) => cell.feature === "output.final-response",
+    );
+    assert.equal(finalCells.length, 7);
+    assert.equal(
+      finalCells.every((cell) => cell.assertion.selector.includes("turn-answer")),
+      true,
+    );
+    assert.match(
+      await readFile(resolve(root, "report.html"), "utf8"),
+      /data-report-acceptance="incomplete"/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("the Cursor live GUI run uses the authorized file credential store", async () => {
   const source = await readFile(
     resolve(scriptsDir, "../e2e/harness-final-response.real.spec.ts"),
@@ -105,10 +157,23 @@ test("renders all 45 GUI features × 7 harnesses with explicit GUI assertions", 
   assert.equal((html.match(/<img /g) ?? []).length, 315);
   assert.match(html, /315 \/ 315/);
   assert.match(html, /PASS-LIVE/);
-  assert.match(html, /PASS-REPLAY/);
   assert.match(html, /Visible locator/);
   assert.match(html, /Expected/);
   assert.match(html, /Observed/);
+});
+
+test("refuses to publish an accepted report when any cell is replay-only", () => {
+  const manifest = strictManifest();
+  manifest.cells[0] = strictCell(features[0], harnesses[0], {
+    status: "pass-replay",
+    verificationMode: "replay",
+    trigger: "test-bridge replay: session.ready from a fixture",
+  });
+
+  assert.throws(
+    () => generateHarnessFeatureMatrixReport(manifest),
+    /accepted report.*LIVE-E2E|replay.*not.*accept/i,
+  );
 });
 
 test("rejects a generic passed status because it does not distinguish live from replay", () => {

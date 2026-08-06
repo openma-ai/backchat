@@ -1541,7 +1541,7 @@ describe("SessionManager prompt queue", () => {
     );
   });
 
-  it("flushes initial idle session state after session.ready", async () => {
+  it("caches initial available commands and re-announces them after a renderer reload", async () => {
     const fake = createControllableAcpSession({
       pendingEvents: [
         {
@@ -1550,6 +1550,17 @@ describe("SessionManager prompt queue", () => {
             {
               name: "review",
               description: "Review the current workspace",
+            },
+          ],
+        },
+      ],
+      promptEvents: [
+        {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [
+            {
+              name: "ship",
+              description: "Ship the current workspace",
             },
           ],
         },
@@ -1591,6 +1602,39 @@ describe("SessionManager prompt queue", () => {
         ],
       },
     });
+    expect(fake.drainCount()).toBe(1);
+
+    const prompt = manager.prompt({
+      session_id: "sess-slash",
+      turn_id: "turn-command-refresh",
+      text: "refresh commands",
+    });
+    await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+    fake.releaseNext();
+    await prompt;
+
+    events.length = 0;
+    manager.announceAll();
+
+    expect(events).toContainEqual({
+      type: "session.event",
+      session_id: "sess-slash",
+      turn_id: "",
+      event: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          {
+            name: "ship",
+            description: "Ship the current workspace",
+          },
+        ],
+      },
+    });
+    expect(events).not.toContainEqual(expect.objectContaining({
+      event: expect.objectContaining({
+        availableCommands: [expect.objectContaining({ name: "review" })],
+      }),
+    }));
     expect(fake.drainCount()).toBe(1);
   });
 

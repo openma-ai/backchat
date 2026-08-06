@@ -248,8 +248,10 @@ export function openSessionDb(path: string): void {
     -- prose types: user_prompt, agent_message, agent_thought. Tool
     -- calls + structural events stay out of search (their JSON is
     -- noise + not useful for "find that chat where I asked X").
-    CREATE TRIGGER IF NOT EXISTS events_ai_fts AFTER INSERT ON events
+    DROP TRIGGER IF EXISTS events_ai_fts;
+    CREATE TRIGGER events_ai_fts AFTER INSERT ON events
     WHEN new.type IN ('user_prompt', 'agent_message', 'agent_thought')
+      AND json_valid(new.data)
     BEGIN
       INSERT INTO messages_fts(session_id, seq, type, ts, text)
       VALUES (new.session_id, new.seq, new.type, new.ts, json_extract(new.data, '$.text'));
@@ -259,8 +261,10 @@ export function openSessionDb(path: string): void {
     -- provider-neutral text without making the renderer understand SQL.
     -- This separate trigger is additive so existing databases retain the
     -- legacy trigger above during the migration window.
-    CREATE TRIGGER IF NOT EXISTS events_ai_fts_openma AFTER INSERT ON events
+    DROP TRIGGER IF EXISTS events_ai_fts_openma;
+    CREATE TRIGGER events_ai_fts_openma AFTER INSERT ON events
     WHEN new.type = 'openma_event'
+      AND json_valid(new.data)
       AND json_extract(new.data, '$.type') IN (
         'agent.message',
         'agent.message_chunk',
@@ -374,14 +378,18 @@ export function openSessionDb(path: string): void {
      *  session dir separately. */
     deleteRow: db.prepare(`DELETE FROM sessions WHERE id = ?`),
     appendEvent: db.prepare(
-      `INSERT INTO events (session_id, type, data, ts) VALUES (?, ?, ?, ?)`,
+      `INSERT INTO events (session_id, type, data, ts)
+       VALUES (?, ?, CAST(? AS TEXT), ?)`,
     ),
     canonicalEventExists: db.prepare(`
       SELECT 1 AS found
       FROM events
       WHERE session_id = ?
         AND type = 'openma_event'
-        AND json_extract(data, '$.event_id') = ?
+        AND CASE
+          WHEN json_valid(data) THEN json_extract(data, '$.event_id')
+          ELSE NULL
+        END = ?
       LIMIT 1
     `),
     sessionEventCount: db.prepare(
@@ -892,13 +900,20 @@ export function appendEvent(
     }
   }
   const ts = Date.now();
-  s.appendEvent.run(session_id, type, JSON.stringify(data), ts);
+  const serialized = serializeJsonForSqlite(data);
+  // Bind event JSON as UTF-8 bytes and cast inside SQLite. Electron 42's
+  // node:sqlite Utf8Value path can abort the entire main process for external
+  // V8 strings whose reported UTF-16 length disagrees with their UTF-8 byte
+  // length (observed in Claude ACP config option descriptions). Binding a
+  // Uint8Array avoids that native string conversion while CAST preserves the
+  // TEXT storage contract consumed by history, FTS, and transcript rebuilds.
+  s.appendEvent.run(session_id, type, serialized.bytes, ts);
   const row = s.sessionEventCount.get(session_id) as { count: number | bigint };
   writeTranscriptEvent(session_id, {
     seq: Number(row.count),
     type,
     ts,
-    data,
+    serializedData: serialized.bytes,
   });
 }
 
@@ -915,7 +930,14 @@ export function appendEventsTx(
   const now = Date.now();
   _db.exec("BEGIN");
   try {
-    for (const r of rows) insert.run(session_id, r.type, JSON.stringify(r.data), now);
+    for (const r of rows) {
+      insert.run(
+        session_id,
+        r.type,
+        serializeJsonForSqlite(r.data).bytes,
+        now,
+      );
+    }
     _db.exec("COMMIT");
   } catch (e) {
     _db.exec("ROLLBACK");
@@ -986,7 +1008,7 @@ export function getActivityStats(): ActivityStatsInfo {
 
 function writeTranscriptEvent(
   sessionId: string,
-  event: { seq: number; type: string; ts: number; data: unknown },
+  event: { seq: number; type: string; ts: number; serializedData: Buffer },
 ): void {
   const root = _storageRoot;
   if (!root) throw new Error("session-store: storage root unavailable");
@@ -997,16 +1019,124 @@ function writeTranscriptEvent(
   mkdirSync(dir, { recursive: true });
   appendFileSync(
     join(dir, `${sessionId}.jsonl`),
-    JSON.stringify({
-      schema_version: "backchat.session_event.v1",
-      seq: event.seq,
-      type: event.type,
-      ts: event.ts,
-      data: event.data,
-      source: "desktop",
-    }) + "\n",
-    "utf-8",
+    Buffer.concat([
+      Buffer.from(
+        `{"schema_version":"backchat.session_event.v1","seq":${event.seq},` +
+          `"type":${JSON.stringify(event.type)},"ts":${event.ts},"data":`,
+        "utf8",
+      ),
+      event.serializedData,
+      Buffer.from(',"source":"desktop"}\n', "utf8"),
+    ]),
   );
+}
+
+/**
+ * Re-materialize adapter-owned strings before JSON encoding. Electron 42 can
+ * expose strings parsed by an ACP child as external V8 strings whose reported
+ * UTF-16 length is inconsistent with their UTF-8 byte length. Passing the
+ * resulting JSON string directly to node:sqlite either aborts in Utf8Value or
+ * yields bytes that SQLite's JSON trigger rejects as `malformed JSON`.
+ *
+ * A UTF-8 round trip in the JSON replacer gives every value an ordinary V8
+ * string before JSON.stringify assembles the final document. The returned
+ * string is then safe to bind as bytes and reuse verbatim in the transcript.
+ */
+function serializeJsonForSqlite(value: unknown): { bytes: Buffer } {
+  const bytes = encodeJsonValue(value, new Set());
+  if (!bytes) {
+    throw new TypeError("session-store: event payload is not JSON serializable");
+  }
+  // Fail in JavaScript before SQLite triggers see a partial document. This
+  // also protects the canonical de-dup query from accumulating bad rows.
+  JSON.parse(bytes.toString("utf8"));
+  return { bytes };
+}
+
+/** Encode JSON as small stable tokens instead of materializing one large V8
+ * string. This preserves JSON.stringify semantics for the protocol payloads
+ * we persist while avoiding Electron 42's broken external-string conversion
+ * on the assembled document. */
+function encodeJsonValue(
+  input: unknown,
+  ancestors: Set<object>,
+  key = "",
+): Buffer | undefined {
+  let value = input;
+  if (
+    value !== null
+    && typeof value === "object"
+    && typeof (value as { toJSON?: unknown }).toJSON === "function"
+  ) {
+    value = (value as { toJSON: (key: string) => unknown }).toJSON(key);
+  }
+
+  if (value === null) return Buffer.from("null");
+  if (typeof value === "string") return encodeJsonString(value);
+  if (typeof value === "boolean") return Buffer.from(value ? "true" : "false");
+  if (typeof value === "number") {
+    return Buffer.from(Number.isFinite(value) ? String(value) : "null");
+  }
+  if (typeof value === "bigint") {
+    throw new TypeError("Do not know how to serialize a BigInt");
+  }
+  if (
+    value === undefined
+    || typeof value === "function"
+    || typeof value === "symbol"
+  ) {
+    return undefined;
+  }
+  if (typeof value !== "object") return undefined;
+  if (ancestors.has(value)) {
+    throw new TypeError("Converting circular structure to JSON");
+  }
+
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const chunks: Buffer[] = [Buffer.from("[")];
+      for (let index = 0; index < value.length; index += 1) {
+        if (index > 0) chunks.push(Buffer.from(","));
+        chunks.push(
+          encodeJsonValue(value[index], ancestors, String(index))
+            ?? Buffer.from("null"),
+        );
+      }
+      chunks.push(Buffer.from("]"));
+      return Buffer.concat(chunks);
+    }
+
+    const chunks: Buffer[] = [Buffer.from("{")];
+    let count = 0;
+    for (const property of Object.keys(value)) {
+      const encoded = encodeJsonValue(
+        (value as Record<string, unknown>)[property],
+        ancestors,
+        property,
+      );
+      if (!encoded) continue;
+      if (count > 0) chunks.push(Buffer.from(","));
+      chunks.push(
+        encodeJsonString(property),
+        Buffer.from(":"),
+        encoded,
+      );
+      count += 1;
+    }
+    chunks.push(Buffer.from("}"));
+    return Buffer.concat(chunks);
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function encodeJsonString(value: string): Buffer {
+  // Iteration copies adapter-owned external strings one code point at a time.
+  // JSON.stringify only sees the resulting ordinary string token.
+  const normalized = Array.from(value).join("");
+  const quoted = JSON.stringify(normalized);
+  return Buffer.from(Array.from(quoted).join(""), "utf8");
 }
 
 function writeSessionMetadata(sessionId: string): void {

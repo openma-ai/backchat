@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -125,6 +126,54 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+async function closeAuxiliaryPanels(page: Page): Promise<void> {
+  let changed = false;
+  const closeSidePanel = page.getByRole("button", {
+    name: "Close side panel",
+    exact: true,
+  });
+  if (await closeSidePanel.isVisible()) {
+    await closeSidePanel.click();
+    await expect(closeSidePanel).toHaveCount(0);
+    changed = true;
+  }
+  const closeTerminal = page.getByRole("button", {
+    name: "Close terminal panel",
+    exact: true,
+  });
+  if (await closeTerminal.isVisible()) {
+    await closeTerminal.click();
+    await expect(closeTerminal).toHaveCount(0);
+    changed = true;
+  }
+  // AppShell intentionally animates its rail and main-stage reservations for
+  // 280 ms. Button removal proves state changed; this wait ensures screenshot
+  // evidence is captured after the visual transition, not mid-collapse.
+  if (changed) await page.waitForTimeout(350);
+}
+
+async function waitForExactAssistantAnswer(
+  page: Page,
+  marker: string,
+): Promise<{
+  response: ReturnType<Page["locator"]>;
+  observed: string;
+}> {
+  const response = page.locator('[data-session-turn-response="true"]').last();
+  const answers = response.locator('[data-session-turn-answer="true"]');
+  await expect.poll(
+    async () => (await answers.allInnerTexts()).join("").trim(),
+    {
+      timeout: 180_000,
+      message: "the visible assistant answer, excluding thinking, must match exactly",
+    },
+  ).toBe(marker);
+  return {
+    response,
+    observed: (await answers.allInnerTexts()).join("").trim(),
+  };
+}
+
 // Keep each harness independent: one upstream/provider failure must not skip
 // the remaining real GUI runs. CI still uses --workers=1 for deterministic
 // desktop focus and filesystem isolation.
@@ -173,6 +222,7 @@ for (const harness of harnesses) {
       );
       await reloadRenderer(launched.page);
       await waitForRunnableHarness(launched.page);
+      await closeAuxiliaryPanels(launched.page);
       const composer = launched.page.locator("textarea").first();
       await expect(composer).toBeVisible();
       await expect(composer).toBeEnabled();
@@ -181,16 +231,16 @@ for (const harness of harnesses) {
       const runStartedMs = Date.now();
       await composer.press("Enter");
       await expect(launched.page.getByText(prompt, { exact: true })).toBeVisible();
-      const finalResponse = launched.page
-        .locator('[data-session-turn-response="true"]')
-        .filter({ hasText: marker })
-        .last();
-      await expect(finalResponse).toBeVisible({ timeout: 180_000 });
-      const observedResponse = await finalResponse.innerText();
-      expect(observedResponse).toContain(marker);
+      const {
+        response: finalResponse,
+        observed: observedResponse,
+      } = await waitForExactAssistantAnswer(launched.page, marker);
       await expect(launched.page.getByRole("button", { name: "Stop" })).toHaveCount(0, {
         timeout: 30_000,
       });
+      // Some panels are spawned lazily with the first live session, so close
+      // them after completion as well and assert the screenshot state.
+      await closeAuxiliaryPanels(launched.page);
       const targetBox = await finalResponse.boundingBox();
       expect(targetBox).not.toBeNull();
       expect(targetBox!.x).toBeGreaterThanOrEqual(0);
@@ -216,8 +266,8 @@ for (const harness of harnesses) {
           protocolBasis: "ACP v1 session/prompt and session/update final agent message",
           screenshot: `screenshots/${screenshot.split("/").at(-1)}`,
           assertion: {
-            selector: `[data-session-turn-response="true"]:has-text("${marker}")`,
-            expected: `Assistant response contains ${marker}`,
+            selector: `[data-session-turn-response="true"]:last [data-session-turn-answer="true"]`,
+            expected: `Visible assistant answer equals ${marker}; thinking is excluded`,
             observed: observedResponse,
             result: "passed",
             targetVisible: true,
@@ -268,6 +318,7 @@ test("renders a live final response from Cursor with the official signed-in acco
     }, { command });
     await reloadRenderer(launched.page);
     await waitForRunnableHarness(launched.page);
+    await closeAuxiliaryPanels(launched.page);
     const composer = launched.page.locator("textarea").first();
     await expect(composer).toBeVisible();
     await expect(composer).toBeEnabled();
@@ -276,16 +327,14 @@ test("renders a live final response from Cursor with the official signed-in acco
     const runStartedMs = Date.now();
     await composer.press("Enter");
     await expect(launched.page.getByText(prompt, { exact: true })).toBeVisible();
-    const finalResponse = launched.page
-      .locator('[data-session-turn-response="true"]')
-      .filter({ hasText: marker })
-      .last();
-    await expect(finalResponse).toBeVisible({ timeout: 180_000 });
-    const observedResponse = await finalResponse.innerText();
-    expect(observedResponse).toContain(marker);
+    const {
+      response: finalResponse,
+      observed: observedResponse,
+    } = await waitForExactAssistantAnswer(launched.page, marker);
     await expect(launched.page.getByRole("button", { name: "Stop" })).toHaveCount(0, {
       timeout: 30_000,
     });
+    await closeAuxiliaryPanels(launched.page);
     const targetBox = await finalResponse.boundingBox();
     expect(targetBox).not.toBeNull();
     expect(targetBox!.x).toBeGreaterThanOrEqual(0);
@@ -311,8 +360,8 @@ test("renders a live final response from Cursor with the official signed-in acco
         protocolBasis: "ACP v1 session/prompt and session/update final agent message",
         screenshot: "screenshots/21-output-final-response--cursor.png",
         assertion: {
-          selector: `[data-session-turn-response="true"]:has-text("${marker}")`,
-          expected: `Assistant response contains ${marker}`,
+          selector: `[data-session-turn-response="true"]:last [data-session-turn-answer="true"]`,
+          expected: `Visible assistant answer equals ${marker}; thinking is excluded`,
           observed: observedResponse,
           result: "passed",
           targetVisible: true,

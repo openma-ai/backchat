@@ -148,14 +148,50 @@ test.describe("user-visible storage persistence", () => {
       {
         schema_version: "backchat.session_event.v1",
         seq: 2,
-        type: "agent_message_chunk",
+        type: "openma_event",
         data: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: response },
+          schema: "oma.event.v1",
+          type: "user.message",
+          data: {
+            text: prompt,
+            input_kind: "prompt",
+          },
+        },
+        source: "desktop",
+      },
+      {
+        schema_version: "backchat.session_event.v1",
+        seq: 3,
+        type: "openma_event",
+        data: {
+          schema: "oma.event.v1",
+          type: "agent.message_chunk",
+          data: {
+            text: response,
+            content: { type: "text", text: response },
+          },
+          raw: {
+            source: "acp",
+            method: "session/update",
+            event_type: "agent_message_chunk",
+          },
+        },
+        source: "desktop",
+      },
+      {
+        schema_version: "backchat.session_event.v1",
+        seq: 4,
+        type: "openma_event",
+        data: {
+          schema: "oma.event.v1",
+          type: "turn.completed",
         },
         source: "desktop",
       },
     ]);
+    expect(
+      transcriptLines.some((line) => line.type === "agent_message_chunk"),
+    ).toBe(false);
     const metadataFiles = await findFiles(join(home, "transcripts"), ".meta.toml");
     expect(metadataFiles).toHaveLength(1);
     const metadata = parseToml(await readFile(metadataFiles[0]!, "utf-8")) as Record<

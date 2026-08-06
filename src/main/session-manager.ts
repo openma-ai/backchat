@@ -122,6 +122,9 @@ interface ActiveSession {
   restartPending: boolean;
   /** Main-process timestamp used only for start→prompt latency diagnostics. */
   readyAt: number;
+  /** Latest complete ACP slash-command catalog for renderer re-announcement.
+   * Session-scoped only: never restored from SQLite across process restarts. */
+  latestAvailableCommandsUpdate: unknown | null;
   disposed: boolean;
 }
 
@@ -374,6 +377,13 @@ export class SessionManager {
   announceAll(): void {
     for (const [session_id, sess] of this.#sessions) {
       this.#readyResult(session_id, sess);
+      if (sess.latestAvailableCommandsUpdate) {
+        this.#sendAcpSessionEvent(
+          sess,
+          "",
+          sess.latestAvailableCommandsUpdate,
+        );
+      }
       this.#sendPromptQueueUpdate(sess);
     }
   }
@@ -598,6 +608,7 @@ export class SessionManager {
         promptQueueEnabled: defaults.promptQueueEnabled !== false,
         restartPending: false,
         readyAt: Date.now(),
+        latestAvailableCommandsUpdate: null,
         disposed: false,
       };
       activeForOutOfBandUpdates = activeSession;
@@ -1137,13 +1148,24 @@ export class SessionManager {
 
   #flushPendingSessionState(sess: ActiveSession): void {
     for (const event of sess.acp.drainPendingEvents()) {
-      this.#send({
-        type: "session.event",
-        session_id: sess.id,
-        turn_id: "",
-        event,
-      });
+      this.#sendAcpSessionEvent(sess, "", event);
     }
+  }
+
+  #sendAcpSessionEvent(
+    sess: ActiveSession,
+    turnId: string,
+    event: unknown,
+  ): void {
+    if (isAvailableCommandsUpdate(event)) {
+      sess.latestAvailableCommandsUpdate = event;
+    }
+    this.#send({
+      type: "session.event",
+      session_id: sess.id,
+      turn_id: turnId,
+      event,
+    });
   }
 
   #handleOutOfBandSessionUpdate(sess: ActiveSession, event: unknown): void {
@@ -1183,12 +1205,7 @@ export class SessionManager {
       return;
     }
 
-    this.#send({
-      type: "session.event",
-      session_id: sess.id,
-      turn_id: "",
-      event,
-    });
+    this.#sendAcpSessionEvent(sess, "", event);
   }
 
   #forwardOutOfBandTurnUpdate(
@@ -1204,12 +1221,7 @@ export class SessionManager {
       }
     }
     this.#trackOpenToolCall(sess, turnId, event);
-    this.#send({
-      type: "session.event",
-      session_id: sess.id,
-      turn_id: turnId,
-      event,
-    });
+    this.#sendAcpSessionEvent(sess, turnId, event);
   }
 
   #trackOpenToolCall(
@@ -1271,12 +1283,7 @@ export class SessionManager {
 
   #flushUnclaimedOutOfBandUpdates(sess: ActiveSession): void {
     for (const event of sess.pendingOutOfBandSteeringUpdates.splice(0)) {
-      this.#send({
-        type: "session.event",
-        session_id: sess.id,
-        turn_id: "",
-        event,
-      });
+      this.#sendAcpSessionEvent(sess, "", event);
     }
   }
 
@@ -1417,12 +1424,7 @@ export class SessionManager {
             }
           }
         }
-        this.#send({
-          type: "session.event",
-          session_id: p.session_id,
-          turn_id: p.turn_id,
-          event: ev,
-        });
+        this.#sendAcpSessionEvent(sess, p.turn_id, ev);
       }
       const stopReason = typeof promptResponse?.stopReason === "string"
         ? promptResponse.stopReason
@@ -1793,6 +1795,16 @@ const KNOWN_ACP_SESSION_UPDATES = new Set([
   "session_info_update",
   "usage_update",
 ]);
+
+function isAvailableCommandsUpdate(event: unknown): boolean {
+  return Boolean(
+    event
+      && typeof event === "object"
+      && !Array.isArray(event)
+      && (event as { sessionUpdate?: unknown }).sessionUpdate
+        === "available_commands_update",
+  );
+}
 
 function acpEventPersistenceType(event: unknown): string | null {
   if (!event || typeof event !== "object") {
