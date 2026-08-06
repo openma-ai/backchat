@@ -9,6 +9,8 @@ import {
 
 import { useTheme } from "@/lib/theme"
 
+export const TASK_LIFECYCLE_TOASTER_ID = "task-lifecycle"
+
 /**
  * Sonner Toaster wired into the console's own `useTheme` (lib/theme.ts)
  * — the shadcn template ships with `next-themes`, but the console already

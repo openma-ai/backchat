@@ -506,6 +506,81 @@ describe("TurnBlock", () => {
     expect(html).toContain("shrink-0 whitespace-nowrap");
   });
 
+  it("renders an ACP MCP extension as inspectable raw protocol data", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          events: [
+            {
+              payload: {
+                type: "acp.mcp_notification",
+                method: "mcp/resources/changed",
+                params: {
+                  status: "received",
+                  resourceUri: "ui://example/dashboard",
+                },
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-raw-event-kind="mcp-extension"');
+    expect(html).toContain('data-raw-event-method="mcp/resources/changed"');
+    expect(html).toContain('data-raw-event-type="acp.mcp_notification"');
+    expect(html).toContain('data-raw-event-status="received"');
+    expect(html).toContain('data-raw-event-error="none"');
+    expect(html).toContain('data-raw-event-payload="true"');
+    expect(html).toContain("ui://example/dashboard");
+  });
+
+  it("renders an unknown vendor event without guessing a known semantic", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          events: [
+            {
+              payload: {
+                schema: "oma.event.v1",
+                event_id: "vendor-raw-1",
+                type: "vendor.event",
+                session_id: "session-1",
+                turn_id: "turn-1",
+                source: { kind: "harness", harness: "kimi-code" },
+                occurred_at: "2026-08-06T00:00:00.000Z",
+                data: {
+                  kind: "vendor",
+                  harness: "kimi-code",
+                  namespace: "acp.extension_notification",
+                  name: "_kimi.dev/runtime_signal",
+                  data: {
+                    status: "stalled",
+                    error: { code: "UPSTREAM_BUSY", message: "Try later" },
+                    payloadVersion: 4,
+                  },
+                },
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-raw-event-kind="vendor-raw"');
+    expect(html).toContain('data-raw-event-method="_kimi.dev/runtime_signal"');
+    expect(html).toContain('data-raw-event-type="acp.extension_notification"');
+    expect(html).toContain('data-raw-event-status="stalled"');
+    expect(html).toContain('data-raw-event-error="present"');
+    expect(html).toContain("UPSTREAM_BUSY");
+    expect(html).toContain("payloadVersion");
+    expect(html).not.toContain('data-tool-status="completed"');
+  });
+
   it("uses Codex thought summaries only as a live status", () => {
     sessionMock.agentId = "codex-acp";
     const thought = "**Planning a temporary status**";

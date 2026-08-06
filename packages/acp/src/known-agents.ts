@@ -175,6 +175,23 @@ export const OVERLAY_AGENTS: KnownAgentEntry[] = [
     homepage: "https://kilo.ai/",
   },
   {
+    // The public ACP registry still points `kimi` at the retired Python/Rust
+    // Kimi CLI line. Backchat intentionally tracks the replacement Kimi Code
+    // package, whose ACP entrypoint is `kimi acp`.
+    id: "kimi",
+    label: "Kimi Code",
+    spec: { command: registryShimName("kimi"), args: ["acp"] },
+    version: "0.33.0",
+    registryId: "kimi",
+    installSource: "registry",
+    install: { kind: "npm", package: "@moonshot-ai/kimi-code" },
+    registryDistribution: {
+      npx: { package: "@moonshot-ai/kimi-code@0.33.0", args: ["acp"] },
+    },
+    installHint: "npm install -g @moonshot-ai/kimi-code@latest",
+    homepage: "https://github.com/MoonshotAI/kimi-code",
+  },
+  {
     id: "grok-build",
     label: "Grok Build",
     spec: { command: registryShimName("grok-build"), args: ["agent", "stdio"] },

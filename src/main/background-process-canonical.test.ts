@@ -53,9 +53,8 @@ describe("ACP terminal canonical background lifecycle", () => {
       id: terminalId,
       kind: "bash",
       status: "completed",
-      output: ["terminal output"],
+      output: "terminal output",
       result: { exit_code: 0, signal: null },
-      missing_start: undefined,
     });
   });
 

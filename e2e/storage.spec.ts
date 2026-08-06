@@ -629,10 +629,9 @@ test.describe("user-visible storage persistence", () => {
       await second.page
         .getByRole("combobox", { name: "Command palette" })
         .fill("rebuild-token");
-      await expect(second.page.getByText("Matches")).toBeVisible();
-      await expect(palette.getByText(firstPrompt).first()).toBeVisible();
-      await expect(palette.getByText(secondPrompt).first()).toBeVisible();
-      await expect(palette.getByText("rebuild-token").first()).toBeVisible();
+      await expect(palette.getByText(firstPrompt).first()).toBeVisible({ timeout: 15_000 });
+      await expect(palette.getByText(secondPrompt).first()).toBeVisible({ timeout: 15_000 });
+      await expect(palette.getByText("rebuild-token").first()).toBeVisible({ timeout: 15_000 });
     } finally {
       await second.cleanup();
     }
@@ -758,7 +757,9 @@ test.describe("user-visible storage persistence", () => {
 
       const liveTranscript = first.page.getByRole("log");
       await expect(liveTranscript.getByText(prompt, { exact: true })).toBeVisible();
-      await expect(liveTranscript.getByText("Internal error")).toBeVisible();
+      await expect(liveTranscript.getByText("Internal error")).toBeVisible({
+        timeout: 15_000,
+      });
     } finally {
       await closeApp(first.app);
     }

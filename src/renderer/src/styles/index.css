@@ -453,6 +453,20 @@ html.dark[data-window-resizing="true"] .liquid-glass {
     0 4px 8px rgb(0 0 0 / 0.28) !important;
 }
 
+[data-sonner-toast].cn-toast[data-type="warning"] {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--border-strong)) !important;
+  box-shadow:
+    inset 2px 0 0 var(--warning),
+    0 4px 8px rgb(0 0 0 / 0.24) !important;
+}
+
+[data-sonner-toast].cn-toast[data-type="success"] {
+  border-color: color-mix(in srgb, var(--success) 38%, var(--border-strong)) !important;
+  box-shadow:
+    inset 2px 0 0 var(--success),
+    0 4px 8px rgb(0 0 0 / 0.24) !important;
+}
+
 [data-sonner-toast].cn-toast [data-description] {
   color: var(--fg-muted) !important;
 }

@@ -146,6 +146,9 @@ describe("RightPanelLauncher", () => {
 
     expect(backgroundSection).toContain("pnpm test");
     expect(backgroundSection).toContain("running");
+    expect(backgroundSection).toContain('data-resource-id="bash-1"');
+    expect(backgroundSection).toContain('data-resource-status="running"');
+    expect(backgroundSection).toContain('data-resource-kind="background"');
     expect(markup).not.toContain('data-resource-category="agents"');
   });
 
@@ -217,6 +220,9 @@ describe("RightPanelLauncher", () => {
 
     expect(backgroundSection.match(/<button/g)).toHaveLength(1);
     expect(backgroundSection).toContain("pnpm test");
+    expect(backgroundSection).toContain('data-callback-kind="terminal"');
+    expect(backgroundSection).toContain('data-terminal-id="term-1"');
+    expect(backgroundSection).toContain('data-resource-status="running"');
     expect(backgroundSection).not.toMatch(/<button[^>]*\sdisabled(?:=|>)/);
   });
 

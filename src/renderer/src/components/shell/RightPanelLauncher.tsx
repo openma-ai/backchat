@@ -194,6 +194,11 @@ export function RightPanelLauncher({
                   key={`work-item:${item.id}`}
                   label={item.title || item.id}
                   hint={item.status}
+                  resourceId={item.id}
+                  resourceStatus={item.status}
+                  resourceKind="background"
+                  callbackKind={process ? "terminal" : undefined}
+                  terminalId={process?.terminalId}
                   icon={workItemIcon(item)}
                   onClick={process ? () => onPickProcess(process) : undefined}
                 />
@@ -215,6 +220,11 @@ export function RightPanelLauncher({
                 key={`process:${process.terminalId}`}
                 label={processLabel(process)}
                 hint={process.cwd}
+                resourceId={process.terminalId}
+                resourceStatus={processResourceStatus(process)}
+                resourceKind="background"
+                callbackKind="terminal"
+                terminalId={process.terminalId}
                 icon={<SquareTerminalIcon className="size-4" />}
                 onClick={() => onPickProcess(process)}
               />
@@ -316,16 +326,32 @@ function ResourceRow({
   hint,
   icon,
   onClick,
+  resourceId,
+  resourceStatus,
+  resourceKind,
+  callbackKind,
+  terminalId,
 }: {
   label: string;
   hint: string;
   icon: React.ReactNode;
   onClick?: () => void;
+  resourceId?: string;
+  resourceStatus?: string;
+  resourceKind?: string;
+  callbackKind?: string;
+  terminalId?: string;
 }) {
   return (
     <button
       type="button"
       title={`${label}\n${hint}`}
+      aria-label={resourceStatus ? `${label} — ${resourceStatus}` : label}
+      data-resource-id={resourceId}
+      data-resource-status={resourceStatus}
+      data-resource-kind={resourceKind}
+      data-callback-kind={callbackKind}
+      data-terminal-id={terminalId}
       onClick={onClick}
       disabled={!onClick}
       className="grid h-8 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-3 rounded-md text-left text-sm text-fg transition-colors hover:bg-bg-surface/60 disabled:cursor-default disabled:hover:bg-transparent"
@@ -333,8 +359,16 @@ function ResourceRow({
       <span className="inline-flex size-8 shrink-0 items-center justify-center text-fg-subtle">
         {icon}
       </span>
-      <span data-launcher-label className="min-w-0 flex-1 truncate">
-        {label}
+      <span data-launcher-label className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {resourceStatus && (
+          <span
+            data-resource-visible-status
+            className="shrink-0 text-[10px] text-fg-subtle"
+          >
+            {resourceStatus}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -367,6 +401,12 @@ function agentResourceHint(
 
 function processLabel(process: AcpTerminalInfo): string {
   return [process.command, ...process.args].join(" ") || "Background process";
+}
+
+function processResourceStatus(process: AcpTerminalInfo): string {
+  if (!process.exited) return "running";
+  if (process.terminationReason === "user_kill") return "cancelled";
+  return process.exitCode === 0 && !process.signal ? "exited" : "failed";
 }
 
 function basename(path: string): string {

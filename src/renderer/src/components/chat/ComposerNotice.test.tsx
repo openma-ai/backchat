@@ -19,7 +19,11 @@ describe("ComposerNotice", () => {
     );
 
     expect(html).toContain("Skill descriptions were shortened.");
+    expect(html).toContain('role="status"');
+    expect(html).toContain('data-tone="warning"');
     expect(html).toContain("line-clamp-2");
+    expect(html).not.toContain('data-slot="collapsible"');
+    expect(html).not.toContain("aria-expanded");
     expect(html).not.toContain("lucide-triangle-alert");
     expect(html).not.toContain("bg-warning-subtle");
   });

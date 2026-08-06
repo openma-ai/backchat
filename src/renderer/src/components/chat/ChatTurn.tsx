@@ -26,6 +26,10 @@ import { TurnAnswer } from "./TurnAnswer";
 import { TurnActivity } from "./TurnActivity";
 import { PlanDocumentActivity } from "./PlanDocumentActivity";
 import { TaskListActivity } from "./TaskListActivity";
+import {
+  inspectRawTurnEvents,
+  RawEventInspector,
+} from "./RawEventInspector";
 
 export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
   const { t } = useI18n();
@@ -66,10 +70,15 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
       : entries;
   }, [agentId, planDocument, turn]);
   const isStreaming = turn.status === "running";
+  const rawEvents = useMemo(
+    () => inspectRawTurnEvents(turn.events),
+    [turn.events],
+  );
   const hasVisibleContent =
     turn.assistantText.length > 0 ||
     activityRendered.tools.length > 0 ||
     taskPlanEntries.length > 0 ||
+    rawEvents.length > 0 ||
     !!planDocument;
   const hasAnything =
     hasVisibleContent ||
@@ -126,6 +135,8 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
               seconds: turnWorkDurationSeconds(turn),
             })}
           />
+
+          <RawEventInspector events={rawEvents} />
 
           <TurnSubagentLinks
             turn={turn}

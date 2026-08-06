@@ -6,6 +6,7 @@ import {
   CirclePauseIcon,
   CirclePlayIcon,
   CircleDashedIcon,
+  ExternalLinkIcon,
   FilesIcon,
   ListChecksIcon,
   PencilIcon,
@@ -288,6 +289,8 @@ function ActivityDock({
             <button
               type="button"
               data-activity-module={module.kind}
+              data-activity-module-id={module.id}
+              data-activity-module-status={activityModuleStatus(module)}
               aria-label={`${module.label}: ${module.summary}`}
               className={cn(
                 "flex h-8 min-w-0 items-center gap-1.5 rounded-full px-3",
@@ -341,6 +344,8 @@ function ActivityModuleItems({
         <div
           key={item.id}
           data-activity-item={item.variant ?? item.status}
+          data-activity-item-id={item.id}
+          data-activity-item-status={item.status}
           className="rounded-lg px-2.5 py-2"
           role="listitem"
         >
@@ -375,10 +380,19 @@ function ActivityModuleIcon({
     ? ListChecksIcon
     : kind === "monitor"
       ? RadioTowerIcon
+      : kind === "elicitation"
+        ? ExternalLinkIcon
       : kind === "files"
         ? FilesIcon
         : SquareTerminalIcon;
   return <Icon className={className} aria-hidden="true" />;
+}
+
+function activityModuleStatus(module: ComposerActivityModule): string {
+  if (module.items.length === 0) return "empty";
+  if (module.items.every((item) => item.status === "completed")) return "completed";
+  if (module.items.some((item) => item.status === "running")) return "running";
+  return module.items[0]!.status;
 }
 
 function QueuedPromptRow({

@@ -1,0 +1,2529 @@
+{
+  "validatedAt": "2026-08-06T04:52:43.727Z",
+  "screenshotCount": 315,
+  "uniqueScreenshotCount": 315,
+  "brokenImages": 0,
+  "secretLeaks": 0,
+  "screenshots": [
+    {
+      "feature": "session.initialize-ready",
+      "harness": "Claude",
+      "path": "screenshots/matrix/01-session-initialize-ready--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 130000
+    },
+    {
+      "feature": "session.new-workspace",
+      "harness": "Claude",
+      "path": "screenshots/matrix/02-session-new-workspace--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 139429
+    },
+    {
+      "feature": "session.load-history",
+      "harness": "Claude",
+      "path": "screenshots/matrix/03-session-load-history--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 94658
+    },
+    {
+      "feature": "session.resume",
+      "harness": "Claude",
+      "path": "screenshots/matrix/04-session-resume--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 105686
+    },
+    {
+      "feature": "session.fork-side-chat",
+      "harness": "Claude",
+      "path": "screenshots/matrix/05-session-fork-side-chat--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 158540
+    },
+    {
+      "feature": "session.side-chat-promote",
+      "harness": "Claude",
+      "path": "screenshots/matrix/06-session-side-chat-promote--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 152017
+    },
+    {
+      "feature": "session.close-terminated",
+      "harness": "Claude",
+      "path": "screenshots/matrix/07-session-close-terminated--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 169142
+    },
+    {
+      "feature": "session.local-archive-delete",
+      "harness": "Claude",
+      "path": "screenshots/matrix/08-session-local-archive-delete--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 58247
+    },
+    {
+      "feature": "session.restart-replay",
+      "harness": "Claude",
+      "path": "screenshots/matrix/09-session-restart-replay--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 112398
+    },
+    {
+      "feature": "input.prompt-text",
+      "harness": "Claude",
+      "path": "screenshots/matrix/10-input-prompt-text--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 117269
+    },
+    {
+      "feature": "input.image-attachment",
+      "harness": "Claude",
+      "path": "screenshots/matrix/11-input-image-attachment--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 176250
+    },
+    {
+      "feature": "input.resource-context",
+      "harness": "Claude",
+      "path": "screenshots/matrix/12-input-resource-context--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 143892
+    },
+    {
+      "feature": "input.session-reference",
+      "harness": "Claude",
+      "path": "screenshots/matrix/13-input-session-reference--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 143354
+    },
+    {
+      "feature": "input.available-commands",
+      "harness": "Claude",
+      "path": "screenshots/matrix/14-input-available-commands--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 145695
+    },
+    {
+      "feature": "input.mode",
+      "harness": "Claude",
+      "path": "screenshots/matrix/15-input-mode--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 183002
+    },
+    {
+      "feature": "input.config-model-reasoning",
+      "harness": "Claude",
+      "path": "screenshots/matrix/16-input-config-model-reasoning--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179997
+    },
+    {
+      "feature": "input.cancel-stop",
+      "harness": "Claude",
+      "path": "screenshots/matrix/17-input-cancel-stop--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178994
+    },
+    {
+      "feature": "input.steering",
+      "harness": "Claude",
+      "path": "screenshots/matrix/18-input-steering--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 177508
+    },
+    {
+      "feature": "input.queue",
+      "harness": "Claude",
+      "path": "screenshots/matrix/19-input-queue--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179970
+    },
+    {
+      "feature": "output.streaming-response",
+      "harness": "Claude",
+      "path": "screenshots/matrix/20-output-streaming-response--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 130828
+    },
+    {
+      "feature": "output.final-response",
+      "harness": "Claude",
+      "path": "screenshots/21-output-final-response--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129911
+    },
+    {
+      "feature": "output.thinking-reasoning",
+      "harness": "Claude",
+      "path": "screenshots/matrix/22-output-thinking-reasoning--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 130541
+    },
+    {
+      "feature": "output.notice-warning-error",
+      "harness": "Claude",
+      "path": "screenshots/matrix/23-output-notice-warning-error--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 131515
+    },
+    {
+      "feature": "output.tool-start-input",
+      "harness": "Claude",
+      "path": "screenshots/matrix/24-output-tool-start-input--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 134618
+    },
+    {
+      "feature": "output.tool-progress-output",
+      "harness": "Claude",
+      "path": "screenshots/matrix/25-output-tool-progress-output--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 141503
+    },
+    {
+      "feature": "output.tool-terminal",
+      "harness": "Claude",
+      "path": "screenshots/matrix/26-output-tool-terminal--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 135476
+    },
+    {
+      "feature": "output.plan-document",
+      "harness": "Claude",
+      "path": "screenshots/matrix/27-output-plan-document--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 135768
+    },
+    {
+      "feature": "output.task-list-progress",
+      "harness": "Claude",
+      "path": "screenshots/matrix/28-output-task-list-progress--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 145423
+    },
+    {
+      "feature": "output.usage-parent",
+      "harness": "Claude",
+      "path": "screenshots/matrix/29-output-usage-parent--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 176211
+    },
+    {
+      "feature": "output.session-status-goal-queue",
+      "harness": "Claude",
+      "path": "screenshots/matrix/30-output-session-status-goal-queue--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 186797
+    },
+    {
+      "feature": "callback.permission",
+      "harness": "Claude",
+      "path": "screenshots/matrix/31-callback-permission--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 184595
+    },
+    {
+      "feature": "callback.filesystem",
+      "harness": "Claude",
+      "path": "screenshots/matrix/32-callback-filesystem--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 190652
+    },
+    {
+      "feature": "callback.terminal",
+      "harness": "Claude",
+      "path": "screenshots/matrix/33-callback-terminal--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179186
+    },
+    {
+      "feature": "callback.elicitation-form",
+      "harness": "Claude",
+      "path": "screenshots/matrix/34-callback-elicitation-form--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 184292
+    },
+    {
+      "feature": "callback.elicitation-url",
+      "harness": "Claude",
+      "path": "screenshots/matrix/35-callback-elicitation-url--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 186134
+    },
+    {
+      "feature": "callback.mcp-extension",
+      "harness": "Claude",
+      "path": "screenshots/matrix/36-callback-mcp-extension--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 147855
+    },
+    {
+      "feature": "runtime.foreground-terminal",
+      "harness": "Claude",
+      "path": "screenshots/matrix/37-runtime-foreground-terminal--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173777
+    },
+    {
+      "feature": "runtime.background-work",
+      "harness": "Claude",
+      "path": "screenshots/matrix/38-runtime-background-work--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 188863
+    },
+    {
+      "feature": "runtime.claude-monitor",
+      "harness": "Claude",
+      "path": "screenshots/matrix/39-runtime-claude-monitor--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172423
+    },
+    {
+      "feature": "runtime.resources",
+      "harness": "Claude",
+      "path": "screenshots/matrix/40-runtime-resources--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 144850
+    },
+    {
+      "feature": "agent.native-list-lifecycle",
+      "harness": "Claude",
+      "path": "screenshots/matrix/41-agent-native-list-lifecycle--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 160427
+    },
+    {
+      "feature": "agent.native-detail",
+      "harness": "Claude",
+      "path": "screenshots/matrix/42-agent-native-detail--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 171886
+    },
+    {
+      "feature": "agent.native-transcript",
+      "harness": "Claude",
+      "path": "screenshots/matrix/43-agent-native-transcript--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 169393
+    },
+    {
+      "feature": "agent.native-final",
+      "harness": "Claude",
+      "path": "screenshots/matrix/44-agent-native-final--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167439
+    },
+    {
+      "feature": "runtime.vendor-raw",
+      "harness": "Claude",
+      "path": "screenshots/matrix/45-runtime-vendor-raw--claude.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 145274
+    },
+    {
+      "feature": "session.initialize-ready",
+      "harness": "Codex",
+      "path": "screenshots/matrix/01-session-initialize-ready--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 174033
+    },
+    {
+      "feature": "session.new-workspace",
+      "harness": "Codex",
+      "path": "screenshots/matrix/02-session-new-workspace--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 182040
+    },
+    {
+      "feature": "session.load-history",
+      "harness": "Codex",
+      "path": "screenshots/matrix/03-session-load-history--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125734
+    },
+    {
+      "feature": "session.resume",
+      "harness": "Codex",
+      "path": "screenshots/matrix/04-session-resume--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 130431
+    },
+    {
+      "feature": "session.fork-side-chat",
+      "harness": "Codex",
+      "path": "screenshots/matrix/05-session-fork-side-chat--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179106
+    },
+    {
+      "feature": "session.side-chat-promote",
+      "harness": "Codex",
+      "path": "screenshots/matrix/06-session-side-chat-promote--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166629
+    },
+    {
+      "feature": "session.close-terminated",
+      "harness": "Codex",
+      "path": "screenshots/matrix/07-session-close-terminated--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 177975
+    },
+    {
+      "feature": "session.local-archive-delete",
+      "harness": "Codex",
+      "path": "screenshots/matrix/08-session-local-archive-delete--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 70093
+    },
+    {
+      "feature": "session.restart-replay",
+      "harness": "Codex",
+      "path": "screenshots/matrix/09-session-restart-replay--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126619
+    },
+    {
+      "feature": "input.prompt-text",
+      "harness": "Codex",
+      "path": "screenshots/matrix/10-input-prompt-text--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125020
+    },
+    {
+      "feature": "input.image-attachment",
+      "harness": "Codex",
+      "path": "screenshots/matrix/11-input-image-attachment--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172972
+    },
+    {
+      "feature": "input.resource-context",
+      "harness": "Codex",
+      "path": "screenshots/matrix/12-input-resource-context--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 141640
+    },
+    {
+      "feature": "input.session-reference",
+      "harness": "Codex",
+      "path": "screenshots/matrix/13-input-session-reference--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 132847
+    },
+    {
+      "feature": "input.available-commands",
+      "harness": "Codex",
+      "path": "screenshots/matrix/14-input-available-commands--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 144193
+    },
+    {
+      "feature": "input.mode",
+      "harness": "Codex",
+      "path": "screenshots/matrix/15-input-mode--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175759
+    },
+    {
+      "feature": "input.config-model-reasoning",
+      "harness": "Codex",
+      "path": "screenshots/matrix/16-input-config-model-reasoning--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175212
+    },
+    {
+      "feature": "input.cancel-stop",
+      "harness": "Codex",
+      "path": "screenshots/matrix/17-input-cancel-stop--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 177413
+    },
+    {
+      "feature": "input.steering",
+      "harness": "Codex",
+      "path": "screenshots/matrix/18-input-steering--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 176486
+    },
+    {
+      "feature": "input.queue",
+      "harness": "Codex",
+      "path": "screenshots/matrix/19-input-queue--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178237
+    },
+    {
+      "feature": "output.streaming-response",
+      "harness": "Codex",
+      "path": "screenshots/matrix/20-output-streaming-response--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129936
+    },
+    {
+      "feature": "output.final-response",
+      "harness": "Codex",
+      "path": "screenshots/21-output-final-response--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 112986
+    },
+    {
+      "feature": "output.thinking-reasoning",
+      "harness": "Codex",
+      "path": "screenshots/matrix/22-output-thinking-reasoning--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129165
+    },
+    {
+      "feature": "output.notice-warning-error",
+      "harness": "Codex",
+      "path": "screenshots/matrix/23-output-notice-warning-error--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129239
+    },
+    {
+      "feature": "output.tool-start-input",
+      "harness": "Codex",
+      "path": "screenshots/matrix/24-output-tool-start-input--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 133951
+    },
+    {
+      "feature": "output.tool-progress-output",
+      "harness": "Codex",
+      "path": "screenshots/matrix/25-output-tool-progress-output--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 138766
+    },
+    {
+      "feature": "output.tool-terminal",
+      "harness": "Codex",
+      "path": "screenshots/matrix/26-output-tool-terminal--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 135196
+    },
+    {
+      "feature": "output.plan-document",
+      "harness": "Codex",
+      "path": "screenshots/matrix/27-output-plan-document--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 134979
+    },
+    {
+      "feature": "output.task-list-progress",
+      "harness": "Codex",
+      "path": "screenshots/matrix/28-output-task-list-progress--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 143924
+    },
+    {
+      "feature": "output.usage-parent",
+      "harness": "Codex",
+      "path": "screenshots/matrix/29-output-usage-parent--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 189073
+    },
+    {
+      "feature": "output.session-status-goal-queue",
+      "harness": "Codex",
+      "path": "screenshots/matrix/30-output-session-status-goal-queue--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 190839
+    },
+    {
+      "feature": "callback.permission",
+      "harness": "Codex",
+      "path": "screenshots/matrix/31-callback-permission--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 183932
+    },
+    {
+      "feature": "callback.filesystem",
+      "harness": "Codex",
+      "path": "screenshots/matrix/32-callback-filesystem--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 190778
+    },
+    {
+      "feature": "callback.terminal",
+      "harness": "Codex",
+      "path": "screenshots/matrix/33-callback-terminal--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178756
+    },
+    {
+      "feature": "callback.elicitation-form",
+      "harness": "Codex",
+      "path": "screenshots/matrix/34-callback-elicitation-form--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 183408
+    },
+    {
+      "feature": "callback.elicitation-url",
+      "harness": "Codex",
+      "path": "screenshots/matrix/35-callback-elicitation-url--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 186273
+    },
+    {
+      "feature": "callback.mcp-extension",
+      "harness": "Codex",
+      "path": "screenshots/matrix/36-callback-mcp-extension--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 148283
+    },
+    {
+      "feature": "runtime.foreground-terminal",
+      "harness": "Codex",
+      "path": "screenshots/matrix/37-runtime-foreground-terminal--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 184461
+    },
+    {
+      "feature": "runtime.background-work",
+      "harness": "Codex",
+      "path": "screenshots/matrix/38-runtime-background-work--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 189446
+    },
+    {
+      "feature": "runtime.claude-monitor",
+      "harness": "Codex",
+      "path": "screenshots/matrix/39-runtime-claude-monitor--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 182374
+    },
+    {
+      "feature": "runtime.resources",
+      "harness": "Codex",
+      "path": "screenshots/matrix/40-runtime-resources--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 144757
+    },
+    {
+      "feature": "agent.native-list-lifecycle",
+      "harness": "Codex",
+      "path": "screenshots/matrix/41-agent-native-list-lifecycle--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 143391
+    },
+    {
+      "feature": "agent.native-detail",
+      "harness": "Codex",
+      "path": "screenshots/matrix/42-agent-native-detail--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 153554
+    },
+    {
+      "feature": "agent.native-transcript",
+      "harness": "Codex",
+      "path": "screenshots/matrix/43-agent-native-transcript--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 152148
+    },
+    {
+      "feature": "agent.native-final",
+      "harness": "Codex",
+      "path": "screenshots/matrix/44-agent-native-final--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 151950
+    },
+    {
+      "feature": "runtime.vendor-raw",
+      "harness": "Codex",
+      "path": "screenshots/matrix/45-runtime-vendor-raw--codex.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 145727
+    },
+    {
+      "feature": "session.initialize-ready",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/01-session-initialize-ready--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 183084
+    },
+    {
+      "feature": "session.new-workspace",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/02-session-new-workspace--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179591
+    },
+    {
+      "feature": "session.load-history",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/03-session-load-history--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125318
+    },
+    {
+      "feature": "session.resume",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/04-session-resume--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 131587
+    },
+    {
+      "feature": "session.fork-side-chat",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/05-session-fork-side-chat--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178986
+    },
+    {
+      "feature": "session.side-chat-promote",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/06-session-side-chat-promote--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 165752
+    },
+    {
+      "feature": "session.close-terminated",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/07-session-close-terminated--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175631
+    },
+    {
+      "feature": "session.local-archive-delete",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/08-session-local-archive-delete--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 81540
+    },
+    {
+      "feature": "session.restart-replay",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/09-session-restart-replay--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 127118
+    },
+    {
+      "feature": "input.prompt-text",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/10-input-prompt-text--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 123960
+    },
+    {
+      "feature": "input.image-attachment",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/11-input-image-attachment--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 169605
+    },
+    {
+      "feature": "input.resource-context",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/12-input-resource-context--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129627
+    },
+    {
+      "feature": "input.session-reference",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/13-input-session-reference--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129842
+    },
+    {
+      "feature": "input.available-commands",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/14-input-available-commands--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 131697
+    },
+    {
+      "feature": "input.mode",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/15-input-mode--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 170155
+    },
+    {
+      "feature": "input.config-model-reasoning",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/16-input-config-model-reasoning--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 170548
+    },
+    {
+      "feature": "input.cancel-stop",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/17-input-cancel-stop--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 170933
+    },
+    {
+      "feature": "input.steering",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/18-input-steering--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 169525
+    },
+    {
+      "feature": "input.queue",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/19-input-queue--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 171485
+    },
+    {
+      "feature": "output.streaming-response",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/20-output-streaming-response--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 122677
+    },
+    {
+      "feature": "output.final-response",
+      "harness": "Cursor",
+      "path": "screenshots/21-output-final-response--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 103570
+    },
+    {
+      "feature": "output.thinking-reasoning",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/22-output-thinking-reasoning--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 122409
+    },
+    {
+      "feature": "output.notice-warning-error",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/23-output-notice-warning-error--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 121974
+    },
+    {
+      "feature": "output.tool-start-input",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/24-output-tool-start-input--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125108
+    },
+    {
+      "feature": "output.tool-progress-output",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/25-output-tool-progress-output--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 130979
+    },
+    {
+      "feature": "output.tool-terminal",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/26-output-tool-terminal--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125750
+    },
+    {
+      "feature": "output.plan-document",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/27-output-plan-document--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126076
+    },
+    {
+      "feature": "output.task-list-progress",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/28-output-task-list-progress--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 134576
+    },
+    {
+      "feature": "output.usage-parent",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/29-output-usage-parent--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179554
+    },
+    {
+      "feature": "output.session-status-goal-queue",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/30-output-session-status-goal-queue--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175945
+    },
+    {
+      "feature": "callback.permission",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/31-callback-permission--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 174072
+    },
+    {
+      "feature": "callback.filesystem",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/32-callback-filesystem--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 181306
+    },
+    {
+      "feature": "callback.terminal",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/33-callback-terminal--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 169325
+    },
+    {
+      "feature": "callback.elicitation-form",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/34-callback-elicitation-form--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173679
+    },
+    {
+      "feature": "callback.elicitation-url",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/35-callback-elicitation-url--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 176981
+    },
+    {
+      "feature": "callback.mcp-extension",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/36-callback-mcp-extension--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 139582
+    },
+    {
+      "feature": "runtime.foreground-terminal",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/37-runtime-foreground-terminal--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175913
+    },
+    {
+      "feature": "runtime.background-work",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/38-runtime-background-work--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 174492
+    },
+    {
+      "feature": "runtime.claude-monitor",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/39-runtime-claude-monitor--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 174187
+    },
+    {
+      "feature": "runtime.resources",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/40-runtime-resources--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128616
+    },
+    {
+      "feature": "agent.native-list-lifecycle",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/41-agent-native-list-lifecycle--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 161916
+    },
+    {
+      "feature": "agent.native-detail",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/42-agent-native-detail--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 165082
+    },
+    {
+      "feature": "agent.native-transcript",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/43-agent-native-transcript--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 176216
+    },
+    {
+      "feature": "agent.native-final",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/44-agent-native-final--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 174090
+    },
+    {
+      "feature": "runtime.vendor-raw",
+      "harness": "Cursor",
+      "path": "screenshots/matrix/45-runtime-vendor-raw--cursor.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 138691
+    },
+    {
+      "feature": "session.initialize-ready",
+      "harness": "Pi",
+      "path": "screenshots/matrix/01-session-initialize-ready--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 177072
+    },
+    {
+      "feature": "session.new-workspace",
+      "harness": "Pi",
+      "path": "screenshots/matrix/02-session-new-workspace--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172925
+    },
+    {
+      "feature": "session.load-history",
+      "harness": "Pi",
+      "path": "screenshots/matrix/03-session-load-history--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125051
+    },
+    {
+      "feature": "session.resume",
+      "harness": "Pi",
+      "path": "screenshots/matrix/04-session-resume--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 121386
+    },
+    {
+      "feature": "session.fork-side-chat",
+      "harness": "Pi",
+      "path": "screenshots/matrix/05-session-fork-side-chat--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 176042
+    },
+    {
+      "feature": "session.side-chat-promote",
+      "harness": "Pi",
+      "path": "screenshots/matrix/06-session-side-chat-promote--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 163594
+    },
+    {
+      "feature": "session.close-terminated",
+      "harness": "Pi",
+      "path": "screenshots/matrix/07-session-close-terminated--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172592
+    },
+    {
+      "feature": "session.local-archive-delete",
+      "harness": "Pi",
+      "path": "screenshots/matrix/08-session-local-archive-delete--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 92005
+    },
+    {
+      "feature": "session.restart-replay",
+      "harness": "Pi",
+      "path": "screenshots/matrix/09-session-restart-replay--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125593
+    },
+    {
+      "feature": "input.prompt-text",
+      "harness": "Pi",
+      "path": "screenshots/matrix/10-input-prompt-text--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 121997
+    },
+    {
+      "feature": "input.image-attachment",
+      "harness": "Pi",
+      "path": "screenshots/matrix/11-input-image-attachment--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167291
+    },
+    {
+      "feature": "input.resource-context",
+      "harness": "Pi",
+      "path": "screenshots/matrix/12-input-resource-context--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128887
+    },
+    {
+      "feature": "input.session-reference",
+      "harness": "Pi",
+      "path": "screenshots/matrix/13-input-session-reference--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126898
+    },
+    {
+      "feature": "input.available-commands",
+      "harness": "Pi",
+      "path": "screenshots/matrix/14-input-available-commands--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128688
+    },
+    {
+      "feature": "input.mode",
+      "harness": "Pi",
+      "path": "screenshots/matrix/15-input-mode--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 168094
+    },
+    {
+      "feature": "input.config-model-reasoning",
+      "harness": "Pi",
+      "path": "screenshots/matrix/16-input-config-model-reasoning--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166332
+    },
+    {
+      "feature": "input.cancel-stop",
+      "harness": "Pi",
+      "path": "screenshots/matrix/17-input-cancel-stop--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 161496
+    },
+    {
+      "feature": "input.steering",
+      "harness": "Pi",
+      "path": "screenshots/matrix/18-input-steering--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167759
+    },
+    {
+      "feature": "input.queue",
+      "harness": "Pi",
+      "path": "screenshots/matrix/19-input-queue--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 163553
+    },
+    {
+      "feature": "output.streaming-response",
+      "harness": "Pi",
+      "path": "screenshots/matrix/20-output-streaming-response--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 117529
+    },
+    {
+      "feature": "output.final-response",
+      "harness": "Pi",
+      "path": "screenshots/21-output-final-response--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 102264
+    },
+    {
+      "feature": "output.thinking-reasoning",
+      "harness": "Pi",
+      "path": "screenshots/matrix/22-output-thinking-reasoning--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 117884
+    },
+    {
+      "feature": "output.notice-warning-error",
+      "harness": "Pi",
+      "path": "screenshots/matrix/23-output-notice-warning-error--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 116758
+    },
+    {
+      "feature": "output.tool-start-input",
+      "harness": "Pi",
+      "path": "screenshots/matrix/24-output-tool-start-input--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 122687
+    },
+    {
+      "feature": "output.tool-progress-output",
+      "harness": "Pi",
+      "path": "screenshots/matrix/25-output-tool-progress-output--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126813
+    },
+    {
+      "feature": "output.tool-terminal",
+      "harness": "Pi",
+      "path": "screenshots/matrix/26-output-tool-terminal--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 123794
+    },
+    {
+      "feature": "output.plan-document",
+      "harness": "Pi",
+      "path": "screenshots/matrix/27-output-plan-document--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 123606
+    },
+    {
+      "feature": "output.task-list-progress",
+      "harness": "Pi",
+      "path": "screenshots/matrix/28-output-task-list-progress--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 131189
+    },
+    {
+      "feature": "output.usage-parent",
+      "harness": "Pi",
+      "path": "screenshots/matrix/29-output-usage-parent--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175968
+    },
+    {
+      "feature": "output.session-status-goal-queue",
+      "harness": "Pi",
+      "path": "screenshots/matrix/30-output-session-status-goal-queue--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173757
+    },
+    {
+      "feature": "callback.permission",
+      "harness": "Pi",
+      "path": "screenshots/matrix/31-callback-permission--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172684
+    },
+    {
+      "feature": "callback.filesystem",
+      "harness": "Pi",
+      "path": "screenshots/matrix/32-callback-filesystem--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179154
+    },
+    {
+      "feature": "callback.terminal",
+      "harness": "Pi",
+      "path": "screenshots/matrix/33-callback-terminal--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167181
+    },
+    {
+      "feature": "callback.elicitation-form",
+      "harness": "Pi",
+      "path": "screenshots/matrix/34-callback-elicitation-form--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172649
+    },
+    {
+      "feature": "callback.elicitation-url",
+      "harness": "Pi",
+      "path": "screenshots/matrix/35-callback-elicitation-url--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175674
+    },
+    {
+      "feature": "callback.mcp-extension",
+      "harness": "Pi",
+      "path": "screenshots/matrix/36-callback-mcp-extension--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 136671
+    },
+    {
+      "feature": "runtime.foreground-terminal",
+      "harness": "Pi",
+      "path": "screenshots/matrix/37-runtime-foreground-terminal--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 156375
+    },
+    {
+      "feature": "runtime.background-work",
+      "harness": "Pi",
+      "path": "screenshots/matrix/38-runtime-background-work--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173345
+    },
+    {
+      "feature": "runtime.claude-monitor",
+      "harness": "Pi",
+      "path": "screenshots/matrix/39-runtime-claude-monitor--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 169504
+    },
+    {
+      "feature": "runtime.resources",
+      "harness": "Pi",
+      "path": "screenshots/matrix/40-runtime-resources--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 127599
+    },
+    {
+      "feature": "agent.native-list-lifecycle",
+      "harness": "Pi",
+      "path": "screenshots/matrix/41-agent-native-list-lifecycle--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 155872
+    },
+    {
+      "feature": "agent.native-detail",
+      "harness": "Pi",
+      "path": "screenshots/matrix/42-agent-native-detail--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 168476
+    },
+    {
+      "feature": "agent.native-transcript",
+      "harness": "Pi",
+      "path": "screenshots/matrix/43-agent-native-transcript--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 168426
+    },
+    {
+      "feature": "agent.native-final",
+      "harness": "Pi",
+      "path": "screenshots/matrix/44-agent-native-final--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167847
+    },
+    {
+      "feature": "runtime.vendor-raw",
+      "harness": "Pi",
+      "path": "screenshots/matrix/45-runtime-vendor-raw--pi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 135673
+    },
+    {
+      "feature": "session.initialize-ready",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/01-session-initialize-ready--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 171119
+    },
+    {
+      "feature": "session.new-workspace",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/02-session-new-workspace--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 170075
+    },
+    {
+      "feature": "session.load-history",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/03-session-load-history--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126936
+    },
+    {
+      "feature": "session.resume",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/04-session-resume--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 127839
+    },
+    {
+      "feature": "session.fork-side-chat",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/05-session-fork-side-chat--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179557
+    },
+    {
+      "feature": "session.side-chat-promote",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/06-session-side-chat-promote--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167343
+    },
+    {
+      "feature": "session.close-terminated",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/07-session-close-terminated--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179865
+    },
+    {
+      "feature": "session.local-archive-delete",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/08-session-local-archive-delete--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 103023
+    },
+    {
+      "feature": "session.restart-replay",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/09-session-restart-replay--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 130216
+    },
+    {
+      "feature": "input.prompt-text",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/10-input-prompt-text--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125314
+    },
+    {
+      "feature": "input.image-attachment",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/11-input-image-attachment--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172168
+    },
+    {
+      "feature": "input.resource-context",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/12-input-resource-context--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 135222
+    },
+    {
+      "feature": "input.session-reference",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/13-input-session-reference--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 135999
+    },
+    {
+      "feature": "input.available-commands",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/14-input-available-commands--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 138375
+    },
+    {
+      "feature": "input.mode",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/15-input-mode--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175063
+    },
+    {
+      "feature": "input.config-model-reasoning",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/16-input-config-model-reasoning--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 176391
+    },
+    {
+      "feature": "input.cancel-stop",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/17-input-cancel-stop--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 170291
+    },
+    {
+      "feature": "input.steering",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/18-input-steering--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 171638
+    },
+    {
+      "feature": "input.queue",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/19-input-queue--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173033
+    },
+    {
+      "feature": "output.streaming-response",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/20-output-streaming-response--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128602
+    },
+    {
+      "feature": "output.final-response",
+      "harness": "OpenCode",
+      "path": "screenshots/21-output-final-response--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 92462
+    },
+    {
+      "feature": "output.thinking-reasoning",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/22-output-thinking-reasoning--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129025
+    },
+    {
+      "feature": "output.notice-warning-error",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/23-output-notice-warning-error--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128376
+    },
+    {
+      "feature": "output.tool-start-input",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/24-output-tool-start-input--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 134047
+    },
+    {
+      "feature": "output.tool-progress-output",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/25-output-tool-progress-output--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 139392
+    },
+    {
+      "feature": "output.tool-terminal",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/26-output-tool-terminal--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 134940
+    },
+    {
+      "feature": "output.plan-document",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/27-output-plan-document--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 136351
+    },
+    {
+      "feature": "output.task-list-progress",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/28-output-task-list-progress--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 144898
+    },
+    {
+      "feature": "output.usage-parent",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/29-output-usage-parent--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178418
+    },
+    {
+      "feature": "output.session-status-goal-queue",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/30-output-session-status-goal-queue--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179403
+    },
+    {
+      "feature": "callback.permission",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/31-callback-permission--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 182462
+    },
+    {
+      "feature": "callback.filesystem",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/32-callback-filesystem--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 190227
+    },
+    {
+      "feature": "callback.terminal",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/33-callback-terminal--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178023
+    },
+    {
+      "feature": "callback.elicitation-form",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/34-callback-elicitation-form--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 182546
+    },
+    {
+      "feature": "callback.elicitation-url",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/35-callback-elicitation-url--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 185447
+    },
+    {
+      "feature": "callback.mcp-extension",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/36-callback-mcp-extension--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 147709
+    },
+    {
+      "feature": "runtime.foreground-terminal",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/37-runtime-foreground-terminal--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178839
+    },
+    {
+      "feature": "runtime.background-work",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/38-runtime-background-work--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 182850
+    },
+    {
+      "feature": "runtime.claude-monitor",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/39-runtime-claude-monitor--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178540
+    },
+    {
+      "feature": "runtime.resources",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/40-runtime-resources--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 136868
+    },
+    {
+      "feature": "agent.native-list-lifecycle",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/41-agent-native-list-lifecycle--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 163869
+    },
+    {
+      "feature": "agent.native-detail",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/42-agent-native-detail--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166869
+    },
+    {
+      "feature": "agent.native-transcript",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/43-agent-native-transcript--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 176812
+    },
+    {
+      "feature": "agent.native-final",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/44-agent-native-final--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175360
+    },
+    {
+      "feature": "runtime.vendor-raw",
+      "harness": "OpenCode",
+      "path": "screenshots/matrix/45-runtime-vendor-raw--opencode.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 147057
+    },
+    {
+      "feature": "session.initialize-ready",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/01-session-initialize-ready--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173908
+    },
+    {
+      "feature": "session.new-workspace",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/02-session-new-workspace--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173504
+    },
+    {
+      "feature": "session.load-history",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/03-session-load-history--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 123094
+    },
+    {
+      "feature": "session.resume",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/04-session-resume--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128537
+    },
+    {
+      "feature": "session.fork-side-chat",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/05-session-fork-side-chat--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178827
+    },
+    {
+      "feature": "session.side-chat-promote",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/06-session-side-chat-promote--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166077
+    },
+    {
+      "feature": "session.close-terminated",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/07-session-close-terminated--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 174649
+    },
+    {
+      "feature": "session.local-archive-delete",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/08-session-local-archive-delete--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 113239
+    },
+    {
+      "feature": "session.restart-replay",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/09-session-restart-replay--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125577
+    },
+    {
+      "feature": "input.prompt-text",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/10-input-prompt-text--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 127668
+    },
+    {
+      "feature": "input.image-attachment",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/11-input-image-attachment--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 168977
+    },
+    {
+      "feature": "input.resource-context",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/12-input-resource-context--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128604
+    },
+    {
+      "feature": "input.session-reference",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/13-input-session-reference--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128834
+    },
+    {
+      "feature": "input.available-commands",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/14-input-available-commands--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 128902
+    },
+    {
+      "feature": "input.mode",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/15-input-mode--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 168575
+    },
+    {
+      "feature": "input.config-model-reasoning",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/16-input-config-model-reasoning--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167103
+    },
+    {
+      "feature": "input.cancel-stop",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/17-input-cancel-stop--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 161973
+    },
+    {
+      "feature": "input.steering",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/18-input-steering--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 162145
+    },
+    {
+      "feature": "input.queue",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/19-input-queue--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 163920
+    },
+    {
+      "feature": "output.streaming-response",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/20-output-streaming-response--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 117849
+    },
+    {
+      "feature": "output.final-response",
+      "harness": "Kilo",
+      "path": "screenshots/21-output-final-response--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 90710
+    },
+    {
+      "feature": "output.thinking-reasoning",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/22-output-thinking-reasoning--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 118027
+    },
+    {
+      "feature": "output.notice-warning-error",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/23-output-notice-warning-error--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 116971
+    },
+    {
+      "feature": "output.tool-start-input",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/24-output-tool-start-input--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 121679
+    },
+    {
+      "feature": "output.tool-progress-output",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/25-output-tool-progress-output--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126410
+    },
+    {
+      "feature": "output.tool-terminal",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/26-output-tool-terminal--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 121839
+    },
+    {
+      "feature": "output.plan-document",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/27-output-plan-document--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 122160
+    },
+    {
+      "feature": "output.task-list-progress",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/28-output-task-list-progress--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 130397
+    },
+    {
+      "feature": "output.usage-parent",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/29-output-usage-parent--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 168989
+    },
+    {
+      "feature": "output.session-status-goal-queue",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/30-output-session-status-goal-queue--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166506
+    },
+    {
+      "feature": "callback.permission",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/31-callback-permission--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172030
+    },
+    {
+      "feature": "callback.filesystem",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/32-callback-filesystem--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 178748
+    },
+    {
+      "feature": "callback.terminal",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/33-callback-terminal--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 165803
+    },
+    {
+      "feature": "callback.elicitation-form",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/34-callback-elicitation-form--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 171704
+    },
+    {
+      "feature": "callback.elicitation-url",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/35-callback-elicitation-url--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173315
+    },
+    {
+      "feature": "callback.mcp-extension",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/36-callback-mcp-extension--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 135787
+    },
+    {
+      "feature": "runtime.foreground-terminal",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/37-runtime-foreground-terminal--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167643
+    },
+    {
+      "feature": "runtime.background-work",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/38-runtime-background-work--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 171529
+    },
+    {
+      "feature": "runtime.claude-monitor",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/39-runtime-claude-monitor--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167012
+    },
+    {
+      "feature": "runtime.resources",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/40-runtime-resources--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125195
+    },
+    {
+      "feature": "agent.native-list-lifecycle",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/41-agent-native-list-lifecycle--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 148977
+    },
+    {
+      "feature": "agent.native-detail",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/42-agent-native-detail--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 151766
+    },
+    {
+      "feature": "agent.native-transcript",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/43-agent-native-transcript--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166633
+    },
+    {
+      "feature": "agent.native-final",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/44-agent-native-final--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166607
+    },
+    {
+      "feature": "runtime.vendor-raw",
+      "harness": "Kilo",
+      "path": "screenshots/matrix/45-runtime-vendor-raw--kilo.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 133885
+    },
+    {
+      "feature": "session.initialize-ready",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/01-session-initialize-ready--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166211
+    },
+    {
+      "feature": "session.new-workspace",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/02-session-new-workspace--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166807
+    },
+    {
+      "feature": "session.load-history",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/03-session-load-history--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125376
+    },
+    {
+      "feature": "session.resume",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/04-session-resume--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125641
+    },
+    {
+      "feature": "session.fork-side-chat",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/05-session-fork-side-chat--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 175592
+    },
+    {
+      "feature": "session.side-chat-promote",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/06-session-side-chat-promote--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 163272
+    },
+    {
+      "feature": "session.close-terminated",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/07-session-close-terminated--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173601
+    },
+    {
+      "feature": "session.local-archive-delete",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/08-session-local-archive-delete--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 125201
+    },
+    {
+      "feature": "session.restart-replay",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/09-session-restart-replay--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 127357
+    },
+    {
+      "feature": "input.prompt-text",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/10-input-prompt-text--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129818
+    },
+    {
+      "feature": "input.image-attachment",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/11-input-image-attachment--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167333
+    },
+    {
+      "feature": "input.resource-context",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/12-input-resource-context--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129082
+    },
+    {
+      "feature": "input.session-reference",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/13-input-session-reference--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129231
+    },
+    {
+      "feature": "input.available-commands",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/14-input-available-commands--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129911
+    },
+    {
+      "feature": "input.mode",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/15-input-mode--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167677
+    },
+    {
+      "feature": "input.config-model-reasoning",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/16-input-config-model-reasoning--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167773
+    },
+    {
+      "feature": "input.cancel-stop",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/17-input-cancel-stop--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 161477
+    },
+    {
+      "feature": "input.steering",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/18-input-steering--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 162390
+    },
+    {
+      "feature": "input.queue",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/19-input-queue--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 164085
+    },
+    {
+      "feature": "output.streaming-response",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/20-output-streaming-response--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 119722
+    },
+    {
+      "feature": "output.final-response",
+      "harness": "Kimi Code",
+      "path": "screenshots/21-output-final-response--kimi.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 108913
+    },
+    {
+      "feature": "output.thinking-reasoning",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/22-output-thinking-reasoning--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 120192
+    },
+    {
+      "feature": "output.notice-warning-error",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/23-output-notice-warning-error--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 119100
+    },
+    {
+      "feature": "output.tool-start-input",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/24-output-tool-start-input--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 123667
+    },
+    {
+      "feature": "output.tool-progress-output",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/25-output-tool-progress-output--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 129293
+    },
+    {
+      "feature": "output.tool-terminal",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/26-output-tool-terminal--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 124951
+    },
+    {
+      "feature": "output.plan-document",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/27-output-plan-document--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126499
+    },
+    {
+      "feature": "output.task-list-progress",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/28-output-task-list-progress--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 135282
+    },
+    {
+      "feature": "output.usage-parent",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/29-output-usage-parent--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 169444
+    },
+    {
+      "feature": "output.session-status-goal-queue",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/30-output-session-status-goal-queue--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 168992
+    },
+    {
+      "feature": "callback.permission",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/31-callback-permission--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172715
+    },
+    {
+      "feature": "callback.filesystem",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/32-callback-filesystem--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 179676
+    },
+    {
+      "feature": "callback.terminal",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/33-callback-terminal--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166799
+    },
+    {
+      "feature": "callback.elicitation-form",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/34-callback-elicitation-form--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172556
+    },
+    {
+      "feature": "callback.elicitation-url",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/35-callback-elicitation-url--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 173958
+    },
+    {
+      "feature": "callback.mcp-extension",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/36-callback-mcp-extension--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 138281
+    },
+    {
+      "feature": "runtime.foreground-terminal",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/37-runtime-foreground-terminal--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 167588
+    },
+    {
+      "feature": "runtime.background-work",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/38-runtime-background-work--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 172410
+    },
+    {
+      "feature": "runtime.claude-monitor",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/39-runtime-claude-monitor--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166979
+    },
+    {
+      "feature": "runtime.resources",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/40-runtime-resources--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 126682
+    },
+    {
+      "feature": "agent.native-list-lifecycle",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/41-agent-native-list-lifecycle--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166399
+    },
+    {
+      "feature": "agent.native-detail",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/42-agent-native-detail--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166384
+    },
+    {
+      "feature": "agent.native-transcript",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/43-agent-native-transcript--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 166715
+    },
+    {
+      "feature": "agent.native-final",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/44-agent-native-final--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 165861
+    },
+    {
+      "feature": "runtime.vendor-raw",
+      "harness": "Kimi Code",
+      "path": "screenshots/matrix/45-runtime-vendor-raw--kimi-code.png",
+      "width": 1440,
+      "height": 900,
+      "bytes": 136741
+    }
+  ]
+}

@@ -11,6 +11,10 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Readable, Writable } from "node:stream";
 
+const fakeAgentName = process.env.BACKCHAT_FAKE_AGENT_NAME ?? "fake-acp-agent";
+const fakeAgentTitle = process.env.BACKCHAT_FAKE_AGENT_TITLE ?? "Fake ACP Agent";
+const fakeAgentVersion = process.env.BACKCHAT_FAKE_AGENT_VERSION ?? "0.0.0-e2e";
+
 class FakeAcpAgent {
   constructor(connection) {
     this.connection = connection;
@@ -21,12 +25,15 @@ class FakeAcpAgent {
     return {
       protocolVersion: PROTOCOL_VERSION,
       agentInfo: {
-        name: "fake-acp-agent",
-        title: "Fake ACP Agent",
-        version: "0.0.0-e2e",
+        name: fakeAgentName,
+        title: fakeAgentTitle,
+        version: fakeAgentVersion,
       },
       agentCapabilities: {
         loadSession: true,
+        sessionCapabilities: {
+          resume: {},
+        },
       },
     };
   }
@@ -38,6 +45,11 @@ class FakeAcpAgent {
   }
 
   async loadSession(params) {
+    this.sessions.set(params.sessionId, params.mcpServers ?? []);
+    return {};
+  }
+
+  async resumeSession(params) {
     this.sessions.set(params.sessionId, params.mcpServers ?? []);
     return {};
   }

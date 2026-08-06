@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -31,12 +31,19 @@ export function TerminalTab({
   terminalId,
   initialCols = 80,
   initialRows = 24,
+  cancellationRequested = false,
 }: {
   terminalId: string;
   initialCols?: number;
   initialRows?: number;
+  cancellationRequested?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [exit, setExit] = useState<TerminalExitState | null>(null);
+  const presentation = terminalStatusPresentation(
+    exit,
+    cancellationRequested,
+  );
 
   useEffect(() => {
     const host = hostRef.current;
@@ -100,6 +107,7 @@ export function TerminalTab({
     });
     const offExit = window.backchat.onUiTermExit((f) => {
       if (f.terminalId !== terminalId) return;
+      setExit({ exitCode: f.exitCode, signal: f.signal });
       // Print a discreet footer so the user sees the shell ended. The
       // \r\n is needed because the cursor is wherever the last byte
       // left it; an unprefixed \n would push the message into the
@@ -217,8 +225,12 @@ export function TerminalTab({
 
   return (
     <div
-      ref={hostRef}
-      className="h-full w-full overflow-hidden"
+      role="region"
+      aria-label={`Terminal ${terminalId}`}
+      data-testid="foreground-terminal"
+      data-terminal-id={terminalId}
+      data-terminal-status={presentation.status}
+      className="relative h-full w-full overflow-hidden"
       // Background matches the bottom panel's --bg card surface.
       // xterm-addon-webgl draws on an OPAQUE framebuffer — transparent
       // themes don't work on the WebGL renderer (it ignores
@@ -237,8 +249,45 @@ export function TerminalTab({
         transform: "translateZ(0)",
         willChange: "transform",
       }}
-    />
+    >
+      <div ref={hostRef} className="h-full w-full" />
+      <span
+        data-testid="foreground-terminal-status"
+        className="pointer-events-none absolute right-2 top-2 z-10 rounded-md bg-bg-surface/90 px-2 py-1 text-[10px] font-medium text-fg-muted ring-1 ring-border/60"
+        aria-live="polite"
+      >
+        {presentation.label}
+      </span>
+    </div>
   );
+}
+
+interface TerminalExitState {
+  exitCode: number | null;
+  signal: string | null;
+}
+
+export function terminalStatusPresentation(
+  exit: TerminalExitState | null,
+  cancellationRequested = false,
+): { status: "running" | "cancelling" | "exited" | "failed" | "cancelled"; label: string } {
+  if (!exit) {
+    return cancellationRequested
+      ? { status: "cancelling", label: "Cancelling" }
+      : { status: "running", label: "Running" };
+  }
+  const suffix = exit.signal
+    ? ` · ${exit.signal}`
+    : exit.exitCode != null
+      ? ` · code ${exit.exitCode}`
+      : "";
+  if (cancellationRequested) {
+    return { status: "cancelled", label: `Cancelled${suffix}` };
+  }
+  if (exit.exitCode === 0 && !exit.signal) {
+    return { status: "exited", label: `Exited${suffix}` };
+  }
+  return { status: "failed", label: `Failed${suffix}` };
 }
 
 /** Resolve CSS vars to literal hex once at construct time. xterm.js's

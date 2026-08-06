@@ -30,8 +30,10 @@ export const test = base.extend<OpenMAFixtures>({
     const tracing = launched.app.context().tracing;
     let tracingStarted = false;
     try {
-      await tracing.start({ screenshots: true, snapshots: true, sources: true });
-      tracingStarted = true;
+      if (process.env["BACKCHAT_E2E_DISABLE_TRACING"] !== "1") {
+        await tracing.start({ screenshots: true, snapshots: true, sources: true });
+        tracingStarted = true;
+      }
       await use(launched);
     } finally {
       const failed = testInfo.status !== testInfo.expectedStatus;

@@ -1,0 +1,395 @@
+{
+  "harness": "opencode",
+  "harnessVersion": "1.18.12",
+  "verificationMode": "live",
+  "provider": "DeepSeek Anthropic",
+  "endpoint": "https://api.deepseek.com/anthropic",
+  "model": "deepseek-v4-flash",
+  "startedAt": "2026-08-05T20:59:55.492Z",
+  "finishedAt": "2026-08-05T20:59:59.707Z",
+  "acpSessionId": "ses_02c463393ffeB5p82NWfUNa3CN",
+  "supportsSessionFork": true,
+  "passed": true,
+  "finalText": "BACKCHAT_HARNESS_LIVE_OK",
+  "failure": null,
+  "diagnostics": [],
+  "events": [
+    {
+      "availableCommands": [
+        {
+          "description": "Viet script video ngan cho TikTok, Reels, YouTube Shorts — 2 ban A/B, co hook, CTA, huong dan quay chi tiet",
+          "name": "04-script-video"
+        },
+        {
+          "description": "Adapt designs to work across different screen sizes, devices, contexts, or platforms. Implements breakpoints, fluid layouts, and touch targets. Use when the user mentions responsive design, mobile layouts, breakpoints, viewport adaptation, or cross-device compatibility.",
+          "name": "adapt"
+        },
+        {
+          "description": "Browser automation CLI for AI agents. Use when the user needs to interact with websites, including navigating pages, filling forms, clicking buttons, taking screenshots, extracting data, testing web apps, or automating any browser task. Triggers include requests to \"open a website\", \"fill out a form\", \"click a button\", \"take a screenshot\", \"scrape data from a page\", \"test this web app\", \"login to a site\", \"automate browser actions\", or any task requiring programmatic web interaction.",
+          "name": "agent-browser"
+        },
+        {
+          "description": "When the user wants to optimize content for AI search engines, get cited by LLMs, or appear in AI-generated answers. Also use when the user mentions 'AI SEO,' 'AEO,' 'GEO,' 'LLMO,' 'answer engine optimization,' 'generative engine optimization,' 'LLM optimization,' 'AI Overviews,' 'optimize for ChatGPT,' 'optimize for Perplexity,' 'AI citations,' 'AI visibility,' 'zero-click search,' 'how do I show up in AI answers,' 'LLM mentions,' or 'optimize for Claude/Gemini.' Use this whenever someone wants their content to be cited or surfaced by AI assistants and AI search engines. For traditional technical and on-page SEO audits, see seo-audit. For structured data implementation, see schema-markup.",
+          "name": "ai-seo"
+        },
+        {
+          "description": "Review a feature and enhance it with purposeful animations, micro-interactions, and motion effects that improve usability and delight. Use when the user mentions adding animation, transitions, micro-interactions, motion design, hover effects, or making the UI feel more alive.",
+          "name": "animate"
+        },
+        {
+          "description": "Improve layout, spacing, and visual rhythm. Fixes monotonous grids, inconsistent spacing, and weak visual hierarchy. Use when the user mentions layout feeling off, spacing issues, visual hierarchy, crowded UI, alignment problems, or wanting better composition.",
+          "name": "arrange"
+        },
+        {
+          "description": "Run technical quality checks across accessibility, performance, theming, responsive design, and anti-patterns. Generates a scored report with P0-P3 severity ratings and actionable plan. Use when the user wants an accessibility check, performance audit, or technical quality review.",
+          "name": "audit"
+        },
+        {
+          "description": "Generate professional infographics with 21 layout types and 22 visual styles. Analyzes content, recommends layout×style combinations, and generates publication-ready infographics. Use when user asks to create \"infographic\", \"信息图\", \"visual summary\", \"可视化\", or \"高密度信息大图\".",
+          "name": "baoyu-infographic"
+        },
+        {
+          "description": "Skill for integrating Better Auth - the comprehensive TypeScript authentication framework.",
+          "name": "better-auth-best-practices"
+        },
+        {
+          "description": "Amplify safe or boring designs to make them more visually interesting and stimulating. Increases impact while maintaining usability. Use when the user says the design looks bland, generic, too safe, lacks personality, or wants more visual impact and character.",
+          "name": "bolder"
+        },
+        {
+          "description": "Xiaohongshu-style knowledge cards, arranged as a swipeable multi-card carousel.",
+          "name": "card-xiaohongshu"
+        },
+        {
+          "description": "Expert guidelines for Chrome extension development with Manifest V3, covering security, performance, and best practices",
+          "name": "chrome-extension-development"
+        },
+        {
+          "description": "Improve unclear UX copy, error messages, microcopy, labels, and instructions to make interfaces easier to understand. Use when the user mentions confusing text, unclear labels, bad error messages, hard-to-follow instructions, or wanting better UX writing.",
+          "name": "clarify"
+        },
+        {
+          "description": "Test Clash desktop Copilot/ACP flows with subagents using agent-browser. Use this skill whenever the user asks for real desktop E2E, ACP agent verification, Codex/Claude/Gemini harness testing, session history persistence checks, or screenshots from a user-perspective Electron run. It prevents mock-only tests from being mistaken for real E2E.",
+          "name": "clash-real-e2e-tester"
+        },
+        {
+          "description": "Comprehensive Cloudflare platform skill covering Workers, Pages, storage (KV, D1, R2), AI (Workers AI, Vectorize, Agents SDK), networking (Tunnel, Spectrum), security (WAF, DDoS), and infrastructure-as-code (Terraform, Pulumi). Use for any Cloudflare development task. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "name": "cloudflare"
+        },
+        {
+          "description": "Add strategic color to features that are too monochromatic or lack visual interest, making interfaces more engaging and expressive. Use when the user mentions the design looking gray, dull, lacking warmth, needing more color, or wanting a more vibrant or expressive palette.",
+          "name": "colorize"
+        },
+        {
+          "description": "Help users understand and respond to competition. Use when someone is positioning against competitors, evaluating market threats, running competitive war games, or deciding how much to focus on competitors versus customers.",
+          "name": "competitive-analysis"
+        },
+        {
+          "description": "Retrieve up-to-date documentation for software libraries, frameworks, and components via the Context7 API. This skill should be used when looking up documentation for any programming library or framework, finding code examples for specific APIs or features, verifying correct usage of library functions, or obtaining current information about library APIs that may have changed since training.",
+          "name": "context7"
+        },
+        {
+          "description": "Critical thinking and logical reasoning analysis skills for when you are explicitly asked to critically analyse written content such as articles, blogs, transcripts and reports (not code).",
+          "name": "critical-thinking-logical-reasoning"
+        },
+        {
+          "description": "Evaluate design from a UX perspective, assessing visual hierarchy, information architecture, emotional resonance, cognitive load, and overall quality with quantitative scoring, persona-based testing, and actionable feedback. Use when the user asks to review, critique, evaluate, or give feedback on a design or component.",
+          "name": "critique"
+        },
+        {
+          "description": "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.",
+          "name": "customize-opencode"
+        },
+        {
+          "description": "Add moments of joy, personality, and unexpected touches that make interfaces memorable and enjoyable to use. Elevates functional to delightful. Use when the user asks to add polish, personality, animations, micro-interactions, delight, or make an interface feel fun or memorable.",
+          "name": "delight"
+        },
+        {
+          "description": "Strip designs to their essence by removing unnecessary complexity. Great design is simple, powerful, and clean. Use when the user asks to simplify, declutter, reduce noise, remove elements, or make a UI cleaner and more focused.",
+          "name": "distill"
+        },
+        {
+          "description": "创作竖屏短剧剧本，包括宏观建构、剧本创作、精准优化、创意发想。适用于从零开始创作短剧、优化现有剧本、设计故事大纲和悬念钩子",
+          "name": "drama-creator"
+        },
+        {
+          "description": "Extract and consolidate reusable components, design tokens, and patterns into your design system. Identifies opportunities for systematic reuse and enriches your component library. Use when the user asks to create components, refactor repeated UI patterns, build a design system, or extract tokens.",
+          "name": "extract"
+        },
+        {
+          "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+          "name": "find-skills"
+        },
+        {
+          "description": "Create distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics. Use when the user asks to build web components, pages, artifacts, posters, or applications, or when any design skill requires project context.",
+          "name": "frontend-design"
+        },
+        {
+          "description": "Improve interface resilience through better error handling, i18n support, text overflow handling, and edge case management. Makes interfaces robust and production-ready. Use when the user asks to harden, make production-ready, handle edge cases, add error states, or fix overflow and i18n issues.",
+          "name": "harden"
+        },
+        {
+          "description": "Mandatory entry point: read this first for any request to make, create, edit, animate, or render a video, animation, or motion graphic, including a promo, explainer, captioned clip, title card, overlay, slideshow or interactive deck, Remotion port, or any HyperFrames HTML composition. Also use it to inspect, diagnose, validate, preview, publish, or batch-render an existing HyperFrames project. Inputs may be a website URL, GitHub PR, Figma design or URL, text or brief, existing footage, or music. It resumes project state, captures intent when applicable, selects and installs the owning workflow, and routes domain capabilities. HyperFrames is the default output framework unless the user explicitly chooses another framework for the deliverable or asks only to record a browser session.\n",
+          "name": "hyperframes"
+        },
+        {
+          "description": "All animation knowledge for HyperFrames — atomic motion rules, multi-phase scene blueprints, scene transitions, broader motion-design techniques, AND the seven runtime adapters (GSAP default, plus Lottie, Three.js, Anime.js, CSS keyframes, Web Animations API, TypeGPU). Use for any motion or animation task: pick 2-4 rules and compose, or load a blueprint, or look up runtime-specific API (e.g. GSAP eases / Lottie player / Three.js mixer). Also covers auditing an existing composition's choreography (animation map) and 24 named text-animation effects. HyperFrames-native: single paused timeline, seek-safe, deterministic.",
+          "name": "hyperframes-animation"
+        },
+        {
+          "description": "Use the HyperFrames CLI development loop: init, add, catalog, capture, lint, check, snapshot, compare, grade-compare, preview, play, present, beats, keyframes, single or batch render, publish, cloud, cloudrun, feedback, lambda, doctor, browser, info, upgrade, skills, compositions, docs, benchmark, telemetry, transcribe, auth, tts, and remove-background. Also use when diagnosing build or render failures. validate, inspect, and layout are deprecated aliases; use check. Covers local, HeyGen-hosted cloud, AWS Lambda, and Google Cloud Run rendering.\n",
+          "name": "hyperframes-cli"
+        },
+        {
+          "description": "The HyperFrames composition contract — build one renderable project. Use for composition structure, the `data-*` timing attributes, `class=\"clip\"`, tracks, sub-compositions, variables, framework-owned media playback, deterministic-render rules, and validation. Also covers Tailwind projects and the STORYBOARD.md / SCRIPT.md plan formats. Read before writing composition HTML.",
+          "name": "hyperframes-core"
+        },
+        {
+          "description": "Non-animation creative direction for HyperFrames videos. Use for design spec (frame.md / design.md) handling, palettes, typography, narration, beat planning, audio-reactive visuals, composition patterns, and brand / style decisions. For atomic motion patterns and scene blueprints, use `hyperframes-animation`.",
+          "name": "hyperframes-creative"
+        },
+        {
+          "description": "Use when a HyperFrames composition needs seek-safe 2D/3D keyframes, GSAP timelines, CSS keyframes, Anime.js, WAAPI, FLIP, paths, masks, SVG morph/draw, text trails, 3D depth, or `hyperframes keyframes` diagnostics. Don't use for broad scene strategy, brand design, media sourcing, captions, or general video planning.\n",
+          "name": "hyperframes-keyframes"
+        },
+        {
+          "description": "Install, discover, and wire registry blocks and components into HyperFrames compositions. Use when running hyperframes add or hyperframes catalog, installing one item or every block matching a tag, wiring an installed item into index.html, or working with hyperframes.json. Covers discovery, install locations, block sub-composition wiring, component snippet merging, and authoring a new block or component to contribute upstream (idea → scaffold → validate → PR).",
+          "name": "hyperframes-registry"
+        },
+        {
+          "description": "guided AGENTS.md setup",
+          "name": "init"
+        },
+        {
+          "description": "Develop native iOS apps with Swift. Covers MVVM architecture, SwiftUI, URLSession for networking, Combine for reactive programming, and Core Data persistence.\n",
+          "name": "ios-swift-development"
+        },
+        {
+          "description": "Agent Media OS, the single skill for every media need in a HyperFrames project. Resolve BGM, SFX, image, icon, brand logo, voice, color grade, or LUT into a frozen local file or paste-ready block + ledger record (one verb, `resolve`); generate via TTS / music / image models when the catalog misses; produce voiceover, transcription, captions, and background removal through one shared audio engine; operate on media (cut / reframe / transform); and reuse assets across projects. Keeps search noise on disk, hands the agent one path or block. Use for any audio, image, icon, logo, voiceover, caption, color-grading, or media-asset need.",
+          "name": "media-use"
+        },
+        {
+          "description": "A short, design-led motion graphic where motion is the message — kinetic typography, stat count-up, chart/data-viz hit, logo sting / brand lockup, lower-third / callout / social overlay, animated map (highlight regions, connect places, zoom to a location), animated tweet / news-article / headline, webpage / UI animation (scroll, cursor, callouts), or fusing a real image's geometry into a chart. Usually under 10s (up to ~30s), no narration or live-action subject; renders to MP4 or transparent overlay. Longer / narrated / multi-scene → /general-video. Unclear → /hyperframes.\n",
+          "name": "motion-graphics"
+        },
+        {
+          "description": "Integrate Apple Music playback, catalog search, and Now Playing metadata using MusicKit and MediaPlayer. Use when adding music search, Apple Music subscription flows, queue management, playback controls, remote command handling, or Now Playing info to iOS apps.",
+          "name": "musickit"
+        },
+        {
+          "description": "MusicKit JS integration expertise — queue management, event handling, autoplay policies, restore flows, and dozens of hard-won gotchas. Use this skill whenever working with MusicKit JS, Apple Music web playback, MusicKit events (queueItemsDidChange, nowPlayingItemDidChange, playbackStateDidChange), MusicKit queue operations (setQueue, playLater, changeToMediaAtIndex), or debugging MusicKit-related issues like ghost playback, queue flickering, NotAllowedError, or 'could not be resolved' errors. Also trigger when the user mentions Apple Music API, MusicKit configure, MusicKit authorize, or music player state management in a web app context.",
+          "name": "musickit-js"
+        },
+        {
+          "description": "Audits and realigns UI to match design system standards, spacing, tokens, and patterns. Use when the user mentions consistency, design drift, mismatched styles, tokens, or wants to bring a feature back in line with the system.",
+          "name": "normalize"
+        },
+        {
+          "description": "Designs and improves onboarding flows, empty states, and first-run experiences to help users reach value quickly. Use when the user mentions onboarding, first-time users, empty states, activation, getting started, or new user flows.",
+          "name": "onboard"
+        },
+        {
+          "description": "Diagnoses and fixes UI performance across loading speed, rendering, animations, images, and bundle size. Use when the user mentions slow, laggy, janky, performance, bundle size, load time, or wants a faster, smoother experience.",
+          "name": "optimize"
+        },
+        {
+          "description": "Pushes interfaces past conventional limits with technically ambitious implementations — shaders, spring physics, scroll-driven reveals, 60fps animations. Use when the user wants to wow, impress, go all-out, or make something that feels extraordinary.",
+          "name": "overdrive"
+        },
+        {
+          "description": "Preview development workflow for the playheads monorepo. Use this skill whenever the user is working on a feature branch and wants to develop, deploy to preview, test, or debug their changes. Triggers include: pushing code, checking deployment status, testing preview URLs, viewing Cloudflare logs, or any mention of 'preview', 'deploy', 'CI status', 'preview test', or debugging production/preview issues in this repo.",
+          "name": "playheads-preview-workflow"
+        },
+        {
+          "description": "Performs a final quality pass fixing alignment, spacing, consistency, and micro-detail issues before shipping. Use when the user mentions polish, finishing touches, pre-launch review, something looks off, or wants to go from good to great.",
+          "name": "polish"
+        },
+        {
+          "description": "Turn a product or marketing URL, pasted script, or brief into a product launch / promo video — SaaS promos, feature reveals, product demos, app and company launches. Use when the user wants to market, launch, promote, or reveal a product; the default for any commercial URL. Site tours / showcases of a website route here too — the brief carries the show-it-as-is intent. Unclear → /hyperframes.",
+          "name": "product-launch-video"
+        },
+        {
+          "description": "When the user wants to create SEO-driven pages at scale using templates and data. Also use when the user mentions \"programmatic SEO,\" \"template pages,\" \"pages at scale,\" \"directory pages,\" \"location pages,\" \"[keyword] + [city] pages,\" \"comparison pages,\" \"integration pages,\" \"building many pages for SEO,\" \"pSEO,\" \"generate 100 pages,\" \"data-driven pages,\" or \"templated landing pages.\" Use this whenever someone wants to create many similar pages targeting different keywords or locations. For auditing existing SEO issues, see seo-audit. For content strategy planning, see content-strategy.",
+          "name": "programmatic-seo"
+        },
+        {
+          "description": "一句话生成大师级海报、书籍封面、专辑封面和各类设计作品。无需懂PS、配色或艺术史，AI自动选择最佳风格（基于33+位传奇设计师）。支持多平台多比例：公众号封面(21:9)、小红书配图(3:4)、文章配图(16:9)、书籍封面(9:16)、专辑封面(1:1)、电影海报(9:16)。包含AI提示词优化、风格对比、图生图转换功能。触发词：\"Mondo风格\"、\"书籍封面设计\"、\"专辑封面\"、\"海报设计\"、\"读书笔记配图\"、\"公众号封面\"、\"小红书配图\"、\"文章配图\"。One-sentence generation of master-level posters, book covers, album covers and designs. 33+ legendary designer styles with multi-platform aspect ratio support (21:9, 16:9, 3:4, 1:1, 9:16).",
+          "name": "qiaomu-mondo-poster-design"
+        },
+        {
+          "description": "Tones down visually aggressive or overstimulating designs, reducing intensity while preserving quality. Use when the user mentions too bold, too loud, overwhelming, aggressive, garish, or wants a calmer, more refined aesthetic.",
+          "name": "quieter"
+        },
+        {
+          "description": "Best practices for Remotion - Video creation in React",
+          "name": "remotion-best-practices"
+        },
+        {
+          "description": "review changes [commit|branch|pr], defaults to uncommitted",
+          "name": "review"
+        },
+        {
+          "description": "Evaluate research rigor. Assess methodology, experimental design, statistical validity, biases, confounding, evidence quality (GRADE, Cochrane ROB), for critical analysis of scientific claims.",
+          "name": "scientific-critical-thinking"
+        },
+        {
+          "description": "When the user wants to audit, review, or diagnose SEO issues on their site. Also use when the user mentions \"SEO audit,\" \"technical SEO,\" \"why am I not ranking,\" \"SEO issues,\" \"on-page SEO,\" \"meta tags review,\" \"SEO health check,\" \"my traffic dropped,\" \"lost rankings,\" \"not showing up in Google,\" \"site isn't ranking,\" \"Google update hit me,\" \"page speed,\" \"core web vitals,\" \"crawl errors,\" or \"indexing issues.\" Use this even if the user just says something vague like \"my SEO is bad\" or \"help with SEO\" — start with an audit. For building pages at scale to target keywords, see programmatic-seo. For adding structured data, see schema-markup. For AI search optimization, see ai-seo.",
+          "name": "seo-audit"
+        },
+        {
+          "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+          "name": "skill-creator"
+        },
+        {
+          "description": "Implement, review, or improve SwiftUI features using the iOS 26+ Liquid Glass API. Use when asked to adopt Liquid Glass in new SwiftUI UI, refactor an existing feature to Liquid Glass, or review Liquid Glass usage for correctness, performance, and design alignment.",
+          "name": "swiftui-liquid-glass"
+        },
+        {
+          "description": "One-time setup that gathers design context for your project and saves it to your AI config file. Run once to establish persistent design guidelines.",
+          "name": "teach-impeccable"
+        },
+        {
+          "description": "Use when implementing any feature or bugfix, before writing implementation code",
+          "name": "test-driven-development"
+        },
+        {
+          "description": "Local TTS router for Apple Silicon — pull models, serve OpenAI-compatible API, synthesize speech, clone voices. Use when the user asks to \"generate speech\", \"text to speech\", \"start TTS server\", \"pull a TTS model\", \"clone a voice\", \"speak in someone's voice\", or any task involving local speech synthesis on macOS.",
+          "name": "tts-router"
+        },
+        {
+          "description": "Improves typography by fixing font choices, hierarchy, sizing, weight, and readability so text feels intentional. Use when the user mentions fonts, type, readability, text hierarchy, sizing looks off, or wants more polished, intentional typography.",
+          "name": "typeset"
+        },
+        {
+          "description": "UI/UX design intelligence. 50 styles, 21 palettes, 50 font pairings, 20 charts, 9 stacks (React, Next.js, Vue, Svelte, SwiftUI, React Native, Flutter, Tailwind, shadcn/ui). Actions: plan, build, create, design, implement, review, fix, improve, optimize, enhance, refactor, check UI/UX code. Projects: website, landing page, dashboard, admin panel, e-commerce, SaaS, portfolio, blog, mobile app, .html, .tsx, .vue, .svelte. Elements: button, modal, navbar, sidebar, card, table, form, chart. Styles: glassmorphism, claymorphism, minimalism, brutalism, neumorphism, bento grid, dark mode, responsive, skeuomorphism, flat design. Topics: color palette, accessibility, animation, layout, typography, font pairing, spacing, hover, shadow, gradient. Integrations: shadcn/ui MCP for component search and examples.",
+          "name": "ui-ux-pro-max"
+        },
+        {
+          "description": "Use when creating After Effects compositions, Premiere Pro motion, video titles, explainer videos, or broadcast motion graphics.",
+          "name": "video-motion-graphics"
+        },
+        {
+          "description": "Review UI code for Web Interface Guidelines compliance. Use when asked to \"review my UI\", \"check accessibility\", \"audit design\", \"review UX\", or \"check my site against best practices\".",
+          "name": "web-design-guidelines"
+        },
+        {
+          "description": "Reviews and authors Cloudflare Workers code against production best practices. Load when writing new Workers, reviewing Worker code, configuring wrangler.jsonc, or checking for common Workers anti-patterns (streaming, floating promises, global state, secrets, bindings, observability). Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "name": "workers-best-practices"
+        },
+        {
+          "description": "Cloudflare Workers CLI for deploying, developing, and managing Workers, KV, R2, D1, Vectorize, Hyperdrive, Workers AI, Containers, Queues, Workflows, Pipelines, and Secrets Store. Load before running wrangler commands to ensure correct syntax and best practices. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "name": "wrangler"
+        },
+        {
+          "description": "Help users write effective PRDs. Use when someone is documenting product requirements, preparing specs for engineering, writing feature briefs, or defining what to build for their team.",
+          "name": "writing-prds"
+        },
+        {
+          "description": "小红书（RedNote）内容工具。使用场景：\n- 搜索小红书笔记并获取详情\n- 获取首页推荐列表\n- 获取帖子详情（正文、图片、互动数据、评论）\n- 发表评论 / 回复评论\n- 获取用户主页和笔记列表\n- 点赞、收藏帖子\n- 发布图文或视频笔记\n- 热点话题跟踪与分析报告\n- 帖子导出为长图\n触发词示例：\n- \"搜一下小红书上的XX\"\n- \"跟踪一下小红书上的XX热点\"\n- \"分析小红书上关于XX的讨论\"\n- \"小红书XX话题报告\"\n- \"生成XX的小红书舆情报告\"\n",
+          "name": "xiaohongshu"
+        },
+        {
+          "description": "Generate Xiaohongshu (小红书) style cover images based on user topics. Use when the user wants to create a social media cover image in Xiaohongshu style, or mentions keywords like \"小红书封面\", \"Xiaohongshu cover\", \"封面生成\", or provides a topic for cover image generation. The generated image will be saved to the current project directory.",
+          "name": "xiaohongshu-cover-generator"
+        },
+        {
+          "description": "Transform markdown/HTML into styled 3:4 ratio images for Xiaohongshu",
+          "name": "xiaohongshu-images"
+        }
+      ],
+      "sessionUpdate": "available_commands_update"
+    },
+    {
+      "content": {
+        "text": "",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_thought_chunk"
+    },
+    {
+      "content": {
+        "text": "BACK",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "content": {
+        "text": "CH",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "content": {
+        "text": "AT",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "content": {
+        "text": "_H",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "content": {
+        "text": "ARN",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "content": {
+        "text": "ESS",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "content": {
+        "text": "_L",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "content": {
+        "text": "IVE",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "content": {
+        "text": "_OK",
+        "type": "text"
+      },
+      "messageId": "msg_fd3b9cc84001u0NXnk60yqUH7j",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "type": "promptComplete",
+      "response": {
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 19248,
+          "outputTokens": 10,
+          "totalTokens": 19258
+        },
+        "_meta": {}
+      }
+    }
+  ]
+}

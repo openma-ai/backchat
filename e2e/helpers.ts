@@ -19,7 +19,7 @@ import {
 } from "@playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -29,9 +29,16 @@ import {
 } from "./test-bridge";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = join(here, "..");
+const repoRoot = process.env["BACKCHAT_E2E_APP_ROOT"]
+  ? resolve(process.env["BACKCHAT_E2E_APP_ROOT"])
+  : join(here, "..");
 
-export async function launchApp(options: { language?: "en" | "zh-CN" } = {}): Promise<{
+interface LaunchAppOptions {
+  language?: "en" | "zh-CN";
+  env?: Record<string, string>;
+}
+
+export async function launchApp(options: LaunchAppOptions = {}): Promise<{
   app: ElectronApplication;
   page: Page;
   home: string;
@@ -54,7 +61,7 @@ export async function launchApp(options: { language?: "en" | "zh-CN" } = {}): Pr
 
 export async function launchAppWithHome(
   home: string,
-  options: { language?: "en" | "zh-CN" } = {},
+  options: LaunchAppOptions = {},
 ): Promise<{
   app: ElectronApplication;
   page: Page;
@@ -65,6 +72,7 @@ export async function launchAppWithHome(
     args: [join(repoRoot, "out/main/index.js")],
     env: {
       ...process.env,
+      ...(options.env ?? {}),
       BACKCHAT_TEST_HOOKS: "1",
       // Live ACP capability probes are useful in production, but they make
       // relaunch/persistence E2Es depend on a configured agent process.
@@ -80,6 +88,19 @@ export async function launchAppWithHome(
   });
   const page = await app.firstWindow();
   try {
+    await page.addStyleTag({
+      content: `
+        *,
+        *::before,
+        *::after {
+          animation-delay: 0s !important;
+          animation-duration: 0s !important;
+          scroll-behavior: auto !important;
+          transition-delay: 0s !important;
+          transition-duration: 0s !important;
+        }
+      `,
+    });
     // Wait on a locale-independent marker, then force English for the legacy
     // E2E suite unless a localization test explicitly requests Chinese.
     await waitForRendererReady(page);

@@ -1,6 +1,9 @@
 packages:
   - 'packages/*'
 
+patchedDependencies:
+  '@openma/common@0.4.0': 'patches/@openma__common@0.4.0.patch'
+
 # pnpm v11 — allow native build scripts for deps that need them.
 # better-sqlite3 needs node-gyp at install; without this its addon
 # file is missing and require() throws "Could not locate the bindings

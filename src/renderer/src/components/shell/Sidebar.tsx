@@ -18,6 +18,7 @@ import {
   SquarePenIcon,
   ArchiveIcon,
   CalendarClockIcon,
+  CircleArrowUpIcon,
   FolderIcon,
   FolderOpenIcon,
   PlusIcon,
@@ -156,6 +157,13 @@ export function Sidebar() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const { collapsed } = useSidebarCollapse();
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => window.backchat.agentsList(),
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const agentUpdateCount = agents.filter((agent) => agent.updateAvailable).length;
   // Single menu state for the whole sidebar — only one row's `…`
   // dropdown can be open at a time. Lifting this up avoids the
   // "right-click row A then row B leaves both menus open" bug.
@@ -613,6 +621,27 @@ export function Sidebar() {
           paddingRight: "calc(8px + var(--sb-w, 0px))",
         }}
       >
+        {agentUpdateCount > 0 && (
+          <Link
+            to="/settings/agents"
+            aria-label={`${agentUpdateCount} ACP ${
+              agentUpdateCount === 1 ? "update" : "updates"
+            } available`}
+            className="app-no-drag mb-0.5 flex w-full items-center gap-2 rounded-md px-2 text-xs text-warning hover:bg-warning-subtle/45"
+            style={{ height: "var(--row-h)" }}
+          >
+            <CircleArrowUpIcon className="size-3.5 shrink-0" />
+            <span className={labelCls}>ACP updates</span>
+            <span
+              className={cn(
+                "ml-auto rounded-full bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-warning",
+                labelCls,
+              )}
+            >
+              {agentUpdateCount}
+            </span>
+          </Link>
+        )}
         <Link
           to="/settings"
           aria-label={t("sidebar.settings")}

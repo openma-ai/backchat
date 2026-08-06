@@ -1,6 +1,45 @@
 import { describe, expect, test } from "vitest";
 import { parseAcpEvent, reduceTurn, sanitizeThoughtText } from "./reduce-turn";
 
+test("projects canonical OpenMA transcript and tool envelopes for the pinned reducer", () => {
+  const canonical = (type: string, data: Record<string, unknown>) => ({
+    schema: "oma.event.v1",
+    event_id: `${type}:${JSON.stringify(data)}`,
+    session_id: "sess-canonical",
+    turn_id: "turn-canonical",
+    source: { kind: "harness", harness: "claude-acp", adapter: "acp" },
+    occurred_at: "2026-08-06T00:00:00.000Z",
+    type,
+    data,
+  });
+  const events = [
+    canonical("agent.message_chunk", { text: "LIVE", message_id: "m1" }),
+    canonical("tool.started", {
+      tool_call_id: "shell-1",
+      title: "test",
+      kind: "execute",
+      status: "in_progress",
+    }),
+    canonical("tool.progress", {
+      tool_call_id: "shell-1",
+      output: { kind: "terminal", data: "ok", append: true },
+    }),
+    canonical("tool.completed", { tool_call_id: "shell-1", status: "completed" }),
+  ].map((payload, index) => ({ payload, receivedAt: index }));
+
+  expect(parseAcpEvent(events[0]!.payload)).toMatchObject({ kind: "text", text: "LIVE" });
+  expect(reduceTurn(events)).toMatchObject({
+    assistantText: "LIVE",
+    tools: [{
+      toolCallId: "shell-1",
+      title: "test",
+      kind: "execute",
+      status: "completed",
+      rawOutput: "ok",
+    }],
+  });
+});
+
 function render(...payloads: unknown[]) {
   return reduceTurn(payloads.map((payload) => ({ payload })));
 }

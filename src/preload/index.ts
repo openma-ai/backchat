@@ -11,6 +11,8 @@ import type {
   SessionPromptParams,
   SessionPromptQueueCommandParams,
   SessionRunCommandParams,
+  SessionRestartResult,
+  SessionRuntimeStatus,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
@@ -45,6 +47,16 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.SessionCancel, p) as Promise<void>,
   sessionDispose: (p) =>
     ipcRenderer.invoke(InvokeChannel.SessionDispose, p) as Promise<void>,
+  sessionRuntimeStatus: (p) =>
+    ipcRenderer.invoke(
+      InvokeChannel.SessionRuntimeStatus,
+      p,
+    ) as Promise<SessionRuntimeStatus | null>,
+  sessionRestart: (p) =>
+    ipcRenderer.invoke(
+      InvokeChannel.SessionRestart,
+      p,
+    ) as Promise<SessionRestartResult>,
   sessionAnnounce: () =>
     ipcRenderer.invoke(InvokeChannel.SessionAnnounce) as Promise<void>,
 
@@ -541,6 +553,8 @@ if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
     }) => ipcRenderer.invoke(InvokeChannel.TestInjectSessionRow, p),
     injectSessionEvent: (msg: unknown) =>
       ipcRenderer.invoke(InvokeChannel.TestInjectSessionEvent, msg),
+    beginBrokerRequest: (request: unknown) =>
+      ipcRenderer.invoke(InvokeChannel.TestBeginBrokerRequest, request),
     persistSessionFixture: (p: {
       sessionId: string;
       agentId?: string;

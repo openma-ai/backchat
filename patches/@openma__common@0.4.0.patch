@@ -1,0 +1,2071 @@
+diff --git a/dist/acp-runtime/index.d.ts b/dist/acp-runtime/index.d.ts
+index 49a9e34cb3d450831712a8c17369569e69e7364f..d10b8044f00a8d0f764de7eaabda3dd14bf42df7 100644
+--- a/dist/acp-runtime/index.d.ts
++++ b/dist/acp-runtime/index.d.ts
+@@ -1,4 +1,4 @@
+-export type { AgentSpec, ChildHandle, Spawner, AcpSession, AcpRuntime, RestartPolicy, SessionOptions, ClientCallbacks, } from "./types.js";
++export type { AgentSpec, ChildHandle, Spawner, AcpSession, AcpRuntime, RestartPolicy, SessionOptions, ClientCallbacks, SteeringOutcome, } from "./types.js";
+ export type { ContentBlock, PromptCapabilities } from "@agentclientprotocol/sdk";
+ export { AcpRuntimeImpl } from "./runtime.js";
+ export { AcpSessionImpl } from "./session.js";
+diff --git a/dist/acp-runtime/session.d.ts b/dist/acp-runtime/session.d.ts
+index c2e7a09df320e15860c232716bd2b31b52553b2e..a588301dd7eaaf8bae8abc09d3c3e6bfd5b253cc 100644
+--- a/dist/acp-runtime/session.d.ts
++++ b/dist/acp-runtime/session.d.ts
+@@ -1,5 +1,5 @@
+ import type * as schema from "@agentclientprotocol/sdk";
+-import type { AcpSession, ChildHandle, SessionOptions } from "./types.js";
++import type { AcpSession, ChildHandle, SessionOptions, SteeringOutcome } from "./types.js";
+ export interface AcpSessionConstructOptions {
+     child: ChildHandle;
+     options: SessionOptions;
+@@ -12,17 +12,53 @@ export declare class AcpSessionImpl implements AcpSession {
+     constructor(deps: AcpSessionConstructOptions);
+     get acpSessionId(): string;
+     get authMethods(): readonly schema.AuthMethod[];
++    get protocolVersion(): schema.ProtocolVersion | null;
+     get agentInfo(): schema.Implementation | null;
++    get agentCapabilities(): schema.AgentCapabilities;
++    get initializeMeta(): Record<string, unknown> | null;
++    get sessionSetupMeta(): Record<string, unknown> | null;
+     get configOptions(): readonly schema.SessionConfigOption[];
++    get modes(): schema.SessionModeState | null;
+     get promptCapabilities(): schema.PromptCapabilities;
+     get supportsSessionFork(): boolean;
++    get supportsSessionList(): boolean;
++    get supportsSessionDelete(): boolean;
++    get supportsSessionResume(): boolean;
++    get supportsSessionClose(): boolean;
++    get supportsAdditionalDirectories(): boolean;
++    get supportsLogout(): boolean;
++    get supportsProviders(): boolean;
++    get supportsNes(): boolean;
++    get nesCapabilities(): schema.NesCapabilities | null;
++    get positionEncoding(): schema.PositionEncodingKind | null;
++    get supportsSteering(): boolean;
+     init(): Promise<void>;
+     authenticate(methodId: string): Promise<void>;
+     setMode(modeId: string): Promise<void>;
+     setConfigOption(configId: string, value: string | boolean): Promise<readonly schema.SessionConfigOption[]>;
++    listSessions(params?: schema.ListSessionsRequest): Promise<schema.ListSessionsResponse>;
++    deleteSession(sessionId: string): Promise<void>;
++    logout(): Promise<void>;
++    listProviders(): Promise<schema.ListProvidersResponse>;
++    setProvider(params: schema.SetProviderRequest): Promise<void>;
++    disableProvider(providerId: schema.ProviderId): Promise<void>;
++    requestExtension(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
++    notifyExtension(method: string, params?: Record<string, unknown>): Promise<void>;
++    startNes(params: schema.StartNesRequest): Promise<schema.StartNesResponse>;
++    suggestNes(params: schema.SuggestNesRequest): Promise<schema.SuggestNesResponse>;
++    closeNes(params: schema.CloseNesRequest): Promise<schema.CloseNesResponse | void>;
++    didOpenDocument(params: schema.DidOpenDocumentNotification): Promise<void>;
++    didChangeDocument(params: schema.DidChangeDocumentNotification): Promise<void>;
++    didCloseDocument(params: schema.DidCloseDocumentNotification): Promise<void>;
++    didSaveDocument(params: schema.DidSaveDocumentNotification): Promise<void>;
++    didFocusDocument(params: schema.DidFocusDocumentNotification): Promise<void>;
++    acceptNes(params: schema.AcceptNesNotification): Promise<void>;
++    rejectNes(params: schema.RejectNesNotification): Promise<void>;
+     prompt(input: string | readonly schema.ContentBlock[], options?: {
+         abortSignal?: AbortSignal;
+     }): AsyncIterable<unknown>;
++    steer(input: string | readonly schema.ContentBlock[]): Promise<SteeringOutcome>;
++    cancelCurrentTurn(): Promise<void>;
+     provideToolResult(toolCallId: string, result: unknown): Promise<void>;
+     drainPendingEvents(): unknown[];
+     isAlive(): boolean;
+diff --git a/dist/acp-runtime/session.js b/dist/acp-runtime/session.js
+index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2aec2d6a3 100644
+--- a/dist/acp-runtime/session.js
++++ b/dist/acp-runtime/session.js
+@@ -1,4 +1,16 @@
+-import { ClientSideConnection, ndJsonStream, } from "@agentclientprotocol/sdk";
++import { ClientSideConnection, RequestError, ndJsonStream, } from "@agentclientprotocol/sdk";
++import { preserveAcpNotificationContext } from "../session-events/acp.js";
++function filterMcpServersForCapabilities(servers, capabilities) {
++    return servers.filter((server) => {
++        if (server.type === undefined || server.type === "stdio")
++            return true;
++        if (server.type === "http")
++            return capabilities?.http === true;
++        if (server.type === "sse")
++            return capabilities?.sse === true;
++        return false;
++    });
++}
+ export class AcpSessionImpl {
+     id;
+     options;
+@@ -6,14 +18,33 @@ export class AcpSessionImpl {
+     #agent;
+     #sessionId;
+     #disposed = false;
++    #acceptOutOfBandUpdates = false;
+     #activePromptCount = 0;
+     #pendingEvents = [];
+     #waiters = [];
+     #authMethods = [];
++    #protocolVersion = null;
+     #agentInfo = null;
++    #agentCapabilities = {};
++    #initializeMeta = null;
++    #sessionSetupMeta = null;
+     #configOptions = [];
++    #modes = null;
+     #promptCapabilities = {};
+     #supportsSessionFork = false;
++    #supportsSessionList = false;
++    #supportsSessionDelete = false;
++    #supportsSessionResume = false;
++    #supportsSessionClose = false;
++    #supportsAdditionalDirectories = false;
++    #supportsLogout = false;
++    #supportsProviders = false;
++    #supportsNes = false;
++    #nesCapabilities = null;
++    #positionEncoding = null;
++    #supportsSteering = false;
++    #nextClientRequestId = 1;
++    #outstandingUrlElicitations = new Set();
+     constructor(deps) {
+         this.id = deps.id;
+         this.options = deps.options;
+@@ -25,41 +56,157 @@ export class AcpSessionImpl {
+     get authMethods() {
+         return this.#authMethods;
+     }
++    get protocolVersion() {
++        return this.#protocolVersion;
++    }
+     get agentInfo() {
+         return this.#agentInfo;
+     }
++    get agentCapabilities() {
++        return this.#agentCapabilities;
++    }
++    get initializeMeta() {
++        return this.#initializeMeta;
++    }
++    get sessionSetupMeta() {
++        return this.#sessionSetupMeta;
++    }
+     get configOptions() {
+         return this.#configOptions;
+     }
++    get modes() {
++        return this.#modes;
++    }
+     get promptCapabilities() {
+         return this.#promptCapabilities;
+     }
+     get supportsSessionFork() {
+         return this.#supportsSessionFork;
+     }
++    get supportsSessionList() {
++        return this.#supportsSessionList;
++    }
++    get supportsSessionDelete() {
++        return this.#supportsSessionDelete;
++    }
++    get supportsSessionResume() {
++        return this.#supportsSessionResume;
++    }
++    get supportsSessionClose() {
++        return this.#supportsSessionClose;
++    }
++    get supportsAdditionalDirectories() {
++        return this.#supportsAdditionalDirectories;
++    }
++    get supportsLogout() {
++        return this.#supportsLogout;
++    }
++    get supportsProviders() {
++        return this.#supportsProviders;
++    }
++    get supportsNes() {
++        return this.#supportsNes;
++    }
++    get nesCapabilities() {
++        return this.#nesCapabilities;
++    }
++    get positionEncoding() {
++        return this.#positionEncoding;
++    }
++    get supportsSteering() {
++        return this.#supportsSteering;
++    }
+     async init() {
+         const initStartedAt = Date.now();
+         const callbacks = this.options.clientCallbacks ?? {};
+-        const connection = new ClientSideConnection(() => this.#createClient(callbacks), ndJsonStream(this.#child.stdin, this.#child.stdout));
++        const requestedElicitationCapabilities = this.options.clientElicitationCapabilities
++            ?? (callbacks.createElicitation
++                ? {
++                    form: {},
++                    ...(callbacks.completeElicitation ? { url: {} } : {}),
++                }
++                : undefined);
++        const elicitationCapabilities = callbacks.createElicitation
++            && requestedElicitationCapabilities
++            && (requestedElicitationCapabilities.form != null
++                || requestedElicitationCapabilities.url != null)
++            ? requestedElicitationCapabilities
++            : undefined;
++        const connection = new ClientSideConnection(() => this.#createClient(callbacks, elicitationCapabilities?.url != null), ndJsonStream(this.#child.stdin, this.#child.stdout));
+         this.#agent = connection;
+         const initialized = await this.#agent.initialize({
+             protocolVersion: 1,
+             clientCapabilities: {
++                // The existing OpenMA controls render both boolean config options and
++                // structured/markdown plans. Advertising these capabilities prevents
++                // agents such as codex-acp from degrading them to plain transcript
++                // text even though the canonical event and GUI projections exist.
++                session: {
++                    configOptions: {
++                        boolean: {},
++                    },
++                },
++                plan: {},
++                // Claude Agent ACP uses this ACP-reserved extension capability to
++                // forward nested subagent text, thinking, and tool updates. It is
++                // harmless for agents that do not implement the extension: ACP
++                // clients and agents must treat unknown `_meta` keys as optional.
++                _meta: {
++                    "subagent-transcript": true,
++                    // claude-agent-acp and codex-acp use this negotiated extension to
++                    // send terminal snapshots instead of forcing clients to reconstruct
++                    // them from provider-specific delta notifications.
++                    terminal_output: true,
++                },
+                 fs: {
+                     readTextFile: Boolean(callbacks.readTextFile),
+                     writeTextFile: Boolean(callbacks.writeTextFile),
+                 },
+                 terminal: Boolean(callbacks.createTerminal),
++                ...(elicitationCapabilities
++                    ? { elicitation: elicitationCapabilities }
++                    : {}),
++                ...(this.options.clientNesCapabilities
++                    ? { nes: this.options.clientNesCapabilities }
++                    : {}),
++                ...(this.options.positionEncodings?.length
++                    ? { positionEncodings: this.options.positionEncodings }
++                    : {}),
+             },
+         });
+         const initializedAt = Date.now();
+         this.#authMethods = initialized.authMethods ?? [];
++        this.#protocolVersion = initialized.protocolVersion;
+         this.#agentInfo = initialized.agentInfo ?? null;
+-        this.#promptCapabilities = initialized.agentCapabilities?.promptCapabilities ?? {};
++        this.#agentCapabilities = initialized.agentCapabilities ?? {};
++        this.#initializeMeta = initialized._meta ?? null;
++        this.#promptCapabilities = this.#agentCapabilities.promptCapabilities ?? {};
+         this.#supportsSessionFork =
+             initialized.agentCapabilities?.sessionCapabilities?.fork != null;
++        this.#supportsSessionList =
++            initialized.agentCapabilities?.sessionCapabilities?.list != null;
++        this.#supportsSessionDelete =
++            initialized.agentCapabilities?.sessionCapabilities?.delete != null;
++        this.#supportsSessionResume =
++            initialized.agentCapabilities?.sessionCapabilities?.resume != null;
++        this.#supportsSessionClose =
++            initialized.agentCapabilities?.sessionCapabilities?.close != null;
++        this.#supportsAdditionalDirectories =
++            initialized.agentCapabilities?.sessionCapabilities?.additionalDirectories != null;
++        this.#supportsLogout = initialized.agentCapabilities?.auth?.logout != null;
++        this.#supportsProviders = initialized.agentCapabilities?.providers != null;
++        this.#nesCapabilities = initialized.agentCapabilities?.nes ?? null;
++        this.#supportsNes = this.#nesCapabilities != null;
++        this.#positionEncoding = initialized.agentCapabilities?.positionEncoding ?? null;
++        this.#supportsSteering =
++            initialized._meta
++                ?.steering?.supported === true;
+         const cwd = this.options.agent.cwd ?? process.cwd();
+-        const mcpServers = this.options.mcpServers ?? [];
++        const mcpServers = filterMcpServersForCapabilities(this.options.mcpServers ?? [], initialized.agentCapabilities?.mcpCapabilities);
++        const additionalDirectories = this.#supportsAdditionalDirectories
++            ? this.options.additionalDirectories ?? []
++            : [];
++        const requestMeta = this.options.sessionRequestMeta;
+         if (this.options.forkFromAcpSessionId) {
+             if (!this.#supportsSessionFork || !this.#agent.unstable_forkSession) {
+                 throw new Error("ACP agent does not support unstable session/fork");
+@@ -68,12 +215,39 @@ export class AcpSessionImpl {
+                 sessionId: this.options.forkFromAcpSessionId,
+                 cwd,
+                 mcpServers,
++                ...(requestMeta ? { _meta: requestMeta } : {}),
+             });
+             this.#sessionId = forked.sessionId;
+             this.#configOptions = forked.configOptions ?? [];
++            this.#modes = forked.modes ?? null;
++            this.#sessionSetupMeta = forked._meta ?? null;
++            this.#acceptOutOfBandUpdates = true;
+             this.#logInit("fork", initStartedAt, initializedAt);
+             return;
+         }
++        if (this.options.resumeAcpSessionId &&
++            this.#supportsSessionResume &&
++            this.#agent.resumeSession) {
++            try {
++                const resumed = await this.#agent.resumeSession({
++                    sessionId: this.options.resumeAcpSessionId,
++                    cwd,
++                    mcpServers,
++                    ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
++                    ...(requestMeta ? { _meta: requestMeta } : {}),
++                });
++                this.#sessionId = this.options.resumeAcpSessionId;
++                this.#configOptions = resumed.configOptions ?? [];
++                this.#modes = resumed.modes ?? null;
++                this.#sessionSetupMeta = resumed._meta ?? null;
++                this.#acceptOutOfBandUpdates = true;
++                this.#logInit("resume", initStartedAt, initializedAt);
++                return;
++            }
++            catch (error) {
++                console.error(`[acp] session/resume(${this.options.resumeAcpSessionId}) failed, falling back to load/new:`, error);
++            }
++        }
+         if (this.options.resumeAcpSessionId &&
+             initialized.agentCapabilities?.loadSession === true &&
+             this.#agent.loadSession) {
+@@ -82,9 +256,14 @@ export class AcpSessionImpl {
+                     sessionId: this.options.resumeAcpSessionId,
+                     cwd,
+                     mcpServers,
++                    ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
++                    ...(requestMeta ? { _meta: requestMeta } : {}),
+                 });
+                 this.#sessionId = this.options.resumeAcpSessionId;
+-                this.#configOptions = loaded.configOptions ?? [];
++                this.#configOptions = loaded?.configOptions ?? [];
++                this.#modes = loaded?.modes ?? null;
++                this.#sessionSetupMeta = loaded?._meta ?? null;
++                this.#acceptOutOfBandUpdates = true;
+                 this.#logInit("load", initStartedAt, initializedAt);
+                 return;
+             }
+@@ -92,55 +271,180 @@ export class AcpSessionImpl {
+                 console.error(`[acp] session/load(${this.options.resumeAcpSessionId}) failed, falling back to new:`, error);
+             }
+         }
+-        const created = await this.#agent.newSession({ cwd, mcpServers });
++        const created = await this.#agent.newSession({
++            cwd,
++            mcpServers,
++            ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
++            ...(requestMeta ? { _meta: requestMeta } : {}),
++        });
+         this.#sessionId = created.sessionId;
+         this.#configOptions = created.configOptions ?? [];
++        this.#modes = created.modes ?? null;
++        this.#sessionSetupMeta = created._meta ?? null;
++        this.#acceptOutOfBandUpdates = true;
+         this.#logInit("new", initStartedAt, initializedAt);
+     }
+-    #createClient(callbacks) {
++    #createClient(callbacks, supportsUrlElicitation) {
+         return {
+             sessionUpdate: async (params) => {
+-                const inner = params.update;
+-                const update = inner === undefined ? params : inner;
+-                if (this.#activePromptCount === 0 && !isIdleSessionUpdate(update))
+-                    return;
+-                this.#pushEvent(update);
++                const update = preserveAcpNotificationContext(params);
++                this.#receiveInboundEvent(update, isIdleSessionUpdate(update));
+             },
+             requestPermission: async (params) => {
+-                if (!callbacks.requestPermission) {
+-                    return { outcome: { outcome: "cancelled" } };
+-                }
+-                try {
+-                    return await callbacks.requestPermission(params);
+-                }
+-                catch (error) {
+-                    this.#pushEvent({ type: "requestPermissionError", error: String(error) });
+-                    return { outcome: { outcome: "cancelled" } };
+-                }
++                return this.#runClientRequest("session/request_permission", params, async () => {
++                    if (!callbacks.requestPermission) {
++                        return { outcome: { outcome: "cancelled" } };
++                    }
++                    try {
++                        return await callbacks.requestPermission(params);
++                    }
++                    catch (error) {
++                        this.#pushEvent({ type: "requestPermissionError", error: String(error) });
++                        return { outcome: { outcome: "cancelled" } };
++                    }
++                });
+             },
+             readTextFile: callbacks.readTextFile
+-                ? async (params) => callbacks.readTextFile(params)
++                ? async (params) => this.#runClientRequest("fs/read_text_file", params, () => callbacks.readTextFile(params))
+                 : undefined,
+             writeTextFile: callbacks.writeTextFile
+-                ? async (params) => callbacks.writeTextFile(params)
++                ? async (params) => this.#runClientRequest("fs/write_text_file", params, () => callbacks.writeTextFile(params))
+                 : undefined,
+             createTerminal: callbacks.createTerminal
+-                ? async (params) => callbacks.createTerminal(params)
++                ? async (params) => this.#runClientRequest("terminal/create", params, () => callbacks.createTerminal(params))
+                 : undefined,
+             terminalOutput: callbacks.terminalOutput
+-                ? async (params) => callbacks.terminalOutput(params)
++                ? async (params) => this.#runClientRequest("terminal/output", params, () => callbacks.terminalOutput(params))
+                 : undefined,
+             releaseTerminal: callbacks.releaseTerminal
+-                ? async (params) => callbacks.releaseTerminal(params)
++                ? async (params) => this.#runClientRequest("terminal/release", params, () => callbacks.releaseTerminal(params))
+                 : undefined,
+             waitForTerminalExit: callbacks.waitForTerminalExit
+-                ? async (params) => callbacks.waitForTerminalExit(params)
++                ? async (params) => this.#runClientRequest("terminal/wait_for_exit", params, () => callbacks.waitForTerminalExit(params))
+                 : undefined,
+             killTerminal: callbacks.killTerminal
+-                ? async (params) => callbacks.killTerminal(params)
++                ? async (params) => this.#runClientRequest("terminal/kill", params, () => callbacks.killTerminal(params))
++                : undefined,
++            unstable_createElicitation: callbacks.createElicitation
++                ? async (params) => {
++                    const response = await this.#runClientRequest("elicitation/create", params, () => callbacks.createElicitation(params));
++                    if (params.mode === "url"
++                        && response.action === "accept"
++                        && typeof params.elicitationId === "string") {
++                        this.#outstandingUrlElicitations.add(params.elicitationId);
++                    }
++                    return response;
++                }
+                 : undefined,
++            unstable_completeElicitation: supportsUrlElicitation
++                ? async (params) => {
++                    if (!this.#outstandingUrlElicitations.delete(params.elicitationId))
++                        return;
++                    this.#receiveClientNotification("elicitation/complete", params);
++                    await callbacks.completeElicitation?.(params);
++                    this.#receiveInboundEvent({
++                        type: "acp.elicitation_complete",
++                        method: "elicitation/complete",
++                        params,
++                    });
++                }
++                : undefined,
++            extMethod: async (method, params) => this.#runClientRequest(method, params, async () => {
++                if (method === "mcp/connect" && callbacks.connectMcp) {
++                    return callbacks.connectMcp(params);
++                }
++                if (method === "mcp/message" && callbacks.messageMcp) {
++                    return await callbacks.messageMcp(params);
++                }
++                if (method === "mcp/disconnect" && callbacks.disconnectMcp) {
++                    return (await callbacks.disconnectMcp(params)) ?? {};
++                }
++                this.#receiveInboundEvent({
++                    type: "acp.extension_request",
++                    method,
++                    params,
++                });
++                if (callbacks.extensionRequest) {
++                    return callbacks.extensionRequest(method, params);
++                }
++                throw RequestError.methodNotFound(method);
++            }),
++            extNotification: async (method, params) => {
++                this.#receiveClientNotification(method, params);
++                try {
++                    if (method === "mcp/message" && callbacks.notifyMcp) {
++                        await callbacks.notifyMcp(params);
++                        this.#receiveInboundEvent({
++                            type: "acp.mcp_notification",
++                            method,
++                            params,
++                        });
++                        return;
++                    }
++                    await callbacks.extensionNotification?.(method, params);
++                }
++                catch (error) {
++                    console.error("[acp] extension notification callback failed:", error);
++                }
++                this.#receiveInboundEvent({
++                    type: "acp.extension_notification",
++                    method,
++                    params,
++                });
++            },
+         };
+     }
++    async #runClientRequest(method, params, invoke) {
++        const requestId = `client-request-${this.#nextClientRequestId++}`;
++        this.#receiveInboundEvent({
++            type: "acp.client_request",
++            requestId,
++            method,
++            params,
++        });
++        try {
++            const result = await invoke();
++            this.#receiveInboundEvent({
++                type: "acp.client_response",
++                requestId,
++                method,
++                result,
++            });
++            return result;
++        }
++        catch (error) {
++            this.#receiveInboundEvent({
++                type: "acp.client_error",
++                requestId,
++                method,
++                error: clientCallbackError(error),
++            });
++            throw error;
++        }
++    }
++    #receiveClientNotification(method, params) {
++        this.#receiveInboundEvent({
++            type: "acp.client_notification",
++            method,
++            params,
++        });
++    }
++    #receiveInboundEvent(event, allowedBeforeSessionReady = false) {
++        if (this.#activePromptCount === 0) {
++            if (!this.#acceptOutOfBandUpdates && !allowedBeforeSessionReady)
++                return;
++            if (this.#acceptOutOfBandUpdates && this.options.onOutOfBandSessionUpdate) {
++                try {
++                    this.options.onOutOfBandSessionUpdate(event);
++                }
++                catch (error) {
++                    console.error("[acp] out-of-band session update callback failed:", error);
++                }
++                return;
++            }
++        }
++        this.#pushEvent(event);
++    }
+     #logInit(mode, startedAt, initializedAt) {
+         if (process.env.NODE_ENV === "test")
+             return;
+@@ -160,6 +464,8 @@ export class AcpSessionImpl {
+             return;
+         try {
+             await setSessionMode.call(this.#agent, { sessionId: this.#sessionId, modeId });
++            if (this.#modes)
++                this.#modes = { ...this.#modes, currentModeId: modeId };
+         }
+         catch (error) {
+             console.warn(`[acp] setSessionMode("${modeId}") failed:`, error);
+@@ -180,11 +486,140 @@ export class AcpSessionImpl {
+         this.#configOptions = response.configOptions ?? [];
+         return this.#configOptions;
+     }
++    async listSessions(params = {}) {
++        if (!this.#supportsSessionList || !this.#agent?.listSessions) {
++            throw new Error("ACP agent does not support session/list");
++        }
++        return this.#agent.listSessions(params);
++    }
++    async deleteSession(sessionId) {
++        if (!this.#supportsSessionDelete || !this.#agent?.deleteSession) {
++            throw new Error("ACP agent does not support session/delete");
++        }
++        await this.#agent.deleteSession({ sessionId });
++    }
++    async logout() {
++        if (!this.#supportsLogout || !this.#agent?.logout) {
++            throw new Error("ACP agent does not support logout");
++        }
++        await this.#agent.logout({});
++    }
++    async listProviders() {
++        if (!this.#supportsProviders || !this.#agent?.unstable_listProviders) {
++            throw new Error("ACP agent does not support providers/list");
++        }
++        return this.#agent.unstable_listProviders({});
++    }
++    async setProvider(params) {
++        if (!this.#supportsProviders || !this.#agent?.unstable_setProvider) {
++            throw new Error("ACP agent does not support providers/set");
++        }
++        await this.#agent.unstable_setProvider(params);
++    }
++    async disableProvider(providerId) {
++        if (!this.#supportsProviders || !this.#agent?.unstable_disableProvider) {
++            throw new Error("ACP agent does not support providers/disable");
++        }
++        await this.#agent.unstable_disableProvider({ providerId });
++    }
++    async requestExtension(method, params = {}) {
++        if (!this.#agent?.extMethod) {
++            throw new Error("ACP connection does not support extension requests");
++        }
++        return this.#agent.extMethod(method, params);
++    }
++    async notifyExtension(method, params = {}) {
++        if (!this.#agent?.extNotification) {
++            throw new Error("ACP connection does not support extension notifications");
++        }
++        await this.#agent.extNotification(method, params);
++    }
++    async startNes(params) {
++        this.#assertNesMethod(this.#agent?.unstable_startNes, "nes/start");
++        return this.#agent.unstable_startNes(params);
++    }
++    async suggestNes(params) {
++        this.#assertNesMethod(this.#agent?.unstable_suggestNes, "nes/suggest");
++        return this.#agent.unstable_suggestNes(params);
++    }
++    async closeNes(params) {
++        this.#assertNesMethod(this.#agent?.unstable_closeNes, "nes/close");
++        return this.#agent.unstable_closeNes(params);
++    }
++    async didOpenDocument(params) {
++        this.#assertNesDocumentEvent("didOpen", this.#agent?.unstable_didOpenDocument);
++        await this.#agent.unstable_didOpenDocument(params);
++    }
++    async didChangeDocument(params) {
++        this.#assertNesDocumentEvent("didChange", this.#agent?.unstable_didChangeDocument);
++        await this.#agent.unstable_didChangeDocument(params);
++    }
++    async didCloseDocument(params) {
++        this.#assertNesDocumentEvent("didClose", this.#agent?.unstable_didCloseDocument);
++        await this.#agent.unstable_didCloseDocument(params);
++    }
++    async didSaveDocument(params) {
++        this.#assertNesDocumentEvent("didSave", this.#agent?.unstable_didSaveDocument);
++        await this.#agent.unstable_didSaveDocument(params);
++    }
++    async didFocusDocument(params) {
++        this.#assertNesDocumentEvent("didFocus", this.#agent?.unstable_didFocusDocument);
++        await this.#agent.unstable_didFocusDocument(params);
++    }
++    async acceptNes(params) {
++        this.#assertNesMethod(this.#agent?.unstable_acceptNes, "nes/accept");
++        await this.#agent.unstable_acceptNes(params);
++    }
++    async rejectNes(params) {
++        this.#assertNesMethod(this.#agent?.unstable_rejectNes, "nes/reject");
++        await this.#agent.unstable_rejectNes(params);
++    }
++    #assertNesMethod(method, name) {
++        if (!this.#supportsNes || typeof method !== "function") {
++            throw new Error(`ACP agent does not support ${name}`);
++        }
++    }
++    #assertNesDocumentEvent(event, method) {
++        const capability = this.#nesCapabilities?.events?.document?.[event];
++        if (capability == null || typeof method !== "function") {
++            throw new Error(`ACP agent does not support document/${event}`);
++        }
++    }
+     prompt(input, options) {
+         if (this.#disposed)
+             throw new Error(`AcpSession ${this.id} is disposed`);
+         return this.#prompt(input, options);
+     }
++    async steer(input) {
++        if (!this.#agent || !this.#sessionId)
++            throw new Error("AcpSession not initialized");
++        if (!this.#supportsSteering) {
++            throw new Error("ACP agent did not negotiate _session/steering");
++        }
++        if (!this.#agent.extMethod)
++            throw new Error("ACP connection does not support extensions");
++        const prompt = typeof input === "string"
++            ? [{ type: "text", text: input }]
++            : [...input];
++        const response = await this.#agent.extMethod("_session/steering", {
++            sessionId: this.#sessionId,
++            prompt,
++            _meta: { steering: { idleBehavior: "promptRequired" } },
++        });
++        const outcome = response.outcome;
++        if (outcome !== "injected"
++            && outcome !== "promptRequired"
++            && outcome !== "startedNewTurn"
++            && outcome !== "failed") {
++            throw new Error(`Invalid _session/steering outcome: ${String(outcome)}`);
++        }
++        return outcome;
++    }
++    async cancelCurrentTurn() {
++        if (!this.#agent || !this.#sessionId)
++            throw new Error("AcpSession not initialized");
++        await this.#agent.cancel({ sessionId: this.#sessionId });
++    }
+     async provideToolResult(toolCallId, result) {
+         void toolCallId;
+         void result;
+@@ -194,25 +629,27 @@ export class AcpSessionImpl {
+         return this.#pendingEvents.splice(0);
+     }
+     async *#prompt(input, options) {
++        const turnAbort = new AbortController();
+         const onAbort = () => {
+-            this.#agent.cancel({ sessionId: this.#sessionId }).catch(() => { });
++            Promise.resolve(this.#agent.cancel({ sessionId: this.#sessionId }))
++                .catch(() => { });
+         };
+-        options?.abortSignal?.addEventListener("abort", onAbort, { once: true });
+-        const turnAbort = new AbortController();
++        const abortTurn = () => turnAbort.abort();
+         const timer = this.options.perTurnTimeoutMs
+             ? setTimeout(() => turnAbort.abort(), this.options.perTurnTimeoutMs)
+             : undefined;
+-        options?.abortSignal?.addEventListener("abort", () => turnAbort.abort(), { once: true });
++        options?.abortSignal?.addEventListener("abort", abortTurn, { once: true });
+         turnAbort.signal.addEventListener("abort", onAbort, { once: true });
++        if (options?.abortSignal?.aborted)
++            turnAbort.abort();
+         this.#activePromptCount += 1;
+         const prompt = typeof input === "string" ? [{ type: "text", text: input }] : [...input];
+-        const done = this.#agent
+-            .prompt({ sessionId: this.#sessionId, prompt })
++        const done = Promise.resolve(this.#agent.prompt({ sessionId: this.#sessionId, prompt }))
+             .finally(() => {
+             this.#activePromptCount = Math.max(0, this.#activePromptCount - 1);
+             if (timer)
+                 clearTimeout(timer);
+-            options?.abortSignal?.removeEventListener("abort", onAbort);
++            options?.abortSignal?.removeEventListener("abort", abortTurn);
+         });
+         let ended = false;
+         void done.then((response) => {
+@@ -245,7 +682,16 @@ export class AcpSessionImpl {
+     async dispose() {
+         if (this.#disposed)
+             return;
++        if (this.#supportsSessionClose && this.#sessionId && this.#agent?.closeSession) {
++            try {
++                await this.#agent.closeSession({ sessionId: this.#sessionId });
++            }
++            catch (error) {
++                console.warn(`[acp] session/close(${this.#sessionId}) failed:`, error);
++            }
++        }
+         this.#disposed = true;
++        this.#outstandingUrlElicitations.clear();
+         this.#endStream();
+         await this.#child.kill("SIGTERM").catch(() => { });
+     }
+@@ -259,6 +705,22 @@ export class AcpSessionImpl {
+         }
+     }
+ }
++function clientCallbackError(error) {
++    const code = error !== null
++        && typeof error === "object"
++        && typeof error.code === "number"
++        ? error.code
++        : undefined;
++    const message = code === -32601
++        ? "Method not found"
++        : error instanceof Error
++            ? error.message
++            : String(error);
++    return {
++        message,
++        ...(code !== undefined ? { code } : {}),
++    };
++}
+ const IDLE_SESSION_UPDATES = new Set([
+     "available_commands_update",
+     "current_mode_update",
+diff --git a/dist/acp-runtime/types.d.ts b/dist/acp-runtime/types.d.ts
+index 58f6a11f909c4091c958379ec5c17cd22e1972de..6d12eb39e2572b844b4e493d98d2d07f3964a6cc 100644
+--- a/dist/acp-runtime/types.d.ts
++++ b/dist/acp-runtime/types.d.ts
+@@ -33,6 +33,19 @@ export interface ClientCallbacks {
+     releaseTerminal?(params: schema.ReleaseTerminalRequest): Promise<schema.ReleaseTerminalResponse | void>;
+     waitForTerminalExit?(params: schema.WaitForTerminalExitRequest): Promise<schema.WaitForTerminalExitResponse>;
+     killTerminal?(params: schema.KillTerminalRequest): Promise<schema.KillTerminalResponse | void>;
++    createElicitation?(params: schema.CreateElicitationRequest): Promise<schema.CreateElicitationResponse>;
++    completeElicitation?(params: schema.CompleteElicitationNotification): Promise<void> | void;
++    connectMcp?(params: schema.ConnectMcpRequest): Promise<schema.ConnectMcpResponse>;
++    messageMcp?(params: schema.MessageMcpRequest): Promise<schema.MessageMcpResponse>;
++    notifyMcp?(params: schema.MessageMcpNotification): Promise<void> | void;
++    disconnectMcp?(params: schema.DisconnectMcpRequest): Promise<schema.DisconnectMcpResponse | void>;
++    /** Handle an agent-to-client ACP extension request. When omitted, the SDK
++     * correctly returns JSON-RPC Method not found instead of inventing a
++     * response for an unknown harness contract. */
++    extensionRequest?(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
++    /** Observe an agent-to-client ACP extension notification in addition to
++     * the runtime retaining it in the session event stream. */
++    extensionNotification?(method: string, params: Record<string, unknown>): Promise<void> | void;
+ }
+ export interface SessionOptions {
+     agent: AgentSpec;
+@@ -42,26 +55,93 @@ export interface SessionOptions {
+     resumeAcpSessionId?: string;
+     forkFromAcpSessionId?: string;
+     mcpServers?: schema.McpServer[];
++    /** Additional absolute workspace roots from ACP session setup. */
++    additionalDirectories?: string[];
++    /** Adapter-specific metadata sent on session/new, load, resume, and fork.
++     * The shared runtime transports it without interpretation; each harness
++     * owns the keys it understands. */
++    sessionRequestMeta?: Record<string, unknown>;
++    /** NES suggestion kinds the host can render/apply. Omit when the host has
++     * no editor surface; the runtime must not advertise an empty capability by
++     * assumption. */
++    clientNesCapabilities?: schema.ClientNesCapabilities;
++    /** Position encodings understood by the host editor, in preference order. */
++    positionEncodings?: schema.PositionEncodingKind[];
++    /** Elicitation modes the host can faithfully render and answer. Keep this
++     * explicit because receiving the optional `elicitation/complete`
++     * notification is not what determines URL-mode support. */
++    clientElicitationCapabilities?: schema.ElicitationCapabilities;
+     clientCallbacks?: ClientCallbacks;
++    /** Receives live `session/update` notifications that arrive after session
++     * initialization while no host-owned `prompt()` iterator is active. The
++     * runtime preserves the raw adapter payload; per-harness lifecycle meaning
++     * belongs to the host adapter layer. */
++    onOutOfBandSessionUpdate?(update: unknown): void;
+ }
++export type SteeringOutcome = "injected" | "promptRequired" | "startedNewTurn" | "failed";
+ export interface AcpSession {
+     readonly id: string;
+     readonly acpSessionId: string;
+     readonly options: SessionOptions;
+     readonly authMethods: readonly schema.AuthMethod[];
++    readonly protocolVersion: schema.ProtocolVersion | null;
+     readonly agentInfo: schema.Implementation | null;
++    readonly agentCapabilities: schema.AgentCapabilities;
++    readonly initializeMeta: Record<string, unknown> | null;
++    /** Raw `_meta` returned by the successful session/new, load, resume, or
++     * fork response. It is adapter evidence, not a GUI contract. */
++    readonly sessionSetupMeta: Record<string, unknown> | null;
+     readonly configOptions: readonly schema.SessionConfigOption[];
++    /** ACP v1 legacy-compatible session mode state. `configOptions` remains
++     * preferred when the agent exposes both contracts. */
++    readonly modes: schema.SessionModeState | null;
+     readonly promptCapabilities: schema.PromptCapabilities;
+     readonly supportsSessionFork: boolean;
++    readonly supportsSessionList: boolean;
++    readonly supportsSessionDelete: boolean;
++    readonly supportsSessionResume: boolean;
++    readonly supportsSessionClose: boolean;
++    /** Whether the agent advertised ACP `sessionCapabilities.additionalDirectories`.
++     * The runtime sends secondary roots only when this is true. */
++    readonly supportsAdditionalDirectories: boolean;
++    readonly supportsLogout: boolean;
++    readonly supportsProviders: boolean;
++    readonly supportsNes: boolean;
++    readonly nesCapabilities: schema.NesCapabilities | null;
++    readonly positionEncoding: schema.PositionEncodingKind | null;
++    /** Whether initialize negotiated the vendor `_session/steering` method. */
++    readonly supportsSteering: boolean;
+     prompt(input: string | readonly schema.ContentBlock[], opts?: {
+         abortSignal?: AbortSignal;
+     }): AsyncIterable<unknown>;
++    steer(input: string | readonly schema.ContentBlock[]): Promise<SteeringOutcome>;
++    /** Send the standard ACP `session/cancel` input even when the active turn
++     * was started by an extension and has no host-owned prompt iterator. */
++    cancelCurrentTurn(): Promise<void>;
+     /** Compatibility hook for older hosts; ACP tool results are handled through client callbacks. */
+     provideToolResult?(toolCallId: string, result: unknown): Promise<void>;
+     drainPendingEvents(): unknown[];
+     setConfigOption(configId: string, value: string | boolean): Promise<readonly schema.SessionConfigOption[]>;
+     authenticate(methodId: string): Promise<void>;
+     setMode(modeId: string): Promise<void>;
++    listSessions(params?: schema.ListSessionsRequest): Promise<schema.ListSessionsResponse>;
++    deleteSession(sessionId: string): Promise<void>;
++    logout(): Promise<void>;
++    listProviders(): Promise<schema.ListProvidersResponse>;
++    setProvider(params: schema.SetProviderRequest): Promise<void>;
++    disableProvider(providerId: schema.ProviderId): Promise<void>;
++    requestExtension(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
++    notifyExtension(method: string, params?: Record<string, unknown>): Promise<void>;
++    startNes(params: schema.StartNesRequest): Promise<schema.StartNesResponse>;
++    suggestNes(params: schema.SuggestNesRequest): Promise<schema.SuggestNesResponse>;
++    closeNes(params: schema.CloseNesRequest): Promise<schema.CloseNesResponse | void>;
++    didOpenDocument(params: schema.DidOpenDocumentNotification): Promise<void>;
++    didChangeDocument(params: schema.DidChangeDocumentNotification): Promise<void>;
++    didCloseDocument(params: schema.DidCloseDocumentNotification): Promise<void>;
++    didSaveDocument(params: schema.DidSaveDocumentNotification): Promise<void>;
++    didFocusDocument(params: schema.DidFocusDocumentNotification): Promise<void>;
++    acceptNes(params: schema.AcceptNesNotification): Promise<void>;
++    rejectNes(params: schema.RejectNesNotification): Promise<void>;
+     isAlive(): boolean;
+     dispose(): Promise<void>;
+ }
+diff --git a/dist/session-events/acp.d.ts b/dist/session-events/acp.d.ts
+index 6fd4f6d693077a246e3ac16562fbac5fc7025207..56f48f455a3f8c73ea895e39f1ca254287a8f61c 100644
+--- a/dist/session-events/acp.d.ts
++++ b/dist/session-events/acp.d.ts
+@@ -22,6 +22,12 @@
+  * with the turn length (a few hundred at most).
+  */
+ export { extractAcpSystemNotice, type AcpSystemNotice } from "./acp-system-notices.js";
++/** Internal transport context added when the ACP SDK gives OpenMA a
++ * notification-scoped `_meta` alongside `params.update`. The explicit key
++ * keeps wire-layer metadata separate from update/harness `_meta` while the
++ * existing flat update shape remains compatible with consumers. */
++export declare const ACP_NOTIFICATION_CONTEXT_KEY: "_openma.acp.notification";
++export declare function preserveAcpNotificationContext(params: unknown): unknown;
+ export interface ChunkText {
+     text: string;
+ }
+@@ -53,12 +59,23 @@ export interface ToolEntry {
+         line?: number;
+     }>;
+ }
++interface ToolOutputDelta {
++    data: string;
++    /** Terminal output is byte-stream-like; MCP progress is line-oriented. */
++    separator: string;
++}
++interface NormalizedToolPatch extends Partial<ToolEntry> {
++    toolCallId: string;
++    /** Incoming-only adapter extension data consumed by reduceTurn. */
++    outputDelta?: ToolOutputDelta;
++}
+ export type ToolContentBlock = {
+     type: "content";
+     content?: {
+         type?: string;
+         text?: string;
+         uri?: string;
++        name?: string;
+         mimeType?: string;
+         data?: string;
+     };
+@@ -72,10 +89,18 @@ export type ToolContentBlock = {
+     terminalId?: string;
+ };
+ export interface PlanEntry {
++    id?: string;
+     content: string;
+-    status?: "pending" | "in_progress" | "completed";
++    status?: "pending" | "in_progress" | "completed" | "cancelled";
+     priority?: "high" | "medium" | "low";
+ }
++export interface PlanDocument {
++    id?: string;
++    title?: string;
++    type?: "markdown" | "file";
++    markdown?: string;
++    uri?: string;
++}
+ export type TimelineItem = {
+     /** Continuous block of assistant text — concatenated agent_message_chunk
+      *  events that arrived without being interrupted by a tool_call. The
+@@ -104,6 +129,7 @@ export interface TurnRender {
+     assistantText: string;
+     tools: ToolEntry[];
+     plan: PlanEntry[];
++    planDocument?: PlanDocument;
+     /** Synthetic runtime notes that belong in the activity transcript. */
+     notes: string[];
+     /** Time-ordered list of "what to render between thought and assistant
+@@ -126,11 +152,15 @@ export type ParsedAcpEvent = {
+     text: string;
+     phase?: "commentary" | "final_answer";
+     messageId?: string;
++    /** Claude Agent ACP's nested transcript correlation. */
++    parentToolUseId?: string;
+     event: unknown;
+ } | {
+     kind: "thought";
+     text: string;
+     messageId?: string;
++    /** Claude Agent ACP's nested transcript correlation. */
++    parentToolUseId?: string;
+     event: unknown;
+ } | {
+     kind: "notice";
+@@ -138,9 +168,7 @@ export type ParsedAcpEvent = {
+     event: unknown;
+ } | {
+     kind: "tool_call";
+-    tool: Partial<ToolEntry> & {
+-        toolCallId: string;
+-    };
++    tool: NormalizedToolPatch;
+     event: unknown;
+ } | {
+     kind: "commands";
+@@ -148,7 +176,18 @@ export type ParsedAcpEvent = {
+     event: unknown;
+ } | {
+     kind: "plan";
++    planId?: string;
++    updateMode?: "replace" | "merge";
+     plan: PlanEntry[];
++    document?: PlanDocument;
++    event: unknown;
++} | {
++    kind: "plan_document";
++    document?: PlanDocument;
++    event: unknown;
++} | {
++    kind: "plan_removed";
++    planId?: string;
+     event: unknown;
+ } | {
+     kind: "note";
+diff --git a/dist/session-events/acp.js b/dist/session-events/acp.js
+index 2bf2e6d98247cabc09065d81fc1db4167c276448..6cfdcc78455840c1e8adc5f402f521e2801526aa 100644
+--- a/dist/session-events/acp.js
++++ b/dist/session-events/acp.js
+@@ -23,6 +23,33 @@
+  */
+ import { extractAcpSystemNotice } from "./acp-system-notices.js";
+ export { extractAcpSystemNotice } from "./acp-system-notices.js";
++/** Internal transport context added when the ACP SDK gives OpenMA a
++ * notification-scoped `_meta` alongside `params.update`. The explicit key
++ * keeps wire-layer metadata separate from update/harness `_meta` while the
++ * existing flat update shape remains compatible with consumers. */
++export const ACP_NOTIFICATION_CONTEXT_KEY = "_openma.acp.notification";
++export function preserveAcpNotificationContext(params) {
++    if (!params || typeof params !== "object")
++        return params;
++    const notification = params;
++    if (!("update" in notification))
++        return params;
++    const update = notification.update;
++    if (!update || typeof update !== "object")
++        return update;
++    const notificationMeta = notification._meta;
++    if (!notificationMeta || typeof notificationMeta !== "object")
++        return update;
++    return {
++        ...update,
++        [ACP_NOTIFICATION_CONTEXT_KEY]: {
++            ...(typeof notification.sessionId === "string"
++                ? { session_id: notification.sessionId }
++                : {}),
++            meta: notificationMeta,
++        },
++    };
++}
+ const SILENT_SESSION_UPDATES = new Set([
+     "current_mode_update",
+     "config_option_update",
+@@ -86,6 +113,30 @@ function normalizeToolCall(raw) {
+         entry.rawInput = rawInput;
+     if (rawOutput !== undefined && rawOutput !== null)
+         entry.rawOutput = rawOutput;
++    if (rawOutput === undefined || rawOutput === null) {
++        const terminalOutput = objectField(meta.terminal_output);
++        const terminalOutputDelta = objectField(meta.terminal_output_delta);
++        const mcpOutputDelta = objectField(meta.mcp_output_delta);
++        const terminalData = stringValue(terminalOutput.data) ?? stringValue(terminalOutputDelta.data);
++        const mcpData = stringValue(mcpOutputDelta.data);
++        if (terminalData !== undefined) {
++            entry.outputDelta = { data: terminalData, separator: "" };
++        }
++        else if (mcpData !== undefined) {
++            entry.outputDelta = { data: mcpData, separator: "\n" };
++        }
++    }
++    if (entry.status === undefined) {
++        const terminalExit = objectField(meta.terminal_exit);
++        const exitCode = terminalExit.exit_code ?? terminalExit.exitCode;
++        const signal = terminalExit.signal;
++        if (typeof exitCode === "number") {
++            entry.status = exitCode === 0 ? "completed" : "failed";
++        }
++        else if (typeof signal === "string" && signal.length > 0) {
++            entry.status = "failed";
++        }
++    }
+     if (Array.isArray(raw.content))
+         entry.content = raw.content;
+     if (Array.isArray(raw.locations))
+@@ -100,6 +151,58 @@ function normalizeToolCall(raw) {
+         entry.parentToolUseId = parentToolUseId;
+     return entry;
+ }
++function normalizeCanonicalToolEvent(event) {
++    const type = stringValue(event.type);
++    if (type !== "tool.started"
++        && type !== "tool.progress"
++        && type !== "tool.completed"
++        && type !== "tool.failed"
++        && type !== "tool.cancelled")
++        return null;
++    const data = objectField(event.data);
++    const toolCallId = stringField(data, ["tool_call_id", "toolCallId", "id"]);
++    if (!toolCallId)
++        return null;
++    const tool = normalizeToolCall({
++        toolCallId,
++        ...(data.title !== undefined ? { title: data.title } : {}),
++        ...(data.kind !== undefined ? { kind: data.kind } : {}),
++        ...(data.status !== undefined ? { status: data.status } : {}),
++        ...(data.raw_input !== undefined ? { rawInput: data.raw_input } : {}),
++        ...(data.rawInput !== undefined ? { rawInput: data.rawInput } : {}),
++        ...(data.raw_output !== undefined ? { rawOutput: data.raw_output } : {}),
++        ...(data.rawOutput !== undefined ? { rawOutput: data.rawOutput } : {}),
++        ...(data.raw_output === undefined
++            && data.rawOutput === undefined
++            && typeof data.error === "string"
++            ? { rawOutput: data.error }
++            : {}),
++        ...(data.content !== undefined ? { content: data.content } : {}),
++        ...(data.locations !== undefined ? { locations: data.locations } : {}),
++        ...(data.tool_name !== undefined ? { toolName: data.tool_name } : {}),
++        ...(data.adapter_meta !== undefined ? { _meta: data.adapter_meta } : {}),
++        ...(event.parent_id !== undefined ? { parentToolUseId: event.parent_id } : {}),
++    });
++    if (type === "tool.completed")
++        tool.status = "completed";
++    if (type === "tool.failed")
++        tool.status = "failed";
++    if (type === "tool.cancelled")
++        tool.status = "cancelled";
++    const output = objectField(data.output);
++    const outputData = stringValue(output.data);
++    if (tool.rawOutput === undefined && outputData !== undefined) {
++        tool.outputDelta = {
++            data: outputData,
++            separator: typeof output.separator === "string"
++                ? output.separator
++                : output.kind === "mcp"
++                    ? "\n"
++                    : "",
++        };
++    }
++    return tool;
++}
+ function objectField(value) {
+     return value && typeof value === "object" && !Array.isArray(value)
+         ? value
+@@ -111,7 +214,17 @@ function stringValue(value) {
+ function messageIdFrom(raw) {
+     return stringField(raw, ["messageId", "message_id"]);
+ }
++function parentToolUseIdFrom(raw) {
++    const meta = objectField(raw._meta);
++    const claudeMeta = objectField(meta.claudeCode);
++    return (stringValue(claudeMeta.parentToolUseId) ??
++        stringValue(raw.parentToolUseId) ??
++        stringValue(raw.parent_tool_use_id));
++}
+ function codexMessagePhase(raw) {
++    if (raw.phase === "commentary" || raw.phase === "final_answer") {
++        return raw.phase;
++    }
+     const codex = objectField(objectField(raw._meta).codex);
+     return codex.phase === "commentary" || codex.phase === "final_answer"
+         ? codex.phase
+@@ -175,6 +288,9 @@ function parsePlanEntries(rawEntries) {
+     return rawEntries
+         .filter((entry) => Boolean(entry) && typeof entry === "object")
+         .map((entry) => ({
++        id: typeof entry.id === "string" && entry.id.length > 0
++            ? entry.id
++            : undefined,
+         content: typeof entry.content === "string" ? entry.content : "",
+         priority: entry.priority === "high" ||
+             entry.priority === "medium" ||
+@@ -183,7 +299,8 @@ function parsePlanEntries(rawEntries) {
+             : undefined,
+         status: entry.status === "pending" ||
+             entry.status === "in_progress" ||
+-            entry.status === "completed"
++            entry.status === "completed" ||
++            entry.status === "cancelled"
+             ? entry.status
+             : "pending",
+     }));
+@@ -197,6 +314,111 @@ function getEventSummary(event) {
+     }
+ }
+ export function parseAcpEvent(event) {
++    const eventRecord = objectField(event);
++    const isCanonicalOpenMAEvent = eventRecord.schema_version === "oma.event.v1";
++    const canonicalTool = isCanonicalOpenMAEvent
++        ? normalizeCanonicalToolEvent(eventRecord)
++        : null;
++    if (canonicalTool)
++        return { kind: "tool_call", tool: canonicalTool, event };
++    const canonicalType = isCanonicalOpenMAEvent
++        ? stringValue(eventRecord.type)
++        : undefined;
++    const canonicalData = objectField(eventRecord.data);
++    if (canonicalType === "agent.message" || canonicalType === "agent.message_chunk") {
++        const text = stringValue(canonicalData.text)
++            ?? extractTextBlocks(canonicalData.content);
++        return text
++            ? {
++                kind: "text",
++                text,
++                messageId: stringField(canonicalData, ["message_id", "messageId"]),
++                ...(canonicalData.phase === "commentary"
++                    || canonicalData.phase === "final_answer"
++                    ? { phase: canonicalData.phase }
++                    : {}),
++                parentToolUseId: stringValue(eventRecord.parent_id),
++                event,
++            }
++            : { kind: "silent", event };
++    }
++    if (canonicalType === "agent.thinking") {
++        const text = stringValue(canonicalData.text)
++            ?? extractTextBlocks(canonicalData.content);
++        return text
++            ? {
++                kind: "thought",
++                text: sanitizeThoughtText(text),
++                messageId: stringField(canonicalData, ["message_id", "messageId"]),
++                parentToolUseId: stringValue(eventRecord.parent_id),
++                event,
++            }
++            : { kind: "silent", event };
++    }
++    if (canonicalType === "plan.updated") {
++        if (Array.isArray(canonicalData.entries)) {
++            const document = objectField(canonicalData.document);
++            const markdown = stringValue(document.markdown)
++                ?? stringValue(canonicalData.markdown);
++            const uri = stringValue(document.uri) ?? stringValue(canonicalData.uri);
++            const parsedDocument = markdown
++                ? {
++                    ...(stringValue(document.id) ? { id: String(document.id) } : {}),
++                    ...(stringValue(document.title) ? { title: String(document.title) } : {}),
++                    markdown,
++                }
++                : uri
++                    ? {
++                        ...(stringValue(document.id) ? { id: String(document.id) } : {}),
++                        ...(stringValue(document.title) ? { title: String(document.title) } : {}),
++                        type: "file",
++                        uri,
++                    }
++                    : undefined;
++            return {
++                kind: "plan",
++                planId: stringField(canonicalData, ["plan_id", "planId", "id"]),
++                updateMode: canonicalData.update_mode === "merge" ? "merge" : "replace",
++                plan: parsePlanEntries(canonicalData.entries),
++                ...(parsedDocument ? { document: parsedDocument } : {}),
++                event,
++            };
++        }
++        const document = objectField(canonicalData.document);
++        const markdown = stringValue(document.markdown)
++            ?? stringValue(canonicalData.markdown);
++        if (markdown) {
++            return {
++                kind: "plan_document",
++                document: {
++                    ...(stringValue(document.id) ? { id: String(document.id) } : {}),
++                    ...(stringValue(document.title) ? { title: String(document.title) } : {}),
++                    markdown,
++                },
++                event,
++            };
++        }
++        const uri = stringValue(document.uri) ?? stringValue(canonicalData.uri);
++        if (uri) {
++            return {
++                kind: "plan_document",
++                document: {
++                    ...(stringValue(document.id) ? { id: String(document.id) } : {}),
++                    ...(stringValue(document.title) ? { title: String(document.title) } : {}),
++                    type: "file",
++                    uri,
++                },
++                event,
++            };
++        }
++    }
++    if (canonicalType === "plan.completed" || canonicalType === "plan.removed") {
++        return {
++            kind: "plan_removed",
++            planId: stringField(canonicalData, ["plan_id", "planId", "id"]),
++            event,
++        };
++    }
+     const inner = sessionUpdateInner(event);
+     const update = sessionUpdateType(event);
+     if (!update) {
+@@ -207,6 +429,7 @@ export function parseAcpEvent(event) {
+                     text: inner.delta,
+                     phase: codexMessagePhase(inner),
+                     messageId: messageIdFrom(inner),
++                    parentToolUseId: parentToolUseIdFrom(inner),
+                     event,
+                 }
+                 : { kind: "silent", event };
+@@ -219,6 +442,7 @@ export function parseAcpEvent(event) {
+                     text,
+                     phase: codexMessagePhase(inner),
+                     messageId: messageIdFrom(inner),
++                    parentToolUseId: parentToolUseIdFrom(inner),
+                     event,
+                 }
+                 : { kind: "silent", event };
+@@ -227,7 +451,13 @@ export function parseAcpEvent(event) {
+             const text = sanitizeThoughtText(inner.delta);
+             return inner.delta.length > 0
+                 ? text.length > 0
+-                    ? { kind: "thought", text, messageId: messageIdFrom(inner), event }
++                    ? {
++                        kind: "thought",
++                        text,
++                        messageId: messageIdFrom(inner),
++                        parentToolUseId: parentToolUseIdFrom(inner),
++                        event,
++                    }
+                     : { kind: "silent", event }
+                 : { kind: "silent", event };
+         }
+@@ -235,7 +465,13 @@ export function parseAcpEvent(event) {
+             const rawText = typeof inner.text === "string" ? inner.text : extractTextBlocks(inner.content);
+             const text = typeof rawText === "string" ? sanitizeThoughtText(rawText) : rawText;
+             return typeof text === "string" && text.length > 0
+-                ? { kind: "thought", text, messageId: messageIdFrom(inner), event }
++                ? {
++                    kind: "thought",
++                    text,
++                    messageId: messageIdFrom(inner),
++                    parentToolUseId: parentToolUseIdFrom(inner),
++                    event,
++                }
+                 : { kind: "silent", event };
+         }
+         if (inner.type === "agent.tool_use" && typeof inner.id === "string") {
+@@ -283,13 +519,20 @@ export function parseAcpEvent(event) {
+                 text: inner.text,
+                 phase: codexMessagePhase(inner),
+                 messageId: messageIdFrom(inner),
++                parentToolUseId: parentToolUseIdFrom(inner),
+                 event,
+             };
+         }
+         if (inner.type === "thought" && typeof inner.text === "string" && inner.text.length > 0) {
+             const text = sanitizeThoughtText(inner.text);
+             return text.length > 0
+-                ? { kind: "thought", text, messageId: messageIdFrom(inner), event }
++                ? {
++                    kind: "thought",
++                    text,
++                    messageId: messageIdFrom(inner),
++                    parentToolUseId: parentToolUseIdFrom(inner),
++                    event,
++                }
+                 : { kind: "silent", event };
+         }
+         if (inner.type === "requestPermission") {
+@@ -329,10 +572,14 @@ export function parseAcpEvent(event) {
+             kind: update === "agent_thought_chunk" ? "thought" : "text",
+             text: visibleText,
+             ...(update === "agent_thought_chunk"
+-                ? { messageId: messageIdFrom(inner) }
++                ? {
++                    messageId: messageIdFrom(inner),
++                    parentToolUseId: parentToolUseIdFrom(inner),
++                }
+                 : {
+                     phase: codexMessagePhase(inner),
+                     messageId: messageIdFrom(inner),
++                    parentToolUseId: parentToolUseIdFrom(inner),
+                 }),
+             event,
+         };
+@@ -359,11 +606,17 @@ export function parseAcpEvent(event) {
+         const plan = inner.plan && typeof inner.plan === "object"
+             ? inner.plan
+             : inner;
++        const planId = stringField(plan, ["planId", "plan_id", "id"]);
+         const content = plan.content && typeof plan.content === "object"
+             ? plan.content
+             : plan;
+         if (Array.isArray(content.entries)) {
+-            return { kind: "plan", plan: parsePlanEntries(content.entries), event };
++            return {
++                kind: "plan",
++                ...(planId ? { planId } : {}),
++                plan: parsePlanEntries(content.entries),
++                event,
++            };
+         }
+         const markdown = typeof content.markdown === "string"
+             ? content.markdown
+@@ -372,8 +625,25 @@ export function parseAcpEvent(event) {
+                 : undefined;
+         if (markdown) {
+             return {
+-                kind: "plan",
+-                plan: [{ content: markdown, status: "in_progress" }],
++                kind: "plan_document",
++                document: {
++                    ...(planId ? { id: planId } : {}),
++                    ...(typeof plan.title === "string" ? { title: plan.title } : {}),
++                    markdown,
++                },
++                event,
++            };
++        }
++        const uri = stringValue(plan.uri) ?? stringValue(content.uri);
++        if (uri) {
++            return {
++                kind: "plan_document",
++                document: {
++                    ...(planId ? { id: planId } : {}),
++                    ...(typeof plan.title === "string" ? { title: plan.title } : {}),
++                    type: "file",
++                    uri,
++                },
+                 event,
+             };
+         }
+@@ -386,8 +656,8 @@ export function parseAcpEvent(event) {
+     }
+     if (update === "plan_removed") {
+         return {
+-            kind: "note",
+-            note: typeof inner.id === "string" ? `Plan removed: ${inner.id}` : "Plan removed",
++            kind: "plan_removed",
++            planId: stringField(inner, ["planId", "plan_id", "id"]),
+             event,
+         };
+     }
+@@ -473,6 +743,7 @@ export function reduceTurn(events) {
+         }
+     };
+     const thoughtIndexByMessageId = new Map();
++    let currentPlanId;
+     let anonymousThoughtIndex;
+     const appendThought = (parsed) => {
+         const id = parsed.messageId;
+@@ -500,6 +771,36 @@ export function reduceTurn(events) {
+             anonymousThoughtIndex = index;
+         out.currentThoughtText = latestThoughtSegment(parsed.text);
+     };
++    const appendOutputDelta = (current, delta) => {
++        if (typeof current !== "string" || current.length === 0)
++            return delta.data;
++        if (delta.separator.length === 0
++            || current.endsWith(delta.separator)
++            || delta.data.startsWith(delta.separator)) {
++            return current + delta.data;
++        }
++        return current + delta.separator + delta.data;
++    };
++    const mergePlanEntries = (current, incoming) => {
++        const next = [...current];
++        const indexById = new Map();
++        next.forEach((entry, index) => {
++            if (entry.id)
++                indexById.set(entry.id, index);
++        });
++        for (const entry of incoming) {
++            const existingIndex = entry.id ? indexById.get(entry.id) : undefined;
++            if (existingIndex === undefined) {
++                if (entry.id)
++                    indexById.set(entry.id, next.length);
++                next.push(entry);
++            }
++            else {
++                next[existingIndex] = entry;
++            }
++        }
++        return next;
++    };
+     const upsertTool = (incoming) => {
+         const id = incoming.toolCallId;
+         if (!id)
+@@ -512,7 +813,9 @@ export function reduceTurn(events) {
+                 kind: incoming.kind,
+                 status: incoming.status,
+                 rawInput: incoming.rawInput,
+-                rawOutput: incoming.rawOutput,
++                rawOutput: incoming.rawOutput !== undefined
++                    ? incoming.rawOutput
++                    : incoming.outputDelta?.data,
+                 toolName: incoming.toolName,
+                 meta: incoming.meta,
+                 parentToolUseId: incoming.parentToolUseId,
+@@ -554,8 +857,14 @@ export function reduceTurn(events) {
+             if (!(incEmpty && prevHasContent))
+                 prev.rawInput = incoming.rawInput;
+         }
+-        if (incoming.rawOutput !== undefined)
++        if (incoming.rawOutput !== undefined) {
++            // A native ACP rawOutput is a complete snapshot and therefore replaces
++            // any adapter deltas accumulated before it.
+             prev.rawOutput = incoming.rawOutput;
++        }
++        else if (incoming.outputDelta !== undefined) {
++            prev.rawOutput = appendOutputDelta(prev.rawOutput, incoming.outputDelta);
++        }
+         if (incoming.content !== undefined)
+             prev.content = incoming.content;
+         if (incoming.locations !== undefined)
+@@ -584,7 +893,27 @@ export function reduceTurn(events) {
+                 upsertTool(parsed.tool);
+                 break;
+             case "plan":
+-                out.plan = parsed.plan;
++                out.plan = parsed.updateMode === "merge"
++                    && (currentPlanId === undefined
++                        || parsed.planId === undefined
++                        || parsed.planId === currentPlanId)
++                    ? mergePlanEntries(out.plan, parsed.plan)
++                    : parsed.plan;
++                if (parsed.document)
++                    out.planDocument = parsed.document;
++                currentPlanId = parsed.planId;
++                break;
++            case "plan_document":
++                out.planDocument = parsed.document;
++                if (parsed.document)
++                    currentPlanId = parsed.document.id;
++                break;
++            case "plan_removed":
++                if (parsed.planId === undefined || parsed.planId === currentPlanId) {
++                    out.plan = [];
++                    out.planDocument = undefined;
++                    currentPlanId = undefined;
++                }
+                 break;
+             case "note":
+                 out.notes.push(parsed.note);
+diff --git a/dist/session-events/openma.d.ts b/dist/session-events/openma.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5cdd5191e7f1bad9a2a9b070f046f2f9adaa12fa
+--- /dev/null
++++ b/dist/session-events/openma.d.ts
+@@ -0,0 +1,246 @@
++/**
++ * OpenMA's harness-neutral event contract.
++ *
++ * ACP and vendor adapters translate their wire payloads into this envelope.
++ * The renderer may project these events into UI state, but must not turn the
++ * projection into a second event vocabulary.
++ */
++export declare const OPENMA_EVENT_SCHEMA_VERSION: "oma.event.v1";
++export type OpenMAEventSourceKind = "harness" | "openma" | "user" | "system";
++export interface OpenMAEventSource {
++    kind: OpenMAEventSourceKind;
++    harness?: string;
++    adapter?: string;
++}
++export interface RawEventRecord {
++    kind: "raw";
++    source: "acp" | "adapter" | "transport";
++    method?: string;
++    event_type?: string;
++    payload: unknown;
++    received_at: string;
++    reason: "unknown" | "unsupported" | "malformed";
++}
++export interface VendorEventRecord {
++    kind: "vendor";
++    harness: string;
++    namespace: string;
++    name: string;
++    version?: string;
++    correlation?: {
++        session_id?: string;
++        turn_id?: string;
++        work_item_id?: string;
++        parent_id?: string;
++    };
++    data: unknown;
++}
++export type CanonicalEventType = "user.message" | "user.interrupt" | "user.permission_response" | "user.fs_write_response" | "user.elicitation_response" | "agent.message" | "agent.message_chunk" | "agent.thinking" | "turn.queued" | "turn.completed" | "turn.failed" | "turn.cancelled" | "tool.started" | "tool.progress" | "tool.completed" | "tool.failed" | "tool.cancelled" | "work_item.started" | "work_item.progress" | "work_item.output" | "work_item.completed" | "work_item.failed" | "work_item.cancelled" | "work_item.killed" | "work_item.terminated" | "work_item.missing_terminal" | "work_item.reidentified" | "work_item.classified" | "monitor.event" | "plan.updated" | "plan.completed" | "plan.removed" | "session.started" | "session.running" | "session.idle" | "session.terminated" | "session.error" | "system.notice" | "command_catalog.updated" | "capability.updated" | "usage.updated" | "callback.requested" | "callback.completed" | "callback.failed" | "callback.notification";
++export type ToolStatus = "pending" | "in_progress" | "completed" | "failed" | "cancelled";
++export type ToolOutputKind = "terminal" | "mcp" | "text" | "structured";
++export interface ToolOutputData {
++    kind: ToolOutputKind;
++    data: unknown;
++    /** True when this record extends rather than replaces prior visible output. */
++    append?: boolean;
++    separator?: string;
++    terminal_id?: string;
++}
++export interface ToolTerminalData {
++    terminal_id?: string;
++    exit_code?: number | null;
++    signal?: string | null;
++}
++export interface ToolLifecycleData {
++    tool_call_id: string;
++    title?: string;
++    kind?: string;
++    status?: ToolStatus;
++    tool_name?: string;
++    raw_input?: unknown;
++    raw_output?: unknown;
++    content?: unknown[];
++    locations?: Array<{
++        path?: string;
++        line?: number;
++    }>;
++    output?: ToolOutputData;
++    terminal?: ToolTerminalData;
++    error?: string;
++    reason?: string;
++    /** Preserved adapter extension data after its known semantics are lifted. */
++    adapter_meta?: Record<string, unknown>;
++}
++/** Harness-neutral message payload. `content` retains a structured
++ * MCP-compatible block (text, image, audio, resource link, or embedded
++ * resource) when no plain-text projection exists. Adapter metadata is
++ * evidence only; GUI projections consume the standard content fields. */
++export interface MessageEventData {
++    text?: string;
++    content?: unknown;
++    message_id?: string;
++    phase?: "commentary" | "final_answer";
++    adapter_meta?: Record<string, unknown>;
++}
++export interface OpenMAEventEnvelope<TType extends string, TData> {
++    /** Backchat compatibility alias retained while persisted v0.4 events are replayable. */
++    schema?: typeof OPENMA_EVENT_SCHEMA_VERSION;
++    schema_version: typeof OPENMA_EVENT_SCHEMA_VERSION;
++    event_id: string;
++    type: TType;
++    session_id: string;
++    session_thread_id?: string;
++    turn_id?: string;
++    work_item_id?: string;
++    parent_event_id?: string;
++    parent_id?: string;
++    source: OpenMAEventSource;
++    occurred_at: string;
++    ingested_at?: string;
++    seq?: number;
++    data: TData;
++    /** Known canonical events may retain the adapter's original wire record. */
++    raw?: RawEventRecord;
++}
++export type OpenMACanonicalEvent = OpenMAEventEnvelope<CanonicalEventType, unknown>;
++export type MessageEvent = OpenMAEventEnvelope<"user.message", MessageEventData> | OpenMAEventEnvelope<"agent.message", MessageEventData> | OpenMAEventEnvelope<"agent.message_chunk", MessageEventData> | OpenMAEventEnvelope<"agent.thinking", MessageEventData>;
++export type ToolEvent = OpenMAEventEnvelope<"tool.started", ToolLifecycleData> | OpenMAEventEnvelope<"tool.progress", ToolLifecycleData> | OpenMAEventEnvelope<"tool.completed", ToolLifecycleData> | OpenMAEventEnvelope<"tool.failed", ToolLifecycleData> | OpenMAEventEnvelope<"tool.cancelled", ToolLifecycleData>;
++export type CallbackCategory = "permission" | "filesystem" | "terminal" | "elicitation" | "mcp" | "extension";
++/** An agent-to-host request/notification observed at the client boundary.
++ * This records the input lifecycle without leaking ACP transport shapes into
++ * GUI projections. `callback_id` correlates a request with its terminal fact. */
++export interface CallbackLifecycleData {
++    callback_id?: string;
++    method: string;
++    category: CallbackCategory;
++    params?: unknown;
++    result?: unknown;
++    error?: unknown;
++}
++export type CallbackEvent = OpenMAEventEnvelope<"callback.requested", CallbackLifecycleData> | OpenMAEventEnvelope<"callback.completed", CallbackLifecycleData> | OpenMAEventEnvelope<"callback.failed", CallbackLifecycleData> | OpenMAEventEnvelope<"callback.notification", CallbackLifecycleData>;
++/** One event delivered by a long-lived external subscription. Monitor
++ * notifications do not necessarily carry a stable subscription id, so
++ * correlation remains optional on the envelope's `work_item_id`. */
++export interface MonitorEventData {
++    description: string;
++    text: string;
++    adapter_meta?: Record<string, unknown>;
++}
++export type MonitorEvent = OpenMAEventEnvelope<"monitor.event", MonitorEventData>;
++export type VendorEvent = OpenMAEventEnvelope<"vendor.event", VendorEventRecord>;
++export type RawEvent = OpenMAEventEnvelope<"raw.event", RawEventRecord>;
++export type OpenMAEvent = OpenMACanonicalEvent | VendorEvent | RawEvent;
++export interface CanonicalPlanEntry {
++    id?: string;
++    content: string;
++    priority?: "high" | "medium" | "low" | string;
++    status?: "pending" | "in_progress" | "completed" | "cancelled" | string;
++    adapter_meta?: Record<string, unknown>;
++}
++export type PlanRepresentation = "items" | "markdown" | "file";
++export interface PlanUpdatedData {
++    representation: PlanRepresentation;
++    plan_id?: string;
++    /** Whether entries replace the current plan snapshot or merge into it by
++     * stable entry id. Omitted values preserve ACP's replacement semantics. */
++    update_mode?: "replace" | "merge";
++    entries?: CanonicalPlanEntry[];
++    document?: {
++        id?: string;
++        title?: string;
++        markdown?: string;
++        uri?: string;
++    };
++    adapter_meta?: Record<string, unknown>;
++}
++export interface PlanRemovedData {
++    plan_id?: string;
++    adapter_meta?: Record<string, unknown>;
++}
++export type PlanEvent = OpenMAEventEnvelope<"plan.updated", PlanUpdatedData> | OpenMAEventEnvelope<"plan.removed", PlanRemovedData>;
++type OpenMAEventInput<TType extends string, TData> = Omit<OpenMAEventEnvelope<TType, TData>, "schema_version">;
++export declare function createOpenMAEvent<TType extends string, TData>(input: OpenMAEventInput<TType, TData>): OpenMAEventEnvelope<TType, TData>;
++export interface CreateVendorEventInput extends Omit<OpenMAEventInput<"vendor.event", VendorEventRecord>, "type" | "data"> {
++    harness: string;
++    namespace: string;
++    name: string;
++    version?: string;
++    correlation?: VendorEventRecord["correlation"];
++    data: unknown;
++}
++export declare function createVendorEvent(input: CreateVendorEventInput): VendorEvent;
++export interface CreateRawEventInput extends Omit<OpenMAEventInput<"raw.event", RawEventRecord>, "type" | "data"> {
++    source_kind: RawEventRecord["source"];
++    method?: string;
++    event_type?: string;
++    payload: unknown;
++    received_at?: string;
++    reason: RawEventRecord["reason"];
++}
++export declare function createRawEvent(input: CreateRawEventInput): RawEvent;
++export type WorkItemKind = "agent" | "bash" | "monitor" | "other";
++export type WorkItemTerminalStatus = "completed" | "failed" | "cancelled" | "killed" | "terminated";
++export type WorkItemStatus = "running" | WorkItemTerminalStatus | "unknown";
++export interface WorkItemStartedData {
++    kind: WorkItemKind;
++    title?: string;
++    command?: string;
++    args?: string[];
++    cwd?: string;
++    can_stop?: boolean;
++}
++export interface WorkItemProgressData {
++    progress?: number;
++    output?: unknown;
++}
++export interface WorkItemOutputData {
++    output: unknown;
++}
++export interface WorkItemTerminalIdentityData {
++    /** Identity evidence carried by a terminal-only adapter observation. */
++    kind?: WorkItemKind;
++    title?: string;
++}
++export interface WorkItemCompletedData extends WorkItemTerminalIdentityData {
++    result?: unknown;
++}
++export interface WorkItemFailureData extends WorkItemTerminalIdentityData {
++    error?: string;
++    reason?: string;
++    result?: unknown;
++}
++export interface WorkItemMissingTerminalData {
++    reason: string;
++}
++export interface WorkItemReidentifiedData {
++    previous_work_item_id: string;
++}
++/** Refines a work item's semantic kind after stronger adapter evidence
++ * arrives. This does not restart or otherwise alter its lifecycle. */
++export interface WorkItemClassifiedData {
++    kind: WorkItemKind;
++}
++export type WorkItemEvent = OpenMAEventEnvelope<"work_item.started", WorkItemStartedData> | OpenMAEventEnvelope<"work_item.progress", WorkItemProgressData> | OpenMAEventEnvelope<"work_item.output", WorkItemOutputData> | OpenMAEventEnvelope<"work_item.completed", WorkItemCompletedData> | OpenMAEventEnvelope<"work_item.failed", WorkItemFailureData> | OpenMAEventEnvelope<"work_item.cancelled", WorkItemFailureData> | OpenMAEventEnvelope<"work_item.killed", WorkItemFailureData> | OpenMAEventEnvelope<"work_item.terminated", WorkItemFailureData> | OpenMAEventEnvelope<"work_item.missing_terminal", WorkItemMissingTerminalData> | OpenMAEventEnvelope<"work_item.reidentified", WorkItemReidentifiedData> | OpenMAEventEnvelope<"work_item.classified", WorkItemClassifiedData>;
++export interface WorkItemSnapshot {
++    id: string;
++    kind: WorkItemKind;
++    status: WorkItemStatus;
++    title?: string;
++    progress?: number;
++    output: unknown;
++    result?: unknown;
++    error?: string;
++    reason?: string;
++    started_at?: string;
++    ended_at?: string;
++    missing_start?: boolean;
++    missing_terminal?: boolean;
++}
++export interface WorkItemRegistry {
++    items: Map<string, WorkItemSnapshot>;
++    seen_event_ids: Set<string>;
++}
++export declare function reduceWorkItems(events: readonly OpenMAEvent[]): WorkItemRegistry;
++export declare function finalizeWorkItems(registry: WorkItemRegistry): WorkItemRegistry;
++export {};
++//# sourceMappingURL=openma.d.ts.map
+diff --git a/dist/session-events/openma.js b/dist/session-events/openma.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..0663bb0a89c1114eb1ed89428806dd01beb9cc64
+--- /dev/null
++++ b/dist/session-events/openma.js
+@@ -0,0 +1,237 @@
++/**
++ * OpenMA's harness-neutral event contract.
++ *
++ * ACP and vendor adapters translate their wire payloads into this envelope.
++ * The renderer may project these events into UI state, but must not turn the
++ * projection into a second event vocabulary.
++ */
++export const OPENMA_EVENT_SCHEMA_VERSION = "oma.event.v1";
++export function createOpenMAEvent(input) {
++    return {
++        schema: OPENMA_EVENT_SCHEMA_VERSION,
++        schema_version: OPENMA_EVENT_SCHEMA_VERSION,
++        ...input,
++    };
++}
++export function createVendorEvent(input) {
++    const { harness, namespace, name, version, correlation, data, ...envelope } = input;
++    return createOpenMAEvent({
++        ...envelope,
++        type: "vendor.event",
++        data: {
++            kind: "vendor",
++            harness,
++            namespace,
++            name,
++            ...(version ? { version } : {}),
++            ...(correlation ? { correlation } : {}),
++            data,
++        },
++    });
++}
++export function createRawEvent(input) {
++    const { source_kind, method, event_type, payload, received_at, reason, ...envelope } = input;
++    return createOpenMAEvent({
++        ...envelope,
++        type: "raw.event",
++        data: {
++            kind: "raw",
++            source: source_kind,
++            ...(method ? { method } : {}),
++            ...(event_type ? { event_type } : {}),
++            payload,
++            received_at: received_at ?? input.occurred_at,
++            reason,
++        },
++    });
++}
++function isWorkItemEvent(event) {
++    return event.type.startsWith("work_item.") && typeof event.work_item_id === "string";
++}
++function isTerminal(status) {
++    return status !== "running" && status !== "unknown";
++}
++function cloneRegistry(registry) {
++    return {
++        items: new Map([...registry.items].map(([id, item]) => [id, {
++                ...item,
++                output: Array.isArray(item.output) ? [...item.output] : item.output,
++            }])),
++        seen_event_ids: new Set(registry.seen_event_ids),
++    };
++}
++function appendWorkItemOutput(current, incoming) {
++    if (Array.isArray(current) && current.length === 0)
++        return incoming;
++    if (typeof current === "string" && typeof incoming === "string")
++        return current + incoming;
++    if (Array.isArray(current))
++        return [...current, incoming];
++    return current === undefined ? incoming : [current, incoming];
++}
++function mergeWorkItemOutput(previous, current) {
++    if (Array.isArray(previous) && previous.length === 0)
++        return Array.isArray(current) ? [...current] : current;
++    if (Array.isArray(current) && current.length === 0)
++        return Array.isArray(previous) ? [...previous] : previous;
++    if (typeof previous === "string" && typeof current === "string")
++        return previous + current;
++    return [
++        ...(Array.isArray(previous) ? previous : [previous]),
++        ...(Array.isArray(current) ? current : [current]),
++    ];
++}
++function getOrCreateItem(items, id, kind = "other") {
++    const existing = items.get(id);
++    if (existing)
++        return existing;
++    const created = {
++        id,
++        kind,
++        status: "unknown",
++        output: [],
++        missing_start: true,
++    };
++    items.set(id, created);
++    return created;
++}
++function applyWorkItemEvent(items, event) {
++    const id = event.work_item_id;
++    if (!id)
++        return;
++    const data = event.data;
++    if (event.type === "work_item.reidentified") {
++        const previous = items.get(data.previous_work_item_id);
++        const current = items.get(id);
++        if (!previous) {
++            getOrCreateItem(items, id);
++            return;
++        }
++        items.delete(data.previous_work_item_id);
++        items.set(id, current
++            ? {
++                ...previous,
++                ...current,
++                id,
++                kind: current.kind === "other" ? previous.kind : current.kind,
++                output: mergeWorkItemOutput(previous.output, current.output),
++            }
++            : {
++                ...previous,
++                id,
++                output: Array.isArray(previous.output)
++                    ? [...previous.output]
++                    : previous.output,
++            });
++        return;
++    }
++    if (event.type === "work_item.classified") {
++        const existing = items.get(id);
++        if (existing)
++            existing.kind = data.kind;
++        return;
++    }
++    const item = getOrCreateItem(items, id, event.type === "work_item.started" ? data.kind : undefined);
++    if (isTerminal(item.status) && event.type !== `work_item.${item.status}`)
++        return;
++    switch (event.type) {
++        case "work_item.started":
++            if (isTerminal(item.status))
++                return;
++            if (item.kind === "other" || data.kind !== "other") {
++                item.kind = data.kind;
++            }
++            item.title = data.title;
++            item.status = "running";
++            item.started_at = event.occurred_at;
++            item.missing_start = undefined;
++            item.missing_terminal = typeof data.missing_terminal === "boolean"
++                ? data.missing_terminal
++                : undefined;
++            item.reason = undefined;
++            return;
++        case "work_item.progress":
++            if (typeof data.progress === "number")
++                item.progress = data.progress;
++            if (data.output !== undefined)
++                item.output = appendWorkItemOutput(item.output, data.output);
++            return;
++        case "work_item.output":
++            item.output = appendWorkItemOutput(item.output, data.output);
++            return;
++        case "work_item.completed":
++            // A terminal-only adapter update may carry the generic `other` kind
++            // because it cannot re-identify the already-started item. Preserve a
++            // richer kind learned from the start event instead of downgrading a
++            // Bash/agent item to `other`.
++            if (data.kind && (item.kind === "other" || data.kind !== "other")) {
++                item.kind = data.kind;
++            }
++            if (data.title)
++                item.title = data.title;
++            item.status = "completed";
++            item.result = data.result;
++            item.ended_at = event.occurred_at;
++            item.missing_terminal = typeof data.missing_terminal === "boolean"
++                ? data.missing_terminal
++                : undefined;
++            return;
++        case "work_item.failed":
++        case "work_item.cancelled":
++        case "work_item.killed":
++        case "work_item.terminated":
++            if (data.kind && (item.kind === "other" || data.kind !== "other")) {
++                item.kind = data.kind;
++            }
++            if (data.title)
++                item.title = data.title;
++            item.status = event.type.slice("work_item.".length);
++            item.error = data.error;
++            item.reason = data.reason;
++            item.result = data.result;
++            item.ended_at = event.occurred_at;
++            item.missing_terminal = typeof data.missing_terminal === "boolean"
++                ? data.missing_terminal
++                : undefined;
++            return;
++        case "work_item.missing_terminal":
++            item.status = "unknown";
++            item.reason = data.reason;
++            item.missing_terminal = true;
++            return;
++    }
++}
++export function reduceWorkItems(events) {
++    const registry = { items: new Map(), seen_event_ids: new Set() };
++    const ordered = events.map((event, index) => ({ event, index })).sort((a, b) => {
++        if (a.event.seq === undefined && b.event.seq === undefined)
++            return a.index - b.index;
++        if (a.event.seq === undefined)
++            return 1;
++        if (b.event.seq === undefined)
++            return -1;
++        return a.event.seq - b.event.seq || a.index - b.index;
++    });
++    for (const { event } of ordered) {
++        if (registry.seen_event_ids.has(event.event_id))
++            continue;
++        registry.seen_event_ids.add(event.event_id);
++        if (isWorkItemEvent(event))
++            applyWorkItemEvent(registry.items, event);
++    }
++    return registry;
++}
++export function finalizeWorkItems(registry) {
++    const finalized = cloneRegistry(registry);
++    for (const [id, item] of finalized.items) {
++        if (isTerminal(item.status))
++            continue;
++        finalized.items.set(id, {
++            ...item,
++            status: "unknown",
++            missing_terminal: true,
++        });
++    }
++    return finalized;
++}
++//# sourceMappingURL=openma.js.map
+diff --git a/dist/session-ui/index.d.ts b/dist/session-ui/index.d.ts
+index da94484da5a935a7c1bdbbb6ec78467aedf388ba..6704c476f9f54417e5cb5f300d2656684ed0d74b 100644
+--- a/dist/session-ui/index.d.ts
++++ b/dist/session-ui/index.d.ts
+@@ -1,8 +1,9 @@
+ import type { ReactNode } from "react";
+-export type SessionTurnStatus = "queued" | "running" | "complete" | "completed" | "error" | "errored" | "cancelled" | "terminated";
++export type SessionTurnStatus = "queued" | "running" | "complete" | "completed" | "error" | "errored" | "cancelled" | "unknown" | "terminated";
+ export interface SessionTurnFrameLabels {
+     queued?: string;
+     cancelled?: string;
++    unknown?: string;
+     terminated?: string;
+     failed?: string;
+ }
+diff --git a/dist/session-ui/index.js b/dist/session-ui/index.js
+index 9c64d30406c55260c72a9cce74e9f8131d7689aa..db7fc172720165c2fb66f5ebe22acbe7abb253ec 100644
+--- a/dist/session-ui/index.js
++++ b/dist/session-ui/index.js
+@@ -24,6 +24,9 @@ function renderStatus(status, errorMessage, labels) {
+     if (status === "cancelled") {
+         return (_jsx("p", { className: "text-xs italic text-fg-subtle", "data-session-turn-status-message": "cancelled", children: labels?.cancelled ?? "cancelled" }));
+     }
++    if (status === "unknown") {
++        return (_jsx("p", { className: "text-xs italic text-fg-subtle", "data-session-turn-status-message": "unknown", children: labels?.unknown ?? "terminal status unavailable" }));
++    }
+     if (status === "terminated") {
+         return (_jsx("p", { className: "text-xs italic text-fg-subtle", "data-session-turn-status-message": "terminated", children: labels?.terminated ?? "terminated" }));
+     }
+diff --git a/package.json b/package.json
+index 0718e9d3363d3613b9f54fdf76bb48ccc1444ccd..79e8bde96209619570576d3de5220cad28192907 100644
+--- a/package.json
++++ b/package.json
+@@ -31,6 +31,10 @@
+       "types": "./dist/session-events/acp.d.ts",
+       "import": "./dist/session-events/acp.js"
+     },
++    "./session-events/openma": {
++      "types": "./dist/session-events/openma.d.ts",
++      "import": "./dist/session-events/openma.js"
++    },
+     "./session-kernel": {
+       "types": "./dist/session-kernel/index.d.ts",
+       "import": "./dist/session-kernel/index.js"

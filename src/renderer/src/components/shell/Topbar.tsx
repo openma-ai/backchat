@@ -25,6 +25,7 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { RenameDialog } from "./RenameDialog";
+import { SessionRuntimeUpdateControl } from "@/components/chat/SessionRuntimeUpdateControl";
 
 /**
  * Single-chat chrome is deliberately sparse: task title + one actions
@@ -71,6 +72,9 @@ export function Topbar(_props: { onCancel: () => void }) {
       <span className="max-w-[min(42vw,32rem)] truncate font-medium text-fg">
         {active.label || t("sidebar.newChat")}
       </span>
+      {active.status !== "draft" && (
+        <SessionRuntimeUpdateControl sessionId={active.id} />
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button

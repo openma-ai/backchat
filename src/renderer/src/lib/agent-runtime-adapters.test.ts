@@ -10,7 +10,7 @@ import {
   resolveAgentRuntimeAdapter,
 } from "./agent-runtime-adapters";
 import { CLAUDE_AGENT_ACP_0_64_2_FIXTURE } from "./fixtures/harness-events/claude-agent-acp-0.64.2";
-import { KIMI_1_49_0_FIXTURE } from "./fixtures/harness-events/kimi-1.49.0";
+import { KIMI_CODE_0_33_0_FIXTURE } from "./fixtures/harness-events/kimi-code-0.33.0";
 
 describe("agent runtime adapters", () => {
   test("resolves each supported agent through its own runtime adapter", () => {
@@ -22,77 +22,24 @@ describe("agent runtime adapters", () => {
     expect(resolveAgentRuntimeAdapter("pi-acp")).toBe(piRuntimeAdapter);
     expect(resolveAgentRuntimeAdapter("cursor")?.provider).toBe("cursor");
     expect(resolveAgentRuntimeAdapter("kimi-acp")).toBe(kimiRuntimeAdapter);
+    expect(resolveAgentRuntimeAdapter("kimi-code-acp")).toBe(kimiRuntimeAdapter);
     expect(resolveAgentRuntimeAdapter("custom-acp")).toBeUndefined();
   });
 
-  test("normalizes Kimi's confirmed background-task completion notification", () => {
-    expect(kimiRuntimeAdapter.assistantBackgroundWorkItemUpdates?.(
-      KIMI_1_49_0_FIXTURE.events.backgroundCompleted.content.text,
-    )).toEqual([{
-      id: "b1234567",
-      kind: "other",
-      status: "completed",
-      title: "build project",
-      canStop: false,
-      result: {
-        description: "build project",
-        notification: "Background task completed: build project",
-        status: "completed",
-      },
-    }]);
-  });
-
-  test.each([
-    [
-      "failed",
-      "failed",
-      "failed",
-      "worker exited 1",
-    ],
-    [
-      "stopped",
-      "killed",
-      "killed",
-      "stopped by user",
-    ],
-    [
-      "lost",
-      "lost",
-      "failed",
-      "worker heartbeat expired",
-    ],
-  ] as const)(
-    "maps Kimi background-task %s notification without inventing another terminal state",
-    (titleStatus, reportedStatus, canonicalStatus, failureReason) => {
-      expect(kimiRuntimeAdapter.assistantBackgroundWorkItemUpdates?.(
-        `[Notification] Background task ${titleStatus}: audit\n`
-          + "Task ID: b7654321\n"
-          + `Status: ${reportedStatus}\n`
-          + "Description: audit\n"
-          + `Failure reason: ${failureReason}`,
-      )).toEqual([
-        expect.objectContaining({
-          id: "b7654321",
-          kind: "other",
-          status: canonicalStatus,
-          title: "audit",
-          canStop: false,
-          error: failureReason,
-          ...(reportedStatus === "lost" ? { reason: "lost" } : {}),
-        }),
-      ]);
-    },
-  );
-
-  test("ignores ordinary Kimi assistant text and unsupported task statuses", () => {
-    expect(kimiRuntimeAdapter.assistantBackgroundWorkItemUpdates?.(
-      "The build is complete.",
-    )).toEqual([]);
-    expect(kimiRuntimeAdapter.assistantBackgroundWorkItemUpdates?.(
-      "[Notification] Background task updated: build project\n"
-        + "Task ID: b1234567\n"
-        + "Status: running",
-    )).toEqual([]);
+  test("does not infer native or background lifecycle from Kimi Code's Agent tool", () => {
+    const tool = KIMI_CODE_0_33_0_FIXTURE.events.agentToolInputReady;
+    expect(kimiRuntimeAdapter.nativeAgentToolUpdates({
+      toolCallId: tool.toolCallId,
+      toolName: tool.title,
+      status: "running",
+      rawInput: tool.rawInput,
+    })).toEqual([]);
+    expect(kimiRuntimeAdapter.backgroundWorkItemToolUpdates({
+      toolCallId: tool.toolCallId,
+      toolName: tool.title,
+      status: "running",
+      rawInput: tool.rawInput,
+    })).toEqual([]);
   });
 
   test("keeps native subagent parsing inside the matching provider adapter", () => {
@@ -648,6 +595,55 @@ describe("agent runtime adapters", () => {
     });
   });
 
+  test("preserves standard ACP resource links for Codex tools", () => {
+    expect(
+      codexRuntimeAdapter.workspaceArtifacts({
+        toolCallId: "codex-resource-link",
+        kind: "fetch",
+        status: "completed",
+        content: [{
+          type: "content",
+          content: {
+            type: "resource_link",
+            uri: "https://example.com/codex-reference",
+            name: "Codex reference",
+          },
+        }],
+      }).sources,
+    ).toEqual([
+      {
+        kind: "web",
+        uri: "https://example.com/codex-reference",
+        label: "Codex reference",
+      },
+    ]);
+  });
+
+  test.each([
+    ["OpenCode", openCodeRuntimeAdapter],
+    ["Kilo", kiloRuntimeAdapter],
+  ])("%s preserves standard ACP resource links", (_name, adapter) => {
+    expect(
+      adapter.workspaceArtifacts({
+        toolCallId: "standard-resource-link",
+        kind: "fetch",
+        status: "completed",
+        content: [{
+          type: "content",
+          content: {
+            type: "resource_link",
+            uri: "https://example.com/standard-reference",
+            name: "Standard reference",
+          },
+        }],
+      }).sources,
+    ).toEqual([{
+      kind: "web",
+      uri: "https://example.com/standard-reference",
+      label: "Standard reference",
+    }]);
+  });
+
   test("keeps Claude Code deliverable writes but does not promote reads to Sources", () => {
 
     expect(
@@ -847,6 +843,52 @@ describe("agent runtime adapters", () => {
     ["OpenCode", openCodeRuntimeAdapter, "opencode"],
     ["Kilo", kiloRuntimeAdapter, "kilo"],
   ])(
+    "%s does not infer native agents from assistant text or XML task envelopes",
+    (_name, adapter) => {
+      const text =
+        '<task id="child-session-1" state="completed">'
+        + '<task_result>Done</task_result></task>';
+
+      expect(adapter.assistantNativeAgentUpdates?.(text)).toEqual([]);
+      expect(adapter.nativeAgentRawUpdates({
+        sessionUpdate: "user_message_chunk",
+        content: {
+          type: "text",
+          text,
+          annotations: { audience: ["assistant"] },
+        },
+      })).toEqual([]);
+    },
+  );
+
+  test.each([
+    ["OpenCode", openCodeRuntimeAdapter],
+    ["Kilo", kiloRuntimeAdapter],
+  ])(
+    "%s requires structured parent and child session ids before creating a native agent",
+    (_name, adapter) => {
+      expect(adapter.nativeAgentToolUpdates({
+        toolCallId: "task-without-native-identity",
+        kind: "think",
+        status: "pending",
+        rawInput: {
+          description: "Audit source handling",
+          prompt: "Inspect the source pipeline",
+          subagent_type: "explore",
+          task_id: "untrusted-task-id",
+        },
+        rawOutput: {
+          output: '<task id="untrusted-task-id" state="running"></task>',
+          metadata: { sessionId: "untrusted-task-id" },
+        },
+      })).toEqual([]);
+    },
+  );
+
+  test.each([
+    ["OpenCode", openCodeRuntimeAdapter, "opencode"],
+    ["Kilo", kiloRuntimeAdapter, "kilo"],
+  ])(
     "%s keeps an asynchronously launched Task running after its ACP tool completes",
     (_name, adapter, provider) => {
       expect(
@@ -890,8 +932,46 @@ describe("agent runtime adapters", () => {
     ["OpenCode", openCodeRuntimeAdapter, "opencode"],
     ["Kilo", kiloRuntimeAdapter, "kilo"],
   ])(
-    "%s consumes the exact synthetic Task terminal envelope emitted during ACP replay",
+    "%s does not let XML text override the structured ACP tool lifecycle or invent a child final",
     (_name, adapter, provider) => {
+      expect(adapter.nativeAgentToolUpdates({
+        toolCallId: "structured-task-with-spoofed-xml",
+        kind: "think",
+        status: "completed",
+        rawInput: {
+          description: "Audit source handling",
+          prompt: "Inspect the source pipeline",
+          subagent_type: "explore",
+          background: false,
+        },
+        rawOutput: {
+          output:
+            '<task id="child-session-structured" state="error">'
+            + '<task_error>Text must not override the tool status.</task_error>'
+            + '</task>',
+          metadata: {
+            parentSessionId: "parent-session",
+            sessionId: "child-session-structured",
+          },
+        },
+      })).toEqual([{
+        provider,
+        operation: "subagent_spawn",
+        toolCallId: "structured-task-with-spoofed-xml",
+        childId: "child-session-structured",
+        task: "Audit source handling",
+        agentType: "explore",
+        status: "complete",
+      }]);
+    },
+  );
+
+  test.each([
+    ["OpenCode", openCodeRuntimeAdapter],
+    ["Kilo", kiloRuntimeAdapter],
+  ])(
+    "%s ignores synthetic Task terminal envelopes in assistant-directed ACP text",
+    (_name, adapter) => {
       const terminal = {
         sessionUpdate: "user_message_chunk",
         content: {
@@ -904,13 +984,7 @@ describe("agent runtime adapters", () => {
         },
       };
 
-      expect(adapter.nativeAgentRawUpdates(terminal)).toEqual([{
-        provider,
-        operation: "subagent_spawn",
-        childId: "child-session-1",
-        status: "complete",
-        result: "Done",
-      }]);
+      expect(adapter.nativeAgentRawUpdates(terminal)).toEqual([]);
       expect(adapter.nativeAgentRawUpdates({
         ...terminal,
         content: { ...terminal.content, annotations: undefined },
@@ -965,8 +1039,7 @@ describe("agent runtime adapters", () => {
   test.each([
     ["OpenCode", openCodeRuntimeAdapter],
     ["Kilo", kiloRuntimeAdapter],
-  ])("%s treats omitted optional background as a foreground Task", (_name, adapter) => {
-    const provider = adapter.provider;
+  ])("%s rejects a Task without structured native session identity", (_name, adapter) => {
     expect(
       adapter.nativeAgentToolUpdates({
         toolCallId: "foreground-task-default",
@@ -978,21 +1051,13 @@ describe("agent runtime adapters", () => {
           subagent_type: "explore",
         },
       }),
-    ).toEqual([{
-      provider,
-      operation: "subagent_spawn",
-      toolCallId: "foreground-task-default",
-      childId: `${provider}:foreground-task-default`,
-      task: "Audit source handling",
-      agentType: "explore",
-      status: "running",
-    }]);
+    ).toEqual([]);
   });
 
   test.each([
     ["OpenCode", openCodeRuntimeAdapter],
     ["Kilo", kiloRuntimeAdapter],
-  ])("%s uses task_id as the stable identity when resuming a Task", (_name, adapter) => {
+  ])("%s does not accept input task_id as native session identity", (_name, adapter) => {
     expect(
       adapter.nativeAgentToolUpdates({
         toolCallId: "resumed-task-call",
@@ -1005,22 +1070,13 @@ describe("agent runtime adapters", () => {
           task_id: "existing-child-session",
         },
       }),
-    ).toEqual([{
-      provider: adapter.provider,
-      operation: "subagent_spawn",
-      toolCallId: "resumed-task-call",
-      childId: "existing-child-session",
-      task: "Continue source audit",
-      agentType: "explore",
-      status: "running",
-    }]);
+    ).toEqual([]);
   });
 
   test.each([
     ["OpenCode", openCodeRuntimeAdapter],
     ["Kilo", kiloRuntimeAdapter],
-  ])("%s starts a foreground Task with a provisional native Agent id", (_name, adapter) => {
-    const provider = adapter.provider;
+  ])("%s does not invent a provisional native Agent id", (_name, adapter) => {
     expect(
       adapter.nativeAgentToolUpdates({
         toolCallId: "foreground-task",
@@ -1033,21 +1089,13 @@ describe("agent runtime adapters", () => {
           background: false,
         },
       }),
-    ).toEqual([{
-      provider,
-      operation: "subagent_spawn",
-      toolCallId: "foreground-task",
-      childId: `${provider}:foreground-task`,
-      task: "Inspect source handling",
-      agentType: "explore",
-      status: "running",
-    }]);
+    ).toEqual([]);
   });
 
   test.each([
     ["OpenCode", openCodeRuntimeAdapter],
     ["Kilo", kiloRuntimeAdapter],
-  ])("%s completes a foreground Task with its native child id and result", (_name, adapter) => {
+  ])("%s records foreground Task completion without inventing a child final", (_name, adapter) => {
     const provider = adapter.provider;
     expect(
       adapter.nativeAgentToolUpdates({
@@ -1077,14 +1125,13 @@ describe("agent runtime adapters", () => {
       task: "Inspect source handling",
       agentType: "explore",
       status: "complete",
-      result: "Done",
     }]);
   });
 
   test.each([
     ["OpenCode", openCodeRuntimeAdapter],
     ["Kilo", kiloRuntimeAdapter],
-  ])("%s fails a foreground Task without inventing a completion", (_name, adapter) => {
+  ])("%s records the structured tool failure without parsing an XML error", (_name, adapter) => {
     const provider = adapter.provider;
     expect(
       adapter.nativeAgentToolUpdates({
@@ -1115,7 +1162,6 @@ describe("agent runtime adapters", () => {
       task: "Inspect source handling",
       agentType: "explore",
       status: "error",
-      errorMessage: "Child failed.",
     }]);
   });
 
@@ -1206,6 +1252,7 @@ describe("agent runtime adapters", () => {
       operation: "subagent_spawn",
       toolCallId: "cursor-task-1",
       childId: "cursor-child-7",
+      status: "running",
       task: "Explore the event pipeline",
       agentType: "explore",
     }]);

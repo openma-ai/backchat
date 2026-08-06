@@ -71,6 +71,24 @@ function pickToolIcon(kind?: string): typeof FileTextIcon {
   }
 }
 
+function toolLifecycleStatus(status: string): {
+  value: "started" | "progress" | "completed" | "failed" | "cancelled";
+  label: string;
+} {
+  switch (status) {
+    case "in_progress":
+      return { value: "progress", label: "In progress" };
+    case "completed":
+      return { value: "completed", label: "Completed" };
+    case "failed":
+      return { value: "failed", label: "Failed" };
+    case "cancelled":
+      return { value: "cancelled", label: "Cancelled" };
+    default:
+      return { value: "started", label: "Started" };
+  }
+}
+
 export function ToolRow({
   tool,
   subagent,
@@ -81,6 +99,7 @@ export function ToolRow({
   sessionId: string;
 }) {
   const status = tool.status ?? "pending";
+  const lifecycle = toolLifecycleStatus(status);
   const inProgress = status === "in_progress" || status === "pending";
   const Icon = pickToolIcon(tool.kind);
   const verb = pickToolActivityVerb(tool);
@@ -99,6 +118,7 @@ export function ToolRow({
   const hasBody =
     bodyBlocks.length > 0 ||
     !!tool.locations?.length ||
+    tool.rawInput !== undefined ||
     (tool.rawOutput !== undefined && hoistedBlocks.length === 0);
   const [open, setOpen] = useState(false);
   const stick = useStickToBottomContext();
@@ -125,7 +145,11 @@ export function ToolRow({
   };
 
   return (
-    <div className={cn("py-0.5", inProgress && "animate-pulse")}>
+    <div
+      className={cn("py-0.5", inProgress && "animate-pulse")}
+      data-tool-call-id={tool.toolCallId}
+      data-tool-status={lifecycle.value}
+    >
       <button
         ref={summaryRef as Ref<HTMLButtonElement>}
         type="button"
@@ -159,15 +183,35 @@ export function ToolRow({
             {target}
           </span>
         )}
+        <span
+          className={cn(
+            "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+            lifecycle.value === "failed"
+              ? "bg-danger-subtle text-danger"
+              : "bg-bg-surface text-fg-muted",
+          )}
+          data-tool-status-label={lifecycle.value}
+        >
+          {lifecycle.label}
+        </span>
         {hasBody && (
           <ChevronRightIcon
             className={cn(
-              "ml-auto size-3 shrink-0 text-fg-subtle transition-transform",
+              "size-3 shrink-0 text-fg-subtle transition-transform",
               open && "rotate-90",
             )}
           />
         )}
       </button>
+
+      {tool.rawInput !== undefined && (
+        <pre
+          className="ml-5 mt-1 max-h-24 overflow-auto rounded bg-bg-surface/45 px-2 py-1 font-mono text-[11px] whitespace-pre-wrap text-fg-muted"
+          data-tool-input={tool.toolCallId}
+        >
+          {safeJson(tool.rawInput)}
+        </pre>
+      )}
 
       {hasBody && open && (
         <div
@@ -230,7 +274,7 @@ export function ToolRawOutputBody({ rawOutput }: { rawOutput: unknown }) {
       : null;
     if (stdout !== null) {
       return (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-tool-output-body="true">
           {exitCode != null && exitCode !== 0 && (
             <div className="rounded bg-danger-subtle px-2 py-1 font-mono text-[11px] text-danger">
               exit {exitCode}
@@ -251,7 +295,10 @@ export function ToolRawOutputBody({ rawOutput }: { rawOutput: unknown }) {
     }
   }
   return (
-    <pre className="overflow-x-auto rounded bg-bg-surface/60 p-2 font-mono text-[11px] text-fg-muted">
+    <pre
+      className="overflow-x-auto rounded bg-bg-surface/60 p-2 font-mono text-[11px] text-fg-muted"
+      data-tool-output-body="true"
+    >
       {safeJson(rawOutput)}
     </pre>
   );
@@ -269,7 +316,10 @@ export function ToolContentRenderer({ block }: { block: ToolContentBlock }) {
   }
   if (block.type === "terminal") {
     return (
-      <div className="flex items-center gap-2 rounded bg-bg/70 px-2 py-1 text-fg-muted">
+      <div
+        className="flex items-center gap-2 rounded bg-bg/70 px-2 py-1 text-fg-muted"
+        data-tool-terminal-id={block.terminalId ?? ""}
+      >
         <TerminalIcon className="size-3 text-fg-subtle" />
         <span className="font-mono text-[11px]">
           terminal {block.terminalId ?? ""}

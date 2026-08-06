@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures";
+import { injectSession } from "./helpers";
 
 const envAgent = {
   id: "env-agent",
@@ -120,5 +121,80 @@ test.describe("settings agent setup lifecycle", () => {
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await expect(page.getByText("Waiting for auth")).toBeVisible();
       await expect(page.getByRole("button", { name: "Continue sign in" })).toBeVisible();
+  });
+
+  test("shows a managed ACP update and restarts the current task process", async ({ page }) => {
+    const sessionId = await injectSession(page, {
+      agentId: "update-agent",
+      cwd: "/tmp/backchat-update-test",
+    });
+    const updateAgent = {
+      id: "update-agent",
+      label: "Update Agent",
+      command: "update-agent",
+      detected: true,
+      available: true,
+      installed: true,
+      installedVersion: "2.0.0",
+      latestVersion: "2.0.0",
+      updateAvailable: true,
+    };
+    await page.evaluate(async ({ fixture, sessionId }) => {
+      // @ts-expect-error — test bridge typed in preload/index.ts
+      await window.__backchatTest.setAgentSetupFixture({
+        agents: [fixture],
+        runtimeStatuses: {
+          [sessionId]: {
+            session_id: sessionId,
+            agent_id: fixture.id,
+            running_version: "1.0.0",
+            installed_version: "2.0.0",
+            restart_required: true,
+            busy: false,
+            restart_pending: false,
+          },
+        },
+        upgradeResults: {
+          [fixture.id]: [{ ...fixture, updateAvailable: false }],
+        },
+      });
+      const settings = await window.backchat.settingsGet();
+      await window.backchat.settingsPatch({
+        agents: [
+          ...settings.agents.filter((agent) => agent.id !== fixture.id),
+          { id: fixture.id, enabled: true, env: [] },
+        ],
+      });
+    }, { fixture: updateAgent, sessionId });
+
+    await page.getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("link", { name: "Agents", exact: true }).click();
+    await page.getByRole("button", { name: "Back to app" }).click();
+    await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Back to app" }).click();
+    await expect(page.getByRole("link", { name: "1 ACP update available" })).toBeVisible();
+    await page.getByRole("link", { name: "1 ACP update available" }).click();
+    await page.getByRole("button", { name: "Upgrade", exact: true }).click();
+    await expect(page.getByText("Update available")).toHaveCount(0);
+    await page.getByRole("button", { name: "Back to app" }).click();
+
+    const composer = page.locator('[data-chat-column="composer"]');
+    await expect(composer.getByText("ACP update installed")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "ACP update installed — restart required" }),
+    ).toBeVisible();
+
+    const updateToast = page.locator(
+      '[data-sonner-toaster][data-y-position="top"][data-x-position="right"] [data-sonner-toast]',
+    ).filter({ hasText: "ACP update installed" });
+    await expect(updateToast).toBeVisible();
+    await expect(updateToast.getByText("1.0.0 → 2.0.0")).toBeVisible();
+    await updateToast.getByRole("button", { name: "Restart ACP" }).click();
+    await expect(
+      page.getByRole("button", { name: "ACP update installed — restart required" }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('[data-sonner-toast]').filter({ hasText: "ACP restarted" }),
+    ).toBeVisible();
   });
 });

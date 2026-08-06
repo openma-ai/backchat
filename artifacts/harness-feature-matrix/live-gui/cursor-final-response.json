@@ -1,0 +1,23 @@
+{
+  "feature": "output.final-response",
+  "harness": "Cursor",
+  "harnessVersion": "2026.07.23",
+  "status": "pass-live",
+  "verificationMode": "live",
+  "trigger": "Reply exactly BACKCHAT_GUI_LIVE_OK_CURSOR and nothing else.",
+  "provider": "Cursor account default",
+  "endpoint": null,
+  "model": "runtime-default",
+  "runAt": "2026-08-06T04:44:45.341Z",
+  "durationMs": 15982,
+  "protocolBasis": "ACP v1 session/prompt and session/update final agent message",
+  "screenshot": "screenshots/21-output-final-response--cursor.png",
+  "assertion": {
+    "selector": "[data-session-turn-response=\"true\"]:has-text(\"BACKCHAT_GUI_LIVE_OK_CURSOR\")",
+    "expected": "Assistant response contains BACKCHAT_GUI_LIVE_OK_CURSOR",
+    "observed": "The exact reply is BACKCHAT_GUI_LIVE_OK_CURSOR.\n\nBACKCHATGUILIVEOKCURSO",
+    "result": "passed",
+    "targetVisible": true,
+    "withinScreenshot": true
+  }
+}

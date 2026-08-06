@@ -1,6 +1,13 @@
 import type { SessionEventOut } from "../shared/session-events.js";
 import { attachOpenMAEvent } from "../shared/openma-event.js";
 
+export function hasOpenMAEventSchema(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const event = value as { schema?: unknown; schema_version?: unknown };
+  return event.schema === "oma.event.v1"
+    || event.schema_version === "oma.event.v1";
+}
+
 export function latestPersistedOpenMAEventSequence(
   rows: ReadonlyArray<{ type: string; data: string }>,
 ): number {
@@ -9,10 +16,11 @@ export function latestPersistedOpenMAEventSequence(
     if (row.type !== "openma_event") continue;
     try {
       const event = JSON.parse(row.data) as {
+        schema?: unknown;
         schema_version?: unknown;
         seq?: unknown;
       };
-      if (event.schema_version !== "oma.event.v1") continue;
+      if (!hasOpenMAEventSchema(event)) continue;
       if (
         typeof event.seq === "number"
         && Number.isSafeInteger(event.seq)

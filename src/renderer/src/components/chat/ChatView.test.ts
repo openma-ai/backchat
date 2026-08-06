@@ -15,6 +15,16 @@ import {
 import * as chatViewModule from "./ChatView";
 
 describe("chat module boundaries", () => {
+  it("projects strict session runtime evidence above both empty and active chat states", () => {
+    const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
+
+    expect(source).toContain('from "./SessionRuntimeSummary"');
+    expect(source).toContain("<SessionRuntimeSummary");
+    expect(source.indexOf("<SessionRuntimeSummary")).toBeLessThan(
+      source.indexOf("{isEmpty ? ("),
+    );
+  });
+
   it("places transient session notices immediately above the composer", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
 
@@ -34,6 +44,20 @@ describe("chat module boundaries", () => {
 });
 
 describe("canSubmitComposer", () => {
+  it("keeps the composer disabled after the runtime terminates", () => {
+    const disabledForStatus = (
+      chatViewModule as unknown as {
+        isSessionComposerDisabled?: (status: string | undefined) => boolean;
+      }
+    ).isSessionComposerDisabled;
+
+    expect(disabledForStatus).toBeTypeOf("function");
+    if (!disabledForStatus) return;
+    expect(disabledForStatus("disposed")).toBe(true);
+    expect(disabledForStatus("errored")).toBe(true);
+    expect(disabledForStatus("ready")).toBe(false);
+  });
+
   it("allows submitting text while a turn is running so it can be queued", () => {
     expect(
       canSubmitComposer({ text: "follow up", disabled: false, running: true }),

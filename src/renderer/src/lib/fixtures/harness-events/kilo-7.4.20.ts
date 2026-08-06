@@ -3,7 +3,7 @@ import { defineHarnessFixture } from "./types";
 
 export const KILO_7_4_20_FIXTURE = defineHarnessFixture({
   metadata: {
-    fixtureVersion: 3,
+    fixtureVersion: 4,
     harness: "kilo",
     harnessVersion: "7.4.20",
     source: "https://github.com/Kilo-Org/kilocode/releases/tag/v7.4.20",
@@ -255,15 +255,15 @@ export const KILO_7_4_20_FIXTURE = defineHarnessFixture({
     },
     nativeAgent: {
       status: "emitted_event",
-      eventKey: "taskStarted",
-      expectedCanonicalTypes: ["work_item.started"],
+      eventKey: "taskCompleted",
+      expectedCanonicalTypes: ["work_item.completed"],
       guiSlot: "Agents",
       evidence: [{
         reference: "Kilo Code@7.4.20 packages/opencode/src/tool/task.ts:53-100,147-233,271-430",
-        claim: "Task background is optional (omission means foreground), task_id resumes a stable child session, and rawOutput metadata carries parent/session/model/variant/background/jobId.",
+        claim: "Task rawOutput metadata carries the structured parentSessionId/sessionId pair required to identify a native child; the preceding Task input supplies its description and agent type.",
       }, {
         reference: "Kilo Code@7.4.20 packages/opencode/src/acp/event.ts:68-113,131-198; service.ts:670-676",
-        claim: "Live ACP forwards assistant deltas but not the synthetic user terminal envelope; session replay exposes that exact envelope as an audience=assistant user_message_chunk.",
+        claim: "Synthetic assistant-directed task envelopes are text-only replay data and are not evidence for child identity, result, error, or terminal state.",
       }],
     },
   },

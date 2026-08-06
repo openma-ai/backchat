@@ -169,14 +169,18 @@ export const codexRuntimeAdapter: AgentRuntimeAdapter = {
   sessionGoalUpdate: codexSessionGoalUpdate,
   sessionThreadStatusUpdate: codexSessionThreadStatusUpdate,
   workspaceArtifacts(tool) {
-    if (tool.status !== "completed") return emptyArtifacts();
+    const standard = standardAcpArtifacts(tool);
+    if (tool.status !== "completed") return standard;
     const files = codexGeneratedMediaPaths(tool);
-    const sources = codexOpenedPageUrls(tool).map(
+    const codexSources = codexOpenedPageUrls(tool).map(
       (uri): WorkspaceSourceRef => ({ kind: "web", uri }),
     );
     return {
-      outputs: { files, services: [] },
-      sources,
+      outputs: {
+        files: unique([...standard.outputs.files, ...files]),
+        services: standard.outputs.services,
+      },
+      sources: uniqueSources([...standard.sources, ...codexSources]),
     };
   },
   assistantArtifacts(text) {
@@ -285,15 +289,20 @@ export const piRuntimeAdapter: AgentRuntimeAdapter = {
 };
 
 /**
- * Kimi Code 1.49.0 does not forward its native SubagentEvent through ACP.
- * It does, however, send terminal background-task notifications as one
- * ordinary agent_message_chunk with a stable, upstream-tested text format.
+ * @moonshot-ai/kimi-code 0.33.0 exposes its `Agent` invocation through the
+ * standard ACP tool_call/tool_call_update surface. The live ACP trace carries
+ * no namespaced `_meta` or separate child lifecycle, so it deliberately stays
+ * an ordinary Tool instead of being inferred as a native Agent or Background
+ * work item.
  */
 export const kimiRuntimeAdapter: AgentRuntimeAdapter = {
   provider: "kimi",
   matches(agentId) {
     const normalized = normalizeAgentId(agentId);
-    return normalized === "kimi-acp" || normalized === "kimi";
+    return normalized === "kimi-acp"
+      || normalized === "kimi-code-acp"
+      || normalized === "kimi-code"
+      || normalized === "kimi";
   },
   nativeAgentToolUpdates: () => [],
   nativeAgentRawUpdates: () => [],
@@ -302,7 +311,6 @@ export const kimiRuntimeAdapter: AgentRuntimeAdapter = {
   planToolUpdates: () => [],
   sessionGoalUpdate: () => undefined,
   sessionThreadStatusUpdate: () => undefined,
-  assistantBackgroundWorkItemUpdates: kimiBackgroundWorkItemUpdates,
   workspaceArtifacts: standardAcpArtifacts,
   settleNativeAgentOnParentTurnComplete: false,
 };
@@ -376,7 +384,8 @@ function artifactsForProviderTool(
 function openCodeFamilyArtifacts(
   tool: RuntimeToolEvent,
 ): RuntimeWorkspaceArtifacts {
-  if (tool.status !== "completed") return emptyArtifacts();
+  const standard = standardAcpArtifacts(tool);
+  if (tool.status !== "completed") return standard;
   const input = isRecord(tool.rawInput) ? tool.rawInput : {};
   const filePath =
     typeof input.filePath === "string" ? input.filePath : undefined;
@@ -391,8 +400,11 @@ function openCodeFamilyArtifacts(
         )
       : [];
   return {
-    outputs: { files: unique(files), services: [] },
-    sources: uniqueSources(sources),
+    outputs: {
+      files: unique([...standard.outputs.files, ...files]),
+      services: standard.outputs.services,
+    },
+    sources: uniqueSources([...standard.sources, ...sources]),
   };
 }
 
@@ -407,17 +419,13 @@ function createOpenCodeFamilyRuntimeAdapter(
     nativeAgentToolUpdates(tool, _context, logicalTool) {
       return openCodeFamilyTaskUpdates(provider, logicalTool ?? tool);
     },
-    nativeAgentRawUpdates(event) {
-      return openCodeFamilyTaskRawUpdates(provider, event);
-    },
+    nativeAgentRawUpdates: () => [],
     nativeAgentTranscriptUpdates: () => [],
     backgroundWorkItemToolUpdates: () => [],
     planToolUpdates: openCodeFamilyPlanToolUpdates,
     sessionGoalUpdate: () => undefined,
     sessionThreadStatusUpdate: () => undefined,
-    assistantNativeAgentUpdates(text) {
-      return openCodeFamilyTaskMessageUpdates(provider, text);
-    },
+    assistantNativeAgentUpdates: () => [],
     workspaceArtifacts: openCodeFamilyArtifacts,
     settleNativeAgentOnParentTurnComplete: "missing_terminal",
   };
@@ -803,60 +811,6 @@ function claudeRawMonitorEvents(event: unknown): RuntimeMonitorEvent[] {
   }];
 }
 
-function kimiBackgroundWorkItemUpdates(text: string): RuntimeWorkItemUpdate[] {
-  const header = text.match(
-    /^\[Notification\] Background task (completed|failed|stopped|lost|timed out):\s*([^\r\n]+)$/im,
-  );
-  const taskId = text.match(/^Task ID:\s*(\S+)\s*$/im)?.[1];
-  const reportedStatus = text.match(
-    /^Status:\s*(completed|failed|killed|lost)\b/im,
-  )?.[1]?.toLowerCase();
-  if (!header || !taskId || !reportedStatus) return [];
-
-  const titleState = header[1]!.toLowerCase();
-  const expectedStatus = titleState === "completed"
-    ? "completed"
-    : titleState === "stopped"
-      ? "killed"
-      : titleState === "lost"
-        ? "lost"
-        : "failed";
-  if (reportedStatus !== expectedStatus) return [];
-
-  const title = header[2]!.trim();
-  const description = text.match(/^Description:\s*([^\r\n]+)$/im)?.[1]?.trim()
-    || title;
-  const failureReason = text.match(/^Failure reason:\s*([^\r\n]+)$/im)?.[1]?.trim();
-  const notification = `Background task ${titleState}: ${title}`;
-  const result = { description, notification, status: reportedStatus };
-
-  if (reportedStatus === "completed") {
-    return [{
-      id: taskId,
-      kind: "other",
-      status: "completed",
-      title,
-      canStop: false,
-      result,
-    }];
-  }
-
-  return [{
-    id: taskId,
-    kind: "other",
-    status: reportedStatus === "killed" ? "killed" : "failed",
-    title,
-    canStop: false,
-    ...(failureReason ? { error: failureReason } : {}),
-    ...(reportedStatus === "lost"
-      ? { reason: "lost" }
-      : titleState === "timed out"
-        ? { reason: "timed_out" }
-        : {}),
-    result,
-  }];
-}
-
 function codexSessionGoalUpdate(
   input: RuntimeSessionGoalInput,
 ): SessionGoal | null | undefined {
@@ -921,25 +875,18 @@ function openCodeFamilyTaskUpdates(
   const hasNativeChildIdentity =
     stringValue(metadata.parentSessionId) !== undefined
     && stringValue(metadata.sessionId) !== undefined;
-  const childId = hasNativeChildIdentity
-    ? stringValue(metadata.sessionId)
-    : stringValue(input.task_id) ?? `${provider}:${tool.toolCallId}`;
-  const outputText = stringValue(output.output);
-  const state = taskState(outputText);
+  if (!hasNativeChildIdentity) return [];
+  const childId = stringValue(metadata.sessionId);
   const background = input.background === true || metadata.background === true;
+  const structuredError = stringValue(output.error);
   const status =
-    tool.status === "failed" || state === "error"
+    tool.status === "failed" || structuredError
       ? "error"
-      : state === "running"
-        || tool.status === "pending"
+      : tool.status === "pending"
         || tool.status === "in_progress"
         || background
         ? "running"
         : "complete";
-  const result = outputText ? taggedBody(outputText, "task_result") : undefined;
-  const errorMessage = outputText
-    ? taggedBody(outputText, "task_error")
-    : stringValue(output.error) ?? stringValue(tool.rawOutput);
 
   return [{
     provider,
@@ -949,67 +896,10 @@ function openCodeFamilyTaskUpdates(
     task: description,
     agentType,
     status,
-    ...(status === "complete" && result ? { result } : {}),
-    ...(status === "error" && errorMessage ? { errorMessage } : {}),
+    ...(status === "error" && structuredError
+      ? { errorMessage: structuredError }
+      : {}),
   }];
-}
-
-function openCodeFamilyTaskMessageUpdates(
-  provider: "opencode" | "kilo",
-  text: string,
-): NativeAgentUpdate[] {
-  const updates: NativeAgentUpdate[] = [];
-  const task = /<task\b([^>]*)>([\s\S]*?)<\/task>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = task.exec(text)) !== null) {
-    const attributes = match[1] ?? "";
-    const childId = quotedAttribute(attributes, "id");
-    const state = quotedAttribute(attributes, "state")?.toLowerCase();
-    if (
-      !childId
-      || (state !== "running" && state !== "completed" && state !== "error")
-    ) {
-      continue;
-    }
-    const body = match[2] ?? "";
-    const result =
-      taggedBody(body, state === "error" ? "task_error" : "task_result");
-    updates.push({
-      provider,
-      operation: "subagent_spawn",
-      childId,
-      status:
-        state === "completed"
-          ? "complete"
-          : state,
-      ...(result ? { result } : {}),
-      ...(state === "error" && result ? { errorMessage: result } : {}),
-    });
-  }
-  return updates;
-}
-
-function openCodeFamilyTaskRawUpdates(
-  provider: "opencode" | "kilo",
-  event: unknown,
-): NativeAgentUpdate[] {
-  const outer = isRecord(event) ? event : {};
-  const inner = isRecord(outer.update) ? outer.update : outer;
-  const updateType = stringValue(inner.sessionUpdate)
-    ?? stringValue(inner.session_update);
-  if (updateType !== "user_message_chunk") return [];
-
-  const content = isRecord(inner.content) ? inner.content : {};
-  const annotations = isRecord(content.annotations)
-    ? content.annotations
-    : {};
-  const audience = Array.isArray(annotations.audience)
-    ? annotations.audience
-    : [];
-  if (audience.length !== 1 || audience[0] !== "assistant") return [];
-
-  const text = stringValue(content.text);
-  return text ? openCodeFamilyTaskMessageUpdates(provider, text) : [];
 }
 
 function cursorTaskToolUpdates(
@@ -1059,6 +949,7 @@ function cursorTaskExtensionUpdates(event: unknown): NativeAgentUpdate[] {
     operation: "subagent_spawn",
     toolCallId,
     childId,
+    status: "running",
     ...(stringValue(params.description) ? { task: stringValue(params.description) } : {}),
     ...(agentType ? { agentType } : {}),
   }];
@@ -1193,29 +1084,6 @@ function stringValue(value: unknown): string | undefined {
 
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function taskState(value: string | undefined): "running" | "completed" | "error" | undefined {
-  const state = value?.match(/<task\b[^>]*\bstate=(?:"([^"]+)"|'([^']+)')/i)?.slice(1)
-    .find((candidate): candidate is string => Boolean(candidate))
-    ?.toLowerCase();
-  return state === "running" || state === "completed" || state === "error"
-    ? state
-    : undefined;
-}
-
-function quotedAttribute(input: string, name: string): string | undefined {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = input.match(
-    new RegExp(`\\b${escaped}\\s*=\\s*(?:"([^"]+)"|'([^']+)')`, "i"),
-  );
-  return match?.[1] ?? match?.[2];
-}
-
-function taggedBody(input: string, tag: "task_result" | "task_error"): string | undefined {
-  const match = input.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "i"));
-  const value = match?.[1]?.trim();
-  return value || undefined;
 }
 
 function isLocalServiceUrl(uri: string): boolean {

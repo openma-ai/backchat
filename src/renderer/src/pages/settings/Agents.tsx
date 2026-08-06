@@ -115,6 +115,7 @@ export function SettingsAgents() {
     onSuccess: (next, variables) => {
       queryClient.setQueryData(["agents", "setup"], next);
       queryClient.setQueryData(["agents"], next);
+      void queryClient.invalidateQueries({ queryKey: ["session-runtime"] });
       if (variables.type === "auth" && variables.id) {
         const agent = next.find((item) => item.id === variables.id);
         setWaitingAuthAgentId(agent?.auth?.status === "configured" ? null : variables.id);

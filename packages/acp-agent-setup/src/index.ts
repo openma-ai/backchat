@@ -97,6 +97,7 @@ export interface AcpAgentSetupServiceDeps {
   probeCwd?: string;
   authInspectionTimeoutMs?: number;
   capabilityInspectionTimeoutMs?: number;
+  npmVersionTimeoutMs?: number;
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
   refreshRegistry?: (opts: { refresh?: boolean }) => Promise<void>;
@@ -143,6 +144,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   private nextOperationId = 1;
   private probeCachePromise: Promise<Record<string, CachedAgentProbe>> | null = null;
   private probeCacheWrite: Promise<void> = Promise.resolve();
+  private readonly npmPackageVersionCache = new Map<string, string | null>();
   private readonly authCache = new Map<string, AcpAgentSetupAuth>();
   private readonly capabilityInspections =
     new Map<string, AcpAgentCapabilityInspection>();
@@ -204,6 +206,9 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   ): Promise<AcpAgentSetupInfo[]> {
     const operationId = `setup-${this.nextOperationId++}`;
     const operationStartedAt = Date.now();
+    if (plan.refreshRegistry) {
+      this.npmPackageVersionCache.clear();
+    }
     await this.refreshRegistry({ refresh: plan.refreshRegistry });
     const probeCache = await this.loadProbeCache();
     const entries = this.catalogEntries();
@@ -384,7 +389,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     if (!installInfo.installed) {
       throw new Error(`${entry.label} is not installed by ${this.managedByName()}`);
     }
-    await this.installEntry(entry);
+    await this.installEntry(entry, installInfo.latestVersion);
     return this.collectAgentSnapshot({
       trigger: "update",
       refreshRegistry: false,
@@ -393,17 +398,33 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     });
   }
 
-  private async installEntry(entry: SetupAgentEntry): Promise<void> {
+  private async installEntry(
+    entry: SetupAgentEntry,
+    targetVersion?: string,
+  ): Promise<void> {
     if (entry.installSource === "registry") {
       if (!entry.registryId) throw new Error(`${entry.label} is missing an ACP registry id`);
+      const registryDistribution =
+        targetVersion && entry.registryDistribution?.npx
+          ? {
+              ...entry.registryDistribution,
+              npx: {
+                ...entry.registryDistribution.npx,
+                package:
+                  `${npmPackageNameFromSpec(entry.registryDistribution.npx.package)}@${targetVersion}`,
+              },
+            }
+          : entry.registryDistribution;
       await installAcpRegistryAgent({
         registryId: entry.registryId,
-        ...(entry.registryDistribution ? {
+        ...(registryDistribution ? {
           registryAgent: {
             id: entry.registryId,
             name: entry.label,
-            ...(entry.version ? { version: entry.version } : {}),
-            distribution: entry.registryDistribution,
+            ...(targetVersion || entry.version
+              ? { version: targetVersion ?? entry.version }
+              : {}),
+            distribution: registryDistribution,
           },
         } : {}),
         shimName: basename(entry.spec.command),
@@ -539,11 +560,11 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     latestVersion?: string;
     updateAvailable?: boolean;
   }> {
-    const latestVersion = entry.version;
+    const registryLatestVersion = entry.version;
     if (!entry.installSource) {
       return {
         installed: false,
-        ...(latestVersion ? { latestVersion } : {}),
+        ...(registryLatestVersion ? { latestVersion: registryLatestVersion } : {}),
       };
     }
     const shimPath = join(this.deps.acpBinDir, basename(entry.spec.command));
@@ -551,17 +572,29 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     if (!installed) {
       return {
         installed: false,
-        ...(latestVersion ? { latestVersion } : {}),
+        ...(registryLatestVersion ? { latestVersion: registryLatestVersion } : {}),
       };
     }
-    const metadata = entry.installSource === "registry" && entry.registryId
-      ? await readAcpRegistryInstallMetadata({
-          registryId: entry.registryId,
-          binDir: this.deps.acpBinDir,
-          installRoot: this.deps.acpInstallRoot,
-        })
-      : null;
-    const installedVersion = metadata?.version;
+    const npmPackageName = entry.registryDistribution?.npx?.package
+      ? npmPackageNameFromSpec(entry.registryDistribution.npx.package)
+      : undefined;
+    const [metadata, installedNpmVersion, latestNpmVersion] = await Promise.all([
+      entry.installSource === "registry" && entry.registryId
+        ? readAcpRegistryInstallMetadata({
+            registryId: entry.registryId,
+            binDir: this.deps.acpBinDir,
+            installRoot: this.deps.acpInstallRoot,
+          })
+        : Promise.resolve(null),
+      npmPackageName
+        ? this.installedNpmPackageVersion(shimPath, npmPackageName)
+        : Promise.resolve(undefined),
+      npmPackageName
+        ? this.latestNpmPackageVersion(npmPackageName)
+        : Promise.resolve(undefined),
+    ]);
+    const installedVersion = installedNpmVersion ?? metadata?.version;
+    const latestVersion = latestNpmVersion ?? registryLatestVersion;
     const updateAvailable = entry.installSource === "registry" && !!latestVersion && installedVersion !== latestVersion;
     return {
       installed: true,
@@ -569,6 +602,75 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       ...(latestVersion ? { latestVersion } : {}),
       ...(updateAvailable ? { updateAvailable: true } : {}),
     };
+  }
+
+  private async installedNpmPackageVersion(
+    shimPath: string,
+    packageName: string,
+  ): Promise<string | undefined> {
+    try {
+      const shim = await readFile(shimPath, "utf8");
+      const commandPath = shim.match(/^exec\s+'([^']+)'(?:\s|$)/m)?.[1];
+      if (!commandPath) return undefined;
+      const normalized = commandPath.replaceAll("\\", "/");
+      const marker = "/node_modules/.bin/";
+      const markerIndex = normalized.lastIndexOf(marker);
+      if (markerIndex < 0) return undefined;
+      const installDir = normalized.slice(0, markerIndex);
+      const parsed = JSON.parse(await readFile(join(
+        installDir,
+        "node_modules",
+        ...packageName.split("/"),
+        "package.json",
+      ), "utf8")) as { version?: unknown };
+      return typeof parsed.version === "string" && parsed.version.length > 0
+        ? parsed.version
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async latestNpmPackageVersion(
+    packageName: string,
+  ): Promise<string | undefined> {
+    if (this.npmPackageVersionCache.has(packageName)) {
+      return this.npmPackageVersionCache.get(packageName) ?? undefined;
+    }
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeoutMs = this.deps.npmVersionTimeoutMs ?? 2_500;
+      const response = await Promise.race([
+        (this.deps.fetchImpl ?? fetch)(
+          `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
+          { signal: controller.signal },
+        ),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => {
+            controller.abort();
+            reject(new Error(`NPM registry timed out after ${timeoutMs}ms`));
+          }, timeoutMs);
+        }),
+      ]);
+      if (!response.ok) {
+        throw new Error(`NPM registry unavailable: HTTP ${response.status}`);
+      }
+      const payload = await response.json() as {
+        version?: unknown;
+        "dist-tags"?: { latest?: unknown };
+      };
+      const version = payload.version ?? payload["dist-tags"]?.latest;
+      const normalized =
+        typeof version === "string" && version.length > 0 ? version : null;
+      this.npmPackageVersionCache.set(packageName, normalized);
+      return normalized ?? undefined;
+    } catch {
+      this.npmPackageVersionCache.set(packageName, null);
+      return undefined;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   private async probeAuth(entry: KnownAgentEntry): Promise<AcpAgentSetupAuth | undefined> {
@@ -638,6 +740,15 @@ interface CachedAgentProbe {
   available_commands: unknown[];
   session_modes?: unknown;
   updated_at: string;
+}
+
+function npmPackageNameFromSpec(packageSpec: string): string {
+  if (packageSpec.startsWith("@")) {
+    const versionIndex = packageSpec.indexOf("@", 1);
+    return versionIndex > 0 ? packageSpec.slice(0, versionIndex) : packageSpec;
+  }
+  const versionIndex = packageSpec.lastIndexOf("@");
+  return versionIndex > 0 ? packageSpec.slice(0, versionIndex) : packageSpec;
 }
 
 function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {

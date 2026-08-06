@@ -59,6 +59,51 @@ describe("ACP agent setup registry", () => {
     );
   });
 
+  it("replaces the legacy Kimi CLI registry entry with Kimi Code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            version: 1,
+            agents: [
+              {
+                id: "kimi",
+                name: "Kimi CLI",
+                version: "1.49.0",
+                repository: "https://github.com/MoonshotAI/kimi-cli",
+                distribution: {
+                  binary: {
+                    "darwin-aarch64": {
+                      archive: "https://example.invalid/kimi-cli-1.49.0.tar.gz",
+                      cmd: "./kimi",
+                      args: ["acp"],
+                    },
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const agents = await loadRegistry({ forceRefresh: true });
+    const kimi = agents.find((agent) => agent.id === "kimi");
+
+    expect(kimi).toMatchObject({
+      label: "Kimi Code",
+      version: "0.33.0",
+      spec: { command: "openma-acp-kimi", args: ["acp"] },
+      install: { kind: "npm", package: "@moonshot-ai/kimi-code" },
+      registryDistribution: {
+        npx: { package: "@moonshot-ai/kimi-code@0.33.0", args: ["acp"] },
+      },
+      homepage: "https://github.com/MoonshotAI/kimi-code",
+    });
+  });
+
   it("keeps common registry agents available offline", async () => {
     await loadRegistry({
       cachePath: join(tmpdir(), `backchat-missing-registry-${process.pid}-${Date.now()}.json`),
@@ -77,6 +122,7 @@ describe("ACP agent setup registry", () => {
       "qwen-code",
       "github-copilot-cli",
       "kilo",
+      "kimi",
       "grok-build",
       "amp-acp",
       "goose",

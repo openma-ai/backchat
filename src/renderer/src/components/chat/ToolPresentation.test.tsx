@@ -1,9 +1,67 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("use-stick-to-bottom", () => ({
+  useStickToBottomContext: () => ({
+    contentRef: { current: null },
+    scrollRef: { current: null },
+    stopScroll: vi.fn(),
+  }),
+}));
+
 import {
   ToolContentRenderer,
+  ToolRow,
   ToolRawOutputBody,
 } from "./ToolPresentation";
+
+describe("ToolRow acceptance contract", () => {
+  it.each([
+    ["pending", "started", "Started"],
+    ["in_progress", "progress", "In progress"],
+    ["completed", "completed", "Completed"],
+    ["failed", "failed", "Failed"],
+    ["cancelled", "cancelled", "Cancelled"],
+  ] as const)(
+    "exposes a stable id and visible %s lifecycle status",
+    (status, lifecycle, label) => {
+      const html = renderToStaticMarkup(
+        <ToolRow
+          sessionId="session-tool-status"
+          tool={{
+            toolCallId: `tool-${lifecycle}`,
+            title: "Run acceptance check",
+            kind: "execute",
+            status,
+          }}
+        />,
+      );
+
+      expect(html).toContain(`data-tool-call-id="tool-${lifecycle}"`);
+      expect(html).toContain(`data-tool-status="${lifecycle}"`);
+      expect(html).toContain(`data-tool-status-label="${lifecycle}"`);
+      expect(html).toContain(`>${label}<`);
+    },
+  );
+
+  it("keeps the tool input visibly attributable to the started tool row", () => {
+    const html = renderToStaticMarkup(
+      <ToolRow
+        sessionId="session-tool-input"
+        tool={{
+          toolCallId: "tool-input-1",
+          title: "Search files",
+          kind: "search",
+          status: "pending",
+          rawInput: { query: "runtime vendor event" },
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-tool-input="tool-input-1"');
+    expect(html).toContain("runtime vendor event");
+  });
+});
 
 describe("ToolRawOutputBody", () => {
   it("shows command output without leaking receipt metadata", () => {
@@ -29,6 +87,7 @@ describe("ToolRawOutputBody", () => {
       <ToolRawOutputBody rawOutput={{ result: "unstructured output" }} />,
     );
 
+    expect(html).toContain('data-tool-output-body="true"');
     expect(html).toContain("result");
     expect(html).toContain("unstructured output");
   });
@@ -65,6 +124,7 @@ describe("ToolContentRenderer", () => {
     );
 
     expect(terminal).toContain("terminal term-7");
+    expect(terminal).toContain('data-tool-terminal-id="term-7"');
     expect(text).toContain("tool result");
     expect(`${terminal}${text}`).not.toContain("<a");
   });

@@ -3,7 +3,7 @@ import { defineHarnessFixture } from "./types";
 
 export const OPENCODE_1_18_13_FIXTURE = defineHarnessFixture({
   metadata: {
-    fixtureVersion: 3,
+    fixtureVersion: 4,
     harness: "opencode",
     harnessVersion: "1.18.13",
     source: "https://github.com/anomalyco/opencode/releases/tag/v1.18.13",
@@ -250,15 +250,15 @@ export const OPENCODE_1_18_13_FIXTURE = defineHarnessFixture({
     },
     nativeAgent: {
       status: "emitted_event",
-      eventKey: "taskStarted",
-      expectedCanonicalTypes: ["work_item.started"],
+      eventKey: "taskCompleted",
+      expectedCanonicalTypes: ["work_item.completed"],
       guiSlot: "Agents",
       evidence: [{
         reference: "OpenCode@1.18.13 packages/opencode/src/tool/task.ts:43-62,136-195,216-347",
-        claim: "Task background is optional (omission means foreground), task_id resumes a stable child session, and rawOutput metadata carries parent/session/model/background/jobId.",
+        claim: "Task rawOutput metadata carries the structured parentSessionId/sessionId pair required to identify a native child; the preceding Task input supplies its description and agent type.",
       }, {
         reference: "OpenCode@1.18.13 packages/opencode/src/acp/event.ts:68-113,131-198; service.ts:669-675",
-        claim: "Live ACP forwards assistant deltas but not the synthetic user terminal envelope; session replay exposes that exact envelope as an audience=assistant user_message_chunk.",
+        claim: "Synthetic assistant-directed task envelopes are text-only replay data and are not evidence for child identity, result, error, or terminal state.",
       }],
     },
   },

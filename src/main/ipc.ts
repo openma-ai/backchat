@@ -27,6 +27,8 @@ import type {
   SessionPromptParams,
   SessionPromptQueueCommandParams,
   SessionRunCommandParams,
+  SessionRestartResult,
+  SessionRuntimeStatus,
   SessionSetConfigOptionParams,
   SessionStartParams,
 } from "../shared/session-events.js";
@@ -50,6 +52,7 @@ import { openmaRoot } from "./storage-root.js";
 import { forwardSessionEventToPet } from "./pet-hook-bridge.js";
 import {
   createSessionEventEnricher,
+  hasOpenMAEventSchema,
   latestPersistedOpenMAEventSequence,
 } from "./session-event-enricher.js";
 import { isAbsolute, join } from "node:path";
@@ -139,6 +142,7 @@ interface TestAgentSetupCall {
 
 interface TestAgentSetupFixture {
   agents: AgentInfo[];
+  runtimeStatuses?: Record<string, SessionRuntimeStatus>;
   authenticateResults?: Record<string, AgentInfo[]>;
   installResults?: Record<string, AgentInfo[]>;
   upgradeResults?: Record<string, AgentInfo[]>;
@@ -390,6 +394,12 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     if (pairManager && pairManager.routeOrPassthrough(enriched)) return;
     publishSingle(enriched);
   };
+  const resolveInstalledAgentVersion = async (
+    agentId: string,
+  ): Promise<string | undefined> => {
+    const agents = testAgentSetupFixture?.agents ?? await agentSetup.listAgents();
+    return agents.find((agent) => agent.id === agentId)?.installedVersion;
+  };
 
   const sessionManager = new SessionManager({
     send,
@@ -429,6 +439,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         envOverride,
       };
     },
+    resolveInstalledAgentVersion,
     // Phase 6: permission / fs / terminal brokers — wired so the agent
     // can actually read files, write files, run commands. Defaults are no
     // longer "deny" — they go to a renderer modal (permission, out-of-cwd
@@ -658,6 +669,37 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     (_e, p: { session_id: string; remove_cwd?: boolean }) =>
       sessionManager.dispose(p.session_id, { removeCwd: p.remove_cwd }),
   );
+  ipcMain.handle(
+    InvokeChannel.SessionRuntimeStatus,
+    (_e, p: { session_id: string }) => {
+      const fixtureStatus = testAgentSetupFixture?.runtimeStatuses?.[p.session_id];
+      if (testHooksEnabled && fixtureStatus) return fixtureStatus;
+      return sessionManager.getRuntimeStatus(p.session_id);
+    },
+  );
+  ipcMain.handle(
+    InvokeChannel.SessionRestart,
+    (
+      _e,
+      p: { session_id: string; mode: "now" | "after-turn" },
+    ): Promise<SessionRestartResult> | SessionRestartResult => {
+      const fixtureStatus = testAgentSetupFixture?.runtimeStatuses?.[p.session_id];
+      if (testHooksEnabled && fixtureStatus) {
+        if (p.mode === "after-turn" && fixtureStatus.busy) {
+          fixtureStatus.restart_pending = true;
+          send({ type: "session.restart_pending", session_id: p.session_id });
+          return { session_id: p.session_id, status: "pending" };
+        }
+        fixtureStatus.running_version = fixtureStatus.installed_version;
+        fixtureStatus.restart_required = false;
+        fixtureStatus.restart_pending = false;
+        fixtureStatus.busy = false;
+        send({ type: "session.restarted", session_id: p.session_id });
+        return { session_id: p.session_id, status: "restarted" };
+      }
+      return sessionManager.restartSession(p.session_id, { mode: p.mode });
+    },
+  );
   ipcMain.handle(InvokeChannel.SessionAnnounce, () => {
     sessionManager.announceAll();
     pairManager?.announcePairs();
@@ -810,7 +852,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     (_e, event: OpenMAEvent): void => {
       if (
         !event
-        || event.schema_version !== "oma.event.v1"
+        || !hasOpenMAEventSchema(event)
         || typeof event.event_id !== "string"
         || typeof event.session_id !== "string"
         || typeof event.type !== "string"
@@ -949,6 +991,15 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         _e,
         p: { session_id: string; agent_id: string; cwd: string; acp_session_id?: string },
       ) => {
+        // Canonical enrichment persists session.ready before broadcasting it.
+        // Seed the parent row first so the event-log foreign key is valid.
+        upsertSession({
+          id: p.session_id,
+          agent_id: p.agent_id,
+          cwd: p.cwd,
+          acp_session_id: p.acp_session_id ?? `acp-${p.session_id}`,
+          last_used_at: Date.now(),
+        });
         send({
           type: "session.ready",
           session_id: p.session_id,
@@ -963,6 +1014,37 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       (_e, msg: SessionEventOut) => {
         // Pass-through — test fully controls what shape it pushes.
         send(msg);
+      },
+    );
+    ipcMain.handle(
+      InvokeChannel.TestBeginBrokerRequest,
+      (
+        _e,
+        p: {
+          kind: "permission" | "fs-write" | "elicitation-form" | "elicitation-url" | "terminal";
+          sessionId: string;
+          cwd?: string;
+          agentId?: string;
+          params: Record<string, unknown>;
+        },
+      ) => {
+        switch (p.kind) {
+          case "permission":
+            void requestPermission(p.sessionId, p.params, p.agentId).catch(() => undefined);
+            return { started: true as const };
+          case "fs-write":
+            void writeTextFile(p.sessionId, p.cwd ?? "/tmp/backchat-e2e", p.params)
+              .catch(() => undefined);
+            return { started: true as const };
+          case "elicitation-form":
+            void requestElicitationForm(p.sessionId, p.params as never).catch(() => undefined);
+            return { started: true as const };
+          case "elicitation-url":
+            void requestElicitationUrl(p.sessionId, p.params as never).catch(() => undefined);
+            return { started: true as const };
+          case "terminal":
+            return createTerminal(p.sessionId, p.cwd ?? "/tmp/backchat-e2e", p.params);
+        }
       },
     );
     ipcMain.handle(

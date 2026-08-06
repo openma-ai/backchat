@@ -8,6 +8,7 @@ import { configureAppLog, flushAppLog } from "./app-log.js";
 import {
   appendEvent,
   appendEventsTx,
+  archiveSession,
   setSessionTitle,
   upsertSession,
 } from "./sql-store.js";
@@ -175,6 +176,160 @@ describe("SessionManager prompt queue", () => {
       type: "session.complete",
       session_id: "sess-lifecycle",
       turn_id: "turn-lifecycle",
+    });
+  });
+
+  it("reports the running ACP version separately from the installed version", async () => {
+    mocks.runtimeStart.mockClear();
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce({
+      ...fake.session,
+      agentInfo: { name: "Codex ACP", version: "1.0.0" },
+    });
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      resolveInstalledAgentVersion: vi.fn(async () => "2.0.0"),
+    });
+
+    await manager.start({
+      session_id: "sess-runtime-version",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    await expect(
+      manager.getRuntimeStatus("sess-runtime-version"),
+    ).resolves.toEqual({
+      session_id: "sess-runtime-version",
+      agent_id: "codex-acp",
+      running_version: "1.0.0",
+      installed_version: "2.0.0",
+      restart_required: true,
+      busy: false,
+      restart_pending: false,
+    });
+  });
+
+  it("restarts only the ACP child without archiving the Backchat task", async () => {
+    mocks.runtimeStart.mockClear();
+    vi.mocked(archiveSession).mockClear();
+    const first = createControllableAcpSession();
+    const second = createControllableAcpSession();
+    const disposeFirst = vi.fn(async () => undefined);
+    mocks.runtimeStart
+      .mockResolvedValueOnce({
+        ...first.session,
+        acpSessionId: "acp-before-upgrade",
+        agentInfo: { name: "Codex ACP", version: "1.0.0" },
+        dispose: disposeFirst,
+      })
+      .mockResolvedValueOnce({
+        ...second.session,
+        acpSessionId: "acp-before-upgrade",
+        agentInfo: { name: "Codex ACP", version: "2.0.0" },
+      });
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      resolveInstalledAgentVersion: vi.fn(async () => "2.0.0"),
+    });
+    await manager.start({
+      session_id: "sess-restart-now",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      workspace_mode: "project",
+    });
+
+    await expect(manager.restartSession("sess-restart-now", {
+      mode: "now",
+    })).resolves.toEqual({
+      session_id: "sess-restart-now",
+      status: "restarted",
+    });
+
+    expect(disposeFirst).toHaveBeenCalledOnce();
+    expect(archiveSession).not.toHaveBeenCalled();
+    expect(manager.sessionCount()).toBe(1);
+    expect(mocks.runtimeStart).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({ cwd: "/repo" }),
+        resumeAcpSessionId: "acp-before-upgrade",
+      }),
+    );
+  });
+
+  it("restarts after the active turn and replays queued prompts on the new ACP child", async () => {
+    mocks.runtimeStart.mockClear();
+    const first = createControllableAcpSession();
+    const second = createControllableAcpSession();
+    mocks.runtimeStart
+      .mockResolvedValueOnce({
+        ...first.session,
+        acpSessionId: "acp-queue-session",
+        agentInfo: { name: "Codex ACP", version: "1.0.0" },
+      })
+      .mockResolvedValueOnce({
+        ...second.session,
+        acpSessionId: "acp-queue-session",
+        agentInfo: { name: "Codex ACP", version: "2.0.0" },
+      });
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ promptQueueEnabled: true }),
+      resolveAgentOverride: () => undefined,
+      resolveInstalledAgentVersion: vi.fn(async () => "2.0.0"),
+    });
+    await manager.start({
+      session_id: "sess-restart-after-turn",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      workspace_mode: "project",
+    });
+    const active = manager.prompt({
+      session_id: "sess-restart-after-turn",
+      turn_id: "turn-active",
+      text: "finish this first",
+    });
+    await vi.waitFor(() => expect(first.prompts).toHaveLength(1));
+    void manager.prompt({
+      session_id: "sess-restart-after-turn",
+      turn_id: "turn-queued",
+      text: "continue after restart",
+    });
+
+    await expect(manager.restartSession("sess-restart-after-turn", {
+      mode: "after-turn",
+    })).resolves.toEqual({
+      session_id: "sess-restart-after-turn",
+      status: "pending",
+    });
+    first.releaseNext();
+    await active;
+
+    await vi.waitFor(() => {
+      expect(mocks.runtimeStart).toHaveBeenCalledTimes(2);
+      expect(second.prompts).toEqual([[
+        { type: "text", text: "continue after restart" },
+      ]]);
+    });
+    second.releaseNext();
+    expect(send).toHaveBeenCalledWith({
+      type: "session.restart_pending",
+      session_id: "sess-restart-after-turn",
+    });
+    expect(send).toHaveBeenCalledWith({
+      type: "session.restarted",
+      session_id: "sess-restart-after-turn",
     });
   });
 
@@ -1564,6 +1719,34 @@ describe("SessionManager prompt queue", () => {
     await prompt;
   });
 
+  it("awaits async MCP server resolution before starting the ACP runtime", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const browserMcpServers = [{
+      type: "http",
+      name: "backchat-browser",
+      url: "http://127.0.0.1:49152/mcp",
+      headers: [{ name: "Authorization", value: "Bearer secret-token" }],
+    }];
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: async () => browserMcpServers,
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "codex-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-browser-mcp",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    expect(mocks.runtimeStart).toHaveBeenLastCalledWith(
+      expect.objectContaining({ mcpServers: browserMcpServers }),
+    );
+  });
+
   it("serializes response annotations as hidden prompt context", async () => {
     const fake = createControllableAcpSession();
     mocks.runtimeStart.mockResolvedValueOnce(fake.session);
@@ -2466,7 +2649,7 @@ describe("SessionManager prompt queue", () => {
       "sess-stream-durable",
       "openma_event",
       expect.objectContaining({
-        schema_version: "oma.event.v1",
+        schema: "oma.event.v1",
         type: "user.message",
         session_id: "sess-stream-durable",
         turn_id: "turn-stream",

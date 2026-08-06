@@ -1,0 +1,23 @@
+{
+  "feature": "output.final-response",
+  "harness": "Kimi Code",
+  "harnessVersion": "0.33.0",
+  "status": "pass-live",
+  "verificationMode": "live",
+  "trigger": "Reply exactly BACKCHAT_GUI_LIVE_OK_KIMI and nothing else.",
+  "provider": "DeepSeek Anthropic",
+  "endpoint": "https://api.deepseek.com/anthropic",
+  "model": "deepseek-v4-flash",
+  "runAt": "2026-08-05T22:49:56.770Z",
+  "durationMs": 2971,
+  "protocolBasis": "ACP v1 session/prompt and session/update final agent message",
+  "screenshot": "screenshots/21-output-final-response--kimi.png",
+  "assertion": {
+    "selector": "[data-session-turn-response=\"true\"]:has-text(\"BACKCHAT_GUI_LIVE_OK_KIMI\")",
+    "expected": "Assistant response contains BACKCHAT_GUI_LIVE_OK_KIMI",
+    "observed": "Worked for 3s\n\nThe user is asking me to reply exactly \"BACKCHAT_GUI_LIVE_OK_KIMI\" and nothing else. This is a simple test/verification message. I should reply exactly that.\n\nBACKCHAT_GUI_LIVE_OK_KIMI",
+    "result": "passed",
+    "targetVisible": true,
+    "withinScreenshot": true
+  }
+}

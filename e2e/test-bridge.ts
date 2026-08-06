@@ -58,6 +58,19 @@ export class TestBridge {
     }, event);
   }
 
+  async beginBrokerRequest(request: {
+    kind: "permission" | "fs-write" | "elicitation-form" | "elicitation-url" | "terminal";
+    sessionId: string;
+    cwd?: string;
+    agentId?: string;
+    params: Record<string, unknown>;
+  }): Promise<{ started: true } | { terminalId: string }> {
+    return this.page.evaluate(async (payload) => {
+      // @ts-expect-error — only exposed when BACKCHAT_TEST_HOOKS=1
+      return window.__backchatTest.beginBrokerRequest(payload);
+    }, request);
+  }
+
   async persistSessionFixture(fixture: PersistedSessionFixture): Promise<void> {
     await this.page.evaluate(async (payload) => {
       // @ts-expect-error — only exposed when BACKCHAT_TEST_HOOKS=1

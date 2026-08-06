@@ -46,7 +46,12 @@ export function BottomPanel() {
     const label = active?.cwd
       ? shortCwdLabel(active.cwd)
       : `shell-${terminalId.slice(-4)}`;
-    setTabs((prev) => [...prev, { id: terminalId, label, alive: true }]);
+    setTabs((prev) => [...prev, {
+      id: terminalId,
+      label,
+      alive: true,
+      cancellationRequested: false,
+    }]);
     setActiveTabId(terminalId);
   }, [active?.cwd]);
 
@@ -82,14 +87,22 @@ export function BottomPanel() {
 
   const closeTab = useCallback(
     async (id: string) => {
+      const target = tabs.find((t) => t.id === id);
+      if (target?.alive) {
+        setTabs((prev) => prev.map((t) =>
+          t.id === id ? { ...t, cancellationRequested: true } : t));
+        try {
+          await window.backchat.uiTermDispose({ terminalId: id });
+        } catch {
+          setTabs((prev) => prev.map((t) =>
+            t.id === id ? { ...t, cancellationRequested: false } : t));
+        }
+        return;
+      }
       const next = tabs.filter((t) => t.id !== id);
       const wasActive = activeTabId === id;
       setTabs(next);
       if (wasActive) setActiveTabId(next.length > 0 ? next[next.length - 1]!.id : null);
-      // Best-effort kill — onExit will fire either way and the
-      // listener above cleans tab state.
-      const isAlive = tabs.find((t) => t.id === id)?.alive ?? false;
-      if (isAlive) await window.backchat.uiTermDispose({ terminalId: id });
     },
     [tabs, activeTabId],
   );
@@ -118,7 +131,10 @@ export function BottomPanel() {
               t.id === activeTabId ? "visible" : "invisible pointer-events-none",
             )}
           >
-            <TerminalTab terminalId={t.id} />
+            <TerminalTab
+              terminalId={t.id}
+              cancellationRequested={t.cancellationRequested}
+            />
           </div>
         ))}
         {tabs.length === 0 && (
@@ -137,6 +153,9 @@ interface TabState {
   /** false once the pty exited — UI dims the row but keeps it
    *  selectable so the user can read the last output before closing. */
   alive: boolean;
+  /** Kept mounted while the PTY exits so TerminalTab can paint a stable
+   *  cancelling/cancelled state before the user removes the finished tab. */
+  cancellationRequested: boolean;
 }
 
 function TabBar({
@@ -189,21 +208,22 @@ function TabBar({
               <SquareTerminalIcon className="size-3.5 shrink-0 text-fg-subtle" />
               <span className="truncate">{t.label}</span>
             </button>
-            {tabs.length > 1 && (
-              <button
-                type="button"
-                onClick={() => onClose(t.id)}
-                aria-label="Close terminal"
-                className={cn(
-                  "inline-flex size-4 items-center justify-center rounded",
-                  "opacity-0 group-hover:opacity-60",
-                  "hover:bg-bg/60 hover:opacity-100",
-                  "transition-opacity",
-                )}
-              >
-                <XIcon className="size-3" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => onClose(t.id)}
+              aria-label={t.alive ? "Cancel terminal" : "Close terminal"}
+              data-testid="foreground-terminal-close"
+              data-terminal-id={t.id}
+              disabled={t.cancellationRequested && t.alive}
+              className={cn(
+                "inline-flex size-4 items-center justify-center rounded",
+                "opacity-0 group-hover:opacity-60",
+                "hover:bg-bg/60 hover:opacity-100",
+                "transition-opacity disabled:cursor-wait",
+              )}
+            >
+              <XIcon className="size-3" />
+            </button>
           </div>
         );
       })}

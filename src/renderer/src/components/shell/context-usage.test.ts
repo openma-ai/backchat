@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { contextUsagePresentation } from "./context-usage";
+import * as runtimePresentationModule from "./context-usage";
 
 describe("contextUsagePresentation", () => {
   test("computes compact usage text and semantic thresholds", () => {
@@ -23,5 +24,45 @@ describe("contextUsagePresentation", () => {
         cost: { amount: 0.42, currency: "USD" },
       }).title,
     ).toBe("Context · 12,345 / 100,000 tokens · 0.42 USD");
+  });
+});
+
+describe("session runtime presentation", () => {
+  test("exposes stable Running, Idle, and Terminated accessible states", () => {
+    const present = (
+      runtimePresentationModule as unknown as {
+        sessionRuntimeStatusPresentation?: (status: string) => {
+          label: string;
+          state: string;
+        };
+      }
+    ).sessionRuntimeStatusPresentation;
+
+    expect(present).toBeTypeOf("function");
+    if (!present) return;
+    expect(present("running")).toEqual({ label: "Running", state: "running" });
+    expect(present("ready")).toEqual({ label: "Idle", state: "idle" });
+    expect(present("disposed")).toEqual({ label: "Terminated", state: "terminated" });
+  });
+
+  test("flattens negotiated nested capabilities into visible labels", () => {
+    const labels = (
+      runtimePresentationModule as unknown as {
+        visibleCapabilityLabels?: (capabilities: unknown) => string[];
+      }
+    ).visibleCapabilityLabels;
+
+    expect(labels).toBeTypeOf("function");
+    if (!labels) return;
+    expect(labels({
+      loadSession: true,
+      promptCapabilities: { image: true, embeddedContext: false },
+      sessionCapabilities: { close: {}, resume: {} },
+    })).toEqual([
+      "loadSession",
+      "promptCapabilities.image",
+      "sessionCapabilities.close",
+      "sessionCapabilities.resume",
+    ]);
   });
 });

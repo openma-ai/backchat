@@ -206,6 +206,7 @@ describe("SessionEventOut → OpenMA event boundary", () => {
         parent_id: "bash-call-1",
         data: {
           kind: "bash",
+          missing_terminal: false,
           title: "pnpm test --watch",
           command: "pnpm test --watch",
           can_stop: true,
@@ -284,6 +285,7 @@ describe("SessionEventOut → OpenMA event boundary", () => {
         source: { kind: "harness", harness: "kimi", adapter: "kimi" },
         data: {
           kind: "other",
+          missing_terminal: false,
           title: "build project",
           result: { status: "completed" },
         },
@@ -563,6 +565,27 @@ describe("SessionEventOut → OpenMA event boundary", () => {
         request_id: "perm-1",
         option_id: "allow-once",
         outcome: "selected",
+      },
+    });
+  });
+
+  it("maps a filesystem approval decision into a canonical user input event", () => {
+    const event = toOpenMAEvent({
+      type: "session.fs_write_response",
+      session_id: "sess-filesystem",
+      request_id: "fsw-1",
+      path: "/tmp/outside/matrix-output.txt",
+      outcome: "denied",
+    } as never, options);
+
+    expect(event).toMatchObject({
+      type: "user.fs_write_response",
+      session_id: "sess-filesystem",
+      source: { kind: "user" },
+      data: {
+        request_id: "fsw-1",
+        path: "/tmp/outside/matrix-output.txt",
+        outcome: "denied",
       },
     });
   });

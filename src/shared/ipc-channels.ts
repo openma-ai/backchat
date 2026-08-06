@@ -19,6 +19,8 @@ export const InvokeChannel = {
   SessionSetConfigOption: "session:setConfigOption",
   SessionCancel: "session:cancel",
   SessionDispose: "session:dispose",
+  SessionRuntimeStatus: "session:runtimeStatus",
+  SessionRestart: "session:restart",
   SessionAnnounce: "session:announce",
   PairStart: "pair:start",
   PairPrompt: "pair:prompt",
@@ -190,6 +192,7 @@ export const InvokeChannel = {
    *  channels reach ipcMain. */
   TestInjectSessionRow: "__test:injectSessionRow",
   TestInjectSessionEvent: "__test:injectSessionEvent",
+  TestBeginBrokerRequest: "__test:beginBrokerRequest",
   TestPersistSessionFixture: "__test:persistSessionFixture",
   TestExportSessionFiles: "__test:exportSessionFiles",
   TestReadSessionPrompts: "__test:readSessionPrompts",

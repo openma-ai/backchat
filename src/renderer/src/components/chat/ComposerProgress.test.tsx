@@ -139,6 +139,31 @@ describe("ComposerProgress", () => {
     );
   });
 
+  it("exposes a stable locator for an elicitation completion module", () => {
+    const html = renderToStaticMarkup(
+      <ComposerProgress
+        activityModules={[{
+          id: "elicitation",
+          kind: "elicitation",
+          label: "External interaction",
+          summary: "1 completed",
+          items: [{
+            id: "elicitation:event-1",
+            label: "Completed external interaction",
+            status: "completed",
+            detail: "github-oauth-001",
+            variant: "event",
+          }],
+        }]}
+      />,
+    );
+
+    expect(html).toContain('data-activity-module="elicitation"');
+    expect(html).toContain('data-activity-module-id="elicitation"');
+    expect(html).toContain('data-activity-module-status="completed"');
+    expect(html).toContain('aria-label="External interaction: 1 completed"');
+  });
+
   it("renders the real prompt queue in the same floating surface as Goal", () => {
     const html = renderToStaticMarkup(
       <ComposerProgress

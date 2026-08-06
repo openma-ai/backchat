@@ -44,6 +44,9 @@ import type {
   SessionPromptParams,
   SessionPromptQueueCommandParams,
   SessionRunCommandParams,
+  SessionRestartMode,
+  SessionRestartResult,
+  SessionRuntimeStatus,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
@@ -341,6 +344,7 @@ export interface TerminalExitFrame {
   terminalId: string;
   exitCode: number | null;
   signal: string | null;
+  terminationReason?: "user_kill" | "released" | "session_disposed";
 }
 
 /** Agent-owned command process created through ACP terminal/create. */
@@ -354,6 +358,9 @@ export interface AcpTerminalInfo {
   exited: boolean;
   exitCode: number | null;
   signal: string | null;
+  /** Host-observed cancellation reason. Kept separate from the ACP exit
+   *  status so the GUI can distinguish a user Stop from a command failure. */
+  terminationReason?: "user_kill" | "released" | "session_disposed";
 }
 
 export interface AcpTerminalSnapshot extends AcpTerminalInfo {
@@ -435,6 +442,13 @@ export interface BackchatApi {
   sessionSetConfigOption(p: SessionSetConfigOptionParams): Promise<void>;
   sessionCancel(p: { session_id: string; turn_id: string }): Promise<void>;
   sessionDispose(p: { session_id: string; remove_cwd?: boolean }): Promise<void>;
+  sessionRuntimeStatus(p: {
+    session_id: string;
+  }): Promise<SessionRuntimeStatus | null>;
+  sessionRestart(p: {
+    session_id: string;
+    mode: SessionRestartMode;
+  }): Promise<SessionRestartResult>;
 
   /** Re-emit `session.ready` for every alive session. Renderer calls this
    *  on mount after a reload. */

@@ -54,6 +54,7 @@ import { useChatSessionActions } from "@/lib/chat-session-actions";
 import { Composer } from "./Composer";
 import { ComposerNotice } from "./ComposerNotice";
 import { ComposerProgress } from "./ComposerProgress";
+import { SessionRuntimeSummary } from "./SessionRuntimeSummary";
 
 export {
   buildSlashCommandSections,
@@ -92,6 +93,10 @@ export function effectiveQueuedTurnCount(
   providerQueueDepth: number | undefined,
 ): number {
   return Math.max(localQueueDepth, providerQueueDepth ?? 0);
+}
+
+export function isSessionComposerDisabled(status: string | undefined): boolean {
+  return status === "errored" || status === "disposed";
 }
 
 /**
@@ -214,7 +219,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       disabled={
         isNativeSubagent ||
         (active?.status === "starting" && !!active?.agent_id) ||
-        active?.status === "errored"
+        isSessionComposerDisabled(active?.status)
       }
       running={!isNativeSubagent && (active?.status === "running" || hasActiveTurn)}
       availableCommands={active?.availableCommands}
@@ -308,6 +313,8 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         plan: t("chat.plan"),
         monitor: t("chat.monitor"),
         background: t("rightPanel.background"),
+        elicitation: t("chat.externalInteraction"),
+        elicitationComplete: t("chat.externalInteractionCompleted"),
         running: t("chat.activityRunning"),
         completed: t("chat.activityCompleted"),
         event: t("chat.activityEvent"),
@@ -355,7 +362,6 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       queueCallbacks={queueCallbacks}
     />
   );
-
   // Project controls exist only while drafting. Once the session starts,
   // workspace ownership is locked and does not become ambient header chrome.
   const showChipRow = !active || active.status === "draft";
@@ -389,6 +395,9 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       className="flex h-full min-h-0 flex-col"
       data-chat-surface={isSide ? "side" : "main"}
     >
+      {active && active.status !== "draft" && (
+        <SessionRuntimeSummary session={active} queueDepth={queuedTurnCount} />
+      )}
       {isEmpty ? (
         // Keep the empty-state ideas in the flexible content region while the
         // composer uses the exact same bottom frame as an active conversation.

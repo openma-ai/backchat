@@ -13,6 +13,8 @@ export interface ComposerActivityLabels {
   plan: string;
   monitor: string;
   background: string;
+  elicitation: string;
+  elicitationComplete: string;
   running: string;
   completed: string;
   event: string;
@@ -117,6 +119,33 @@ export function composerActivityModules(
     });
   }
 
+  const callbackDecisions = callbackDecisionItems(input.openmaEvents);
+  if (callbackDecisions.length > 0) {
+    modules.push({
+      id: "callbacks",
+      kind: "callbacks",
+      label: "Callback decisions",
+      summary: `${callbackDecisions.length} ${
+        callbackDecisions.length === 1 ? "decision" : "decisions"
+      }`,
+      items: callbackDecisions,
+    });
+  }
+
+  const elicitationCompletions = completedUrlElicitations(
+    input.openmaEvents,
+    input.labels,
+  );
+  if (elicitationCompletions.length > 0) {
+    modules.push({
+      id: "elicitation",
+      kind: "elicitation",
+      label: input.labels.elicitation,
+      summary: `${elicitationCompletions.length} ${input.labels.completed}`,
+      items: elicitationCompletions,
+    });
+  }
+
   const background = input.workItems.filter((item) => item.kind !== "monitor");
   if (background.length > 0) {
     modules.push({
@@ -132,6 +161,99 @@ export function composerActivityModules(
     });
   }
   return modules;
+}
+
+function callbackDecisionItems(
+  events: readonly OpenMAEvent[],
+): ComposerActivityItem[] {
+  return events.flatMap((event) => {
+    if (!isRecord(event.data)) return [];
+    if (event.type === "user.permission_response") {
+      const outcome = stringValue(event.data.outcome);
+      if (!outcome) return [];
+      return [{
+        id: `callback:permission:${event.event_id}`,
+        label: "Permission",
+        status: outcome,
+        detail: stringValue(event.data.option_id),
+        variant: "event" as const,
+      }];
+    }
+    if (event.type === "user.fs_write_response") {
+      const outcome = stringValue(event.data.outcome);
+      if (!outcome) return [];
+      return [{
+        id: `callback:filesystem:${event.event_id}`,
+        label: "File write",
+        status: outcome,
+        detail: stringValue(event.data.path),
+        variant: "event" as const,
+      }];
+    }
+    if (event.type !== "user.elicitation_response") return [];
+    const action = stringValue(event.data.action);
+    if (!action) return [];
+    const urlMode = event.data.mode === "url";
+    return [{
+      id: `callback:${urlMode ? "url" : "form"}:${event.event_id}`,
+      label: urlMode ? "External page" : "Form",
+      status: action,
+      detail: urlMode
+        ? stringValue(event.data.elicitation_id)
+        : callbackFormDetail(event.data.content),
+      variant: "event" as const,
+    }];
+  });
+}
+
+function callbackFormDetail(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).sort(([left], [right]) =>
+    left.localeCompare(right));
+  if (entries.length === 0) return undefined;
+  return entries.map(([key, item]) =>
+    `${key}: ${Array.isArray(item) ? item.join(", ") : String(item)}`
+  ).join(" · ");
+}
+
+function completedUrlElicitations(
+  events: readonly OpenMAEvent[],
+  labels: ComposerActivityLabels,
+): ComposerActivityItem[] {
+  const accepted = new Set<string>();
+  for (const event of events) {
+    if (event.type !== "user.elicitation_response" || !isRecord(event.data)) continue;
+    if (event.data.action !== "accept" || event.data.mode !== "url") continue;
+    const elicitationId = stringValue(event.data.elicitation_id);
+    if (elicitationId) accepted.add(elicitationId);
+  }
+
+  const completed = new Set<string>();
+  const items: ComposerActivityItem[] = [];
+  for (const event of events) {
+    if (event.type !== "callback.notification" || !isRecord(event.data)) continue;
+    if (
+      event.data.method !== "elicitation/complete"
+      || event.data.category !== "elicitation"
+    ) continue;
+    const params = isRecord(event.data.params) ? event.data.params : undefined;
+    const elicitationId = stringValue(params?.elicitationId);
+    // ACP says unknown and already-completed identities are ignored. The
+    // accepted URL response is the client-side proof that this opaque id was
+    // actually outstanding on this session.
+    if (!elicitationId || !accepted.has(elicitationId) || completed.has(elicitationId)) {
+      continue;
+    }
+    completed.add(elicitationId);
+    items.push({
+      id: `elicitation:${event.event_id}`,
+      label: labels.elicitationComplete,
+      status: "completed",
+      detail: elicitationId,
+      variant: "event",
+    });
+  }
+  return items;
 }
 
 function summarizeMonitorActivity(

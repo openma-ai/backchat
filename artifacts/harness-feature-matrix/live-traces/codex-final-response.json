@@ -1,0 +1,838 @@
+{
+  "harness": "codex",
+  "harnessVersion": "1.1.9",
+  "verificationMode": "live",
+  "provider": "Codex default",
+  "endpoint": null,
+  "model": null,
+  "startedAt": "2026-08-05T20:49:50.534Z",
+  "finishedAt": "2026-08-05T20:50:02.999Z",
+  "acpSessionId": "019fd3b0-9156-7143-8da9-76f80c207684",
+  "supportsSessionFork": false,
+  "passed": true,
+  "finalText": "Warning: Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.\n\nBACKCHAT_HARNESS_LIVE_OK",
+  "failure": null,
+  "diagnostics": [],
+  "events": [
+    {
+      "availableCommands": [
+        {
+          "_meta": {
+            "commandAction": {
+              "kind": "setConfigOption",
+              "configId": "collaboration_mode",
+              "value": "plan",
+              "resetValue": "default",
+              "presentation": "state"
+            }
+          },
+          "description": "Turn plan mode on.",
+          "input": null,
+          "name": "plan"
+        },
+        {
+          "description": "List configured Model Context Protocol (MCP) tools.",
+          "input": null,
+          "name": "mcp"
+        },
+        {
+          "description": "List available skills.",
+          "input": null,
+          "name": "skills"
+        },
+        {
+          "description": "Display session configuration and token usage.",
+          "input": null,
+          "name": "status"
+        },
+        {
+          "description": "Review uncommitted changes, or review with custom instructions.",
+          "input": {
+            "hint": "optional review instructions"
+          },
+          "name": "review"
+        },
+        {
+          "description": "Review changes relative to a base branch.",
+          "input": {
+            "hint": "branch name"
+          },
+          "name": "review-branch"
+        },
+        {
+          "description": "Review a specific commit.",
+          "input": {
+            "hint": "commit sha"
+          },
+          "name": "review-commit"
+        },
+        {
+          "description": "Summarize conversation to avoid hitting the context limit.",
+          "input": null,
+          "name": "compact"
+        },
+        {
+          "_meta": {
+            "commandAction": {
+              "kind": "prefixPrompt",
+              "presentation": "state"
+            }
+          },
+          "description": "Set a goal to keep pursuing.",
+          "input": {
+            "hint": "[<objective>|clear|pause|resume]"
+          },
+          "name": "goal"
+        },
+        {
+          "description": "Sign out of Codex. This option is available when you are logged in via ChatGPT.",
+          "input": null,
+          "name": "logout"
+        },
+        {
+          "description": "Viet script video ngan cho TikTok, Reels, YouTube Shorts — 2 ban A/B, co hook, CTA, huong dan quay chi tiet",
+          "input": null,
+          "name": "$04-script-video"
+        },
+        {
+          "description": "Adapt designs to work across different screen sizes, devices, contexts, or platforms. Implements breakpoints, fluid layouts, and touch targets. Use when the user mentions responsive design, mobile layouts, breakpoints, viewport adaptation, or cross-device compatibility.",
+          "input": null,
+          "name": "$adapt"
+        },
+        {
+          "description": "Browser automation CLI for AI agents. Use when the user needs to interact with websites, including navigating pages, filling forms, clicking buttons, taking screenshots, extracting data, testing web apps, or automating any browser task. Triggers include requests to \"open a website\", \"fill out a form\", \"click a button\", \"take a screenshot\", \"scrape data from a page\", \"test this web app\", \"login to a site\", \"automate browser actions\", or any task requiring programmatic web interaction.",
+          "input": null,
+          "name": "$agent-browser"
+        },
+        {
+          "description": "When the user wants to optimize content for AI search engines, get cited by LLMs, or appear in AI-generated answers. Also use when the user mentions 'AI SEO,' 'AEO,' 'GEO,' 'LLMO,' 'answer engine optimization,' 'generative engine optimization,' 'LLM optimization,' 'AI Overviews,' 'optimize for ChatGPT,' 'optimize for Perplexity,' 'AI citations,' 'AI visibility,' 'zero-click search,' 'how do I show up in AI answers,' 'LLM mentions,' or 'optimize for Claude/Gemini.' Use this whenever someone wants their content to be cited or surfaced by AI assistants and AI search engines. For traditional technical and on-page SEO audits, see seo-audit. For structured data implementation, see schema-markup.",
+          "input": null,
+          "name": "$ai-seo"
+        },
+        {
+          "description": "Review a feature and enhance it with purposeful animations, micro-interactions, and motion effects that improve usability and delight. Use when the user mentions adding animation, transitions, micro-interactions, motion design, hover effects, or making the UI feel more alive.",
+          "input": null,
+          "name": "$animate"
+        },
+        {
+          "description": "Improve layout, spacing, and visual rhythm. Fixes monotonous grids, inconsistent spacing, and weak visual hierarchy. Use when the user mentions layout feeling off, spacing issues, visual hierarchy, crowded UI, alignment problems, or wanting better composition.",
+          "input": null,
+          "name": "$arrange"
+        },
+        {
+          "description": "Run technical quality checks across accessibility, performance, theming, responsive design, and anti-patterns. Generates a scored report with P0-P3 severity ratings and actionable plan. Use when the user wants an accessibility check, performance audit, or technical quality review.",
+          "input": null,
+          "name": "$audit"
+        },
+        {
+          "description": "Generate professional infographics with 21 layout types and 22 visual styles. Analyzes content, recommends layout×style combinations, and generates publication-ready infographics. Use when user asks to create \"infographic\", \"信息图\", \"visual summary\", \"可视化\", or \"高密度信息大图\".",
+          "input": null,
+          "name": "$baoyu-infographic"
+        },
+        {
+          "description": "Skill for integrating Better Auth - the comprehensive TypeScript authentication framework.",
+          "input": null,
+          "name": "$better-auth-best-practices"
+        },
+        {
+          "description": "Amplify safe or boring designs to make them more visually interesting and stimulating. Increases impact while maintaining usability. Use when the user says the design looks bland, generic, too safe, lacks personality, or wants more visual impact and character.",
+          "input": null,
+          "name": "$bolder"
+        },
+        {
+          "description": "Control the in-app Browser for opening, navigating, inspecting visible or interactive page state, clicking, typing, screenshots, and local web testing. It can have existing signed-in sessions. For semantic operations on linked resources, prefer a purpose-built connector, API, or CLI when available.",
+          "input": null,
+          "name": "$browser:control-in-app-browser"
+        },
+        {
+          "description": "Xiaohongshu-style knowledge cards, arranged as a swipeable multi-card carousel.",
+          "input": null,
+          "name": "$card-xiaohongshu"
+        },
+        {
+          "description": "Expert guidelines for Chrome extension development with Manifest V3, covering security, performance, and best practices",
+          "input": null,
+          "name": "$chrome-extension-development"
+        },
+        {
+          "description": "Control the user's Chrome browser for tasks that depend on existing Chrome state: tabs, logged-in sessions, or extensions. Prefer purpose-built connectors, APIs, or CLIs when available.",
+          "input": null,
+          "name": "$chrome:control-chrome"
+        },
+        {
+          "description": "Allows you to view the user's screen as well as several hours of history. Use when the user makes a reference to their recent work, for which it'd be helpful to see the screen. This skill MUST be used whenever you need to resolve ambiguity in a user request, where the user hasn't specified enough context to do the task. Examples include disambiguating the specific user/app/document/error the user is referring to. You must also use this skill if the user asks about any question regarding Chronicle or asks what you can see from the screen.",
+          "input": null,
+          "name": "$chronicle"
+        },
+        {
+          "description": "Improve unclear UX copy, error messages, microcopy, labels, and instructions to make interfaces easier to understand. Use when the user mentions confusing text, unclear labels, bad error messages, hard-to-follow instructions, or wanting better UX writing.",
+          "input": null,
+          "name": "$clarify"
+        },
+        {
+          "description": "Test Clash desktop Copilot/ACP flows with subagents using agent-browser. Use this skill whenever the user asks for real desktop E2E, ACP agent verification, Codex/Claude/Gemini harness testing, session history persistence checks, or screenshots from a user-perspective Electron run. It prevents mock-only tests from being mistaken for real E2E.",
+          "input": null,
+          "name": "$clash-real-e2e-tester"
+        },
+        {
+          "description": "Operate a local Clash creative workspace through the installed Clash Codex Plugin, including projects, Canvas, Timeline, Director, assets, models, tasks, text, and production.",
+          "input": null,
+          "name": "$clash:clash"
+        },
+        {
+          "description": "Transform a supplied movie poster, film still, key art, portrait, or film brief into a classic 1930s-1970s hand-painted theatrical poster and generate the finished raster image. Use whenever the user asks to restyle, repaint, redesign, or reimagine film artwork as a classic, vintage, retro, illustrated, monumental, high-concept, or old-cinema poster with bold display typography, large warm-cool color contrast, simplified painted forms, and aged lithographic print texture. Preserve period grammar without copying a reference poster's exact composition.",
+          "input": null,
+          "name": "$classic-epic-movie-poster"
+        },
+        {
+          "description": "Comprehensive Cloudflare platform skill covering Workers, Pages, storage (KV, D1, R2), AI (Workers AI, Vectorize, Agents SDK), networking (Tunnel, Spectrum), security (WAF, DDoS), and infrastructure-as-code (Terraform, Pulumi). Use for any Cloudflare development task. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "input": null,
+          "name": "$cloudflare"
+        },
+        {
+          "description": "Add strategic color to features that are too monochromatic or lack visual interest, making interfaces more engaging and expressive. Use when the user mentions the design looking gray, dull, lacking warmth, needing more color, or wanting a more vibrant or expressive palette.",
+          "input": null,
+          "name": "$colorize"
+        },
+        {
+          "description": "Help users understand and respond to competition. Use when someone is positioning against competitors, evaluating market threats, running competitive war games, or deciding how much to focus on competitors versus customers.",
+          "input": null,
+          "name": "$competitive-analysis"
+        },
+        {
+          "description": "Control local Mac apps through Computer Use for tasks that require reading or operating app UI. Prefer purpose-built connectors, APIs, or CLIs when available.",
+          "input": null,
+          "name": "$computer-use:computer-use"
+        },
+        {
+          "description": "Retrieve up-to-date documentation for software libraries, frameworks, and components via the Context7 API. This skill should be used when looking up documentation for any programming library or framework, finding code examples for specific APIs or features, verifying correct usage of library functions, or obtaining current information about library APIs that may have changed since training.",
+          "input": null,
+          "name": "$context7"
+        },
+        {
+          "description": "Critical thinking and logical reasoning analysis skills for when you are explicitly asked to critically analyse written content such as articles, blogs, transcripts and reports (not code).",
+          "input": null,
+          "name": "$critical-thinking-logical-reasoning"
+        },
+        {
+          "description": "Evaluate design from a UX perspective, assessing visual hierarchy, information architecture, emotional resonance, cognitive load, and overall quality with quantitative scoring, persona-based testing, and actionable feedback. Use when the user asks to review, critique, evaluate, or give feedback on a design or component.",
+          "input": null,
+          "name": "$critique"
+        },
+        {
+          "description": "Add moments of joy, personality, and unexpected touches that make interfaces memorable and enjoyable to use. Elevates functional to delightful. Use when the user asks to add polish, personality, animations, micro-interactions, delight, or make an interface feel fun or memorable.",
+          "input": null,
+          "name": "$delight"
+        },
+        {
+          "description": "Strip designs to their essence by removing unnecessary complexity. Great design is simple, powerful, and clean. Use when the user asks to simplify, declutter, reduce noise, remove elements, or make a UI cleaner and more focused.",
+          "input": null,
+          "name": "$distill"
+        },
+        {
+          "description": "Create, edit, redline, and comment on `.docx`, Word, and Google Docs-targeted document artifacts inside the container, with a strict render-and-verify workflow. Use `render_docx.py` to generate page PNGs (and optional PDF) for visual QA, then iterate until layout is flawless before delivering the final document.",
+          "input": null,
+          "name": "$documents:documents"
+        },
+        {
+          "description": "创作竖屏短剧剧本，包括宏观建构、剧本创作、精准优化、创意发想。适用于从零开始创作短剧、优化现有剧本、设计故事大纲和悬念钩子",
+          "input": null,
+          "name": "$drama-creator"
+        },
+        {
+          "description": "Extract and consolidate reusable components, design tokens, and patterns into your design system. Identifies opportunities for systematic reuse and enriches your component library. Use when the user asks to create components, refactor repeated UI patterns, build a design system, or extract tokens.",
+          "input": null,
+          "name": "$extract"
+        },
+        {
+          "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+          "input": null,
+          "name": "$find-skills"
+        },
+        {
+          "description": "Create distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics. Use when the user asks to build web components, pages, artifacts, posters, or applications, or when any design skill requires project context.",
+          "input": null,
+          "name": "$frontend-design"
+        },
+        {
+          "description": "Generate Minimal Zine Poster v0.1 poetic paper-poster prompts and the matching generated image. Use when the user gives a theme, sentence, object, mood, article idea, photo, or content brief and wants a quiet Japanese/Korean zine-like editorial poster with large negative space, aged paper texture, experimental typography, restrained color accents, and a generated bitmap image.",
+          "input": null,
+          "name": "$gc-minimal-zine-poster-v0-1"
+        },
+        {
+          "description": "Address actionable GitHub pull request review feedback. Use when the user wants to inspect unresolved review threads, requested changes, or inline review comments on a PR, then implement selected fixes. Use the GitHub app for PR metadata and flat comment reads, and use the bundled GraphQL script via `gh` whenever thread-level state, resolution status, or inline review context matters.",
+          "input": null,
+          "name": "$github:gh-address-comments"
+        },
+        {
+          "description": "Use when a user asks to debug or fix failing GitHub PR checks that run in GitHub Actions. Use the GitHub app from this plugin for PR metadata and patch context, and use `gh` for Actions check and log inspection before implementing any approved fix.",
+          "input": null,
+          "name": "$github:gh-fix-ci"
+        },
+        {
+          "description": "Triage and orient GitHub repository, pull request, and issue work through the connected GitHub app. Use when the user asks for general GitHub help, wants PR or issue summaries, or needs repository context before choosing a more specific GitHub workflow.",
+          "input": null,
+          "name": "$github:github"
+        },
+        {
+          "description": "Publish local changes to GitHub by confirming scope, committing intentionally, pushing the branch, and opening a draft PR through the GitHub app from this plugin, with `gh` used only as a fallback where connector coverage is insufficient.",
+          "input": null,
+          "name": "$github:yeet"
+        },
+        {
+          "description": "Manage Gmail search, thread reading, summaries, reply or forward drafts, self-delivery, inbox triage, and label actions. Use for mailbox analysis, pasted Gmail links, email replies or forwards, inbox cleanup, or explicit Gmail writes.",
+          "input": null,
+          "name": "$gmail:gmail"
+        },
+        {
+          "description": "Improve interface resilience through better error handling, i18n support, text overflow handling, and edge case management. Makes interfaces robust and production-ready. Use when the user asks to harden, make production-ready, handle edge cases, add error states, or fix overflow and i18n issues.",
+          "input": null,
+          "name": "$harden"
+        },
+        {
+          "description": "Create, repair, validate, visually QA, and package Codex-compatible v2 animated pets from character art, generated images, company or prospect brand cues, or visual references. Use for any new Codex pet, custom mascot, non-pixel pet style, brand-inspired pet, existing-pet repair, or 8x11 spritesheet workflow requiring all 9 standard animation rows, 16 look directions, deterministic assembly, QA artifacts, and spriteVersionNumber 2 packaging.",
+          "input": null,
+          "name": "$hatch-pet"
+        },
+        {
+          "description": "Mandatory entry point: read this first for any request to make, create, edit, animate, or render a video, animation, or motion graphic, including a promo, explainer, captioned clip, title card, overlay, slideshow or interactive deck, Remotion port, or any HyperFrames HTML composition. Also use it to inspect, diagnose, validate, preview, publish, or batch-render an existing HyperFrames project. Inputs may be a website URL, GitHub PR, Figma design or URL, text or brief, existing footage, or music. It resumes project state, captures intent when applicable, selects and installs the owning workflow, and routes domain capabilities. HyperFrames is the default output framework unless the user explicitly chooses another framework for the deliverable or asks only to record a browser session.",
+          "input": null,
+          "name": "$hyperframes"
+        },
+        {
+          "description": "All animation knowledge for HyperFrames — atomic motion rules, multi-phase scene blueprints, scene transitions, broader motion-design techniques, AND the seven runtime adapters (GSAP default, plus Lottie, Three.js, Anime.js, CSS keyframes, Web Animations API, TypeGPU). Use for any motion or animation task: pick 2-4 rules and compose, or load a blueprint, or look up runtime-specific API (e.g. GSAP eases / Lottie player / Three.js mixer). Also covers auditing an existing composition's choreography (animation map) and 24 named text-animation effects. HyperFrames-native: single paused timeline, seek-safe, deterministic.",
+          "input": null,
+          "name": "$hyperframes-animation"
+        },
+        {
+          "description": "Use the HyperFrames CLI development loop: init, add, catalog, capture, lint, check, snapshot, compare, grade-compare, preview, play, present, beats, keyframes, single or batch render, publish, cloud, cloudrun, feedback, lambda, doctor, browser, info, upgrade, skills, compositions, docs, benchmark, telemetry, transcribe, auth, tts, and remove-background. Also use when diagnosing build or render failures. validate, inspect, and layout are deprecated aliases; use check. Covers local, HeyGen-hosted cloud, AWS Lambda, and Google Cloud Run rendering.",
+          "input": null,
+          "name": "$hyperframes-cli"
+        },
+        {
+          "description": "The HyperFrames composition contract — build one renderable project. Use for composition structure, the `data-*` timing attributes, `class=\"clip\"`, tracks, sub-compositions, variables, framework-owned media playback, deterministic-render rules, and validation. Also covers Tailwind projects and the STORYBOARD.md / SCRIPT.md plan formats. Read before writing composition HTML.",
+          "input": null,
+          "name": "$hyperframes-core"
+        },
+        {
+          "description": "Non-animation creative direction for HyperFrames videos. Use for design spec (frame.md / design.md) handling, palettes, typography, narration, beat planning, audio-reactive visuals, composition patterns, and brand / style decisions. For atomic motion patterns and scene blueprints, use `hyperframes-animation`.",
+          "input": null,
+          "name": "$hyperframes-creative"
+        },
+        {
+          "description": "Use when a HyperFrames composition needs seek-safe 2D/3D keyframes, GSAP timelines, CSS keyframes, Anime.js, WAAPI, FLIP, paths, masks, SVG morph/draw, text trails, 3D depth, or `hyperframes keyframes` diagnostics. Don't use for broad scene strategy, brand design, media sourcing, captions, or general video planning.",
+          "input": null,
+          "name": "$hyperframes-keyframes"
+        },
+        {
+          "description": "Install, discover, and wire registry blocks and components into HyperFrames compositions. Use when running hyperframes add or hyperframes catalog, installing one item or every block matching a tag, wiring an installed item into index.html, or working with hyperframes.json. Covers discovery, install locations, block sub-composition wiring, component snippet merging, and authoring a new block or component to contribute upstream (idea → scaffold → validate → PR).",
+          "input": null,
+          "name": "$hyperframes-registry"
+        },
+        {
+          "description": "Develop native iOS apps with Swift. Covers MVVM architecture, SwiftUI, URLSession for networking, Combine for reactive programming, and Core Data persistence.",
+          "input": null,
+          "name": "$ios-swift-development"
+        },
+        {
+          "description": "Agent Media OS, the single skill for every media need in a HyperFrames project. Resolve BGM, SFX, image, icon, brand logo, voice, color grade, or LUT into a frozen local file or paste-ready block + ledger record (one verb, `resolve`); generate via TTS / music / image models when the catalog misses; produce voiceover, transcription, captions, and background removal through one shared audio engine; operate on media (cut / reframe / transform); and reuse assets across projects. Keeps search noise on disk, hands the agent one path or block. Use for any audio, image, icon, logo, voiceover, caption, color-grading, or media-asset need.",
+          "input": null,
+          "name": "$media-use"
+        },
+        {
+          "description": "A short, design-led motion graphic where motion is the message — kinetic typography, stat count-up, chart/data-viz hit, logo sting / brand lockup, lower-third / callout / social overlay, animated map (highlight regions, connect places, zoom to a location), animated tweet / news-article / headline, webpage / UI animation (scroll, cursor, callouts), or fusing a real image's geometry into a chart. Usually under 10s (up to ~30s), no narration or live-action subject; renders to MP4 or transparent overlay. Longer / narrated / multi-scene → /general-video. Unclear → /hyperframes.",
+          "input": null,
+          "name": "$motion-graphics"
+        },
+        {
+          "description": "Integrate Apple Music playback, catalog search, and Now Playing metadata using MusicKit and MediaPlayer. Use when adding music search, Apple Music subscription flows, queue management, playback controls, remote command handling, or Now Playing info to iOS apps.",
+          "input": null,
+          "name": "$musickit"
+        },
+        {
+          "description": "Audits and realigns UI to match design system standards, spacing, tokens, and patterns. Use when the user mentions consistency, design drift, mismatched styles, tokens, or wants to bring a feature back in line with the system.",
+          "input": null,
+          "name": "$normalize"
+        },
+        {
+          "description": "Designs and improves onboarding flows, empty states, and first-run experiences to help users reach value quickly. Use when the user mentions onboarding, first-time users, empty states, activation, getting started, or new user flows.",
+          "input": null,
+          "name": "$onboard"
+        },
+        {
+          "description": "Create a spreadsheet using the Analytics Dashboard template and its retained reference file. Use when the user selects or names Analytics Dashboard. Monitor acquisition, engagement, retention, revenue, and conversion funnel KPIs with charts.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-analytics-dashboard"
+        },
+        {
+          "description": "Create a presentation using the Business Review template and its retained reference file. Use when the user selects or names Business Review. Review business performance, KPIs, segment results, strategic priorities, decisions, and outlook.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-business-review"
+        },
+        {
+          "description": "Create a document using the Design Report template and its retained reference file. Use when the user selects or names Design Report. Produce design reports with an executive summary, key findings, implications, recommendations, and appendix.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-design-report"
+        },
+        {
+          "description": "Create a document using the Experiment Analysis template and its retained reference file. Use when the user selects or names Experiment Analysis. Analyze experiments with hypotheses, methodology, results, interpretation, limitations, and next steps.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-experiment-analysis"
+        },
+        {
+          "description": "Create a spreadsheet using the Financial Budget template and its retained reference file. Use when the user selects or names Financial Budget. Model actuals, budget and scenario forecasts, variances, cash runway, and departmental plans.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-financial-budget"
+        },
+        {
+          "description": "Create a document using the Investment Committee Memo template and its retained reference file. Use when the user selects or names Investment Committee Memo. Prepare investment committee memos with the thesis, transaction details, financial analysis, risks, and recommendation.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-investment-committee-memo"
+        },
+        {
+          "description": "Create a document using the Legal Memorandum template and its retained reference file. Use when the user selects or names Legal Memorandum. Draft legal memoranda with the issue, brief answer, relevant facts, analysis, and conclusion.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-legal-memorandum"
+        },
+        {
+          "description": "Create a presentation using the Market Trends Report template and its retained reference file. Use when the user selects or names Market Trends Report. Communicate market or industry trends, supporting evidence, implications, and recommended responses.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-market-trends-report"
+        },
+        {
+          "description": "Create a document using the Minimal Letterhead template and its retained reference file. Use when the user selects or names Minimal Letterhead. Write professional business letters with sender, recipient, message, and signature fields in a minimal letterhead layout.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-minimal-letterhead"
+        },
+        {
+          "description": "Create a spreadsheet using the Operating Calendar template and its retained reference file. Use when the user selects or names Operating Calendar. Plan annual and monthly operating milestones, campaigns, launches, deadlines, and recurring events.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-operating-calendar"
+        },
+        {
+          "description": "Create a presentation using the Operating Review template and its retained reference file. Use when the user selects or names Operating Review. Run weekly operating reviews with scorecards, functional updates, risks, decisions, and action items.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-operating-review"
+        },
+        {
+          "description": "Create a presentation using the Project Kickoff template and its retained reference file. Use when the user selects or names Project Kickoff. Align teams on project goals, scope, roles, milestones, risks, and the working model.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-project-kickoff"
+        },
+        {
+          "description": "Create a spreadsheet using the Project Tracker template and its retained reference file. Use when the user selects or names Project Tracker. Manage workstreams, tasks, owners, status, priority, dates, launch pulse, and a Gantt schedule.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-project-tracker"
+        },
+        {
+          "description": "Create a spreadsheet using the Sales Pipeline template and its retained reference file. Use when the user selects or names Sales Pipeline. Track opportunities, stages, owners, deal sizes, probabilities, forecasts, next steps, and risks.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-sales-pipeline"
+        },
+        {
+          "description": "Create a presentation using the Simple Dark Mode template and its retained reference file. Use when the user selects or names Simple Dark Mode. Create clean dark-mode presentations with bold typography, simple sections, charts, and imagery.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-simple-dark-mode"
+        },
+        {
+          "description": "Create a presentation using the Simple Light Mode template and its retained reference file. Use when the user selects or names Simple Light Mode. Create clean light-mode presentations with spacious typography, simple sections, charts, and imagery.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-simple-light-mode"
+        },
+        {
+          "description": "Create a document using the Strategy Memorandum template and its retained reference file. Use when the user selects or names Strategy Memorandum. Present strategic context, choices, rationale, risks, milestones, and a clear recommendation.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-strategy-memorandum"
+        },
+        {
+          "description": "Create a document using the System Design template and its retained reference file. Use when the user selects or names System Design. Document system architecture, requirements, components, data flows, APIs, tradeoffs, and operational considerations.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-system-design"
+        },
+        {
+          "description": "Create a presentation using the Team Alignment template and its retained reference file. Use when the user selects or names Team Alignment. Facilitate team offsites and planning with context, goals, priorities, decisions, and action items.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-team-alignment"
+        },
+        {
+          "description": "Create a spreadsheet using the Three-Statement Forecast template and its retained reference file. Use when the user selects or names Three-Statement Forecast. Build an integrated income statement, balance sheet, and cash flow forecast with assumptions, checks, and an executive summary.",
+          "input": null,
+          "name": "$openai-templates:artifact-template-three-statement-forecast"
+        },
+        {
+          "description": "Diagnoses and fixes UI performance across loading speed, rendering, animations, images, and bundle size. Use when the user mentions slow, laggy, janky, performance, bundle size, load time, or wants a faster, smoother experience.",
+          "input": null,
+          "name": "$optimize"
+        },
+        {
+          "description": "Pushes interfaces past conventional limits with technically ambitious implementations — shaders, spring physics, scroll-driven reveals, 60fps animations. Use when the user wants to wow, impress, go all-out, or make something that feels extraordinary.",
+          "input": null,
+          "name": "$overdrive"
+        },
+        {
+          "description": "Read, create, inspect, render, and verify PDF files where visual layout matters, including fillable AcroForms. Use Poppler rendering plus Python tools such as reportlab, pdfplumber, and pypdf for generation and extraction.",
+          "input": null,
+          "name": "$pdf:pdf"
+        },
+        {
+          "description": "Performs a final quality pass fixing alignment, spacing, consistency, and micro-detail issues before shipping. Use when the user mentions polish, finishing touches, pre-launch review, something looks off, or wants to go from good to great.",
+          "input": null,
+          "name": "$polish"
+        },
+        {
+          "description": "Read, create or edit PowerPoint or Google Slides decks. Use for presentation, slide deck, PowerPoint, PPT, PPTX, or Google Slides requests.",
+          "input": null,
+          "name": "$presentations:Presentations"
+        },
+        {
+          "description": "Turn a product or marketing URL, pasted script, or brief into a product launch / promo video — SaaS promos, feature reveals, product demos, app and company launches. Use when the user wants to market, launch, promote, or reveal a product; the default for any commercial URL. Site tours / showcases of a website route here too — the brief carries the show-it-as-is intent. Unclear → /hyperframes.",
+          "input": null,
+          "name": "$product-launch-video"
+        },
+        {
+          "description": "When the user wants to create SEO-driven pages at scale using templates and data. Also use when the user mentions \"programmatic SEO,\" \"template pages,\" \"pages at scale,\" \"directory pages,\" \"location pages,\" \"[keyword] + [city] pages,\" \"comparison pages,\" \"integration pages,\" \"building many pages for SEO,\" \"pSEO,\" \"generate 100 pages,\" \"data-driven pages,\" or \"templated landing pages.\" Use this whenever someone wants to create many similar pages targeting different keywords or locations. For auditing existing SEO issues, see seo-audit. For content strategy planning, see content-strategy.",
+          "input": null,
+          "name": "$programmatic-seo"
+        },
+        {
+          "description": "一句话生成大师级海报、书籍封面、专辑封面和各类设计作品。无需懂PS、配色或艺术史，AI自动选择最佳风格（基于33+位传奇设计师）。支持多平台多比例：公众号封面(21:9)、小红书配图(3:4)、文章配图(16:9)、书籍封面(9:16)、专辑封面(1:1)、电影海报(9:16)。包含AI提示词优化、风格对比、图生图转换功能。触发词：\"Mondo风格\"、\"书籍封面设计\"、\"专辑封面\"、\"海报设计\"、\"读书笔记配图\"、\"公众号封面\"、\"小红书配图\"、\"文章配图\"。One-sentence generation of master-level posters, book covers, album covers and designs. 33+ legendary designer styles with multi-platform aspect ratio support (21:9, 16:9, 3:4, 1:1, 9:16).",
+          "input": null,
+          "name": "$qiaomu-mondo-poster-design"
+        },
+        {
+          "description": "Tones down visually aggressive or overstimulating designs, reducing intensity while preserving quality. Use when the user mentions too bold, too loud, overwhelming, aggressive, garish, or wants a calmer, more refined aesthetic.",
+          "input": null,
+          "name": "$quieter"
+        },
+        {
+          "description": "Best practices for Remotion - Video creation in React",
+          "input": null,
+          "name": "$remotion-best-practices"
+        },
+        {
+          "description": "Evaluate research rigor. Assess methodology, experimental design, statistical validity, biases, confounding, evidence quality (GRADE, Cochrane ROB), for critical analysis of scientific claims.",
+          "input": null,
+          "name": "$scientific-critical-thinking"
+        },
+        {
+          "description": "When the user wants to audit, review, or diagnose SEO issues on their site. Also use when the user mentions \"SEO audit,\" \"technical SEO,\" \"why am I not ranking,\" \"SEO issues,\" \"on-page SEO,\" \"meta tags review,\" \"SEO health check,\" \"my traffic dropped,\" \"lost rankings,\" \"not showing up in Google,\" \"site isn't ranking,\" \"Google update hit me,\" \"page speed,\" \"core web vitals,\" \"crawl errors,\" or \"indexing issues.\" Use this even if the user just says something vague like \"my SEO is bad\" or \"help with SEO\" — start with an audit. For building pages at scale to target keywords, see programmatic-seo. For adding structured data, see schema-markup. For AI search optimization, see ai-seo.",
+          "input": null,
+          "name": "$seo-audit"
+        },
+        {
+          "description": "Use Sites to build websites, including landing pages, portfolios, dashboards, portals, trackers, hubs, and internal tools. Always use Sites when the project contains `.openai/hosting.json`.",
+          "input": null,
+          "name": "$sites:sites-building"
+        },
+        {
+          "description": "Host websites with Sites. Always use after `sites-building`, and use for website publishing, deployment, hosting management, or projects containing `.openai/hosting.json`.",
+          "input": null,
+          "name": "$sites:sites-hosting"
+        },
+        {
+          "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+          "input": null,
+          "name": "$skill-creator"
+        },
+        {
+          "description": "Read Slack context, route to the right Slack workflow, prepare or perform Slack writes that match the user's intent, summarize channel activity, create daily digests, triage recent activity, and draft replies from available context.",
+          "input": null,
+          "name": "$slack:slack"
+        },
+        {
+          "description": "Create, edit, analyze, and verify standalone spreadsheet files or Google Sheets-ready workbooks, including .xlsx, .xls, .csv, and .tsv. Do not use for live controlling Microsoft Excel app or a live Excel session.",
+          "input": null,
+          "name": "$spreadsheets:Spreadsheets"
+        },
+        {
+          "description": "Control an open or active Microsoft Excel workbook through the ChatGPT add-in or connected session. Use when the user tags the Microsoft Excel app in Codex or follows up on an established live Excel task. Do not use for standalone spreadsheet files or Google Sheets.",
+          "input": null,
+          "name": "$spreadsheets:excel-live-control"
+        },
+        {
+          "description": "Implement, review, or improve SwiftUI features using the iOS 26+ Liquid Glass API. Use when asked to adopt Liquid Glass in new SwiftUI UI, refactor an existing feature to Liquid Glass, or review Liquid Glass usage for correctness, performance, and design alignment.",
+          "input": null,
+          "name": "$swiftui-liquid-glass"
+        },
+        {
+          "description": "Reverse-engineer the design taste of any website. Given a URL, captures DOM data and a screenshot via real browser, then runs a 4-step analysis to produce taste.md + taste.json with practical design tokens (colors, typography, spacing, radii, shadows, grid) AND taste DNA (Trigger → Decision → Reason → Evidence trade-offs explaining WHY the design works). Use whenever the user wants to extract a site's design system, study a competitor's visual language, port an aesthetic to a new project, or generate design guidance for an AI coding agent. Triggers on: '/taste <url>', 'analyze the design of X', 'what makes X's site good', 'extract design tokens from X', 'give me X's design DNA', 'build something in the style of X', 'I want my app to feel like X'. Output rejects AI slop ('clean', 'modern', 'user-friendly') in favor of concrete px/hex values and restraint trade-offs. Do NOT use for: scraping data, summarizing page content, or tasks unrelated to visual design.",
+          "input": null,
+          "name": "$taste"
+        },
+        {
+          "description": "One-time setup that gathers design context for your project and saves it to your AI config file. Run once to establish persistent design guidelines.",
+          "input": null,
+          "name": "$teach-impeccable"
+        },
+        {
+          "description": "Create or update a reusable personal Codex artifact-template skill. Use when the user invokes $template-creator or asks in natural language to create a reusable template from a reference document, presentation, spreadsheet, ImageGen or Product Design image, email, or Slack message, or explicitly asks to edit or update a passed artifact-template skill. Do not use for one-off creation from an existing template.",
+          "input": null,
+          "name": "$template-creator:template-creator"
+        },
+        {
+          "description": "Use when implementing any feature or bugfix, before writing implementation code",
+          "input": null,
+          "name": "$test-driven-development"
+        },
+        {
+          "description": "Local TTS router for Apple Silicon — pull models, serve OpenAI-compatible API, synthesize speech, clone voices. Use when the user asks to \"generate speech\", \"text to speech\", \"start TTS server\", \"pull a TTS model\", \"clone a voice\", \"speak in someone's voice\", or any task involving local speech synthesis on macOS.",
+          "input": null,
+          "name": "$tts-router"
+        },
+        {
+          "description": "Improves typography by fixing font choices, hierarchy, sizing, weight, and readability so text feels intentional. Use when the user mentions fonts, type, readability, text hierarchy, sizing looks off, or wants more polished, intentional typography.",
+          "input": null,
+          "name": "$typeset"
+        },
+        {
+          "description": "UI/UX design intelligence. 50 styles, 21 palettes, 50 font pairings, 20 charts, 9 stacks (React, Next.js, Vue, Svelte, SwiftUI, React Native, Flutter, Tailwind, shadcn/ui). Actions: plan, build, create, design, implement, review, fix, improve, optimize, enhance, refactor, check UI/UX code. Projects: website, landing page, dashboard, admin panel, e-commerce, SaaS, portfolio, blog, mobile app, .html, .tsx, .vue, .svelte. Elements: button, modal, navbar, sidebar, card, table, form, chart. Styles: glassmorphism, claymorphism, minimalism, brutalism, neumorphism, bento grid, dark mode, responsive, skeuomorphism, flat design. Topics: color palette, accessibility, animation, layout, typography, font pairing, spacing, hover, shadow, gradient. Integrations: shadcn/ui MCP for component search and examples.",
+          "input": null,
+          "name": "$ui-ux-pro-max"
+        },
+        {
+          "description": "Use when creating After Effects compositions, Premiere Pro motion, video titles, explainer videos, or broadcast motion graphics.",
+          "input": null,
+          "name": "$video-motion-graphics"
+        },
+        {
+          "description": "Create visualizations and interactive tools directly in conversation. Use when asked to show how something works, make simulators or labs, maps, plots, charts or graphs, comparisons, UI mockups, scenarios, adjustable inputs, and exploration beyond regular text.",
+          "input": null,
+          "name": "$visualize:visualize"
+        },
+        {
+          "description": "Review UI code for Web Interface Guidelines compliance. Use when asked to \"review my UI\", \"check accessibility\", \"audit design\", \"review UX\", or \"check my site against best practices\".",
+          "input": null,
+          "name": "$web-design-guidelines"
+        },
+        {
+          "description": "Reviews and authors Cloudflare Workers code against production best practices. Load when writing new Workers, reviewing Worker code, configuring wrangler.jsonc, or checking for common Workers anti-patterns (streaming, floating promises, global state, secrets, bindings, observability). Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "input": null,
+          "name": "$workers-best-practices"
+        },
+        {
+          "description": "Cloudflare Workers CLI for deploying, developing, and managing Workers, KV, R2, D1, Vectorize, Hyperdrive, Workers AI, Containers, Queues, Workflows, Pipelines, and Secrets Store. Load before running wrangler commands to ensure correct syntax and best practices. Biases towards retrieval from Cloudflare docs over pre-trained knowledge.",
+          "input": null,
+          "name": "$wrangler"
+        },
+        {
+          "description": "Help users write effective PRDs. Use when someone is documenting product requirements, preparing specs for engineering, writing feature briefs, or defining what to build for their team.",
+          "input": null,
+          "name": "$writing-prds"
+        },
+        {
+          "description": "小红书（RedNote）内容工具。使用场景： - 搜索小红书笔记并获取详情 - 获取首页推荐列表 - 获取帖子详情（正文、图片、互动数据、评论） - 发表评论 / 回复评论 - 获取用户主页和笔记列表 - 点赞、收藏帖子 - 发布图文或视频笔记 - 热点话题跟踪与分析报告 - 帖子导出为长图 触发词示例： - \"搜一下小红书上的XX\" - \"跟踪一下小红书上的XX热点\" - \"分析小红书上关于XX的讨论\" - \"小红书XX话题报告\" - \"生成XX的小红书舆情报告\"",
+          "input": null,
+          "name": "$xiaohongshu"
+        },
+        {
+          "description": "Generate Xiaohongshu (小红书) style cover images based on user topics. Use when the user wants to create a social media cover image in Xiaohongshu style, or mentions keywords like \"小红书封面\", \"Xiaohongshu cover\", \"封面生成\", or provides a topic for cover image generation. The generated image will be saved to the current project directory.",
+          "input": null,
+          "name": "$xiaohongshu-cover-generator"
+        },
+        {
+          "description": "Transform markdown/HTML into styled 3:4 ratio images for Xiaohongshu",
+          "input": null,
+          "name": "$xiaohongshu-images"
+        },
+        {
+          "description": "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas.",
+          "input": null,
+          "name": "$imagegen"
+        },
+        {
+          "description": "Use when the user asks how to build with OpenAI products or APIs, asks about Codex itself or choosing Codex surfaces, needs up-to-date official documentation with citations, help choosing the latest model for a use case, or model upgrade and prompt-upgrade guidance; use OpenAI docs MCP tools for non-Codex docs questions, use the Codex manual helper first for broad Codex self-knowledge, and restrict fallback browsing to official OpenAI domains.",
+          "input": null,
+          "name": "$openai-docs"
+        },
+        {
+          "description": "Create and scaffold plugin directories for Codex with a required `.codex-plugin/plugin.json`, optional plugin folders/files, valid manifest defaults, and personal-marketplace entries by default. Use when Codex needs to create a new personal plugin, add optional plugin structure, generate or update marketplace entries for plugin ordering and availability metadata, or update an existing local plugin during development with the CLI-driven cachebuster and reinstall flow.",
+          "input": null,
+          "name": "$plugin-creator"
+        },
+        {
+          "description": "Install curated skills from openai/skills or other repos",
+          "input": null,
+          "name": "$skill-installer"
+        }
+      ],
+      "sessionUpdate": "available_commands_update"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "threadStatus": {
+            "type": "active",
+            "activeFlags": []
+          }
+        }
+      },
+      "sessionUpdate": "session_info_update"
+    },
+    {
+      "content": {
+        "text": "Warning: Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.\n\n",
+        "type": "text"
+      },
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "phase": "final_answer"
+        }
+      },
+      "content": {
+        "text": "BACK",
+        "type": "text"
+      },
+      "messageId": "msg_09ec706b2e139c91016a73a1fad33c8191b2ecc21c33eecfb9",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "phase": "final_answer"
+        }
+      },
+      "content": {
+        "text": "CHAT",
+        "type": "text"
+      },
+      "messageId": "msg_09ec706b2e139c91016a73a1fad33c8191b2ecc21c33eecfb9",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "phase": "final_answer"
+        }
+      },
+      "content": {
+        "text": "_H",
+        "type": "text"
+      },
+      "messageId": "msg_09ec706b2e139c91016a73a1fad33c8191b2ecc21c33eecfb9",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "phase": "final_answer"
+        }
+      },
+      "content": {
+        "text": "AR",
+        "type": "text"
+      },
+      "messageId": "msg_09ec706b2e139c91016a73a1fad33c8191b2ecc21c33eecfb9",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "phase": "final_answer"
+        }
+      },
+      "content": {
+        "text": "NESS",
+        "type": "text"
+      },
+      "messageId": "msg_09ec706b2e139c91016a73a1fad33c8191b2ecc21c33eecfb9",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "phase": "final_answer"
+        }
+      },
+      "content": {
+        "text": "_L",
+        "type": "text"
+      },
+      "messageId": "msg_09ec706b2e139c91016a73a1fad33c8191b2ecc21c33eecfb9",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "phase": "final_answer"
+        }
+      },
+      "content": {
+        "text": "IVE",
+        "type": "text"
+      },
+      "messageId": "msg_09ec706b2e139c91016a73a1fad33c8191b2ecc21c33eecfb9",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "phase": "final_answer"
+        }
+      },
+      "content": {
+        "text": "_OK",
+        "type": "text"
+      },
+      "messageId": "msg_09ec706b2e139c91016a73a1fad33c8191b2ecc21c33eecfb9",
+      "sessionUpdate": "agent_message_chunk"
+    },
+    {
+      "size": 258400,
+      "used": 25356,
+      "sessionUpdate": "usage_update"
+    },
+    {
+      "_meta": {
+        "codex": {
+          "threadStatus": {
+            "type": "idle"
+          }
+        }
+      },
+      "sessionUpdate": "session_info_update"
+    },
+    {
+      "title": "Reply with exactly BACKCHAT_HARNESS_LIVE_OK and nothing else.",
+      "sessionUpdate": "session_info_update"
+    },
+    {
+      "type": "promptComplete",
+      "response": {
+        "stopReason": "end_turn",
+        "usage": {
+          "totalTokens": 25356,
+          "inputTokens": 15360,
+          "cachedReadTokens": 9984,
+          "outputTokens": 12,
+          "thoughtTokens": 0
+        },
+        "_meta": {
+          "quota": {
+            "token_count": {
+              "totalTokens": 25356,
+              "inputTokens": 15360,
+              "cachedInputTokens": 9984,
+              "outputTokens": 12,
+              "reasoningOutputTokens": 0
+            },
+            "model_usage": [
+              {
+                "model": "gpt-5.6-sol",
+                "token_count": {
+                  "totalTokens": 25356,
+                  "inputTokens": 15360,
+                  "cachedInputTokens": 9984,
+                  "outputTokens": 12,
+                  "reasoningOutputTokens": 0
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

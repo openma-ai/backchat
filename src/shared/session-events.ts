@@ -85,6 +85,23 @@ export type SessionStartResult =
       session_id: string;
     };
 
+export interface SessionRuntimeStatus {
+  session_id: string;
+  agent_id: string;
+  running_version?: string;
+  installed_version?: string;
+  restart_required: boolean;
+  busy: boolean;
+  restart_pending: boolean;
+}
+
+export type SessionRestartMode = "now" | "after-turn";
+
+export interface SessionRestartResult {
+  session_id: string;
+  status: "pending" | "restarted";
+}
+
 export interface PairStartParams {
   /** Stable pair id chosen by the renderer (uuid). */
   pair_id: string;
@@ -376,6 +393,16 @@ export type SessionEventOut = (
       outcome: "selected" | "cancelled";
     }
   | {
+      /** User's decision for an out-of-workspace ACP filesystem write.
+       * The host records the decision before resolving/rejecting the broker
+       * so the GUI can retain an auditable callback receipt. */
+      type: "session.fs_write_response";
+      session_id: string;
+      request_id: string;
+      path: string;
+      outcome: "allowed" | "denied";
+    }
+  | {
       /** A user selected an advertised command from OpenMA's command palette.
        * ACP transports the invocation as an ordinary prompt; retaining this
        * host-side fact distinguishes the input without inventing an ACP RPC. */
@@ -501,6 +528,8 @@ export type SessionEventOut = (
        *  active turn via the Backchat/Clash-style steer action. */
       steering_turn_ids?: string[];
     }
+  | { type: "session.restart_pending"; session_id: string }
+  | { type: "session.restarted"; session_id: string }
   | {
       type: "session.error";
       session_id: string;

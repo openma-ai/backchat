@@ -61,6 +61,9 @@ import type {
   SessionPromptParams,
   SessionPromptQueueCommandParams,
   SessionRunCommandParams,
+  SessionRestartMode,
+  SessionRestartResult,
+  SessionRuntimeStatus,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
@@ -98,6 +101,7 @@ interface ActiveSession {
   cwd: string;
   additionalDirectories: string[];
   projectId?: string;
+  startParams: SessionStartParams;
   /** Live turns keyed by turn_id. abort() cancels the ACP request and unwinds
    *  the prompt() async iterator. */
   turns: Map<string, AbortController>;
@@ -115,6 +119,7 @@ interface ActiveSession {
   pendingOutOfBandSteeringUpdates: unknown[];
   queuedPrompts: QueuedPrompt[];
   promptQueueEnabled: boolean;
+  restartPending: boolean;
   /** Main-process timestamp used only for start→prompt latency diagnostics. */
   readyAt: number;
   disposed: boolean;
@@ -148,7 +153,10 @@ export interface SessionManagerDeps {
   /** Build the per-session ACP McpServer[] for `session/new`. Returns the
    *  user's globally-configured servers (from settings, see Phase 8 for the
    *  per-agent override matrix). */
-  resolveMcpServers: (agentId: string, taskId: string) => unknown[];
+  resolveMcpServers: (
+    agentId: string,
+    taskId: string,
+  ) => unknown[] | Promise<unknown[]>;
   /** Per-session client callbacks (permission/fs/terminal). Returned object's
    *  identity changes per session — each call yields a closure bound to the
    *  given session_id so brokers know which window to dispatch to. The
@@ -191,6 +199,9 @@ export interface SessionManagerDeps {
         envOverride?: Record<string, string>;
       }
     | undefined;
+  resolveInstalledAgentVersion?: (
+    agentId: string,
+  ) => string | undefined | Promise<string | undefined>;
 }
 
 export class SessionManager {
@@ -201,6 +212,8 @@ export class SessionManager {
   #requestElicitationUrl: SessionManagerDeps["requestElicitationUrl"];
   #resolveDefaults: SessionManagerDeps["resolveDefaults"];
   #resolveAgentOverride: SessionManagerDeps["resolveAgentOverride"];
+  #resolveInstalledAgentVersion:
+    NonNullable<SessionManagerDeps["resolveInstalledAgentVersion"]>;
   #spawner = new NodeSpawner();
   #runtime = new AcpRuntimeImpl(this.#spawner);
   #sessions = new Map<string, ActiveSession>();
@@ -216,6 +229,8 @@ export class SessionManager {
     this.#requestElicitationUrl = deps.requestElicitationUrl;
     this.#resolveDefaults = deps.resolveDefaults;
     this.#resolveAgentOverride = deps.resolveAgentOverride;
+    this.#resolveInstalledAgentVersion =
+      deps.resolveInstalledAgentVersion ?? (() => undefined);
   }
 
   setSender(send: Sender): void {
@@ -305,6 +320,45 @@ export class SessionManager {
   lifecycle(id: string): SessionLifecycle | undefined {
     const state = this.#lifecycles.get(id);
     return state ? { ...state } : undefined;
+  }
+
+  async getRuntimeStatus(
+    session_id: string,
+  ): Promise<SessionRuntimeStatus | null> {
+    const sess = this.#sessions.get(session_id);
+    if (!sess) return null;
+    const runningVersion = sess.acp.agentInfo?.version;
+    const installedVersion = await this.#resolveInstalledAgentVersion(
+      sess.agentId,
+    );
+    return {
+      session_id,
+      agent_id: sess.agentId,
+      ...(runningVersion ? { running_version: runningVersion } : {}),
+      ...(installedVersion ? { installed_version: installedVersion } : {}),
+      restart_required: Boolean(
+        runningVersion &&
+          installedVersion &&
+          runningVersion !== installedVersion,
+      ),
+      busy: this.#promptBusy(sess),
+      restart_pending: sess.restartPending,
+    };
+  }
+
+  async restartSession(
+    session_id: string,
+    options: { mode: SessionRestartMode },
+  ): Promise<SessionRestartResult> {
+    const sess = this.#sessions.get(session_id);
+    if (!sess) throw new Error("no such session");
+    if (options.mode === "after-turn" && sess.activePromptTurnId !== null) {
+      sess.restartPending = true;
+      this.#send({ type: "session.restart_pending", session_id });
+      return { session_id, status: "pending" };
+    }
+    await this.#restartSessionNow(sess);
+    return { session_id, status: "restarted" };
   }
 
   #transition(
@@ -494,7 +548,7 @@ export class SessionManager {
             });
           },
         },
-        mcpServers: this.#resolveMcpServers(agent.id, p.session_id) as never,
+        mcpServers: await this.#resolveMcpServers(agent.id, p.session_id) as never,
         additionalDirectories,
         ...(sessionRequestMetaForHarness(agent.id)
           ? { sessionRequestMeta: sessionRequestMetaForHarness(agent.id) }
@@ -530,6 +584,10 @@ export class SessionManager {
         cwd: sessionCwd,
         additionalDirectories,
         projectId: p.project_id?.trim() || undefined,
+        startParams: {
+          ...p,
+          cwd: sessionCwd,
+        },
         turns: new Map(),
         openToolCallsByTurn: new Map(),
         activePromptTurnId: null,
@@ -538,6 +596,7 @@ export class SessionManager {
         pendingOutOfBandSteeringUpdates: [],
         queuedPrompts: [],
         promptQueueEnabled: defaults.promptQueueEnabled !== false,
+        restartPending: false,
         readyAt: Date.now(),
         disposed: false,
       };
@@ -957,6 +1016,10 @@ export class SessionManager {
     } finally {
       if (sess.activePromptTurnId === p.turn_id) {
         sess.activePromptTurnId = null;
+      }
+      if (sess.restartPending && !sess.disposed) {
+        await this.#restartSessionNow(sess);
+        return;
       }
       if (!sess.disposed) {
         this.#drainPromptQueue(sess);
@@ -1591,6 +1654,42 @@ export class SessionManager {
     // Unblock any pending permission / fs / terminal request for this
     // session — its ACP child is gone, no one will answer them.
     this.#onSessionPendingWorkCancelled?.(session_id);
+  }
+
+  async #restartSessionNow(sess: ActiveSession): Promise<void> {
+    if (this.#sessions.get(sess.id) !== sess) return;
+    const queuedPrompts = sess.queuedPrompts.map((prompt) => ({
+      params: { ...prompt.params },
+      resolveCompletion: prompt.resolveCompletion,
+    }));
+    const acpSessionId = sess.acpSessionId;
+    const { fork: _fork, ...previousStart } = sess.startParams;
+    sess.restartPending = false;
+    sess.disposed = true;
+    sess.queuedPrompts = [];
+    for (const ctrl of sess.turns.values()) ctrl.abort();
+    await Promise.resolve(sess.acp.dispose()).catch(() => undefined);
+    this.#sessions.delete(sess.id);
+    this.#onSessionPendingWorkCancelled?.(sess.id);
+
+    const result = await this.start({
+      ...previousStart,
+      session_id: sess.id,
+      agent_id: sess.agentId,
+      cwd: sess.cwd,
+      resume: { acp_session_id: acpSessionId },
+    });
+    if (result.status !== "ready") {
+      throw new Error(
+        result.status === "error"
+          ? result.message
+          : `ACP session restart ${result.status}`,
+      );
+    }
+    this.#send({ type: "session.restarted", session_id: sess.id });
+    for (const prompt of queuedPrompts) {
+      void this.prompt(prompt.params).finally(prompt.resolveCompletion);
+    }
   }
 
   /** Optional hook fired when a turn is cancelled or its ACP child is

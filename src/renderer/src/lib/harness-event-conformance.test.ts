@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { reduceTurn } from "@openma/common/session-events/acp";
 import { toOpenMAEvent } from "@shared/openma-event.js";
 import {
   CLAUDE_AGENT_ACP_0_64_2_FIXTURE,
   CODEX_ACP_1_1_9_FIXTURE,
   CURSOR_2026_07_23_FIXTURE,
   KILO_7_4_20_FIXTURE,
-  KIMI_1_49_0_FIXTURE,
+  KIMI_CODE_0_33_0_FIXTURE,
   OPENCODE_1_18_13_FIXTURE,
   PI_ACP_0_0_33_FIXTURE,
 } from "./fixtures/harness-events";
 import { SessionStore } from "./session-store";
+import { reduceTurn } from "./reduce-turn";
 
 const coverageDimensions = [
   "capability",
@@ -32,7 +32,7 @@ const harnessFixtures = [
   PI_ACP_0_0_33_FIXTURE,
   OPENCODE_1_18_13_FIXTURE,
   KILO_7_4_20_FIXTURE,
-  KIMI_1_49_0_FIXTURE,
+  KIMI_CODE_0_33_0_FIXTURE,
 ] as const;
 
 type CoverageFixture = {
@@ -74,22 +74,6 @@ const nativeCases = [
     childId: "cursor:cursor-task-1",
     status: "running",
   },
-  {
-    fixture: OPENCODE_1_18_13_FIXTURE,
-    agentId: "opencode",
-    event: OPENCODE_1_18_13_FIXTURE.events.taskStarted,
-    canonicalType: "work_item.started",
-    childId: "opencode:opencode-task-1",
-    status: "running",
-  },
-  {
-    fixture: KILO_7_4_20_FIXTURE,
-    agentId: "kilo",
-    event: KILO_7_4_20_FIXTURE.events.taskStarted,
-    canonicalType: "work_item.started",
-    childId: "kilo:kilo-task-1",
-    status: "running",
-  },
 ] as const;
 
 function readyStore(agentId: string, sessionId: string): SessionStore {
@@ -106,6 +90,15 @@ function readyStore(agentId: string, sessionId: string): SessionStore {
 }
 
 describe("versioned harness event conformance", () => {
+  it("uses Kimi Code 0.33.0 ACP evidence instead of the retired Kimi CLI fixture", () => {
+    expect(KIMI_CODE_0_33_0_FIXTURE.metadata).toMatchObject({
+      harness: "kimi-code",
+      harnessVersion: "0.33.0",
+      distribution: "@moonshot-ai/kimi-code",
+      entrypoint: "kimi acp",
+    });
+  });
+
   it("requires every harness fixture to account for all GUI event dimensions with evidence", () => {
     for (const fixture of harnessFixtures) {
       expect(
@@ -155,6 +148,17 @@ describe("versioned harness event conformance", () => {
         const sessionId = `coverage-${fixture.metadata.harness}-${dimension}`;
         const turnId = `turn-${sessionId}`;
         const store = readyStore(fixture.metadata.harness, sessionId);
+        if (
+          dimension === "nativeAgent"
+          && (fixture.metadata.harness === "opencode" || fixture.metadata.harness === "kilo")
+        ) {
+          store.apply({
+            type: "session.event",
+            session_id: sessionId,
+            turn_id: turnId,
+            event: fixture.events.taskStarted,
+          });
+        }
         const event = fixture.events[coverage.eventKey!];
         const canonical = toOpenMAEvent({
           type: "session.event",
@@ -411,33 +415,34 @@ describe("versioned harness event conformance", () => {
       label: "opencode@1.18.13",
       agentId: "opencode",
       fixture: OPENCODE_1_18_13_FIXTURE,
-      provisionalId: "opencode:opencode-task-1",
       childId: "opencode-child-1",
     },
     {
       label: "kilo@7.4.20",
       agentId: "kilo",
       fixture: KILO_7_4_20_FIXTURE,
-      provisionalId: "kilo:kilo-task-1",
       childId: "kilo-child-1",
     },
   ] as const) {
-    it(`${taskCase.label} reidentifies the default foreground Task before terminal`, () => {
+    it(`${taskCase.label} creates a native row only after structured parent/child identity`, () => {
       const sessionId = `fixture-${taskCase.agentId}-foreground-lifecycle`;
       const turnId = `turn-${sessionId}`;
       const store = readyStore(taskCase.agentId, sessionId);
 
-      for (const event of [
-        taskCase.fixture.events.taskStarted,
-        taskCase.fixture.events.taskCompleted,
-      ]) {
-        store.apply({
-          type: "session.event",
-          session_id: sessionId,
-          turn_id: turnId,
-          event,
-        });
-      }
+      store.apply({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: taskCase.fixture.events.taskStarted,
+      });
+      expect(store.subagentsFor(sessionId)).toEqual([]);
+
+      store.apply({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: taskCase.fixture.events.taskCompleted,
+      });
 
       expect(store.subagentsFor(sessionId)).toEqual([
         expect.objectContaining({
@@ -447,15 +452,13 @@ describe("versioned harness event conformance", () => {
       ]);
       expect(store.openmaEventsFor(sessionId)).toEqual(expect.arrayContaining([
         expect.objectContaining({
-          type: "work_item.reidentified",
-          work_item_id: taskCase.childId,
-          data: { previous_work_item_id: taskCase.provisionalId },
-        }),
-        expect.objectContaining({
           type: "work_item.completed",
           work_item_id: taskCase.childId,
         }),
       ]));
+      expect(store.openmaEventsFor(sessionId).map((event) => event.type)).not.toContain(
+        "work_item.reidentified",
+      );
     });
   }
 
@@ -466,8 +469,6 @@ describe("versioned harness event conformance", () => {
       fixture: OPENCODE_1_18_13_FIXTURE,
       childId: "opencode-child-background",
       terminalEvent: OPENCODE_1_18_13_FIXTURE.events.backgroundTaskCompletedReplay,
-      terminalType: "work_item.completed",
-      terminalStatus: "complete",
     },
     {
       label: "kilo@7.4.20",
@@ -475,11 +476,9 @@ describe("versioned harness event conformance", () => {
       fixture: KILO_7_4_20_FIXTURE,
       childId: "kilo-child-background",
       terminalEvent: KILO_7_4_20_FIXTURE.events.backgroundTaskFailedReplay,
-      terminalType: "work_item.failed",
-      terminalStatus: "error",
     },
   ] as const) {
-    it(`${taskCase.label} marks the live background terminal missing, then accepts replay evidence`, () => {
+    it(`${taskCase.label} keeps a missing terminal when replay only supplies assistant text`, () => {
       const sessionId = `fixture-${taskCase.agentId}-background-lifecycle`;
       const turnId = `turn-${sessionId}`;
       const store = readyStore(taskCase.agentId, sessionId);
@@ -525,75 +524,51 @@ describe("versioned harness event conformance", () => {
       expect(store.subagentsFor(sessionId)).toEqual([
         expect.objectContaining({
           childSessionId: taskCase.childId,
-          status: taskCase.terminalStatus,
+          status: "unknown",
         }),
       ]);
-      expect(store.openmaEventsFor(sessionId)).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          type: taskCase.terminalType,
-          work_item_id: taskCase.childId,
-        }),
-      ]));
+      const childEventTypes = store.openmaEventsFor(sessionId)
+        .filter((event) => event.work_item_id === taskCase.childId)
+        .map((event) => event.type);
+      expect(childEventTypes).toContain("work_item.missing_terminal");
+      expect(childEventTypes).not.toContain("work_item.completed");
+      expect(childEventTypes).not.toContain("work_item.failed");
     });
   }
 
-  it("kimi@1.49.0 projects its terminal notification into canonical Background", () => {
-    const sessionId = "fixture-kimi";
-    const store = readyStore("kimi-acp", sessionId);
-    store.apply({
-      type: "session.event",
-      session_id: sessionId,
-      turn_id: `turn-${sessionId}`,
-      event: KIMI_1_49_0_FIXTURE.events.backgroundCompleted,
-    });
+  it("kimi-code@0.33.0 keeps Agent as an ordinary Tool without inventing native lifecycle", () => {
+    const sessionId = "fixture-kimi-code-agent-tool";
+    const turnId = `turn-${sessionId}`;
+    const store = readyStore("kimi-code-acp", sessionId);
 
-    expect(store.openmaEventsFor(sessionId)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "work_item.completed",
-          work_item_id: "b1234567",
-        }),
-      ]),
+    for (const event of [
+      KIMI_CODE_0_33_0_FIXTURE.events.agentToolStarted,
+      KIMI_CODE_0_33_0_FIXTURE.events.agentToolInputReady,
+      KIMI_CODE_0_33_0_FIXTURE.events.agentToolCompleted,
+    ]) {
+      const openmaEvent = toOpenMAEvent({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event,
+      }, {
+        occurredAt: "2026-08-05T00:00:00.000Z",
+        harness: "kimi-code",
+        adapter: "kimi-code",
+      });
+      store.apply({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event,
+        openma_event: openmaEvent ?? undefined,
+      });
+    }
+
+    expect(store.openmaEventsFor(sessionId).map((event) => event.type)).toEqual(
+      expect.arrayContaining(["tool.started", "tool.progress", "tool.completed"]),
     );
-    expect(store.workItemsFor(sessionId)).toEqual([
-      expect.objectContaining({
-        id: "b1234567",
-        status: "completed",
-        missing_start: true,
-      }),
-    ]);
-  });
-
-  it("kimi@1.49.0 keeps an idle timeout session-scoped and terminal-only", () => {
-    const sessionId = "fixture-kimi-idle-timeout";
-    const store = readyStore("kimi-acp", sessionId);
-    store.apply({
-      type: "session.event",
-      session_id: sessionId,
-      turn_id: "",
-      event: KIMI_1_49_0_FIXTURE.events.backgroundTimedOut,
-    });
-
-    const failed = store.openmaEventsFor(sessionId).find(
-      (event) => event.type === "work_item.failed",
-    );
-    expect(failed).toMatchObject({
-      work_item_id: "b7654321",
-      data: {
-        kind: "other",
-        title: "wait for service",
-        reason: "timed_out",
-        error: "Command timed out after 30s",
-      },
-    });
-    expect(failed).not.toHaveProperty("turn_id");
-    expect(store.workItemsFor(sessionId)).toEqual([
-      expect.objectContaining({
-        id: "b7654321",
-        status: "failed",
-        missing_start: true,
-        reason: "timed_out",
-      }),
-    ]);
+    expect(store.subagentsFor(sessionId)).toEqual([]);
+    expect(store.workItemsFor(sessionId)).toEqual([]);
   });
 });

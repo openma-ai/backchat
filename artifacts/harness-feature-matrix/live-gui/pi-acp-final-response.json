@@ -1,0 +1,23 @@
+{
+  "feature": "output.final-response",
+  "harness": "Pi",
+  "harnessVersion": "0.0.33",
+  "status": "pass-live",
+  "verificationMode": "live",
+  "trigger": "Reply exactly BACKCHAT_GUI_LIVE_OK_PI_ACP and nothing else.",
+  "provider": "DeepSeek Anthropic",
+  "endpoint": "https://api.deepseek.com/anthropic",
+  "model": "deepseek-v4-flash",
+  "runAt": "2026-08-05T22:49:39.821Z",
+  "durationMs": 2466,
+  "protocolBasis": "ACP v1 session/prompt and session/update final agent message",
+  "screenshot": "screenshots/21-output-final-response--pi.png",
+  "assertion": {
+    "selector": "[data-session-turn-response=\"true\"]:has-text(\"BACKCHAT_GUI_LIVE_OK_PI_ACP\")",
+    "expected": "Assistant response contains BACKCHAT_GUI_LIVE_OK_PI_ACP",
+    "observed": "Worked for 3s\n\nThe user wants me to reply exactly \"BACKCHAT_GUI_LIVE_OK_PI_ACP\" and nothing else.\n\nBACKCHAT_GUI_LIVE_OK_PI_ACP",
+    "result": "passed",
+    "targetVisible": true,
+    "withinScreenshot": true
+  }
+}

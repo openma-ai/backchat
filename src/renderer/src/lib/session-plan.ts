@@ -63,6 +63,40 @@ export function latestPlanDocumentForEvents(
 ): PlanDocumentPresentation | undefined {
   const removedPlanIds = new Set<string>();
   for (let index = events.length - 1; index >= 0; index -= 1) {
+    const canonical = canonicalPlanEnvelope(events[index]?.payload);
+    if (canonical?.type === "plan.removed") {
+      const planId = planIdFrom(canonical.data);
+      if (!planId) return undefined;
+      removedPlanIds.add(planId);
+      continue;
+    }
+    if (
+      canonical?.type === "plan.updated"
+      || canonical?.type === "plan.completed"
+    ) {
+      const document = canonical.data.document
+        && typeof canonical.data.document === "object"
+          ? canonical.data.document as Record<string, unknown>
+          : undefined;
+      const planId = planIdFrom(canonical.data) ?? (document ? planIdFrom(document) : undefined);
+      if (planId && removedPlanIds.has(planId)) continue;
+      if (document && typeof document.markdown === "string") {
+        return {
+          ...(planId ? { id: planId } : {}),
+          ...(typeof document.title === "string" ? { title: document.title } : {}),
+          markdown: document.markdown,
+        };
+      }
+      if (document && typeof document.uri === "string") {
+        return {
+          ...(planId ? { id: planId } : {}),
+          title: typeof document.title === "string" ? document.title : "Plan file",
+          markdown: `[Open plan file](${document.uri})`,
+          uri: document.uri,
+        };
+      }
+    }
+
     const parsed = parseAcpEvent(events[index]?.payload);
     if (parsed.kind === "plan_removed") {
       if (!parsed.planId) return undefined;
@@ -161,6 +195,29 @@ export function latestPlanDocumentForEvents(
     };
   }
   return undefined;
+}
+
+function canonicalPlanEnvelope(value: unknown): {
+  type: "plan.updated" | "plan.completed" | "plan.removed";
+  data: Record<string, unknown>;
+} | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const envelope = value as Record<string, unknown>;
+  if (
+    envelope.schema !== "oma.event.v1"
+    && envelope.schema_version !== "oma.event.v1"
+  ) return undefined;
+  if (
+    envelope.type !== "plan.updated"
+    && envelope.type !== "plan.completed"
+    && envelope.type !== "plan.removed"
+  ) return undefined;
+  return {
+    type: envelope.type,
+    data: envelope.data && typeof envelope.data === "object"
+      ? envelope.data as Record<string, unknown>
+      : {},
+  };
 }
 
 function planIdFrom(value: Record<string, unknown>): string | undefined {

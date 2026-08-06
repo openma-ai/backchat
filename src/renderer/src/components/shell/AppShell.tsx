@@ -5,6 +5,10 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
 import { getThemePlugin } from "@/themes";
+import {
+  TASK_LIFECYCLE_TOASTER_ID,
+  Toaster,
+} from "@/components/ui/sonner";
 
 /**
  * AppShell — three-slot stage. Left sidebar and (optional) right side-
@@ -153,6 +157,16 @@ export function AppShell({
         "--right-rail-w": `${rightRailWidth}px`,
       } as React.CSSProperties}
     >
+      <Toaster
+        id={TASK_LIFECYCLE_TOASTER_ID}
+        position="top-right"
+        offset={{
+          top: "calc(var(--stage-inset) + 50px + 8px)",
+          right: rightCollapsed || !rightPanel
+            ? "calc(var(--stage-inset) + 12px)"
+            : "calc(var(--right-rail-w) + var(--stage-inset) + 12px)",
+        }}
+      />
       <div className="theme-app-background" aria-hidden="true" />
       {/* Left sidebar — absolute floating card. Spans full height
           regardless of bottom panel state (the bottom panel is inset

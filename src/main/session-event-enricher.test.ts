@@ -24,7 +24,7 @@ describe("session event canonical enricher", () => {
     expect(persist).toHaveBeenCalledTimes(1);
     expect(persist).toHaveBeenCalledWith(result.openma_event);
     expect(result.openma_event).toMatchObject({
-      schema_version: "oma.event.v1",
+      schema: "oma.event.v1",
       type: "agent.message_chunk",
       session_id: "sess-persist",
       turn_id: "turn-persist",
@@ -118,7 +118,7 @@ describe("session event canonical enricher", () => {
     expect(result.openma_event?.seq).toBe(42);
   });
 
-  it("finds the highest persisted canonical sequence while ignoring legacy rows", () => {
+  it("finds the highest persisted canonical sequence across current and legacy schema keys", () => {
     const latestSequence = (
       sessionEventEnricherModule as unknown as {
         latestPersistedOpenMAEventSequence?: (
@@ -140,9 +140,13 @@ describe("session event canonical enricher", () => {
       },
       {
         type: "openma_event",
+        data: JSON.stringify({ schema: "oma.event.v1", seq: 52 }),
+      },
+      {
+        type: "openma_event",
         data: JSON.stringify({ schema_version: "oma.event.v1", seq: -1 }),
       },
-    ])).toBe(41);
+    ])).toBe(52);
   });
 
   it("advances past a higher sequence attached by a harness adapter", () => {

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createAgentSetupService } from "./agent-setup.js";
 import { _resetRegistryCache } from "@open-managed-agents-desktop/acp/registry";
@@ -46,6 +46,12 @@ describe("agent setup service", () => {
 
   it("marks managed shims with missing metadata as updateable when registry has a latest version", async () => {
     _resetRegistryCache();
+    const fetchLatest = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ version: "2.0.0" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
     const root = join(tmpdir(), `backchat-agent-setup-version-${process.pid}-${Date.now()}`);
     const binDir = join(root, "bin");
     const registryCachePath = join(root, "registry-cache.json");
@@ -75,14 +81,18 @@ describe("agent setup service", () => {
       registryCachePath,
     });
 
-    const gemini = (await service.listAgents()).find((agent) => agent.id === "gemini");
-    expect(gemini).toMatchObject({
-      id: "gemini",
-      installed: true,
-      latestVersion: "2.0.0",
-      updateAvailable: true,
-    });
-    _resetRegistryCache();
+    try {
+      const gemini = (await service.listAgents()).find((agent) => agent.id === "gemini");
+      expect(gemini).toMatchObject({
+        id: "gemini",
+        installed: true,
+        latestVersion: "2.0.0",
+        updateAvailable: true,
+      });
+    } finally {
+      fetchLatest.mockRestore();
+      _resetRegistryCache();
+    }
   });
 
   it("rejects upgrade for agents that are not managed-installed", async () => {

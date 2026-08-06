@@ -10,6 +10,57 @@ import { AcpSessionImpl } from "./session";
 import type { ChildHandle } from "./types";
 
 describe("AcpSessionImpl", () => {
+  it("filters HTTP and SSE MCP servers unless the agent advertises support", async () => {
+    let sentMcpServers: unknown;
+    const harness = createInMemoryAcpHarness(() => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: {
+            mcpCapabilities: {
+              http: true,
+              sse: false,
+            },
+          },
+        };
+      },
+      async newSession(params) {
+        sentMcpServers = params.mcpServers;
+        return { sessionId: "fresh-session" };
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async authenticate() {
+        return {};
+      },
+      async cancel() {
+        return;
+      },
+    }));
+
+    const session = new AcpSessionImpl({
+      child: harness.child,
+      id: "test-acp-session",
+      options: {
+        agent: { command: "fake-agent", cwd: "/tmp/backchat-test" },
+        mcpServers: [
+          { type: "stdio", name: "filesystem", command: "fs", args: [], env: [] },
+          { type: "http", name: "backchat-browser", url: "http://127.0.0.1:1234/mcp", headers: [] },
+          { type: "sse", name: "legacy-sse", url: "http://127.0.0.1:1235/sse", headers: [] },
+        ] as never,
+      },
+    });
+
+    await session.init();
+    await session.dispose();
+
+    expect(sentMcpServers).toEqual([
+      { name: "filesystem", command: "fs", args: [], env: [] },
+      { type: "http", name: "backchat-browser", url: "http://127.0.0.1:1234/mcp", headers: [] },
+    ]);
+  });
+
   it("turns a first-prompt broken pipe into an actionable process-exit error", async () => {
     const child = createChildThatExitsOnFirstPrompt();
     const session = new AcpSessionImpl({

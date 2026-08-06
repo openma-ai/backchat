@@ -93,4 +93,37 @@ describe("agent and session lifecycle contract", () => {
     expect(ipc).toContain("sessionManager.disposeAll()");
     expect(ipc).toContain("agentSetup.dispose()");
   });
+
+  it("exposes managed ACP update status and session restart through Backchat IPC", () => {
+    const channels = source("../shared/ipc-channels.ts");
+    const api = source("../shared/api.ts");
+    const preload = source("../preload/index.ts");
+    const ipc = source("ipc.ts");
+    const chat = source("../renderer/src/components/chat/ChatView.tsx");
+    const topbar = source("../renderer/src/components/shell/Topbar.tsx");
+    const updateControl = source(
+      "../renderer/src/components/chat/SessionRuntimeUpdateControl.tsx",
+    );
+    const sidebar = source("../renderer/src/components/shell/Sidebar.tsx");
+    const settingsAgents = source("../renderer/src/pages/settings/Agents.tsx");
+
+    expect(channels).toContain('SessionRuntimeStatus: "session:runtimeStatus"');
+    expect(channels).toContain('SessionRestart: "session:restart"');
+    expect(api).toContain("sessionRuntimeStatus(");
+    expect(api).toContain("sessionRestart(");
+    expect(preload).toContain("InvokeChannel.SessionRuntimeStatus");
+    expect(preload).toContain("InvokeChannel.SessionRestart");
+    expect(ipc).toContain("sessionManager.getRuntimeStatus");
+    expect(ipc).toContain("sessionManager.restartSession");
+    expect(chat).not.toContain("SessionRuntimeUpdate");
+    expect(topbar).toContain("<SessionRuntimeUpdateControl");
+    expect(updateControl).toContain('toast.warning(t("acpUpdate.installed")');
+    expect(updateControl).toContain('position: "top-right"');
+    expect(updateControl).toContain("window.backchat.sessionRestart");
+    expect(sidebar).toContain('to="/settings/agents"');
+    expect(sidebar).toContain("updateAvailable");
+    expect(settingsAgents).toContain(
+      'invalidateQueries({ queryKey: ["session-runtime"] })',
+    );
+  });
 });

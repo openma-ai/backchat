@@ -280,6 +280,9 @@ export class SessionStore {
             ? { messageId: metadata.messageId }
             : {}),
           ...(metadata?.phase ? { phase: metadata.phase } : {}),
+          ...(metadata?.phase
+            ? { _meta: { codex: { phase: metadata.phase } } }
+            : {}),
           content: { type: "text", text: merged },
         },
         receivedAt: last!.receivedAt,
@@ -292,6 +295,9 @@ export class SessionStore {
           kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
         ...(metadata?.messageId ? { messageId: metadata.messageId } : {}),
         ...(metadata?.phase ? { phase: metadata.phase } : {}),
+        ...(metadata?.phase
+          ? { _meta: { codex: { phase: metadata.phase } } }
+          : {}),
         content: { type: "text", text },
       },
       receivedAt,
@@ -406,7 +412,17 @@ export class SessionStore {
   }
 
   workItemsFor(sessionId: string): WorkItemSnapshot[] {
-    return [...reduceWorkItems(this.#openmaEventsBySession.get(sessionId) ?? []).items.values()];
+    const events = (this.#openmaEventsBySession.get(sessionId) ?? []).filter(
+      // Correlated evidence keeps its work_item_id for inspection and replay,
+      // but it is not itself a lifecycle edge. openma-common's generic
+      // reducer deliberately merges every correlated event, so keep these
+      // evidence-only records out of the GUI WorkItem projection.
+      (event) =>
+        event.type !== "vendor.event"
+        && event.type !== "raw.event"
+        && event.type !== "monitor.event",
+    );
+    return [...reduceWorkItems(events).items.values()];
   }
 
   #ingestOpenMAEvent(
@@ -2148,7 +2164,10 @@ export class SessionStore {
         source: started.source,
         occurred_at: new Date().toISOString(),
         type: "work_item.missing_terminal",
-        data: { reason: "parent_turn_completed" },
+        data: {
+          missing_terminal: true,
+          reason: "parent_turn_completed",
+        },
       }), { persist: true });
     }
   }
@@ -2176,6 +2195,7 @@ export class SessionStore {
         type: "work_item.started",
         data: {
           kind: update.kind,
+          missing_terminal: false,
           ...(update.title ? { title: update.title } : {}),
           ...(update.canStop !== undefined ? { can_stop: update.canStop } : {}),
         },
@@ -2197,7 +2217,10 @@ export class SessionStore {
         source: { kind: "harness", harness: adapter, adapter },
         occurred_at: new Date().toISOString(),
         type: "work_item.missing_terminal",
-        data: { reason: "absent_from_background_level" },
+        data: {
+          missing_terminal: true,
+          reason: "absent_from_background_level",
+        },
       }), { persist: true });
     }
   }
@@ -2211,6 +2234,9 @@ export class SessionStore {
     const existing = this.workItemsFor(sessionId).find(
       (item) => item.id === update.id,
     );
+    // A classification refines an already-observed lifecycle; it must not
+    // manufacture a subscription from a delivery-only monitor event.
+    if (update.phase === "classification" && !existing) return;
     // Claude's terminal task_notification carries a stable task_id but no
     // task kind. Preserve the kind established by an earlier structured
     // lifecycle edge; do not classify an uncorrelated terminal notification.
@@ -2870,6 +2896,20 @@ export class SessionStore {
               selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
             supportsSessionFork: ev.supports_session_fork ?? s.supportsSessionFork,
             supportsSteering: ev.supports_steering ?? s.supportsSteering,
+            protocolVersion: ev.protocol_version ?? s.protocolVersion,
+            agentInfo: ev.agent_info ?? s.agentInfo,
+            agentCapabilities: ev.agent_capabilities ?? s.agentCapabilities,
+            initializeMeta: ev.initialize_meta ?? s.initializeMeta,
+            sessionSetupMeta: ev.session_setup_meta ?? s.sessionSetupMeta,
+            supportsSessionList: ev.supports_session_list ?? s.supportsSessionList,
+            supportsSessionDelete: ev.supports_session_delete ?? s.supportsSessionDelete,
+            supportsSessionResume: ev.supports_session_resume ?? s.supportsSessionResume,
+            supportsSessionClose: ev.supports_session_close ?? s.supportsSessionClose,
+            supportsAdditionalDirectories:
+              ev.supports_additional_directories ?? s.supportsAdditionalDirectories,
+            supportsLogout: ev.supports_logout ?? s.supportsLogout,
+            supportsProviders: ev.supports_providers ?? s.supportsProviders,
+            supportsNes: ev.supports_nes ?? s.supportsNes,
             status: s.activeTurnId ? "running" : "ready",
             lastError: undefined,
             pendingAsks:
@@ -2892,6 +2932,19 @@ export class SessionStore {
             currentModeId: selectedModeIdFromConfigOptions(configOptions),
             supportsSessionFork: ev.supports_session_fork,
             supportsSteering: ev.supports_steering,
+            protocolVersion: ev.protocol_version,
+            agentInfo: ev.agent_info,
+            agentCapabilities: ev.agent_capabilities,
+            initializeMeta: ev.initialize_meta,
+            sessionSetupMeta: ev.session_setup_meta,
+            supportsSessionList: ev.supports_session_list,
+            supportsSessionDelete: ev.supports_session_delete,
+            supportsSessionResume: ev.supports_session_resume,
+            supportsSessionClose: ev.supports_session_close,
+            supportsAdditionalDirectories: ev.supports_additional_directories,
+            supportsLogout: ev.supports_logout,
+            supportsProviders: ev.supports_providers,
+            supportsNes: ev.supports_nes,
             pendingAsks: pendingBeforeReady,
           });
         }
@@ -3246,14 +3299,12 @@ export class SessionStore {
             parsed.tool,
             tool,
           )) {
-            for (const event of runtimeWorkItemUpdateToOpenMAEvents(update, {
-              sessionId: ev.session_id,
-              turnId: ev.turn_id,
-              occurredAt: new Date().toISOString(),
-              adapter: workItemAdapter.provider,
-            })) {
-              this.#ingestOpenMAEvent(event, { persist: true });
-            }
+            this.#ingestRuntimeWorkItemUpdate(
+              ev.session_id,
+              ev.turn_id,
+              workItemAdapter.provider,
+              update,
+            );
           }
           const { outputs, sources } = (
             runtimeAdapter ?? genericAcpRuntimeAdapter
@@ -3927,7 +3978,8 @@ function safeParse(s: string): unknown {
 function parsePersistedOpenMAEvent(value: unknown): OpenMAEvent | null {
   if (!isPlainRecord(value)) return null;
   if (
-    value.schema_version !== "oma.event.v1"
+    (value.schema !== "oma.event.v1"
+      && value.schema_version !== "oma.event.v1")
     || typeof value.event_id !== "string"
     || typeof value.type !== "string"
     || typeof value.session_id !== "string"

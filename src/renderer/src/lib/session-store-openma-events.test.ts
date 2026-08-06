@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createOpenMAEvent } from "@openma/common/session-events/openma";
-import { reduceTurn } from "@openma/common/session-events/acp";
 import { attachOpenMAEvent } from "@shared/openma-event.js";
+import { reduceTurn } from "./reduce-turn";
 import { SessionStore } from "./session-store";
 
 describe("SessionStore canonical OpenMA events", () => {
@@ -35,7 +35,7 @@ describe("SessionStore canonical OpenMA events", () => {
 
     expect(persist).toHaveBeenCalledWith(
       expect.objectContaining({
-        schema_version: "oma.event.v1",
+        schema: "oma.event.v1",
         type: "work_item.started",
         session_id: "sess-native-persist",
       }),
@@ -262,7 +262,7 @@ describe("SessionStore canonical OpenMA events", () => {
         kind: "bash",
         title: "pnpm test",
         status: "completed",
-        output: ["42 tests passed\n"],
+        output: "42 tests passed\n",
         result: { exit_code: 0, signal: null },
       },
     ]);
@@ -1213,7 +1213,7 @@ describe("SessionStore canonical OpenMA events", () => {
           id: "bash-task-1",
           kind: "bash",
           status: "killed",
-          missing_terminal: undefined,
+          missing_terminal: false,
           reason: "task_stop",
         }),
       ]),
@@ -1578,7 +1578,7 @@ describe("SessionStore canonical OpenMA events", () => {
         id: "monitor-level-task",
         kind: "monitor",
         status: "completed",
-        missing_terminal: undefined,
+        missing_terminal: false,
       }),
     ]);
   });
@@ -1662,7 +1662,7 @@ describe("SessionStore canonical OpenMA events", () => {
         id: "level-local-task",
         kind: "other",
         status: "running",
-        missing_terminal: undefined,
+        missing_terminal: false,
       }),
     ]);
   });
@@ -1865,13 +1865,13 @@ describe("SessionStore canonical OpenMA events", () => {
     expect(monitorEvent).not.toHaveProperty("turn_id");
   });
 
-  it("routes Kimi's ACP text notification into Background while preserving the missing start", () => {
+  it("keeps legacy Kimi notification-shaped text as assistant content without inferring background work", () => {
     const store = new SessionStore();
     store.apply({
       type: "session.ready",
       session_id: "sess-kimi-background",
       acp_session_id: "acp-kimi-background",
-      agent_id: "kimi-acp",
+      agent_id: "kimi-code-acp",
       cwd: "/tmp/project",
     });
     store.registerTurn(
@@ -1896,19 +1896,14 @@ describe("SessionStore canonical OpenMA events", () => {
       },
     });
 
-    expect(store.workItemsFor("sess-kimi-background")).toEqual([
-      expect.objectContaining({
-        id: "b1234567",
-        kind: "other",
-        status: "completed",
-        missing_start: true,
-        result: {
-          description: "build project",
-          notification: "Background task completed: build project",
-          status: "completed",
-        },
-      }),
-    ]);
+    expect(store.workItemsFor("sess-kimi-background")).toEqual([]);
+    expect(store.subagentsFor("sess-kimi-background")).toEqual([]);
+    expect(store.turnsFor("sess-kimi-background")[0]?.assistantText).toBe(
+      "[Notification] Background task completed: build project\n"
+        + "Task ID: b1234567\n"
+        + "Status: completed\n"
+        + "Description: build project",
+    );
   });
 
   it("marks an unfinished Codex child unknown when its parent turn ends without a child terminal event", () => {

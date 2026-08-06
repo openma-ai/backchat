@@ -1327,6 +1327,45 @@ describe("SessionStore config options", () => {
 });
 
 describe("SessionStore ACP session metadata", () => {
+  test("retains initialize identity, capabilities, and workspace evidence on the session row", () => {
+    const store = new SessionStore();
+    const agentCapabilities = {
+      loadSession: true,
+      promptCapabilities: { image: true, embeddedContext: true },
+      sessionCapabilities: { close: {}, resume: {} },
+    };
+
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-runtime-evidence",
+      acp_session_id: "acp-runtime-evidence",
+      agent_id: "kimi-code-acp",
+      cwd: "/work/primary",
+      additional_directories: ["/work/docs", "/work/packages"],
+      protocol_version: 1,
+      agent_info: { name: "Kimi Code CLI", version: "0.33.0" },
+      agent_capabilities: agentCapabilities,
+      initialize_meta: { kimi: { channel: "acp" } },
+      session_setup_meta: { kimi: { startupInfo: "ready" } },
+      supports_session_close: true,
+      supports_session_resume: true,
+      supports_additional_directories: true,
+    });
+
+    expect(store.get("sess-runtime-evidence")).toMatchObject({
+      cwd: "/work/primary",
+      additionalDirectories: ["/work/docs", "/work/packages"],
+      protocolVersion: 1,
+      agentInfo: { name: "Kimi Code CLI", version: "0.33.0" },
+      agentCapabilities,
+      initializeMeta: { kimi: { channel: "acp" } },
+      sessionSetupMeta: { kimi: { startupInfo: "ready" } },
+      supportsSessionClose: true,
+      supportsSessionResume: true,
+      supportsAdditionalDirectories: true,
+    });
+  });
+
   test("adapts usage updates without creating a transcript turn", () => {
     const store = new SessionStore();
     store.apply({
@@ -3089,7 +3128,7 @@ describe("SessionStore side chats and native subagents", () => {
     ["OpenCode", "opencode", "opencode"],
     ["Kilo", "kilo", "kilo"],
   ])(
-    "tracks %s foreground Task from provisional id through reidentification and completion",
+    "tracks %s foreground Task only after structured parent/child identity is confirmed",
     (_name, agentId, provider) => {
       const store = new SessionStore();
       const parentId = `${agentId}-foreground-parent`;
@@ -3123,12 +3162,7 @@ describe("SessionStore side chats and native subagents", () => {
         },
       });
 
-      expect(store.subagentsFor(parentId)).toEqual([
-        expect.objectContaining({
-          childSessionId: `${provider}:${toolCallId}`,
-          status: "running",
-        }),
-      ]);
+      expect(store.subagentsFor(parentId)).toEqual([]);
 
       store.apply({
         type: "session.event",
@@ -3158,7 +3192,6 @@ describe("SessionStore side chats and native subagents", () => {
             provider,
             toolCallId,
             childThreadId: `${agentId}-foreground-child`,
-            result: "Audit passed.",
           }),
         }),
       ]);
@@ -3166,16 +3199,11 @@ describe("SessionStore side chats and native subagents", () => {
         expect.objectContaining({
           id: `${agentId}-foreground-child`,
           status: "completed",
-          result: "Audit passed.",
         }),
       ]);
       expect(
         store.openmaEventsFor(parentId).map((event) => event.type),
-      ).toEqual([
-        "work_item.started",
-        "work_item.reidentified",
-        "work_item.completed",
-      ]);
+      ).toEqual(["work_item.completed"]);
     },
   );
 
@@ -3183,7 +3211,7 @@ describe("SessionStore side chats and native subagents", () => {
     ["OpenCode", "opencode", "opencode"],
     ["Kilo", "kilo", "kilo"],
   ])(
-    "tracks %s background Task lifecycle through its runtime adapter",
+    "keeps %s background Task terminal unknown when assistant text claims completion",
     (_name, agentId, provider) => {
       const store = new SessionStore();
       store.apply({
@@ -3277,10 +3305,9 @@ describe("SessionStore side chats and native subagents", () => {
       expect(store.subagentsFor(`${agentId}-parent`)).toEqual([
         expect.objectContaining({
           childSessionId: `${agentId}-child`,
-          status: "complete",
+          status: "unknown",
           native: expect.objectContaining({
             provider,
-            result: "Audit passed.",
           }),
         }),
       ]);

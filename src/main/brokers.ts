@@ -363,6 +363,9 @@ export function createTerminal(
       terminalId,
       exitCode: rec.exitCode,
       signal: rec.exitSignal,
+      ...(rec.terminationReason
+        ? { terminationReason: rec.terminationReason }
+        : {}),
     });
     const outcome = {
       exit_code: rec.exitCode,
@@ -409,6 +412,9 @@ function terminalInfo(terminalId: string, rec: PtyRecord): AcpTerminalInfo {
     exited: rec.exited,
     exitCode: rec.exitCode,
     signal: rec.exitSignal,
+    ...(rec.terminationReason
+      ? { terminationReason: rec.terminationReason }
+      : {}),
   };
 }
 
@@ -590,6 +596,13 @@ export function registerBrokers(): void {
       const pending = pendingFsWrite.get(decision.requestId);
       if (!pending) return;
       pendingFsWrite.delete(decision.requestId);
+      brokerSessionEventSink?.({
+        type: "session.fs_write_response",
+        session_id: pending.sessionId,
+        request_id: decision.requestId,
+        path: pending.path,
+        outcome: decision.approved ? "allowed" : "denied",
+      });
       if (!decision.approved) {
         pending.reject(new Error("user denied write"));
         return;

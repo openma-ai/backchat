@@ -8,6 +8,17 @@ import type {
   PermissionAskInfo,
 } from "../shared/api.js";
 
+type CreateElicitationResponse = Awaited<ReturnType<
+  NonNullable<ClientCallbacks["createElicitation"]>
+>>;
+type AcceptedElicitationResponse = Extract<
+  CreateElicitationResponse,
+  { action: "accept" }
+>;
+type ElicitationContentValue = NonNullable<
+  AcceptedElicitationResponse["content"]
+>[string];
+
 /** Normalize the display fields of an ACP permission callback before the
  * request crosses into the renderer. Provider metadata remains callback/raw
  * evidence and never becomes a GUI parsing contract. */
@@ -90,7 +101,7 @@ export function elicitationCallbackForSession(
     }
 
     if (!requestPermission) return { action: "decline" };
-    const content: Record<string, unknown> = {};
+    const content: Record<string, ElicitationContentValue> = {};
 
     for (const [name, rawProperty] of Object.entries(properties)) {
       const property = recordValue(rawProperty);
@@ -281,7 +292,10 @@ async function selectOne(input: {
   prompt: string;
   choices: Choice[];
   required: boolean;
-}): Promise<{ action: "accept" | "cancel" | "decline"; value?: unknown }> {
+}): Promise<{
+  action: "accept" | "cancel" | "decline";
+  value?: ElicitationContentValue;
+}> {
   const skip = reservedOption("__openma_elicitation_skip__", input.choices);
   const response = await input.requestPermission({
     sessionId: input.sessionId,

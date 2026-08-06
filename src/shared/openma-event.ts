@@ -1,7 +1,7 @@
 import {
   createOpenMAEvent,
-  createRawEvent,
-  createVendorEvent,
+  createRawEvent as createCommonRawEvent,
+  createVendorEvent as createCommonVendorEvent,
   type OpenMAEvent,
   type OpenMAEventSource,
 } from "@openma/common/session-events/openma";
@@ -14,6 +14,20 @@ export interface OpenMAEventBridgeOptions {
   occurredAt: string;
   harness?: string;
   adapter?: string;
+}
+
+/** Keep Backchat call sites on the shared constructors so raw/vendor records
+ * use the same canonical `data` envelope as every other OpenMA consumer. */
+function createRawEvent(
+  input: Parameters<typeof createCommonRawEvent>[0],
+): OpenMAEvent {
+  return createCommonRawEvent(input);
+}
+
+function createVendorEvent(
+  input: Parameters<typeof createCommonVendorEvent>[0],
+): OpenMAEvent {
+  return createCommonVendorEvent(input);
 }
 
 /**
@@ -189,7 +203,9 @@ function acpAdapterMeta(
   const raw = asRecord(rawEvent);
   const notificationContext =
     asRecord(inner[ACP_NOTIFICATION_CONTEXT_KEY])
-    ?? asRecord(raw?.[ACP_NOTIFICATION_CONTEXT_KEY]);
+    ?? asRecord(raw?.[ACP_NOTIFICATION_CONTEXT_KEY])
+    ?? asRecord(inner["_openma.acp.notification"])
+    ?? asRecord(raw?.["_openma.acp.notification"]);
   const notificationMeta = asRecord(notificationContext?.meta);
   const combined = {
     ...updateMeta,
@@ -969,6 +985,7 @@ export function runtimeWorkItemUpdateToOpenMAEvents(
       type: "work_item.started",
       data: {
         kind: update.kind,
+        missing_terminal: false,
         ...(update.title ? { title: update.title } : {}),
         ...(update.command ? { command: update.command } : {}),
         ...(update.canStop !== undefined ? { can_stop: update.canStop } : {}),
@@ -984,6 +1001,7 @@ export function runtimeWorkItemUpdateToOpenMAEvents(
         // dropping `other` here would make the reconstructed work-item
         // identity lose its only semantic classification.
         kind: update.kind,
+        missing_terminal: false,
         ...(update.title ? { title: update.title } : {}),
         ...(update.result !== undefined ? { result: update.result } : {}),
       },
@@ -996,6 +1014,7 @@ export function runtimeWorkItemUpdateToOpenMAEvents(
         : "work_item.failed",
       data: {
         kind: update.kind,
+        missing_terminal: false,
         ...(update.title ? { title: update.title } : {}),
         ...(update.error ? { error: update.error } : {}),
         ...(update.reason ? { reason: update.reason } : {}),
@@ -1304,7 +1323,11 @@ export function nativeAgentUpdateToOpenMAEvent(
       return createOpenMAEvent({
         ...base,
         type: "work_item.missing_terminal",
-        data: { kind: "agent", reason: "parent_turn_completed" },
+        data: {
+          kind: "agent",
+          missing_terminal: true,
+          reason: "parent_turn_completed",
+        },
       });
     default:
       return createVendorEvent({
@@ -1567,6 +1590,21 @@ export function toOpenMAEvent(
           outcome: message.outcome,
         },
       });
+    case "session.fs_write_response":
+      return createOpenMAEvent({
+        ...canonicalEventBase(message, options),
+        event_id: transportEventId(
+          `fs-write-response:${message.session_id}:${message.request_id}`,
+          message,
+        ),
+        type: "user.fs_write_response",
+        source: { kind: "user" },
+        data: {
+          request_id: message.request_id,
+          path: message.path,
+          outcome: message.outcome,
+        },
+      });
     case "session.elicitation_response":
       return createOpenMAEvent({
         ...canonicalEventBase(message, options),
@@ -1731,6 +1769,7 @@ export function toOpenMAEvent(
         data: { reason: "disposed" },
       });
   }
+  return null;
 }
 
 export function attachOpenMAEvent(

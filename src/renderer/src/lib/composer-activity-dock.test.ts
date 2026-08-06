@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createOpenMAEvent } from "@openma/common/session-events/openma";
+import {
+  createOpenMAEvent,
+  type CanonicalEventType,
+} from "@openma/common/session-events/openma";
 
 import {
   composerActivityModules,
@@ -11,6 +14,8 @@ const labels = {
   plan: "Plan",
   monitor: "Monitor",
   background: "Background",
+  elicitation: "External interaction",
+  elicitationComplete: "Completed external interaction",
   running: "running",
   completed: "completed",
   event: "event",
@@ -112,6 +117,193 @@ describe("composerActivityModules", () => {
       openmaEvents: [],
       labels,
     })).toEqual([]);
+  });
+
+  it("keeps permission, filesystem, form, and URL callback decisions as durable GUI activity", () => {
+    const callbackEvent = (
+      eventId: string,
+      type: CanonicalEventType,
+      data: Record<string, unknown>,
+    ) => createOpenMAEvent({
+      event_id: eventId,
+      type,
+      session_id: "sess-callbacks",
+      source: { kind: "user" },
+      occurred_at: "2026-08-06T10:00:00.000Z",
+      data,
+    });
+
+    expect(composerActivityModules({
+      tasks: [],
+      workItems: [],
+      openmaEvents: [
+        callbackEvent("permission-1", "user.permission_response", {
+          request_id: "perm-1",
+          outcome: "selected",
+          option_id: "allow-once",
+        }),
+        callbackEvent("filesystem-1", "user.fs_write_response", {
+          request_id: "fsw-1",
+          outcome: "denied",
+          path: "/tmp/outside/matrix-output.txt",
+        }),
+        callbackEvent("form-1", "user.elicitation_response", {
+          request_id: "form-1",
+          action: "accept",
+          content: { strategy: "strict" },
+        }),
+        callbackEvent("url-1", "user.elicitation_response", {
+          request_id: "url-1",
+          action: "decline",
+          mode: "url",
+          elicitation_id: "matrix-url-1",
+        }),
+      ],
+      labels,
+    })).toEqual([{
+      id: "callbacks",
+      kind: "callbacks",
+      label: "Callback decisions",
+      summary: "4 decisions",
+      items: [
+        {
+          id: "callback:permission:permission-1",
+          label: "Permission",
+          status: "selected",
+          detail: "allow-once",
+          variant: "event",
+        },
+        {
+          id: "callback:filesystem:filesystem-1",
+          label: "File write",
+          status: "denied",
+          detail: "/tmp/outside/matrix-output.txt",
+          variant: "event",
+        },
+        {
+          id: "callback:form:form-1",
+          label: "Form",
+          status: "accept",
+          detail: "strategy: strict",
+          variant: "event",
+        },
+        {
+          id: "callback:url:url-1",
+          label: "External page",
+          status: "decline",
+          detail: "matrix-url-1",
+          variant: "event",
+        },
+      ],
+    }]);
+  });
+
+  it("projects URL elicitation completion as an explicit GUI activity", () => {
+    const accepted = createOpenMAEvent({
+      event_id: "elicitation-accepted-1",
+      type: "user.elicitation_response",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      source: { kind: "user" },
+      occurred_at: "2026-08-06T09:59:00.000Z",
+      data: {
+        request_id: "elicit-url-1",
+        action: "accept",
+        mode: "url",
+        elicitation_id: "github-oauth-001",
+      },
+    });
+    const completion = createOpenMAEvent({
+      event_id: "elicitation-complete-1",
+      type: "callback.notification",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      source: { kind: "harness", harness: "claude-acp", adapter: "claude" },
+      occurred_at: "2026-08-06T10:00:00.000Z",
+      data: {
+        method: "elicitation/complete",
+        category: "elicitation",
+        params: { elicitationId: "github-oauth-001" },
+      },
+    });
+
+    expect(composerActivityModules({
+      tasks: [],
+      workItems: [],
+      openmaEvents: [accepted, completion],
+      labels,
+    })).toEqual([
+      {
+        id: "callbacks",
+        kind: "callbacks",
+        label: "Callback decisions",
+        summary: "1 decision",
+        items: [{
+          id: "callback:url:elicitation-accepted-1",
+          label: "External page",
+          status: "accept",
+          detail: "github-oauth-001",
+          variant: "event",
+        }],
+      },
+      {
+        id: "elicitation",
+        kind: "elicitation",
+        label: "External interaction",
+        summary: "1 completed",
+        items: [{
+          id: "elicitation:elicitation-complete-1",
+          label: "Completed external interaction",
+          status: "completed",
+          detail: "github-oauth-001",
+          variant: "event",
+        }],
+      },
+    ]);
+  });
+
+  it("does not surface unknown or duplicate URL completion identities", () => {
+    const accepted = createOpenMAEvent({
+      event_id: "elicitation-accepted-2",
+      type: "user.elicitation_response",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      source: { kind: "user" },
+      occurred_at: "2026-08-06T09:59:00.000Z",
+      data: {
+        request_id: "elicit-url-2",
+        action: "accept",
+        mode: "url",
+        elicitation_id: "known-id",
+      },
+    });
+    const completion = (id: string, elicitationId: string) => createOpenMAEvent({
+      event_id: id,
+      type: "callback.notification",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      source: { kind: "harness", harness: "claude-acp", adapter: "claude" },
+      occurred_at: "2026-08-06T10:00:00.000Z",
+      data: {
+        method: "elicitation/complete",
+        category: "elicitation",
+        params: { elicitationId },
+      },
+    });
+
+    const [module] = composerActivityModules({
+      tasks: [],
+      workItems: [],
+      openmaEvents: [
+        accepted,
+        completion("unknown", "unknown-id"),
+        completion("known-first", "known-id"),
+        completion("known-duplicate", "known-id"),
+      ],
+      labels,
+    });
+    expect(module?.items).toHaveLength(1);
+    expect(module?.items[0]?.detail).toBe("known-id");
   });
 
   it("reads the latest ACP task list for the session Plan module", () => {

@@ -55,6 +55,22 @@ export interface SessionRow {
   /** Whether the live ACP initialize response negotiated `_session/steering`.
    * This is session-scoped capability evidence, never inferred from agent id. */
   supportsSteering?: boolean;
+  /** Complete ACP initialize/session setup evidence retained for the visible
+   * runtime summary. These values are informational and never used to infer
+   * unsupported protocol methods. */
+  protocolVersion?: number;
+  agentInfo?: unknown;
+  agentCapabilities?: unknown;
+  initializeMeta?: Record<string, unknown> | null;
+  sessionSetupMeta?: Record<string, unknown> | null;
+  supportsSessionList?: boolean;
+  supportsSessionDelete?: boolean;
+  supportsSessionResume?: boolean;
+  supportsSessionClose?: boolean;
+  supportsAdditionalDirectories?: boolean;
+  supportsLogout?: boolean;
+  supportsProviders?: boolean;
+  supportsNes?: boolean;
   /** Lifecycle:
    *    "draft"     → empty session, no IPC fired yet.
    *    "persisted" → loaded from disk; ACP child NOT spawned (spawns
