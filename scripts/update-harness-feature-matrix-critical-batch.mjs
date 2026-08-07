@@ -174,6 +174,20 @@ async function updateRoot(root, batchRoot, runAt) {
       durationMs: 62_000,
     },
     {
+      feature: "input.resource-context", harness: "OpenCode", harnessDir: "opencode",
+      sourceName: "input-resource-context-live.png",
+      trigger: "Computer Use: type @ in a real OpenCode draft, choose a file, select README.md in the native macOS picker, send the exact prompt, and wait for the visible final reply",
+      selector: "[data-context-resource][data-resource-name=\"README.md\"] + [data-session-turn-answer=true]",
+      expected: "The selected README.md resource is visibly attached before send and the real OpenCode turn reaches the exact resource-dependent final response.",
+      observed: "The trigger screenshot visibly shows the README.md mentioned-file chip, exact prompt and OpenCode Zen/DeepSeek V4 Flash Free; the completed turn visibly shows RESOURCE_CONTEXT_OPENCODE_OK, OpenCode 1.18.12 ACP v1, Idle and Queue 0.",
+      protocol: "https://agentclientprotocol.com/protocol/v1/content",
+      durationMs: 56_000,
+      extraEvidence: [
+        `Computer Use trigger source: ${resolve(batchRoot, "opencode", "input-resource-context-trigger.png")}`,
+        `Computer Use in-progress source: ${resolve(batchRoot, "opencode", "input-resource-context-running.png")}`,
+      ],
+    },
+    {
       feature: "input.session-reference", harness: "Cursor", harnessDir: "cursor",
       sourceName: "input-session-reference-live.png",
       trigger: "Computer Use: type @ in a real Cursor draft, choose the existing Readme Cursor session, send the exact prompt, approve the real session/request_permission request once, and wait for the visible final reply",
@@ -186,6 +200,20 @@ async function updateRoot(root, batchRoot, runAt) {
         `Computer Use trigger source: ${resolve(batchRoot, "cursor", "input-session-reference-trigger.png")}`,
         `Computer Use permission source: ${resolve(batchRoot, "cursor", "input-session-reference-permission.png")}`,
         `Computer Use in-progress source: ${resolve(batchRoot, "cursor", "input-session-reference-running.png")}`,
+      ],
+    },
+    {
+      feature: "input.session-reference", harness: "OpenCode", harnessDir: "opencode",
+      sourceName: "input-session-reference-live.png",
+      trigger: "Computer Use: choose OpenCode with OpenCode Zen/DeepSeek V4 Flash Free, type @ in a real draft, select the existing Readme Cursor session, send the exact prompt, and wait for the visible final reply",
+      selector: "[data-session-reference] + [data-session-turn-answer=true]",
+      expected: "The selected session reference is visibly attached to the real prompt, the referenced session is read through a real tool call, and OpenCode reaches a visible final response.",
+      observed: "The trigger screenshot visibly shows the Readme Cursor reference chip and DeepSeek V4 Flash model; the completed turn shows OpenMA_Sessions_openma_sessions_read Completed, SESSION_REFERENCE_OPENCODE_OK, OpenCode 1.18.12 ACP v1, Idle, Queue 0 and a 35 second duration.",
+      protocol: "https://agentclientprotocol.com/protocol/v1/content",
+      durationMs: 35_000,
+      extraEvidence: [
+        `Computer Use trigger source: ${resolve(batchRoot, "opencode", "input-session-reference-trigger.png")}`,
+        `Computer Use in-progress source: ${resolve(batchRoot, "opencode", "input-session-reference-running.png")}`,
       ],
     },
     {
