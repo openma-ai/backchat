@@ -817,11 +817,12 @@ function RailResizer({
       onPointerUp={up}
       onPointerCancel={up}
       className={cn(
-        "absolute inset-y-2 z-30 w-2 cursor-ew-resize group/rail-resizer",
+        // Keep the forgiving drag target and resize cursor, but do not draw a
+        // full-height hover rule. On a translucent rail that one-pixel rule
+        // recomposited as a bright vertical strip beside the glass edge.
+        "absolute inset-y-2 z-30 w-2 cursor-ew-resize",
         side === "right" ? "-right-1" : "-left-1",
       )}
-    >
-      <span className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 rounded-full bg-border-strong opacity-0 transition-opacity group-hover/rail-resizer:opacity-70" />
-    </div>
+    />
   );
 }

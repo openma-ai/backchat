@@ -6,6 +6,7 @@ import type {
   Turn,
   WorkspaceArtifacts,
 } from "./session-types";
+import { subagentMoniker } from "./subagent-avatar";
 
 export function defaultSideTabLabel(type: SideTabType, payload: string): string {
   switch (type) {
@@ -135,10 +136,9 @@ export function isPersistedSubagentActivity(value: unknown): value is SubagentAc
 }
 
 export function subagentActivityLabel(activity: SubagentActivity): string {
-  const name =
-    activity.native?.nickname ||
-    activity.task ||
-    activity.native?.agentType ||
-    activity.childSessionId;
+  const nativeName = activity.native?.nickname?.trim();
+  const name = nativeName
+    ? (/^[a-z]$/i.test(nativeName) ? `Agent ${nativeName.toUpperCase()}` : nativeName)
+    : subagentMoniker(activity.avatarId);
   return name.length <= 24 ? name : name.slice(0, 23).trimEnd() + "…";
 }

@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSlashCommandSections,
+  isHostForkSlashCommand,
   isSkillSlashCommand,
   matchesSlashCommand,
   normalizeAgentAvailableCommands,
   skillCommandLabel,
   slashCommandQuery,
   withSessionStateCommands,
+  withHostForkCommand,
 } from "./composer-slash-commands";
 import type { AcpSessionConfigOption } from "./session-config-options";
 
@@ -74,6 +76,32 @@ describe("composer slash commands", () => {
     ).map((command) => command.name)).toEqual(["compact"]);
   });
 
+  it("owns /fork as a host action only when the current session can fork", () => {
+    const existing = [
+      { name: "fork", description: "provider fork" },
+      { name: "compact" },
+    ];
+    const enabled = withHostForkCommand(existing, true, {
+      title: "Continue in new chat",
+      description: "Create a new chat with the current context",
+    });
+
+    expect(enabled.map((command) => command.name)).toEqual(["fork", "compact"]);
+    expect(enabled[0]).toMatchObject({
+      name: "fork",
+      description: "Continue in new chat",
+      kind: "host-fork",
+      metadata: {
+        description: "Create a new chat with the current context",
+      },
+    });
+    expect(isHostForkSlashCommand(enabled[0]!)).toBe(true);
+    expect(withHostForkCommand(existing, false, {
+      title: "Continue in new chat",
+      description: "Create a new chat with the current context",
+    })).toEqual(existing);
+  });
+
   it("matches prefixes, substrings, and compact abbreviations case-insensitively", () => {
     expect(matchesSlashCommand("compact", "COM")).toBe(true);
     expect(matchesSlashCommand("session-export", "export")).toBe(true);
@@ -83,6 +111,7 @@ describe("composer slash commands", () => {
 
   it("recognizes skill commands from names, metadata, and descriptions", () => {
     expect(isSkillSlashCommand({ name: "skill:review" })).toBe(true);
+    expect(isSkillSlashCommand({ name: "$arrange" })).toBe(true);
     expect(isSkillSlashCommand({
       name: "review",
       metadata: { category: "skills" },
@@ -92,6 +121,8 @@ describe("composer slash commands", () => {
       description: "[Skill] Review code",
     })).toBe(true);
     expect(isSkillSlashCommand({ name: "compact" })).toBe(false);
+    expect(skillCommandLabel({ name: "$better-auth-best-practices" }))
+      .toBe("Better-auth-best-practices");
   });
 
   it("keeps commands prominent and limits unfiltered skill previews", () => {

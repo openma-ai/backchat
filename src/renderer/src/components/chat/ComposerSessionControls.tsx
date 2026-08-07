@@ -3,10 +3,13 @@ import {
   CheckIcon,
   CheckSquareIcon,
   ChevronDownIcon,
+  CloudIcon,
   EyeIcon,
   HandIcon,
   LightbulbIcon,
   MonitorIcon,
+  RotateCcwIcon,
+  ServerIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
   TargetIcon,
@@ -15,7 +18,7 @@ import {
   ZapIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   DropdownMenu,
@@ -26,6 +29,12 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { AgentIcon } from "@/components/AgentIcon";
 import {
   buildComposerConfigOptions,
@@ -33,6 +42,7 @@ import {
   configModeOptionPresentation,
   findModeConfigOption,
   flattenSelectOptions,
+  isFastModeConfigOption,
   selectedConfigOptionLabel,
   type AcpSessionConfigOption,
 } from "@/lib/session-config-options";
@@ -44,10 +54,27 @@ import { cn } from "@/lib/utils";
 export type ComposerAgentOption = {
   id: string;
   label: string;
+  icon?: string;
   command: string;
   detected: boolean;
   installed?: boolean;
 };
+
+export type ComposerRuntimeKind = "local" | "cloud" | "remote";
+
+export function runtimePresentation(kind: ComposerRuntimeKind): {
+  Icon: LucideIcon;
+  labelKey: TranslationKey;
+} {
+  switch (kind) {
+    case "cloud":
+      return { Icon: CloudIcon, labelKey: "chat.cloud" };
+    case "remote":
+      return { Icon: ServerIcon, labelKey: "chat.otherMachine" };
+    default:
+      return { Icon: MonitorIcon, labelKey: "chat.local" };
+  }
+}
 
 export function SessionRunChip({
   disabled,
@@ -55,18 +82,22 @@ export function SessionRunChip({
   agents,
   currentAgentId,
   currentAgentLabel,
+  runtimeKind = "local",
   configOptions,
   onPickAgent,
   onSetConfigOption,
+  onResetConfigOptions,
 }: {
   disabled: boolean;
   locked: boolean;
   agents: ComposerAgentOption[];
   currentAgentId: string;
   currentAgentLabel?: string;
+  runtimeKind?: ComposerRuntimeKind;
   onPickAgent: (agentId: string) => void;
   configOptions?: AcpSessionConfigOption[];
   onSetConfigOption: (configId: string, value: string | boolean) => void;
+  onResetConfigOptions?: () => void;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -86,6 +117,9 @@ export function SessionRunChip({
   const configLabel = configSummary
     ? selectedConfigOptionLabel(configSummary)
     : t("chat.configure");
+  const { Icon: RuntimeIcon, labelKey: runtimeLabelKey } =
+    runtimePresentation(runtimeKind);
+  const runtimeLabel = t(runtimeLabelKey);
 
   return (
     <DropdownMenu>
@@ -100,18 +134,27 @@ export function SessionRunChip({
         style={{ height: "32px" }}
         aria-label={
           noHarnessSetup
-            ? "Run on Local with no harness setup"
-            : `Run on Local with ${agentLabel} using ${configLabel}`
+            ? `Run on ${runtimeLabel} with no harness setup`
+            : `Run on ${runtimeLabel} with ${agentLabel} using ${configLabel}`
         }
       >
-        <MonitorIcon className="size-3.5 shrink-0 text-fg-subtle" />
-        <span className="shrink-0">{t("chat.local")}</span>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0" aria-label={runtimeLabel}>
+                <RuntimeIcon className="size-3.5 text-fg-subtle" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">{runtimeLabel}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <span className="text-fg-subtle">·</span>
         {noHarnessSetup ? (
           <span className="shrink-0">{agentLabel}</span>
         ) : (
           <AgentIcon
             agentId={currentAgentId}
+            iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
             className="size-3.5 shrink-0 text-fg-muted"
             title={agentLabel}
           />
@@ -119,44 +162,32 @@ export function SessionRunChip({
         {!noHarnessSetup && (
           <>
             <span className="text-fg-subtle">·</span>
-            <span className="shrink-0">{configLabel}</span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="min-w-0 max-w-[140px] truncate">
+                    {configLabel}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top">{configLabel}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </>
         )}
         <ChevronDownIcon className="size-3.5 shrink-0 text-fg-subtle" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6} className="w-[280px]">
-        <SessionRunSection title={t("chat.runtime")}>
-          <SessionRunItem
-            icon={MonitorIcon}
-            label={t("chat.local")}
-            hint={t("chat.thisMachine")}
-            active
-            onSelect={() => undefined}
+        <div className="border-b border-border/50 py-1">
+          <SessionRuntimeSubmenu runtimeKind={runtimeKind} />
+          <SessionAgentSubmenu
+            agents={agents}
+            currentAgentId={currentAgentId}
+            currentAgentLabel={agentLabel}
+            locked={locked}
+            onPickAgent={onPickAgent}
+            onOpenSettings={() => void navigate({ to: "/settings/agents" })}
           />
-        </SessionRunSection>
-
-        <SessionRunSection title={t("chat.harness")}>
-          {agents.length > 0 ? (
-            agents.map((agent) => (
-              <SessionRunItem
-                key={agent.id}
-                agentId={agent.id}
-                label={agent.label}
-                hint={agent.command}
-                active={agent.id === currentAgentId}
-                disabled={locked}
-                onSelect={() => onPickAgent(agent.id)}
-              />
-            ))
-          ) : (
-            <SessionRunItem
-              icon={TerminalIcon}
-              label={t("chat.noHarness")}
-              hint="Open Settings to install and enable"
-              onSelect={() => void navigate({ to: "/settings/agents" })}
-            />
-          )}
-        </SessionRunSection>
+        </div>
 
         {configSections.length > 0 && (
           <div className="border-b border-border/50 py-1 last:border-b-0">
@@ -171,8 +202,120 @@ export function SessionRunChip({
             )}
           </div>
         )}
+        {configSections.length > 0 && onResetConfigOptions && (
+          <DropdownMenuItem
+            className="min-h-10 gap-2 px-2 py-1.5 text-xs text-fg-muted"
+            onSelect={onResetConfigOptions}
+          >
+            <RotateCcwIcon className="size-3.5 text-fg-subtle" />
+            <span>{t("chat.resetToDefault")}</span>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function SessionRuntimeSubmenu({
+  runtimeKind,
+}: {
+  runtimeKind: ComposerRuntimeKind;
+}) {
+  const { t } = useI18n();
+  const { Icon, labelKey } = runtimePresentation(runtimeKind);
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
+        <Icon className="size-3.5 text-fg-subtle" />
+        <span>{t("chat.runtime")}</span>
+        <span className="ml-auto max-w-[120px] truncate text-fg-subtle">
+          {t(labelKey)}
+        </span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent sideOffset={6} className="w-[280px]">
+        <SessionRunItem
+          icon={MonitorIcon}
+          label={t("chat.local")}
+          hint={t("chat.thisMachine")}
+          active
+          onSelect={() => undefined}
+        />
+        <SessionRunItem
+          icon={CloudIcon}
+          label={t("chat.cloud")}
+          hint={t("chat.comingSoon")}
+          disabled
+          onSelect={() => undefined}
+        />
+        <SessionRunItem
+          icon={ServerIcon}
+          label={t("chat.otherMachine")}
+          hint={t("chat.notConnected")}
+          disabled
+          onSelect={() => undefined}
+        />
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
+function SessionAgentSubmenu({
+  agents,
+  currentAgentId,
+  currentAgentLabel,
+  locked,
+  onPickAgent,
+  onOpenSettings,
+}: {
+  agents: ComposerAgentOption[];
+  currentAgentId: string;
+  currentAgentLabel: string;
+  locked: boolean;
+  onPickAgent: (agentId: string) => void;
+  onOpenSettings: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
+        {agents.length > 0 ? (
+          <AgentIcon
+            agentId={currentAgentId}
+            iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
+            className="size-3.5 text-fg-subtle"
+            title={currentAgentLabel}
+          />
+        ) : (
+          <TerminalIcon className="size-3.5 text-fg-subtle" />
+        )}
+        <span>{t("chat.harness")}</span>
+        <span className="ml-auto max-w-[120px] truncate text-fg-subtle">
+          {currentAgentLabel}
+        </span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent sideOffset={6} className="w-[280px]">
+        {agents.length > 0 ? (
+          agents.map((agent) => (
+            <SessionRunItem
+              key={agent.id}
+              agentId={agent.id}
+              agentIconUrl={agent.icon}
+              label={agent.label}
+              active={agent.id === currentAgentId}
+              disabled={locked}
+              onSelect={() => onPickAgent(agent.id)}
+            />
+          ))
+        ) : (
+          <SessionRunItem
+            icon={TerminalIcon}
+            label={t("chat.noHarness")}
+            hint="Open Settings to install and enable"
+            onSelect={onOpenSettings}
+          />
+        )}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }
 
@@ -190,7 +333,7 @@ function SessionConfigSubmenu({
       ? t("chat.model")
       : option.category === "thought_level"
         ? t("chat.effort")
-        : option.id === "fast-mode"
+        : isFastModeConfigOption(option)
           ? t("chat.fast")
           : option.name;
   return (
@@ -234,23 +377,6 @@ function SessionConfigSubmenu({
         )}
       </DropdownMenuSubContent>
     </DropdownMenuSub>
-  );
-}
-
-function SessionRunSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="border-b border-border/50 py-1 last:border-b-0">
-      <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
-        {title}
-      </div>
-      <div className="space-y-0.5">{children}</div>
-    </div>
   );
 }
 
@@ -616,6 +742,7 @@ function InlineComposerOptionControl({
 function SessionRunItem({
   icon: Icon,
   agentId,
+  agentIconUrl,
   label,
   hint,
   active,
@@ -624,6 +751,7 @@ function SessionRunItem({
 }: {
   icon?: LucideIcon;
   agentId?: string;
+  agentIconUrl?: string;
   label: string;
   hint?: string;
   active?: boolean;
@@ -642,6 +770,7 @@ function SessionRunItem({
       {agentId ? (
         <AgentIcon
           agentId={agentId}
+          iconUrl={agentIconUrl}
           className="mt-0.5 size-3.5 shrink-0 text-fg-subtle"
         />
       ) : Icon ? (

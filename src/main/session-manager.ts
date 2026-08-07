@@ -47,7 +47,11 @@ import {
   type PromptCapabilities,
 } from "@open-managed-agents-desktop/acp";
 import { NodeSpawner } from "@open-managed-agents-desktop/acp/node-spawner";
-import { resolveKnownAgent, type KnownAgentEntry } from "@open-managed-agents-desktop/acp/registry";
+import {
+  detect as detectKnownAgent,
+  resolveKnownAgent,
+  type KnownAgentEntry,
+} from "@open-managed-agents-desktop/acp/registry";
 import {
   sessionUpdateInner,
   sessionUpdateType,
@@ -425,7 +429,14 @@ export class SessionManager {
         "No agent selected. Pick an enabled agent and try again.",
       );
     }
-    const knownAgent = resolveKnownAgent(requestedAgentId);
+    const registeredAgent = resolveKnownAgent(requestedAgentId);
+    // Registry-managed shims already embed the ACP subcommand/flags declared
+    // by the distribution. Detection resolves that effective launch spec and
+    // deliberately removes the duplicate args from the overlay entry.
+    const detectedAgent = registeredAgent
+      ? await detectKnownAgent(requestedAgentId).catch(() => null)
+      : null;
+    const knownAgent = detectedAgent ?? registeredAgent;
     const override = this.#resolveAgentOverride(requestedAgentId) ?? {};
     const agent = knownAgent ?? customAgentFromOverride(requestedAgentId, override);
     if (!agent) {
@@ -1611,6 +1622,35 @@ export class SessionManager {
     turn.abort();
     this.#transition(session_id, { type: "prompt.cancelled", turnId: turn_id });
     this.#onSessionPendingWorkCancelled?.(session_id);
+  }
+
+  async close(session_id: string): Promise<void> {
+    const sess = this.#sessions.get(session_id);
+    if (!sess) throw new Error("no such active session");
+    if (!sess.acp.supportsSessionClose) {
+      throw new Error(`${sess.agentId} does not support session/close`);
+    }
+    const terminated = createOpenMAEvent({
+      event_id: `session-terminated:${session_id}`,
+      type: "session.terminated",
+      session_id,
+      source: {
+        kind: "harness",
+        harness: sess.agentId,
+        adapter: "acp",
+      },
+      occurred_at: new Date().toISOString(),
+      data: { reason: "closed" },
+    });
+    await this.#killChild(session_id);
+    this.#transition(session_id, { type: "session.disposed" });
+    this.#send({
+      type: "session.event",
+      session_id,
+      turn_id: "",
+      event: { sessionUpdate: "session_info_update" },
+      openma_event: terminated,
+    });
   }
 
   async dispose(session_id: string, opts?: { removeCwd?: boolean }): Promise<void> {

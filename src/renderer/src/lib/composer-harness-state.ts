@@ -23,6 +23,7 @@ import {
   readRecentRunPreferences,
   recentConfigOverrides,
   recordRecentRunPreferences,
+  resetRecentRunPreferencesForAgent,
 } from "./recent-run-preferences";
 
 export interface ComposerHarnessState {
@@ -216,6 +217,14 @@ export function useComposerHarnessState({
     );
   };
 
+  const resetCurrentRunToDefaults = () => {
+    if (!harness.currentAgentId) return;
+    setRecentPreferences(
+      resetRecentRunPreferencesForAgent(harness.currentAgentId),
+    );
+    setDraftConfigValues({});
+  };
+
   return {
     ...harness,
     draftConfigValues,
@@ -224,6 +233,7 @@ export function useComposerHarnessState({
     primaryIntent,
     primaryRunningAction,
     rememberCurrentRun,
+    resetCurrentRunToDefaults,
     resetDraftConfigValues: () => setDraftConfigValues({}),
     setDraftConfigValues,
   };

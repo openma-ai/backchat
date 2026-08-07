@@ -6,6 +6,7 @@ import {
   parseRecentRunPreferences,
   recentConfigOverrides,
   recordRecentRunPreferences,
+  resetRecentRunPreferencesForAgent,
 } from "./recent-run-preferences";
 
 const options: AcpSessionConfigOption[] = [
@@ -88,6 +89,32 @@ describe("recent run preferences", () => {
           effort: "medium",
           "fast-mode": false,
         },
+      },
+    });
+    expect(parseRecentRunPreferences(raw)).toEqual(next);
+  });
+
+  it("resets one harness to ACP defaults without losing other harness preferences", () => {
+    let raw = JSON.stringify({
+      agentId: "kilo",
+      configByAgent: {
+        kilo: { model: "kilo/nano-banana" },
+        opencode: { model: "anthropic/deepseek-v4-flash" },
+      },
+    });
+    const storage = {
+      getItem: () => raw,
+      setItem: (_key: string, value: string) => {
+        raw = value;
+      },
+    };
+
+    const next = resetRecentRunPreferencesForAgent("kilo", storage);
+
+    expect(next).toEqual({
+      agentId: "kilo",
+      configByAgent: {
+        opencode: { model: "anthropic/deepseek-v4-flash" },
       },
     });
     expect(parseRecentRunPreferences(raw)).toEqual(next);

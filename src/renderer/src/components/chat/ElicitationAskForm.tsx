@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { ArrowRightIcon, CheckIcon, PencilIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type {
@@ -19,6 +20,21 @@ export function ElicitationAskForm({
   const initialValues = useMemo(() => initialElicitationValues(ask.fields), [ask]);
   const [values, setValues] = useState<Record<string, DraftValue>>(initialValues);
   const [error, setError] = useState<string>();
+  const possibleChoiceField = ask.fields.find((field) => field.type === "select");
+  const possibleOtherField = possibleChoiceField
+    ? ask.fields.find((field) =>
+        field.type === "text"
+        && !field.required
+        && field.name === `${possibleChoiceField.name}__other`)
+    : undefined;
+  const choiceField = possibleChoiceField
+    && ask.fields.every((field) =>
+      field === possibleChoiceField || field === possibleOtherField)
+    ? possibleChoiceField
+    : null;
+  const choiceOtherField = choiceField && possibleOtherField?.type === "text"
+    ? possibleOtherField
+    : null;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -31,9 +47,108 @@ export function ElicitationAskForm({
     void onSubmit({ action: "accept", content });
   };
 
+  if (choiceField) {
+    const draftOtherValue = choiceOtherField
+      ? values[choiceOtherField.name]
+      : undefined;
+    const otherValue = typeof draftOtherValue === "string"
+      ? draftOtherValue
+      : "";
+    return (
+      <form
+        className="min-w-0"
+        data-elicitation-form="choice"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!choiceOtherField || !otherValue.trim()) return;
+          void onSubmit({
+            action: "accept",
+            content: { [choiceOtherField.name]: otherValue.trim() },
+          });
+        }}
+      >
+        <div className="max-h-[48vh] space-y-1.5 overflow-auto py-1">
+          {choiceField.description
+            && choiceField.description.trim() !== ask.message.trim() && (
+            <p className="px-2 pb-1 text-xs leading-5 text-fg-muted">
+              {choiceField.description}
+            </p>
+          )}
+          {choiceField.options.map((option, index) => (
+            <button
+              key={option.value}
+              type="button"
+              data-elicitation-choice={option.value}
+              className="group flex w-full items-center gap-3 rounded-xl bg-bg/45 px-3 py-2.5 text-left transition-colors hover:bg-bg/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              onClick={() => void onSubmit({
+                action: "accept",
+                content: { [choiceField.name]: option.value },
+              })}
+            >
+              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-border/70 text-xs tabular-nums text-fg-muted">
+                {index + 1}
+              </span>
+              <span className="min-w-0 flex-1 text-sm font-medium text-fg">
+                {option.label}
+              </span>
+              <ArrowRightIcon className="size-4 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+            </button>
+          ))}
+          {choiceOtherField && (
+            <div
+              data-elicitation-other={choiceOtherField.name}
+              className="group flex w-full items-center gap-3 rounded-xl bg-bg/45 px-3 py-2.5 transition-colors focus-within:bg-bg/75"
+            >
+              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-border/70 text-fg-muted">
+                <PencilIcon className="size-3.5" aria-hidden="true" />
+              </span>
+              <label className="min-w-0 flex-1">
+                <span className="sr-only">{choiceOtherField.title}</span>
+                <input
+                  name={choiceOtherField.name}
+                  value={otherValue}
+                  placeholder={choiceOtherField.title}
+                  onChange={(event) => setValues((current) => ({
+                    ...current,
+                    [choiceOtherField.name]: event.currentTarget.value,
+                  }))}
+                  className="h-6 w-full bg-transparent text-sm font-medium text-fg outline-none placeholder:text-fg-muted"
+                />
+                {choiceOtherField.description && (
+                  <span className="block truncate text-[11px] leading-4 text-fg-subtle">
+                    {choiceOtherField.description}
+                  </span>
+                )}
+              </label>
+              <button
+                type="submit"
+                disabled={!otherValue.trim()}
+                aria-label={`Submit ${choiceOtherField.title}`}
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-bg disabled:opacity-0"
+              >
+                <ArrowRightIcon className="size-4" />
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onClick={() => void onSubmit({ action: "decline" })}
+          >
+            Skip
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
   return (
-    <form onSubmit={submit}>
-      <div className="max-h-[55vh] space-y-4 overflow-auto p-4">
+    <form onSubmit={submit} className="min-w-0" data-elicitation-form="structured">
+      <div className="max-h-[48vh] space-y-3 overflow-auto py-2">
         {ask.fields.map((field) => (
           <ElicitationField
             key={field.name}
@@ -47,15 +162,16 @@ export function ElicitationAskForm({
         ))}
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
-      <div className="flex justify-end gap-2 border-t border-border/60 p-3">
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-3">
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
+          size="sm"
           onClick={() => void onSubmit({ action: "decline" })}
         >
           Decline
         </Button>
-        <Button type="submit">Submit</Button>
+        <Button type="submit" size="sm">Submit</Button>
       </div>
     </form>
   );
@@ -76,8 +192,8 @@ function ElicitationField({
     : null;
   if (field.type === "boolean") {
     return (
-      <div className="space-y-1.5">
-        <label className="flex items-center gap-2 text-xs font-medium text-fg">
+      <div className="space-y-1.5 rounded-xl bg-bg/45 px-3 py-2.5">
+        <label className="flex items-center gap-3 text-xs font-medium text-fg">
           <input
             id={id}
             name={field.name}
@@ -85,7 +201,8 @@ function ElicitationField({
             checked={value === true}
             onChange={(event) => onChange(event.currentTarget.checked)}
           />
-          {field.title}
+          <span className="min-w-0 flex-1">{field.title}</span>
+          {value === true && <CheckIcon className="size-3.5 text-primary" />}
         </label>
         {description}
       </div>
@@ -102,7 +219,7 @@ function ElicitationField({
           required={field.required}
           value={typeof value === "string" ? value : ""}
           onChange={(event) => onChange(event.currentTarget.value)}
-          className="h-9 w-full rounded-md border border-border bg-bg-surface px-3 text-sm"
+          className="h-9 w-full rounded-xl border border-border/50 bg-bg/45 px-3 text-xs outline-none transition-shadow focus:ring-2 focus:ring-ring/40"
         >
           {!field.required && <option value="">Skip</option>}
           {field.options.map((option) => (
@@ -121,7 +238,7 @@ function ElicitationField({
         </legend>
         {description}
         {field.options.map((option) => (
-          <label key={option.value} className="flex items-center gap-2 text-xs text-fg">
+          <label key={option.value} className="flex items-center gap-3 rounded-xl bg-bg/45 px-3 py-2.5 text-xs text-fg transition-colors hover:bg-bg/75">
             <input
               name={field.name}
               type="checkbox"
@@ -158,7 +275,7 @@ function ElicitationField({
               maxLength: field.maxLength,
               pattern: field.pattern,
             })}
-        className="h-9 w-full rounded-md border border-border bg-bg-surface px-3 text-sm"
+        className="h-9 w-full rounded-xl border border-border/50 bg-bg/45 px-3 text-xs outline-none transition-shadow focus:ring-2 focus:ring-ring/40"
       />
     </div>
   );

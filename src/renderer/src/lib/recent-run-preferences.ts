@@ -128,3 +128,22 @@ export function recordRecentRunPreferences(
   }
   return next;
 }
+
+export function resetRecentRunPreferencesForAgent(
+  agentId: string,
+  storage: PreferenceStorage = localStorage,
+): RecentRunPreferences {
+  const current = readRecentRunPreferences(storage);
+  const configByAgent = { ...current.configByAgent };
+  delete configByAgent[agentId];
+  const next: RecentRunPreferences = {
+    ...(current.agentId ? { agentId: current.agentId } : {}),
+    configByAgent,
+  };
+  try {
+    storage.setItem(RECENT_RUN_PREFERENCES_KEY, JSON.stringify(next));
+  } catch {
+    // The current draft can still reset even when storage is blocked.
+  }
+  return next;
+}

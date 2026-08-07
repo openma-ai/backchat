@@ -1,19 +1,11 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
-  DialogFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
-}));
-
-import { ApprovalPrompt } from "./BrokerModal";
+import { ComposerBrokerAsk as ApprovalPrompt } from "../chat/ComposerAskPanel";
 
 describe("ApprovalPrompt", () => {
-  it("renders a blocking permission choice instead of transcript activity", () => {
+  it("renders a permission choice in the composer ask slot", () => {
     const html = renderToStaticMarkup(
       <ApprovalPrompt
         ask={{
@@ -55,7 +47,19 @@ describe("ApprovalPrompt", () => {
     expect(html).toContain("libreoffice --headless document.docx");
     expect(html).toContain("Allow once");
     expect(html).toContain("Reject");
+    expect(html).toContain('data-composer-ask-slot="true"');
     expect(html).not.toContain("Permission request");
+  });
+
+  it("routes pending broker asks through the current session composer instead of a dialog", () => {
+    const brokerSource = readFileSync(new URL("./BrokerModal.tsx", import.meta.url), "utf8");
+    const composerSource = readFileSync(
+      new URL("../chat/Composer.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(brokerSource).not.toContain("<Dialog");
+    expect(composerSource).toContain("<ComposerBrokerAsk");
   });
 
   it("renders only the harness-neutral permission presentation", () => {

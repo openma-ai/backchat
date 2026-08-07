@@ -690,7 +690,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       agent: entry.spec,
       env: this.spawnEnv(),
       ...(this.deps.probeCwd ? { cwd: this.deps.probeCwd } : {}),
-      timeoutMs: this.deps.capabilityInspectionTimeoutMs ?? 30_000,
+      timeoutMs: this.deps.capabilityInspectionTimeoutMs ?? 90_000,
     });
   }
 

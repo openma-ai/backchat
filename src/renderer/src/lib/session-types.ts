@@ -45,6 +45,10 @@ export interface SessionRow {
    *  ACP context; promoteSideToMain clears the link so the session
    *  becomes a normal independent fork. */
   sideParent?: SideSessionParentLink;
+  /** Parent link for a user-created independent main fork. Unlike a side
+   *  chat this row belongs in the main task list immediately, but the ACP
+   *  session itself is still created lazily on the first prompt. */
+  forkParent?: SideSessionParentLink;
   /** Parent-child task metadata for side subagents. The optional ACP parent
    *  id is only used for fork-based context seeding; task progress is tracked
    *  in Backchat's own store. */

@@ -103,25 +103,25 @@ export function EmptyStateIntro({
   const configuredSuggestions = (
     homeSuggestions?.items ?? HOME_SUGGESTIONS
   ).map((item) => {
-    const fallback = HOME_SUGGESTIONS.find(
-      (suggestion) => suggestion.kind === item.kind,
-    )!;
-    const custom = item as ThemeHomeSuggestionSpec;
-    return {
-      ...fallback,
-      label: resolveThemeText(
-        custom.label,
-        locale,
-        t(fallback.labelKey),
-      ),
-      description: resolveThemeText(custom.description, locale, ""),
-      prompt: resolveThemeText(
-        custom.prompt,
-        locale,
-        t(fallback.promptKey),
-      ),
-    };
-  });
+      const fallback = HOME_SUGGESTIONS.find(
+        (suggestion) => suggestion.kind === item.kind,
+      )!;
+      const custom = item as ThemeHomeSuggestionSpec;
+      return {
+        ...fallback,
+        label: resolveThemeText(
+          custom.label,
+          locale,
+          t(fallback.labelKey),
+        ),
+        description: resolveThemeText(custom.description, locale, ""),
+        prompt: resolveThemeText(
+          custom.prompt,
+          locale,
+          t(fallback.promptKey),
+        ),
+      };
+    });
   const card = homeSuggestions?.card;
   const sloganText = hasAgent
     ? resolveThemeText(homeSlogan?.text, locale, defaultSlogan)
@@ -232,45 +232,47 @@ export function EmptyStateIntro({
           )}
         </div>
       </div>
-      <div
-        data-slot="home-suggestions"
-        data-suggestion-width={homeSuggestions?.width ?? "inset"}
-        className="home-suggestion-stage home-suggestions mt-8 grid w-full"
-        style={suggestionStyle}
-      >
-        {onSuggestion &&
-          !selectedSuggestionKind &&
-          configuredSuggestions.map((suggestion) => {
-            const Icon = suggestion.icon;
-            return (
-              <button
-                key={suggestion.kind}
-                type="button"
-                data-suggestion-kind={suggestion.kind}
-                className="home-suggestion-card group"
-                onClick={() => selectSuggestionKind(suggestion.kind)}
-              >
-                <span className="home-suggestion-icon" aria-hidden="true" />
-                <Icon
-                  className={cn(
-                    "home-suggestion-fallback-icon",
-                    suggestion.toneClass,
-                  )}
-                  aria-hidden="true"
-                />
-                <span className="home-suggestion-copy">
-                  <span className="home-suggestion-label max-w-[16ch] text-left text-sm font-medium leading-snug text-fg">
-                    {suggestion.label}
-                  </span>
-                  {suggestion.description && (
-                    <span className="home-suggestion-description">
-                      {suggestion.description}
+      <div className="home-suggestion-container w-full">
+        <div
+          data-slot="home-suggestions"
+          data-suggestion-width={homeSuggestions?.width ?? "inset"}
+          className="home-suggestion-stage home-suggestions mt-8 grid w-full"
+          style={suggestionStyle}
+        >
+          {onSuggestion &&
+            !selectedSuggestionKind &&
+            configuredSuggestions.map((suggestion) => {
+              const Icon = suggestion.icon;
+              return (
+                <button
+                  key={suggestion.kind}
+                  type="button"
+                  data-suggestion-kind={suggestion.kind}
+                  className="home-suggestion-card group"
+                  onClick={() => selectSuggestionKind(suggestion.kind)}
+                >
+                  <span className="home-suggestion-icon" aria-hidden="true" />
+                  <Icon
+                    className={cn(
+                      "home-suggestion-fallback-icon",
+                      suggestion.toneClass,
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span className="home-suggestion-copy">
+                    <span className="home-suggestion-label max-w-[16ch] text-left text-sm font-medium leading-snug text-fg">
+                      {suggestion.label}
                     </span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
+                    {suggestion.description && (
+                      <span className="home-suggestion-description">
+                        {suggestion.description}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+        </div>
       </div>
     </div>
   );

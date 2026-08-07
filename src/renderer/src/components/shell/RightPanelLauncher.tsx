@@ -14,6 +14,7 @@ import type { AcpTerminalInfo } from "@shared/api.js";
 import type { ScheduleInfo } from "@shared/schedules.js";
 import type { PromptAttachment } from "@shared/session-events.js";
 import type { WorkItemSnapshot } from "@openma/common/session-events/openma";
+import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
 import {
   sessionStore,
   type SideTabType,
@@ -381,10 +382,7 @@ function workItemIcon(item: WorkItemSnapshot): React.ReactNode {
 }
 
 function subagentLabel(activity: SubagentActivity): string {
-  return activity.native?.nickname
-    || activity.task
-    || activity.native?.agentType
-    || activity.childSessionId;
+  return subagentActivityLabel(activity);
 }
 
 function agentResourceHint(

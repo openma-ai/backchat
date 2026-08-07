@@ -83,7 +83,7 @@ describe("ComposerProgress", () => {
     expect(html).toContain('aria-label="Dismiss progress"');
   });
 
-  it("renders several independent modules in one activity dock without merging Goal", () => {
+  it("renders foreground activity inside one unified pill without merging Goal or background work", () => {
     const html = renderToStaticMarkup(
       <ComposerProgress
         presentation={{
@@ -127,16 +127,34 @@ describe("ComposerProgress", () => {
     );
 
     expect(html).toContain('data-activity-dock="true"');
-    expect(html.match(/data-activity-module=/g)).toHaveLength(3);
+    expect(html).toMatch(/data-activity-dock="true" class="[^"]*mb-2\.5/);
+    expect(html.match(/data-activity-pill="true"/g)).toHaveLength(1);
+    expect(html.match(/data-activity-module=/g)).toHaveLength(1);
     expect(html).toContain('data-activity-module="files"');
-    expect(html).toContain('data-activity-module="plan"');
-    expect(html).toContain('data-activity-module="monitor"');
-    expect(html).toContain('data-activity-overflow="1"');
-    expect(html).toContain("+1");
+    expect(html).toContain('data-activity-modules="files plan monitor"');
+    expect(html).not.toContain('data-activity-section="background"');
+    expect(html).toContain('data-activity-module-count="3"');
+    expect(html).toContain("+2");
     expect(html).toContain('data-progress-cap-content="true"');
     expect(html.indexOf('data-activity-dock="true"')).toBeLessThan(
       html.indexOf('data-progress-cap-content="true"'),
     );
+  });
+
+  it("does not create composer chrome for background work alone", () => {
+    const html = renderToStaticMarkup(
+      <ComposerProgress
+        activityModules={[{
+          id: "background",
+          kind: "background",
+          label: "Background",
+          summary: "1 running",
+          items: [{ id: "work-1", label: "Watch build", status: "running" }],
+        }]}
+      />,
+    );
+
+    expect(html).toBe("");
   });
 
   it("exposes a stable locator for an elicitation completion module", () => {
@@ -221,8 +239,9 @@ describe("ComposerProgress", () => {
         queueCallbacks={{ steer: vi.fn() }}
       />,
     );
-    const steerStart = html.indexOf('aria-label="Steer queued message 1"');
-    const steerEnd = html.indexOf("</button>", steerStart);
+    const steerLabel = html.indexOf('aria-label="Steer queued message 1"');
+    const steerStart = html.lastIndexOf("<button", steerLabel);
+    const steerEnd = html.indexOf("</button>", steerLabel);
     const steerButton = html.slice(steerStart, steerEnd);
 
     expect(html).toContain('data-queue-leading-icon="drag"');
@@ -232,6 +251,24 @@ describe("ComposerProgress", () => {
     expect(html).not.toContain("lucide-corner-up-right");
     expect(steerButton).toContain("lucide-send-horizontal");
     expect(steerButton).toContain("Steer");
+  });
+
+  it("explains when steering was not negotiated by the active harness", () => {
+    const html = renderToStaticMarkup(
+      <ComposerProgress
+        queuedPrompts={[
+          { turn_id: "turn-2", text: "queued item", created_at: 2 },
+        ]}
+        queueCallbacks={{ remove: vi.fn() }}
+      />,
+    );
+    const steerLabel = html.indexOf('aria-label="Steer queued message 1"');
+    const steerStart = html.lastIndexOf("<button", steerLabel);
+    const steerEnd = html.indexOf("</button>", steerLabel);
+    const steerButton = html.slice(steerStart, steerEnd);
+
+    expect(steerButton).toContain("disabled");
+    expect(steerButton).toContain('title="Steering is not available for this harness"');
   });
 
   it("presents progress items as a checklist rather than a status table", () => {

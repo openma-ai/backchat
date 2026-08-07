@@ -658,6 +658,25 @@ export class SessionStore {
     const data = isPlainRecord(event.data) ? event.data : {};
     const existing = this.subagentByChildId(event.work_item_id);
     const kind = typeof data.kind === "string" ? data.kind : undefined;
+    if (event.type === "work_item.reidentified") {
+      const previousId =
+        typeof data.previous_work_item_id === "string"
+          ? data.previous_work_item_id
+          : undefined;
+      const previous = previousId
+        ? this.subagentByChildId(previousId)
+        : undefined;
+      if (!previous) return false;
+      this.#upsertNativeSubagentActivity(event.session_id, {
+        provider: previous.native?.provider ?? this.#canonicalNativeProvider(event),
+        operation: "subagent_spawn",
+        toolCallId: event.parent_id ?? previous.native?.toolCallId,
+        childId: event.work_item_id,
+        task: previous.task,
+        status: previous.status === "draft" ? "running" : previous.status,
+      });
+      return true;
+    }
     if (event.type === "work_item.started") {
       if (kind !== "agent") return false;
       this.#upsertNativeSubagentActivity(event.session_id, {
@@ -1701,16 +1720,29 @@ export class SessionStore {
     cwd?: string;
   }): string {
     const id = `side-${Math.random().toString(36).slice(2, 10)}`;
+    const parent = opts?.parentSessionId
+      ? this.#sessions.get(opts.parentSessionId)
+      : undefined;
     this.#sessions.set(id, {
       id,
-      agent_id: opts?.agentId ?? "",
-      cwd: opts?.cwd ?? "",
+      agent_id: opts?.agentId ?? parent?.agent_id ?? "",
+      cwd: opts?.cwd ?? parent?.cwd ?? "",
       acp_session_id: "",
       label: "",
       kind: "side",
       sideKind: "chat",
       status: "draft",
       createdAt: Date.now(),
+      projectId: parent?.projectId,
+      additionalDirectories: parent?.additionalDirectories
+        ? [...parent.additionalDirectories]
+        : undefined,
+      projectScope: parent?.projectScope,
+      configOptions: parent?.configOptions?.map((option) => ({ ...option })),
+      currentModeId: parent?.currentModeId,
+      availableCommands: parent?.availableCommands?.map((command) => ({
+        ...command,
+      })),
       sideParent: opts?.parentSessionId
         ? {
             parentSessionId: opts.parentSessionId,
@@ -1720,6 +1752,52 @@ export class SessionStore {
         : undefined,
     });
     this.#sideActiveId = id;
+    this.#emit();
+    return id;
+  }
+
+  /** Create an independent main-chat draft that will inherit the current
+   *  ACP context on its first prompt. The provider session is intentionally
+   *  started lazily, matching ordinary drafts and avoiding an idle child
+   *  process when the user changes their mind. */
+  newMainForkDraft(parentSessionId: string): string | null {
+    const parent = this.#sessions.get(parentSessionId);
+    if (
+      !parent
+      || parent.status === "draft"
+      || parent.sideKind === "subagent"
+      || !parent.supportsSessionFork
+      || !parent.acp_session_id
+    ) {
+      return null;
+    }
+    const id = `fork-${Math.random().toString(36).slice(2, 10)}`;
+    this.#sessions.set(id, {
+      id,
+      agent_id: parent.agent_id,
+      cwd: parent.cwd,
+      acp_session_id: "",
+      label: "",
+      kind: "main",
+      status: "draft",
+      createdAt: Date.now(),
+      projectId: parent.projectId,
+      additionalDirectories: parent.additionalDirectories
+        ? [...parent.additionalDirectories]
+        : undefined,
+      projectScope: parent.projectScope,
+      configOptions: parent.configOptions?.map((option) => ({ ...option })),
+      currentModeId: parent.currentModeId,
+      availableCommands: parent.availableCommands?.map((command) => ({
+        ...command,
+      })),
+      forkParent: {
+        parentSessionId: parent.id,
+        parentAcpSessionId: parent.acp_session_id,
+        inheritance: "fork",
+      },
+    });
+    this.#activeId = id;
     this.#emit();
     return id;
   }
@@ -2627,16 +2705,38 @@ export class SessionStore {
         .filter((payload): payload is unknown => payload !== undefined)
         .map(persistedEventFingerprint),
     );
-    const canonicalByRawEvidence = new Map<string, OpenMAEvent>();
+    const richerCanonicalByRawOccurrence = new Map<string, OpenMAEvent>();
+    const canonicalNativeAgentIds = new Set<string>();
     for (const { canonical } of prepared) {
-      if (!canonical?.raw?.payload) continue;
-      const key = persistedEventFingerprint(canonical.raw.payload);
-      const previous = canonicalByRawEvidence.get(key);
-      // Renderer-derived native transcript events carry work_item_id and
-      // are richer than the main ACP projection of the same wire payload.
-      if (!previous || (!previous.work_item_id && canonical.work_item_id)) {
-        canonicalByRawEvidence.set(key, canonical);
+      if (canonical?.work_item_id) {
+        const canonicalData = isPlainRecord(canonical.data)
+          ? canonical.data
+          : {};
+        if (
+          canonical.type === "work_item.started"
+          && canonicalData.kind === "agent"
+        ) {
+          canonicalNativeAgentIds.add(canonical.work_item_id);
+        } else if (canonical.type === "work_item.reidentified") {
+          const previousId =
+            typeof canonicalData.previous_work_item_id === "string"
+              ? canonicalData.previous_work_item_id
+              : undefined;
+          if (previousId && canonicalNativeAgentIds.has(previousId)) {
+            canonicalNativeAgentIds.delete(previousId);
+            canonicalNativeAgentIds.add(canonical.work_item_id);
+          }
+        }
       }
+      if (!canonical?.raw?.payload || !canonical.work_item_id) continue;
+      // Renderer-derived native transcript events carry work_item_id and
+      // are richer than the main ACP projection of the same wire occurrence.
+      // Scope the preference to that occurrence: repeated token payloads are
+      // valid stream data and must never be deduplicated across timestamps.
+      richerCanonicalByRawOccurrence.set(
+        persistedCanonicalRawOccurrenceFingerprint(canonical),
+        canonical,
+      );
     }
 
     let current: Turn | null = null;
@@ -2644,10 +2744,15 @@ export class SessionStore {
     for (const { row: r, data, canonical } of prepared) {
       if (canonical) {
         const canonicalRaw = canonical.raw?.payload;
+        const richerCanonical = canonicalRaw !== undefined
+          ? richerCanonicalByRawOccurrence.get(
+              persistedCanonicalRawOccurrenceFingerprint(canonical),
+            )
+          : undefined;
         if (
-          canonicalRaw !== undefined
-          && canonicalByRawEvidence.get(persistedEventFingerprint(canonicalRaw))?.event_id
-            !== canonical.event_id
+          richerCanonical
+          && !canonical.work_item_id
+          && richerCanonical.event_id !== canonical.event_id
         ) {
           continue;
         }
@@ -2849,6 +2954,60 @@ export class SessionStore {
       }
     }
     if (current) this.#turns.set(current.id, current);
+    if (canonicalNativeAgentIds.size > 0) {
+      // Side-workspace snapshots are restored before SQL history. Native
+      // subagent tabs are projections of canonical lifecycle events, so a
+      // hot reload must discard snapshot-only children that are absent from
+      // the replayed stream. Otherwise each reload accumulates another
+      // random view id and leaves stale "Running / Thinking" tabs beside a
+      // terminal child that has already completed.
+      const previousActivities = this.#subagentsByParent.get(sessionId) ?? [];
+      const canonicalActivities = previousActivities.filter((activity) =>
+        canonicalNativeAgentIds.has(activity.childSessionId),
+      );
+      const canonicalViewIds = new Set(
+        canonicalActivities.map((activity) => activity.viewSessionId),
+      );
+      const removedViewIds = new Set(
+        previousActivities
+          .filter((activity) => !canonicalNativeAgentIds.has(activity.childSessionId))
+          .map((activity) => activity.viewSessionId),
+      );
+      const previousTabs = this.#sideTabsByMain.get(sessionId) ?? [];
+      const seenCanonicalSubagentViews = new Set<string>();
+      const nextTabs = previousTabs.filter((tab) => {
+        if (tab.type !== "subagent") return true;
+        if (canonicalViewIds.has(tab.payload)) {
+          if (seenCanonicalSubagentViews.has(tab.payload)) return false;
+          seenCanonicalSubagentViews.add(tab.payload);
+          return true;
+        }
+        removedViewIds.add(tab.payload);
+        return false;
+      });
+      this.#subagentsByParent.set(sessionId, canonicalActivities);
+      if (nextTabs.length > 0) this.#sideTabsByMain.set(sessionId, nextTabs);
+      else this.#sideTabsByMain.delete(sessionId);
+      const activeTabId = this.#activeSideTabByMain.get(sessionId);
+      if (activeTabId && !nextTabs.some((tab) => tab.id === activeTabId)) {
+        const fallback = nextTabs.at(-1)?.id;
+        if (fallback) this.#activeSideTabByMain.set(sessionId, fallback);
+        else this.#activeSideTabByMain.delete(sessionId);
+      }
+      for (const viewSessionId of removedViewIds) {
+        const row = this.#sessions.get(viewSessionId);
+        if (
+          row?.sideKind === "subagent"
+          && row.subagent?.parentSessionId === sessionId
+        ) {
+          this.#sessions.delete(viewSessionId);
+        }
+        for (const [turnId, turn] of this.#turns) {
+          if (turn.sessionId === viewSessionId) this.#turns.delete(turnId);
+        }
+      }
+      this.#syncVisibleSideSession(sessionId);
+    }
     this.#emit();
   }
 
@@ -2885,6 +3044,7 @@ export class SessionStore {
         if (existing) {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
+            forkParent: undefined,
             acp_session_id: ev.acp_session_id,
             agent_id: ev.agent_id,
             cwd: ev.cwd,
@@ -3999,6 +4159,13 @@ function persistedEventFingerprint(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function persistedCanonicalRawOccurrenceFingerprint(event: OpenMAEvent): string {
+  return persistedEventFingerprint([
+    event.raw?.received_at ?? event.occurred_at,
+    event.raw?.payload,
+  ]);
 }
 
 /** React hook — re-renders whenever the store version bumps. Components

@@ -163,6 +163,10 @@ export function Sidebar() {
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
+  const agentIconUrls = useMemo(
+    () => new Map(agents.flatMap((agent) => agent.icon ? [[agent.id, agent.icon] as const] : [])),
+    [agents],
+  );
   const agentUpdateCount = agents.filter((agent) => agent.updateAvailable).length;
   // Single menu state for the whole sidebar — only one row's `…`
   // dropdown can be open at a time. Lifting this up avoids the
@@ -187,8 +191,8 @@ export function Sidebar() {
   );
 
   const goHome = () => {
-    const id = sessionStore.newDraft();
-    void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+    sessionStore.newDraft();
+    void navigate({ to: "/" });
   };
 
   const onSelectSession = (id: string) => {
@@ -216,16 +220,16 @@ export function Sidebar() {
   };
 
   const onNewProjectChat = (cwd: string) => {
-    const id = sessionStore.newDraft(cwd);
-    void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+    sessionStore.newDraft(cwd);
+    void navigate({ to: "/" });
   };
 
   const onNewNamedProjectChat = (project: SidebarProjectGroup) => {
-    const id = sessionStore.newDraft({
+    sessionStore.newDraft({
       projectId: project.projectId!,
       sourceFolders: project.sourceFolders,
     });
-    void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+    void navigate({ to: "/" });
   };
 
   const settingsActive = location.pathname.startsWith("/settings");
@@ -284,35 +288,22 @@ export function Sidebar() {
     "truncate",
   );
 
-  // Measure the actual scrollbar gutter width inside the chats nav and
-  // mirror it onto the sidebar root as `--sb-w`. New chat / Search /
-  // Settings paddings reference this var so their right edges line up
-  // with chat rows regardless of OS "show scroll bars" preference
-  // (Always vs Automatic). Re-measure when sessions change or window
-  // resizes — content height crossing the overflow threshold flips the
-  // bar on/off and the var follows. ResizeObserver already reports the
-  // nav's height changes during a window resize, so a second global resize
-  // listener would only force the same layout read twice per frame.
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const navRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    const measure = () => {
+    const measureNativeScrollbar = () => {
       const root = sidebarRef.current;
       const nav = navRef.current;
       if (!root || !nav) return;
-      // offsetWidth = layout box width, clientWidth = content width
-      // (excludes scrollbar). Diff is the bar's gutter px, or 0 if it's
-      // an overlay (macOS Automatic) or not present (no overflow).
-      const w = nav.offsetWidth - nav.clientWidth;
-      root.style.setProperty("--sb-w", `${w}px`);
+      const width = nav.offsetWidth - nav.clientWidth;
+      root.style.setProperty("--native-scrollbar-width", `${width}px`);
     };
-    measure();
-    const ro = new ResizeObserver(measure);
-    if (navRef.current) ro.observe(navRef.current);
-    return () => {
-      ro.disconnect();
-    };
-  }, [sessions.length, pairs.length]);
+
+    measureNativeScrollbar();
+    const observer = new ResizeObserver(measureNativeScrollbar);
+    if (navRef.current) observer.observe(navRef.current);
+    return () => observer.disconnect();
+  }, [pairs.length, savedProjects.length, sessions.length]);
 
   return (
     <div ref={sidebarRef} className="flex h-full min-h-0 flex-col">
@@ -327,15 +318,14 @@ export function Sidebar() {
         style={{ height: "36px" }}
       />
 
-      {/* First content row — the "+ New chat" button. paddingRight
-          includes the measured scrollbar gutter width (--sb-w) so its
-          right edge matches the chats nav below, regardless of OS
-          "show scroll bars" preference. */}
+      {/* Header actions keep the same 8px visual inset as conversation rows.
+          The scrolling region's native auto-width gutter is mirrored once so
+          the fixed and scrolling rows have identical visible widths. */}
       <div
         className="pt-[var(--row-gap-y)]"
         style={{
           paddingLeft: "8px",
-          paddingRight: "calc(8px + var(--sb-w, 0px))",
+          paddingRight: "calc(8px + var(--native-scrollbar-width, 0px))",
         }}
       >
         <button
@@ -411,9 +401,8 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* Chats — flex-1 takes all remaining space. The scrollbar is overlay-
-          styled; do not reserve a classic gutter here, because macOS draws
-          that gutter as bright vertical seams while the thumb is active. */}
+      {/* Chats — the only scrolling sidebar region. Its native scrollbar uses
+          the platform's automatic width; rows retain an 8px visual inset. */}
       <nav
         ref={navRef}
         className="sidebar-scrollbar flex-1 overflow-y-auto pt-[var(--row-gap-y)]"
@@ -460,6 +449,7 @@ export function Sidebar() {
                         <li key={s.id}>
                           <SessionRow
                             row={s}
+                            agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             labelCls={labelCls}
                             onSelect={() => onSelectSession(s.id)}
@@ -555,6 +545,7 @@ export function Sidebar() {
                                   <li key={s.id}>
                                     <SessionRow
                                       row={s}
+                                      agentIconUrl={agentIconUrls.get(s.agent_id)}
                                       active={s.id === activeId && location.pathname.startsWith("/chat/")}
                                       labelCls={labelCls}
                                       onSelect={() => onSelectSession(s.id)}
@@ -589,6 +580,7 @@ export function Sidebar() {
                         <li key={s.id}>
                           <SessionRow
                             row={s}
+                            agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             labelCls={labelCls}
                             onSelect={() => onSelectSession(s.id)}
@@ -611,14 +603,13 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Footer — Settings link only. Symmetric vertical padding keeps the
-          row centered in the footer; paddingRight matches the New chat row
-          above via --sb-w. */}
+      {/* Footer — Settings link only. It mirrors the same single native gutter
+          as the header so all three row groups keep the same visible width. */}
       <div
         className="py-[var(--row-gap-y)]"
         style={{
           paddingLeft: "8px",
-          paddingRight: "calc(8px + var(--sb-w, 0px))",
+          paddingRight: "calc(8px + var(--native-scrollbar-width, 0px))",
         }}
       >
         {agentUpdateCount > 0 && (
@@ -945,6 +936,7 @@ function PairSidebarRow({
  *  menu opens via a pure onClick handler. */
 function SessionRow({
   row,
+  agentIconUrl,
   active,
   labelCls,
   onSelect,
@@ -953,6 +945,7 @@ function SessionRow({
   onMenuOpenChange,
 }: {
   row: SessionRow;
+  agentIconUrl?: string;
   active: boolean;
   labelCls: string;
   onSelect: () => void;
@@ -994,7 +987,7 @@ function SessionRow({
             className="flex min-w-0 flex-1 items-center gap-2 text-left"
           >
             {row.agent_id ? (
-              <AgentIcon agentId={row.agent_id} className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" title={row.agent_id} />
+              <AgentIcon agentId={row.agent_id} iconUrl={agentIconUrl} className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" title={row.agent_id} />
             ) : (
               <span className="size-3.5 shrink-0" />
             )}

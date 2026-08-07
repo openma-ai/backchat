@@ -6,6 +6,7 @@ import {
   configModeOptionPresentation,
   findModeConfigOption,
   flattenSelectOptions,
+  isFastModeConfigOption,
   selectedConfigOptionLabel,
   type AcpSessionConfigOption,
 } from "./session-config-options";
@@ -23,7 +24,7 @@ const modelOption: AcpSessionConfigOption = {
 };
 
 describe("session config options", () => {
-  test("groups model, mode, thought, and custom options in run-menu order", () => {
+  test("groups model, mode, thought, model config, and custom options in run-menu order", () => {
     const sections = buildConfigOptionSections([
       {
         id: "custom-flag",
@@ -47,6 +48,13 @@ describe("session config options", () => {
         currentValue: "code",
         options: [{ value: "code", name: "Code" }],
       },
+      {
+        id: "fast",
+        name: "Fast mode",
+        category: "model_config",
+        type: "boolean",
+        currentValue: false,
+      },
       modelOption,
     ]);
 
@@ -54,12 +62,14 @@ describe("session config options", () => {
       "model",
       "mode",
       "thought_level",
+      "model_config",
       "custom",
     ]);
     expect(sections.map((section) => section.label)).toEqual([
       "Model",
       "Mode",
       "Thought",
+      "Model options",
       "Options",
     ]);
   });
@@ -125,6 +135,13 @@ describe("session config options", () => {
         ],
       },
       {
+        id: "fast",
+        name: "Fast mode",
+        category: "model_config",
+        type: "boolean",
+        currentValue: false,
+      },
+      {
         id: "telemetry",
         name: "Telemetry",
         type: "boolean",
@@ -134,11 +151,13 @@ describe("session config options", () => {
     ];
 
     expect(findModeConfigOption(options)).toEqual(modeOption);
+    expect(isFastModeConfigOption(options[2]!)).toBe(true);
+    expect(isFastModeConfigOption(options[3]!)).toBe(true);
     expect(
       buildRunMenuConfigOptionSections(options).flatMap((section) =>
         section.options.map((option) => option.id),
       ),
-    ).toEqual(["model", "fast-mode"]);
+    ).toEqual(["model", "fast", "fast-mode"]);
     expect(buildComposerConfigOptions(options).map((option) => option.id)).toEqual([
       "telemetry",
     ]);

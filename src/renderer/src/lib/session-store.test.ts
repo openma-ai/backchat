@@ -80,6 +80,73 @@ const initialConfig: AcpSessionConfigOption[] = [
 ];
 
 describe("SessionStore replay", () => {
+  test("replays repeated numeric thought chunks without dropping the equation", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-arithmetic";
+    const turnId = "turn-replay-arithmetic";
+    const chunks = [
+      "The", " user", " is", " asking", " me", " to", " calculate", " ",
+      "37", " +", " ", "58", " and", " output", " only", " \"", "CL",
+      "AU", "DE", "_C", "U", "_OK", ":", " ", "95", "\".\n\n",
+      "37", " +", " ", "58", " =", " ", "95", ".",
+    ];
+    const canonical = (text: string, index: number) => {
+      const occurredAt = `2026-08-06T00:00:00.${String(index).padStart(3, "0")}Z`;
+      const rawPayload = {
+        content: { text, type: "text" },
+        messageId: "60d8e901-4ea5-41a1-a810-d798e7715e83",
+        sessionUpdate: "agent_thought_chunk",
+      };
+      return {
+        schema: "oma.event.v1",
+        event_id: `thought-${index}`,
+        session_id: sessionId,
+        turn_id: turnId,
+        source: { kind: "harness", harness: "claude-acp", adapter: "acp" },
+        occurred_at: occurredAt,
+        type: "agent.thinking",
+        data: {
+          text,
+          message_id: "60d8e901-4ea5-41a1-a810-d798e7715e83",
+        },
+        raw: {
+          kind: "raw",
+          source: "acp",
+          method: "session/update",
+          event_type: "agent_thought_chunk",
+          payload: rawPayload,
+          received_at: occurredAt,
+          reason: "unknown",
+        },
+      };
+    };
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "calculate" }),
+        ts: 1000,
+      },
+      ...chunks.map((text, index) => ({
+        seq: index + 2,
+        type: "openma_event",
+        data: JSON.stringify(canonical(text, index)),
+        ts: 1001 + index,
+      })),
+    ]);
+
+    const turn = store.turnsFor(sessionId)[0]!;
+    expect(turn.thoughtText).toBe(
+      'The user is asking me to calculate 37 + 58 and output only "CLAUDE_CU_OK: 95".\n\n37 + 58 = 95.',
+    );
+    expect(reduceTurn(turn.events).timeline).toEqual([{
+      kind: "thought",
+      messageId: "60d8e901-4ea5-41a1-a810-d798e7715e83",
+      text: 'The user is asking me to calculate 37 + 58 and output only "CLAUDE_CU_OK: 95".\n\n37 + 58 = 95.',
+    }]);
+  });
+
   test("restores prompt attachments as task sources", () => {
     const store = new SessionStore();
     const sessionId = "sess-replay-attachments";
@@ -649,6 +716,171 @@ describe("SessionStore replay", () => {
     expect(store.turnsFor(activity.viewSessionId)[0]).toMatchObject({
       assistantText: "Child found the boundary.",
     });
+  });
+
+  test("collapses a replayed native Agent provisional id into its reidentified terminal child", () => {
+    const sessionId = "sess-replay-native-reidentified";
+    const turnId = "turn-replay-native-reidentified";
+    const parentToolUseId = "toolu-native-agent";
+    const provisionalId = `claude:${parentToolUseId}`;
+    const childId = "claude-child-final";
+    const stale = new SessionStore();
+    stale.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-native-reidentified",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+    stale.registerTurn("stale-turn", sessionId, "stale native children");
+    for (const [toolCallId, description] of [
+      ["toolu-stale-a", "Reply CHILD_OK only"],
+      ["toolu-stale-b", "Reply with exactly: CHILD_OK"],
+    ] as const) {
+      stale.apply({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: "stale-turn",
+        event: {
+          type: "agent.tool_use",
+          id: toolCallId,
+          name: "Agent",
+          input: {
+            subagent_type: "general-purpose",
+            description,
+            prompt: description,
+          },
+        },
+      });
+    }
+
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-native-reidentified",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+    const staleSnapshots = stale.sideWorkspaceSnapshots();
+    const staleState = staleSnapshots[0]!.state;
+    const restoredActivity = staleState.subagents[0]!;
+    restoredActivity.childSessionId = childId;
+    restoredActivity.native = {
+      ...(restoredActivity.native ?? { provider: "claude" }),
+      provider: "claude",
+      toolCallId: parentToolUseId,
+      childThreadId: childId,
+    };
+    staleState.subagents = [restoredActivity];
+    staleState.sideSessions = staleState.sideSessions.filter(
+      (item) => item.row.id === restoredActivity.viewSessionId,
+    );
+    const canonicalTab = staleState.tabs.find(
+      (tab) => tab.payload === restoredActivity.viewSessionId,
+    )!;
+    staleState.tabs = [
+      canonicalTab,
+      {
+        ...canonicalTab,
+        id: "tab-duplicate-native-child",
+        label: "Reply with exactly: CHILD_OK",
+      },
+    ];
+    staleState.activeTabId = "tab-duplicate-native-child";
+    store.hydrateSideWorkspaces(staleSnapshots);
+    expect(store.subagentsFor(sessionId)).toHaveLength(1);
+    expect(store.sideTabs()).toHaveLength(2);
+    store.setSideActive(null);
+    const canonical = (
+      eventId: string,
+      type: "work_item.started" | "work_item.reidentified" | "work_item.completed",
+      workItemId: string,
+      data: Record<string, unknown>,
+    ) => createOpenMAEvent({
+      event_id: eventId,
+      type,
+      session_id: sessionId,
+      turn_id: turnId,
+      work_item_id: workItemId,
+      parent_id: parentToolUseId,
+      source: { kind: "harness", harness: "claude", adapter: "claude" },
+      occurred_at: "2026-08-05T00:00:00.000Z",
+      data,
+    });
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "delegate this" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify(canonical(
+          "native-provisional-start",
+          "work_item.started",
+          provisionalId,
+          { kind: "agent", title: "Reply CHILD_OK only" },
+        )),
+        ts: 2_000,
+      },
+      {
+        seq: 3,
+        type: "openma_event",
+        data: JSON.stringify(canonical(
+          "native-reidentified",
+          "work_item.reidentified",
+          childId,
+          { previous_work_item_id: provisionalId },
+        )),
+        ts: 3_000,
+      },
+      {
+        seq: 4,
+        type: "openma_event",
+        data: JSON.stringify(canonical(
+          "native-final-start",
+          "work_item.started",
+          childId,
+          { kind: "agent", title: "Reply CHILD_OK only" },
+        )),
+        ts: 4_000,
+      },
+      {
+        seq: 5,
+        type: "openma_event",
+        data: JSON.stringify(canonical(
+          "native-final-complete",
+          "work_item.completed",
+          childId,
+          { kind: "agent", result: "CHILD_OK" },
+        )),
+        ts: 5_000,
+      },
+    ]);
+
+    const activities = store.subagentsFor(sessionId);
+    expect(activities).toHaveLength(1);
+    expect(activities[0]).toMatchObject({
+      childSessionId: childId,
+      task: "Reply CHILD_OK only",
+      status: "complete",
+      native: {
+        provider: "claude",
+        toolCallId: parentToolUseId,
+        result: "CHILD_OK",
+      },
+    });
+    expect(store.sideTabs()).toEqual([
+      expect.objectContaining({
+        type: "subagent",
+        payload: activities[0]!.viewSessionId,
+      }),
+    ]);
+    expect(store.sideActiveId()).toBe(activities[0]!.viewSessionId);
   });
 
   test("replays total-only native Agent progress usage without inventing a token split", () => {
@@ -2467,6 +2699,17 @@ describe("SessionStore side chats and native subagents", () => {
       agent_id: "codex-acp",
       cwd: "/repo",
       supports_session_fork: true,
+      config_options: [{
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "deepseek-v4-flash",
+        options: [{
+          value: "deepseek-v4-flash",
+          name: "DeepSeek V4 Flash",
+        }],
+      }],
     });
 
     expect(store.get("parent-session")?.supportsSessionFork).toBe(true);
@@ -2481,6 +2724,17 @@ describe("SessionStore side chats and native subagents", () => {
       agent_id: "codex-acp",
       cwd: "/repo",
       supports_session_fork: true,
+      config_options: [{
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "deepseek-v4-flash",
+        options: [{
+          value: "deepseek-v4-flash",
+          name: "DeepSeek V4 Flash",
+        }],
+      }],
     });
 
     const childId = store.newSideDraft({
@@ -2502,9 +2756,49 @@ describe("SessionStore side chats and native subagents", () => {
         parentAcpSessionId: "parent-acp",
         inheritance: "fork",
       },
+      configOptions: [{
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "deepseek-v4-flash",
+        options: [{
+          value: "deepseek-v4-flash",
+          name: "DeepSeek V4 Flash",
+        }],
+      }],
     });
     expect(store.activeSideTab()?.type).toBe("chat");
     expect(store.sideActiveId()).toBe(childId);
+  });
+
+  test("creates an independent main draft that lazily forks the parent context", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-acp",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      supports_session_fork: true,
+    });
+
+    const forkId = store.newMainForkDraft("parent-session");
+
+    expect(forkId).toEqual(expect.stringMatching(/^fork-/));
+    expect(store.get(forkId!)).toMatchObject({
+      kind: "main",
+      status: "draft",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      forkParent: {
+        parentSessionId: "parent-session",
+        parentAcpSessionId: "parent-acp",
+        inheritance: "fork",
+      },
+    });
+    expect(store.activeId()).toBe(forkId);
+    expect(store.newMainForkDraft("missing-session")).toBeNull();
   });
 
   test("promotes a side chat into an independent fork", () => {
@@ -3042,7 +3336,7 @@ describe("SessionStore side chats and native subagents", () => {
       expect.objectContaining({
         type: "subagent",
         payload: initialViewSessionId,
-        label: "Compare native session…",
+        label: "Curie",
         avatarId: initialAvatarId,
       }),
     ]);

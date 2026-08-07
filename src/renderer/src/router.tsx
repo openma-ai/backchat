@@ -25,6 +25,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { ChatPage } from "@/pages/ChatPage";
+import { NewChatPage } from "@/pages/NewChatPage";
 import { PairChatPage } from "@/pages/PairChatPage";
 import { ShellLayout } from "@/components/shell/ShellLayout";
 import { SettingsAgents } from "@/pages/settings/Agents";
@@ -52,7 +53,7 @@ const rootRoute = createRootRoute({
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: ChatPage,
+  component: NewChatPage,
 });
 
 const chatRoute = createRoute({

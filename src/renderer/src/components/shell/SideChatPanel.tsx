@@ -38,6 +38,7 @@ import { browserSettings } from "@shared/browser-settings.js";
 import { cn } from "@/lib/utils";
 import { previewLocalFile } from "@/lib/file-preview";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
 import {
   selectActive,
   selectActiveSideTab,
@@ -408,18 +409,24 @@ export function SideChatPanel() {
             className="side-tab-scroll min-w-0 flex-1 overflow-x-auto"
           >
             <div className="flex w-max items-center gap-1">
-              {tabs.map((tab) => (
-                <TabChip
-                  key={tab.id}
-                  tab={tab}
-                  active={!mainSelected && tab.id === activeTab?.id}
-                  onPick={() => {
-                    selectPanel();
-                    sessionStore.setActiveSideTab(tab.id);
-                  }}
-                  onClose={() => closeTab(tab)}
-                />
-              ))}
+              {tabs.map((tab) => {
+                const activity = tab.type === "subagent"
+                  ? subagents.find((item) => item.viewSessionId === tab.payload)
+                  : undefined;
+                return (
+                  <TabChip
+                    key={tab.id}
+                    tab={tab}
+                    label={activity ? subagentActivityLabel(activity) : tab.label}
+                    active={!mainSelected && tab.id === activeTab?.id}
+                    onPick={() => {
+                      selectPanel();
+                      sessionStore.setActiveSideTab(tab.id);
+                    }}
+                    onClose={() => closeTab(tab)}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1045,11 +1052,13 @@ function RecentRow({
 
 function TabChip({
   tab,
+  label,
   active,
   onPick,
   onClose,
 }: {
   tab: SideTab;
+  label: string;
   active: boolean;
   onPick: () => void;
   onClose: () => void;
@@ -1082,7 +1091,7 @@ function TabChip({
           "inline-flex min-w-0 flex-1 items-center gap-1.5 truncate",
           active ? "pr-4" : "group-hover:pr-4",
         )}
-        title={tab.label}
+        title={label}
       >
         {tab.type === "subagent" ? (
           <SubagentAvatar avatarId={tab.avatarId} className="size-[18px]" />
@@ -1100,7 +1109,7 @@ function TabChip({
             and the label always shows even when narrow — image #95
             had chat/browser tabs reading as icon-only because the
             truncate had no room. */}
-        <span className="min-w-0 truncate">{tab.label}</span>
+        <span className="min-w-0 truncate">{label}</span>
       </button>
       <button
         type="button"
@@ -1164,7 +1173,7 @@ const ICON_BY_TYPE: Record<Exclude<SideTabType, "subagent">, LucideIcon> = {
 };
 
 function subagentLabel(activity: SubagentActivity): string {
-  return activity.native?.nickname || activity.task || activity.native?.agentType || activity.childSessionId;
+  return subagentActivityLabel(activity);
 }
 
 function processLabel(process: AcpTerminalInfo): string {

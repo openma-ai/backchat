@@ -10,10 +10,14 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { generateHarnessFeatureMatrixReport } from "./generate-harness-feature-matrix-report.mjs";
+import {
+  generateHarnessFeatureMatrixDraftReport,
+  generateHarnessFeatureMatrixReport,
+} from "./generate-harness-feature-matrix-report.mjs";
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const SECRET_PATTERN = /\bsk-[A-Za-z0-9_-]{16,}\b/;
@@ -31,10 +35,18 @@ async function validatePng(path) {
   if (SECRET_PATTERN.test(bytes.toString("latin1"))) {
     throw new Error(`Secret-shaped material found in screenshot bytes: ${path}`);
   }
-  return { width, height, bytes: info.size };
+  return {
+    width,
+    height,
+    bytes: info.size,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
 }
 
-export async function validateHarnessFeatureMatrixArtifacts(stagingRoot) {
+async function validateHarnessFeatureMatrixArtifactsWithReport(
+  stagingRoot,
+  generateReport,
+) {
   const root = resolve(stagingRoot);
   const manifestPath = resolve(root, "manifest.json");
   const manifestText = await readFile(manifestPath, "utf8");
@@ -42,7 +54,7 @@ export async function validateHarnessFeatureMatrixArtifacts(stagingRoot) {
     throw new Error("Secret-shaped credential material found in staging manifest");
   }
   const manifest = JSON.parse(manifestText);
-  const html = generateHarnessFeatureMatrixReport(manifest);
+  const html = generateReport(manifest);
   if (SECRET_PATTERN.test(html)) {
     throw new Error("Secret-shaped credential material found in generated HTML");
   }
@@ -70,6 +82,14 @@ export async function validateHarnessFeatureMatrixArtifacts(stagingRoot) {
       `Strict publish requires 315 unique screenshots; received ${screenshotPaths.size}`,
     );
   }
+  const screenshotContentHashes = new Set(
+    screenshots.map((screenshot) => screenshot.sha256),
+  );
+  if (screenshotContentHashes.size !== 315) {
+    throw new Error(
+      `Strict publish rejects duplicate screenshot content; received ${screenshotContentHashes.size} unique images for 315 cells`,
+    );
+  }
   await writeFile(resolve(root, "report.html"), html, "utf8");
   await writeFile(
     resolve(root, "artifact-validation.json"),
@@ -77,6 +97,7 @@ export async function validateHarnessFeatureMatrixArtifacts(stagingRoot) {
       validatedAt: new Date().toISOString(),
       screenshotCount: screenshots.length,
       uniqueScreenshotCount: screenshotPaths.size,
+      uniqueScreenshotContentCount: screenshotContentHashes.size,
       brokenImages: 0,
       secretLeaks: 0,
       screenshots,
@@ -84,6 +105,20 @@ export async function validateHarnessFeatureMatrixArtifacts(stagingRoot) {
     "utf8",
   );
   return { manifest, html, screenshots };
+}
+
+export async function validateHarnessFeatureMatrixArtifacts(stagingRoot) {
+  return validateHarnessFeatureMatrixArtifactsWithReport(
+    stagingRoot,
+    generateHarnessFeatureMatrixReport,
+  );
+}
+
+export async function validateHarnessFeatureMatrixDraftArtifacts(stagingRoot) {
+  return validateHarnessFeatureMatrixArtifactsWithReport(
+    stagingRoot,
+    generateHarnessFeatureMatrixDraftReport,
+  );
 }
 
 export async function publishHarnessFeatureMatrixReport(stagingRoot, publishedRoot) {
@@ -121,6 +156,15 @@ export async function publishHarnessFeatureMatrixReport(stagingRoot, publishedRo
 }
 
 async function main(argv) {
+  if (argv[0] === "--validate-draft") {
+    if (!argv[1] || argv.length !== 2) {
+      throw new Error(
+        "usage: publish-harness-feature-matrix-report.mjs --validate-draft <staging-dir>",
+      );
+    }
+    await validateHarnessFeatureMatrixDraftArtifacts(argv[1]);
+    return;
+  }
   const staging = argv[0];
   const published = argv[1];
   if (!staging || !published) {

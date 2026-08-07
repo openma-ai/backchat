@@ -45,6 +45,8 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.SessionSetConfigOption, p) as Promise<void>,
   sessionCancel: (p) =>
     ipcRenderer.invoke(InvokeChannel.SessionCancel, p) as Promise<void>,
+  sessionClose: (p) =>
+    ipcRenderer.invoke(InvokeChannel.SessionClose, p) as Promise<void>,
   sessionDispose: (p) =>
     ipcRenderer.invoke(InvokeChannel.SessionDispose, p) as Promise<void>,
   sessionRuntimeStatus: (p) =>

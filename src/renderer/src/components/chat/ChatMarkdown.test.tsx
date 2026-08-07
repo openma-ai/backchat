@@ -1,7 +1,26 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { MarkdownAnchor, MarkdownCwdProvider } from "./ChatMarkdown";
+import {
+  MarkdownAnchor,
+  MarkdownCwdProvider,
+  StreamdownText,
+} from "./ChatMarkdown";
+
+describe("StreamdownText", () => {
+  it("preserves plain arithmetic in completed thought text", () => {
+    const html = renderToStaticMarkup(
+      <StreamdownText
+        text={'The user is asking me to calculate 37 + 58.\n\n37 + 58 = 95.'}
+        cwd={null}
+        sessionId="session-arithmetic"
+        surfacePrefix="thought-arithmetic"
+      />,
+    );
+
+    expect(html).toContain("37 + 58 = 95.");
+  });
+});
 
 describe("MarkdownAnchor", () => {
   it("renders a relative file link when the surrounding session has a cwd", () => {

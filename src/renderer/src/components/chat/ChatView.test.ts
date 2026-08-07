@@ -9,9 +9,11 @@ vi.mock("@/components/AgentIcon", () => ({
 import {
   buildSlashCommandSections,
   canSubmitComposer,
+  canSteerQueuedPrompts,
   removeSuggestionTemplateSlot,
   serializeSuggestionTemplate,
 } from "./ChatView";
+import { runtimePresentation } from "./ComposerSessionControls";
 import * as chatViewModule from "./ChatView";
 
 describe("chat module boundaries", () => {
@@ -116,6 +118,54 @@ describe("canSubmitComposer", () => {
         ],
       }),
     ).toBe(true);
+  });
+});
+
+describe("canSteerQueuedPrompts", () => {
+  it("only enables the queue Steer action after the runtime negotiates steering", () => {
+    expect(canSteerQueuedPrompts(undefined)).toBe(false);
+    expect(canSteerQueuedPrompts({ supportsSteering: false })).toBe(false);
+    expect(canSteerQueuedPrompts({ supportsSteering: true })).toBe(true);
+  });
+});
+
+describe("side draft runtime inheritance", () => {
+  it("binds a GUI-created side draft to its parent harness before the first submit", () => {
+    const resolveBinding = (
+      chatViewModule as unknown as {
+        resolveComposerAgentBinding?: (active: {
+          status: string;
+          kind?: string;
+          agent_id: string;
+        }) => { sessionAgentId?: string; lockedAgentId: string | null };
+      }
+    ).resolveComposerAgentBinding;
+
+    expect(resolveBinding).toBeTypeOf("function");
+    if (!resolveBinding) return;
+    expect(resolveBinding({
+      status: "draft",
+      kind: "side",
+      agent_id: "opencode",
+    })).toEqual({
+      sessionAgentId: "opencode",
+      lockedAgentId: "opencode",
+    });
+    expect(resolveBinding({
+      status: "draft",
+      kind: "main",
+      agent_id: "cursor",
+    })).toEqual({
+      sessionAgentId: "cursor",
+      lockedAgentId: "cursor",
+    });
+    expect(resolveBinding({
+      status: "draft",
+      agent_id: "",
+    })).toEqual({
+      sessionAgentId: undefined,
+      lockedAgentId: null,
+    });
   });
 });
 
@@ -463,19 +513,61 @@ describe("home suggestions", () => {
     );
   });
 
-  it("only offers the local runtime in the run menu", () => {
+  it("keeps the compact run trigger narrow and reveals the full model on hover", () => {
     const controlsSource = readFileSync(
       resolve(__dirname, "ComposerSessionControls.tsx"),
       "utf8",
     );
-    const runChip = controlsSource.slice(
-      controlsSource.indexOf("function SessionRunChip"),
-      controlsSource.indexOf("function SessionConfigSubmenu"),
+    const runTrigger = controlsSource.slice(
+      controlsSource.indexOf("<DropdownMenuTrigger"),
+      controlsSource.indexOf("</DropdownMenuTrigger>"),
     );
 
-    expect(runChip).toContain('label={t("chat.local")}');
-    expect(runChip).not.toContain('label={t("chat.cloud")}');
-    expect(runChip).not.toContain('label={t("chat.otherMachine")}');
+    expect(runTrigger).not.toContain('{t("chat.local")}');
+    expect(runTrigger.match(/text-fg-subtle">·<\/span>/g)).toHaveLength(2);
+    expect(runTrigger).toContain("<TooltipProvider>");
+    expect(runTrigger).toContain("<TooltipTrigger asChild>");
+    expect(runTrigger).toContain(
+      '<TooltipContent side="top">{runtimeLabel}</TooltipContent>',
+    );
+    expect(runTrigger).toContain(
+      '<TooltipContent side="top">{configLabel}</TooltipContent>',
+    );
+    expect(runTrigger).toContain(
+      'className="min-w-0 max-w-[140px] truncate"',
+    );
+  });
+
+  it("uses distinct runtime icons for local, cloud, and other machines", () => {
+    const local = runtimePresentation("local");
+    const cloud = runtimePresentation("cloud");
+    const remote = runtimePresentation("remote");
+
+    expect([local.labelKey, cloud.labelKey, remote.labelKey]).toEqual([
+      "chat.local",
+      "chat.cloud",
+      "chat.otherMachine",
+    ]);
+    expect(new Set([local.Icon, cloud.Icon, remote.Icon])).toHaveLength(3);
+  });
+
+  it("shows distinct local, cloud, and other-machine icons without enabling unavailable runtimes", () => {
+    const controlsSource = readFileSync(
+      resolve(__dirname, "ComposerSessionControls.tsx"),
+      "utf8",
+    );
+    const runtimeMenu = controlsSource.slice(
+      controlsSource.indexOf("function SessionRuntimeSubmenu"),
+      controlsSource.indexOf("function SessionAgentSubmenu"),
+    );
+
+    expect(runtimeMenu).toContain('icon={MonitorIcon}');
+    expect(runtimeMenu).toContain('label={t("chat.local")}');
+    expect(runtimeMenu).toContain('icon={CloudIcon}');
+    expect(runtimeMenu).toContain('label={t("chat.cloud")}');
+    expect(runtimeMenu).toContain('icon={ServerIcon}');
+    expect(runtimeMenu).toContain('label={t("chat.otherMachine")}');
+    expect(runtimeMenu.match(/disabled/g)).toHaveLength(2);
   });
 });
 
@@ -538,6 +630,20 @@ describe("slash command presentation", () => {
     expect(source).toContain('from "./ComposerSessionControls"');
     expect(controlsSource).toContain("buildRunMenuConfigOptionSections");
     expect(controlsSource).toContain("<DropdownMenuSub");
+    expect(controlsSource).toContain("<SessionRuntimeSubmenu");
+    expect(controlsSource).toContain("<SessionAgentSubmenu");
+    expect(controlsSource).not.toContain(
+      '<SessionRunSection title={t("chat.runtime")}',
+    );
+    expect(controlsSource).not.toContain(
+      '<SessionRunSection title={t("chat.harness")}',
+    );
+    expect(controlsSource).toContain(
+      '<TooltipContent side="top">{configLabel}</TooltipContent>',
+    );
+    expect(controlsSource).toContain(
+      'className="min-w-0 max-w-[140px] truncate"',
+    );
     expect(controlsSource).toContain('t("chat.model")');
     expect(controlsSource).toContain('t("chat.effort")');
     expect(controlsSource).toContain('t("chat.fast")');

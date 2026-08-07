@@ -41,9 +41,9 @@ describe("groupSidebarSessions", () => {
   it("creates global and project drafts with explicit, separate scopes", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
 
-    expect(source).toContain("const id = sessionStore.newDraft();");
-    expect(source).toContain("const id = sessionStore.newDraft(cwd);");
-    expect(source).toContain('to: "/chat/$sessionId"');
+    expect(source).toContain("sessionStore.newDraft();");
+    expect(source).toContain("sessionStore.newDraft(cwd);");
+    expect(source).toContain('navigate({ to: "/" })');
   });
 
   it("does not persist a selected style on project folders", () => {
@@ -196,6 +196,23 @@ describe("groupSidebarSessions", () => {
 
     expect(footer).toContain('className="py-[var(--row-gap-y)]"');
     expect(footer).not.toContain('className="pb-[var(--row-gap-y)]"');
+  });
+
+  it("aligns fixed rows to the native scrollbar client width without an extra gap", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const styles = readFileSync(
+      resolve(__dirname, "../../styles/index.css"),
+      "utf8",
+    );
+
+    expect(source).not.toContain("--sb-w");
+    expect(source).toContain("--native-scrollbar-width");
+    expect(source).toContain("offsetWidth - nav.clientWidth");
+    expect(
+      source.match(/paddingRight: "calc\(8px \+ var\(--native-scrollbar-width, 0px\)\)"/g),
+    ).toHaveLength(2);
+    expect(source.match(/paddingRight: "8px"/g)).toHaveLength(1);
+    expect(styles).toContain(".sidebar-scrollbar {\n  scrollbar-width: auto;");
   });
 
   it("keeps Scheduled with the header actions instead of the settings footer", () => {

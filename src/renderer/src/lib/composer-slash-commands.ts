@@ -64,6 +64,30 @@ export function withSessionStateCommands(
   ];
 }
 
+export function withHostForkCommand(
+  commands: readonly AcpAvailableCommand[],
+  enabled: boolean,
+  copy: { title: string; description: string },
+): AcpAvailableCommand[] {
+  if (!enabled) return [...commands];
+  return [
+    {
+      name: "fork",
+      description: copy.title,
+      kind: "host-fork",
+      source: "backchat",
+      metadata: { description: copy.description },
+    },
+    ...commands.filter((command) => command.name.trim().toLowerCase() !== "fork"),
+  ];
+}
+
+export function isHostForkSlashCommand(
+  command: AcpAvailableCommand,
+): boolean {
+  return command.kind === "host-fork" && command.name === "fork";
+}
+
 export function matchesSlashCommand(
   commandName: string,
   query: string,
@@ -90,7 +114,10 @@ export function matchesSlashCommand(
 export function isSkillSlashCommand(
   command: AcpAvailableCommand,
 ): boolean {
-  if (/^skill[:/]/i.test(command.name)) return true;
+  // Codex publishes installed skills as `$skill-name`; other adapters use
+  // `skill:` / `skill/` or structured metadata. Treat all of those as the
+  // same semantic category instead of relying on description copy.
+  if (/^(?:skill[:/]|\$)/i.test(command.name)) return true;
   const metadata = command.metadata ?? {};
   const markers = [
     command.kind,
@@ -159,6 +186,6 @@ export function buildSlashCommandSections(
 }
 
 export function skillCommandLabel(command: AcpAvailableCommand): string {
-  const name = command.name.replace(/^skill[:/]/i, "");
+  const name = command.name.replace(/^(?:skill[:/]|\$)/i, "");
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : name;
 }

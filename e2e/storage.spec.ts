@@ -83,6 +83,104 @@ test.describe("user-visible storage persistence", () => {
     }
   });
 
+  test("replays every numeric chunk in completed Claude thought text", async () => {
+    const home = await test.info().outputPath("home");
+    const sessionId = "e2e-claude-thought-arithmetic";
+    const title = "Claude thought arithmetic replay";
+    const turnId = "turn-claude-thought-arithmetic";
+    const messageId = "60d8e901-4ea5-41a1-a810-d798e7715e83";
+    const chunks = [
+      "The", " user", " is", " asking", " me", " to", " calculate", " ",
+      "37", " +", " ", "58", " and", " output", " only", " \"", "CL",
+      "AU", "DE", "_C", "U", "_OK", ":", " ", "95", "\".\n\n",
+      "37", " +", " ", "58", " =", " ", "95", ".",
+    ];
+    const first = await launchAppWithHome(home);
+    try {
+      await persistSessionFixture(first.page, {
+        sessionId,
+        agentId: "claude-acp",
+        cwd: join(home, "sessions", sessionId),
+        acpSessionId: "acp-claude-thought-arithmetic",
+        title,
+        events: [
+          { type: "user_prompt", data: { text: "calculate" } },
+          ...chunks.map((text, index) => {
+            const occurredAt = `2026-08-06T00:00:00.${String(index).padStart(3, "0")}Z`;
+            const payload = {
+              content: { text, type: "text" },
+              messageId,
+              sessionUpdate: "agent_thought_chunk",
+            };
+            return {
+              type: "openma_event",
+              data: {
+                schema: "oma.event.v1",
+                event_id: `thought-${index}`,
+                session_id: sessionId,
+                turn_id: turnId,
+                source: { kind: "harness", harness: "claude-acp", adapter: "acp" },
+                occurred_at: occurredAt,
+                type: "agent.thinking",
+                data: { text, message_id: messageId },
+                raw: {
+                  kind: "raw",
+                  source: "acp",
+                  method: "session/update",
+                  event_type: "agent_thought_chunk",
+                  payload,
+                  received_at: occurredAt,
+                  reason: "unknown",
+                },
+              },
+            };
+          }),
+          ...["CL", "AU", "DE", "_C", "U", "_OK", ":", " ", "95"].map(
+            (text, index) => ({
+              type: "openma_event",
+              data: {
+                schema: "oma.event.v1",
+                event_id: `message-${index}`,
+                session_id: sessionId,
+                turn_id: turnId,
+                source: { kind: "harness", harness: "claude-acp", adapter: "acp" },
+                occurred_at: "2026-08-06T00:00:01.000Z",
+                type: "agent.message_chunk",
+                data: { text, message_id: messageId },
+              },
+            }),
+          ),
+          {
+            type: "openma_event",
+            data: {
+              schema: "oma.event.v1",
+              event_id: "turn-completed",
+              session_id: sessionId,
+              turn_id: turnId,
+              source: { kind: "harness", harness: "claude-acp", adapter: "acp" },
+              occurred_at: "2026-08-06T00:00:02.000Z",
+              type: "turn.completed",
+              data: { stop_reason: "end_turn" },
+            },
+          },
+        ],
+      });
+    } finally {
+      await closeApp(first.app);
+    }
+
+    const second = await launchAppWithHome(home);
+    try {
+      await openPersistedSession(second.page, title, sessionId);
+      const transcript = second.page.getByRole("log");
+      await expect(
+        transcript.getByText("37 + 58 = 95.", { exact: true }),
+      ).toBeVisible();
+    } finally {
+      await second.cleanup();
+    }
+  });
+
   test("replays a UI-created conversation after relaunch", async () => {
     const home = await test.info().outputPath("home");
     const workspace = join(home, "workspace");

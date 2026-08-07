@@ -1,13 +1,15 @@
 import {
   ArchiveIcon,
-  MessageSquarePlusIcon,
+  CircleStopIcon,
   MoreHorizontalIcon,
   PinIcon,
   PinOffIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useMemo } from "react";
 import { useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,28 +45,20 @@ export function Topbar(_props: { onCancel: () => void }) {
   if (!active || !isChat) return null;
 
   const pinned = active.pinnedAt != null;
-  const canOpenSideChat =
-    active.status !== "draft" && active.sideKind !== "subagent";
-
-  const openSideChat = async () => {
-    if (!canOpenSideChat) return;
-    const cwd = active.cwd || (await window.backchat.uiFsHome());
-    const canFork =
-      !!active.supportsSessionFork && !!active.acp_session_id;
-    const sideId = sessionStore.newSideDraft({
-      parentSessionId: active.id,
-      parentAcpSessionId: canFork ? active.acp_session_id : undefined,
-      inheritance: canFork ? "fork" : "fresh",
-      agentId: active.agent_id,
-      cwd,
-    });
-    sessionStore.openSideTab("chat", sideId, t("sideChat.title"));
-  };
-
   const archive = () => {
     sessionStore.archive(active.id);
     sessionStore.setActive(null);
     void navigate({ to: "/" });
+  };
+
+  const closeSession = async () => {
+    try {
+      await window.backchat.sessionClose({ session_id: active.id });
+    } catch (error) {
+      toast.error(t("topbar.endSessionFailed"), {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 
   return (
@@ -106,13 +100,16 @@ export function Topbar(_props: { onCancel: () => void }) {
               : <PinIcon className="size-3.5" />}
             <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
           </DropdownMenuItem>
-          {canOpenSideChat && (
-            <DropdownMenuItem onSelect={() => void openSideChat()}>
-              <MessageSquarePlusIcon className="size-3.5" />
-              <span>{t("topbar.openSideChat")}</span>
+          <DropdownMenuSeparator />
+          {active.supportsSessionClose && active.status !== "disposed" && (
+            <DropdownMenuItem
+              onSelect={() => void closeSession()}
+              className="text-danger focus:text-danger"
+            >
+              <CircleStopIcon className="size-3.5" />
+              <span>{t("topbar.endSession")}</span>
             </DropdownMenuItem>
           )}
-          <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={archive}>
             <ArchiveIcon className="size-3.5" />
             <span>{t("sidebar.archive")}</span>
@@ -131,6 +128,15 @@ export function Topbar(_props: { onCancel: () => void }) {
 
 export function PairTopbar() {
   const location = useLocation();
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => window.backchat.agentsList(),
+    staleTime: 60_000,
+  });
+  const agentIconUrls = useMemo(
+    () => new Map(agents.flatMap((agent) => agent.icon ? [[agent.id, agent.icon] as const] : [])),
+    [agents],
+  );
   const pairId = location.pathname.startsWith("/pair/")
     ? decodeURIComponent(location.pathname.slice("/pair/".length))
     : "";
@@ -173,7 +179,7 @@ export function PairTopbar() {
             index > 0 && "border-l border-border/60",
           )}
         >
-          <AgentIcon agentId={m.agent_id} className="size-4 shrink-0" />
+          <AgentIcon agentId={m.agent_id} iconUrl={agentIconUrls.get(m.agent_id)} className="size-4 shrink-0" />
         </div>
       ))}
     </div>

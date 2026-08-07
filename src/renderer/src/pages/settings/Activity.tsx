@@ -245,22 +245,10 @@ function HarnessIcon({ harness, label }: {
   harness: HarnessActivityInfo;
   label: string;
 }) {
-  const [registryIconFailed, setRegistryIconFailed] = useState(false);
-  if (harness.icon_url && !registryIconFailed) {
-    return (
-      <img
-        src={harness.icon_url}
-        alt={label}
-        className="size-4 object-contain"
-        draggable={false}
-        referrerPolicy="no-referrer"
-        onError={() => setRegistryIconFailed(true)}
-      />
-    );
-  }
   return (
     <AgentIcon
       agentId={harness.harness_id}
+      iconUrl={harness.icon_url}
       title={label}
       className="size-3.5"
     />

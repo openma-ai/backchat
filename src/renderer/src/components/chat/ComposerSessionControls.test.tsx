@@ -23,9 +23,20 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
 
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuSub: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuSubContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuSubTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 import {
   ComposerSessionStateSlot,
   InlineComposerOptionControls,
+  SessionRunChip,
 } from "./ComposerSessionControls";
 
 describe("ComposerSessionStateSlot", () => {
@@ -84,5 +95,62 @@ describe("InlineComposerOptionControls", () => {
     expect(html).toContain("Telemetry");
     expect(html).toContain('aria-pressed="true"');
     expect(html).not.toContain("disabled");
+  });
+});
+
+describe("SessionRunChip", () => {
+  it("does not expose local agent command paths in the harness menu", () => {
+    const command = "/Users/test/.oma/acp/bin/claude-agent-acp";
+    const html = renderToStaticMarkup(
+      <SessionRunChip
+        disabled={false}
+        locked={false}
+        agents={[{
+          id: "claude",
+          label: "Claude",
+          command,
+          detected: true,
+        }]}
+        currentAgentId="claude"
+        onPickAgent={() => undefined}
+        onSetConfigOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Claude");
+    expect(html).not.toContain(command);
+    expect(html).not.toContain("/.oma/acp/bin/");
+  });
+
+  it("offers a direct reset to the ACP-declared config defaults", () => {
+    const html = renderToStaticMarkup(
+      <SessionRunChip
+        disabled={false}
+        locked={false}
+        agents={[{
+          id: "kilo",
+          label: "Kilo",
+          command: "kilo",
+          detected: true,
+        }]}
+        currentAgentId="kilo"
+        configOptions={[{
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "kilo/nano-banana",
+          options: [
+            { value: "anthropic/deepseek-v4-flash", name: "Anthropic/DeepSeek V4 Flash" },
+            { value: "kilo/nano-banana", name: "Kilo/Nano Banana" },
+          ],
+        }]}
+        onPickAgent={() => undefined}
+        onSetConfigOption={() => undefined}
+        onResetConfigOptions={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("chat.resetToDefault");
   });
 });

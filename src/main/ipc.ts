@@ -693,6 +693,11 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       sessionManager.cancel(p.session_id, p.turn_id),
   );
   ipcMain.handle(
+    InvokeChannel.SessionClose,
+    (_e, p: { session_id: string }) =>
+      sessionManager.close(p.session_id),
+  );
+  ipcMain.handle(
     InvokeChannel.SessionDispose,
     (_e, p: { session_id: string; remove_cwd?: boolean }) =>
       sessionManager.dispose(p.session_id, { removeCwd: p.remove_cwd }),

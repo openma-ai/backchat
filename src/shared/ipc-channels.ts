@@ -18,6 +18,7 @@ export const InvokeChannel = {
   SessionRunCommand: "session:runCommand",
   SessionSetConfigOption: "session:setConfigOption",
   SessionCancel: "session:cancel",
+  SessionClose: "session:close",
   SessionDispose: "session:dispose",
   SessionRuntimeStatus: "session:runtimeStatus",
   SessionRestart: "session:restart",
@@ -214,13 +215,13 @@ export const PushChannel = {
   /** Whole-settings push fired after each patch — renderer subscribes once
    *  and re-renders settings-driven UI without polling. */
   SettingsChanged: "settings:changed",
-  /** Permission ask from a running ACP child. Renderer surfaces a modal,
-   *  user picks → PermissionRespond invoke routes the decision back. */
+  /** Permission ask from a running ACP child. The owning session's composer
+   *  becomes an approval form; PermissionRespond routes the decision back. */
   PermissionRequest: "permission:request",
   /** ACP form elicitation normalized by the main adapter into typed fields. */
   ElicitationRequest: "elicitation:request",
-  /** Out-of-cwd file write request — same pattern. Renderer shows a
-   *  diff/approval modal, replies via FsApprovalRespond. */
+  /** Out-of-cwd file write request — same composer-form pattern, with a
+   *  preview and FsApprovalRespond decision. */
   FsWriteApproval: "fs:writeApproval",
   /** Per-terminal output frames pushed for live rendering. */
   TerminalOutput: "terminal:output",

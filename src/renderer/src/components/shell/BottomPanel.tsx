@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PlusIcon, SquareTerminalIcon, XIcon } from "lucide-react";
 import { useBottomBarCollapse } from "@/components/shell/AppShell";
 import { TerminalTab } from "@/components/shell/TerminalTab";
@@ -23,37 +23,84 @@ import { useTheme } from "@/lib/theme";
  * Lifetime: tabs aren't persisted across app launches — this is a
  * scratch surface, same lifecycle as the Codex side-chat.
  */
+const NO_SESSION_BUCKET = "__no_session__";
+
+interface TerminalBucketState {
+  tabs: TabState[];
+  activeTabId: string | null;
+  autoSpawned: boolean;
+}
+
+const EMPTY_TERMINAL_BUCKET: TerminalBucketState = {
+  tabs: [],
+  activeTabId: null,
+  autoSpawned: false,
+};
+
 export function BottomPanel() {
   const { collapsed, toggle } = useBottomBarCollapse();
   const { themeId, effective } = useTheme();
   const active = useSessionStore(selectActive);
-  const [tabs, setTabs] = useState<TabState[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  // Track whether the FIRST tab has been spawned yet — auto-spawn one
-  // when the panel opens for the first time so the user lands inside a
-  // working shell, not an empty tab bar.
-  const autoSpawnedRef = useRef(false);
+  const sessionKey = active?.id ?? NO_SESSION_BUCKET;
+  const [buckets, setBuckets] = useState<Record<string, TerminalBucketState>>(
+    {},
+  );
+  const bucket = buckets[sessionKey] ?? EMPTY_TERMINAL_BUCKET;
+  const { tabs, activeTabId } = bucket;
+
+  const updateBucket = useCallback(
+    (update: (current: TerminalBucketState) => TerminalBucketState) => {
+      setBuckets((currentBuckets) => {
+        const current = currentBuckets[sessionKey] ?? EMPTY_TERMINAL_BUCKET;
+        const next = update(current);
+        if (next === current) return currentBuckets;
+        return { ...currentBuckets, [sessionKey]: next };
+      });
+    },
+    [sessionKey],
+  );
 
   const spawnTab = useCallback(async () => {
+    const spawnSessionKey = sessionKey;
+    const cwd = active?.cwd || undefined;
+    setBuckets((currentBuckets) => {
+      const current = currentBuckets[spawnSessionKey]
+        ?? EMPTY_TERMINAL_BUCKET;
+      return {
+        ...currentBuckets,
+        [spawnSessionKey]: { ...current, autoSpawned: true },
+      };
+    });
     // 80x24 is the "VT220 default" every shell expects; the fit addon
     // will resize on the next frame anyway, so the visible terminal
     // never renders at this resolution.
     const { terminalId } = await window.backchat.uiTermSpawn({
-      cwd: active?.cwd || undefined,
+      cwd,
       cols: 80,
       rows: 24,
     });
-    const label = active?.cwd
-      ? shortCwdLabel(active.cwd)
+    const label = cwd
+      ? shortCwdLabel(cwd)
       : `shell-${terminalId.slice(-4)}`;
-    setTabs((prev) => [...prev, {
-      id: terminalId,
-      label,
-      alive: true,
-      cancellationRequested: false,
-    }]);
-    setActiveTabId(terminalId);
-  }, [active?.cwd]);
+    setBuckets((currentBuckets) => {
+      const current = currentBuckets[spawnSessionKey]
+        ?? EMPTY_TERMINAL_BUCKET;
+      return {
+        ...currentBuckets,
+        [spawnSessionKey]: {
+          ...current,
+          tabs: [...current.tabs, {
+            id: terminalId,
+            label,
+            alive: true,
+            cancellationRequested: false,
+          }],
+          activeTabId: terminalId,
+          autoSpawned: true,
+        },
+      };
+    });
+  }, [active?.cwd, sessionKey]);
 
   // Auto-spawn on first open. We can't do this in collapsed state —
   // that would spawn a shell the user hasn't asked for. The check is
@@ -61,26 +108,37 @@ export function BottomPanel() {
   useEffect(() => {
     if (collapsed) return;
     if (tabs.length > 0) return;
-    if (autoSpawnedRef.current) return;
-    autoSpawnedRef.current = true;
+    if (bucket.autoSpawned) return;
     void spawnTab();
-  }, [collapsed, tabs.length, spawnTab]);
+  }, [bucket.autoSpawned, collapsed, tabs.length, spawnTab]);
 
   // Re-allow auto-spawn after all tabs are closed and the panel is
   // re-opened — otherwise re-opening an empty panel leaves the user
   // staring at the empty tab bar with no shell.
   useEffect(() => {
-    if (tabs.length === 0 && collapsed) autoSpawnedRef.current = false;
-  }, [tabs.length, collapsed]);
+    if (tabs.length !== 0 || !collapsed || !bucket.autoSpawned) return;
+    updateBucket((current) => ({ ...current, autoSpawned: false }));
+  }, [bucket.autoSpawned, collapsed, tabs.length, updateBucket]);
 
   // Listen for terminal exits — mark tab "alive: false" so its X turns
   // into a "close finished tab" affordance without trying to dispose a
   // dead pid.
   useEffect(() => {
     const off = window.backchat.onUiTermExit((f) => {
-      setTabs((prev) =>
-        prev.map((t) => (t.id === f.terminalId ? { ...t, alive: false } : t)),
-      );
+      setBuckets((currentBuckets) => {
+        let changed = false;
+        const next = Object.fromEntries(
+          Object.entries(currentBuckets).map(([key, current]) => {
+            const tabs = current.tabs.map((tab) => {
+              if (tab.id !== f.terminalId) return tab;
+              changed = true;
+              return { ...tab, alive: false };
+            });
+            return [key, changed ? { ...current, tabs } : current];
+          }),
+        );
+        return changed ? next : currentBuckets;
+      });
     });
     return off;
   }, []);
@@ -89,22 +147,35 @@ export function BottomPanel() {
     async (id: string) => {
       const target = tabs.find((t) => t.id === id);
       if (target?.alive) {
-        setTabs((prev) => prev.map((t) =>
-          t.id === id ? { ...t, cancellationRequested: true } : t));
+        updateBucket((current) => ({
+          ...current,
+          tabs: current.tabs.map((tab) =>
+            tab.id === id ? { ...tab, cancellationRequested: true } : tab
+          ),
+        }));
         try {
           await window.backchat.uiTermDispose({ terminalId: id });
         } catch {
-          setTabs((prev) => prev.map((t) =>
-            t.id === id ? { ...t, cancellationRequested: false } : t));
+          updateBucket((current) => ({
+            ...current,
+            tabs: current.tabs.map((tab) =>
+              tab.id === id ? { ...tab, cancellationRequested: false } : tab
+            ),
+          }));
         }
         return;
       }
       const next = tabs.filter((t) => t.id !== id);
       const wasActive = activeTabId === id;
-      setTabs(next);
-      if (wasActive) setActiveTabId(next.length > 0 ? next[next.length - 1]!.id : null);
+      updateBucket((current) => ({
+        ...current,
+        tabs: next,
+        activeTabId: wasActive
+          ? next.length > 0 ? next[next.length - 1]!.id : null
+          : current.activeTabId,
+      }));
     },
-    [tabs, activeTabId],
+    [tabs, activeTabId, updateBucket],
   );
 
   if (collapsed) return null;
@@ -114,7 +185,10 @@ export function BottomPanel() {
       <TabBar
         tabs={tabs}
         activeTabId={activeTabId}
-        onPick={setActiveTabId}
+        onPick={(id) => updateBucket((current) => ({
+          ...current,
+          activeTabId: id,
+        }))}
         onSpawn={() => void spawnTab()}
         onClose={(id) => void closeTab(id)}
         onClosePanel={toggle}

@@ -71,9 +71,12 @@ export function ComposerProgress({
   }, [presentationKey]);
   const visibleModel =
     model && dismissedPresentationKey !== presentationKey ? model : undefined;
+  const dockModules = activityModules.filter(
+    (module) => module.kind !== "background",
+  );
   if (
     !visibleModel
-    && activityModules.length === 0
+    && dockModules.length === 0
     && queuedPrompts.length === 0
   ) return null;
 
@@ -104,8 +107,8 @@ export function ComposerProgress({
       className="relative z-0 mx-auto !mb-0 flex flex-col items-center gap-1.5"
       style={{ width: "calc(100% - 2 * var(--composer-radius))" }}
     >
-      {activityModules.length > 0 ? (
-        <ActivityDock modules={activityModules} />
+      {dockModules.length > 0 ? (
+        <ActivityDock modules={dockModules} />
       ) : visibleModel && progress.total > 0 && (
         <Popover>
           <PopoverTrigger asChild>
@@ -276,59 +279,82 @@ function ActivityDock({
 }: {
   modules: readonly ComposerActivityModule[];
 }) {
-  const visible = modules.slice(0, 3);
-  const overflow = Math.max(0, modules.length - visible.length);
+  const primary = modules[0]!;
+  const additionalCount = Math.max(0, modules.length - 1);
+  const activityLabel = modules
+    .map((module) => `${module.label}: ${module.summary}`)
+    .join(", ");
   return (
     <div
       data-activity-dock="true"
-      className="flex h-8 max-w-full items-center justify-center gap-1.5"
+      className="mb-2.5 flex h-8 max-w-full items-center justify-center gap-1.5"
     >
-      {visible.map((module) => (
-        <Popover key={module.id}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              data-activity-module={module.kind}
-              data-activity-module-id={module.id}
-              data-activity-module-status={activityModuleStatus(module)}
-              aria-label={`${module.label}: ${module.summary}`}
-              className={cn(
-                "flex h-8 min-w-0 items-center gap-1.5 rounded-full px-3",
-                "bg-bg-surface/65 text-xs text-fg-muted ring-1 ring-border/55",
-                "hover:bg-bg-surface hover:text-fg hover:ring-border",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/35",
-                "transition-colors",
-              )}
-            >
-              <ActivityModuleIcon
-                kind={module.kind}
-                className="size-3.5 shrink-0 text-info"
-              />
-              <span className="truncate font-medium">{module.label}</span>
-              <span className="shrink-0 tabular-nums text-fg-subtle">
-                {module.summary}
-              </span>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="center"
-            side="top"
-            sideOffset={8}
-            aria-label={module.label}
-            className="composer-action-panel liquid-glass composer-card w-[min(420px,calc(100vw-32px))]"
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-activity-pill="true"
+            data-activity-module={primary.kind}
+            data-activity-module-id={primary.id}
+            data-activity-module-status={activityModuleStatus(primary)}
+            data-activity-module-count={modules.length}
+            data-activity-modules={modules.map((module) => module.kind).join(" ")}
+            aria-label={activityLabel}
+            className={cn(
+              "flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full px-3",
+              "bg-bg-surface/65 text-xs text-fg-muted ring-1 ring-border/55",
+              "hover:bg-bg-surface hover:text-fg hover:ring-border",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/35",
+              "transition-colors",
+            )}
           >
-            <ActivityModuleItems module={module} />
-          </PopoverContent>
-        </Popover>
-      ))}
-      {overflow > 0 && (
-        <span
-          data-activity-overflow={overflow}
-          className="flex h-8 items-center rounded-full bg-bg-surface/65 px-2.5 text-xs text-fg-muted ring-1 ring-border/55"
+            <ActivityModuleIcon
+              kind={primary.kind}
+              className="size-3.5 shrink-0 text-info"
+            />
+            <span className="truncate font-medium">{primary.label}</span>
+            <span className="shrink-0 tabular-nums text-fg-subtle">
+              {primary.summary}
+            </span>
+            {additionalCount > 0 && (
+              <span className="shrink-0 text-fg-subtle">
+                +{additionalCount}
+              </span>
+            )}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="center"
+          side="top"
+          sideOffset={8}
+          aria-label={activityLabel}
+          className="composer-action-panel liquid-glass composer-card w-[min(420px,calc(100vw-32px))]"
         >
-          +{overflow}
-        </span>
-      )}
+          <div className="space-y-3">
+            {modules.map((module) => (
+              <section
+                key={module.id}
+                data-activity-section={module.kind}
+                data-activity-section-id={module.id}
+              >
+                {modules.length > 1 && (
+                  <div className="flex items-center gap-2 px-2.5 pb-1 text-xs text-fg-muted">
+                    <ActivityModuleIcon
+                      kind={module.kind}
+                      className="size-3.5 shrink-0 text-info"
+                    />
+                    <span className="font-medium text-fg">{module.label}</span>
+                    <span className="ml-auto tabular-nums text-fg-subtle">
+                      {module.summary}
+                    </span>
+                  </div>
+                )}
+                <ActivityModuleItems module={module} />
+              </section>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -485,7 +511,11 @@ function QueuedPromptRow({
             size="xs"
             disabled={!callbacks?.steer}
             aria-label={`Steer queued message ${index + 1}`}
-            title="Steer queued message"
+            title={
+              callbacks?.steer
+                ? "Steer queued message"
+                : "Steering is not available for this harness"
+            }
             onClick={() => {
               void Promise.resolve(callbacks?.steer?.(prompt.turn_id)).catch(
                 () => undefined,

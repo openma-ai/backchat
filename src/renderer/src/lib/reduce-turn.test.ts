@@ -45,6 +45,41 @@ function render(...payloads: unknown[]) {
 }
 
 describe("reduceTurn ACP event compatibility", () => {
+  test("preserves numeric chunks in a canonical thought stream", () => {
+    const chunks = [
+      "The user is asking me to calculate 37 + 58.\n\n",
+      "37",
+      " +",
+      " ",
+      "58",
+      " =",
+      " ",
+      "95",
+      ".",
+    ];
+    const out = reduceTurn(chunks.map((text, index) => ({
+      payload: {
+        schema: "oma.event.v1",
+        event_id: `thought-${index}`,
+        session_id: "sess-arithmetic",
+        turn_id: "turn-arithmetic",
+        source: { kind: "harness", harness: "claude-acp", adapter: "acp" },
+        occurred_at: "2026-08-06T00:00:00.000Z",
+        type: "agent.thinking",
+        data: { text },
+      },
+      receivedAt: index,
+    })));
+
+    expect(out.thoughtText).toBe(
+      "The user is asking me to calculate 37 + 58.\n\n37 + 58 = 95.",
+    );
+    expect(out.timeline).toEqual([{
+      kind: "thought",
+      text: "The user is asking me to calculate 37 + 58.\n\n37 + 58 = 95.",
+    }]);
+  });
+
   test("routes the Codex skill-context warning away from assistant text", () => {
     const warning =
       "Warning: Skill descriptions were shortened to fit the 2% skills context budget. " +

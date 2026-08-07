@@ -1,14 +1,12 @@
 import { memo, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSignIcon } from "lucide-react";
+import { ArrowRightFromLineIcon, AtSignIcon } from "lucide-react";
 import { SessionTurnFrame } from "@openma/common/session-ui";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useI18n } from "@/lib/i18n";
 import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
-import {
-  latestPlanDocumentForEvents,
-  latestTaskListForTurns,
-} from "@/lib/session-plan";
+import { latestPlanDocumentForEvents } from "@/lib/session-plan";
+import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
 import {
   selectAgentIdFor,
   selectSubagentsFor,
@@ -25,13 +23,18 @@ import { useMarkdownCwd } from "./ChatMarkdown";
 import { TurnAnswer } from "./TurnAnswer";
 import { TurnActivity } from "./TurnActivity";
 import { PlanDocumentActivity } from "./PlanDocumentActivity";
-import { TaskListActivity } from "./TaskListActivity";
 import {
   inspectRawTurnEvents,
   RawEventInspector,
 } from "./RawEventInspector";
 
-export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
+export const TurnBlock = memo(function TurnBlock({
+  turn,
+  onFork,
+}: {
+  turn: Turn;
+  onFork?: () => void;
+}) {
   const { t } = useI18n();
   const rendered = useMemo(() => reduceTurn(turn.events), [turn.events]);
   const cwd = useMarkdownCwd();
@@ -63,12 +66,6 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
       ),
     };
   }, [planDocument?.sourceToolCallId, rendered]);
-  const taskPlanEntries = useMemo(() => {
-    const entries = latestTaskListForTurns(agentId, [turn]);
-    return planDocument
-      ? entries.filter((entry) => entry.content !== planDocument.markdown)
-      : entries;
-  }, [agentId, planDocument, turn]);
   const isStreaming = turn.status === "running";
   const rawEvents = useMemo(
     () => inspectRawTurnEvents(turn.events),
@@ -77,7 +74,6 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
   const hasVisibleContent =
     turn.assistantText.length > 0 ||
     activityRendered.tools.length > 0 ||
-    taskPlanEntries.length > 0 ||
     rawEvents.length > 0 ||
     !!planDocument;
   const hasAnything =
@@ -115,15 +111,6 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
             />
           )}
 
-          {taskPlanEntries.length > 0 && (
-            <TaskListActivity
-              items={taskPlanEntries.map((entry) => ({
-                label: entry.content,
-                status: entry.status,
-              }))}
-            />
-          )}
-
           <TurnActivity
             turn={turn}
             rendered={activityRendered}
@@ -152,6 +139,19 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
             cwd={cwd}
             isStreaming={isStreaming}
           />
+
+          {onFork && turn.status === "complete" && turn.assistantText.trim() && (
+            <button
+              type="button"
+              data-turn-fork-action="true"
+              aria-label={t("chat.continueInNewChat")}
+              title={t("chat.continueInNewChat")}
+              onClick={onFork}
+              className="ml-auto inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ArrowRightFromLineIcon className="size-4" aria-hidden="true" />
+            </button>
+          )}
 
           {!hasAnything && isStreaming && <StreamingPlaceholder />}
       </SessionTurnFrame>
@@ -224,7 +224,7 @@ function TurnSubagentLinks({
       turn.sessionId,
       "subagent",
       activity.viewSessionId,
-      activity.native?.nickname || activity.task || label,
+      label,
       existingTab?.id,
     );
   };
@@ -253,11 +253,7 @@ function TurnSubagentLinks({
 }
 
 function subagentLinkLabel(activity: SubagentActivity): string {
-  const label =
-    activity.native?.nickname ||
-    activity.task.split("/").filter(Boolean).at(-1) ||
-    activity.childSessionId;
-  return /^[a-z]$/i.test(label) ? `Agent ${label.toUpperCase()}` : label;
+  return subagentActivityLabel(activity);
 }
 
 function StreamingPlaceholder() {

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { generateHarnessFeatureMatrixReport } from "./generate-harness-feature-matrix-report.mjs";
 import {
   publishHarnessFeatureMatrixReport,
+  validateHarnessFeatureMatrixDraftArtifacts,
   validateHarnessFeatureMatrixArtifacts,
 } from "./publish-harness-feature-matrix-report.mjs";
 import { syncHarnessLiveEvidence } from "./sync-harness-live-evidence.mjs";
@@ -64,18 +65,19 @@ function strictManifest() {
   };
 }
 
-function minimalPng() {
-  const bytes = Buffer.alloc(24);
+function minimalPng(uniqueMarker = 0) {
+  const bytes = Buffer.alloc(28);
   Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);
   bytes.writeUInt32BE(1, 16);
   bytes.writeUInt32BE(1, 20);
+  bytes.writeUInt32BE(uniqueMarker, 24);
   return bytes;
 }
 
 async function writeStrictStaging(root, manifest = strictManifest()) {
   await mkdir(resolve(root, "screenshots"), { recursive: true });
-  for (const cell of manifest.cells) {
-    await writeFile(resolve(root, cell.screenshot), minimalPng());
+  for (const [index, cell] of manifest.cells.entries()) {
+    await writeFile(resolve(root, cell.screenshot), minimalPng(index));
   }
   await writeFile(resolve(root, "manifest.json"), JSON.stringify(manifest), "utf8");
 }
@@ -156,7 +158,7 @@ test("renders all 45 GUI features × 7 harnesses with explicit GUI assertions", 
   assert.equal((html.match(/data-summary-cell/g) ?? []).length, 315);
   assert.equal((html.match(/<img /g) ?? []).length, 315);
   assert.match(html, /315 \/ 315/);
-  assert.match(html, /PASS-LIVE/);
+  assert.match(html, /LIVE-E2E/);
   assert.match(html, /Visible locator/);
   assert.match(html, /Expected/);
   assert.match(html, /Observed/);
@@ -259,8 +261,23 @@ test("rejects replay evidence for any harness final response", () => {
   });
   assert.throws(
     () => generateHarnessFeatureMatrixReport(manifest),
-    /final response.*Claude.*PASS-LIVE/i,
+    /final response.*Claude.*LIVE-E2E/i,
   );
+});
+
+test("rejects replay-only evidence for N/A and other gap outcomes in an accepted report", () => {
+  for (const status of ["n-a", "fail", "pending", "blocked", "upstream-gap"]) {
+    const manifest = strictManifest();
+    manifest.cells[0] = strictCell(features[0], harnesses[0], {
+      status,
+      verificationMode: "replay",
+      reason: `${status} was inferred from replay-only evidence`,
+    });
+    assert.throws(
+      () => generateHarnessFeatureMatrixReport(manifest),
+      /N\/A|FAILED|PENDING|BLOCKED|UPSTREAM-GAP|live GUI evidence/i,
+    );
+  }
 });
 
 test("renders an explicitly incomplete staging report without weakening the strict final-response gate", async () => {
@@ -276,16 +293,127 @@ test("renders an explicitly incomplete staging report without weakening the stri
     verificationMode: "live",
     reason: "Cursor stayed running without a final response",
   });
+  manifest.cells[0] = strictCell(features[0], harnesses[0], {
+    status: "pass-replay",
+    verificationMode: "replay",
+  });
+  manifest.cells[1] = strictCell(features[0], harnesses[1], {
+    status: "pending",
+    verificationMode: "live",
+    reason: "Real GUI click has not been executed yet",
+  });
 
   const html = reportModule.generateHarnessFeatureMatrixDraftReport(manifest);
   assert.equal((html.match(/data-matrix-cell/g) ?? []).length, 315);
   assert.match(html, /data-report-acceptance="incomplete"/);
   assert.match(html, /未通过验收/);
   assert.match(html, /UPSTREAM-GAP/);
+  assert.match(html, /LIVE-E2E/);
+  assert.match(html, /REPLAY-ONLY/);
+  assert.doesNotMatch(html, /PASS-REPLAY/);
+  assert.match(html, /PENDING/);
   assert.throws(
     () => generateHarnessFeatureMatrixReport(manifest),
-    /final response.*Cursor.*PASS-LIVE/i,
+    /final response.*Cursor.*LIVE-E2E/i,
   );
+});
+
+test("validates a complete draft artifact set without weakening the accepted LIVE-E2E gate", async () => {
+  const root = await mkdtemp(resolve(tmpdir(), "backchat-matrix-draft-validation-"));
+  const staging = resolve(root, "staging");
+  const published = resolve(root, "published");
+  try {
+    const manifest = strictManifest();
+    manifest.cells[0] = strictCell(features[0], harnesses[0], {
+      status: "pass-replay",
+      verificationMode: "replay",
+      trigger: "Fixture replay for draft diagnostics only",
+    });
+    await writeStrictStaging(staging, manifest);
+
+    const validated = await validateHarnessFeatureMatrixDraftArtifacts(staging);
+    assert.equal(validated.screenshots.length, 315);
+    assert.match(validated.html, /data-report-acceptance="incomplete"/);
+    const validation = JSON.parse(await readFile(
+      resolve(staging, "artifact-validation.json"),
+      "utf8",
+    ));
+    assert.equal(validation.screenshotCount, 315);
+    assert.equal(validation.uniqueScreenshotCount, 315);
+    assert.equal(validation.uniqueScreenshotContentCount, 315);
+    assert.equal(validation.secretLeaks, 0);
+
+    await assert.rejects(
+      validateHarnessFeatureMatrixArtifacts(staging),
+      /accepted report.*LIVE-E2E|replay.*not.*accept/i,
+    );
+    await assert.rejects(
+      publishHarnessFeatureMatrixReport(staging, published),
+      /accepted report.*LIVE-E2E|replay.*not.*accept/i,
+    );
+    assert.equal(existsSync(published), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("draft artifact validation reuses screenshot completeness, uniqueness, hash, and secret guards", async (t) => {
+  const root = await mkdtemp(resolve(tmpdir(), "backchat-matrix-draft-guards-"));
+  const manifest = strictManifest();
+  manifest.cells[0].status = "pass-replay";
+  manifest.cells[0].verificationMode = "replay";
+  await writeStrictStaging(root, manifest);
+  try {
+    await t.test("missing screenshot", async () => {
+      await rm(resolve(root, manifest.cells[0].screenshot));
+      await assert.rejects(
+        validateHarnessFeatureMatrixDraftArtifacts(root),
+        /ENOENT|no such file/i,
+      );
+      await writeFile(
+        resolve(root, manifest.cells[0].screenshot),
+        minimalPng(0),
+      );
+    });
+
+    await t.test("reused screenshot path", async () => {
+      const originalScreenshot = manifest.cells[1].screenshot;
+      manifest.cells[1].screenshot = manifest.cells[0].screenshot;
+      await writeFile(resolve(root, "manifest.json"), JSON.stringify(manifest), "utf8");
+      await assert.rejects(
+        validateHarnessFeatureMatrixDraftArtifacts(root),
+        /315 unique screenshots/i,
+      );
+      manifest.cells[1].screenshot = originalScreenshot;
+      await writeFile(resolve(root, "manifest.json"), JSON.stringify(manifest), "utf8");
+    });
+
+    await t.test("duplicate screenshot content", async () => {
+      await writeFile(
+        resolve(root, manifest.cells[1].screenshot),
+        await readFile(resolve(root, manifest.cells[0].screenshot)),
+      );
+      await assert.rejects(
+        validateHarnessFeatureMatrixDraftArtifacts(root),
+        /duplicate screenshot content/i,
+      );
+      await writeFile(
+        resolve(root, manifest.cells[1].screenshot),
+        minimalPng(1),
+      );
+    });
+
+    await t.test("secret-shaped manifest material", async () => {
+      manifest.cells[0].secret = "sk-draft-secret-material-must-fail";
+      await writeFile(resolve(root, "manifest.json"), JSON.stringify(manifest), "utf8");
+      await assert.rejects(
+        validateHarnessFeatureMatrixDraftArtifacts(root),
+        /secret|credential/i,
+      );
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("rejects a duplicate cell that hides a missing feature × harness combination", () => {
@@ -321,6 +449,23 @@ test("strict artifact validation rejects one screenshot reused across matrix cel
   }
 });
 
+test("strict artifact validation rejects duplicate image content under different paths", async () => {
+  const root = await mkdtemp(resolve(tmpdir(), "backchat-matrix-duplicate-content-"));
+  try {
+    const manifest = strictManifest();
+    await writeStrictStaging(root, manifest);
+    const first = resolve(root, manifest.cells[0].screenshot);
+    const second = resolve(root, manifest.cells[1].screenshot);
+    await writeFile(second, await readFile(first));
+    await assert.rejects(
+      validateHarnessFeatureMatrixArtifacts(root),
+      /duplicate screenshot content/i,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("strict publisher atomically replaces a prior report only after all artifacts validate", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "backchat-matrix-publish-"));
   const staging = resolve(root, "staging");
@@ -339,6 +484,7 @@ test("strict publisher atomically replaces a prior report only after all artifac
     ));
     assert.equal(validation.screenshotCount, 315);
     assert.equal(validation.uniqueScreenshotCount, 315);
+    assert.equal(validation.uniqueScreenshotContentCount, 315);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

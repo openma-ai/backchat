@@ -28,6 +28,14 @@ describe("ComposerSlashCommandMenu", () => {
             name: "compact",
             description: "Compact context",
           },
+          {
+            name: "status",
+            description: "Display session configuration",
+          },
+          {
+            name: "review-branch",
+            description: "Review changes relative to a branch",
+          },
         ],
       },
       {
@@ -46,7 +54,7 @@ describe("ComposerSlashCommandMenu", () => {
     const html = renderToStaticMarkup(
       <ComposerSlashCommandMenu
         sections={sections}
-        selectedIndex={1}
+        selectedIndex={3}
         onHighlight={() => undefined}
         onPick={() => undefined}
       />,
@@ -56,8 +64,13 @@ describe("ComposerSlashCommandMenu", () => {
     expect(html).not.toContain(">Commands<");
     expect(html).toContain(">Skills<");
     expect(html).toContain(">/compact<");
-    expect(html).toContain(">/skill:review<");
+    expect(html).toContain(">/status<");
+    expect(html).toContain(">/review-branch<");
+    expect(html).toContain(">Review<");
+    expect(html).not.toContain(">/skill:review<");
     expect(html).toContain('data-command-icon="compact"');
+    expect(html).toContain("lucide-gauge");
+    expect(html).toContain("lucide-bug");
     expect(html).not.toContain("lucide-slash");
     expect(html).toContain("lucide-box");
     expect(html).not.toContain("lucide-sparkles");

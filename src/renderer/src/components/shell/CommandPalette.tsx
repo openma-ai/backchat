@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
   ClockIcon,
@@ -58,6 +59,15 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHitInfo[]>([]);
   const sessions = useSessionStore(selectSessions);
+  const { data: agents = [] } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => window.backchat.agentsList(),
+    staleTime: 60_000,
+  });
+  const agentIconUrls = useMemo(
+    () => new Map(agents.flatMap((agent) => agent.icon ? [[agent.id, agent.icon] as const] : [])),
+    [agents],
+  );
   const sessionMap = useMemo(
     () => new Map(sessions.map((s) => [s.id, s])),
     [sessions],
@@ -128,11 +138,8 @@ export function CommandPalette() {
   };
 
   const actionNewChat = () => {
-    const id = sessionStore.newDraft();
-    void navigate({
-      to: "/chat/$sessionId",
-      params: { sessionId: id },
-    });
+    sessionStore.newDraft();
+    void navigate({ to: "/" });
     setOpen(false);
   };
   const actionToggleTheme = () => {
@@ -210,6 +217,7 @@ export function CommandPalette() {
                     <CmdSlot>
                       <AgentIcon
                         agentId={h.agent_id}
+                        iconUrl={agentIconUrls.get(h.agent_id)}
                         className="size-3.5 text-fg-subtle"
                       />
                     </CmdSlot>
@@ -246,6 +254,7 @@ export function CommandPalette() {
                     {s.agent_id && (
                       <AgentIcon
                         agentId={s.agent_id}
+                        iconUrl={agentIconUrls.get(s.agent_id)}
                         className="size-3.5 shrink-0 text-fg-subtle"
                       />
                     )}
@@ -339,6 +348,7 @@ export function CommandPalette() {
                           {s.agent_id && (
                             <AgentIcon
                               agentId={s.agent_id}
+                              iconUrl={agentIconUrls.get(s.agent_id)}
                               className="size-3.5 text-fg-subtle"
                             />
                           )}

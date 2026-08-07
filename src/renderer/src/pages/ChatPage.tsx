@@ -4,9 +4,8 @@ import { ChatView } from "@/components/chat/ChatView";
 import { sessionStore, useSessionStore, type SessionRow } from "@/lib/session-store";
 
 /**
- * Chat page — backs both `/` (no session) and `/chat/$sessionId`. Syncs the
- * route param into the active session so navigating in the sidebar /
- * deep-linking lands on the right turn-stream.
+ * Chat page — backs `/chat/$sessionId`. The cold-create `/` route is a
+ * separate NewChatPage so draft layout cannot inherit transcript chrome.
  *
  * Side-effect on entry: if the session has no turns yet AND it's a persisted
  * row (status=ready with no in-flight turn), we ask main for its event log
@@ -21,8 +20,6 @@ const HISTORY_LOADED = new Set<string>();
 const PREWARMED = new Set<string>();
 
 export function ChatPage() {
-  // useParams strict:false because this page is also rendered at "/" with
-  // no params. Both shapes resolve cleanly here.
   const params = useParams({ strict: false }) as { sessionId?: string };
   const routeSessionSelector = useMemo(() => {
     const sessionId = params.sessionId;

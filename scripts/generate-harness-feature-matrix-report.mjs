@@ -5,9 +5,10 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const STATUS_LABELS = Object.freeze({
-  "pass-live": "PASS-LIVE",
-  "pass-replay": "PASS-REPLAY",
-  fail: "FAIL",
+  "pass-live": "LIVE-E2E",
+  "pass-replay": "REPLAY-ONLY",
+  fail: "FAILED",
+  pending: "PENDING",
   blocked: "BLOCKED",
   "upstream-gap": "UPSTREAM-GAP",
   "n-a": "N/A",
@@ -123,7 +124,9 @@ function validateManifest(manifest, { requireAllFinalLive = true } = {}) {
         candidate.feature === "output.final-response" && candidate.harness === harness
       ));
       if (cell?.status !== "pass-live" || cell?.verificationMode !== "live") {
-        throw new Error(`Final response for ${harness} must be PASS-LIVE`);
+        throw new Error(
+          `Final response for ${harness} must be ${STATUS_LABELS["pass-live"]}`,
+        );
       }
     }
   }
@@ -133,6 +136,14 @@ function validateManifest(manifest, { requireAllFinalLive = true } = {}) {
     if (replayCell) {
       throw new Error(
         `Accepted report requires LIVE-E2E for supported cells; replay evidence is not acceptance: ${replayCell.feature} × ${replayCell.harness}`,
+      );
+    }
+    const replayGapCell = cells.find((cell) => (
+      !PASS_STATUSES.has(cell.status) && cell.verificationMode !== "live"
+    ));
+    if (replayGapCell) {
+      throw new Error(
+        `${STATUS_LABELS[replayGapCell.status]} requires live GUI evidence in an accepted report: ${replayGapCell.feature} × ${replayGapCell.harness}`,
       );
     }
   }
@@ -208,7 +219,7 @@ function renderHarnessFeatureMatrixReport(manifest, { requireAllFinalLive, accep
   return `<!doctype html>
 <html lang="zh-CN" data-report-acceptance="${escapeHtml(acceptance)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(manifest?.title ?? "Harness GUI Feature Matrix")}</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#080a0f;color:#eef0f6}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0%,#172034 0,transparent 30rem),#080a0f}main{width:min(1880px,calc(100% - 40px));margin:auto;padding:40px 0 80px}.acceptance-warning{position:sticky;top:0;z-index:10;border:1px solid #ef4444;border-radius:14px;background:#450a0a;color:#fecaca;padding:14px 18px;margin-bottom:20px}.acceptance-warning strong{font-size:18px}.acceptance-warning p{margin:4px 0 0}.hero,.routing,.notes{border:1px solid #2b3140;border-radius:20px;background:#11141c;padding:24px;margin-bottom:20px}.hero h1{margin:4px 0 12px;font-size:clamp(28px,4vw,54px)}.hero p,.notes li{color:#aab3c4}.summary{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:13px}.summary span,.summary-cell{display:inline-flex;align-items:center;gap:7px}.dot{width:9px;height:9px;border-radius:99px;background:#64748b}.filters{position:sticky;top:0;z-index:5;display:flex;gap:8px;overflow:auto;padding:14px 0;background:linear-gradient(#080a0f 75%,transparent)}.filters a{white-space:nowrap;color:#cbd5e1;text-decoration:none;border:1px solid #2b3140;border-radius:999px;padding:7px 10px;background:#11141c}.matrix-wrap{overflow:auto;border:1px solid #292f3d;border-radius:16px;background:#10131a;margin-bottom:20px}table{width:100%;min-width:1200px;border-collapse:collapse}th,td{padding:11px 12px;border:1px solid #272d39;text-align:left;font-size:11px}thead th{position:sticky;top:0;background:#171b24}.summary-cell{color:#cbd5e1;text-decoration:none}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:18px}.cell{overflow:hidden;border:1px solid #292f3d;border-radius:18px;background:#10131a}.cell header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 18px}.eyebrow{margin:0 0 3px;color:#8d98ad;font-size:11px;text-transform:uppercase}.cell h2{margin:0;font-size:18px}.cell h2 small{color:#8490a5;font-size:12px}.status{border-radius:999px;padding:6px 9px;background:#252b38;font-size:11px;font-weight:700}.run-meta{padding:0 18px 14px;color:#aab3c4}.run-meta span{text-transform:uppercase;color:#d5dbea;font-size:11px}.run-meta p{margin:5px 0 0;font-size:12px;line-height:1.45}.shot{display:block;aspect-ratio:16/10;background:#080a0f;border-block:1px solid #242a36}.shot img{display:block;width:100%;height:100%;object-fit:contain}.facts{margin:0;padding:14px 18px;display:grid;gap:8px}.facts div{display:grid;grid-template-columns:110px 1fr;gap:12px}.facts dt{color:#7f8ba1;font-size:11px}.facts dd{margin:0;color:#cbd5e1;font-size:12px;overflow-wrap:anywhere}.facts code{color:#a5b4fc}.evidence{padding:0 18px 16px;color:#aab3c4}.evidence h3{font-size:11px;text-transform:uppercase}.evidence li{font-size:11px;line-height:1.45}.status-pass-live .status,.dot.status-pass-live{background:#14532d;color:#bbf7d0}.status-pass-replay .status,.dot.status-pass-replay{background:#1e3a5f;color:#bfdbfe}.status-fail .status,.dot.status-fail{background:#7f1d1d;color:#fecaca}.status-blocked .status,.dot.status-blocked{background:#78350f;color:#fde68a}.status-upstream-gap .status,.dot.status-upstream-gap{background:#4c1d3f;color:#fbcfe8}.status-n-a .status,.dot.status-n-a{background:#334155;color:#cbd5e1}@media(max-width:700px){main{width:calc(100% - 20px)}.grid{grid-template-columns:1fr}.facts div{grid-template-columns:1fr}}
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#080a0f;color:#eef0f6}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0%,#172034 0,transparent 30rem),#080a0f}main{width:min(1880px,calc(100% - 40px));margin:auto;padding:40px 0 80px}.acceptance-warning{position:sticky;top:0;z-index:10;border:1px solid #ef4444;border-radius:14px;background:#450a0a;color:#fecaca;padding:14px 18px;margin-bottom:20px}.acceptance-warning strong{font-size:18px}.acceptance-warning p{margin:4px 0 0}.hero,.routing,.notes{border:1px solid #2b3140;border-radius:20px;background:#11141c;padding:24px;margin-bottom:20px}.hero h1{margin:4px 0 12px;font-size:clamp(28px,4vw,54px)}.hero p,.notes li{color:#aab3c4}.summary{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:13px}.summary span,.summary-cell{display:inline-flex;align-items:center;gap:7px}.dot{width:9px;height:9px;border-radius:99px;background:#64748b}.filters{position:sticky;top:0;z-index:5;display:flex;gap:8px;overflow:auto;padding:14px 0;background:linear-gradient(#080a0f 75%,transparent)}.filters a{white-space:nowrap;color:#cbd5e1;text-decoration:none;border:1px solid #2b3140;border-radius:999px;padding:7px 10px;background:#11141c}.matrix-wrap{overflow:auto;border:1px solid #292f3d;border-radius:16px;background:#10131a;margin-bottom:20px}table{width:100%;min-width:1200px;border-collapse:collapse}th,td{padding:11px 12px;border:1px solid #272d39;text-align:left;font-size:11px}thead th{position:sticky;top:0;background:#171b24}.summary-cell{color:#cbd5e1;text-decoration:none}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:18px}.cell{overflow:hidden;border:1px solid #292f3d;border-radius:18px;background:#10131a}.cell header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 18px}.eyebrow{margin:0 0 3px;color:#8d98ad;font-size:11px;text-transform:uppercase}.cell h2{margin:0;font-size:18px}.cell h2 small{color:#8490a5;font-size:12px}.status{border-radius:999px;padding:6px 9px;background:#252b38;font-size:11px;font-weight:700}.run-meta{padding:0 18px 14px;color:#aab3c4}.run-meta span{text-transform:uppercase;color:#d5dbea;font-size:11px}.run-meta p{margin:5px 0 0;font-size:12px;line-height:1.45}.shot{display:block;aspect-ratio:16/10;background:#080a0f;border-block:1px solid #242a36}.shot img{display:block;width:100%;height:100%;object-fit:contain}.facts{margin:0;padding:14px 18px;display:grid;gap:8px}.facts div{display:grid;grid-template-columns:110px 1fr;gap:12px}.facts dt{color:#7f8ba1;font-size:11px}.facts dd{margin:0;color:#cbd5e1;font-size:12px;overflow-wrap:anywhere}.facts code{color:#a5b4fc}.evidence{padding:0 18px 16px;color:#aab3c4}.evidence h3{font-size:11px;text-transform:uppercase}.evidence li{font-size:11px;line-height:1.45}.status-pass-live .status,.dot.status-pass-live{background:#14532d;color:#bbf7d0}.status-pass-replay .status,.dot.status-pass-replay{background:#1e3a5f;color:#bfdbfe}.status-fail .status,.dot.status-fail{background:#7f1d1d;color:#fecaca}.status-pending .status,.dot.status-pending{background:#3f3f46;color:#e4e4e7}.status-blocked .status,.dot.status-blocked{background:#78350f;color:#fde68a}.status-upstream-gap .status,.dot.status-upstream-gap{background:#4c1d3f;color:#fbcfe8}.status-n-a .status,.dot.status-n-a{background:#334155;color:#cbd5e1}@media(max-width:700px){main{width:calc(100% - 20px)}.grid{grid-template-columns:1fr}.facts div{grid-template-columns:1fr}}
 </style></head><body><main>
 ${acceptanceBanner}
 <section class="hero"><p>Backchat · strict harness GUI acceptance</p><h1>${escapeHtml(manifest?.title ?? "Harness GUI Feature Matrix")}</h1><p>生成时间 ${escapeHtml(manifest?.generatedAt ?? "unknown")} · 截图覆盖 ${complete} / ${expected}</p><div class="summary">${statusSummary}</div></section>

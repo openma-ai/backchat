@@ -14,6 +14,7 @@ vi.mock("@open-managed-agents-desktop/acp/node-spawner", () => ({
 }));
 
 vi.mock("@open-managed-agents-desktop/acp/registry", () => ({
+  detect: vi.fn(async () => null),
   resolveKnownAgent: vi.fn(() => ({
     id: "fake-agent",
     label: "Fake Agent",

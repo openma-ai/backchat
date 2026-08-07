@@ -12,7 +12,7 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import { PairTopbar, Topbar } from "@/components/shell/Topbar";
 import { SideChatPanel } from "@/components/shell/SideChatPanel";
 import { BottomPanel } from "@/components/shell/BottomPanel";
-import { BrokerModal } from "@/components/shell/BrokerModal";
+import { BrokerAskBridge } from "@/components/shell/BrokerModal";
 import { CommandPalette } from "@/components/shell/CommandPalette";
 import {
   sessionStore,
@@ -215,8 +215,8 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
     });
     const offAct = window.backchat.onMenuAction((action) => {
       if (action === "new-chat") {
-        const id = sessionStore.newDraft();
-        void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+        sessionStore.newDraft();
+        void navigate({ to: "/" });
       } else if (action === "command-palette") {
         // CommandPalette listens on window keydown for ⌘K — replay one.
         window.dispatchEvent(
@@ -263,7 +263,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
               bottomPanel={hasTaskChrome ? <BottomPanel /> : undefined}
             >
               {children}
-              <BrokerModal />
+              <BrokerAskBridge />
               <CommandPalette />
             </AppShell>
           </BottomBarCollapseContext.Provider>

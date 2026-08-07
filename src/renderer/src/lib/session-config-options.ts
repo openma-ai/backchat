@@ -1,5 +1,6 @@
 export type AcpSessionConfigOptionCategory =
   | "model"
+  | "model_config"
   | "mode"
   | "thought_level"
   | string;
@@ -171,7 +172,7 @@ export interface FlattenedConfigSelectOption extends AcpSessionConfigSelectOptio
 }
 
 export interface ConfigOptionSection {
-  category: "model" | "mode" | "thought_level" | "custom";
+  category: "model" | "mode" | "thought_level" | "model_config" | "custom";
   label: string;
   options: AcpSessionConfigOption[];
 }
@@ -184,6 +185,7 @@ export function buildConfigOptionSections(
     model: [],
     mode: [],
     thought_level: [],
+    model_config: [],
     custom: [],
   };
   for (const option of options) {
@@ -194,6 +196,7 @@ export function buildConfigOptionSections(
     ["model", "Model"],
     ["mode", "Mode"],
     ["thought_level", "Thought"],
+    ["model_config", "Model options"],
     ["custom", "Options"],
   ] as const)
     .map(([category, label]) => ({
@@ -212,13 +215,14 @@ export function buildRunMenuConfigOptionSections(
       ...section,
       options:
         section.category === "custom"
-          ? section.options.filter((option) => option.id === "fast-mode")
+          ? section.options.filter(isFastModeConfigOption)
           : section.options,
     }))
     .filter(
       (section) =>
         (section.category === "model" ||
           section.category === "thought_level" ||
+          section.category === "model_config" ||
           section.category === "custom") &&
         section.options.length > 0,
     );
@@ -232,9 +236,24 @@ export function buildComposerConfigOptions(
     return (
       category === "custom" &&
       option.id !== "collaboration_mode" &&
-      option.id !== "fast-mode"
+      !isFastModeConfigOption(option)
     );
   });
+}
+
+export function isFastModeConfigOption(
+  option: AcpSessionConfigOption,
+): boolean {
+  const normalizedId = option.id.trim().toLowerCase().replaceAll("_", "-");
+  const normalizedName = option.name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return (
+    normalizedId === "fast"
+    || normalizedId === "fast-mode"
+    || normalizedName === "fastmode"
+  );
 }
 
 export function findModeConfigOption(
@@ -335,7 +354,12 @@ export function selectedModeIdFromConfigOptions(
 function normalizeCategory(
   category: AcpSessionConfigOptionCategory | null | undefined,
 ): ConfigOptionSection["category"] {
-  if (category === "model" || category === "mode" || category === "thought_level") {
+  if (
+    category === "model"
+    || category === "mode"
+    || category === "thought_level"
+    || category === "model_config"
+  ) {
     return category;
   }
   return "custom";

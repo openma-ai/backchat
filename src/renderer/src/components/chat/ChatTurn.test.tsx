@@ -108,6 +108,35 @@ describe("TurnBlock", () => {
     expect(html).toContain('data-session-turn-answer="true"');
   });
 
+  it("renders Continue in new chat as a response action when fork is available", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          assistantText: "A completed answer",
+          status: "complete",
+        })}
+        onFork={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('data-turn-fork-action="true"');
+    expect(html).toContain('aria-label="chat.continueInNewChat"');
+    expect(html).toContain("lucide-arrow-right-from-line");
+  });
+
+  it("does not render the response fork action without an eligible callback", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          assistantText: "A completed answer",
+          status: "complete",
+        })}
+      />,
+    );
+
+    expect(html).not.toContain("data-turn-fork-action");
+  });
+
   it("renders the broker error message for a failed turn", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
@@ -725,7 +754,7 @@ describe("TurnBlock", () => {
   });
 
   it.each(["opencode", "kilo"])(
-    "renders the canonical %s todo snapshot through the shared task-list GUI",
+    "keeps the canonical %s todo snapshot out of the transcript because the composer dock owns Plan",
     (agentId) => {
       sessionMock.agentId = agentId;
       const html = renderToStaticMarkup(
@@ -754,10 +783,9 @@ describe("TurnBlock", () => {
         />,
       );
 
-      expect(html).toContain('data-plan-activity="true"');
-      expect(html).toContain("Inspect ACP");
-      expect(html).toContain("Adapt UI");
-      expect(html).toContain("1 / 2");
+      expect(html).not.toContain('data-plan-activity="true"');
+      expect(html).not.toContain("Inspect ACP");
+      expect(html).not.toContain("Adapt UI");
     },
   );
 });

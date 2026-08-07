@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -64,6 +65,13 @@ function renderExpandedShell(mainSelected = false) {
 }
 
 describe("AppShell expanded right panel", () => {
+  it("keeps the resize hit target invisible instead of drawing a full-height hover bar", () => {
+    const source = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("cursor-ew-resize");
+    expect(source).not.toContain("group-hover/rail-resizer:opacity-70");
+  });
+
   it("fills the workspace beside the pinned left navigation", () => {
     const markup = renderExpandedShell();
 

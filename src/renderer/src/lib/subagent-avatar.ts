@@ -8,6 +8,38 @@ export const SUBAGENT_AVATAR_IDS = [
 
 export type SubagentAvatarId = (typeof SUBAGENT_AVATAR_IDS)[number];
 
+const SUBAGENT_MONIKERS: Record<SubagentAvatarId, string> = {
+  "1_01": "Aster",
+  "1_02": "Babbage",
+  "1_03": "Curie",
+  "1_04": "Darwin",
+  "1_05": "Euler",
+  "2_01": "Faraday",
+  "2_02": "Gauss",
+  "2_03": "Halley",
+  "2_04": "Hopper",
+  "2_05": "Iris",
+  "3_01": "Joule",
+  "3_02": "Kepler",
+  "3_03": "Lagrange",
+  "3_04": "Lovelace",
+  "3_05": "Maxwell",
+  "4_01": "Noether",
+  "4_02": "Ohm",
+  "4_03": "Pascal",
+  "4_04": "Quine",
+  "4_05": "Raman",
+  "5_01": "Sagan",
+  "5_02": "Turing",
+  "5_03": "Volta",
+  "5_04": "Weyl",
+  "5_05": "Zephyr",
+};
+
+export function subagentMoniker(avatarId: SubagentAvatarId): string {
+  return SUBAGENT_MONIKERS[avatarId];
+}
+
 /** Stable FNV-1a assignment. The renderer keeps the chosen id when a
  * provider later replaces a temporary tool-call child id with a native one. */
 export function subagentAvatarId(seed: string): SubagentAvatarId {

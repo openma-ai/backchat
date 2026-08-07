@@ -210,8 +210,9 @@ export interface PairSaveParams {
   }>;
 }
 
-/** Permission ask pushed from the agent. Renderer surfaces a modal with
- *  one button per `options` entry; on click, calls permissionRespond. */
+/** Permission ask pushed from the agent. Renderer replaces the owning
+ *  session's composer with a short-lived approval form and calls
+ *  permissionRespond for the selected option. */
 export interface PermissionAskInfo {
   requestId: string;
   sessionId: string;
@@ -441,6 +442,7 @@ export interface BackchatApi {
   sessionRunCommand(p: SessionRunCommandParams): Promise<void>;
   sessionSetConfigOption(p: SessionSetConfigOptionParams): Promise<void>;
   sessionCancel(p: { session_id: string; turn_id: string }): Promise<void>;
+  sessionClose(p: { session_id: string }): Promise<void>;
   sessionDispose(p: { session_id: string; remove_cwd?: boolean }): Promise<void>;
   sessionRuntimeStatus(p: {
     session_id: string;

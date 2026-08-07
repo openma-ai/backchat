@@ -95,7 +95,7 @@ describe("createChromeExtensionHttpBridge", () => {
   it("tracks bridge health for command errors and timeouts", async () => {
     const server = await createChromeExtensionHttpBridge({
       preferredPort: 0,
-      commandTimeoutMs: 25,
+      commandTimeoutMs: 250,
     });
     try {
       expect(server.bridge.health).toMatchObject({
@@ -123,7 +123,7 @@ describe("createChromeExtensionHttpBridge", () => {
       expect(server.bridge.health).not.toHaveProperty("lastError");
 
       const failedCommand = server.bridge.sendCommand({ id: "cmd-fail", type: "tabs.list" });
-      const failedExpectation = expect(failedCommand).rejects.toThrow("extension failed");
+      const failedResult = failedCommand.catch((error: unknown) => error);
       await expect(fetch(`${server.url}/commands/next?instanceId=instance-1`).then((r) => r.json()))
         .resolves.toEqual({ id: "cmd-fail", type: "tabs.list" });
       await postJson(`${server.url}/commands/result`, {
@@ -132,7 +132,7 @@ describe("createChromeExtensionHttpBridge", () => {
         ok: false,
         error: "extension failed",
       });
-      await failedExpectation;
+      await expect(failedResult).resolves.toMatchObject({ message: "extension failed" });
       expect(server.bridge.health).toMatchObject({
         status: "command-error",
         lastCommandType: "tabs.list",

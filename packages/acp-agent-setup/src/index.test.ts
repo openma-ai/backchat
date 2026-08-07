@@ -89,6 +89,9 @@ describe("acp agent setup sdk", () => {
     const spawnEnv = probeAgentSessionConfigMock.mock.calls[0]?.[0]?.env;
     expect(spawnEnv).toHaveProperty("CLAUDECODE");
     expect(spawnEnv?.CLAUDECODE).toBeUndefined();
+    expect(probeAgentSessionConfigMock.mock.calls[0]?.[0]?.timeoutMs).toBe(
+      90_000,
+    );
   });
 
   it("can live-probe config options for setup surfaces without changing default list behavior", async () => {

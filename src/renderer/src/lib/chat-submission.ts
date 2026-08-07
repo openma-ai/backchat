@@ -205,7 +205,13 @@ export function useChatSubmission({
         draftAgentId,
         deriveChatLabel(displayText),
       );
-      const parentLink = target.sideParent ?? target.subagent;
+      if (!isSide) {
+        void navigate({
+          to: "/chat/$sessionId",
+          params: { sessionId: target.id },
+        });
+      }
+      const parentLink = target.forkParent ?? target.sideParent ?? target.subagent;
       const startCwd = resolveChatStartCwd({
         pickedCwd: resolveProjectScopedPickedCwd(
           target.projectScope,

@@ -119,7 +119,7 @@ describe("composerActivityModules", () => {
     })).toEqual([]);
   });
 
-  it("keeps permission, filesystem, form, and URL callback decisions as durable GUI activity", () => {
+  it("does not turn completed callback decisions into permanent composer chrome", () => {
     const callbackEvent = (
       eventId: string,
       type: CanonicalEventType,
@@ -160,42 +160,7 @@ describe("composerActivityModules", () => {
         }),
       ],
       labels,
-    })).toEqual([{
-      id: "callbacks",
-      kind: "callbacks",
-      label: "Callback decisions",
-      summary: "4 decisions",
-      items: [
-        {
-          id: "callback:permission:permission-1",
-          label: "Permission",
-          status: "selected",
-          detail: "allow-once",
-          variant: "event",
-        },
-        {
-          id: "callback:filesystem:filesystem-1",
-          label: "File write",
-          status: "denied",
-          detail: "/tmp/outside/matrix-output.txt",
-          variant: "event",
-        },
-        {
-          id: "callback:form:form-1",
-          label: "Form",
-          status: "accept",
-          detail: "strategy: strict",
-          variant: "event",
-        },
-        {
-          id: "callback:url:url-1",
-          label: "External page",
-          status: "decline",
-          detail: "matrix-url-1",
-          variant: "event",
-        },
-      ],
-    }]);
+    })).toEqual([]);
   });
 
   it("projects URL elicitation completion as an explicit GUI activity", () => {
@@ -233,19 +198,6 @@ describe("composerActivityModules", () => {
       openmaEvents: [accepted, completion],
       labels,
     })).toEqual([
-      {
-        id: "callbacks",
-        kind: "callbacks",
-        label: "Callback decisions",
-        summary: "1 decision",
-        items: [{
-          id: "callback:url:elicitation-accepted-1",
-          label: "External page",
-          status: "accept",
-          detail: "github-oauth-001",
-          variant: "event",
-        }],
-      },
       {
         id: "elicitation",
         kind: "elicitation",

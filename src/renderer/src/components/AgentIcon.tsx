@@ -11,17 +11,17 @@
  * color (text-fg-muted by default).
  */
 
-import { siClaude, siGooglegemini } from "simple-icons";
+import { siGooglegemini } from "simple-icons";
 import { BotIcon } from "lucide-react";
 import CodexIcon from "@lobehub/icons/es/Codex";
 import HermesAgentIcon from "@lobehub/icons/es/HermesAgent";
 import OpenClawIcon from "@lobehub/icons/es/OpenClaw";
 import OpenCodeIcon from "@lobehub/icons/es/OpenCode";
+import claudeAcpIconUrl from "@/assets/agent-icons/claude-acp.svg";
 
 type SimpleIcon = { path: string; title: string };
 
 const SIMPLE: Record<string, SimpleIcon> = {
-  "claude-acp": siClaude,
   "gemini": siGooglegemini,
 };
 
@@ -38,12 +38,35 @@ const LOBE: Record<string, LobeIcon> = {
 export function AgentIcon({
   agentId,
   className = "size-3.5",
+  iconUrl,
   title,
 }: {
   agentId: string;
   className?: string;
+  iconUrl?: string;
   title?: string;
 }) {
+  if (agentId === "claude-acp") {
+    return (
+      <span
+        role="img"
+        aria-label={title ?? "Claude"}
+        data-agent-icon-source="bundled"
+        className={`inline-block ${className}`}
+        style={{
+          backgroundColor: "currentColor",
+          maskImage: `url("${claudeAcpIconUrl}")`,
+          maskPosition: "center",
+          maskRepeat: "no-repeat",
+          maskSize: "contain",
+          WebkitMaskImage: `url("${claudeAcpIconUrl}")`,
+          WebkitMaskPosition: "center",
+          WebkitMaskRepeat: "no-repeat",
+          WebkitMaskSize: "contain",
+        }}
+      />
+    );
+  }
   if (agentId === "pi-acp") {
     return (
       <svg
@@ -75,6 +98,27 @@ export function AgentIcon({
   const Lobe = LOBE[agentId];
   if (Lobe) {
     return <Lobe className={className} aria-label={title ?? agentId} />;
+  }
+  if (iconUrl) {
+    return (
+      <span
+        role="img"
+        aria-label={title ?? agentId}
+        data-agent-icon-source="registry"
+        className={`inline-block ${className}`}
+        style={{
+          backgroundColor: "currentColor",
+          maskImage: `url("${iconUrl}")`,
+          maskPosition: "center",
+          maskRepeat: "no-repeat",
+          maskSize: "contain",
+          WebkitMaskImage: `url("${iconUrl}")`,
+          WebkitMaskPosition: "center",
+          WebkitMaskRepeat: "no-repeat",
+          WebkitMaskSize: "contain",
+        }}
+      />
+    );
   }
   return <BotIcon className={className} aria-label={title ?? agentId} />;
 }

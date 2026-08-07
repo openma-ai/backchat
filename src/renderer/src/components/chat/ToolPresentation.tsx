@@ -5,9 +5,7 @@ import {
   FileTextIcon,
   FolderTreeIcon,
   GlobeIcon,
-  SearchIcon,
   TerminalIcon,
-  WrenchIcon,
 } from "lucide-react";
 import {
   Suspense,
@@ -30,6 +28,10 @@ import type { SubagentActivity } from "@/lib/session-store";
 import { resolveToolImageSource } from "@/lib/tool-content-source";
 import { cn } from "@/lib/utils";
 import { SubagentAvatar } from "@/components/SubagentAvatar";
+import {
+  ToolActivityIdentity,
+  ToolInputBlock,
+} from "./ToolActivityPrimitives";
 
 const McpAppView = lazy(async () => {
   const module = await import("./McpAppView");
@@ -44,31 +46,6 @@ function hasMcpAppResource(tool: ToolEntry): boolean {
   const legacy = tool.meta?.["ui/resourceUri"];
   return (typeof nested === "string" && nested.startsWith("ui://")) ||
     (typeof legacy === "string" && legacy.startsWith("ui://"));
-}
-
-function pickToolIcon(kind?: string): typeof FileTextIcon {
-  switch (kind) {
-    case "read":
-      return FileTextIcon;
-    case "edit":
-      return FileEditIcon;
-    case "search":
-    case "grep":
-      return SearchIcon;
-    case "execute":
-    case "terminal":
-      return TerminalIcon;
-    case "fetch":
-    case "web":
-      return GlobeIcon;
-    case "think":
-      return BrainIcon;
-    case "list":
-    case "tree":
-      return FolderTreeIcon;
-    default:
-      return WrenchIcon;
-  }
 }
 
 function toolLifecycleStatus(status: string): {
@@ -101,7 +78,6 @@ export function ToolRow({
   const status = tool.status ?? "pending";
   const lifecycle = toolLifecycleStatus(status);
   const inProgress = status === "in_progress" || status === "pending";
-  const Icon = pickToolIcon(tool.kind);
   const verb = pickToolActivityVerb(tool);
   const target = pickToolActivityTarget(tool);
 
@@ -160,40 +136,28 @@ export function ToolRow({
           hasBody ? "cursor-pointer hover:bg-bg-surface/40" : "cursor-default",
         )}
       >
-        {subagent ? (
-          <SubagentAvatar avatarId={subagent.avatarId} className="size-[18px]" />
-        ) : (
-          <Icon
-            className={cn(
-              "size-3.5 shrink-0",
-              status === "failed" ? "text-danger" : "text-fg-muted",
-            )}
-          />
-        )}
-        <span
-          className={cn(
-            "shrink-0",
-            status === "failed" ? "text-danger" : "text-fg-muted",
+        <ToolActivityIdentity
+          kind={tool.kind}
+          label={verb}
+          target={target}
+          failed={status === "failed"}
+          leading={subagent
+            ? <SubagentAvatar avatarId={subagent.avatarId} className="size-[18px]" />
+            : undefined}
+          trailing={(
+            <span
+              className={cn(
+                "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                lifecycle.value === "failed"
+                  ? "bg-danger-subtle text-danger"
+                  : "bg-bg-surface text-fg-muted",
+              )}
+              data-tool-status-label={lifecycle.value}
+            >
+              {lifecycle.label}
+            </span>
           )}
-        >
-          {verb}
-        </span>
-        {target && (
-          <span className="min-w-0 truncate text-fg-muted/80" title={target}>
-            {target}
-          </span>
-        )}
-        <span
-          className={cn(
-            "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
-            lifecycle.value === "failed"
-              ? "bg-danger-subtle text-danger"
-              : "bg-bg-surface text-fg-muted",
-          )}
-          data-tool-status-label={lifecycle.value}
-        >
-          {lifecycle.label}
-        </span>
+        />
         {hasBody && (
           <ChevronRightIcon
             className={cn(
@@ -205,12 +169,9 @@ export function ToolRow({
       </button>
 
       {tool.rawInput !== undefined && (
-        <pre
-          className="ml-5 mt-1 max-h-24 overflow-auto rounded bg-bg-surface/45 px-2 py-1 font-mono text-[11px] whitespace-pre-wrap text-fg-muted"
-          data-tool-input={tool.toolCallId}
-        >
+        <ToolInputBlock id={tool.toolCallId}>
           {safeJson(tool.rawInput)}
-        </pre>
+        </ToolInputBlock>
       )}
 
       {hasBody && open && (

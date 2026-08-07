@@ -27,6 +27,7 @@ import {
   sessionStore,
   useSessionStore,
 } from "@/lib/session-store";
+import type { SessionRow } from "@/lib/session-store";
 import { useSettings } from "@/lib/settings-store";
 import { useI18n } from "@/lib/i18n";
 import { goalProgressPresentation } from "@/lib/goal-progress";
@@ -99,6 +100,28 @@ export function isSessionComposerDisabled(status: string | undefined): boolean {
   return status === "errored" || status === "disposed";
 }
 
+export function canSteerQueuedPrompts(
+  session: Pick<SessionRow, "supportsSteering"> | null | undefined,
+): boolean {
+  return session?.supportsSteering === true;
+}
+
+export function resolveComposerAgentBinding(
+  active: Pick<SessionRow, "status" | "kind" | "agent_id"> | null | undefined,
+): { sessionAgentId: string | undefined; lockedAgentId: string | null } {
+  const agentId = active?.agent_id.trim() || "";
+  // A GUI side draft keeps its inherited harness when promoted into a main
+  // draft. `promoteSideToMain` intentionally preserves `agent_id`, so the
+  // composer must keep honoring that binding until the first submission
+  // starts the ACP session. Ordinary New chat drafts have an empty agent_id
+  // and therefore remain freely selectable.
+  const shouldBind = !!agentId;
+  return {
+    sessionAgentId: shouldBind ? agentId : undefined,
+    lockedAgentId: shouldBind ? agentId : null,
+  };
+}
+
 /**
  * ChatView — the right pane.
  *
@@ -155,6 +178,19 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   const navigate = useNavigate();
   const isNativeSubagent = active?.sideKind === "subagent";
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const canForkCurrentSession = !isSide
+    && active?.status !== "draft"
+    && active?.supportsSessionFork === true
+    && !!active.acp_session_id;
+  const continueInNewChat = () => {
+    if (!active || !canForkCurrentSession) return;
+    const forkId = sessionStore.newMainForkDraft(active.id);
+    if (!forkId) return;
+    void navigate({ to: "/" });
+  };
+  const latestForkableTurnId = canForkCurrentSession && !active?.activeTurnId
+    ? [...transcriptTurns].reverse().find((turn) => turn.status === "complete")?.id
+    : undefined;
 
   // The chip keeps a local value for the bare home route, while explicit
   // drafts also persist the choice on SessionRow. The draft's projectScope
@@ -192,6 +228,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   const {
     askInSideChat,
     cancelActiveTurn,
+    resolveAsk,
     setSessionConfigOption,
   } = useChatSessionActions({
     active,
@@ -210,12 +247,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     active?.queuedTurnIds?.length ?? 0,
     active?.providerQueueDepth,
   );
-  const boundComposerAgentId =
-    active && active.status !== "draft" ? active.agent_id : undefined;
+  const composerAgentBinding = resolveComposerAgentBinding(active);
   const composer = (
     <Composer
       sessionId={active?.id}
-      sessionAgentId={boundComposerAgentId}
+      sessionAgentId={composerAgentBinding.sessionAgentId}
       disabled={
         isNativeSubagent ||
         (active?.status === "starting" && !!active?.agent_id) ||
@@ -224,15 +260,17 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       running={!isNativeSubagent && (active?.status === "running" || hasActiveTurn)}
       availableCommands={active?.availableCommands}
       attachmentDefaultPath={active?.cwd || pickedCwd || undefined}
-      lockedAgentId={active && active.status !== "draft" ? active.agent_id : null}
+      lockedAgentId={composerAgentBinding.lockedAgentId}
       pickedAgentId={pickedAgentId}
       suggestionDraft={suggestionDraft}
       goal={active?.goal}
+      pendingAsk={active?.pendingAsks?.[0]}
       currentModeId={active?.currentModeId}
       onUserInput={syncHomeSuggestionsForUserInput}
       onPickAgent={setPickedAgentId}
       configOptions={active?.configOptions}
       onSetConfigOption={setSessionConfigOption}
+      onResolveAsk={resolveAsk}
       placeholder={
         isNativeSubagent
           ? "Native subagent is managed by its parent"
@@ -252,6 +290,8 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       }
       onSubmit={onSubmit}
       onCancel={cancelActiveTurn}
+      canFork={canForkCurrentSession}
+      onFork={continueInNewChat}
     />
   );
   const composerNotice =
@@ -345,12 +385,16 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
               action: "reorder",
               turn_ids: turnIds,
             }),
-          steer: (turnId: string) =>
-            window.backchat.sessionUpdatePromptQueue({
-              session_id: active.id,
-              action: "steer",
-              turn_id: turnId,
-            }),
+          ...(canSteerQueuedPrompts(active)
+            ? {
+                steer: (turnId: string) =>
+                  window.backchat.sessionUpdatePromptQueue({
+                    session_id: active.id,
+                    action: "steer",
+                    turn_id: turnId,
+                  }),
+              }
+            : {}),
         }
       : undefined;
   const composerProgress = (
@@ -486,7 +530,15 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
                   className={CHAT_TURN_FRAME_CLASS}
                   data-chat-column="turns"
                 >
-                  {transcriptTurns.map((turn) => <TurnBlock key={turn.id} turn={turn} />)}
+                  {transcriptTurns.map((turn) => (
+                    <TurnBlock
+                      key={turn.id}
+                      turn={turn}
+                      onFork={turn.id === latestForkableTurnId
+                        ? continueInNewChat
+                        : undefined}
+                    />
+                  ))}
                 </div>
                 <ResponseAnnotationController
                   scopeRef={transcriptRef}

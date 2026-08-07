@@ -892,6 +892,59 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
     border-color var(--dur-base) var(--ease-snap),
     background-color var(--dur-base) var(--ease-snap);
 }
+
+/* The cold-create surface keeps cards at a useful width by reducing their
+   count as the composer gets narrower: four when roomy, then three, then two.
+   Scope the container and sizing rules to NewChatPage so transcript empty
+   states and theme previews retain their existing layout contract. */
+.new-chat-page .home-suggestion-container {
+  width: 100%;
+  max-width: min(100%, var(--home-composer-width));
+  margin-inline: auto;
+  container-type: inline-size;
+}
+
+.new-chat-page .home-suggestions,
+.new-chat-page .home-suggestions[data-suggestion-width="composer"],
+.new-chat-page .home-suggestions[data-suggestion-width="wide"] {
+  width: 100%;
+  /* Suggestions may reflow, but they remain subordinate to the input they
+     seed. Theme `wide` is therefore capped by the same semantic width token
+     as the composer instead of stretching across the whole empty state. */
+  max-width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-content: start;
+}
+
+.new-chat-page .home-suggestion-card {
+  min-height: clamp(96px, 13cqi, 112px);
+  gap: clamp(10px, 2cqi, 18px);
+  padding: clamp(12px, 2cqi, 18px);
+}
+
+@container (max-width: 960px) {
+  .new-chat-page .home-suggestions,
+  .new-chat-page .home-suggestions[data-suggestion-width="composer"],
+  .new-chat-page .home-suggestions[data-suggestion-width="wide"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .new-chat-page .home-suggestion-card:nth-child(n + 4) {
+    display: none;
+  }
+}
+
+@container (max-width: 640px) {
+  .new-chat-page .home-suggestions,
+  .new-chat-page .home-suggestions[data-suggestion-width="composer"],
+  .new-chat-page .home-suggestions[data-suggestion-width="wide"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .new-chat-page .home-suggestion-card:nth-child(n + 3) {
+    display: none;
+  }
+}
 .home-suggestion-card:hover {
   transform: translateY(-2px);
   border-color: var(--border-strong);
@@ -1485,14 +1538,9 @@ body,
   background-clip: padding-box;
 }
 
-/* Sidebar nav — override the OS-decided scrollbar width with our own
-   8px so the gutter is a known, fixed size we can mirror onto sibling
-   sticky rows (New chat / Search / Settings) via padding. macOS
-   "Always show scroll bars" otherwise hands us 15px which makes chat
-   rows look narrower than the buttons above. Width 8 + the shared
-   transparent-thumb fade-in keeps it subtle.
-   `scrollbar-width: thin` is the Firefox/standards way to ask for the
-   same; both declarations together cover every renderer. */
+/* Sidebar conversation list keeps the platform scrollbar width. The gutter
+   belongs to this scrolling region only; header and footer spacing never
+   measure or mirror it. */
 .sidebar-scrollbar {
   scrollbar-width: auto;
   scrollbar-color: color-mix(in srgb, var(--fg) 35%, transparent) transparent;

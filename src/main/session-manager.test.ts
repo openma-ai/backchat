@@ -15,6 +15,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   runtimeStart: vi.fn(),
+  detectAgent: vi.fn<() => Promise<unknown>>(async () => null),
   probeAgentAuthStatus: vi.fn(async () => ({ status: "configured" })),
   installAcpRegistryAgent: vi.fn(),
 }));
@@ -41,6 +42,7 @@ vi.mock("@open-managed-agents-desktop/acp/node-spawner", () => ({
 }));
 
 vi.mock("@open-managed-agents-desktop/acp/registry", () => ({
+  detect: mocks.detectAgent,
   resolveKnownAgent: vi.fn((id: string) => ({
     id,
     label: id,
@@ -638,6 +640,64 @@ describe("SessionManager prompt queue", () => {
       type: "session.disposed",
       session_id: "sess-cancelled-start",
     });
+  });
+
+  it("closes a negotiated ACP session without archiving its local transcript", async () => {
+    const dispose = vi.fn(async () => undefined);
+    const fake = createControllableAcpSession({ supportsSessionClose: true });
+    mocks.runtimeStart.mockResolvedValueOnce({ ...fake.session, dispose });
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-close-live",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    send.mockClear();
+    await manager.close("sess-close-live");
+
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(manager.sessionCount()).toBe(0);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.event",
+      session_id: "sess-close-live",
+      openma_event: expect.objectContaining({
+        type: "session.terminated",
+        data: expect.objectContaining({ reason: "closed" }),
+      }),
+    }));
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.disposed",
+    }));
+  });
+
+  it("refuses session close when the agent did not negotiate the capability", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({
+      session_id: "sess-close-unsupported",
+      agent_id: "pi-acp",
+      cwd: "/repo",
+    });
+
+    await expect(manager.close("sess-close-unsupported")).rejects.toThrow(
+      "does not support session/close",
+    );
+    expect(manager.sessionCount()).toBe(1);
   });
 
   it("bypasses the settings project for an explicitly managed global chat", async () => {
@@ -1263,6 +1323,40 @@ describe("SessionManager prompt queue", () => {
       expect.objectContaining({
         type: "session.ready",
         session_id: "sess-managed-install",
+      }),
+    );
+  });
+
+  it("uses the detected managed shim without repeating its embedded ACP args", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    mocks.detectAgent.mockResolvedValueOnce({
+      id: "cursor",
+      label: "Cursor",
+      spec: { command: process.execPath, args: undefined },
+      registryId: "cursor",
+      installSource: "registry",
+    });
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-managed-shim-args",
+      agent_id: "cursor",
+      cwd: "/repo",
+    });
+
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({
+          command: process.execPath,
+          args: undefined,
+        }),
       }),
     );
   });

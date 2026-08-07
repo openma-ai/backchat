@@ -119,19 +119,6 @@ export function composerActivityModules(
     });
   }
 
-  const callbackDecisions = callbackDecisionItems(input.openmaEvents);
-  if (callbackDecisions.length > 0) {
-    modules.push({
-      id: "callbacks",
-      kind: "callbacks",
-      label: "Callback decisions",
-      summary: `${callbackDecisions.length} ${
-        callbackDecisions.length === 1 ? "decision" : "decisions"
-      }`,
-      items: callbackDecisions,
-    });
-  }
-
   const elicitationCompletions = completedUrlElicitations(
     input.openmaEvents,
     input.labels,
@@ -161,59 +148,6 @@ export function composerActivityModules(
     });
   }
   return modules;
-}
-
-function callbackDecisionItems(
-  events: readonly OpenMAEvent[],
-): ComposerActivityItem[] {
-  return events.flatMap((event) => {
-    if (!isRecord(event.data)) return [];
-    if (event.type === "user.permission_response") {
-      const outcome = stringValue(event.data.outcome);
-      if (!outcome) return [];
-      return [{
-        id: `callback:permission:${event.event_id}`,
-        label: "Permission",
-        status: outcome,
-        detail: stringValue(event.data.option_id),
-        variant: "event" as const,
-      }];
-    }
-    if (event.type === "user.fs_write_response") {
-      const outcome = stringValue(event.data.outcome);
-      if (!outcome) return [];
-      return [{
-        id: `callback:filesystem:${event.event_id}`,
-        label: "File write",
-        status: outcome,
-        detail: stringValue(event.data.path),
-        variant: "event" as const,
-      }];
-    }
-    if (event.type !== "user.elicitation_response") return [];
-    const action = stringValue(event.data.action);
-    if (!action) return [];
-    const urlMode = event.data.mode === "url";
-    return [{
-      id: `callback:${urlMode ? "url" : "form"}:${event.event_id}`,
-      label: urlMode ? "External page" : "Form",
-      status: action,
-      detail: urlMode
-        ? stringValue(event.data.elicitation_id)
-        : callbackFormDetail(event.data.content),
-      variant: "event" as const,
-    }];
-  });
-}
-
-function callbackFormDetail(value: unknown): string | undefined {
-  if (!isRecord(value)) return undefined;
-  const entries = Object.entries(value).sort(([left], [right]) =>
-    left.localeCompare(right));
-  if (entries.length === 0) return undefined;
-  return entries.map(([key, item]) =>
-    `${key}: ${Array.isArray(item) ? item.join(", ") : String(item)}`
-  ).join(" · ");
 }
 
 function completedUrlElicitations(

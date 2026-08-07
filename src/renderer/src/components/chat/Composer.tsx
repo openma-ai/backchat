@@ -7,6 +7,7 @@ import type {
   PromptAttachment,
   PromptSessionReference,
 } from "@shared/session-events.js";
+import type { ElicitationResponseInfo } from "@shared/api.js";
 import type { AgentMessageIntent } from "@shared/agent-interaction.js";
 import type { AcpSessionConfigOption } from "@/lib/session-config-options";
 import type { SessionGoal } from "@/lib/session-types";
@@ -14,6 +15,7 @@ import {
   selectSessions,
   useSessionStore,
   type AcpAvailableCommand,
+  type BrokerAsk,
 } from "@/lib/session-store";
 import { useI18n } from "@/lib/i18n";
 import { removeSuggestionTemplateSlot, type ComposerSuggestionDraft } from "@/lib/home-suggestion-flow";
@@ -21,7 +23,11 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
 import { describeRunningMessageAction } from "@/lib/composer-delivery";
 import { buildComposerSubmitText, canSubmitComposer, resolveComposerKeyAction } from "@/lib/composer-prompt";
-import { isSkillSlashCommand } from "@/lib/composer-slash-commands";
+import {
+  isHostForkSlashCommand,
+  isSkillSlashCommand,
+  withHostForkCommand,
+} from "@/lib/composer-slash-commands";
 import { promptAnnotationStore } from "@/lib/prompt-annotations";
 import { useComposerContextState } from "@/lib/composer-context-state";
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
@@ -53,6 +59,7 @@ import {
   type SessionMentionCandidate,
 } from "@/lib/composer-mentions";
 import { ComposerSessionMentionMenu } from "./ComposerSessionMentionMenu";
+import { ComposerBrokerAsk } from "./ComposerAskPanel";
 
 export function Composer({
   sessionId,
@@ -68,11 +75,15 @@ export function Composer({
   pickedAgentId,
   suggestionDraft,
   goal,
+  pendingAsk,
   currentModeId,
   onUserInput = () => undefined,
   configOptions,
   onPickAgent,
   onSetConfigOption,
+  onResolveAsk,
+  canFork = false,
+  onFork,
   onSubmit,
   onCancel,
 }: {
@@ -89,11 +100,19 @@ export function Composer({
   pickedAgentId: string | null;
   suggestionDraft?: ComposerSuggestionDraft | null;
   goal?: SessionGoal;
+  pendingAsk?: BrokerAsk;
   currentModeId?: string;
   onUserInput?: (hasContent: boolean) => void;
   configOptions?: AcpSessionConfigOption[];
   onPickAgent: (agentId: string) => void;
   onSetConfigOption?: (configId: string, value: string | boolean) => void | Promise<void>;
+  onResolveAsk?: (
+    optionId: string | null,
+    approve?: boolean,
+    elicitation?: ElicitationResponseInfo,
+  ) => void | Promise<void>;
+  canFork?: boolean;
+  onFork?: () => void;
   onSubmit: (
     text: string,
     attachments?: PromptAttachment[],
@@ -206,6 +225,7 @@ export function Composer({
     primaryIntent,
     primaryRunningAction,
     rememberCurrentRun,
+    resetCurrentRunToDefaults,
     resetDraftConfigValues,
     setDraftConfigValues,
   } = useComposerHarnessState({
@@ -218,6 +238,17 @@ export function Composer({
     running,
     supportsSteering,
   });
+  const composerAvailableCommands = useMemo(
+    () => withHostForkCommand(
+      effectiveAvailableCommands,
+      canFork,
+      {
+        title: t("chat.continueInNewChat"),
+        description: t("chat.continueInNewChatHint"),
+      },
+    ),
+    [canFork, effectiveAvailableCommands, t],
+  );
   const composerSessionState = selectComposerSessionStatePresentation([
     {
       priority: 10,
@@ -256,7 +287,7 @@ export function Composer({
     visibleSlashCommands,
   } = useComposerSlashState({
     text,
-    availableCommands: effectiveAvailableCommands,
+    availableCommands: composerAvailableCommands,
   });
   const {
     suggestionFillActive,
@@ -318,6 +349,12 @@ export function Composer({
   };
 
   const pickCommand = (cmd: AcpAvailableCommand) => {
+    if (isHostForkSlashCommand(cmd)) {
+      setText("");
+      clearDismissal();
+      onFork?.();
+      return;
+    }
     if (isSkillSlashCommand(cmd)) {
       selectSkillCommand(cmd);
       setText("");
@@ -527,6 +564,10 @@ export function Composer({
           suggestionFillActive && "composer-suggestion-fill suggestion-fill-active",
         )}
       >
+      {pendingAsk && onResolveAsk ? (
+        <ComposerBrokerAsk ask={pendingAsk} onResolve={onResolveAsk} />
+      ) : (
+      <>
       <div className="flex min-h-[60px] w-full flex-col items-start gap-2 px-1">
         {selectedSkillCommand && (
           <SkillCommandChip
@@ -776,6 +817,7 @@ export function Composer({
                     >
                       <AgentIcon
                         agentId={agentId}
+                        iconUrl={enabledAgents.find((agent) => agent.id === agentId)?.icon}
                         className="size-3.5 text-fg-muted"
                       />
                     </span>
@@ -802,6 +844,9 @@ export function Composer({
                 if (lockedAgentId) onSetConfigOption?.(configId, value);
                 else setDraftConfigValues((prev) => ({ ...prev, [configId]: value }));
               }}
+              onResetConfigOptions={
+                lockedAgentId ? undefined : resetCurrentRunToDefaults
+              }
             />
           )}
 
@@ -839,6 +884,8 @@ export function Composer({
           </button>
         </div>
       </div>
+      </>
+      )}
       </div>
 
       {/* These transient surfaces are siblings of the composer card, not

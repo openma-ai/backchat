@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 
+import type { ElicitationResponseInfo } from "@shared/api.js";
 import type { PromptAnnotation } from "@shared/session-events.js";
 import { promptAnnotationStore } from "./prompt-annotations";
 import type { SessionRow, SubagentInheritance } from "./session-store";
@@ -122,10 +123,18 @@ export function useChatSessionActions({
   const resolveAsk = async (
     optionId: string | null,
     approve?: boolean,
+    elicitation?: ElicitationResponseInfo,
   ) => {
     const ask = active?.pendingAsks?.[0];
     if (!active || !ask) return;
-    if (ask.kind === "elicitation") return;
+    if (ask.kind === "elicitation") {
+      await window.backchat.elicitationRespond(
+        ask.ask.requestId,
+        elicitation ?? { action: "cancel" },
+      );
+      sessionStore.dequeueAsk(active.id, ask.ask.requestId);
+      return;
+    }
     const response = resolveChatAskResponse(ask, optionId, !!approve);
     if (response?.kind === "permission") {
       await window.backchat.permissionRespond(

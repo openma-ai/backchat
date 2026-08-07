@@ -246,7 +246,7 @@ describe("RightPanelLauncher", () => {
     const backgroundSection =
       markup.match(/data-resource-category="background"[\s\S]*?<\/section>/)?.[0];
 
-    expect(agentsSection).toContain("Audit source handling");
+    expect(agentsSection).toContain("Aster");
     expect(agentsSection).toContain("rightPanel.agents");
     expect(backgroundSection).toContain("Refresh release notes");
     expect(backgroundSection).not.toContain("Audit source handling");
