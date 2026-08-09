@@ -12,7 +12,7 @@ import {
 } from "@/lib/activity-tool-groups";
 import {
   pickToolActivityTarget,
-  pickToolActivityVerb,
+  toolActivityVerbKey,
 } from "@/lib/chat-tool-presentation";
 import { useI18n } from "@/lib/i18n";
 import type { SubagentActivity } from "@/lib/session-store";
@@ -46,7 +46,7 @@ export function ActivityToolGroup({
   const running = tools.some((tool) => isToolRunning(tool.status));
   const latest =
     tools.findLast((tool) => isToolRunning(tool.status)) ?? tools.at(-1)!;
-  const latestVerb = pickToolActivityVerb(latest);
+  const latestVerb = t(toolActivityVerbKey(latest));
   const toggleOpen = () => {
     preserveScrollAnchor({
       scrollElement: stick.scrollRef.current,

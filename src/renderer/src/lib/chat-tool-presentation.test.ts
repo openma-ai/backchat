@@ -4,9 +4,9 @@ import {
   capitalizeToolLabel,
   detectSkillName,
   pickToolActivityTarget,
-  pickToolActivityVerb,
+  toolActivityVerbKey,
   pickToolTarget,
-  pickToolVerb,
+  toolVerbKey,
   settleInterruptedToolStatus,
   shortToolPath,
 } from "./chat-tool-presentation";
@@ -14,10 +14,10 @@ import { isToolRunning } from "./activity-tool-groups";
 
 describe("chat tool presentation", () => {
   it("uses progress-aware verbs for known and unknown tool kinds", () => {
-    expect(pickToolVerb("read", "in_progress")).toBe("读取中");
-    expect(pickToolVerb("read", "completed")).toBe("已读取");
-    expect(pickToolVerb("terminal", "in_progress")).toBe("运行中");
-    expect(pickToolVerb("custom", "completed")).toBe("已调用");
+    expect(toolVerbKey("read", "in_progress")).toBe("tool.reading");
+    expect(toolVerbKey("read", "completed")).toBe("tool.read");
+    expect(toolVerbKey("terminal", "in_progress")).toBe("tool.running");
+    expect(toolVerbKey("custom", "completed")).toBe("tool.called");
   });
 
   it("selects the most informative target in title, location, then content order", () => {
@@ -67,11 +67,11 @@ describe("chat tool presentation", () => {
       }],
     };
 
-    expect(pickToolActivityVerb(skillRead)).toBe("读取中");
+    expect(toolActivityVerbKey(skillRead)).toBe("tool.reading");
     expect(pickToolActivityTarget(skillRead)).toBe("Imagegen 技能");
     expect(
-      pickToolActivityVerb({ ...skillRead, status: "completed" }),
-    ).toBe("已读取");
+      toolActivityVerbKey({ ...skillRead, status: "completed" }),
+    ).toBe("tool.read");
   });
 
   it("keeps tool labels and short paths compact", () => {
@@ -97,19 +97,19 @@ describe("interrupted tool calls", () => {
   });
 
   it("never labels an interrupted call as running or as having run", () => {
-    expect(pickToolVerb("execute", "cancelled")).toBe("已中断");
-    expect(pickToolVerb("read", "cancelled")).toBe("已中断");
-    expect(pickToolActivityVerb({ kind: "execute", status: "cancelled" })).toBe(
-      "已中断",
+    expect(toolVerbKey("execute", "cancelled")).toBe("tool.interrupted");
+    expect(toolVerbKey("read", "cancelled")).toBe("tool.interrupted");
+    expect(toolActivityVerbKey({ kind: "execute", status: "cancelled" })).toBe(
+      "tool.interrupted",
     );
     // A skill read is still a read while live, but not once interrupted.
     expect(
-      pickToolActivityVerb({
+      toolActivityVerbKey({
         kind: "read",
         status: "cancelled",
         locations: [{ path: "/tmp/skills/documents/SKILL.md" }],
       }),
-    ).toBe("已中断");
+    ).toBe("tool.interrupted");
   });
 
   it("stops counting an interrupted call as active", () => {

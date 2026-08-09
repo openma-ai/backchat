@@ -1,3 +1,4 @@
+import type { TranslationKey } from "@/lib/i18n";
 /** Presentation status for a tool call the agent stopped reporting on — the
  * process was killed, or the turn ended without a terminal update. The value
  * matches the lifecycle vocabulary ToolRow already renders. */
@@ -32,43 +33,49 @@ export interface ChatToolPresentationInput {
   rawInput?: unknown;
 }
 
-export function pickToolVerb(
+/** The i18n key for what a tool call is doing, or did.
+ *
+ * These used to be Chinese literals returned straight into JSX, which made the
+ * agent's actions the one part of the transcript that ignored the language
+ * setting. Returning a key keeps the mapping from ACP tool kinds here, where the
+ * protocol knowledge lives, and leaves the wording to the translator. */
+export function toolVerbKey(
   kind: string | undefined,
   status: string | undefined,
-): string {
+): TranslationKey {
   // A call the agent never finished reporting on. ACP v1's ToolCallStatus is
   // only pending/in_progress/completed/failed, so an interrupted call has no
   // wire status of its own — the host settles it for presentation rather than
   // claim it either ran to completion or failed.
-  if (status === INTERRUPTED_TOOL_STATUS) return "已中断";
+  if (status === INTERRUPTED_TOOL_STATUS) return "tool.interrupted";
   const inProgress = status === "in_progress";
   switch (kind) {
     case "read":
-      return inProgress ? "读取中" : "已读取";
+      return inProgress ? "tool.reading" : "tool.read";
     case "edit":
-      return inProgress ? "编辑中" : "已编辑";
+      return inProgress ? "tool.editing" : "tool.edited";
     case "delete":
-      return inProgress ? "删除中" : "已删除";
+      return inProgress ? "tool.deleting" : "tool.deleted";
     case "move":
-      return inProgress ? "移动中" : "已移动";
+      return inProgress ? "tool.moving" : "tool.moved";
     case "search":
     case "grep":
-      return inProgress ? "搜索中" : "已搜索";
+      return inProgress ? "tool.searching" : "tool.searched";
     case "execute":
     case "terminal":
-      return inProgress ? "运行中" : "已运行";
+      return inProgress ? "tool.running" : "tool.ran";
     case "fetch":
     case "web":
-      return inProgress ? "获取中" : "已获取";
+      return inProgress ? "tool.fetching" : "tool.fetched";
     case "think":
-      return inProgress ? "思考中" : "已思考";
+      return inProgress ? "tool.thinking" : "tool.thought";
     case "list":
     case "tree":
-      return inProgress ? "列出中" : "已列出";
+      return inProgress ? "tool.listing" : "tool.listed";
     case "switch_mode":
-      return "切换模式";
+      return "tool.switchMode";
     default:
-      return inProgress ? "调用中" : "已调用";
+      return inProgress ? "tool.calling" : "tool.called";
   }
 }
 
@@ -112,11 +119,11 @@ export function detectSkillName(
   return null;
 }
 
-export function pickToolActivityVerb(
+export function toolActivityVerbKey(
   tool: ChatToolPresentationInput,
-): string {
+): TranslationKey {
   if (tool.status === INTERRUPTED_TOOL_STATUS) {
-    return pickToolVerb(tool.kind, tool.status);
+    return toolVerbKey(tool.kind, tool.status);
   }
   const status =
     tool.status === undefined ||
@@ -126,9 +133,9 @@ export function pickToolActivityVerb(
       : tool.status;
   return detectSkillName(tool)
     ? status === "in_progress"
-      ? "读取中"
-      : "已读取"
-    : pickToolVerb(tool.kind, status);
+      ? "tool.reading"
+      : "tool.read"
+    : toolVerbKey(tool.kind, status);
 }
 
 export function pickToolActivityTarget(

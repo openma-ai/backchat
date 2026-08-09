@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import {
   BrainIcon,
   ChevronRightIcon,
@@ -19,7 +20,7 @@ import { useStickToBottomContext } from "use-stick-to-bottom";
 import { safeJson } from "@/lib/format";
 import {
   pickToolActivityTarget,
-  pickToolActivityVerb,
+  toolActivityVerbKey,
   shortToolPath as shortPath,
 } from "@/lib/chat-tool-presentation";
 import { CHAT_GENERATED_IMAGE_CLASS } from "@/lib/chat-layout";
@@ -75,10 +76,11 @@ export function ToolRow({
   subagent?: SubagentActivity;
   sessionId: string;
 }) {
+  const { t } = useI18n();
   const status = tool.status ?? "pending";
   const lifecycle = toolLifecycleStatus(status);
   const inProgress = status === "in_progress" || status === "pending";
-  const verb = pickToolActivityVerb(tool);
+  const verb = t(toolActivityVerbKey(tool));
   const target = pickToolActivityTarget(tool);
 
   const hoistedBlocks: ToolContentBlock[] = [];

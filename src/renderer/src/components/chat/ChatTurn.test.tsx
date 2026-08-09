@@ -393,10 +393,10 @@ describe("TurnBlock", () => {
 
     expect(html).not.toContain("chat.thinking");
     expect(html).toContain("I will create the document.");
-    expect(html.match(/读取中/g)).toHaveLength(1);
+    expect(html.match(/tool.reading/g)).toHaveLength(1);
     expect(html).not.toContain(">读取<");
     expect(html).not.toContain("Planning the document.");
-    expect(html.indexOf("读取中")).toBeGreaterThan(
+    expect(html.indexOf("tool.reading")).toBeGreaterThan(
       html.indexOf("I will create the document."),
     );
   });
@@ -470,7 +470,7 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html.match(/已读取/g)).toHaveLength(1);
+    expect(html.match(/tool.read/g)).toHaveLength(1);
   });
 
   it("collapses consecutive tool calls into one activity group", () => {
@@ -629,7 +629,7 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain('data-tool-group-size="2"');
-    expect(html).toContain("运行中");
+    expect(html).toContain("tool.running");
     expect(html).toContain("Active command");
     expect(html).toContain("shrink-0 whitespace-nowrap");
   });
@@ -637,7 +637,7 @@ describe("TurnBlock", () => {
   it("settles a tool call the agent stopped reporting on", () => {
     // Killing the ACP process leaves the last tool_call at in_progress, and
     // those events replay from disk unchanged. The turn is over, so nothing
-    // will ever finish it — showing a spinner and "运行中" forever is a lie.
+    // will ever finish it — showing a spinner and "tool.running" forever is a lie.
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
@@ -658,8 +658,8 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html).toContain("已中断");
-    expect(html).not.toContain("运行中");
+    expect(html).toContain("tool.interrupted");
+    expect(html).not.toContain("tool.running");
     expect(html).toContain("AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read");
   });
 
