@@ -338,7 +338,7 @@
 }
 
 .activity-disclosure-row:hover {
-  background: color-mix(in srgb, var(--bg-surface) 40%, transparent);
+  background: var(--interaction-bg-hover);
 }
 
 .activity-disclosure-row:focus-visible {
@@ -357,11 +357,14 @@
 }
 
 /* Menus are siblings of the composer card in its full-width shell, so their
-   outer edge is exactly the same edge as the composer card. */
+   outer edge is exactly the same edge as the composer card. They share the
+   composer's material but never its resting height — an overlay is exactly
+   as tall as its results. */
 .composer-overlay-panel {
   left: 0;
   width: 100%;
   box-sizing: border-box;
+  min-height: 0;
 }
 
 .slash-command-section + .slash-command-section {
@@ -401,7 +404,7 @@
 .slash-command-item:hover,
 .slash-command-item[aria-selected="true"] {
   color: var(--fg);
-  background: var(--bg);
+  background: var(--control-bg-hover);
 }
 
 .slash-command-item:focus-visible {
@@ -443,7 +446,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--fg-subtle);
-  background: var(--bg-surface);
+  background: var(--surface-raised);
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 16px;
@@ -547,7 +550,7 @@
 .session-mention-item:hover,
 .session-mention-item[aria-selected="true"] {
   color: var(--fg);
-  background: var(--bg);
+  background: var(--control-bg-hover);
 }
 
 .session-mention-item:focus-visible {

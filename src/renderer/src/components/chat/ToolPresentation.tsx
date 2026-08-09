@@ -133,7 +133,7 @@ export function ToolRow({
         aria-expanded={open}
         className={cn(
           "activity-disclosure-row",
-          hasBody ? "cursor-pointer hover:bg-bg-surface/40" : "cursor-default",
+          hasBody ? "cursor-pointer hover:bg-[var(--control-bg-hover)]" : "cursor-default",
         )}
       >
         <ToolActivityIdentity

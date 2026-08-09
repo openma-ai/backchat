@@ -65,7 +65,7 @@ export function ActivityToolGroup({
         type="button"
         aria-expanded={open}
         onClick={toggleOpen}
-        className="activity-disclosure-row py-1 text-[13px] hover:bg-bg-surface/40"
+        className="activity-disclosure-row py-1 text-[13px]"
       >
         <span
           data-tool-group-icon-slot
