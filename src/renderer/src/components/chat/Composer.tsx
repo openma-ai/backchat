@@ -926,7 +926,12 @@ export function Composer({
             }
           />
           <InlineComposerOptionControls
-            disabled={!!running}
+            // Session config options are changeable "at any point during a
+            // session, whether the Agent is idle or generating a response"
+            // (ACP v1 session-config-options). Gating them on `running` is
+            // what made 代我批准 look present but refuse to switch mid-turn —
+            // exactly when you need to loosen approvals.
+            disabled={false}
             configOptions={effectiveConfigOptions}
             onSetConfigOption={(configId, value) => {
               if (lockedAgentId) return onSetConfigOption?.(configId, value);

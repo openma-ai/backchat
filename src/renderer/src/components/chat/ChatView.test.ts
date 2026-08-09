@@ -736,3 +736,21 @@ describe("new task submission", () => {
     );
   });
 });
+
+describe("session config options stay live mid-turn", () => {
+  it("never gates the inline option controls on a running turn", () => {
+    // ACP v1 session-config-options: "The current value of a config option can
+    // be changed at any point during a session, whether the Agent is idle or
+    // generating a response." Approval policy is the case that matters most —
+    // you loosen it precisely while the agent is blocked on a prompt.
+    const source = readFileSync(resolve(__dirname, "Composer.tsx"), "utf8");
+    const control = source.slice(
+      source.indexOf("<InlineComposerOptionControls"),
+    );
+    const props = control.slice(0, control.indexOf("/>"));
+
+    expect(props).toContain("disabled={false}");
+    expect(props).not.toContain("disabled={!!running}");
+    expect(props).not.toContain("disabled={running");
+  });
+});
