@@ -297,6 +297,13 @@ under investigation are marked; do not treat them as settled findings.
   error. Queued prompts a restart cannot carry now get the terminal statement
   their row is waiting for and their completions are released, and a restart
   failure is reported as the session's news rather than the turn's.
+- **Verified with no regressions.** The full Playwright suite was run on this
+  work and on `ef03152`, the commit before it. The failing set under this work is
+  a strict subset of the baseline's: twenty specs fail either way, all of them
+  network- or environment-dependent (browser CDP, registry icon assets, the
+  harness matrix), and one baseline failure no longer occurs. E2E does not touch
+  the developer's real `~/.oma`: `openmaRoot()` honours `BACKCHAT_HOME` under test
+  hooks, and the real database was untouched across a full run.
 - **I4 — held.** The composer said "1 queued…" above no rows because the count
   was `Math.max(hostQueueDepth, providerQueueDepth)`: two different facts, one of
   them the agent's own queue depth, which has no rows on this side to show. The
