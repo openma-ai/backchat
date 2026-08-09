@@ -1,3 +1,13 @@
+src/renderer/src/components/AppStartupGate.test.ts:20:    expect(gate).toContain('queryKey: ["agents"]');
+src/renderer/src/components/shell/AgentUpdateControl.tsx:92:      queryClient.setQueryData<AgentInfo[]>(["agents"], merge);
+src/renderer/src/components/shell/AgentUpdateControl.tsx:93:      queryClient.setQueryData<AgentInfo[]>(["agents", "setup"], merge);
+src/renderer/src/components/shell/Sidebar.tsx:162:    queryKey: ["agents"],
+src/renderer/src/components/shell/Sidebar.tsx:1061:    queryKey: ["agents"],
+src/renderer/src/components/shell/CommandPalette.tsx:63:    queryKey: ["agents"],
+src/renderer/src/components/AppStartupGate.tsx:7:    queryKey: ["agents"],
+src/renderer/src/pages/settings/Agents.tsx:74:    queryKey: ["agents", "setup"],
+src/renderer/src/components/chat/PairChatView.tsx:54:    queryKey: ["agents"],
+src/renderer/src/lib/composer-harness-state.ts:115:    queryKey: ["agents"],
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import { isAgentEnabled } from "@/lib/enabled-agents";
+import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";
 import { deriveAgentSetupState } from "./agent-setup-lifecycle";
@@ -71,15 +82,14 @@ export function SettingsAgents() {
   const [customForm, setCustomForm] = useState<CustomAgentFormState | null>(null);
   const [pendingActions, setPendingActions] = useState<AgentAction[]>([]);
   const { data: agents = [], isLoading: agentsLoading, error: agentsError } = useQuery({
-    queryKey: ["agents", "setup"],
+    queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList({ readiness: "snapshot" }),
   });
   useEffect(() => {
     let cancelled = false;
     void window.backchat.agentsList().then((readyAgents) => {
       if (cancelled) return;
-      queryClient.setQueryData(["agents", "setup"], readyAgents);
-      queryClient.setQueryData(["agents"], readyAgents);
+      queryClient.setQueryData(AGENTS_QUERY_KEY, readyAgents);
     });
     return () => {
       cancelled = true;
@@ -113,8 +123,7 @@ export function SettingsAgents() {
       ]);
     },
     onSuccess: (next, variables) => {
-      queryClient.setQueryData(["agents", "setup"], next);
-      queryClient.setQueryData(["agents"], next);
+      queryClient.setQueryData(AGENTS_QUERY_KEY, next);
       void queryClient.invalidateQueries({ queryKey: ["session-runtime"] });
       if (variables.type === "auth" && variables.id) {
         const agent = next.find((item) => item.id === variables.id);

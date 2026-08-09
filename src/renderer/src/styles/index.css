@@ -101,32 +101,108 @@
     box-shadow var(--dur-quick) var(--ease-snap);
 }
 
-/* Electron <webview> is a separate Chromium surface. During live native
-   window resize, the guest and translucent full-height rail can repaint on
-   different frames, making the panel flash and trail the window edge.
-   AppShell sets data-window-resizing without involving React; use an opaque
-   equivalent while the drag is active, then restore the resting material. */
-html[data-window-resizing="true"] .liquid-glass {
-  background: color-mix(in srgb, var(--bg-surface) 62%, var(--bg-sidebar));
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  transition: none !important;
+.app-compact-control:hover {
+  color: var(--control-fg-active);
+  background: var(--control-bg-hover);
 }
 
-html.dark[data-window-resizing="true"] .liquid-glass {
-  background: color-mix(in srgb, var(--bg-surface) 70%, var(--bg-sidebar));
+.app-compact-control[data-state="open"],
+.app-compact-control[aria-expanded="true"] {
+  color: var(--control-fg-active);
+  background: var(--control-bg-open);
 }
 
-/* Shared composer material override of .liquid-glass's far drop. The card
-   and its transient command/mention surfaces use the same inset rims and
-   geometry; only the far drop is removed so it does not create a band in
-   the gap above the bottom terminal panel. */
-.composer-card {
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in srgb, #ffffff 85%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, #ffffff 8%, transparent),
-    inset 0 -1px 0 0 color-mix(in srgb, #ffffff 22%, transparent),
-    0 1px 3px 0 rgb(0 0 0 / 0.05);
+/* Runtime is a location label, not a selected item. Opening its menu should
+   strengthen the foreground without painting a second active surface. */
+.runtime-location-control:hover,
+.runtime-location-control[data-state="open"],
+.runtime-location-control[aria-expanded="true"] {
+  background: transparent;
+}
+
+.app-compact-control:focus {
+  outline: none;
+}
+
+.app-compact-control:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--control-focus-ring);
+}
+
+.app-compact-control:disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+[data-composer-run-trigger] {
+  padding-inline: var(--control-padding-inline);
+}
+
+/* Agent/model/send is the one intentionally linked composer interaction
+   scope. Switch its foreground in the same frame so nested brand SVGs and the
+   submit glyph cannot drift through different transition phases. */
+[data-composer-run-actions]:hover [data-composer-run-trigger],
+[data-composer-run-actions]:hover [data-composer-submit] {
+  color: var(--fg);
+  transition: none;
+}
+
+.app-compact-control > [data-control-icon] {
+  display: grid;
+  width: var(--control-height-compact);
+  height: var(--control-height-compact);
+  flex: 0 0 var(--control-height-compact);
+  place-items: center;
+}
+
+.app-compact-control > [data-control-icon] > svg,
+.app-compact-control > svg:not([data-control-chevron]) {
+  width: var(--control-icon-size);
+  height: var(--control-icon-size);
+}
+
+.app-compact-control > [data-control-chevron] {
+  width: 12px;
+  height: 12px;
+  margin-inline-start: 2px;
+  opacity: 0.65;
+}
+
+/* Select, DropdownMenu, and cmdk share one visual state machine. Their
+   libraries expose different attributes, so this adapter normalizes those
+   signals without allowing one trigger or roving-focus item to style a
+   sibling component. */
+.app-select-content {
+  color: var(--fg);
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-select-item {
+  min-height: var(--control-height-compact);
+  border-radius: var(--control-radius);
+  color: var(--control-fg-rest);
+  background: transparent;
+}
+
+.app-select-focus:is(:focus, [data-highlighted], [data-selected="true"]) {
+  color: var(--control-fg-active);
+  background: var(--control-bg-hover);
+}
+
+.app-select-item[data-state="checked"],
+.app-select-item[data-checked="true"] {
+  color: var(--control-fg-active);
+  background: var(--control-bg-open);
+}
+
+.app-select-selected {
+  color: var(--fg-muted);
+}
+
+.app-select-separator {
+  background: var(--border);
 }
 
 .composer-radius {

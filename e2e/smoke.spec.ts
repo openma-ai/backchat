@@ -120,36 +120,18 @@ test.describe("backchat smoke", () => {
       expect(Math.abs(newChatCenter - settingsCenter)).toBeLessThanOrEqual(0.5);
   });
 
-  test("keeps equal space around the runtime row and folds ACP updates into Settings", async ({
-      page,
-      bridge,
-  }) => {
-      await bridge.setAgentSetupFixture({
-        agents: [{
-          id: "codex-acp",
-          label: "Codex",
-          command: "codex-acp",
-          detected: true,
-          available: true,
-          installed: true,
-          updateAvailable: true,
-        }],
-      });
+  test("keeps equal space around the runtime row", async ({ page }) => {
       await enableAgent(page, "codex-acp");
 
       const settings = page.getByRole("link", { name: "Settings", exact: true });
-      const acpUpdate = page.getByRole("link", { name: "1 ACP update available" });
-      const updateBadge = settings.locator('[data-sidebar-agent-update-count="1"]');
       const runtime = page.locator('[data-composer-footer-control="runtime"]').first();
       const composer = page.locator(".composer-card").first();
       const composerFrame = page.locator('[data-chat-column="composer"]').first();
       await Promise.all(
-        [settings, updateBadge, runtime, composer, composerFrame].map((item) =>
+        [settings, runtime, composer, composerFrame].map((item) =>
           expect(item).toBeVisible(),
         ),
       );
-      await expect(acpUpdate).toHaveCount(0);
-      await expect(settings).toHaveAttribute("href", "/settings/agents");
 
       const [settingsBox, runtimeBox, composerBox, composerFrameBox] = await Promise.all([
         settings.boundingBox(),
@@ -171,6 +153,86 @@ test.describe("backchat smoke", () => {
       expect(gapAboveRuntime).toBeGreaterThan(0);
       expect(Math.abs(gapAboveRuntime - gapBelowRuntime)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(runtimeCenter - settingsCenter)).toBeLessThanOrEqual(2);
+  });
+
+  test("separates Settings from ACP updates and upgrades directly from a dialog", async ({
+      page,
+      bridge,
+  }) => {
+      const availableAgent = {
+        id: "codex-acp",
+        label: "Codex",
+        command: "codex-acp",
+        detected: true,
+        available: true,
+        installed: true,
+        installedVersion: "1.0.0",
+        latestVersion: "1.1.0",
+        updateAvailable: true,
+      };
+      await bridge.setAgentSetupFixture({
+        agents: [availableAgent],
+        upgradeResults: {
+          "codex-acp": [{
+            ...availableAgent,
+            installedVersion: "1.1.0",
+            updateAvailable: false,
+          }],
+        },
+      });
+      await enableAgent(page, "codex-acp");
+
+      const settings = page.getByRole("link", { name: "Settings", exact: true });
+      const update = page.getByRole("button", { name: "1 ACP update available" });
+      await Promise.all([settings, update].map((item) => expect(item).toBeVisible()));
+      await expect(settings).toHaveAttribute("href", "/settings");
+      await expect(settings.locator("button")).toHaveCount(0);
+
+      const [settingsBox, updateBox] = await Promise.all([
+        settings.boundingBox(),
+        update.boundingBox(),
+      ]);
+      expect(settingsBox).not.toBeNull();
+      expect(updateBox).not.toBeNull();
+      expect(settingsBox!.x + settingsBox!.width).toBeLessThanOrEqual(updateBox!.x + 0.5);
+
+      const backgrounds = async () => Promise.all([settings, update].map((item) =>
+        item.evaluate((element) => getComputedStyle(element).backgroundColor),
+      ));
+      const resting = await backgrounds();
+      await settings.hover();
+      await page.waitForTimeout(180);
+      const settingsHovered = await backgrounds();
+      expect(settingsHovered[0]).not.toBe(resting[0]);
+      expect(settingsHovered[1]).toBe(resting[1]);
+      await update.hover();
+      await page.waitForTimeout(180);
+      const updateHovered = await backgrounds();
+      expect(updateHovered[0]).toBe(resting[0]);
+      expect(updateHovered[1]).not.toBe(resting[1]);
+      await update.click();
+      const dialog = page.getByRole("dialog", { name: "ACP updates" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText("Codex", { exact: true })).toBeVisible();
+      await expect(dialog.getByText("1.0.0 → 1.1.0", { exact: true })).toBeVisible();
+
+      await dialog.getByRole("button", { name: "Update Codex" }).click();
+      await expect(dialog.getByRole("button", { name: "Updating Codex" })).toBeDisabled();
+      await expect(dialog.getByRole("status")).toContainText("Codex updated to 1.1.0");
+      await expect.poll(() => bridge.readAgentSetupCalls()).toEqual(
+        expect.arrayContaining([{ type: "upgrade", id: "codex-acp" }]),
+      );
+
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole("button", { name: "1 ACP update available" }))
+        .toHaveCount(0);
+
+      await settings.click();
+      await page.getByRole("link", { name: "Agents", exact: true }).click();
+      await expect(page.getByText("Installed 1.1.0", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Upgrade", exact: true }))
+        .toHaveCount(0);
   });
 
   test("keeps suggestion cards visually level with the resting composer", async ({
@@ -405,17 +467,181 @@ test.describe("backchat smoke", () => {
 
       const summary = singleTool.getByRole("button");
       const input = singleTool.locator('[data-tool-input="single-tool"]');
-      const terminal = singleTool.locator('[data-tool-terminal-id="terminal-final"]');
-      await expect(input).toBeHidden();
-      await summary.click();
-      await expect(input).toBeVisible();
-      await expect(terminal).toBeVisible();
-      await summary.click();
-      await expect(input).toBeHidden();
-      await expect(terminal).toBeHidden();
+      cons…1359 tokens truncated…Role("textbox").fill("hello");
+
+      const runChip = page.locator('button[aria-label^="Run on "]').first();
+      const submit = page.getByRole("button", { name: "Send (Enter)", exact: true });
+      await expect(runChip).toBeVisible();
+      await expect(submit).toBeEnabled();
+
+      const runtimeIcon = runChip.locator("svg").first();
+      const chevron = runChip.locator("svg").last();
+      const submitIcon = submit.locator("svg");
+      const before = await Promise.all(
+        [runtimeIcon, chevron, submitIcon].map((item) =>
+          item.evaluate((element) => getComputedStyle(element).color),
+        ),
+      );
+
+      await runChip.hover();
+      const foreground = await runChip.evaluate(
+        (element) => getComputedStyle(element).color,
+      );
+      const after = await Promise.all(
+        [runtimeIcon, chevron, submitIcon].map((item) =>
+          item.evaluate((element) => getComputedStyle(element).color),
+        ),
+      );
+
+      expect(after).toEqual([foreground, foreground, foreground]);
+      expect(after.filter((color, index) => color !== before[index])).toHaveLength(3);
   });
 
-  test("uses an inset thin overlay thumb that grows on hover without a native gutter", async ({
+  test("keeps compact composer controls above a transparent runtime and context footer", async ({
+      page,
+      bridge,
+  }) => {
+      await bridge.setAgentSetupFixture({
+        agents: [{
+          id: "codex-acp",
+          label: "Codex",
+          command: "codex-acp",
+          detected: true,
+          available: true,
+          installed: true,
+        }],
+      });
+      await enableAgent(page, "codex-acp");
+      const sessionId = await injectSession(page, {
+        agentId: "codex-acp",
+        cwd: "/tmp/backchat-composer-footer",
+      });
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: "usage-footer",
+        event: { sessionUpdate: "usage_update", used: 30, size: 100 },
+      });
+
+      const card = page.locator(".composer-card").first();
+      const footer = page.locator('[data-session-runtime="true"]').first();
+      const runtime = footer.locator('[data-session-runtime-location="true"]');
+      const context = footer.locator('[data-gui-feature="output.usage-parent"]');
+      await Promise.all([card, footer, runtime, context].map((item) => expect(item).toBeVisible()));
+
+      const [cardBox, footerBox] = await Promise.all([card.boundingBox(), footer.boundingBox()]);
+      expect(cardBox).not.toBeNull();
+      expect(footerBox).not.toBeNull();
+      expect(footerBox!.y).toBeGreaterThanOrEqual(cardBox!.y + cardBox!.height);
+      expect(await footer.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .toBe("rgba(0, 0, 0, 0)");
+
+      const controls = [
+        card.getByRole("button", { name: "Attach files" }),
+        card.getByRole("button", { name: "Ask each time" }),
+        card.locator('button[aria-label^="Run on "]').first(),
+        card.getByRole("button", { name: "Send (Enter)" }),
+      ];
+      for (const control of controls) {
+        const box = await control.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.height).toBeLessThanOrEqual(28);
+      }
+  });
+
+  test("keeps the runtime trigger background transparent while its menu is open", async ({
+      page,
+  }) => {
+      const runtime = page.locator('[data-session-runtime-location="true"]').first();
+      await expect(runtime).toBeVisible();
+
+      await runtime.click();
+      await expect(page.getByRole("menu")).toBeVisible();
+      expect(await runtime.evaluate((element) => getComputedStyle(element).backgroundColor))
+        .toBe("rgba(0, 0, 0, 0)");
+  });
+
+  test("keeps the context meter out of native text selection", async ({
+      page,
+  }) => {
+      await enableAgent(page, "codex-acp");
+      const sessionId = await injectSession(page, { agentId: "codex-acp" });
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: "context-selection-boundary",
+        event: { sessionUpdate: "usage_update", used: 30_000, size: 258_000 },
+      });
+
+      const context = page.locator('[data-gui-feature="output.usage-parent"]');
+      await expect(context).toBeVisible();
+      expect(await context.evaluate((element) => getComputedStyle(element).userSelect))
+        .toBe("none");
+  });
+
+  test("aligns footer icons to the activity rail and keeps the attachment inset square", async ({
+      page,
+  }) => {
+      await enableAgent(page, "codex-acp");
+      const sessionId = await injectSession(page, { agentId: "codex-acp" });
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: "shared-icon-rail",
+        event: {
+          sessionUpdate: "tool_call",
+          toolCallId: "shared-icon-rail-tool",
+          kind: "execute",
+          status: "completed",
+          title: "Verify icon rail",
+          rawInput: { command: "true" },
+        },
+      });
+
+      const card = page.locator(".composer-card").first();
+      const attachButton = page.getByRole("button", { name: "Attach files" });
+      const attachIcon = page.getByRole("button", { name: "Attach files" }).locator("svg");
+      const runtimeIcon = page
+        .locator('[data-session-runtime-location="true"] [data-control-icon] svg');
+      const activityIcon = page
+        .locator('[data-tool-call-id="shared-icon-rail-tool"] [data-tool-activity-identity] svg');
+      const [cardBox, attachButtonBox, attachBox, runtimeBox, activityBox] = await Promise.all([
+        card.boundingBox(),
+        attachButton.boundingBox(),
+        attachIcon.boundingBox(),
+        runtimeIcon.boundingBox(),
+        activityIcon.boundingBox(),
+      ]);
+      expect(cardBox).not.toBeNull();
+      expect(attachButtonBox).not.toBeNull();
+      expect(attachBox).not.toBeNull();
+      expect(runtimeBox).not.toBeNull();
+      expect(activityBox).not.toBeNull();
+      const attachCenter = attachBox!.x + attachBox!.width / 2;
+      const runtimeCenter = runtimeBox!.x + runtimeBox!.width / 2;
+      const activityCenter = activityBox!.x + activityBox!.width / 2;
+      expect.soft(Math.abs(attachCenter - activityCenter)).toBeLessThanOrEqual(1);
+      expect.soft(Math.abs(runtimeCenter - activityCenter)).toBeLessThanOrEqual(1);
+
+      const attachmentLeftInset = attachButtonBox!.x - cardBox!.x;
+      const attachmentBottomInset = cardBox!.y + cardBox!.height
+        - (attachButtonBox!.y + attachButtonBox!.height);
+      expect.soft(Math.abs(attachmentLeftInset - attachmentBottomInset)).toBeLessThanOrEqual(1);
+  });
+
+  test("uses the same product-owned scroll area in Settings", async ({ page }) => {
+      await page.getByRole("link", { name: "Settings", exact: true }).click();
+
+      const scrollArea = page.locator('[data-settings-sidebar-scroll-area="true"]');
+      await expect(scrollArea).toBeVisible();
+      await expect(
+        scrollArea.locator('[data-slot="scroll-area-viewport"]'),
+      ).toHaveCount(1);
+      await expect(
+        scrollArea.locator('[data-slot="scroll-area-scrollbar"]'),
+      ).toHaveCount(1);
+  });
+
   test("home suggestion selection creates an editable composer template", async ({ page }) => {
       await page.locator('[data-suggestion-kind="shape"]').click();
 

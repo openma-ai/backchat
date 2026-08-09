@@ -38,6 +38,7 @@ export type AgentSetupFixture = {
   agents: unknown[];
   authenticateResults?: Record<string, unknown[]>;
   probeResults?: Record<string, unknown[]>;
+  upgradeResults?: Record<string, unknown[]>;
 };
 
 /** Typed access to the dev-only preload bridge used by E2E setup/assertions. */

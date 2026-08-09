@@ -54,7 +54,7 @@ describe("groupSidebarSessions", () => {
     );
 
     expect(projectRow).not.toContain("active: boolean");
-    expect(projectRow).not.toContain("liquid-glass-selected");
+    expect(projectRow).not.toContain("app-selected-surface");
     expect(projectRow).toContain("hover:bg-bg-surface/60");
     expect(projectRow).toContain("active:bg-bg-surface/80");
   });
@@ -192,34 +192,57 @@ describe("groupSidebarSessions", () => {
 
   it("centers the settings row inside symmetric footer padding", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const footer = source.slice(source.indexOf("{/* Footer — Settings link only."));
-
-    expect(footer).toContain('className="py-[var(--row-gap-y)]"');
-    expect(footer).not.toContain('className="pb-[var(--row-gap-y)]"');
-  });
-
-  it("aligns fixed rows to the native scrollbar client width without an extra gap", () => {
-    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const styles = readFileSync(
       resolve(__dirname, "../../styles/index.css"),
       "utf8",
     );
+    const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
 
-    expect(source).not.toContain("--sb-w");
-    expect(source).toContain("--native-scrollbar-width");
-    expect(source).toContain("offsetWidth - nav.clientWidth");
-    expect(
-      source.match(/paddingRight: "calc\(8px \+ var\(--native-scrollbar-width, 0px\)\)"/g),
-    ).toHaveLength(2);
-    expect(source.match(/paddingRight: "8px"/g)).toHaveLength(1);
-    expect(styles).toContain(".sidebar-scrollbar {\n  scrollbar-width: auto;");
+    expect(footer).toContain('className="py-[var(--bottom-bar-gap-y)]"');
+    expect(styles).toContain("--bottom-bar-gap-y: 6px;");
+    expect(styles).toContain(
+      "--composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);",
+    );
+  });
+
+  it("keeps Settings and ACP updates as independent footer controls", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const updateControl = readFileSync(
+      resolve(__dirname, "AgentUpdateControl.tsx"),
+      "utf8",
+    );
+    const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
+
+    expect(footer).toContain('to="/settings"');
+    expect(footer).toContain("<AgentUpdateControl agents={agents} />");
+    expect(footer).toContain(
+      'className="flex w-full items-stretch overflow-hidden rounded-md"',
+    );
+    expect(footer.indexOf("<AgentUpdateControl")).toBeGreaterThan(
+      footer.indexOf("</Link>"),
+    );
+    expect(updateControl).not.toContain("border-l");
+  });
+
+  it("shares one canonical Agent cache between the sidebar, updater, and Settings", () => {
+    const sidebar = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const updater = readFileSync(resolve(__dirname, "AgentUpdateControl.tsx"), "utf8");
+    const settings = readFileSync(
+      resolve(__dirname, "../../pages/settings/Agents.tsx"),
+      "utf8",
+    );
+
+    for (const source of [sidebar, updater, settings]) {
+      expect(source).toContain("AGENTS_QUERY_KEY");
+      expect(source).not.toContain('["agents", "setup"]');
+    }
   });
 
   it("keeps Scheduled with the header actions instead of the settings footer", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const scheduled = source.indexOf('to="/scheduled"');
     const conversationNav = source.indexOf("<nav", scheduled);
-    const footer = source.indexOf("{/* Footer — Settings link only.");
+    const footer = source.indexOf("{/* Footer navigation and update affordance");
 
     expect(scheduled).toBeGreaterThan(source.indexOf('data-testid="new-chat-button"'));
     expect(scheduled).toBeLessThan(conversationNav);
@@ -228,7 +251,7 @@ describe("groupSidebarSessions", () => {
 
   it("places the settings icon on the same horizontal track as session icons", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const footer = source.slice(source.indexOf("{/* Footer — Settings link only."));
+    const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
 
     expect(footer).toContain(
       '<span className="inline-flex size-4 shrink-0 items-center justify-center">',

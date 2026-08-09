@@ -18,14 +18,13 @@ import {
   SquarePenIcon,
   ArchiveIcon,
   CalendarClockIcon,
-  CircleArrowUpIcon,
   FolderIcon,
   FolderOpenIcon,
   PlusIcon,
   UsersRoundIcon,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
@@ -41,11 +40,14 @@ import {
 } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
 import { AnimatedCollapse } from "@/components/ui/animated-collapse";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSidebarCollapse } from "@/components/shell/AppShell";
 import { folderName, projectKeyForCwd } from "@/lib/project-path";
 import { useI18n } from "@/lib/i18n";
+import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { RenameDialog } from "./RenameDialog";
+import { AgentUpdateControl } from "./AgentUpdateControl";
 import type { ProjectInfo } from "@shared/projects.js";
 
 export interface SidebarProjectGroup {
@@ -158,7 +160,7 @@ export function Sidebar() {
   const location = useLocation();
   const { collapsed } = useSidebarCollapse();
   const { data: agents = [] } = useQuery({
-    queryKey: ["agents"],
+    queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList(),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
@@ -167,10 +169,6 @@ export function Sidebar() {
     () => new Map(agents.flatMap((agent) => agent.icon ? [[agent.id, agent.icon] as const] : [])),
     [agents],
   );
-  const agentUpdateCount = agents.filter((agent) => agent.updateAvailable).length;
-  const agentUpdateLabel = `${agentUpdateCount} ACP ${
-    agentUpdateCount === 1 ? "update" : "updates"
-  } available`;
   // Single menu state for the whole sidebar — only one row's `…`
   // dropdown can be open at a time. Lifting this up avoids the
   // "right-click row A then row B leaves both menus open" bug.
@@ -291,25 +289,8 @@ export function Sidebar() {
     "truncate",
   );
 
-  const sidebarRef = useRef<HTMLDivElement | null>(null);
-  const navRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    const measureNativeScrollbar = () => {
-      const root = sidebarRef.current;
-      const nav = navRef.current;
-      if (!root || !nav) return;
-      const width = nav.offsetWidth - nav.clientWidth;
-      root.style.setProperty("--native-scrollbar-width", `${width}px`);
-    };
-
-    measureNativeScrollbar();
-    const observer = new ResizeObserver(measureNativeScrollbar);
-    if (navRef.current) observer.observe(navRef.current);
-    return () => observer.disconnect();
-  }, [pairs.length, savedProjects.length, sessions.length]);
-
   return (
-    <div ref={sidebarRef} className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {/* TrafficLight drag region — just empty space inside the sidebar
           card so the macOS-drawn trafficLight (at window x=16, y=18)
           has visible padding inside the card's rounded top-left. The
@@ -321,14 +302,13 @@ export function Sidebar() {
         style={{ height: "36px" }}
       />
 
-      {/* Header actions keep the same 8px visual inset as conversation rows.
-          The scrolling region's native auto-width gutter is mirrored once so
-          the fixed and scrolling rows have identical visible widths. */}
+      {/* Header actions and conversation rows share one fixed 8px inset. The
+          product-owned scrollbar overlays the viewport and reserves no gutter. */}
       <div
         className="pt-[var(--row-gap-y)]"
         style={{
           paddingLeft: "8px",
-          paddingRight: "calc(8px + var(--native-scrollbar-width, 0px))",
+          paddingRight: "8px",
         }}
       >
         <button
@@ -340,7 +320,7 @@ export function Sidebar() {
           className={cn(
             "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
             newChatActive
-              ? "liquid-glass-selected text-fg"
+              ? "app-selected-surface text-fg"
               : "text-fg hover:bg-bg-surface/60",
             "transition-colors",
           )}
@@ -392,7 +372,7 @@ export function Sidebar() {
           className={cn(
             "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-xs",
             scheduledActive
-              ? "liquid-glass-selected text-fg"
+              ? "app-selected-surface text-fg"
               : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
           )}
           style={{ height: "var(--row-h)" }}
@@ -404,16 +384,16 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* Chats — the only scrolling sidebar region. Its native scrollbar uses
-          the platform's automatic width; rows retain an 8px visual inset. */}
-      <nav
-        ref={navRef}
-        className="sidebar-scrollbar flex-1 overflow-y-auto pt-[var(--row-gap-y)]"
-        style={{
-          paddingLeft: "8px",
-          paddingRight: "8px",
-        }}
+      {/* Chats — the only scrolling sidebar region. Radix keeps native
+          scrolling semantics while drawing a platform-independent overlay
+          thumb that never changes the row width. */}
+      <ScrollArea
+        type="always"
+        showBoundaries
+        data-sidebar-scroll-area="true"
+        className="sidebar-scroll-area min-h-0 flex-1"
       >
+        <nav className="app-no-drag px-2 pt-[var(--row-gap-y)]">
         {sessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
           <div>
             <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
@@ -607,50 +587,35 @@ export function Sidebar() {
         </nav>
       </ScrollArea>
 
-      {/* Footer — Settings link only. Its fixed inset matches the header and
-          scrolling rows because the overlay scrollbar owns no layout width. */}
+      {/* Footer navigation and update affordance are independent hit targets.
+          Opening the update dialog never changes route or paints Settings as
+          hovered; the fixed inset still matches the scrolling rows. */}
       <div
-        className="py-[var(--row-gap-y)]"
+        className="py-[var(--bottom-bar-gap-y)]"
         style={{
           paddingLeft: "8px",
           paddingRight: "8px",
         }}
       >
-        <Link
-          to={agentUpdateCount > 0 ? "/settings/agents" : "/settings"}
-          aria-label={t("sidebar.settings")}
-          aria-describedby={
-            agentUpdateCount > 0 ? "sidebar-agent-update-description" : undefined
-          }
-          title={agentUpdateCount > 0 ? agentUpdateLabel : undefined}
-          className={cn(
-            "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-xs",
-            settingsActive
-              ? "app-selected-surface text-fg"
-              : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
-          )}
-          style={{ height: "var(--row-h)" }}
-        >
-          <span className="inline-flex size-4 shrink-0 items-center justify-center">
-            <Settings2Icon className="size-3.5" />
-          </span>
-          <span className={labelCls}>{t("sidebar.settings")}</span>
-          {agentUpdateCount > 0 && (
-            <>
-              <span
-                aria-hidden="true"
-                data-sidebar-agent-update-count={agentUpdateCount}
-                className="ml-auto inline-flex h-5 min-w-5 items-center justify-center gap-1 rounded-full bg-warning-subtle px-1.5 text-[10px] font-medium tabular-nums text-warning"
-              >
-                <CircleArrowUpIcon className="size-3 shrink-0" />
-                {agentUpdateCount}
-              </span>
-              <span id="sidebar-agent-update-description" className="sr-only">
-                {agentUpdateLabel}
-              </span>
-            </>
-          )}
-        </Link>
+        <div className="flex w-full items-stretch overflow-hidden rounded-md" data-sidebar-footer-actions="true">
+          <Link
+            to="/settings"
+            aria-label={t("sidebar.settings")}
+            className={cn(
+              "app-no-drag flex min-w-0 flex-1 items-center gap-2 px-2 text-xs",
+              settingsActive
+                ? "app-selected-surface text-fg"
+                : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+            )}
+            style={{ height: "var(--row-h)" }}
+          >
+            <span className="inline-flex size-4 shrink-0 items-center justify-center">
+              <Settings2Icon className="size-3.5" />
+            </span>
+            <span className={labelCls}>{t("sidebar.settings")}</span>
+          </Link>
+          <AgentUpdateControl agents={agents} />
+        </div>
       </div>
       <CreateProjectDialog
         open={createProjectOpen}
@@ -847,7 +812,7 @@ function PairSidebarRow({
       className={cn(
         "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
         active
-          ? "liquid-glass-selected text-fg"
+          ? "app-selected-surface text-fg"
           : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
         "transition-colors",
       )}
@@ -975,7 +940,7 @@ function SessionRow({
             "group relative flex w-full items-center gap-2 rounded-md px-2 text-xs",
             errored && "text-danger",
             active
-              ? "liquid-glass-selected text-fg"
+              ? "app-selected-surface text-fg"
               : !errored && "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
             "transition-colors",
           )}
@@ -1094,7 +1059,7 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
   const navigate = useNavigate();
   const settings = useSettings();
   const { data: agents = [] } = useQuery({
-    queryKey: ["agents"],
+    queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList(),
     enabled: open,
   });
