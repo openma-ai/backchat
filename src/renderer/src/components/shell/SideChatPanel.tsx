@@ -802,7 +802,8 @@ function LegacyEmptyState({
   canStartSideChat: boolean;
   browserEnabled: boolean;
 }) {
-  // 推荐 ordering:
+  const { t } = useI18n();
+  // Recommendation ordering:
   //   1. Services the agent has spun up in THIS chat (localhost URLs
   //      sniffed from tool_call output). Most relevant — user just
   //      asked for them.
@@ -868,7 +869,7 @@ function LegacyEmptyState({
 
       {artifacts.files.length > 0 && (
         <section className="mt-6">
-          <div className="mb-2 text-xs font-medium text-fg select-none">最近改动的文件</div>
+          <div className="mb-2 text-xs font-medium text-fg select-none">{t("side.recentlyChangedFiles")}</div>
           <ul className="space-y-1">
             {artifacts.files.slice(0, 8).map((path) => (
               <li key={path}>
@@ -889,7 +890,7 @@ function LegacyEmptyState({
       {!hasArtifacts && recent.length > 0 && (
         <section className="mt-6">
           <div className="mb-2 flex items-baseline justify-between select-none">
-            <span className="text-xs font-medium text-fg">推荐</span>
+            <span className="text-xs font-medium text-fg">{t("side.recommended")}</span>
             <span
               className="font-mono text-[10px] text-fg-subtle truncate max-w-[60%]"
               title={cwd}
@@ -902,7 +903,7 @@ function LegacyEmptyState({
               <li key={entry.path}>
                 <RecentRow
                   label={entry.name}
-                  hint={entry.isDir ? "目录" : "文件"}
+                  hint={entry.isDir ? t("side.directory") : t("side.file")}
                   icon={
                     entry.isDir ? (
                       <FolderIcon className="size-4 text-fg-subtle" />

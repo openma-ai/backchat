@@ -68,7 +68,12 @@ describe("chat tool presentation", () => {
     };
 
     expect(toolActivityVerbKey(skillRead)).toBe("tool.reading");
-    expect(pickToolActivityTarget(skillRead)).toBe("Imagegen 技能");
+    // The word around the skill name belongs to the translator; without one
+    // the bare name is still the truthful target.
+    expect(pickToolActivityTarget(skillRead)).toBe("Imagegen");
+    expect(
+      pickToolActivityTarget(skillRead, (name) => `${name} skill`),
+    ).toBe("Imagegen skill");
     expect(
       toolActivityVerbKey({ ...skillRead, status: "completed" }),
     ).toBe("tool.read");

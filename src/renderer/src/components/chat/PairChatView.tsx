@@ -15,6 +15,7 @@
  * every member completes.
  */
 
+import { useI18n } from "@/lib/i18n";
 import { useEffect, useMemo } from "react";
 import { useParams } from "@tanstack/react-router";
 import type {
@@ -135,6 +136,7 @@ function PairColumn({
   session: SessionRow;
   showLeftDivider: boolean;
 }) {
+  const { t } = useI18n();
   const turns = useSessionStore(
     useMemo(() => selectTurnsFor(session.id), [session.id]),
   );
@@ -158,7 +160,7 @@ function PairColumn({
             <div className={CHAT_TURN_FRAME_CLASS} data-chat-column="turns">
               {turns.length === 0 && session.status !== "running" && (
                 <div className="flex min-h-[160px] items-center justify-center text-[12px] text-fg-subtle">
-                  尚无消息
+                  {t("pair.noMessages")}
                 </div>
               )}
               {turns.map((t) => (
@@ -176,6 +178,7 @@ function PairColumn({
 /** Shared composer that fans out a prompt to every member of a pair.
  *  Locked while any member is still streaming the current turn. */
 function PairComposer({ pair }: { pair: PairRow }) {
+  const { t } = useI18n();
   const locked = !!pair.activeTurnId;
   const members = pair.members
     .map((sid) => sessionStore.get(sid))
@@ -247,7 +250,9 @@ function PairComposer({ pair }: { pair: PairRow }) {
         pickedAgentId={null}
         onPickAgent={() => {}}
         placeholder={
-          locked ? "等所有 agent 完成…" : `同时发送给 ${memberCount} 个 agent…`
+          locked
+            ? t("pair.waitingForAll")
+            : t("pair.sendToAll", { count: memberCount })
         }
         attachmentDefaultPath={members.find((m) => m.cwd)?.cwd}
         onSubmit={(

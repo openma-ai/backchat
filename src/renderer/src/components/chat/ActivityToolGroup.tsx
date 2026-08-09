@@ -83,7 +83,7 @@ export function ActivityToolGroup({
             : t("chat.toolCallCount", { count: tools.length })}
         </span>
         <span className="min-w-0 flex-1 truncate text-fg-muted/70">
-          {pickToolActivityTarget(latest)}
+          {pickToolActivityTarget(latest, (name) => t("tool.skillSuffix", { name }))}
         </span>
         {running && (
           <span className="shrink-0 whitespace-nowrap text-fg-subtle">

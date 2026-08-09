@@ -138,13 +138,17 @@ export function toolActivityVerbKey(
     : toolVerbKey(tool.kind, status);
 }
 
+/** What a tool call is acting on. A skill read names the skill instead of its
+ *  file path, which needs a word around it — so the caller passes the
+ *  translator rather than this module owning a language. */
 export function pickToolActivityTarget(
   tool: ChatToolPresentationInput,
+  translateSkill?: (name: string) => string,
 ): string {
   const skillName = detectSkillName(tool);
-  return skillName
-    ? `${capitalizeToolLabel(skillName)} 技能`
-    : pickToolTarget(tool);
+  if (!skillName) return pickToolTarget(tool);
+  const label = capitalizeToolLabel(skillName);
+  return translateSkill ? translateSkill(label) : label;
 }
 
 export function capitalizeToolLabel(value: string): string {

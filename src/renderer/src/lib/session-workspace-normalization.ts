@@ -13,7 +13,9 @@ export function defaultSideTabLabel(type: SideTabType, payload: string): string 
     case "chat":
       return "Context fork";
     case "subagent":
-      return "子任务";
+      // This label is stored on the tab, not translated at render time, so it
+      // matches its siblings above rather than pretending to be a key.
+      return "Subtask";
     case "file": {
       const trimmed = payload.replace(/\/+$/, "");
       const last = trimmed.split("/").pop();

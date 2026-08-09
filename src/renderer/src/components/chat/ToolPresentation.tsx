@@ -81,7 +81,9 @@ export function ToolRow({
   const lifecycle = toolLifecycleStatus(status);
   const inProgress = status === "in_progress" || status === "pending";
   const verb = t(toolActivityVerbKey(tool));
-  const target = pickToolActivityTarget(tool);
+  const target = pickToolActivityTarget(tool, (name) =>
+    t("tool.skillSuffix", { name }),
+  );
 
   const hoistedBlocks: ToolContentBlock[] = [];
   const bodyBlocks: ToolContentBlock[] = [];
