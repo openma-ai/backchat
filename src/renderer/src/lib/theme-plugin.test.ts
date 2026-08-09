@@ -269,28 +269,28 @@ describe("theme plugin contract", () => {
     });
   });
 
-  it("uses neutral reference surfaces with coral reserved for branded actions", async () => {
+  it("matches Cursor's light hierarchy while reserving OpenMA coral for branded actions", async () => {
     const { getThemePlugin } = await loadThemePlugins();
     const light = getThemePlugin?.("backchat-light", "light");
     expect(light).toBeDefined();
 
-    const tokens = light!.tokens;
-    const canvas = oklchComponents(tokens.bg).lightness;
-    const panel = oklchComponents(tokens["bg-surface"]).lightness;
-    const sidebar = oklchComponents(tokens["bg-sidebar"]).lightness;
-    const raised = oklchComponents(tokens["bg-bubble"]).lightness;
-
-    expect(panel - canvas).toBeGreaterThanOrEqual(0.02);
-    expect(canvas - sidebar).toBeGreaterThanOrEqual(0.03);
-    expect(sidebar - raised).toBeGreaterThanOrEqual(0.04);
-    for (const token of ["bg", "bg-sidebar", "bg-surface", "bg-bubble"] as const) {
-      expect(oklchComponents(tokens[token]).chroma).toBeLessThanOrEqual(0.003);
-    }
-    expect(tokens["brand-fg"]).toBe("#101010");
-
-    const brand = oklchComponents(tokens.brand);
-    expect(brand.chroma).toBeGreaterThanOrEqual(0.13);
-    expect(brand.chroma).toBeLessThanOrEqual(0.16);
+    expect(light?.tokens).toMatchObject({
+      brand: "#f84f32",
+      "brand-fg": "#141414",
+      bg: "#fcfcfc",
+      "bg-sidebar": "#f3f3f3",
+      "bg-surface": "#f3f3f3",
+      "bg-bubble": "#e9e9e9",
+      fg: "#141414",
+      border: "#14141414",
+      "border-strong": "#14141433",
+    });
+    expect(light?.preview).toEqual({
+      background: "#fcfcfc",
+      surface: "#f3f3f3",
+      foreground: "#141414",
+      accent: "#f84f32",
+    });
   });
 
   it("replaces every visual token and exposes the active theme on the root", async () => {

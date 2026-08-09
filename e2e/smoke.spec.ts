@@ -99,6 +99,65 @@ test.describe("backchat smoke", () => {
       expect(Object.values(colors).every(({ alpha }) => alpha === 255)).toBe(true);
   });
 
+  test("applies the Cursor-aligned default light palette and interaction overlays", async ({
+      page,
+  }) => {
+      await page.evaluate(async () => {
+        const current = await window.backchat.settingsGet();
+        await window.backchat.settingsPatch({
+          appearance: {
+            ...current.appearance,
+            theme: "light",
+            light_theme_id: "backchat-light",
+          },
+        });
+      });
+      await expect(page.locator("html")).toHaveAttribute("data-theme-mode", "light");
+
+      const palette = await page.evaluate(() => {
+        const rootStyle = getComputedStyle(document.documentElement);
+        const resolvedColor = (value: string) => {
+          const probe = document.createElement("span");
+          probe.style.backgroundColor = value;
+          document.body.append(probe);
+          const color = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return color;
+        };
+        return {
+          canvas: getComputedStyle(document.querySelector(".app-canvas-surface")!).backgroundColor,
+          panel: getComputedStyle(document.querySelector(".app-rail-surface")!).backgroundColor,
+          composer: getComputedStyle(document.querySelector(".app-composer-surface")!).backgroundColor,
+          foreground: resolvedColor("var(--fg)"),
+          brand: resolvedColor("var(--brand)"),
+          border: resolvedColor("var(--border)"),
+          focus: resolvedColor("var(--focus-ring)"),
+          hover: resolvedColor("var(--interaction-bg-hover)"),
+          active: resolvedColor("var(--interaction-bg-active)"),
+          tokenValues: {
+            bg: rootStyle.getPropertyValue("--bg").trim(),
+            panel: rootStyle.getPropertyValue("--bg-surface").trim(),
+          },
+        };
+      });
+
+      expect(palette).toMatchObject({
+        canvas: "rgb(252, 252, 252)",
+        panel: "rgb(243, 243, 243)",
+        composer: "rgb(243, 243, 243)",
+        foreground: "rgb(20, 20, 20)",
+        brand: "rgb(248, 79, 50)",
+        border: "rgba(20, 20, 20, 0.08)",
+        focus: "rgba(20, 20, 20, 0.2)",
+        tokenValues: {
+          bg: "#fcfcfc",
+          panel: "#f3f3f3",
+        },
+      });
+      expect(palette.hover).toBe(palette.active);
+      expect(Number(palette.hover.match(/[\d.]+(?=\))/)?.[0] ?? 1)).toBeLessThanOrEqual(0.08);
+  });
+
   test("aligns the Settings icon with the primary sidebar icon track", async ({
       page,
   }) => {
