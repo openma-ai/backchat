@@ -90,6 +90,31 @@ test.describe("composer slash commands", () => {
     await composer.waitForPromptTexts(["/compact"]);
   });
 
+  test("the goal chip cancels through Codex's own clear command", async ({ page, composer }) => {
+    // plan and goal are both session states with a chip, but they cancel
+    // through different transports: plan resets a config option, goal takes
+    // the control command Codex publishes for it.
+    await enableAgent(page, "codex-acp");
+    const sessionId = await injectSession(page, { agentId: "codex-acp" });
+    await injectEvent(page, {
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "e2e-goal-state",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: { codex: { goal: { objective: "ship the release", status: "active" } } },
+      },
+    });
+
+    const chip = page.locator('[data-composer-session-state="true"]');
+    await expect(chip).toBeVisible();
+    await chip.click();
+
+    await expect
+      .poll(async () => await composer.readPromptTexts())
+      .toEqual(["/goal clear"]);
+  });
+
   test("a long hint never truncates the command token", async ({ page, composer }) => {
     await enableAgent(page, "codex-acp");
     const sessionId = await injectSession(page, { agentId: "codex-acp" });

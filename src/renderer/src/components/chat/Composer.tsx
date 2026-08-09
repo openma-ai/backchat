@@ -303,6 +303,39 @@ export function Composer({
     availableCommands: composerAvailableCommands,
     draftConfigValues,
   });
+  /** The chip's dismiss control. Each session state cancels through its own
+   * transport: plan resets a config option (draft overrides included), goal
+   * sends its control command the way ACP invokes commands. Plan reads the
+   * live config catalogue rather than a static value, so it stays ahead of
+   * the declared exit. */
+  const sessionStateExit = (() => {
+    if (!composerSessionState) return undefined;
+    const applyConfig = (configId: string, value: string | boolean) => () => {
+      if (lockedAgentId) {
+        void onSetConfigOption?.(configId, value);
+        return;
+      }
+      setDraftConfigValues((prev) => ({ ...prev, [configId]: value }));
+    };
+    if (composerSessionState.kind === "plan_mode") {
+      return planExit ? applyConfig(planExit.configId, planExit.value) : undefined;
+    }
+    const exit = composerSessionState.exit;
+    if (!exit) return undefined;
+    if (exit.kind === "setConfigOption") return applyConfig(exit.configId, exit.value);
+    // A control prompt needs a live session to reach.
+    if (!sessionId || !hasHarnessSetup) return undefined;
+    return () => {
+      onSubmit(
+        exit.text,
+        undefined,
+        primaryIntent,
+        draftConfigValues,
+        currentEnabledAgent?.id,
+        [],
+      );
+    };
+  })();
   const {
     clearDismissal,
     clearSelectedSkill,
@@ -874,21 +907,12 @@ export function Composer({
           />
           <ComposerSessionStateSlot
             presentation={composerSessionState}
-            onClear={
-              composerSessionState?.kind === "plan_mode" && planExit
-                ? () => {
-                    if (lockedAgentId) {
-                      void onSetConfigOption?.(planExit.configId, planExit.value);
-                    } else {
-                      setDraftConfigValues((prev) => ({
-                        ...prev,
-                        [planExit.configId]: planExit.value,
-                      }));
-                    }
-                  }
-                : undefined
+            onClear={sessionStateExit}
+            clearLabel={
+              composerSessionState?.kind === "goal"
+                ? t("chat.exitGoal")
+                : t("chat.exitPlanMode")
             }
-            clearLabel={t("chat.exitPlanMode")}
           />
           <InlineComposerOptionControls
             disabled={!!running}
