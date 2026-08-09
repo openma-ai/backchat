@@ -588,7 +588,7 @@ export function Sidebar() {
       </ScrollArea>
 
       {/* Footer navigation and update affordance are independent hit targets.
-          Opening the update dialog never changes route or paints Settings as
+          Opening the update popover never changes route or paints Settings as
           hovered; the fixed inset still matches the scrolling rows. */}
       <div
         className="py-[var(--bottom-bar-gap-y)]"

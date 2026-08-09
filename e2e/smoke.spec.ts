@@ -213,7 +213,8 @@ test.describe("backchat smoke", () => {
       await update.click();
       const popover = page.locator('[data-sidebar-agent-update-popover="true"]');
       await expect(popover).toBeVisible();
-      await expect(popover).toHaveAttribute("data-side", "right");
+      await expect(popover).toHaveAttribute("data-side", "top");
+      await expect(popover).toHaveAttribute("data-align", "start");
       await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
       await expect(popover.locator('[data-agent-update-label="codex-acp"]'))
         .toHaveText("Codex");

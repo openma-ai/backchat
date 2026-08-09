@@ -10,10 +10,14 @@ import {
 
 import type { AgentInfo } from "@shared/api";
 import { AgentIcon } from "@/components/AgentIcon";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useI18n } from "@/lib/i18n";
@@ -126,7 +130,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
           title={triggerLabel}
           data-sidebar-agent-update-control="true"
           data-sidebar-agent-update-count={availableAgents.length || undefined}
-          className="app-no-drag inline-flex h-[var(--row-h)] shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-medium tabular-nums text-warning transition-colors hover:bg-warning-subtle/55 focus-visible:bg-warning-subtle/55"
+          className="app-no-drag inline-flex h-[var(--row-h)] shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-medium tabular-nums text-fg-muted transition-colors hover:bg-bg-surface/60 hover:text-fg focus-visible:bg-bg-surface/60 focus-visible:text-fg"
         >
           {activeIds.size > 0 ? (
             <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />
@@ -142,44 +146,44 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
       <PopoverContent
         aria-label={t("acpUpdates.title")}
         data-sidebar-agent-update-popover="true"
-        side="right"
-        align="end"
+        side="top"
+        align="start"
         sideOffset={8}
         collisionPadding={8}
-        className="w-[340px] max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden p-0"
+        className="max-w-[var(--radix-popover-content-available-width)]"
       >
-        <div className="px-3.5 pb-2 pt-3">
-          <div className="flex items-center gap-3">
-            <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+        <PopoverHeader>
+          <div className="flex items-center gap-2">
+            <PopoverTitle className="min-w-0 flex-1 truncate">
               {t("acpUpdates.title")}
-            </h2>
+            </PopoverTitle>
             {availableAgents.length > 0 && (
-              <span className="shrink-0 rounded-md bg-warning-subtle/45 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-warning">
+              <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tabular-nums">
                 {t("acpUpdates.ready", { count: availableAgents.length })}
-              </span>
+              </Badge>
             )}
           </div>
-          <p className="mt-1 text-[11px] leading-4 text-fg-muted">
+          <PopoverDescription className="text-xs leading-4">
             {t("acpUpdates.description")}
-          </p>
-        </div>
+          </PopoverDescription>
+        </PopoverHeader>
 
         {recentlyUpdated && (
-          <div
+          <p
             role="status"
-            className="mx-2 mb-1 flex items-center gap-2 rounded-md bg-success-subtle/55 px-2.5 py-2 text-[11px] font-medium text-success"
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
           >
-            <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            <CheckIcon className="size-3.5 shrink-0 text-success" aria-hidden="true" />
             {t("acpUpdates.updatedTo", {
               agent: recentlyUpdated.label,
               version: recentlyUpdated.installedVersion
                 ?? recentlyUpdated.latestVersion
                 ?? t("acpUpdates.latestVersion"),
             })}
-          </div>
+          </p>
         )}
 
-        <div className="max-h-[min(300px,var(--radix-popover-content-available-height))] space-y-0.5 overflow-y-auto px-2 pb-1">
+        <div className="max-h-[min(300px,var(--radix-popover-content-available-height))] space-y-1 overflow-y-auto">
           {availableAgents.map((agent) => {
             const updating = activeIds.has(agent.id);
             const error = errors[agent.id];
@@ -191,9 +195,9 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
             return (
               <div
                 key={agent.id}
-                className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-bg-surface/55"
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md p-1.5 transition-colors hover:bg-muted/50"
               >
-                <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-bg-surface/70 text-fg-muted">
+                <span className="inline-flex size-6 shrink-0 items-center justify-center text-muted-foreground">
                   <AgentIcon
                     agentId={agent.id}
                     iconUrl={agent.icon}
@@ -204,15 +208,15 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
                 <div className="min-w-0">
                   <p
                     data-agent-update-label={agent.id}
-                    className="truncate text-xs font-medium text-fg"
+                    className="truncate text-xs font-medium text-foreground"
                   >
                     {agent.label}
                   </p>
-                  <p className="mt-0.5 truncate font-mono text-[10px] tabular-nums text-fg-subtle">
+                  <p className="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
                     {updateDescription(agent, t("acpUpdates.newerRuntime"))}
                   </p>
                   {error && (
-                    <p className="mt-1 flex items-start gap-1 text-[10px] leading-4 text-danger">
+                    <p className="mt-1 flex items-start gap-1 text-[10px] leading-4 text-destructive">
                       <TriangleAlertIcon
                         className="mt-0.5 size-3 shrink-0"
                         aria-hidden="true"
@@ -227,25 +231,19 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
                   size="xs"
                   onClick={() => void startUpgrade(agent)}
                   disabled={updating}
+                  loading={updating}
+                  loadingLabel={t("acpUpdates.updating")}
                   aria-label={actionLabel}
-                  className="text-warning hover:bg-warning-subtle/45 hover:text-warning"
                 >
-                  {updating && (
-                    <Loader2Icon className="size-3 animate-spin" aria-hidden="true" />
-                  )}
-                  {updating
-                    ? t("acpUpdates.updating")
-                    : error
-                      ? t("acpUpdates.retry")
-                      : t("acpUpdates.update")}
+                  {error ? t("acpUpdates.retry") : t("acpUpdates.update")}
                 </Button>
               </div>
             );
           })}
         </div>
 
-        <p className="mx-2 mb-2 mt-1 flex items-start gap-1.5 rounded-md bg-bg-surface/45 px-2.5 py-2 text-[10px] leading-4 text-fg-muted">
-          <InfoIcon className="mt-0.5 size-3 shrink-0 text-fg-subtle" aria-hidden="true" />
+        <p className="flex items-start gap-1.5 text-[11px] leading-4 text-muted-foreground">
+          <InfoIcon className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
           <span>{t("acpUpdates.runningNotice")}</span>
         </p>
       </PopoverContent>
