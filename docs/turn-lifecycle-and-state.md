@@ -302,7 +302,10 @@ under investigation are marked; do not treat them as settled findings.
 - **I7 held for config options; the restore mechanism was deliberately removed**
   after the reference client was found to reset plan mode on restart too, so the
   agreed behaviour is to reset, not to restore.
-- **I8 held** for the goal edit control.
+- **I8 held** for the goal edit control, the queued-prompt Steer action, and the
+  progress row's edit/pause/resume buttons, which now render only with a callback
+  behind them. Edit had no `onClick` at all and a tooltip blaming the adapter for
+  a handler that was never wired.
 - **I9 held.**
 - **I10 held** for plan, goal, and the sent-as-goal annotation.
 

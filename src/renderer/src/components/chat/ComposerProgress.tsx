@@ -233,24 +233,28 @@ export function ComposerProgress({
               )}
               {actions && (
                 <div className="flex shrink-0 items-center gap-0.5">
-                  {actions.edit && (
+                  {actions.edit && callbacks?.edit && (
+                    // It had no onClick at all, so the one path that looked
+                    // available did nothing when pressed, and its tooltip
+                    // blamed the adapter for a handler that was never wired.
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      disabled={!callbacks?.edit || pendingAction !== null}
+                      disabled={pendingAction !== null}
                       aria-label={t("chat.editProgress")}
-                      title="Editing requires adapter support"
+                      title={t("chat.editProgress")}
+                      onClick={() => invokeAction("edit", callbacks.edit)}
                     >
                       <PencilIcon className="size-3.5" aria-hidden="true" />
                     </Button>
                   )}
-                  {actions.pause && (
+                  {actions.pause && callbacks?.pause && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      disabled={!callbacks?.pause || pendingAction !== null}
+                      disabled={pendingAction !== null}
                       aria-label={t("chat.pauseProgress")}
                       title={t("chat.pauseProgress")}
                       onClick={() => invokeAction("pause", callbacks?.pause)}
@@ -258,12 +262,12 @@ export function ComposerProgress({
                       <CirclePauseIcon className="size-3.5" aria-hidden="true" />
                     </Button>
                   )}
-                  {actions.resume && (
+                  {actions.resume && callbacks?.resume && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      disabled={!callbacks?.resume || pendingAction !== null}
+                      disabled={pendingAction !== null}
                       aria-label={t("chat.resumeProgress")}
                       title={t("chat.resumeProgress")}
                       onClick={() => invokeAction("resume", callbacks?.resume)}

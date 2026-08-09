@@ -378,3 +378,29 @@ describe("the floating progress pills are opaque", () => {
     expect(source).toContain("bg-bg-surface text-xs tabular-nums");
   });
 });
+describe("progress row actions", () => {
+  it("wires edit to its callback and omits it when there is none", () => {
+    const model = {
+      id: "goal-1",
+      kind: "goal",
+      label: "Goal",
+      title: "Ship the release",
+      status: "active",
+      items: [{ id: "a", content: "step", status: "in_progress" as const }],
+      actions: { edit: true },
+    };
+
+    // The edit button had no onClick at all: it rendered, it enabled itself
+    // when a callback existed, and pressing it did nothing.
+    const wired = renderToStaticMarkup(
+      <ComposerProgress presentation={model} callbacks={{ edit: () => {} }} />,
+    );
+    expect(wired).toContain("chat.editProgress");
+
+    const unwired = renderToStaticMarkup(
+      <ComposerProgress presentation={model} />,
+    );
+    expect(unwired).not.toContain("chat.editProgress");
+  });
+});
+
