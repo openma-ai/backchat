@@ -284,7 +284,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       onResolveAsk={resolveAsk}
       placeholder={
         isNativeSubagent
-          ? "Native subagent is managed by its parent"
+          ? t("chat.nativeSubagentManaged")
           : !active || active.status === "draft"
           ? homeComposerPlaceholder
           : active.status === "starting"
@@ -293,7 +293,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
               ? t("chat.sessionErrored")
               : active.status === "running" || hasActiveTurn
               ? queuedTurnCount > 0
-                  ? `${queuedTurnCount} queued…`
+                  ? t("chat.queuedCount", { count: queuedTurnCount })
                   : t("chat.addToQueue")
                 : isEmpty
                   ? homeComposerPlaceholder

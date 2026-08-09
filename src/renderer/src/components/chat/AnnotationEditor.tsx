@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import {
   useEffect,
   useLayoutEffect,
@@ -65,6 +66,7 @@ export const AnnotationEditor = function AnnotationEditor({
   onCancel: () => void;
   onRemove: () => void;
 }) {
+  const { t } = useI18n();
   const [draftComment, setDraftComment] = useState(annotation.comment ?? "");
   const [isListening, setIsListening] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -190,7 +192,7 @@ export const AnnotationEditor = function AnnotationEditor({
                 onSave(draftComment.trim());
               }
             }}
-            placeholder="Add an optional comment…"
+            placeholder={t("annotation.commentPlaceholder")}
             className={cn(
               "min-w-0 flex-1 resize-none bg-transparent text-sm leading-6 text-fg outline-none",
               "placeholder:text-fg-muted",
@@ -237,8 +239,8 @@ export const AnnotationEditor = function AnnotationEditor({
             <button
               type="button"
               onClick={onRemove}
-              aria-label="Delete annotation"
-              title="Delete annotation"
+              aria-label={t("annotation.delete")}
+              title={t("annotation.delete")}
               className="inline-flex size-8 items-center justify-center rounded-lg text-fg-muted hover:bg-danger-subtle hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30"
             >
               <Trash2Icon className="size-4" />
@@ -254,7 +256,7 @@ export const AnnotationEditor = function AnnotationEditor({
               <button
                 type="button"
                 onClick={() => onSave(draftComment.trim())}
-                aria-label="Save annotation comment"
+                aria-label={t("annotation.saveComment")}
                 className="h-8 rounded-full bg-fg px-3.5 text-sm font-medium text-bg hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/40 focus-visible:ring-offset-2"
               >
                 Save

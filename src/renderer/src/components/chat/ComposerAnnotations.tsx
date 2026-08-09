@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import { MessageSquareTextIcon, ScanSearchIcon, XIcon } from "lucide-react";
 
 import type { PromptAnnotation, PromptAttachment } from "@shared/session-events.js";
@@ -22,6 +23,7 @@ export function ComposerAnnotationStrip({
   attachments: PromptAttachment[];
   onRemove: (annotationId: string) => void;
 }) {
+  const { t } = useI18n();
   const browserOnly = annotations.every(isBrowserPageAnnotation);
   const label = annotationCountLabel(annotations.length, browserOnly);
   const TriggerIcon = browserOnly ? ScanSearchIcon : MessageSquareTextIcon;
@@ -45,7 +47,7 @@ export function ComposerAnnotationStrip({
         align="start"
         side="top"
         sideOffset={8}
-        aria-label="Response annotations"
+        aria-label={t("annotation.listLabel")}
         className="w-[min(420px,calc(100vw-24px))] gap-0 p-3"
       >
         <div className="max-h-72 overflow-y-auto">
@@ -108,7 +110,7 @@ export function ComposerAnnotationStrip({
                   type="button"
                   onClick={() => onRemove(annotation.id)}
                   aria-label={`Remove annotation ${index}`}
-                  title="Remove annotation"
+                  title={t("annotation.remove")}
                   className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-bg-subtle hover:text-danger"
                 >
                   <XIcon className="size-3.5" />
