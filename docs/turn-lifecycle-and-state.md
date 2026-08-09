@@ -287,8 +287,14 @@ under investigation are marked; do not treat them as settled findings.
   reduce the chances of draining. Whatever produced the symptom is elsewhere,
   and the next attempt should start from recorded traffic for the affected
   session rather than from a hand-built fixture.
-- **I4 — unproven.** The composer showed "1 queued…" with no rows. The count and
-  the rows are read in different places; no trace yet.
+- **I4 — held.** The composer said "1 queued…" above no rows because the count
+  was `Math.max(hostQueueDepth, providerQueueDepth)`: two different facts, one of
+  them the agent's own queue depth, which has no rows on this side to show. The
+  same disagreement appeared with the prompt-queue setting off, where the rows are
+  cleared and the count was not. The count is now taken from the rows the
+  composer renders, and a source guard keeps a second source from being
+  reintroduced. `providerQueueDepth` remains in the store as data; it is no
+  longer spoken as if it were ours.
 - **I6 partially held.** The clock derives from `createdAt` and ticks; goal
   presentation still borrows the progress row built for turns.
 - **I7 held for config options; the restore mechanism was deliberately removed**

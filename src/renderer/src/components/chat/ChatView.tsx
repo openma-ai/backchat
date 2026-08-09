@@ -90,11 +90,18 @@ export function filterQueuedTurns<T extends { status: string }>(
 /** Provider queue depth is display-only; local queued prompts remain the
  * editable source. Reuse the existing placeholder count without hiding a
  * larger queue observed inside the harness. */
-export function effectiveQueuedTurnCount(
-  localQueueDepth: number,
-  providerQueueDepth: number | undefined,
+/** How many queued prompts to claim, given the rows that will be shown.
+ *
+ * It used to be `Math.max(hostDepth, providerDepth)`, which mixed two different
+ * facts: the prompts this host holds and can show as rows, and the depth the
+ * agent reports for its own queue. When the provider number was the larger one
+ * the composer said "1 queued…" above no rows at all, and when the prompt queue
+ * setting is off there are no rows to speak for either. A count nobody can see
+ * the members of is not a count, so this counts the rows. */
+export function visibleQueuedPromptCount(
+  visibleQueuedPrompts: readonly unknown[],
 ): number {
-  return Math.max(localQueueDepth, providerQueueDepth ?? 0);
+  return visibleQueuedPrompts.length;
 }
 
 export function isSessionComposerDisabled(status: string | undefined): boolean {
@@ -245,10 +252,12 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   // session.event arriving lets the user fire a second prompt and
   // collapse the conversation order.
   const hasActiveTurn = !!active?.activeTurnId;
-  const queuedTurnCount = effectiveQueuedTurnCount(
-    active?.queuedTurnIds?.length ?? 0,
-    active?.providerQueueDepth,
-  );
+  const showPromptQueue = settings?.default.prompt_queue_enabled !== false;
+  const queuedPrompts = showPromptQueue ? active?.queuedPrompts ?? [] : [];
+  // The same rows the composer renders, so the count and the list cannot
+  // disagree about what is waiting.
+  const queuedTurnCount = visibleQueuedPromptCount(queuedPrompts);
+
   const composerAgentBinding = resolveComposerAgentBinding(active);
   const composer = (
     <Composer
@@ -346,8 +355,6 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
           },
         )
       : undefined;
-  const showPromptQueue = settings?.default.prompt_queue_enabled !== false;
-  const queuedPrompts = showPromptQueue ? active?.queuedPrompts ?? [] : [];
   const activityModules = useMemo(
     () => composerActivityModulesForSession({
       agentId: active?.agent_id,
