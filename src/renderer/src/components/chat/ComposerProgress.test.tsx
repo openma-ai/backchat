@@ -213,7 +213,7 @@ describe("ComposerProgress", () => {
     expect(html).toContain("check the internal logic");
     expect(html).toContain("then polish the GUI");
     expect(html).toContain('aria-label="Edit queued message 1"');
-    expect(html).toContain('aria-label="Steer queued message 1"');
+    expect(html).toContain('aria-label="chat.steerQueued 1"');
     expect(html).toContain('aria-label="Remove queued message 2"');
     expect(html).toContain('aria-label="Move queued message 2 up"');
   });
@@ -240,7 +240,7 @@ describe("ComposerProgress", () => {
         queueCallbacks={{ steer: vi.fn() }}
       />,
     );
-    const steerLabel = html.indexOf('aria-label="Steer queued message 1"');
+    const steerLabel = html.indexOf('aria-label="chat.steerQueued 1"');
     const steerStart = html.lastIndexOf("<button", steerLabel);
     const steerEnd = html.indexOf("</button>", steerLabel);
     const steerButton = html.slice(steerStart, steerEnd);
@@ -251,10 +251,10 @@ describe("ComposerProgress", () => {
     expect(html).not.toContain("lucide-corner-down-right");
     expect(html).not.toContain("lucide-corner-up-right");
     expect(steerButton).toContain("lucide-send-horizontal");
-    expect(steerButton).toContain("Steer");
+    expect(steerButton).toContain("chat.steer");
   });
 
-  it("explains when steering was not negotiated by the active harness", () => {
+  it("omits steering when the harness did not negotiate it", () => {
     const html = renderToStaticMarkup(
       <ComposerProgress
         queuedPrompts={[
@@ -263,13 +263,13 @@ describe("ComposerProgress", () => {
         queueCallbacks={{ remove: vi.fn() }}
       />,
     );
-    const steerLabel = html.indexOf('aria-label="Steer queued message 1"');
-    const steerStart = html.lastIndexOf("<button", steerLabel);
-    const steerEnd = html.indexOf("</button>", steerLabel);
-    const steerButton = html.slice(steerStart, steerEnd);
 
-    expect(steerButton).toContain("disabled");
-    expect(steerButton).toContain('title="Steering is not available for this harness"');
+    // A greyed control with a tooltip still claims the action belongs on this
+    // row. It does not: the row can be reordered and removed, and steering
+    // simply is not one of its actions here.
+    expect(html).toContain("queued item");
+    expect(html).not.toContain("chat.steerQueued");
+    expect(html).not.toContain("Steering is not available");
   });
 
   it("presents progress items as a checklist rather than a status table", () => {

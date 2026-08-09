@@ -445,6 +445,7 @@ function QueuedPromptRow({
   prompts: ComposerQueuedPrompt[];
   callbacks?: ComposerQueueCallbacks;
 }) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(prompt.text);
   useEffect(() => setDraft(prompt.text), [prompt.text]);
@@ -518,27 +519,30 @@ function QueuedPromptRow({
               <ArrowDownIcon className="size-3.5" aria-hidden="true" />
             </Button>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            disabled={!callbacks?.steer}
-            aria-label={`Steer queued message ${index + 1}`}
-            title={
-              callbacks?.steer
-                ? "Steer queued message"
-                : "Steering is not available for this harness"
-            }
-            onClick={() => {
-              void Promise.resolve(callbacks?.steer?.(prompt.turn_id)).catch(
-                () => undefined,
-              );
-            }}
-            className="gap-1 px-2 text-xs text-fg-muted"
-          >
-            <SendHorizontalIcon className="size-3.5" aria-hidden="true" />
-            Steer
-          </Button>
+          {callbacks?.steer && (
+            // Rendered only when it can act. A greyed Steer with a tooltip
+            // explaining that steering is unavailable still claims the action
+            // belongs here, and the claim was wrong for a further reason: the
+            // capability only ever arrives on session.ready, so a row rebuilt
+            // from persisted state showed a dead control for a session that
+            // may well support steering.
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              aria-label={`${t("chat.steerQueued")} ${index + 1}`}
+              title={t("chat.steerQueued")}
+              onClick={() => {
+                void Promise.resolve(callbacks.steer?.(prompt.turn_id)).catch(
+                  () => undefined,
+                );
+              }}
+              className="gap-1 px-2 text-xs text-fg-muted"
+            >
+              <SendHorizontalIcon className="size-3.5" aria-hidden="true" />
+              {t("chat.steer")}
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
