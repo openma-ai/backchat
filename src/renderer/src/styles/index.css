@@ -423,12 +423,18 @@
 .slash-command-main {
   display: flex;
   min-width: 0;
+  overflow: hidden;
   align-items: center;
   gap: 8px;
 }
 
 .slash-command-token {
+  /* The token is the row's identity, so the hint pill gives up width first:
+     `/goal` must never degrade to `/…` just because its hint is long. A
+     token that outgrows the column on its own still ellipsizes. */
+  flex: 0 0 auto;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   color: var(--fg);
   font-family: var(--font-mono);
@@ -440,6 +446,7 @@
 }
 
 .slash-command-hint {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   padding: 1px 6px;

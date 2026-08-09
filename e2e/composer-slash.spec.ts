@@ -90,6 +90,28 @@ test.describe("composer slash commands", () => {
     await composer.waitForPromptTexts(["/compact"]);
   });
 
+  test("a long hint never truncates the command token", async ({ page, composer }) => {
+    await enableAgent(page, "codex-acp");
+    const sessionId = await injectSession(page, { agentId: "codex-acp" });
+    // Codex's real `/goal`: a short token with a long argument hint, which
+    // used to squeeze the token column down to "/…".
+    await injectAvailableCommands(page, sessionId, [{
+      name: "goal",
+      description: "Set a goal to keep pursuing.",
+      input: { hint: "[<objective>|clear|pause|resume]" },
+      _meta: { commandAction: { kind: "prefixPrompt", presentation: "state" } },
+    }]);
+
+    await composer.input.fill("/goal");
+
+    const token = page.locator(".slash-command-token").first();
+    await expect(token).toHaveText("/goal");
+    // The hint pill absorbs the squeeze instead of the identity token.
+    expect(
+      await token.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+    ).toBe(true);
+  });
+
   test("plan from a cold new chat switches state without starting a session", async ({ page }) => {
     // The shipped regression: a draft composer has no session catalogue, so
     // `/plan` fell through to the generic branch, promoted the draft and left
