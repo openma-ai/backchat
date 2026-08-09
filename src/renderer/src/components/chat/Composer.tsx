@@ -37,6 +37,7 @@ import { useComposerContextState } from "@/lib/composer-context-state";
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
 import { ComposerSessionStateSlot, InlineComposerOptionControls, PermissionModeChip, SessionRunChip } from "./ComposerSessionControls";
 import {
+  armedCommandSessionStatePresentation,
   goalSessionStatePresentation,
   selectComposerSessionStatePresentation,
 } from "@/lib/composer-session-state";
@@ -284,13 +285,9 @@ export function Composer({
       // thing the next Enter will do.
       priority: 5,
       presentation: armedCommand
-        ? {
-          id: `armed:${armedCommand.name}`,
-          kind: "armed_command",
-          label: `/${armedCommand.name}`,
-          title: armedCommand.input?.hint?.trim() || armedCommand.description,
-          icon: "goal" as const,
-        }
+        ? armedCommandSessionStatePresentation(armedCommand, {
+          goal: t("chat.goalStatus"),
+        })
         : undefined,
     },
     {

@@ -61,6 +61,27 @@ export function goalSessionStatePresentation(
   };
 }
 
+/** Labels for a command the composer is holding until its argument arrives.
+ * A chip is a state, not a token: showing `/goal` leaks the wire form the
+ * composer prefixes for the user, and it would read differently from the chip
+ * that replaces it once the goal exists. The table maps a command to the state
+ * it is about to enter, so adding another one is a data change. */
+const ARMED_COMMAND_STATE_LABELS: Record<string, "goal"> = { goal: "goal" };
+
+export function armedCommandSessionStatePresentation(
+  command: { name: string; description?: string; input?: { hint?: string } | null },
+  labels: { goal: string },
+): ComposerSessionStatePresentation {
+  const stateLabel = ARMED_COMMAND_STATE_LABELS[command.name];
+  return {
+    id: `armed:${command.name}`,
+    kind: "armed_command",
+    label: stateLabel ? labels[stateLabel] : command.name,
+    title: command.input?.hint?.trim() || command.description,
+    icon: "goal",
+  };
+}
+
 export function selectComposerSessionStatePresentation(
   candidates: readonly ComposerSessionStateCandidate[],
 ): ComposerSessionStatePresentation | undefined {

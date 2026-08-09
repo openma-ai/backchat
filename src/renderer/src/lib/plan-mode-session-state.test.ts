@@ -1,3 +1,4 @@
+import { armedCommandSessionStatePresentation } from "./composer-session-state";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -153,5 +154,34 @@ describe("planModeExitAction", () => {
       },
       labels,
     )).toBeUndefined();
+  });
+});
+
+describe("a command armed while it waits for its argument", () => {
+  it("reads as the state it is about to enter, not as a slash token", () => {
+    // The chip that replaces it once the goal exists says "Goal"; showing
+    // "/goal" here would leak the wire form the composer prefixes and read
+    // differently from its own successor.
+    expect(
+      armedCommandSessionStatePresentation(
+        { name: "goal", input: { hint: "[<objective>|clear|pause|resume]" } },
+        { goal: "Goal" },
+      ),
+    ).toEqual({
+      id: "armed:goal",
+      kind: "armed_command",
+      label: "Goal",
+      title: "[<objective>|clear|pause|resume]",
+      icon: "goal",
+    });
+  });
+
+  it("falls back to the command's own name when no state is known", () => {
+    expect(
+      armedCommandSessionStatePresentation(
+        { name: "review", description: "Review changes.", input: { hint: "" } },
+        { goal: "Goal" },
+      ),
+    ).toMatchObject({ label: "review", title: "Review changes." });
   });
 });
