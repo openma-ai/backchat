@@ -552,7 +552,7 @@ export function Composer({
 
   return (
     <div
-      className="relative w-full"
+      className="composer-stack-card relative w-full"
     >
       <div
         data-suggestion-fill-active={suggestionFillActive ? "true" : undefined}

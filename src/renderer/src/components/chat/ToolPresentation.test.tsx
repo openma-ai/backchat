@@ -17,14 +17,14 @@ import {
 
 describe("ToolRow acceptance contract", () => {
   it.each([
-    ["pending", "started", "Started"],
-    ["in_progress", "progress", "In progress"],
-    ["completed", "completed", "Completed"],
-    ["failed", "failed", "Failed"],
-    ["cancelled", "cancelled", "Cancelled"],
+    ["pending", "started", "Started", true],
+    ["in_progress", "progress", "In progress", true],
+    ["completed", "completed", "Completed", false],
+    ["failed", "failed", "Failed", true],
+    ["cancelled", "cancelled", "Cancelled", true],
   ] as const)(
     "exposes a stable id and visible %s lifecycle status",
-    (status, lifecycle, label) => {
+    (status, lifecycle, label, showsLabel) => {
       const html = renderToStaticMarkup(
         <ToolRow
           sessionId="session-tool-status"
@@ -39,8 +39,13 @@ describe("ToolRow acceptance contract", () => {
 
       expect(html).toContain(`data-tool-call-id="tool-${lifecycle}"`);
       expect(html).toContain(`data-tool-status="${lifecycle}"`);
-      expect(html).toContain(`data-tool-status-label="${lifecycle}"`);
-      expect(html).toContain(`>${label}<`);
+      if (showsLabel) {
+        expect(html).toContain(`data-tool-status-label="${lifecycle}"`);
+        expect(html).toContain(`>${label}<`);
+      } else {
+        expect(html).not.toContain(`data-tool-status-label="${lifecycle}"`);
+        expect(html).not.toContain(`>${label}<`);
+      }
     },
   );
 

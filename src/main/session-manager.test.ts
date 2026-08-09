@@ -1274,7 +1274,7 @@ describe("SessionManager prompt queue", () => {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: "Warning: Skill descriptions were shortened to fit the 2% skills context budget.",
+          text: "Warning: Skill descriptions were shortened to fit the skills context budget.",
         },
       }),
     ).toBe("composer_notice");

@@ -144,7 +144,7 @@ export function ToolRow({
           leading={subagent
             ? <SubagentAvatar avatarId={subagent.avatarId} className="size-[18px]" />
             : undefined}
-          trailing={(
+          trailing={lifecycle.value === "completed" ? undefined : (
             <span
               className={cn(
                 "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",

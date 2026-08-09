@@ -6,7 +6,7 @@ import {
 export type { AcpSystemNotice };
 
 const CODEX_SKILL_CONTEXT_WARNING =
-  /^Warning:\s*Skill descriptions were shortened to fit the \d+% skills context budget\./;
+  /^Warning:\s*Skill descriptions were shortened to fit the (?:\d+%\s+)?skills context budget\./;
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -34,18 +34,25 @@ export function splitAcpSystemNoticeText(text: string): {
   };
 }
 
-/** Preserve the common Codex warning classifier and add Pi's structured
- * `_meta.piAcp.notify.level=warning` signal. No warning is inferred from
- * natural-language wording. */
+/** Preserve the common Codex warning classifier, accept the provider variant
+ * that omits its percentage, and add Pi's structured warning signal. */
 export function extractAcpSystemNotice(event: unknown): AcpSystemNotice | null {
   const common = extractCommonAcpSystemNotice(event);
   if (common) return common;
   const outer = record(event);
   const inner = record(outer?.update) ?? outer;
   if (inner?.sessionUpdate !== "agent_message_chunk") return null;
+  const meta = record(inner._meta);
+  const codex = record(meta?.codex);
+  const text = record(inner.content)?.text;
+  if (codex?.phase !== "final_answer" && typeof text === "string") {
+    const split = splitAcpSystemNoticeText(text);
+    if (split.notice) {
+      return { message: split.notice, tone: "warning" };
+    }
+  }
   const notify = record(record(record(inner._meta)?.piAcp)?.notify);
   if (notify?.level !== "warning") return null;
-  const text = record(inner.content)?.text;
   return typeof text === "string" && text.trim().length > 0
     ? { message: text.trim(), tone: "warning" }
     : null;

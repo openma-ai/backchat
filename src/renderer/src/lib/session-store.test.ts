@@ -251,7 +251,7 @@ describe("SessionStore replay", () => {
     const store = new SessionStore();
     const sessionId = "sess-replay-skill-warning";
     const warning =
-      "Warning: Skill descriptions were shortened to fit the 2% skills context budget. " +
+      "Warning: Skill descriptions were shortened to fit the skills context budget. " +
       "Codex can still see every skill, but some descriptions are shorter. " +
       "Disable unused skills or plugins to leave more room for the rest.";
     store.registerStarting(sessionId, "codex-acp", "Codex");
@@ -1024,7 +1024,7 @@ describe("SessionStore performance invariants", () => {
       store.registerStarting("sess-warning", "codex-acp", "Codex");
       store.registerTurn("turn-warning", "sess-warning", "hello");
       const warning =
-        "Warning: Skill descriptions were shortened to fit the 2% skills context budget. " +
+        "Warning: Skill descriptions were shortened to fit the skills context budget. " +
         "Codex can still see every skill, but some descriptions are shorter.";
 
       store.apply({

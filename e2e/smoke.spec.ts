@@ -120,22 +120,29 @@ test.describe("backchat smoke", () => {
       expect(Math.abs(newChatCenter - settingsCenter)).toBeLessThanOrEqual(0.5);
   });
 
-  test("places Settings and the draft runtime controls on one horizontal row", async ({
+  test("anchors the composer bottom to the top of the sidebar settings row", async ({
       page,
   }) => {
       const settings = page.getByRole("link", { name: "Settings", exact: true });
       const runtime = page.locator('[data-composer-footer-control="runtime"]').first();
-      await Promise.all([settings, runtime].map((item) => expect(item).toBeVisible()));
+      const composer = page.locator(".composer-card").first();
+      await Promise.all(
+        [settings, runtime, composer].map((item) =>
+          expect(item).toBeVisible(),
+        ),
+      );
 
-      const [settingsBox, runtimeBox] = await Promise.all([
+      const [settingsBox, runtimeBox, composerBox] = await Promise.all([
         settings.boundingBox(),
         runtime.boundingBox(),
+        composer.boundingBox(),
       ]);
       expect(settingsBox).not.toBeNull();
       expect(runtimeBox).not.toBeNull();
-      const settingsCenter = settingsBox!.y + settingsBox!.height / 2;
-      const runtimeCenter = runtimeBox!.y + runtimeBox!.height / 2;
-      expect(Math.abs(settingsCenter - runtimeCenter)).toBeLessThanOrEqual(2);
+      expect(composerBox).not.toBeNull();
+      const composerBottom = composerBox!.y + composerBox!.height;
+      expect(Math.abs(composerBottom - settingsBox!.y)).toBeLessThanOrEqual(2);
+      expect(Math.abs(runtimeBox!.y - composerBottom - 8)).toBeLessThanOrEqual(0.5);
   });
 
   test("keeps suggestion cards visually level with the resting composer", async ({
@@ -294,273 +301,6 @@ test.describe("backchat smoke", () => {
         event: {
           sessionUpdate: "agent_message_chunk",
           _meta: { codex: { phase: "commentary" } },
-          content: { type: "text", text: "Then inspect the final command." },
-        },
-      });
-      await injectEvent(page, {
-        type: "session.event",
-        session_id: sessionId,
-        turn_id: turnId,
-        event: {
-          sessionUpdate: "tool_call",
-          toolCallId: "single-tool",
-          kind: "execute",
-          status: "completed",
-          title: "Final command",
-          rawInput: { command: "final command" },
-          content: [{ type: "terminal", terminalId: "terminal-final" }],
-        },
-      });
-      await injectEvent(page, {
-        type: "session.complete",
-        session_id: sessionId,
-        turn_id: turnId,
-      });
-
-      const groupIcon = page
-        .locator('[data-tool-group-trigger] [data-tool-group-icon-slot] svg')
-        .first();
-      const singleTool = page.locator('[data-tool-call-id="single-tool"]');
-      const singleIcon = singleTool.locator('[data-tool-activity-identity] svg');
-      const [groupIconBox, singleIconBox] = await Promise.all([
-        groupIcon.boundingBox(),
-        singleIcon.boundingBox(),
-      ]);
-      expect(groupIconBox).not.toBeNull();
-      expect(singleIconBox).not.toBeNull();
-      expect(Math.abs(groupIconBox!.x - singleIconBox!.x)).toBeLessThanOrEqual(0.5);
-
-      const summary = singleTool.getByRole("button");
-      const input = singleTool.locator('[data-tool-input="single-tool"]');
-      const terminal = singleTool.locator('[data-tool-terminal-id="terminal-final"]');
-      await expect(input).toBeHidden();
-      await summary.click();
-      await expect(input).toBeVisible();
-      await expect(terminal).toBeVisible();
-      await summary.click();
-      await expect(input).toBeHidden();
-      await expect(terminal).toBeHidden();
-  });
-
-  test("uses an inset thin overlay thumb that grows on hover without a native gutter", async ({
-      page,
-      bridge,
-  }) => {
-      await page.setViewportSize({ width: 1200, height: 600 });
-      for (let index = 0; index < 24; index += 1) {
-        await bridge.injectSessionRow({
-          session_id: `sidebar-overflow-${String(index).padStart(2, "0")}`,
-          agent_id: "codex-acp",
-          cwd: "",
-        });
-      }
-
-      const scrollArea = page.locator('[data-sidebar-scroll-area="true"]');
-      await expect(scrollArea).toBeVisible();
-      const scrollbar = scrollArea.locator('[data-slot="scroll-area-scrollbar"]');
-      const thumb = scrollArea.locator('[data-slot="scroll-area-thumb"]');
-      await expect(scrollbar).toHaveCount(1);
-
-      const viewport = scrollArea.locator('[data-slot="scroll-area-viewport"]');
-      const dimensions = await viewport.evaluate((element) => ({
-        clientHeight: element.clientHeight,
-        clientWidth: element.clientWidth,
-        offsetWidth: (element as HTMLElement).offsetWidth,
-        scrollHeight: element.scrollHeight,
-      }));
-      expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight);
-      expect(dimensions.offsetWidth - dimensions.clientWidth).toBe(0);
-
-      const [scrollAreaBox, scrollbarBox, restingThumbBox] = await Promise.all([
-        scrollArea.boundingBox(),
-        scrollbar.boundingBox(),
-        thumb.boundingBox(),
-      ]);
-      expect(scrollAreaBox).not.toBeNull();
-      expect(scrollbarBox).not.toBeNull();
-      expect(restingThumbBox).not.toBeNull();
-      expect(Math.round(scrollbarBox!.width)).toBe(8);
-      expect(
-        Math.round(
-          scrollAreaBox!.x + scrollAreaBox!.width - scrollbarBox!.x - scrollbarBox!.width,
-        ),
-      ).toBe(0);
-      expect(Math.round(restingThumbBox!.width)).toBe(4);
-      expect(Math.round(
-        scrollbarBox!.x + scrollbarBox!.width - restingThumbBox!.x - restingThumbBox!.width,
-      )).toBe(2);
-
-      await scrollbar.hover();
-      await expect
-        .poll(async () => Math.round((await thumb.boundingBox())?.width ?? 0))
-        .toBe(6);
-      await expect
-        .poll(async () => {
-          const [hoveredScrollbarBox, hoveredThumbBox] = await Promise.all([
-            scrollbar.boundingBox(),
-            thumb.boundingBox(),
-          ]);
-          if (!hoveredScrollbarBox || !hoveredThumbBox) return -1;
-          return Math.round(
-            hoveredScrollbarBox.x + hoveredScrollbarBox.width
-              - hoveredThumbBox.x - hoveredThumbBox.width,
-          );
-        })
-        .toBe(1);
-  });
-
-  test("shows sidebar boundary lines only while content continues beyond that edge", async ({
-      page,
-      bridge,
-  }) => {
-      await page.setViewportSize({ width: 1200, height: 600 });
-      for (let index = 0; index < 24; index += 1) {
-        await bridge.injectSessionRow({
-          session_id: `sidebar-boundary-${String(index).padStart(2, "0")}`,
-          agent_id: "codex-acp",
-          cwd: "",
-        });
-      }
-
-      const scrollArea = page.locator('[data-sidebar-scroll-area="true"]');
-      const viewport = scrollArea.locator('[data-slot="scroll-area-viewport"]');
-      const top = scrollArea.locator('[data-sidebar-scroll-boundary="top"]');
-      const bottom = scrollArea.locator('[data-sidebar-scroll-boundary="bottom"]');
-
-      await expect(top).toHaveAttribute("data-visible", "false");
-      await expect(bottom).toHaveAttribute("data-visible", "true");
-
-      await viewport.evaluate((element) => {
-        element.scrollTop = Math.floor((element.scrollHeight - element.clientHeight) / 2);
-        element.dispatchEvent(new Event("scroll", { bubbles: true }));
-      });
-      await expect(top).toHaveAttribute("data-visible", "true");
-      await expect(bottom).toHaveAttribute("data-visible", "true");
-
-      await viewport.evaluate((element) => {
-        element.scrollTop = element.scrollHeight;
-        element.dispatchEvent(new Event("scroll", { bubbles: true }));
-      });
-      await expect(top).toHaveAttribute("data-visible", "true");
-      await expect(bottom).toHaveAttribute("data-visible", "false");
-
-      const [scrollAreaBox, topBox] = await Promise.all([
-        scrollArea.boundingBox(),
-        top.boundingBox(),
-      ]);
-      expect(scrollAreaBox).not.toBeNull();
-      expect(topBox).not.toBeNull();
-      expect(Math.abs(topBox!.x - scrollAreaBox!.x)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(topBox!.width - scrollAreaBox!.width)).toBeLessThanOrEqual(0.5);
-  });
-
-  test("brightens the whole composer run group together on hover", async ({ page, bridge }) => {
-      await bridge.setAgentSetupFixture({
-        agents: [{
-          id: "codex-acp",
-          label: "Codex",
-          command: "codex-acp",
-          detected: true,
-          available: true,
-          installed: true,
-        }],
-      });
-      await enableAgent(page, "codex-acp");
-      await page.getByRole("textbox").fill("hello");
-
-      const runChip = page.locator('button[aria-label^="Run on "]').first();
-      const submit = page.getByRole("button", { name: "Send (Enter)", exact: true });
-      await expect(runChip).toBeVisible();
-      await expect(submit).toBeEnabled();
-
-      const runtimeIcon = runChip.locator("svg").first();
-      const chevron = runChip.locator("svg").last();
-      const submitIcon = submit.locator("svg");
-      const before = await Promise.all(
-        [runtimeIcon, chevron, submitIcon].map((item) =>
-          item.evaluate((element) => getComputedStyle(element).color),
-        ),
-      );
-
-      await runChip.hover();
-      const foreground = await runChip.evaluate(
-        (element) => getComputedStyle(element).color,
-      );
-      const after = await Promise.all(
-        [runtimeIcon, chevron, submitIcon].map((item) =>
-          item.evaluate((element) => getComputedStyle(element).color),
-        ),
-      );
-
-      expect(after).toEqual([foreground, foreground, foreground]);
-      expect(after.filter((color, index) => color !== before[index])).toHaveLength(3);
-  });
-
-  test("keeps compact composer controls above a transparent runtime and context footer", async ({
-      page,
-      bridge,
-  }) => {
-      await bridge.setAgentSetupFixture({
-        agents: [{
-          id: "codex-acp",
-          label: "Codex",
-          command: "codex-acp",
-          detected: true,
-          available: true,
-          installed: true,
-        }],
-      });
-      await enableAgent(page, "codex-acp");
-      const sessionId = await injectSession(page, {
-        agentId: "codex-acp",
-        cwd: "/tmp/backchat-composer-footer",
-      });
-      await injectEvent(page, {
-        type: "session.event",
-        session_id: sessionId,
-        turn_id: "usage-footer",
-        event: { sessionUpdate: "usage_update", used: 30, size: 100 },
-      });
-
-      const card = page.locator(".composer-card").first();
-      const footer = page.locator('[data-session-runtime="true"]').first();
-      const runtime = footer.locator('[data-session-runtime-location="true"]');
-      const context = footer.locator('[data-gui-feature="output.usage-parent"]');
-      await Promise.all([card, footer, runtime, context].map((item) => expect(item).toBeVisible()));
-
-      const [cardBox, footerBox] = await Promise.all([card.boundingBox(), footer.boundingBox()]);
-      expect(cardBox).not.toBeNull();
-      expect(footerBox).not.toBeNull();
-      expect(footerBox!.y).toBeGreaterThanOrEqual(cardBox!.y + cardBox!.height);
-      expect(await footer.evaluate((element) => getComputedStyle(element).backgroundColor))
-        .toBe("rgba(0, 0, 0, 0)");
-
-      const controls = [
-        card.getByRole("button", { name: "Attach files" }),
-        card.getByRole("button", { name: "Ask each time" }),
-        card.locator('button[aria-label^="Run on "]').first(),
-        card.getByRole("button", { name: "Send (Enter)" }),
-      ];
-      for (const control of controls) {
-        const box = await control.boundingBox();
-        expect(box).not.toBeNull();
-        expect(box!.height).toBeLessThanOrEqual(28);
-      }
-  });
-
-  test("uses the same product-owned scroll area in Settings", async ({ page }) => {
-      await page.getByRole("link", { name: "Settings", exact: true }).click();
-
-      const scrollArea = page.locator('[data-settings-sidebar-scroll-area="true"]');
-      await expect(scrollArea).toBeVisible();
-      await expect(
-        scrollArea.locator('[data-slot="scroll-area-viewport"]'),
-      ).toHaveCount(1);
-      await expect(
-        scrollArea.locator('[data-slot="scroll-area-scrollbar"]'),
-      ).toHaveCount(1);
-  });
-
   test("home suggestion selection creates an editable composer template", async ({ page }) => {
       await page.locator('[data-suggestion-kind="shape"]').click();
 

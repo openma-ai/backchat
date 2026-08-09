@@ -3181,7 +3181,15 @@ export class SessionStore {
         }
         const inner = sessionUpdateInner(ev.event);
         const updateType = sessionUpdateType(ev.event);
-        const parsed = parseAcpEvent(semanticEvent);
+        let parsed = parseAcpEvent(semanticEvent);
+        if (parsed.kind === "text") {
+          const split = splitAcpSystemNoticeText(parsed.text);
+          if (split.notice) {
+            this.#showNotice(ev.session_id, split.notice, "warning");
+            if (!split.transcript) break;
+            parsed = { ...parsed, text: split.transcript };
+          }
+        }
         if (parsed.kind === "commands") {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,

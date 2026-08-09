@@ -57,6 +57,13 @@
   padding-inline: var(--composer-card-padding-inline);
 }
 
+/* Tailwind's space-y writes its gap onto the preceding child. Keep the
+   standard 8px card-to-footer rhythm explicit while the footer's bottom
+   token moves the entire visible stack onto the sidebar anchor. */
+.composer-stack-card {
+  margin-bottom: var(--composer-card-footer-gap) !important;
+}
+
 /* Product wrapper around the mature Button + Radix trigger primitives. The
    primitive owns semantics/keyboard behavior; this class owns shared density
    and state visuals. Plain focus never looks selected. */
