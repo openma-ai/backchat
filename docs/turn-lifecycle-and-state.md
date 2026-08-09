@@ -249,12 +249,13 @@ under investigation are marked; do not treat them as settled findings.
   inserted in turn order, so the clock is what makes replay come out right. A
   fix has to separate the two populations — replayed turns ordered by their
   persisted sequence, live turns by registration — not pick one comparator.
-- **I3 violated, unfixed.** `shouldShowTransientThought` requires
-  `!hasVisibleContent`, so the first assistant token removes the only sign that
-  more is coming. An attempt to show the indicator for any running turn broke
-  three tests that forbid a generic thinking heading above live activity; the
-  reconciliation is that a turn with content needs a trailing continuation
-  marker inside its activity block, not a heading above it.
+- **I3 — held.** The signal was gated on `!hasAnything`, so the first assistant
+  token removed the only sign that more was coming and a turn mid-sentence looked
+  finished. A running turn now always says so, in one of two shapes: a worded
+  placeholder while nothing is visible, and a wordless trailing continuation
+  (`data-streaming-continuation`) once output exists. The two shapes are what
+  reconciles this with the rule against a generic thinking heading above live
+  activity — showing the placeholder unconditionally breaks that rule, and did.
 - **I5 — the stall is unreproduced; the code path is sound.** The reported
   symptom was queued prompts that never sent. A test written to reproduce it
   hung, and that hang was twice an artifact of the harness, not the product: it

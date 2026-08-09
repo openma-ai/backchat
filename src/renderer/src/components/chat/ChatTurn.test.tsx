@@ -284,6 +284,40 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("chat.thoughtComplete");
   });
 
+  it("keeps saying it is running after the first token arrives", () => {
+    // The signal used to be gated on nothing being visible yet, so the first
+    // token removed it and a turn mid-sentence looked finished — which is what
+    // invited the next prompt to be sent on top of it.
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          assistantText: "Half a sentence so far",
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-streaming-continuation="true"');
+    // Motion, not a restated heading, and never above the output.
+    expect(html).not.toContain("chat.thinking");
+    expect(html.indexOf("Half a sentence so far")).toBeLessThan(
+      html.indexOf('data-streaming-continuation="true"'),
+    );
+  });
+
+  it("stops saying it is running once the turn ends", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          assistantText: "A finished answer",
+        })}
+      />,
+    );
+
+    expect(html).not.toContain('data-streaming-continuation="true"');
+  });
+
   it("keeps only one current tool activity and renders it at the bottom of the working block", () => {
     const skillPath =
       "/Users/test/.codex/plugins/cache/openai-primary-runtime/documents/1/skills/documents/SKILL.md";

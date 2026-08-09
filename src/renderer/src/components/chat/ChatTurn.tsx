@@ -197,7 +197,18 @@ export const TurnBlock = memo(function TurnBlock({
             </button>
           )}
 
-          {!hasAnything && isStreaming && <StreamingPlaceholder />}
+          {isStreaming && (
+            hasAnything
+              // A running turn has to look running for as long as it runs.
+              // Gating the only signal on "nothing visible yet" meant the first
+              // token made a turn mid-sentence look finished, which is what
+              // invited the next prompt on top of it. With content present the
+              // wait is a continuation, so it trails the output as motion
+              // alone: repeating the word would read as starting over, and a
+              // heading above live activity is what this deliberately is not.
+              ? <StreamingContinuation />
+              : <StreamingPlaceholder />
+          )}
       </SessionTurnFrame>
     </>
   );
@@ -298,6 +309,42 @@ function TurnSubagentLinks({
 
 function subagentLinkLabel(activity: SubagentActivity): string {
   return subagentActivityLabel(activity);
+}
+
+function StreamingDots({ hidden }: { hidden?: boolean }) {
+  return (
+    <span aria-hidden={hidden === false ? undefined : "true"}>
+      <span className="thinking-placeholder-dot">.</span>
+      <span
+        className="thinking-placeholder-dot"
+        style={{ animationDelay: "180ms" }}
+      >
+        .
+      </span>
+      <span
+        className="thinking-placeholder-dot"
+        style={{ animationDelay: "360ms" }}
+      >
+        .
+      </span>
+    </span>
+  );
+}
+
+/** The tail of a turn that is still producing output. Carries no words: the
+ *  output above it already says what is happening. */
+function StreamingContinuation() {
+  const { t } = useI18n();
+  return (
+    <p
+      data-streaming-continuation="true"
+      className="text-sm leading-6 text-fg-subtle"
+      aria-label={t("chat.stillWorking")}
+      aria-live="polite"
+    >
+      <StreamingDots />
+    </p>
+  );
 }
 
 function StreamingPlaceholder() {
