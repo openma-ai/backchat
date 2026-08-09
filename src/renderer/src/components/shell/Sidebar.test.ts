@@ -232,7 +232,7 @@ describe("groupSidebarSessions", () => {
 
     expect(source).toContain('from "@/components/ui/popover"');
     expect(source).toContain('data-sidebar-agent-update-popover="true"');
-    expect(source).toContain('side="top"');
+    expect(source).toContain('side="right"');
     expect(source).toContain('align="end"');
     expect(source).toContain("<AgentIcon");
     expect(source).toContain('variant="ghost"');

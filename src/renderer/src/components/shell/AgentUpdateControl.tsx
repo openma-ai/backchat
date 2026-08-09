@@ -142,7 +142,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
       <PopoverContent
         aria-label={t("acpUpdates.title")}
         data-sidebar-agent-update-popover="true"
-        side="top"
+        side="right"
         align="end"
         sideOffset={8}
         collisionPadding={8}
