@@ -49,3 +49,27 @@ describe("ShellLayout route chrome", () => {
     });
   });
 });
+
+describe("right rail visibility is per chat", () => {
+  it("does not keep a global stored flag that any auto-open can set", () => {
+    const layout = readFileSync(resolve(__dirname, "ShellLayout.tsx"), "utf8");
+
+    // One terminal opened in one chat used to write a single localStorage flag,
+    // so every later chat — and every relaunch — started with an empty rail
+    // hanging open, with no way back to the default.
+    expect(layout).not.toContain("openma:right-rail-collapsed");
+    expect(layout).not.toContain("usePersistedCollapse(RIGHT_KEY");
+
+    // Collapse is bucketed by the active chat, like the expansion state.
+    expect(layout).toContain("function useRightRailCollapseState(sessionId: string | null)");
+    expect(layout).toContain("const collapsed = !openChats.has(bucket);");
+    expect(layout).toContain(
+      "const rightRailCollapse = useRightRailCollapseState(\n    isChat ? activeSession?.id ?? null : null,\n  );",
+    );
+    expect(layout).toContain(
+      "<RightRailCollapseContext.Provider value={rightRailCollapse}>",
+    );
+    // Imperative reveals still route through the same per-chat setter.
+    expect(layout).toContain("bindRightRailSetter(rightRailCollapse.set)");
+  });
+});

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AppShell,
@@ -24,7 +24,6 @@ import { createSideWorkspacePersistence } from "@/lib/side-workspace-persistence
 import { SettingsSidebar } from "@/pages/settings/SettingsLayout";
 
 const COLLAPSE_KEY = "openma:sidebar-collapsed";
-const RIGHT_KEY = "openma:right-rail-collapsed";
 const BOTTOM_KEY = "openma:bottom-panel-collapsed";
 
 /** Tiny helper for the localStorage-backed collapse pattern used by
@@ -84,8 +83,39 @@ const DEFAULT_RIGHT_RAIL_EXPANSION: RightRailExpansionState = {
   mainSelected: false,
 };
 
-function useRightRailExpansionState(sessionId: string | null) {
-  const [states, setStates] = useState<Map<string, RightRailExpansionState>>(
+/** Right-rail visibility is per chat, and deliberately not persisted.
+ *
+ * A brand new chat has nothing in the rail, so it opens closed. The old
+ * model was a single localStorage flag that any auto-open wrote to, so one
+ * terminal opened in one chat left every later chat — and every relaunch —
+ * starting with an empty rail hanging open, with no way to get the default
+ * back. Per-chat state also means returning to a chat restores the rail you
+ * left there. Matches useRightRailExpansionState, which is already per chat. */
+const RIGHT_RAIL_NO_CHAT_BUCKET = "__no-chat__";
+
+function useRightRailCollapseState(sessionId: string | null) {
+  const [openChats, setOpenChats] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const bucket = sessionId ?? RIGHT_RAIL_NO_CHAT_BUCKET;
+  const collapsed = !openChats.has(bucket);
+  const set = useCallback(
+    (value: boolean) => {
+      setOpenChats((previous) => {
+        if (previous.has(bucket) === !value) return previous;
+        const next = new Set(previous);
+        if (value) next.delete(bucket);
+        else next.add(bucket);
+        return next;
+      });
+    },
+    [bucket],
+  );
+  const toggle = useCallback(() => set(!collapsed), [collapsed, set]);
+  return useMemo(() => ({ collapsed, toggle, set }), [collapsed, toggle, set]);
+}
+
+function useRightRailExpansionState(sessionId: string | null) {  const [states, setStates] = useState<Map<string, RightRailExpansionState>>(
     () => new Map(),
   );
   const current = sessionId
@@ -167,7 +197,9 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   const sidebarCollapse = usePersistedCollapse(COLLAPSE_KEY);
   // Side chat starts collapsed — users opt in via the rail toggle so
   // a first-launch window doesn't show two empty chat surfaces.
-  const rightCollapse = usePersistedCollapse(RIGHT_KEY, true);
+  const rightRailCollapse = useRightRailCollapseState(
+    isChat ? activeSession?.id ?? null : null,
+  );
   const rightExpansion = useRightRailExpansionState(
     isChat ? activeSession?.id ?? null : null,
   );
@@ -245,11 +277,14 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   // Expose the right-rail collapse setter to module-level imperative
   // callers so non-React code (session store auto-open, plain click
   // handlers) can ensure the panel is visible before pushing a tab.
-  useEffect(() => bindRightRailSetter(rightCollapse.set), [rightCollapse.set]);
+  useEffect(
+    () => bindRightRailSetter(rightRailCollapse.set),
+    [rightRailCollapse.set],
+  );
 
   return (
     <SidebarCollapseContext.Provider value={sidebarCollapse}>
-      <RightRailCollapseContext.Provider value={rightCollapse}>
+      <RightRailCollapseContext.Provider value={rightRailCollapse}>
         <RightRailExpansionContext.Provider value={rightExpansion}>
           <BottomBarCollapseContext.Provider value={bottomCollapse}>
             <AppShell

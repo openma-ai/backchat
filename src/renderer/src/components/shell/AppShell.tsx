@@ -215,6 +215,7 @@ export function AppShell({
             rightExpanded ? "rounded-r-2xl" : "rounded-2xl",
           )}
           data-right-panel-expanded={rightExpanded}
+          data-right-panel-collapsed={rightCollapsed}
           data-expanded-surface={expandedMainSelected ? "main" : "panel"}
           style={{
             right: "var(--stage-inset)",
