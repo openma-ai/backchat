@@ -138,15 +138,6 @@
   padding-inline: var(--control-padding-inline);
 }
 
-/* Agent/model/send is the one intentionally linked composer interaction
-   scope. Switch its foreground in the same frame so nested brand SVGs and the
-   submit glyph cannot drift through different transition phases. */
-[data-composer-run-actions]:hover [data-composer-run-trigger],
-[data-composer-run-actions]:hover [data-composer-submit] {
-  color: var(--fg);
-  transition: none;
-}
-
 .app-compact-control > [data-control-icon] {
   display: grid;
   width: var(--control-height-compact);
@@ -1519,7 +1510,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --color-accent-violet: var(--accent-violet);
   --color-accent-violet-subtle: var(--accent-violet-subtle);
 
-  --color-ring: var(--ring);
+  --color-ring: var(--focus-ring);
 
   /* Card / input shadow tokens — surfaced as Tailwind utilities so
      `shadow-card-soft` / `shadow-card-press` / `shadow-input-rest` /
@@ -1562,7 +1553,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --color-sidebar-accent: var(--bg-surface);
   --color-sidebar-accent-foreground: var(--fg);
   --color-sidebar-border: var(--border);
-  --color-sidebar-ring: var(--brand);
+  --color-sidebar-ring: var(--focus-ring);
 }
 
 /* ---------- Base typography ---------- */

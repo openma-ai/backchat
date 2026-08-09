@@ -248,11 +248,9 @@ export function AppShell({
           // (6px) of geometric gap. The full `stage-inset * 2` (12px)
           // from the original formula left a 6px visual gap between
           // the chat and each rail; halving it to 6px geometric gives
-          // ~2px visual clearance after the rail's liquid-glass blur
-          // halo + border eats ~4px. Result: the chat scrollbar pill
-          // sits right at the rail's halo edge — close enough to read
-          // as "flush", with enough room to not get visually clipped
-          // by the rail's backdrop-filter.
+          // The panel is an opaque surface, so one stage inset is the exact
+          // visual gap; no blur halo or compositor-dependent allowance is
+          // involved.
           paddingLeft: leftCollapsed
             ? "var(--stage-inset)"
             : `calc(${sidebarWidth}px + var(--stage-inset))`,

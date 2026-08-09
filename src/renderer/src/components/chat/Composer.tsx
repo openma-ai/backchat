@@ -797,7 +797,7 @@ export function Composer({
         </div>
 
         <div
-          className="group/run-actions flex shrink-0 items-center gap-0.5"
+          className="flex shrink-0 items-center gap-0.5"
           data-composer-run-actions="true"
         >
           {/* Agent picker — Radix DropdownMenu so the popover matches
@@ -866,7 +866,7 @@ export function Composer({
               title={t("chat.stop")}
               className={cn(
                 "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
-                "text-fg-subtle hover:text-fg hover:bg-bg-surface group-hover/run-actions:text-fg group-hover/run-actions:transition-none",
+                "text-fg-subtle hover:text-fg hover:bg-bg-surface",
                 "transition-colors",
               )}
             >
@@ -884,7 +884,7 @@ export function Composer({
             title={running ? primaryRunningAction?.title : t("chat.send")}
             className={cn(
               "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
-              "text-fg-subtle hover:text-fg hover:bg-bg-surface group-hover/run-actions:text-fg group-hover/run-actions:transition-none",
+              "text-fg-subtle hover:text-fg hover:bg-bg-surface",
               "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
               "transition-colors",
             )}

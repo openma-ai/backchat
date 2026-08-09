@@ -127,9 +127,9 @@ export function SessionRunChip({
         disabled={disabled}
         data-composer-run-trigger="true"
         className={cn(
-          "app-compact-control inline-flex max-w-[250px] items-center pl-[var(--control-padding-inline)] text-xs",
+          "app-compact-control group/model-selector inline-flex max-w-[250px] items-center pl-[var(--control-padding-inline)] text-xs",
           "select-none bg-transparent",
-          "transition-colors group-hover/run-actions:text-fg group-hover/run-actions:transition-none disabled:opacity-50 disabled:cursor-not-allowed",
+          "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         )}
         aria-label={
           noHarnessSetup
@@ -151,7 +151,7 @@ export function SessionRunChip({
             </Tooltip>
           </TooltipProvider>
         )}
-        <ChevronDownIcon className="size-3.5 shrink-0 text-current opacity-65 group-hover/run-actions:text-fg group-hover/run-actions:opacity-100" />
+        <ChevronDownIcon className="size-3.5 shrink-0 text-current opacity-65 group-hover/model-selector:text-fg group-hover/model-selector:opacity-100" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6} className="w-[var(--composer-menu-width)]">
         <div className="border-b border-border/50 py-1">

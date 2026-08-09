@@ -248,28 +248,27 @@ function validateNumber(
 
 const backchatLight: ThemeTokens = {
   ...commonLightTokens,
-  // Long-session light surfaces use a restrained clay-tinted neutral ladder.
-  // The steps are intentionally wider than the shared fallback palette so
-  // panels, controls, and raised states stay legible without extra hairlines.
-  brand: "oklch(0.62 0.08 30)",
-  "brand-hover": "oklch(0.56 0.09 30)",
-  "brand-subtle": "oklch(0.95 0.025 30)",
-  "brand-fg": "#2a1a14",
-  bg: "oklch(0.985 0.003 30)",
-  "bg-sidebar": "oklch(0.95 0.006 30)",
-  "bg-surface": "oklch(0.968 0.004 30)",
-  "bg-bubble": "oklch(0.925 0.008 30)",
-  fg: "oklch(0.19 0.006 30)",
-  "fg-muted": "oklch(0.40 0.01 30)",
-  "fg-subtle": "oklch(0.47 0.008 30)",
-  border: "oklch(0.855 0.008 30)",
-  "border-strong": "oklch(0.76 0.012 30)",
-  "shadow-md": "0 4px 10px -5px rgb(42 26 20 / 0.18)",
-  "shadow-sm": "0 1px 3px -2px rgb(42 26 20 / 0.14)",
-  "shadow-card-soft": "0 3px 8px -5px rgb(42 26 20 / 0.16)",
-  "shadow-card-press": "0 2px 5px -3px rgb(42 26 20 / 0.18)",
-  "shadow-input-rest": "0 1px 3px -2px rgb(42 26 20 / 0.16)",
-  "shadow-chip-press": "0 1px 2px -1px rgb(42 26 20 / 0.16)",
+  // Reference-derived neutral hierarchy: the canvas, sidebar, controls, and
+  // selected material remain achromatic. Coral is reserved for primary action.
+  brand: "oklch(0.6218 0.1437 35.6)",
+  "brand-hover": "oklch(0.56 0.15 35.6)",
+  "brand-subtle": "oklch(0.95 0.025 35.6)",
+  "brand-fg": "#101010",
+  bg: "oklch(0.9627 0.0021 17.2)",
+  "bg-sidebar": "oklch(0.9269 0.0017 145.6)",
+  "bg-surface": "oklch(0.9881 0 0)",
+  "bg-bubble": "oklch(0.8781 0.0017 145.6)",
+  fg: "oklch(0.173 0 0)",
+  "fg-muted": "oklch(0.3523 0 0)",
+  "fg-subtle": "oklch(0.4386 0 0)",
+  border: "oklch(0.8853 0 0)",
+  "border-strong": "oklch(0.76 0 0)",
+  "shadow-md": "0 4px 10px -5px rgb(16 16 16 / 0.16)",
+  "shadow-sm": "0 1px 3px -2px rgb(16 16 16 / 0.12)",
+  "shadow-card-soft": "0 3px 8px -5px rgb(16 16 16 / 0.14)",
+  "shadow-card-press": "0 2px 5px -3px rgb(16 16 16 / 0.16)",
+  "shadow-input-rest": "0 1px 3px -2px rgb(16 16 16 / 0.14)",
+  "shadow-chip-press": "0 1px 2px -1px rgb(16 16 16 / 0.14)",
 };
 
 const backchatDark: ThemeTokens = {
@@ -331,12 +330,12 @@ export const backchatLightTheme = defineThemePlugin({
     id: "backchat-light",
     name: "Backchat Light",
     author: "Backchat",
-    description: "Quiet clay-tinted work surfaces with a restrained accent.",
+    description: "Neutral white-gray work surfaces with a focused coral accent.",
     preview: {
-      background: "#fcf9f9",
-      surface: "#f7f2f1",
-      foreground: "#161312",
-      accent: "#b17469",
+      background: "#f4f2f2",
+      surface: "#fbfbfb",
+      foreground: "#101010",
+      accent: "#ce6246",
     },
     appearance: "light",
     tokens: backchatLight,

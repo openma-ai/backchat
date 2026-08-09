@@ -530,18 +530,36 @@ describe("home suggestions", () => {
     );
 
     expect(runTrigger).not.toContain('{t("chat.local")}');
-    expect(runTrigger.match(/text-fg-subtle">·<\/span>/g)).toHaveLength(2);
+    expect(runTrigger).toContain("group-hover/model-selector:opacity-100");
+    expect(runTrigger).toContain("group-hover/model-selector:text-fg");
     expect(runTrigger).toContain("<TooltipProvider>");
     expect(runTrigger).toContain("<TooltipTrigger asChild>");
-    expect(runTrigger).toContain(
-      '<TooltipContent side="top">{runtimeLabel}</TooltipContent>',
-    );
     expect(runTrigger).toContain(
       '<TooltipContent side="top">{configLabel}</TooltipContent>',
     );
     expect(runTrigger).toContain(
       'className="min-w-0 max-w-[140px] truncate"',
     );
+  });
+
+  it("isolates each composer action interaction state from its siblings", () => {
+    const composer = readFileSync(resolve(__dirname, "Composer.tsx"), "utf8");
+    const controlsSource = readFileSync(
+      resolve(__dirname, "ComposerSessionControls.tsx"),
+      "utf8",
+    );
+    const runTrigger = controlsSource.slice(
+      controlsSource.indexOf("<DropdownMenuTrigger"),
+      controlsSource.indexOf("</DropdownMenuTrigger>"),
+    );
+
+    expect(composer).not.toContain("group/composer-actions");
+    expect(composer).not.toContain("group/run-actions");
+    expect(controlsSource).not.toContain("group-hover/composer-actions");
+    expect(controlsSource).not.toContain("group-hover/run-actions");
+    expect(runTrigger).toContain("select-none");
+    expect(runTrigger).not.toContain("focus:bg-");
+    expect(runTrigger).toContain("app-compact-control");
   });
 
   it("uses distinct runtime icons for local, cloud, and other machines", () => {

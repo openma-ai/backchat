@@ -228,7 +228,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
                 </div>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="default"
                   size="xs"
                   onClick={() => void startUpgrade(agent)}
                   disabled={updating}

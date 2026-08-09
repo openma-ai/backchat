@@ -60,7 +60,19 @@ type ThemePluginModule = {
     };
     preview: { background: string; surface: string; foreground: string; accent: string };
   }>;
-  getThemePlugin?: (id: string, appearance: "light" | "dark") => { id: string };
+  getThemePlugin?: (
+    id: string,
+    appearance: "light" | "dark",
+  ) => {
+    id: string;
+    tokens: Record<string, string>;
+    preview: {
+      background: string;
+      surface: string;
+      foreground: string;
+      accent: string;
+    };
+  };
   defineThemePlugin?: (plugin: never) => unknown;
   resolveThemeText?: (
     value: string | { en: string; "zh-CN": string } | undefined,
@@ -235,7 +247,29 @@ describe("theme plugin contract", () => {
     expect(Object.keys(style?.tokens ?? {}).length).toBeGreaterThan(20);
   });
 
-  it("gives the default light theme perceptible, restrained surface hierarchy", async () => {
+  it("uses the approved neutral reference palette for the default dark theme", async () => {
+    const { getThemePlugin } = await loadThemePlugins();
+    const dark = getThemePlugin?.("backchat-dark", "dark");
+
+    expect(dark?.tokens).toMatchObject({
+      bg: "#171717",
+      "bg-sidebar": "#1c1c1c",
+      "bg-surface": "#1c1c1c",
+      "bg-bubble": "#404040",
+      fg: "#dbdad2",
+      "fg-muted": "#858379",
+      "fg-subtle": "#747471",
+      border: "#2a2a2a",
+      "border-strong": "#3a3a39",
+    });
+    expect(dark?.preview).toMatchObject({
+      background: "#171717",
+      surface: "#1c1c1c",
+      foreground: "#dbdad2",
+    });
+  });
+
+  it("uses neutral reference surfaces with coral reserved for branded actions", async () => {
     const { getThemePlugin } = await loadThemePlugins();
     const light = getThemePlugin?.("backchat-light", "light");
     expect(light).toBeDefined();
@@ -246,16 +280,17 @@ describe("theme plugin contract", () => {
     const sidebar = oklchComponents(tokens["bg-sidebar"]).lightness;
     const raised = oklchComponents(tokens["bg-bubble"]).lightness;
 
-    expect(canvas - panel).toBeGreaterThanOrEqual(0.015);
-    expect(panel - sidebar).toBeGreaterThanOrEqual(0.01);
-    expect(sidebar - raised).toBeGreaterThanOrEqual(0.02);
-    expect(oklchComponents(tokens.border).lightness).toBeLessThanOrEqual(0.87);
-    expect(oklchComponents(tokens["border-strong"]).lightness).toBeLessThanOrEqual(0.78);
-    expect(oklchComponents(tokens["fg-subtle"]).lightness).toBeLessThanOrEqual(0.48);
+    expect(panel - canvas).toBeGreaterThanOrEqual(0.02);
+    expect(canvas - sidebar).toBeGreaterThanOrEqual(0.03);
+    expect(sidebar - raised).toBeGreaterThanOrEqual(0.04);
+    for (const token of ["bg", "bg-sidebar", "bg-surface", "bg-bubble"] as const) {
+      expect(oklchComponents(tokens[token]).chroma).toBeLessThanOrEqual(0.003);
+    }
+    expect(tokens["brand-fg"]).toBe("#101010");
 
     const brand = oklchComponents(tokens.brand);
-    expect(brand.chroma).toBeGreaterThanOrEqual(0.06);
-    expect(brand.chroma).toBeLessThanOrEqual(0.1);
+    expect(brand.chroma).toBeGreaterThanOrEqual(0.13);
+    expect(brand.chroma).toBeLessThanOrEqual(0.16);
   });
 
   it("replaces every visual token and exposes the active theme on the root", async () => {
