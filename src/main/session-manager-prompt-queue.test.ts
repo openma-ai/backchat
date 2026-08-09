@@ -651,8 +651,9 @@ describe("SessionManager prompt queue", () => {
 
     // The queued prompt must be answered for, not silently forgotten.
     await queued;
-    const reported = send.mock.calls
-      .map(([event]: [{ type: string; turn_id?: string; message?: string }]) => event)
+    type ReportedEvent = { type: string; turn_id?: string; message?: string };
+    const reported = (send.mock.calls as ReportedEvent[][])
+      .map((call) => call[0]!)
       .filter((event) => event.type === "session.error" && event.turn_id === "turn-2");
     expect(reported).toHaveLength(1);
     expect(reported[0]!.message).toContain("agent refused to come back");
