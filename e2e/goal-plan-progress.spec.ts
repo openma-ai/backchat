@@ -187,7 +187,12 @@ test.describe("composer progress semantics", () => {
       });
     });
     await expect(page.locator("html")).toHaveClass(/dark/);
-    const sessionId = await injectSession(page, { agentId: "codex-acp" });
+    // This row asserts the Steer action, which only exists for a session that
+    // negotiated steering — so the fixture has to say so.
+    const sessionId = await injectSession(page, {
+      agentId: "codex-acp",
+      supportsSteering: true,
+    });
 
     await injectEvent(page, {
       type: "session.event",
@@ -223,9 +228,7 @@ test.describe("composer progress semantics", () => {
     const queue = page.locator('[data-composer-queue="true"]');
     const queueRow = page.locator('[data-queued-turn-id="turn-queued"]');
     const queueText = queueRow.getByText("Queued visual check", { exact: true });
-    const steerButton = queueRow.getByRole("button", {
-      name: "Steer queued message 1",
-    });
+    const steerButton = queueRow.locator('[data-queue-steer="true"]');
     const goalRow = page.locator('[data-progress-cap-content="true"]');
     const composer = page.locator(".composer-card");
 

@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import { BracesIcon } from "lucide-react";
 import { safeJson } from "@/lib/format";
 import type { TurnEvent } from "@/lib/session-store";
@@ -132,12 +133,13 @@ export function RawEventInspector({
 }: {
   events: readonly InspectableRawEvent[];
 }) {
+  const { t } = useI18n();
   if (events.length === 0) return null;
   return (
     <section
       className="space-y-2 rounded-xl border border-border/45 bg-bg-surface/25 p-3"
       data-raw-event-inspector="true"
-      aria-label="Raw protocol events"
+      aria-label={t("chat.rawProtocolEvents")}
     >
       <div className="flex items-center gap-2 text-xs font-medium text-fg-muted">
         <BracesIcon className="size-3.5" aria-hidden="true" />

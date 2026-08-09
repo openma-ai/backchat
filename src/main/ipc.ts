@@ -1028,7 +1028,13 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       InvokeChannel.TestInjectSessionRow,
       (
         _e,
-        p: { session_id: string; agent_id: string; cwd: string; acp_session_id?: string },
+        p: {
+          session_id: string;
+          agent_id: string;
+          cwd: string;
+          acp_session_id?: string;
+          supports_steering?: boolean;
+        },
       ) => {
         // Canonical enrichment persists session.ready before broadcasting it.
         // Seed the parent row first so the event-log foreign key is valid.
@@ -1045,6 +1051,12 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
           acp_session_id: p.acp_session_id ?? `acp-${p.session_id}`,
           agent_id: p.agent_id,
           cwd: p.cwd,
+          // Capabilities a real session negotiates. A fixture that omits them
+          // gets a session that genuinely cannot steer, which is what controls
+          // gated on capability will show.
+          ...(p.supports_steering === undefined
+            ? {}
+            : { supports_steering: p.supports_steering }),
         });
       },
     );

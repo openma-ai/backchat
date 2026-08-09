@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import {
   createContext,
   createElement,
@@ -146,6 +147,7 @@ export function MarkdownAnchor({
   onClick: _onClick,
   ...rest
 }: AnchorHTMLAttributes<HTMLAnchorElement>) {
+  const { t } = useI18n();
   const cwd = useMarkdownCwd();
   const url = (href ?? "").trim();
   const target = resolveMarkdownLinkTarget(url, cwd);
@@ -153,7 +155,7 @@ export function MarkdownAnchor({
     return (
       <span
         className="underline decoration-dotted underline-offset-2 text-fg"
-        title="Bare relative path — no resolvable target"
+        title={t("chat.bareRelativePath")}
       >
         {children}
       </span>

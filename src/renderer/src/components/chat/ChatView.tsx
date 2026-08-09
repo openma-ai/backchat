@@ -90,20 +90,6 @@ export function filterQueuedTurns<T extends { status: string }>(
 /** Provider queue depth is display-only; local queued prompts remain the
  * editable source. Reuse the existing placeholder count without hiding a
  * larger queue observed inside the harness. */
-/** How many queued prompts to claim, given the rows that will be shown.
- *
- * It used to be `Math.max(hostDepth, providerDepth)`, which mixed two different
- * facts: the prompts this host holds and can show as rows, and the depth the
- * agent reports for its own queue. When the provider number was the larger one
- * the composer said "1 queued…" above no rows at all, and when the prompt queue
- * setting is off there are no rows to speak for either. A count nobody can see
- * the members of is not a count, so this counts the rows. */
-export function visibleQueuedPromptCount(
-  visibleQueuedPrompts: readonly unknown[],
-): number {
-  return visibleQueuedPrompts.length;
-}
-
 export function isSessionComposerDisabled(status: string | undefined): boolean {
   return status === "errored" || status === "disposed";
 }
@@ -254,9 +240,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   const hasActiveTurn = !!active?.activeTurnId;
   const showPromptQueue = settings?.default.prompt_queue_enabled !== false;
   const queuedPrompts = showPromptQueue ? active?.queuedPrompts ?? [] : [];
-  // The same rows the composer renders, so the count and the list cannot
-  // disagree about what is waiting.
-  const queuedTurnCount = visibleQueuedPromptCount(queuedPrompts);
+  // The rows themselves, so the count and the list cannot disagree about what is
+  // waiting. It used to be `Math.max(hostQueueDepth, providerQueueDepth)`, which
+  // mixed the prompts this host holds with a depth the agent reports for a queue
+  // of its own, and announced "1 queued…" above no rows at all.
+  const queuedTurnCount = queuedPrompts.length;
 
   const composerAgentBinding = resolveComposerAgentBinding(active);
   const composer = (

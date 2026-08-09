@@ -195,27 +195,12 @@ describe("transcript projection", () => {
 });
 
 describe("provider queue projection", () => {
-  it("counts the queued rows it is showing, not a depth from elsewhere", () => {
+  it("takes the queued count from the rows the composer renders", () => {
     // The count used to be max(hostDepth, providerDepth). When the provider
     // number won, the composer announced "1 queued…" above no rows at all.
-    const visibleQueuedPromptCount = (
-      chatViewModule as unknown as {
-        visibleQueuedPromptCount?: (rows: readonly unknown[]) => number;
-      }
-    ).visibleQueuedPromptCount;
-
-    expect(visibleQueuedPromptCount).toBeTypeOf("function");
-    if (!visibleQueuedPromptCount) return;
-    expect(visibleQueuedPromptCount([])).toBe(0);
-    expect(visibleQueuedPromptCount([{}, {}])).toBe(2);
-  });
-
-  it("takes the count from the same rows the composer renders", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
 
-    expect(source).toContain(
-      "visibleQueuedPromptCount(queuedPrompts)",
-    );
+    expect(source).toContain("const queuedTurnCount = queuedPrompts.length;");
     // Nothing may reintroduce a second source for the same statement.
     expect(source).not.toContain("providerQueueDepth,");
     expect(source).not.toContain("Math.max(localQueueDepth");

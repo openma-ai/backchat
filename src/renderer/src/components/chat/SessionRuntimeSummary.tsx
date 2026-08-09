@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import type { SessionRow } from "@/lib/session-store";
 import {
   contextUsagePresentation,
@@ -59,6 +60,7 @@ export function SessionRuntimeSummary({
   session: SessionRow;
   queueDepth?: number;
 }) {
+  const { t } = useI18n();
   const identity = runtimeAgentIdentity(session);
   const runtimeStatus = sessionRuntimeStatusPresentation(session.status);
   const capabilities = Array.from(new Set([
@@ -78,7 +80,7 @@ export function SessionRuntimeSummary({
 
   return (
     <section
-      aria-label="Session runtime"
+      aria-label={t("chat.sessionRuntime")}
       data-gui-feature="session.initialize-ready"
       data-session-runtime="true"
       data-session-id={session.id}

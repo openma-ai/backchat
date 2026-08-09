@@ -78,11 +78,9 @@ export async function launchAppWithHome(
       // relaunch/persistence E2Es depend on a configured agent process.
       BACKCHAT_E2E_SKIP_AGENT_WARMUP: "1",
       BACKCHAT_HOME: home,
-      // Skip the renderer-side persistence load so each test starts
-      // with an empty sidebar (the SQLite store still mounts at
-      // ~/.oma/sessions.db; opt out of the seedPersisted call
-      // would be cleaner, but for now we just tolerate any pre-existing
-      // rows — tests assert on what they inject, not on totals).
+      // `openmaRoot()` honours BACKCHAT_HOME whenever BACKCHAT_TEST_HOOKS is set,
+      // so the SQLite store opens under this per-test home. Nothing here reads or
+      // writes the developer's real ~/.oma.
       NODE_ENV: "test",
     },
   });
@@ -282,7 +280,12 @@ export async function waitForRunnableHarness(page: Page): Promise<Locator> {
  *  pane. Returns the session id we synthesized. */
 export async function injectSession(
   page: Page,
-  opts: { sessionId?: string; agentId?: string; cwd?: string } = {},
+  opts: {
+    sessionId?: string;
+    agentId?: string;
+    cwd?: string;
+    supportsSteering?: boolean;
+  } = {},
 ): Promise<string> {
   const sessionId = opts.sessionId ?? `e2e-${Math.random().toString(36).slice(2, 8)}`;
   const agentId = opts.agentId ?? "claude-acp";
@@ -291,6 +294,9 @@ export async function injectSession(
     session_id: sessionId,
     agent_id: agentId,
     cwd,
+    ...(opts.supportsSteering === undefined
+      ? {}
+      : { supports_steering: opts.supportsSteering }),
   });
   const sessionButton = page.getByRole("button", {
     name: `${agentId} · ${sessionId.slice(0, 6)}`,

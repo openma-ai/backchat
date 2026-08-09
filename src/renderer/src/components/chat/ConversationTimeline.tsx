@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ const MIN_PROMPTS = 5;
  * chat mid-stream before (see ToolRow's bodyMaxH comment in ChatView).
  */
 export function ConversationTimeline({ turns }: { turns: Turn[] }) {
+  const { t } = useI18n();
   const stick = useStickToBottomContext();
   const prompts = turns.filter((t) => t.promptText);
 
@@ -178,7 +180,7 @@ export function ConversationTimeline({ turns }: { turns: Turn[] }) {
             "shadow-lg p-1 ml-2",
           )}
           role="listbox"
-          aria-label="Conversation timeline"
+          aria-label={t("chat.conversationTimeline")}
         >
           {prompts.map((turn) => (
             <button

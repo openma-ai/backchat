@@ -29,6 +29,7 @@ export function SuggestionTemplateEditor({
   onRemove: () => void;
   onSubmit: () => void;
 }) {
+  const { t } = useI18n();
   const width = Math.min(
     240,
     Math.max(88, (value || template.slotLabel).length * 14 + 42),
@@ -77,8 +78,8 @@ export function SuggestionTemplateEditor({
         />
         <button
           type="button"
-          aria-label="Remove template field"
-          title="Remove field"
+          aria-label={t("composer.removeTemplateField")}
+          title={t("composer.removeField")}
           disabled={disabled}
           onClick={onRemove}
           className="inline-flex size-5 shrink-0 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-bg hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40"
@@ -102,6 +103,7 @@ export function AttachmentPreviewStrip({
   hiddenAttachmentIds?: ReadonlySet<string>;
   onRemove: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const visibleAttachments = attachments.filter(
     (attachment) =>
       !browserScreenshotNames.has(attachment.name) &&
@@ -112,7 +114,7 @@ export function AttachmentPreviewStrip({
   return (
     <div
       className="flex w-full flex-wrap items-center gap-2"
-      aria-label="Attachments"
+      aria-label={t("composer.attachments")}
     >
       {visibleAttachments.map((attachment) => {
         const isPreviewableImage =
@@ -177,11 +179,12 @@ export function MentionedFileStrip({
   onOpen: (attachment: PromptAttachment) => void;
   onRemove: (id: string) => void;
 }) {
+  const { t } = useI18n();
   if (attachments.length === 0) return null;
   return (
     <div
       className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-1.5"
-      aria-label="Mentioned files"
+      aria-label={t("composer.mentionedFiles")}
     >
       {attachments.map((attachment) => (
         <span
@@ -296,12 +299,13 @@ export function SkillCommandChip({
   command: AcpAvailableCommand;
   onRemove: () => void;
 }) {
+  const { t } = useI18n();
   const label = skillCommandLabel(command);
   return (
     <button
       type="button"
       aria-label={`Skill ${label}`}
-      title="Remove skill"
+      title={t("composer.removeSkill")}
       onClick={onRemove}
       className={cn(
         "inline-flex max-w-full items-center gap-2 rounded-md px-0 py-1",

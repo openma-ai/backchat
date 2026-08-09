@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import {
   useEffect,
   useRef,
@@ -336,13 +337,14 @@ const SelectionToolbar = function SelectionToolbar({
   onAdd: () => void;
   onAskInSideChat: () => void;
 }) {
+  const { t } = useI18n();
   const position = selectionToolbarPosition(rect);
   const preserveSelection = (event: React.PointerEvent) => event.preventDefault();
   return (
     <div
       ref={ref}
       role="toolbar"
-      aria-label="Selected response actions"
+      aria-label={t("chat.selectedResponseActions")}
       data-response-selection-toolbar
       className={cn(
         "fixed z-[90] flex max-w-[calc(100vw-24px)] items-center overflow-hidden rounded-md",

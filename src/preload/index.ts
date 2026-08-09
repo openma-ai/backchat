@@ -555,6 +555,7 @@ if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
       agent_id: string;
       cwd: string;
       acp_session_id?: string;
+      supports_steering?: boolean;
     }) => ipcRenderer.invoke(InvokeChannel.TestInjectSessionRow, p),
     injectSessionEvent: (msg: unknown) =>
       ipcRenderer.invoke(InvokeChannel.TestInjectSessionEvent, msg),

@@ -12,6 +12,9 @@ export type SessionRowFixture = {
   agent_id: string;
   cwd: string;
   acp_session_id?: string;
+  /** Negotiated capabilities a real session would report on session.ready.
+   *  Controls that only render when they can act need these to be declared. */
+  supports_steering?: boolean;
 };
 
 export type PersistedSessionFixture = {

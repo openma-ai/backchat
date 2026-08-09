@@ -147,7 +147,7 @@ function PairColumn({
         "flex min-h-0 min-w-0 flex-col",
         showLeftDivider && "border-l border-border/60",
       )}
-      aria-label="Pair chat pane"
+      aria-label={t("chat.pairPane")}
     >
       <Conversation key={session.id} className="min-h-0 flex-1">
         <ConversationContent

@@ -543,6 +543,9 @@ function QueuedPromptRow({
               type="button"
               variant="ghost"
               size="xs"
+              // A stable hook, because the accessible name is translated and a
+              // test that pinned the English string was really pinning a locale.
+              data-queue-steer="true"
               aria-label={`${t("chat.steerQueued")} ${index + 1}`}
               title={t("chat.steerQueued")}
               onClick={() => {
