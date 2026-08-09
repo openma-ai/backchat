@@ -601,15 +601,16 @@ export function Sidebar() {
             );
           })()
         )}
-      </nav>
+        </nav>
+      </ScrollArea>
 
-      {/* Footer — Settings link only. It mirrors the same single native gutter
-          as the header so all three row groups keep the same visible width. */}
+      {/* Footer — Settings link only. Its fixed inset matches the header and
+          scrolling rows because the overlay scrollbar owns no layout width. */}
       <div
         className="py-[var(--row-gap-y)]"
         style={{
           paddingLeft: "8px",
-          paddingRight: "calc(8px + var(--native-scrollbar-width, 0px))",
+          paddingRight: "8px",
         }}
       >
         {agentUpdateCount > 0 && (
@@ -639,7 +640,7 @@ export function Sidebar() {
           className={cn(
             "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-xs",
             settingsActive
-              ? "liquid-glass-selected text-fg"
+              ? "app-selected-surface text-fg"
               : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
           )}
           style={{ height: "var(--row-h)" }}

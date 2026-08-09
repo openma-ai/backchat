@@ -174,7 +174,7 @@ export function AppShell({
       <aside
         className={cn(
           "absolute flex flex-col overflow-hidden transform-gpu",
-          "liquid-glass theme-sidebar-background rounded-2xl",
+          "app-rail-surface theme-sidebar-background rounded-2xl",
         )}
         style={{
           left: "var(--stage-inset)",
@@ -204,9 +204,9 @@ export function AppShell({
         <aside
           className={cn(
             "absolute flex flex-col overflow-hidden transform-gpu",
-            !rightExpanded && "liquid-glass",
+            "app-rail-surface",
             rightExpanded && !expandedMainSelected && "bg-bg-sidebar",
-            "rounded-2xl",
+            rightExpanded ? "rounded-r-2xl" : "rounded-2xl",
           )}
           data-right-panel-expanded={rightExpanded}
           data-expanded-surface={expandedMainSelected ? "main" : "panel"}

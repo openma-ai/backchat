@@ -1,80 +1,81 @@
-/* ---------- Liquid Glass material ----------
-   Approximates Apple's Liquid Glass (macOS Tahoe 26 / iOS 26) — the
-   essential cues:
-     1. translucent tinted background
-     2. heavy backdrop-filter blur + saturation (the "frost")
-     3. bright inset top edge highlight (the "glass rim")
-     4. layered shadow for depth lift off the stage
-     5. faint inner glow (rim light around all 4 edges)
-
-   Apply via `.liquid-glass` class. The stage MUST have visible color
-   (gradient or wallpaper) for the backdrop-filter to read as glass —
-   on a flat solid stage the blur looks like a slightly washed bg. */
-.liquid-glass {
-  /* Native-vibrancy-scale glass: blur(32px) matches macOS NSVisualEffect
-     "sidebar" material; pushing to 48px+ visibly fogs on lower-end GPUs
-     without adding visual weight (the human eye plateaus around 24-32px
-     blur radius). Keep saturation lift moderate to avoid over-tinting. */
-  background: color-mix(in srgb, var(--bg-surface) 62%, transparent);
-  backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border: 1px solid color-mix(in srgb, #ffffff 35%, transparent);
-  box-shadow:
-    /* bright top rim — the most recognizable glass tell */
-    inset 0 1px 0 0 color-mix(in srgb, #ffffff 85%, transparent),
-    /* secondary inner rim — bumps the depth a hair more */
-    inset 0 0 0 1px color-mix(in srgb, #ffffff 8%, transparent),
-    /* bottom edge soft */
-    inset 0 -1px 0 0 color-mix(in srgb, #ffffff 22%, transparent),
-    /* near drop */
-    0 1px 3px 0 rgb(0 0 0 / 0.05),
-    /* far drop — sets the card off the stage */
-    0 16px 40px -12px rgb(0 0 0 / 0.22);
+/* ---------- Semantic application surfaces ----------
+   Components name their role, never a shade number. The active theme owns the
+   actual colors; these classes only map product roles onto that palette. */
+.app-canvas-surface {
+  background: var(--surface-canvas);
 }
 
-/* Liquid-glass-aware selected row — sits on top of the .liquid-glass
-   sidebar. No own backdrop-filter — restacking blur on top of the
-   sidebar's blur(48px) doubles the per-frame paint cost without
-   adding visible material (the underlying frost is already opaque
-   enough). The pebble effect comes from tint + bright top rim +
-   layered drop shadow alone. */
-.liquid-glass-selected {
+.app-panel-surface,
+.app-rail-surface,
+.app-composer-surface {
+  background: var(--surface-panel);
+}
+
+.app-panel-surface,
+.app-rail-surface {
+  border: 1px solid var(--surface-panel-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-overlay-surface {
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-composer-surface {
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-input-rest);
+}
+
+.app-raised-surface,
+.app-floating-tab {
   position: relative;
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
-  box-shadow:
-    /* bright top rim — the dominant glass tell */
-    inset 0 1px 0 0 color-mix(in srgb, #ffffff 95%, transparent),
-    /* secondary inner rim — gives the body more material thickness */
-    inset 0 0 0 1px color-mix(in srgb, #ffffff 35%, transparent),
-    /* deeper bottom edge — read as the pebble's underside */
-    inset 0 -1px 0 0 color-mix(in srgb, var(--fg) 8%, transparent),
-    /* very subtle internal vertical gradient via two inset rgba — fakes
-       the top-to-bottom material density that real glass shows */
-    inset 0 2px 12px -4px color-mix(in srgb, #ffffff 50%, transparent),
-    /* outer near drop */
-    0 1px 2px 0 color-mix(in srgb, var(--fg) 10%, transparent),
-    /* outer far drop — pushes the pebble off the glass surface */
-    0 4px 12px -2px color-mix(in srgb, var(--fg) 12%, transparent);
+  background: var(--surface-raised);
+  border: 1px solid var(--surface-raised-border);
+  box-shadow: var(--shadow-sm);
 }
-.dark .liquid-glass-selected {
-  background: color-mix(in srgb, var(--bg-bubble) 80%, transparent);
+
+.app-selected-surface {
+  position: relative;
+  border: 0;
+  background: var(--surface-raised);
   box-shadow:
-    inset 0 1px 0 0 color-mix(in srgb, #ffffff 28%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, #ffffff 12%, transparent),
-    inset 0 -1px 0 0 color-mix(in srgb, #000000 35%, transparent),
-    inset 0 2px 12px -4px color-mix(in srgb, #ffffff 14%, transparent),
-    0 1px 2px 0 rgb(0 0 0 / 0.5),
-    0 4px 12px -2px rgb(0 0 0 / 0.55);
+    inset 0 0 0 1px var(--surface-raised-border),
+    var(--shadow-chip-press);
+  /* Never interpolate from a transparent resting row into this selected
+     material; opaque surfaces must remain opaque on the very first frame. */
+  transition-property: color, border-color, text-decoration-color, fill, stroke;
 }
-.dark .liquid-glass {
-  background: color-mix(in srgb, var(--bg-surface) 70%, transparent);
-  border-color: color-mix(in srgb, #ffffff 14%, transparent);
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in srgb, #ffffff 22%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, #ffffff 5%, transparent),
-    inset 0 -1px 0 0 color-mix(in srgb, #ffffff 6%, transparent),
-    0 1px 3px 0 rgb(0 0 0 / 0.5),
-    0 16px 40px -12px rgb(0 0 0 / 0.7);
+
+.composer-card {
+  min-height: var(--composer-resting-height);
+  box-shadow: var(--shadow-input-rest);
+}
+
+.composer-control-row-inset {
+  padding-inline: var(--composer-card-padding-inline);
+}
+
+/* Product wrapper around the mature Button + Radix trigger primitives. The
+   primitive owns semantics/keyboard behavior; this class owns shared density
+   and state visuals. Plain focus never looks selected. */
+.app-compact-control {
+  height: var(--control-height-compact);
+  min-height: var(--control-height-compact);
+  gap: var(--control-gap-compact);
+  padding: 0 var(--control-padding-inline) 0 0;
+  border: 0;
+  border-radius: var(--control-radius);
+  color: var(--control-fg-rest);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.75rem;
+  font-weight: 400;
+  transition:
+    color var(--dur-quick) var(--ease-snap),
+    background-color var(--dur-quick) var(--ease-snap),
+    box-shadow var(--dur-quick) var(--ease-snap);
 }
 
 /* Electron <webview> is a separate Chromium surface. During live native
