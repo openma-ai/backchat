@@ -1412,6 +1412,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --interaction-bg-active: var(--interaction-bg-hover);
   --control-bg-hover: var(--interaction-bg-hover);
   --control-bg-open: var(--interaction-bg-active);
+  --sidebar-row-action-size: 16px;
+  --sidebar-row-action-icon-size: var(--control-icon-size);
+  --sidebar-row-action-radius: calc(var(--sidebar-row-action-size) / 2);
   --scrollbar-thumb: color-mix(in srgb, var(--fg-subtle) 72%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--fg-muted) 90%, transparent);
   --scroll-boundary-thickness: 0.5px;
