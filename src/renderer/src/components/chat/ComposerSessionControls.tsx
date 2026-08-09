@@ -371,10 +371,11 @@ export function PermissionModeChip({
       <DropdownMenuTrigger
         disabled={disabled}
         className={cn(
-          "inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs",
+          "inline-flex h-7 select-none items-center gap-1 rounded-md px-1.5 text-xs",
           meta.toneClass,
-          "hover:bg-bg-surface/60",
-          "focus:outline-none focus:bg-bg-surface/60",
+          "hover:bg-[var(--control-bg-hover)]",
+          "focus:outline-none focus:bg-[var(--control-bg-hover)]",
+          "data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg",
           "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         )}
         aria-label={label}
@@ -482,8 +483,9 @@ function SessionModeControl({
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
         className={cn(
-          "inline-flex h-7 max-w-[180px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs",
-          "hover:bg-bg-surface/60 focus:outline-none focus:bg-bg-surface/60",
+          "inline-flex h-7 max-w-[180px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs",
+          "hover:bg-[var(--control-bg-hover)] focus:outline-none focus:bg-[var(--control-bg-hover)]",
+          "data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg",
           "transition-colors disabled:cursor-not-allowed disabled:opacity-50",
           selectedPresentation.tone === "warning"
             ? "text-warning"
@@ -632,10 +634,10 @@ function InlineComposerOptionControl({
         aria-pressed={option.currentValue}
         onClick={() => void onSetConfigOption?.(option.id, !option.currentValue)}
         className={cn(
-          "inline-flex h-7 max-w-[150px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs",
+          "inline-flex h-7 max-w-[150px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs",
           option.currentValue
-            ? "bg-bg-surface text-fg"
-            : "text-fg-muted hover:bg-bg-surface/60",
+            ? "bg-[var(--control-bg-open)] text-fg"
+            : "text-fg-muted hover:bg-[var(--control-bg-hover)]",
         )}
       >
         <CheckSquareIcon className="size-3.5 shrink-0" />
@@ -647,7 +649,7 @@ function InlineComposerOptionControl({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
-        className="inline-flex h-7 max-w-[180px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted hover:bg-bg-surface/60"
+        className="inline-flex h-7 max-w-[180px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted hover:bg-[var(--control-bg-hover)] focus:outline-none focus:bg-[var(--control-bg-hover)] data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg"
       >
         <WrenchIcon className="size-3.5 shrink-0" />
         <span className="truncate">{option.name}</span>

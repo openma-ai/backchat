@@ -39,10 +39,8 @@
 .app-selected-surface {
   position: relative;
   border: 0;
-  background: var(--surface-raised);
-  box-shadow:
-    inset 0 0 0 1px var(--surface-raised-border),
-    var(--shadow-chip-press);
+  background: var(--interaction-bg-active);
+  box-shadow: none;
   /* Never interpolate from a transparent resting row into this selected
      material; opaque surfaces must remain opaque on the very first frame. */
   transition-property: color, border-color, text-decoration-color, fill, stroke;
@@ -93,6 +91,7 @@
   color: var(--control-fg-rest);
   background: transparent;
   box-shadow: none;
+  user-select: none;
   font-size: 0.75rem;
   font-weight: 400;
   transition:
@@ -126,7 +125,12 @@
 
 .app-compact-control:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--control-focus-ring);
+  box-shadow: none;
+}
+
+.app-compact-control:focus-visible:not([data-state="open"]):not([aria-expanded="true"]) {
+  color: var(--control-fg-active);
+  background: var(--control-bg-hover);
 }
 
 .app-compact-control:disabled {

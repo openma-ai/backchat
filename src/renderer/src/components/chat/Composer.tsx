@@ -769,7 +769,7 @@ export function Composer({
             disabled={!!disabled}
             className={cn(
               "inline-flex size-[var(--control-height-compact)] shrink-0 items-center justify-center rounded-md",
-              "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+              "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
               "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
               "transition-colors",
             )}
@@ -866,7 +866,7 @@ export function Composer({
               title={t("chat.stop")}
               className={cn(
                 "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
-                "text-fg-subtle hover:text-fg hover:bg-bg-surface",
+                "text-fg-subtle hover:text-fg hover:bg-[var(--control-bg-hover)]",
                 "transition-colors",
               )}
             >
@@ -884,7 +884,7 @@ export function Composer({
             title={running ? primaryRunningAction?.title : t("chat.send")}
             className={cn(
               "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
-              "text-fg-subtle hover:text-fg hover:bg-bg-surface",
+              "text-fg-subtle hover:text-fg hover:bg-[var(--control-bg-hover)]",
               "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
               "transition-colors",
             )}

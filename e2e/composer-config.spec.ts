@@ -140,6 +140,80 @@ test.describe("composer configuration", () => {
     expect(Math.abs(approvalBox!.width - configBox!.width)).toBeLessThanOrEqual(2);
   });
 
+  test("uses ringless, non-selectable focus feedback for composer selectors", async ({
+    page,
+    bridge,
+  }) => {
+    await bridge.setAgentSetupFixture({
+      agents: [{
+        id: "codex-acp",
+        label: "Codex",
+        command: "codex-acp",
+        detected: true,
+        available: true,
+        installed: true,
+      }],
+    });
+    await enableAgent(page, "codex-acp");
+    const sessionId = await injectSession(page, { agentId: "codex-acp" });
+    await injectEvent(page, {
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "e2e-compact-selector-focus",
+      event: {
+        sessionUpdate: "config_option_update",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Session mode",
+            category: "mode",
+            type: "select",
+            currentValue: "agent",
+            options: [
+              { value: "read-only", name: "Ask for approval" },
+              { value: "agent", name: "Approve for me" },
+              { value: "agent-full-access", name: "Full access" },
+            ],
+          },
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-5.6-sol",
+            options: [{ value: "gpt-5.6-sol", name: "GPT-5.6-Sol" }],
+          },
+        ],
+      },
+    });
+
+    const approval = page.getByRole("button", {
+      name: "Approve for me",
+      exact: true,
+    });
+    const model = page.locator('button[aria-label^="Run on "]').first();
+    const userSelect = await Promise.all([approval, model].map((control) =>
+      control.evaluate((element) => getComputedStyle(element).userSelect),
+    ));
+    expect(userSelect).toEqual(["none", "none"]);
+
+    await model.click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toBeHidden();
+    const focusAppearance = await model.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        backgroundColor: style.backgroundColor,
+        boxShadow: style.boxShadow,
+        outlineStyle: style.outlineStyle,
+      };
+    });
+    expect(focusAppearance.boxShadow).toBe("none");
+    expect(focusAppearance.outlineStyle).toBe("none");
+    expect(focusAppearance.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
   test("model picker switches the active session config option", async ({ page, bridge }) => {
     await enableAgent(page, "claude-acp");
     const sessionId = await injectSession(page);

@@ -55,8 +55,6 @@ describe("groupSidebarSessions", () => {
 
     expect(projectRow).not.toContain("active: boolean");
     expect(projectRow).not.toContain("app-selected-surface");
-    expect(projectRow).toContain("hover:bg-bg-surface/60");
-    expect(projectRow).toContain("active:bg-bg-surface/80");
   });
 
   it("uses closed and open folder icons for project disclosure state", () => {

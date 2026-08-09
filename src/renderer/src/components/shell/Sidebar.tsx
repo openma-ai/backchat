@@ -321,7 +321,7 @@ export function Sidebar() {
             "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
             newChatActive
               ? "app-selected-surface text-fg"
-              : "text-fg hover:bg-bg-surface/60",
+              : "text-fg hover:bg-[var(--control-bg-hover)]",
             "transition-colors",
           )}
           style={{ height: "var(--row-h)" }}
@@ -347,7 +347,7 @@ export function Sidebar() {
           aria-label={t("sidebar.search")}
           className={cn(
             "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
-            "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+            "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
             "transition-colors",
           )}
           style={{ height: "var(--row-h)" }}
@@ -373,7 +373,7 @@ export function Sidebar() {
             "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-xs",
             scheduledActive
               ? "app-selected-surface text-fg"
-              : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+              : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
           )}
           style={{ height: "var(--row-h)" }}
         >
@@ -488,7 +488,7 @@ export function Sidebar() {
                       onClick={() => setCreateProjectOpen(true)}
                       aria-label={t("project.create")}
                       title={t("project.create")}
-                      className="flex size-5 items-center justify-center rounded text-fg-subtle hover:bg-bg-surface/60 hover:text-fg"
+                      className="flex size-5 items-center justify-center rounded text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg"
                     >
                       <PlusIcon className="size-3.5" />
                     </button>
@@ -605,7 +605,7 @@ export function Sidebar() {
               "app-no-drag flex min-w-0 flex-1 items-center gap-2 px-2 text-xs",
               settingsActive
                 ? "app-selected-surface text-fg"
-                : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+                : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
             )}
             style={{ height: "var(--row-h)" }}
           >
@@ -713,7 +713,7 @@ function ProjectSidebarRow({
     <div
       className={cn(
         "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
-        "text-fg-muted hover:bg-bg-surface/60 hover:text-fg active:bg-bg-surface/80",
+        "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg active:bg-[var(--control-bg-open)]",
         "transition-colors",
       )}
       style={{ height: "var(--row-h)" }}
@@ -813,7 +813,7 @@ function PairSidebarRow({
         "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
         active
           ? "app-selected-surface text-fg"
-          : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+          : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
         "transition-colors",
       )}
       style={{ height: "var(--row-h)" }}
@@ -941,7 +941,7 @@ function SessionRow({
             errored && "text-danger",
             active
               ? "app-selected-surface text-fg"
-              : !errored && "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
+              : !errored && "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
             "transition-colors",
           )}
           style={{ height: "var(--row-h)" }}
@@ -1093,7 +1093,7 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
           aria-label={t("sidebar.pairChat")}
           className={cn(
             "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
-            "text-fg hover:bg-bg-surface/60 transition-colors",
+            "text-fg hover:bg-[var(--control-bg-hover)] transition-colors",
           )}
           style={{ height: "var(--row-h)" }}
         >
@@ -1123,7 +1123,7 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
                 disabled={atCap}
                 className={cn(
                   "flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs",
-                  "hover:bg-bg-surface/60",
+                  "hover:bg-[var(--control-bg-hover)]",
                   atCap && "opacity-50",
                 )}
               >
