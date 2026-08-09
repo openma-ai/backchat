@@ -120,29 +120,50 @@ test.describe("backchat smoke", () => {
       expect(Math.abs(newChatCenter - settingsCenter)).toBeLessThanOrEqual(0.5);
   });
 
-  test("anchors the composer bottom to the top of the sidebar settings row", async ({
+  test("uses the sidebar footer gap between the composer and runtime row", async ({
       page,
+      bridge,
   }) => {
+      await bridge.setAgentSetupFixture({
+        agents: [{
+          id: "codex-acp",
+          label: "Codex",
+          command: "codex-acp",
+          detected: true,
+          available: true,
+          installed: true,
+          updateAvailable: true,
+        }],
+      });
+      await enableAgent(page, "codex-acp");
+
       const settings = page.getByRole("link", { name: "Settings", exact: true });
+      const acpUpdate = page.getByRole("link", { name: "1 ACP update available" });
       const runtime = page.locator('[data-composer-footer-control="runtime"]').first();
       const composer = page.locator(".composer-card").first();
       await Promise.all(
-        [settings, runtime, composer].map((item) =>
+        [settings, acpUpdate, runtime, composer].map((item) =>
           expect(item).toBeVisible(),
         ),
       );
 
-      const [settingsBox, runtimeBox, composerBox] = await Promise.all([
+      const [settingsBox, acpUpdateBox, runtimeBox, composerBox] = await Promise.all([
         settings.boundingBox(),
+        acpUpdate.boundingBox(),
         runtime.boundingBox(),
         composer.boundingBox(),
       ]);
       expect(settingsBox).not.toBeNull();
+      expect(acpUpdateBox).not.toBeNull();
       expect(runtimeBox).not.toBeNull();
       expect(composerBox).not.toBeNull();
       const composerBottom = composerBox!.y + composerBox!.height;
-      expect(Math.abs(composerBottom - settingsBox!.y)).toBeLessThanOrEqual(2);
-      expect(Math.abs(runtimeBox!.y - composerBottom - 8)).toBeLessThanOrEqual(0.5);
+      const acpUpdateBottom = acpUpdateBox!.y + acpUpdateBox!.height;
+      const settingsCenter = settingsBox!.y + settingsBox!.height / 2;
+      const runtimeCenter = runtimeBox!.y + runtimeBox!.height / 2;
+      expect(Math.abs(runtimeBox!.y - composerBottom - 2)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(composerBottom - acpUpdateBottom)).toBeLessThanOrEqual(2);
+      expect(Math.abs(runtimeCenter - settingsCenter)).toBeLessThanOrEqual(2);
   });
 
   test("keeps suggestion cards visually level with the resting composer", async ({
@@ -201,6 +222,44 @@ test.describe("backchat smoke", () => {
       await page.getByRole("button", { name: "Back to app", exact: true }).click();
 
       await expect(page.getByRole("textbox")).toHaveValue("keep this unfinished draft");
+  });
+
+  test("uses a native CJK font stack for chat prose while code stays monospace", async ({
+      page,
+  }) => {
+      await enableAgent(page, "codex-acp");
+      const sessionId = await injectSession(page, { agentId: "codex-acp" });
+      const turnId = "native-chat-typography";
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "native-chat-typography-message",
+          _meta: { codex: { phase: "final_answer" } },
+          content: {
+            type: "text",
+            text: "中文排版 mixed with Latin and `inlineCode`.",
+          },
+        },
+      });
+      await injectEvent(page, {
+        type: "session.complete",
+        session_id: sessionId,
+        turn_id: turnId,
+      });
+
+      const answer = page.locator('[data-session-turn-answer="true"]').last();
+      await expect(answer).toContainText("中文排版 mixed with Latin");
+      const families = await answer.evaluate((element) => ({
+        prose: getComputedStyle(element.querySelector("p")!).fontFamily,
+        code: getComputedStyle(element.querySelector("code")!).fontFamily,
+      }));
+
+      expect(families.prose).toContain("PingFang SC");
+      expect(families.prose).not.toContain("Geist Variable");
+      expect(families.code).toContain("JetBrains Mono Variable");
   });
 
   test("keeps runtime location out of the model menu", async ({ page, bridge }) => {
@@ -301,6 +360,55 @@ test.describe("backchat smoke", () => {
         event: {
           sessionUpdate: "agent_message_chunk",
           _meta: { codex: { phase: "commentary" } },
+          content: { type: "text", text: "Then inspect the final command." },
+        },
+      });
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "tool_call",
+          toolCallId: "single-tool",
+          kind: "execute",
+          status: "completed",
+          title: "Final command",
+          rawInput: { command: "final command" },
+          content: [{ type: "terminal", terminalId: "terminal-final" }],
+        },
+      });
+      await injectEvent(page, {
+        type: "session.complete",
+        session_id: sessionId,
+        turn_id: turnId,
+      });
+
+      const groupIcon = page
+        .locator('[data-tool-group-trigger] [data-tool-group-icon-slot] svg')
+        .first();
+      const singleTool = page.locator('[data-tool-call-id="single-tool"]');
+      const singleIcon = singleTool.locator('[data-tool-activity-identity] svg');
+      const [groupIconBox, singleIconBox] = await Promise.all([
+        groupIcon.boundingBox(),
+        singleIcon.boundingBox(),
+      ]);
+      expect(groupIconBox).not.toBeNull();
+      expect(singleIconBox).not.toBeNull();
+      expect(Math.abs(groupIconBox!.x - singleIconBox!.x)).toBeLessThanOrEqual(0.5);
+
+      const summary = singleTool.getByRole("button");
+      const input = singleTool.locator('[data-tool-input="single-tool"]');
+      const terminal = singleTool.locator('[data-tool-terminal-id="terminal-final"]');
+      await expect(input).toBeHidden();
+      await summary.click();
+      await expect(input).toBeVisible();
+      await expect(terminal).toBeVisible();
+      await summary.click();
+      await expect(input).toBeHidden();
+      await expect(terminal).toBeHidden();
+  });
+
+  test("uses an inset thin overlay thumb that grows on hover without a native gutter", async ({
   test("home suggestion selection creates an editable composer template", async ({ page }) => {
       await page.locator('[data-suggestion-kind="shape"]').click();
 

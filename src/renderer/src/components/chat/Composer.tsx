@@ -1,3 +1,4 @@
+---RESULT 1---
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";

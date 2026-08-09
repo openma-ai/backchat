@@ -82,7 +82,7 @@ export function SessionRuntimeSummary({
       data-gui-feature="session.initialize-ready"
       data-session-runtime="true"
       data-session-id={session.id}
-      className="mb-[var(--composer-footer-gap)] flex h-[var(--row-h)] shrink-0 items-center justify-between px-2 text-xs text-fg-muted"
+      className="mb-[var(--row-gap-y)] flex h-[var(--row-h)] shrink-0 items-center justify-between px-2 text-xs text-fg-muted"
     >
       <RuntimeLocationControl title={runtimeTitle} />
       {usage ? (

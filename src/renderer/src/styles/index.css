@@ -57,9 +57,9 @@
   padding-inline: var(--composer-card-padding-inline);
 }
 
-/* Tailwind's space-y writes its gap onto the preceding child. Keep the
-   standard 8px card-to-footer rhythm explicit while the footer's bottom
-   token moves the entire visible stack onto the sidebar anchor. */
+/* Tailwind's space-y writes its gap onto the preceding child. Match the
+   sidebar's ACP-update-to-Settings separation so the two footer stacks read
+   as one shared row system. */
 .composer-stack-card {
   margin-bottom: var(--composer-card-footer-gap) !important;
 }
@@ -1394,6 +1394,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
 @theme {
   --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
   --font-sans: "Geist Variable", -apple-system, "Segoe UI", sans-serif;
+  --font-chat: -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono Variable", "SF Mono", Menlo, Consolas, monospace;
 
   --color-brand: var(--brand);
@@ -1480,6 +1482,14 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Chat prose is multilingual long-form content. A native system stack keeps
+   Latin and CJK glyph metrics coherent; code descendants retain font-mono. */
+[data-session-turn-prompt],
+[data-session-turn-answer] {
+  font-family: var(--font-chat);
+  font-kerning: normal;
 }
 
 /* Viewport lock — the AppShell sidebar + breadcrumb header are global frame
