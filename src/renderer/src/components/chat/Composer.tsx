@@ -25,6 +25,7 @@ import { describeRunningMessageAction } from "@/lib/composer-delivery";
 import { buildComposerSubmitText, canSubmitComposer, resolveComposerKeyAction } from "@/lib/composer-prompt";
 import {
   HOST_PLAN_COMMAND,
+  hostSessionStateAction,
   isHostForkSlashCommand,
   isSkillSlashCommand,
   slashCommandConfigAction,
@@ -407,7 +408,9 @@ export function Composer({
     }
     // Session-state commands (`/plan`) switch a config option locally.
     // The command text never becomes a prompt — there is nothing to send.
-    const configAction = slashCommandConfigAction(cmd);
+    // The host contract backstops a catalogue entry that lost its `_meta`.
+    const configAction =
+      slashCommandConfigAction(cmd) ?? hostSessionStateAction(cmd, currentAgentId);
     if (configAction) {
       if (lockedAgentId) {
         void onSetConfigOption?.(configAction.configId, configAction.value);
@@ -550,8 +553,9 @@ export function Composer({
       const stateCommand =
         composerAvailableCommands.find(
           (command) =>
-            slashCommandConfigAction(command) &&
-            `/${command.name}` === t.trim(),
+            (slashCommandConfigAction(command)
+              ?? hostSessionStateAction(command, currentAgentId))
+            && `/${command.name}` === t.trim(),
         ) ??
         // The catalogue can lag behind a fast typist (agent list still
         // loading). The host contract for Codex holds regardless.

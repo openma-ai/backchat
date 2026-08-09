@@ -40,6 +40,12 @@ export function normalizeAgentAvailableCommands(
       ...(command.metadata && typeof command.metadata === "object"
         ? { metadata: command.metadata as Record<string, unknown> }
         : {}),
+      // `_meta` is where ACP puts implementation detail, and where Codex puts
+      // the `/plan` config switch. Dropping it here turned `/plan` into an
+      // ordinary command that escaped as a prompt from draft composers.
+      ...(command._meta && typeof command._meta === "object"
+        ? { _meta: command._meta as Record<string, unknown> }
+        : {}),
     }];
   });
 }
@@ -61,22 +67,73 @@ export const HOST_PLAN_COMMAND: AcpAvailableCommand = {
   },
 };
 
+/** Host knowledge about session-state commands, keyed by harness.
+ *
+ * ACP v1's `AvailableCommand` is only `name` / `description` / `input`, and
+ * commands are invoked by putting their text in a `session/prompt` request.
+ * `commandAction` is a codex-acp `_meta` extension, so a command name alone
+ * proves nothing: the official slash-command docs even show a prompt-style
+ * `/plan` that takes `input.hint`. Never infer this contract from a name —
+ * add a harness here only with evidence from that adapter. */
+const HOST_SESSION_STATE_COMMANDS: Readonly<
+  Record<string, readonly AcpAvailableCommand[]>
+> = {
+  "codex-acp": [HOST_PLAN_COMMAND],
+};
+
+/** Codex's `/plan` contract is host-owned, so a catalogue entry that reached
+ * us stripped of `_meta` (probe caches and snapshot normalizers whitelist
+ * fields) is still a config switch and must never leave as a prompt. */
+export function hostSessionStateAction(
+  command: AcpAvailableCommand,
+  agentId: string,
+): SlashCommandConfigAction | undefined {
+  const host = (HOST_SESSION_STATE_COMMANDS[agentId] ?? []).find(
+    (candidate) => candidate.name === command.name,
+  );
+  // A host entry describes an argument-free switch; an entry carrying input
+  // is the agent's own prompt command and must keep its prompt transport.
+  if (!host || command.input) return undefined;
+  return slashCommandConfigAction(host);
+}
+
 export function withSessionStateCommands(
   commands: readonly AcpAvailableCommand[],
   configOptions: readonly AcpSessionConfigOption[] | undefined,
   agentId: string,
   options?: { assumePlanCapable?: boolean },
 ): AcpAvailableCommand[] {
-  // Drafts have no session config catalogue yet; modern Codex always
-  // supports the collaboration switch, so the host still owns `/plan`
-  // there and the picked value rides along as a draft config override.
-  const hasPlanMode = agentId === "codex-acp"
-    && (Boolean(options?.assumePlanCapable)
-      || Boolean(findSelectConfigOption(configOptions, "collaboration_mode")));
-  if (!hasPlanMode || commands.some((command) => command.name === "plan")) {
-    return [...commands];
+  let next = [...commands];
+  for (const host of HOST_SESSION_STATE_COMMANDS[agentId] ?? []) {
+    const action = slashCommandConfigAction(host);
+    if (!action) continue;
+    const existing = next.find((command) => command.name === host.name);
+    // An agent-published entry that still carries its own action owns itself.
+    if (existing && slashCommandConfigAction(existing)) continue;
+    // Drafts have no session config catalogue yet; modern Codex always
+    // supports the collaboration switch, so the host still owns `/plan`
+    // there and the picked value rides along as a draft config override.
+    const capable = Boolean(options?.assumePlanCapable)
+      || Boolean(findSelectConfigOption(configOptions, action.configId));
+    if (!capable) continue;
+    if (existing) {
+      // Upgrade in place: leaving a stripped entry in the list is exactly how
+      // `/plan` used to fall through the generic branch and get sent.
+      next = next.map((command) =>
+        command === existing
+          ? {
+              ...host,
+              ...(command.description
+                ? { description: command.description }
+                : {}),
+            }
+          : command,
+      );
+      continue;
+    }
+    next = [host, ...next];
   }
-  return [HOST_PLAN_COMMAND, ...commands];
+  return next;
 }
 
 export interface SlashCommandConfigAction {
@@ -85,22 +142,25 @@ export interface SlashCommandConfigAction {
   resetValue?: string | boolean;
 }
 
-/** Codex marks session-state commands (`/plan`) with `_meta.commandAction`.
- * Such a command is a local config switch: the client applies the config
- * value and never submits the command text as a prompt. The same shape on
- * `metadata` covers host-synthesized commands. */
+/** Codex marks session-state commands with `_meta.commandAction`; ACP v1
+ * itself has no such field, so this is read defensively. Only
+ * `setConfigOption` is a local switch — `prefixPrompt` (Codex's `/goal`)
+ * still travels as prompt text, which is how ACP invokes commands. */
 export function slashCommandConfigAction(
   command: AcpAvailableCommand,
 ): SlashCommandConfigAction | undefined {
-  const carriers = [
-    command.metadata,
-    (command as { _meta?: Record<string, unknown> })._meta,
-  ];
+  const carriers = [command.metadata, command._meta];
   for (const carrier of carriers) {
     const action = carrier?.["commandAction"];
     if (!action || typeof action !== "object") continue;
     const record = action as Record<string, unknown>;
-    if (record["kind"] !== "setConfigOption") continue;
+    switch (record["kind"]) {
+      case "setConfigOption":
+        break;
+      // `prefixPrompt` and any future kind keep the prompt transport.
+      default:
+        continue;
+    }
     const configId = record["configId"];
     if (typeof configId !== "string" || !configId) continue;
     const value = record["value"];

@@ -1,11 +1,22 @@
 import { expect, test } from "./fixtures";
 
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   enableAgent,
   injectAvailableCommands,
   injectEvent,
   injectSession,
+  reloadRenderer,
+  waitForRunnableHarness,
 } from "./helpers";
+
+const fakeAcpAgentPath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "fixtures",
+  "fake-acp-agent.mjs",
+);
 
 test.describe("composer slash commands", () => {
   test("available commands populate the slash picker", async ({ page, composer, capture }) => {
@@ -77,6 +88,55 @@ test.describe("composer slash commands", () => {
     await composer.input.press("Enter");
 
     await composer.waitForPromptTexts(["/compact"]);
+  });
+
+  test("plan from a cold new chat switches state without starting a session", async ({ page }) => {
+    // The shipped regression: a draft composer has no session catalogue, so
+    // `/plan` fell through to the generic branch, promoted the draft and left
+    // as a prompt — the sidebar filled up with sessions literally named
+    // "/plan". A draft must apply the switch locally instead.
+    await page.evaluate(
+      async ({ nodePath, fakeAgentPath }) => {
+        await window.backchat.settingsPatch({
+          agents: [{
+            id: "codex-acp",
+            enabled: true,
+            command_override: nodePath,
+            args_override: [fakeAgentPath],
+            env: [],
+          }],
+        });
+      },
+      { nodePath: process.execPath, fakeAgentPath: fakeAcpAgentPath },
+    );
+    await reloadRenderer(page);
+    await waitForRunnableHarness(page);
+    const sessionsBefore = await page.evaluate(
+      async () => (await window.backchat.sessionsList()).length,
+    );
+
+    // The cold-create page renders its own composer, outside the chat surface.
+    const draftInput = page.locator(".new-chat-page textarea").last();
+    await draftInput.fill("/plan");
+    // The host owns `/plan` for Codex even before a session exists, so the
+    // picker offers it without any agent catalogue.
+    await expect(
+      page.getByRole("option", { name: /plan/i }).first(),
+    ).toBeVisible();
+    await draftInput.press("Enter");
+
+    await expect(draftInput).toHaveValue("");
+    // The draft keeps its plan choice as a config override and shows the chip
+    // before any session exists.
+    await expect(
+      page.locator('[data-composer-session-state="true"]'),
+    ).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(
+      await page.evaluate(
+        async () => (await window.backchat.sessionsList()).length,
+      ),
+    ).toBe(sessionsBefore);
   });
 
   test("plan switches session state locally and the chip can dismiss it", async ({ page, composer }) => {

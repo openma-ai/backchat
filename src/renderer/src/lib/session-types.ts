@@ -314,6 +314,9 @@ export interface AcpAvailableCommand {
   category?: string;
   source?: string;
   metadata?: Record<string, unknown>;
+  /** ACP's own extension envelope. Codex publishes the `/plan` config
+   *  switch here, so it must survive every normalization hop. */
+  _meta?: Record<string, unknown>;
 }
 
 export interface TurnEvent {

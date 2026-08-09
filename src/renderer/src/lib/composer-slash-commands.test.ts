@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSlashCommandSections,
+  hostSessionStateAction,
   isHostForkSlashCommand,
   isSkillSlashCommand,
   matchesSlashCommand,
@@ -207,5 +208,116 @@ describe("composer slash commands", () => {
       "Review-code",
     );
     expect(skillCommandLabel({ name: "skill/testing" })).toBe("Testing");
+  });
+});
+
+describe("codex session-state commands", () => {
+  // Codex publishes the switch on `_meta`; ACP v1's AvailableCommand has no
+  // such field, so every normalization hop must carry it through. Dropping it
+  // is what let a draft composer send `/plan` as a prompt.
+  const codexPlan = {
+    name: "plan",
+    description: "Turn plan mode on.",
+    input: null,
+    _meta: {
+      commandAction: {
+        kind: "setConfigOption",
+        configId: "collaboration_mode",
+        value: "plan",
+        resetValue: "default",
+        presentation: "state",
+      },
+    },
+  };
+
+  it("keeps _meta through normalization so the switch survives", () => {
+    const [normalized] = normalizeAgentAvailableCommands([codexPlan]);
+
+    expect(normalized._meta).toEqual(codexPlan._meta);
+    expect(slashCommandConfigAction(normalized)).toEqual({
+      configId: "collaboration_mode",
+      value: "plan",
+      resetValue: "default",
+    });
+  });
+
+  it("upgrades a stripped /plan instead of leaving it sendable", () => {
+    // A probe-cache round trip that lost `_meta`: same name, no action.
+    const stripped = { name: "plan", description: "Turn plan mode on." };
+
+    const [resolved] = withSessionStateCommands(
+      [stripped],
+      undefined,
+      "codex-acp",
+      { assumePlanCapable: true },
+    );
+
+    expect(resolved.name).toBe("plan");
+    expect(resolved.description).toBe("Turn plan mode on.");
+    expect(slashCommandConfigAction(resolved)).toMatchObject({
+      configId: "collaboration_mode",
+      value: "plan",
+    });
+  });
+
+  it("does not duplicate or override an agent-published /plan", () => {
+    const resolved = withSessionStateCommands(
+      [codexPlan],
+      undefined,
+      "codex-acp",
+      { assumePlanCapable: true },
+    );
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]).toBe(codexPlan);
+  });
+
+  it("leaves another harness's /plan as an ordinary prompt command", () => {
+    // The official slash-command docs show a prompt-style `/plan` that takes
+    // `input.hint`. Only Codex declares the config switch, so a name match
+    // must never hijack anyone else.
+    const promptPlan = {
+      name: "plan",
+      description: "Create a detailed implementation plan",
+      input: { hint: "description of what to plan" },
+    };
+
+    const resolved = withSessionStateCommands(
+      [promptPlan],
+      undefined,
+      "claude-acp",
+      { assumePlanCapable: true },
+    );
+
+    expect(resolved).toEqual([promptPlan]);
+    expect(slashCommandConfigAction(promptPlan)).toBeUndefined();
+    expect(hostSessionStateAction(promptPlan, "claude-acp")).toBeUndefined();
+  });
+
+  it("keeps prefixPrompt commands like /goal on the prompt transport", () => {
+    const codexGoal = {
+      name: "goal",
+      description: "Set a goal to keep pursuing.",
+      input: { hint: "[<objective>|clear|pause|resume]" },
+      _meta: { commandAction: { kind: "prefixPrompt", presentation: "state" } },
+    };
+
+    expect(slashCommandConfigAction(codexGoal)).toBeUndefined();
+    expect(hostSessionStateAction(codexGoal, "codex-acp")).toBeUndefined();
+    expect(
+      withSessionStateCommands([codexGoal], undefined, "codex-acp", {
+        assumePlanCapable: true,
+      }),
+    ).toContainEqual(codexGoal);
+  });
+
+  it("backstops a stripped /plan picked straight from the overlay", () => {
+    const stripped = { name: "plan", description: "Turn plan mode on." };
+
+    expect(hostSessionStateAction(stripped, "codex-acp")).toMatchObject({
+      configId: "collaboration_mode",
+      value: "plan",
+    });
+    expect(hostSessionStateAction(stripped, "gemini")).toBeUndefined();
   });
 });
