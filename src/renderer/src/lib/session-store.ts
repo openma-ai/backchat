@@ -2210,30 +2210,40 @@ export class SessionStore {
   }
 
   /** Push back any config value this session remembers that the agent did not
-   * restore on resume. Only writable select options are touched, only when the
-   * agent still offers the remembered value, and the agent's own answer is the
-   * final word — its config_option_update lands after this call, so a value it
-   * deliberately changed is not fought over twice. */
+   * restore on resume. The agent's answer to `session/set_config_option` MUST
+   * carry the complete option list (ACP v1 session-config-options), so its
+   * reply becomes the truth and the chip stops showing an unverified value.
+   *
+   * Two shapes of loss are covered. A fresh agent process can report the
+   * option with a different value, and it can report nothing at all: Codex's
+   * resume response carries no standard `configOptions`, so the runtime hands
+   * us an empty list, which normalization turns into undefined — leaving the
+   * pre-restart value on screen while the agent has silently reset it. */
   #restoreUnrestoredConfigOptions(
     sessionId: string,
     remembered: readonly AcpSessionConfigOption[] | undefined,
     reported: readonly AcpSessionConfigOption[] | undefined,
   ): void {
-    if (!remembered?.length || !reported?.length) return;
-    for (const option of reported) {
-      if (option.type !== "select") continue;
-      const previous = remembered.find((entry) => entry.id === option.id);
-      if (!previous || previous.type !== "select") continue;
+    if (!remembered?.length) return;
+    for (const previous of remembered) {
+      if (previous.type !== "select") continue;
       const wanted = previous.currentValue;
-      if (wanted === undefined || wanted === option.currentValue) continue;
-      const offered = flattenSelectOptions(option).some(
-        (choice) => choice.value === wanted,
-      );
-      if (!offered) continue;
+      if (wanted === undefined) continue;
+      const live = reported?.find((entry) => entry.id === previous.id);
+      if (live) {
+        if (live.type !== "select" || live.currentValue === wanted) continue;
+        const offered = flattenSelectOptions(live).some(
+          (choice) => choice.value === wanted,
+        );
+        if (!offered) continue;
+      } else if (reported?.length) {
+        // The agent published a catalogue and dropped this option from it.
+        continue;
+      }
       void window.backchat
         .sessionSetConfigOption({
           session_id: sessionId,
-          config_id: option.id,
+          config_id: previous.id,
           value: wanted,
         })
         .catch(() => undefined);

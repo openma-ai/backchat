@@ -4224,4 +4224,66 @@ describe("resuming a session restores config the agent dropped", () => {
   test("does not resurrect a mode the user left", () => {
     expect(resumeWith("default", "default")).not.toHaveBeenCalled();
   });
+
+  test("reasserts plan when a resumed agent reports no config at all", () => {
+    // Codex's resume response carries no standard configOptions, so the
+    // runtime hands us an empty list and normalization turns it into
+    // undefined. The pre-restart value then stays on screen while the agent
+    // has silently reset it — the chip said 计划 while Codex said it was not.
+    const sessionSetConfigOption = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("window", { backchat: { sessionSetConfigOption } });
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-empty",
+      agent_id: "codex-acp",
+      cwd: "/tmp/resume",
+      acp_session_id: "acp-1",
+      config_options: [collaboration("plan")],
+    } as never);
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-empty",
+      agent_id: "codex-acp",
+      cwd: "/tmp/resume",
+      acp_session_id: "acp-1",
+      config_options: [],
+    } as never);
+
+    expect(sessionSetConfigOption).toHaveBeenCalledWith({
+      session_id: "sess-empty",
+      config_id: "collaboration_mode",
+      value: "plan",
+    });
+  });
+
+  test("leaves an option the agent dropped from a published catalogue alone", () => {
+    const sessionSetConfigOption = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("window", { backchat: { sessionSetConfigOption } });
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-dropped",
+      agent_id: "codex-acp",
+      cwd: "/tmp/resume",
+      acp_session_id: "acp-1",
+      config_options: [collaboration("plan")],
+    } as never);
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-dropped",
+      agent_id: "codex-acp",
+      cwd: "/tmp/resume",
+      acp_session_id: "acp-1",
+      config_options: [{
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "gpt-5",
+        options: [{ value: "gpt-5", name: "GPT-5" }],
+      }],
+    } as never);
+
+    expect(sessionSetConfigOption).not.toHaveBeenCalled();
+  });
 });
