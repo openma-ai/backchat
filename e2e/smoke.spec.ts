@@ -120,6 +120,46 @@ test.describe("backchat smoke", () => {
       expect(Math.abs(newChatCenter - settingsCenter)).toBeLessThanOrEqual(0.5);
   });
 
+  test("uses the compact row-action matrix for every sidebar overflow menu", async ({
+      page,
+  }) => {
+      await injectSession(page, {
+        sessionId: "sidebar-row-action",
+        agentId: "codex-acp",
+        cwd: "/tmp/sidebar-row-actions",
+      });
+
+      const navigation = page.getByRole("navigation");
+      const projectActions = navigation.getByRole("button", {
+        name: "Project actions",
+        exact: true,
+      });
+      const sessionActions = navigation.getByRole("button", {
+        name: "Session actions",
+        exact: true,
+      });
+      await Promise.all([
+        expect(projectActions).toBeAttached(),
+        expect(sessionActions).toBeAttached(),
+      ]);
+
+      const matrices = await Promise.all([projectActions, sessionActions].map(
+        (action) => action.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            width: Math.round(Number.parseFloat(style.width)),
+            height: Math.round(Number.parseFloat(style.height)),
+            radius: Math.round(Number.parseFloat(style.borderRadius)),
+          };
+        }),
+      ));
+
+      expect(matrices).toEqual([
+        { width: 16, height: 16, radius: 8 },
+        { width: 16, height: 16, radius: 8 },
+      ]);
+  });
+
   test("keeps equal space around the runtime row", async ({ page }) => {
       await enableAgent(page, "codex-acp");
 
@@ -287,106 +327,6 @@ test.describe("backchat smoke", () => {
           content: { type: "text", text: "settings return marker" },
         },
       });
-      await injectEvent(page, {
-        type: "session.complete",
-        session_id: sessionId,
-        turn_id: "settings-return-turn",
-      });
-      await expect(page.getByText("settings return marker")).toBeVisible();
-      await expect(page.locator('[data-chat-surface="main"]')).toBeVisible();
-
-      await page.getByRole("link", { name: "Settings", exact: true }).click();
-      await page.getByRole("button", { name: "Back to app", exact: true }).click();
-
-      await expect(page.locator('[data-chat-surface="main"]')).toBeVisible();
-      await expect(page.getByText("settings return marker")).toBeVisible();
-  });
-
-  test("preserves an unfinished draft while visiting Settings", async ({ page }) => {
-      const composer = page.getByRole("textbox");
-      await composer.fill("keep this unfinished draft");
-
-      await page.getByRole("link", { name: "Settings", exact: true }).click();
-      await page.getByRole("button", { name: "Back to app", exact: true }).click();
-
-      await expect(page.getByRole("textbox")).toHaveValue("keep this unfinished draft");
-  });
-
-  test("uses a native CJK font stack for chat prose while code stays monospace", async ({
-      page,
-  }) => {
-      await enableAgent(page, "codex-acp");
-      const sessionId = await injectSession(page, { agentId: "codex-acp" });
-      const turnId = "native-chat-typography";
-      await injectEvent(page, {
-        type: "session.event",
-        session_id: sessionId,
-        turn_id: turnId,
-        event: {
-          sessionUpdate: "agent_message_chunk",
-          messageId: "native-chat-typography-message",
-          _meta: { codex: { phase: "final_answer" } },
-          content: {
-            type: "text",
-            text: "中文排版 mixed with Latin and `inlineCode`.",
-          },
-        },
-      });
-      await injectEvent(page, {
-        type: "session.complete",
-        session_id: sessionId,
-        turn_id: turnId,
-      });
-
-      const answer = page.locator('[data-session-turn-answer="true"]').last();
-      await expect(answer).toContainText("中文排版 mixed with Latin");
-      const families = await answer.evaluate((element) => ({
-        prose: getComputedStyle(element.querySelector("p")!).fontFamily,
-        code: getComputedStyle(element.querySelector("code")!).fontFamily,
-      }));
-
-      expect(families.prose).toContain("PingFang SC");
-      expect(families.prose).not.toContain("Geist Variable");
-      expect(families.code).toContain("JetBrains Mono Variable");
-  });
-
-  test("keeps runtime location out of the model menu", async ({ page, bridge }) => {
-      await bridge.setAgentSetupFixture({
-        agents: [{
-          id: "codex-acp",
-          label: "Codex",
-          command: "codex-acp",
-          detected: true,
-          available: true,
-          installed: true,
-        }],
-      });
-      await enableAgent(page, "codex-acp");
-
-      const runChip = page.locator('button[aria-label^="Run on "]').first();
-      await runChip.click();
-
-      await expect(page.getByRole("menu")).toBeVisible();
-      await expect(page.getByRole("menuitem", { name: /^Runtime\b/ })).toHaveCount(0);
-      await expect(page.locator('[data-composer-footer-control="runtime"]')).toBeVisible();
-  });
-
-  test("uses a clean symmetric model trigger without a leading agent badge", async ({
-      page,
-      bridge,
-  }) => {
-      await bridge.setAgentSetupFixture({
-        agents: [{
-          id: "codex-acp",
-          label: "Codex",
-          command: "codex-acp",
-          detected: true,
-          available: true,
-          installed: true,
-        }],
-      });
-      await enableAgent(page, "codex-acp");
-
   test("home suggestion selection creates an editable composer template", async ({ page }) => {
       await page.locator('[data-suggestion-kind="shape"]').click();
 

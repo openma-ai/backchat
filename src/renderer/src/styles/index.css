@@ -138,6 +138,44 @@
   opacity: 0.45;
 }
 
+/* Every sidebar row uses the same compact overflow affordance. Keeping its
+   visual matrix here prevents project, pair, and session rows from drifting
+   when their surrounding layouts evolve independently. */
+.sidebar-row-action {
+  display: inline-flex;
+  width: var(--sidebar-row-action-size);
+  height: var(--sidebar-row-action-size);
+  flex: 0 0 var(--sidebar-row-action-size);
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sidebar-row-action-radius);
+  outline: none;
+  color: var(--control-fg-rest);
+  background: transparent;
+  transition:
+    color var(--dur-quick) var(--ease-snap),
+    background-color var(--dur-quick) var(--ease-snap);
+}
+
+.sidebar-row-action:hover,
+.sidebar-row-action:focus-visible {
+  color: var(--control-fg-active);
+  background: var(--control-bg-hover);
+}
+
+.sidebar-row-action[data-state="open"],
+.sidebar-row-action[aria-expanded="true"] {
+  color: var(--control-fg-active);
+  background: var(--control-bg-open);
+}
+
+.sidebar-row-action > svg {
+  width: var(--sidebar-row-action-icon-size);
+  height: var(--sidebar-row-action-icon-size);
+}
+
 [data-composer-run-trigger] {
   padding-inline: var(--control-padding-inline);
 }
@@ -1314,6 +1352,77 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --motion-disclosure-easing: var(--ease-soft);
   --composer-radius: 1rem;
 
+  /* ---------- Theme-derived product semantics ----------
+     Theme plugins provide the primitive palette. Product components consume
+     these roles, so a theme swap never requires component-specific colors. */
+  --surface-canvas: var(--bg);
+  --surface-panel: var(--bg-surface);
+  --surface-raised: var(--bg-bubble);
+  --surface-panel-border: color-mix(in srgb, var(--border) 72%, transparent);
+  --surface-raised-border: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  /* Ordinary keyboard focus is structural, not branded. Themes may use
+     `--ring` for explicit emphasis, while generic controls always resolve
+     through this neutral boundary token. */
+  --focus-ring: var(--border-strong);
+
+  /* Compact GUI controls share one geometry and one interaction state model.
+     Persistent selections and open menus use one active fill. Keyboard focus
+     uses the quieter hover fill instead of drawing a second outline. */
+  --control-height-compact: 28px;
+  --control-icon-size: 14px;
+  --control-gap-compact: 2px;
+  --control-padding-inline: 6px;
+  --control-radius: 8px;
+  --control-fg-rest: var(--fg-muted);
+  --control-fg-active: var(--fg);
+  --interaction-bg-hover: color-mix(in srgb, var(--bg-bubble) 36%, transparent);
+  --interaction-bg-active: color-mix(in srgb, var(--bg-bubble) 52%, var(--bg-surface));
+  --control-bg-hover: var(--interaction-bg-hover);
+  --control-bg-open: var(--interaction-bg-active);
+  --scrollbar-thumb: color-mix(in srgb, var(--fg-subtle) 72%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--fg-muted) 90%, transparent);
+  --scroll-boundary-thickness: 0.5px;
+  --scroll-boundary-color: color-mix(in srgb, var(--border) 72%, transparent);
+
+  /* The transcript owns the icon rail. Composer controls and the runtime
+     footer derive their frame insets from that one centerline, so the lower
+     controls follow the activity column instead of maintaining a second
+     hand-tuned track. */
+  --chat-turn-content-inset: 32px;
+  --chat-activity-icon-size: var(--control-icon-size);
+  --chat-icon-rail-center: calc(
+    var(--chat-turn-content-inset) + (var(--chat-activity-icon-size) / 2)
+  );
+  --composer-card-border-width: 1px;
+  --composer-card-padding-block: 10px;
+  --composer-section-gap: 6px;
+  --composer-card-padding-inline: var(--composer-card-padding-block);
+  --composer-action-edge-inset: calc(
+    var(--composer-card-border-width) + var(--composer-card-padding-inline)
+  );
+  --composer-frame-padding-inline: calc(
+    var(--chat-icon-rail-center) - var(--composer-action-edge-inset) -
+      (var(--control-height-compact) / 2)
+  );
+  --composer-footer-padding-inline: var(--composer-action-edge-inset);
+  --composer-attachment-icon-size: 16px;
+  /* Bottom chrome is intentionally denser than navigation rows. Sidebar and
+     composer consume this one token so their centers stay locked while the
+     entire lower band becomes slightly shorter. The 1px panel boundary is
+     already part of the main-stage geometry. */
+  --bottom-bar-gap-y: 6px;
+  --composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);
+  --composer-card-footer-gap: var(--composer-footer-gap);
+  --composer-body-min-height: 48px;
+  --composer-resting-height: calc(
+    var(--composer-card-border-width) + var(--composer-card-border-width) +
+      var(--composer-card-padding-block) + var(--composer-card-padding-block) +
+      var(--composer-body-min-height) + var(--composer-section-gap) +
+      var(--control-height-compact)
+  );
+  --composer-menu-width: 280px;
+  --agent-update-popover-width: 17rem;
+
   /* ---------- Spatial tokens (taste-saas) ----------
      Wireless: every visible alignment lives in tokens, not in per-component
      px. If you find yourself writing `pl-3` or `h-11` in a component,
@@ -1343,7 +1452,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
                           consume them; never write a one-off `pl-4`.  */
   --traffic-light-w: 78px;
   --top-row-h: 38px;
-  --row-h: 28px;
+  --row-h: var(--control-height-compact);
   --command-row-h: 40px;
   --row-gap-y: 8px;
   /* Stage inset = the gray band between the cards and the viewport

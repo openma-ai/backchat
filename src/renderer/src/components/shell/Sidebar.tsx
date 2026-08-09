@@ -11,6 +11,7 @@ import {
   ChevronRightIcon,
   CpuIcon,
   Loader2Icon,
+  MoreHorizontalIcon,
   PinIcon,
   PinOffIcon,
   SearchIcon,
@@ -743,9 +744,10 @@ function ProjectSidebarRow({
             <button
               type="button"
               aria-label={t("sidebar.projectActions")}
-              className="flex size-5 items-center justify-center rounded text-fg-muted hover:bg-bg-surface/80 hover:text-fg"
+              data-sidebar-row-action="true"
+              className="sidebar-row-action"
             >
-              <span aria-hidden="true">⋯</span>
+              <MoreHorizontalIcon aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -847,9 +849,10 @@ function PairSidebarRow({
               type="button"
               aria-label={t("sidebar.sessionActions")}
               onClick={(event) => event.stopPropagation()}
-              className="flex size-4 items-center justify-center rounded text-fg-muted hover:bg-bg-surface/80 hover:text-fg"
+              data-sidebar-row-action="true"
+              className="sidebar-row-action"
             >
-              <span aria-hidden="true">⋯</span>
+              <MoreHorizontalIcon aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
@@ -973,12 +976,13 @@ function SessionRow({
                     type="button"
                     aria-label={t("sidebar.sessionActions")}
                     onClick={(e) => e.stopPropagation()}
+                    data-sidebar-row-action="true"
                     className={cn(
-                      "flex size-4 items-center justify-center rounded text-fg-muted transition-opacity hover:bg-bg-surface/80 hover:text-fg",
+                      "sidebar-row-action transition-opacity",
                       menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                     )}
                   >
-                    <span aria-hidden="true">⋯</span>
+                    <MoreHorizontalIcon aria-hidden="true" />
                   </button>
                 </DropdownMenuTrigger>
                  <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
