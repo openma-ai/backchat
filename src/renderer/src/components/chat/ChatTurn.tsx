@@ -1,15 +1,17 @@
 import { memo, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRightFromLineIcon, AtSignIcon } from "lucide-react";
+import { ArrowRightFromLineIcon, AtSignIcon, TargetIcon } from "lucide-react";
 import { SessionTurnFrame } from "@openma/common/session-ui";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useI18n } from "@/lib/i18n";
 import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
 import { settleInterruptedToolStatus } from "@/lib/chat-tool-presentation";
+import { promptCommandAnnotation } from "@/lib/prompt-command-annotation";
 import { latestPlanDocumentForEvents } from "@/lib/session-plan";
 import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
 import {
   selectAgentIdFor,
+  selectCommandNamesFor,
   selectSubagentsFor,
   sessionStore,
   useSessionStore,
@@ -97,6 +99,18 @@ export const TurnBlock = memo(function TurnBlock({
       hasVisibleContent,
     });
   const hasSessionReferences = (turn.sessionReferences?.length ?? 0) > 0;
+  const commandNamesSelector = useMemo(
+    () => selectCommandNamesFor(turn.sessionId),
+    [turn.sessionId],
+  );
+  const commandNames = useSessionStore(commandNamesSelector);
+  // The composer prefixed `/goal ` for the user, so the wire text is not what
+  // they typed. Show the argument as the message and name the command beside
+  // it instead of echoing plumbing back at them.
+  const commandInvocation = useMemo(
+    () => promptCommandAnnotation(turn.promptText, commandNames),
+    [commandNames, turn.promptText],
+  );
 
   return (
     <>
@@ -104,7 +118,21 @@ export const TurnBlock = memo(function TurnBlock({
       <SessionTurnFrame
         turnId={turn.id}
         sessionId={turn.sessionId}
-        promptText={hasSessionReferences ? undefined : turn.promptText}
+        promptText={
+          hasSessionReferences
+            ? undefined
+            : commandInvocation?.body ?? turn.promptText
+        }
+        promptAnnotation={
+          commandInvocation && !hasSessionReferences
+            ? (
+              <>
+                <TargetIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 truncate">{t("chat.sentAsGoal")}</span>
+              </>
+            )
+            : undefined
+        }
         status={turn.status}
         errorMessage={turn.errorMessage}
         className="!mb-8 !space-y-4 [&_[data-session-turn-prompt]>div]:!px-3 [&_[data-session-turn-prompt]>div]:!py-2"

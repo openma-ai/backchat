@@ -4077,6 +4077,14 @@ export const selectTurnsFor = (sessionId: string) => (s: SessionStore) =>
 export const selectAgentIdFor = (sessionId: string) => (s: SessionStore) =>
   s.get(sessionId)?.agent_id;
 
+const NO_COMMAND_NAMES: readonly string[] = [];
+
+/** Command names this session advertises. A prompt is only relabelled as a
+ *  command invocation when the agent actually published that command. */
+export const selectCommandNamesFor = (sessionId: string) => (s: SessionStore) =>
+  s.get(sessionId)?.availableCommands?.map((command) => command.name)
+  ?? NO_COMMAND_NAMES;
+
 /** Imperative new-draft helper for routes that don't have a hook in scope. */
 export function newDraftSession(): string {
   return sessionStore.newDraft();

@@ -6,6 +6,7 @@ import type { SubagentActivity, Turn } from "@/lib/session-store";
 const sessionMock = vi.hoisted(() => ({
   agentId: "",
   subagents: [] as SubagentActivity[],
+  commands: [] as Array<{ name: string }>,
 }));
 
 vi.mock("@/lib/i18n", () => ({
@@ -23,7 +24,10 @@ vi.mock("@/lib/session-store", async (importOriginal) => {
     ...actual,
     useSessionStore: (selector: (store: unknown) => unknown) =>
       selector({
-        get: () => ({ agent_id: sessionMock.agentId }),
+        get: () => ({
+          agent_id: sessionMock.agentId,
+          availableCommands: sessionMock.commands,
+        }),
         subagentsFor: () => sessionMock.subagents,
       }),
     sessionStore: {
@@ -830,4 +834,33 @@ describe("TurnBlock", () => {
       expect(html).not.toContain("Adapt UI");
     },
   );
+});
+
+describe("a prompt the composer sent as a command invocation", () => {
+  beforeEach(() => {
+    sessionMock.agentId = "codex-acp";
+    sessionMock.commands = [{ name: "goal" }];
+  });
+
+  it("shows the objective and names the command beside it", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock turn={turn({ promptText: "/goal 保护世界和平", status: "complete" })} />,
+    );
+
+    // The composer added the prefix, so echoing "/goal ..." back would show
+    // the user plumbing they never typed.
+    expect(html).toContain("保护世界和平");
+    expect(html).not.toContain("/goal");
+    expect(html).toContain("data-session-turn-prompt-annotation");
+    expect(html).toContain("chat.sentAsGoal");
+  });
+
+  it("leaves an ordinary prompt untouched", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock turn={turn({ promptText: "保护世界和平", status: "complete" })} />,
+    );
+
+    expect(html).toContain("保护世界和平");
+    expect(html).not.toContain("data-session-turn-prompt-annotation");
+  });
 });
