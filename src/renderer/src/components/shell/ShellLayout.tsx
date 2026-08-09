@@ -99,19 +99,26 @@ function useRightRailCollapseState(sessionId: string | null) {
   );
   const bucket = sessionId ?? RIGHT_RAIL_NO_CHAT_BUCKET;
   const collapsed = !openChats.has(bucket);
-  const set = useCallback(
-    (value: boolean) => {
-      setOpenChats((previous) => {
-        if (previous.has(bucket) === !value) return previous;
-        const next = new Set(previous);
-        if (value) next.delete(bucket);
-        else next.add(bucket);
-        return next;
-      });
-    },
-    [bucket],
-  );
-  const toggle = useCallback(() => set(!collapsed), [collapsed, set]);
+  // The handlers must keep one identity for the life of the shell. Switching
+  // chats changes the bucket, and if that re-created them the context value
+  // changed too — re-rendering AppShell, re-applying its inline stage styles
+  // and nudging any open Radix popper, which slid the model submenu out from
+  // under the pointer mid-click. Only `collapsed` may move the value.
+  const bucketRef = useRef(bucket);
+  bucketRef.current = bucket;
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
+  const set = useCallback((value: boolean) => {
+    const key = bucketRef.current;
+    setOpenChats((previous) => {
+      if (previous.has(key) === !value) return previous;
+      const next = new Set(previous);
+      if (value) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const toggle = useCallback(() => set(!collapsedRef.current), [set]);
   return useMemo(() => ({ collapsed, toggle, set }), [collapsed, toggle, set]);
 }
 

@@ -245,16 +245,32 @@ test.describe("composer configuration", () => {
     await expect(modelPicker).toContainText("GPT-5 mini");
 
     await modelPicker.click();
-    await page
-      .getByRole("menuitem", { name: "Model GPT-5 mini", exact: true })
-      .hover();
-    // Radix briefly leaves the submenu under an animating portal layer after
-    // hover. The item is already visible and enabled; force dispatch avoids
-    // the transient root hit-test interception while preserving the real
-    // menuitem click handler and session/set_config_option path.
-    await page
-      .getByRole("menuitem", { name: "GPT-5 Model" })
-      .click({ force: true });
+    const submenuTrigger = page.getByRole("menuitem", {
+      name: "Model GPT-5 mini",
+      exact: true,
+    });
+    await submenuTrigger.hover();
+    const target = page.getByRole("menuitem", { name: "GPT-5 Model" });
+    await expect(target).toBeVisible();
+    // Radix closes a submenu when the pointer leaves the trigger's safe area,
+    // and Playwright's hover() teleports the cursor — which lands outside that
+    // area and detaches the submenu mid-click. Walk the pointer across like a
+    // hand instead, so this exercises the real menuitem handler. A forced
+    // dispatch used to hide the problem only while the right rail happened to
+    // be open, which changed the submenu's geometry.
+    const from = await submenuTrigger.boundingBox();
+    const to = await target.boundingBox();
+    if (!from || !to) throw new Error("submenu geometry unavailable");
+    const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+    const end = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
+    for (let step = 1; step <= 10; step += 1) {
+      await page.mouse.move(
+        start.x + ((end.x - start.x) * step) / 10,
+        start.y + ((end.y - start.y) * step) / 10,
+      );
+    }
+    await page.mouse.down();
+    await page.mouse.up();
 
     await expect
       .poll(async () =>

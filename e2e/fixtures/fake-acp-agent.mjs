@@ -19,6 +19,8 @@ class FakeAcpAgent {
   constructor(connection) {
     this.connection = connection;
     this.sessions = new Map();
+    /** sessionId -> resolver for a deliberately stalled turn. */
+    this.pendingStalls = new Map();
   }
 
   async initialize() {
@@ -68,6 +70,14 @@ class FakeAcpAgent {
     if (promptText === "open-inline-preference-plugin-e2e") {
       await this.runInlinePreferencePlugin(params.sessionId);
       return { stopReason: "end_turn" };
+    }
+    if (promptText === "stall-until-cancelled-e2e") {
+      // Hold the turn open so tests can observe a genuinely running composer.
+      // Cancellation rejects the pending promise via cancel(), below.
+      await new Promise((resolve) => {
+        this.pendingStalls.set(params.sessionId, resolve);
+      });
+      return { stopReason: "cancelled" };
     }
     if (promptText === "cursor-plan-merge-e2e") {
       await this.runCursorPlanMerge();
@@ -192,7 +202,14 @@ class FakeAcpAgent {
     return {};
   }
 
-  async cancel() {
+  async cancel(params) {
+    const stall = params?.sessionId
+      ? this.pendingStalls.get(params.sessionId)
+      : undefined;
+    if (stall) {
+      this.pendingStalls.delete(params.sessionId);
+      stall();
+    }
     return;
   }
 }

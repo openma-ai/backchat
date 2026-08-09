@@ -670,6 +670,10 @@ export function Composer({
     running,
     actionDisabled: primaryRunningAction?.disabled || !hasHarnessSetup,
   });
+  /** The run-action slot shows a stop only when there is nothing to send:
+   *  a draft always keeps its send/queue meaning so Enter and the button
+   *  never disagree. */
+  const stopIsPrimary = !!running && !canSubmitNow;
 
   return (
     <div
@@ -1002,30 +1006,36 @@ export function Composer({
             />
           )}
 
-          {running && (
-            <button
-              type="button"
-              onClick={onCancel}
-              aria-label={t("chat.stop")}
-              title={t("chat.stop")}
-              className={cn(
-                "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
-                "text-fg-subtle hover:text-fg hover:bg-[var(--control-bg-hover)]",
-                "transition-colors",
-              )}
-            >
-              <SquareIcon className="size-3.5" />
-            </button>
-          )}
+          {/* One slot, one interaction weight: the glyph follows what Enter
+              would do right now. With a draft it sends or queues; with an
+              empty composer mid-run it stops the turn. Two adjacent buttons
+              forced a choice between an enabled stop and a disabled send. */}
           <button
             type="button"
             onClick={() => {
+              if (stopIsPrimary) {
+                onCancel();
+                return;
+              }
               submitComposer(primaryIntent);
             }}
-            disabled={!canSubmitNow}
-            data-composer-submit="true"
-            aria-label={running ? primaryRunningAction?.ariaLabel : t("chat.send")}
-            title={running ? primaryRunningAction?.title : t("chat.send")}
+            disabled={!stopIsPrimary && !canSubmitNow}
+            data-composer-submit={stopIsPrimary ? undefined : "true"}
+            data-composer-stop={stopIsPrimary ? "true" : undefined}
+            aria-label={
+              stopIsPrimary
+                ? t("chat.stop")
+                : running
+                  ? primaryRunningAction?.ariaLabel
+                  : t("chat.send")
+            }
+            title={
+              stopIsPrimary
+                ? t("chat.stop")
+                : running
+                  ? primaryRunningAction?.title
+                  : t("chat.send")
+            }
             className={cn(
               "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
               "text-fg-subtle hover:text-fg hover:bg-[var(--control-bg-hover)]",
@@ -1033,7 +1043,11 @@ export function Composer({
               "transition-colors",
             )}
           >
-            <CornerDownLeftIcon className="size-4" />
+            {stopIsPrimary ? (
+              <SquareIcon className="size-3.5" />
+            ) : (
+              <CornerDownLeftIcon className="size-4" />
+            )}
           </button>
         </div>
       </div>
