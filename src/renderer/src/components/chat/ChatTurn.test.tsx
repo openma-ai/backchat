@@ -6,7 +6,7 @@ import type { SubagentActivity, Turn } from "@/lib/session-store";
 const sessionMock = vi.hoisted(() => ({
   agentId: "",
   subagents: [] as SubagentActivity[],
-  commands: [] as Array<{ name: string }>,
+  commands: [] as Array<{ name: string; input?: { hint?: string } | null }>,
 }));
 
 vi.mock("@/lib/i18n", () => ({
@@ -839,7 +839,9 @@ describe("TurnBlock", () => {
 describe("a prompt the composer sent as a command invocation", () => {
   beforeEach(() => {
     sessionMock.agentId = "codex-acp";
-    sessionMock.commands = [{ name: "goal" }];
+    sessionMock.commands = [
+      { name: "goal", input: { hint: "[<objective>|clear|pause|resume]" } },
+    ];
   });
 
   it("shows the objective and names the command beside it", () => {
@@ -851,7 +853,7 @@ describe("a prompt the composer sent as a command invocation", () => {
     // the user plumbing they never typed.
     expect(html).toContain("保护世界和平");
     expect(html).not.toContain("/goal");
-    expect(html).toContain("data-session-turn-prompt-annotation");
+    expect(html).toContain('data-prompt-command="goal"');
     expect(html).toContain("chat.sentAsGoal");
   });
 
@@ -861,6 +863,6 @@ describe("a prompt the composer sent as a command invocation", () => {
     );
 
     expect(html).toContain("保护世界和平");
-    expect(html).not.toContain("data-session-turn-prompt-annotation");
+    expect(html).not.toContain("data-prompt-command");
   });
 });

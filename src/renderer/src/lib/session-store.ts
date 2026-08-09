@@ -4077,13 +4077,14 @@ export const selectTurnsFor = (sessionId: string) => (s: SessionStore) =>
 export const selectAgentIdFor = (sessionId: string) => (s: SessionStore) =>
   s.get(sessionId)?.agent_id;
 
-const NO_COMMAND_NAMES: readonly string[] = [];
+const NO_AVAILABLE_COMMANDS: readonly AcpAvailableCommand[] = [];
 
-/** Command names this session advertises. A prompt is only relabelled as a
- *  command invocation when the agent actually published that command. */
-export const selectCommandNamesFor = (sessionId: string) => (s: SessionStore) =>
-  s.get(sessionId)?.availableCommands?.map((command) => command.name)
-  ?? NO_COMMAND_NAMES;
+/** Commands this session advertises. Returns the stored array itself so the
+ *  reference stays stable across reads; mapping here would hand every render a
+ *  new array and churn every subscriber. */
+export const selectAvailableCommandsFor =
+  (sessionId: string) => (s: SessionStore) =>
+    s.get(sessionId)?.availableCommands ?? NO_AVAILABLE_COMMANDS;
 
 /** Imperative new-draft helper for routes that don't have a hook in scope. */
 export function newDraftSession(): string {

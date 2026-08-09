@@ -11,7 +11,7 @@ import { latestPlanDocumentForEvents } from "@/lib/session-plan";
 import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
 import {
   selectAgentIdFor,
-  selectCommandNamesFor,
+  selectAvailableCommandsFor,
   selectSubagentsFor,
   sessionStore,
   useSessionStore,
@@ -99,17 +99,17 @@ export const TurnBlock = memo(function TurnBlock({
       hasVisibleContent,
     });
   const hasSessionReferences = (turn.sessionReferences?.length ?? 0) > 0;
-  const commandNamesSelector = useMemo(
-    () => selectCommandNamesFor(turn.sessionId),
+  const availableCommandsSelector = useMemo(
+    () => selectAvailableCommandsFor(turn.sessionId),
     [turn.sessionId],
   );
-  const commandNames = useSessionStore(commandNamesSelector);
+  const availableCommands = useSessionStore(availableCommandsSelector);
   // The composer prefixed `/goal ` for the user, so the wire text is not what
   // they typed. Show the argument as the message and name the command beside
   // it instead of echoing plumbing back at them.
   const commandInvocation = useMemo(
-    () => promptCommandAnnotation(turn.promptText, commandNames),
-    [commandNames, turn.promptText],
+    () => promptCommandAnnotation(turn.promptText, availableCommands),
+    [availableCommands, turn.promptText],
   );
 
   return (
@@ -123,16 +123,7 @@ export const TurnBlock = memo(function TurnBlock({
             ? undefined
             : commandInvocation?.body ?? turn.promptText
         }
-        promptAnnotation={
-          commandInvocation && !hasSessionReferences
-            ? (
-              <>
-                <TargetIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 truncate">{t("chat.sentAsGoal")}</span>
-              </>
-            )
-            : undefined
-        }
+
         status={turn.status}
         errorMessage={turn.errorMessage}
         className="!mb-8 !space-y-4 [&_[data-session-turn-prompt]>div]:!px-3 [&_[data-session-turn-prompt]>div]:!py-2"
@@ -144,6 +135,18 @@ export const TurnBlock = memo(function TurnBlock({
           ) : undefined
         }
       >
+          {commandInvocation && !hasSessionReferences && (
+            // Sits directly under the prompt bubble: the frame renders children
+            // after it. Right-aligned to stay with the message it describes.
+            <p
+              className="ml-auto flex w-fit items-center gap-1.5 text-xs text-fg-muted"
+              data-prompt-command={commandInvocation.command}
+            >
+              <TargetIcon className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate">{t("chat.sentAsGoal")}</span>
+            </p>
+          )}
+
           {planDocument && (
             <PlanDocumentActivity
               document={planDocument}

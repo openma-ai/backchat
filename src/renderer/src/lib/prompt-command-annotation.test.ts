@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { promptCommandAnnotation } from "./prompt-command-annotation";
 
 describe("a prompt the composer sent as a command invocation", () => {
-  const commands = ["goal", "review", "plan"];
+  const commands = [
+    { name: "goal", input: { hint: "[<objective>|clear|pause|resume]" } },
+    { name: "review", input: { hint: "optional review instructions" } },
+    { name: "plan", input: null },
+  ];
 
   it("splits the argument from the prefix the composer added", () => {
     expect(promptCommandAnnotation("/goal 保护世界和平", commands)).toEqual({
@@ -24,12 +28,21 @@ describe("a prompt the composer sent as a command invocation", () => {
   });
 
   it("leaves an unadvertised command alone", () => {
-    expect(promptCommandAnnotation("/goal do it", ["review"])).toBeUndefined();
+    expect(promptCommandAnnotation("/goal do it", [{ name: "review" }])).toBeUndefined();
   });
 
   it("leaves ordinary text alone, including a path", () => {
     expect(promptCommandAnnotation("goal 保护世界和平", commands)).toBeUndefined();
     expect(promptCommandAnnotation("/usr/local/bin matters", commands)).toBeUndefined();
+  });
+
+  it("does not relabel a control word as a goal", () => {
+    // The hint declares [<objective>|clear|pause|resume]: only <objective> is
+    // content. The composer's own exit fallback sends "/goal clear", so calling
+    // that "sent as goal" would invert its meaning.
+    for (const verb of ["clear", "pause", "resume"]) {
+      expect(promptCommandAnnotation(`/goal ${verb}`, commands)).toBeUndefined();
+    }
   });
 
   it("keeps a multi-line argument whole", () => {

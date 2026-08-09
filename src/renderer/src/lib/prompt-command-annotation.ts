@@ -18,9 +18,26 @@ export interface PromptCommandAnnotation {
  * a command stays a data change. */
 const ANNOTATED_COMMAND_STATES: Record<string, "goal"> = { goal: "goal" };
 
+/** Literal choices a command's hint offers, as opposed to its placeholders.
+ * Codex hints `[<objective>|clear|pause|resume]`: only `<objective>` is
+ * content, the rest are control words. `/goal clear` is therefore not a goal
+ * being set — and the composer's own exit fallback sends exactly that — so
+ * relabelling it "sent as goal" would invert its meaning. */
+function literalHintChoices(hint: string | undefined): string[] {
+  if (!hint) return [];
+  return hint
+    .replace(/^\[|\]$/gu, "")
+    .split("|")
+    .map((choice) => choice.trim())
+    .filter((choice) => choice.length > 0 && !choice.startsWith("<"));
+}
+
 export function promptCommandAnnotation(
   promptText: string | undefined,
-  commands: readonly string[],
+  commands: readonly {
+    name: string;
+    input?: { hint?: string } | null;
+  }[],
 ): PromptCommandAnnotation | undefined {
   if (!promptText) return undefined;
   const match = /^\/([A-Za-z0-9_-]+)[ \t]+([\s\S]+)$/u.exec(promptText.trim());
@@ -28,9 +45,13 @@ export function promptCommandAnnotation(
   const [, command, body] = match;
   // Only annotate a command this session actually advertises, so a message
   // that merely starts with a slash is left alone.
-  if (!commands.includes(command)) return undefined;
+  const advertised = commands.find((candidate) => candidate.name === command);
+  if (!advertised) return undefined;
   if (!ANNOTATED_COMMAND_STATES[command]) return undefined;
   const trimmedBody = body.trim();
   if (!trimmedBody) return undefined;
+  if (literalHintChoices(advertised.input?.hint).includes(trimmedBody)) {
+    return undefined;
+  }
   return { command, body: trimmedBody };
 }
