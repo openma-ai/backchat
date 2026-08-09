@@ -247,6 +247,39 @@ describe("SessionStore replay", () => {
     expect(store.turnsFor(sessionId)[0]?.assistantText).toBe("Rendered once.");
   });
 
+  test("keeps a restored Codex skill warning out of the assistant answer", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-skill-warning";
+    const warning =
+      "Warning: Skill descriptions were shortened to fit the 2% skills context budget. " +
+      "Codex can still see every skill, but some descriptions are shorter. " +
+      "Disable unused skills or plugins to leave more room for the rest.";
+    store.registerStarting(sessionId, "codex-acp", "Codex");
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "Inspect the project" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "agent_message",
+        data: JSON.stringify({ text: `${warning}\n\nThe project is ready.` }),
+        ts: 1_001,
+      },
+    ]);
+
+    expect(store.turnsFor(sessionId)[0]?.assistantText).toBe(
+      "The project is ready.",
+    );
+    expect(store.get(sessionId)?.notice).toMatchObject({
+      message: warning,
+      tone: "warning",
+    });
+  });
+
   test("restores a turn's end time from its final persisted event", () => {
     const store = new SessionStore();
     const sessionId = "sess-replay-duration";

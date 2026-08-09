@@ -168,7 +168,7 @@ export function ToolRow({
         )}
       </button>
 
-      {tool.rawInput !== undefined && (
+      {open && tool.rawInput !== undefined && (
         <ToolInputBlock id={tool.toolCallId}>
           {safeJson(tool.rawInput)}
         </ToolInputBlock>

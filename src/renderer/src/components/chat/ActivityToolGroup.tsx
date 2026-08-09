@@ -65,11 +65,11 @@ export function ActivityToolGroup({
         type="button"
         aria-expanded={open}
         onClick={toggleOpen}
-        className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[13px] text-fg-muted hover:bg-bg-surface/40"
+        className="activity-disclosure-row py-1 text-[13px] hover:bg-bg-surface/40"
       >
         <span
           data-tool-group-icon-slot
-          className="grid size-5 shrink-0 place-items-center"
+          className="grid size-3.5 shrink-0 place-items-center"
         >
           {running ? (
             <Loader2Icon className="size-3.5 animate-spin" />

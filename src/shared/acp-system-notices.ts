@@ -5,10 +5,33 @@ import {
 
 export type { AcpSystemNotice };
 
+const CODEX_SKILL_CONTEXT_WARNING =
+  /^Warning:\s*Skill descriptions were shortened to fit the \d+% skills context budget\./;
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
+}
+
+export function splitAcpSystemNoticeText(text: string): {
+  notice?: string;
+  transcript: string;
+} {
+  const candidate = text.trimStart();
+  if (!CODEX_SKILL_CONTEXT_WARNING.test(candidate)) {
+    return { transcript: text };
+  }
+  const paragraphBreak = candidate.search(/\r?\n[\t ]*\r?\n/);
+  if (paragraphBreak < 0) {
+    return { notice: candidate.trim(), transcript: "" };
+  }
+  const separator = candidate.slice(paragraphBreak).match(/^\r?\n[\t ]*\r?\n/)?.[0]
+    ?? "";
+  return {
+    notice: candidate.slice(0, paragraphBreak).trim(),
+    transcript: candidate.slice(paragraphBreak + separator.length).trimStart(),
+  };
 }
 
 /** Preserve the common Codex warning classifier and add Pi's structured

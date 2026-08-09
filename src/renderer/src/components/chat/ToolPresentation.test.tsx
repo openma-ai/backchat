@@ -44,7 +44,7 @@ describe("ToolRow acceptance contract", () => {
     },
   );
 
-  it("keeps the tool input visibly attributable to the started tool row", () => {
+  it("keeps the tool input hidden until its tool row is expanded", () => {
     const html = renderToStaticMarkup(
       <ToolRow
         sessionId="session-tool-input"
@@ -58,8 +58,9 @@ describe("ToolRow acceptance contract", () => {
       />,
     );
 
-    expect(html).toContain('data-tool-input="tool-input-1"');
-    expect(html).toContain("runtime vendor event");
+    expect(html).not.toContain('data-tool-input="tool-input-1"');
+    expect(html).not.toContain("runtime vendor event");
+    expect(html).toContain('aria-expanded="false"');
   });
 });
 

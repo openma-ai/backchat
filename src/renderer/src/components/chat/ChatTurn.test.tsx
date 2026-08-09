@@ -421,7 +421,7 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("renderer");
   });
 
-  it("keeps grouped-tool controls optically inset inside their highlight", () => {
+  it("puts grouped and single-tool controls on the same leading column", () => {
     const events = ["components", "renderer"].map((target, index) => ({
       payload: {
         sessionUpdate: "tool_call",
@@ -440,7 +440,8 @@ describe("TurnBlock", () => {
       /data-tool-group-trigger="true"[^>]*class="([^"]+)"/,
     )?.[1];
 
-    expect(triggerClass).toContain("px-2");
+    expect(triggerClass).toContain("activity-disclosure-row");
+    expect(triggerClass).not.toContain("px-2");
     expect(triggerClass).toContain("py-1");
     expect(html.match(/data-tool-group-icon-slot="true"/g)).toHaveLength(2);
   });

@@ -266,6 +266,82 @@ test.describe("backchat smoke", () => {
       await expect(highlighted).toHaveAttribute("data-checked", "true");
   });
 
+  test("aligns activity icons and lets tool details collapse again", async ({
+      page,
+  }) => {
+      await enableAgent(page, "codex-acp");
+      const sessionId = await injectSession(page, { agentId: "codex-acp" });
+      const turnId = "activity-alignment-collapse";
+      for (const [index, title] of ["First command", "Second command"].entries()) {
+        await injectEvent(page, {
+          type: "session.event",
+          session_id: sessionId,
+          turn_id: turnId,
+          event: {
+            sessionUpdate: "tool_call",
+            toolCallId: `grouped-tool-${index}`,
+            kind: "execute",
+            status: "completed",
+            title,
+            rawInput: { command: title.toLowerCase() },
+          },
+        });
+      }
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          _meta: { codex: { phase: "commentary" } },
+          content: { type: "text", text: "Then inspect the final command." },
+        },
+      });
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "tool_call",
+          toolCallId: "single-tool",
+          kind: "execute",
+          status: "completed",
+          title: "Final command",
+          rawInput: { command: "final command" },
+          content: [{ type: "terminal", terminalId: "terminal-final" }],
+        },
+      });
+      await injectEvent(page, {
+        type: "session.complete",
+        session_id: sessionId,
+        turn_id: turnId,
+      });
+
+      const groupIcon = page
+        .locator('[data-tool-group-trigger] [data-tool-group-icon-slot] svg')
+        .first();
+      const singleTool = page.locator('[data-tool-call-id="single-tool"]');
+      const singleIcon = singleTool.locator('[data-tool-activity-identity] svg');
+      const [groupIconBox, singleIconBox] = await Promise.all([
+        groupIcon.boundingBox(),
+        singleIcon.boundingBox(),
+      ]);
+      expect(groupIconBox).not.toBeNull();
+      expect(singleIconBox).not.toBeNull();
+      expect(Math.abs(groupIconBox!.x - singleIconBox!.x)).toBeLessThanOrEqual(0.5);
+
+      const summary = singleTool.getByRole("button");
+      const input = singleTool.locator('[data-tool-input="single-tool"]');
+      const terminal = singleTool.locator('[data-tool-terminal-id="terminal-final"]');
+      await expect(input).toBeHidden();
+      await summary.click();
+      await expect(input).toBeVisible();
+      await expect(terminal).toBeVisible();
+      await summary.click();
+      await expect(input).toBeHidden();
+      await expect(terminal).toBeHidden();
+  });
+
   test("uses an inset thin overlay thumb that grows on hover without a native gutter", async ({
       page,
       bridge,

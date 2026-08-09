@@ -25,6 +25,7 @@ import type {
   SessionEventOut,
 } from "@shared/session-events.js";
 import type { BrowserPluginStateEvent } from "@shared/browser-plugin.js";
+import { splitAcpSystemNoticeText } from "@shared/acp-system-notices.js";
 import {
   createOpenMAEvent,
   reduceWorkItems,
@@ -2845,14 +2846,20 @@ export class SessionStore {
         // envelope, so replay does not need to reconstruct an ACP payload.
         const parsedCanonical = parseAcpEvent(canonical);
         if (parsedCanonical.kind === "text") {
+          const split = splitAcpSystemNoticeText(parsedCanonical.text);
+          if (split.notice) {
+            this.#showNotice(sessionId, split.notice, "warning");
+          }
           current.assistantText = mergeStreamingText(
             current.assistantText,
-            parsedCanonical.text,
+            split.transcript,
           );
-          this.#appendStreamEvent(current, "text", parsedCanonical.text, r.ts, {
-            messageId: parsedCanonical.messageId,
-            phase: parsedCanonical.phase,
-          });
+          if (split.transcript) {
+            this.#appendStreamEvent(current, "text", split.transcript, r.ts, {
+              messageId: parsedCanonical.messageId,
+              phase: parsedCanonical.phase,
+            });
+          }
         } else if (parsedCanonical.kind === "thought") {
           current.thoughtText = mergeStreamingText(
             current.thoughtText,
@@ -2926,8 +2933,14 @@ export class SessionStore {
         // `agent_message` / `agent_thought` rows.
         if (r.type === "agent_message") {
           const text = (data as { text?: string })?.text ?? "";
-          current.assistantText += text;
-          this.#appendStreamEvent(current, "text", text, r.ts);
+          const split = splitAcpSystemNoticeText(text);
+          if (split.notice) {
+            this.#showNotice(sessionId, split.notice, "warning");
+          }
+          current.assistantText += split.transcript;
+          if (split.transcript) {
+            this.#appendStreamEvent(current, "text", split.transcript, r.ts);
+          }
         } else if (r.type === "agent_thought") {
           const text = (data as { text?: string })?.text ?? "";
           current.thoughtText += text;
@@ -2937,11 +2950,20 @@ export class SessionStore {
         // row's `data`. They remain supported for pre-canonical histories.
           const parsed = parseAcpEvent(data);
           if (parsed.kind === "text") {
-            current.assistantText = mergeStreamingText(current.assistantText, parsed.text);
-            this.#appendStreamEvent(current, "text", parsed.text, r.ts, {
-              messageId: parsed.messageId,
-              phase: parsed.phase,
-            });
+            const split = splitAcpSystemNoticeText(parsed.text);
+            if (split.notice) {
+              this.#showNotice(sessionId, split.notice, "warning");
+            }
+            current.assistantText = mergeStreamingText(
+              current.assistantText,
+              split.transcript,
+            );
+            if (split.transcript) {
+              this.#appendStreamEvent(current, "text", split.transcript, r.ts, {
+                messageId: parsed.messageId,
+                phase: parsed.phase,
+              });
+            }
           } else if (parsed.kind === "thought") {
             current.thoughtText = mergeStreamingText(current.thoughtText, parsed.text);
             this.#appendStreamEvent(current, "thought", parsed.text, r.ts, {
