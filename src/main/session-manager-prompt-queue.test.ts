@@ -15,9 +15,11 @@ vi.mock("@open-managed-agents-desktop/acp/node-spawner", () => ({
 
 vi.mock("@open-managed-agents-desktop/acp/registry", () => ({
   detect: vi.fn(async () => null),
-  resolveKnownAgent: vi.fn(() => ({
-    id: "fake-agent",
-    label: "Fake Agent",
+  // Echo the requested id. A registry that renamed every session's harness to
+  // "fake-agent" silently disabled every per-harness code path under test.
+  resolveKnownAgent: vi.fn((id: string) => ({
+    id,
+    label: `Fake ${id}`,
     spec: { command: "node" },
   })),
 }));
@@ -506,8 +508,9 @@ describe("SessionManager prompt queue", () => {
   it("drains the queue once an out-of-band steering turn ends", async () => {
     // Codex answers a steer by starting a turn of its own, which the host
     // tracks separately from activePromptTurnId. That turn ending is still the
-    // moment the agent is free, so a queue that only watches the prompt turn
-    // sits full forever with nothing in flight.
+    // moment the agent is free, so this pins that the reported idle releases the
+    // queue. It only holds for a session whose harness is actually codex-acp:
+    // the status meta is read behind a per-harness boundary.
     const send = vi.fn();
     const firstPromptDone = deferred();
     const prompt = vi.fn(async function* (blocks: Array<{ type: string; text?: string }>) {

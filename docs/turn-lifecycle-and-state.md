@@ -240,25 +240,39 @@ Recorded so the next change can tell a known gap from a new regression. Items
 under investigation are marked; do not treat them as settled findings.
 
 - **I1 violated.** `stopReason` never reaches the renderer (§4).
-- **I2 violated, cause identified, unfixed.** Turns are ordered by `startedAt`,
-  a client-side `Date.now()`, and a turn synthesized on its first event can take
-  a later stamp than one registered after it, which puts a new prompt inside an
-  earlier turn's output. Sequence, not wall clock, is the ordering.
+- **I2 violated, unfixed, and not a plain sort bug.** Turns are ordered by
+  `startedAt`, a client-side `Date.now()`, and a turn synthesized on its first
+  event can take a later stamp than one registered after it, which puts a new
+  prompt inside an earlier turn's output. Replacing that with registration order
+  broke six tests, because ordering is load-bearing in the other direction too:
+  turns rebuilt from persisted events carry stored timestamps and are not
+  inserted in turn order, so the clock is what makes replay come out right. A
+  fix has to separate the two populations — replayed turns ordered by their
+  persisted sequence, live turns by registration — not pick one comparator.
 - **I3 violated, unfixed.** `shouldShowTransientThought` requires
   `!hasVisibleContent`, so the first assistant token removes the only sign that
   more is coming. An attempt to show the indicator for any running turn broke
   three tests that forbid a generic thinking heading above live activity; the
   reconciliation is that a turn with content needs a trailing continuation
   marker inside its activity block, not a heading above it.
-- **I5 violated, reproduced.** `src/main/session-manager-prompt-queue.test.ts`
-  → "drains the queue once an out-of-band steering turn ends" hangs: when the
-  agent answers a steer by opening a turn of its own, the queue is never
-  released. It is a standing red, kept because it is the only executable
-  evidence of the defect. Two dead ends are recorded so they are not retried:
-  the settle path waits for an idle *edge* after the turn is confirmed, and
-  remembering the last status as a level did not release it; and widening
-  `#drainPromptQueue` to also gate on `outOfBandSteeringTurn` cannot help, since
-  adding a block condition can only reduce the chances of draining.
+- **I5 — the stall is unreproduced; the code path is sound.** The reported
+  symptom was queued prompts that never sent. A test written to reproduce it
+  hung, and that hang was twice an artifact of the harness, not the product: it
+  sent `threadStatus` as a bare string where the agent sends an object, and the
+  registry mock renamed every session's harness to `fake-agent`, which disables
+  the per-harness boundary that reads Codex status meta at all. With the real
+  payload shape and a session whose harness is genuinely `codex-acp`, the
+  reported idle settles the steering turn, the queue drains, and the next prompt
+  goes out. The test now pins that, and the mock echoes the requested id so a
+  per-harness path can never be silently switched off again.
+
+  Two changes were tried against the imagined stall and reverted, recorded so
+  they are not retried: treating idle as a standing level rather than an edge
+  changed nothing, and widening `#drainPromptQueue` to also gate on
+  `outOfBandSteeringTurn` cannot help, since adding a block condition can only
+  reduce the chances of draining. Whatever produced the symptom is elsewhere,
+  and the next attempt should start from recorded traffic for the affected
+  session rather than from a hand-built fixture.
 - **I4 — unproven.** The composer showed "1 queued…" with no rows. The count and
   the rows are read in different places; no trace yet.
 - **I6 partially held.** The clock derives from `createdAt` and ticks; goal
