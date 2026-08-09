@@ -397,9 +397,16 @@ export class SessionStore {
   }
 
   turnsFor(sessionId: string): Turn[] {
-    return [...this.#turns.values()]
-      .filter((t) => t.sessionId === sessionId)
-      .sort((a, b) => a.startedAt - b.startedAt);
+    // Registration order, which is what this Map already holds: replayed turns
+    // are built from persisted rows in stored sequence, and live turns are
+    // appended as they start. Re-registering an existing id keeps its original
+    // position, which is the intent.
+    //
+    // It used to sort by `startedAt`, a client-side Date.now(). That reordered
+    // turns whose clock disagreed with their sequence — a turn synthesized from
+    // its first event can stamp itself after a turn that started before it —
+    // and rendered a newly sent prompt inside an earlier turn's output.
+    return [...this.#turns.values()].filter((t) => t.sessionId === sessionId);
   }
 
   subagentsFor(parentSessionId: string): SubagentActivity[] {

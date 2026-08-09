@@ -2351,6 +2351,32 @@ describe("SessionStore prompt queue state", () => {
     ]);
   });
 
+  test("keeps registration order when a turn's clock disagrees with it", () => {
+    // startedAt is a client-side Date.now(). A turn synthesized from its first
+    // event can stamp itself after a turn that started before it, and ordering
+    // by that clock put a newly sent prompt inside the earlier turn's output.
+    const store = new SessionStore();
+    const sessionId = "sess-turn-order";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-turn-order",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-earlier", sessionId, "first");
+    store.registerTurn("turn-later", sessionId, "second");
+
+    const earlier = store.turnsFor(sessionId).find((t) => t.id === "turn-earlier");
+    expect(earlier).toBeDefined();
+    earlier!.startedAt = Number.MAX_SAFE_INTEGER;
+
+    expect(store.turnsFor(sessionId).map((turn) => turn.id)).toEqual([
+      "turn-earlier",
+      "turn-later",
+    ]);
+  });
+
   test("deduplicates broker asks and clears them when the active turn terminates", () => {
     const store = new SessionStore();
     const sessionId = "sess-broker-lifecycle";

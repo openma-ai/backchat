@@ -240,15 +240,20 @@ Recorded so the next change can tell a known gap from a new regression. Items
 under investigation are marked; do not treat them as settled findings.
 
 - **I1 violated.** `stopReason` never reaches the renderer (§4).
-- **I2 violated, unfixed, and not a plain sort bug.** Turns are ordered by
-  `startedAt`, a client-side `Date.now()`, and a turn synthesized on its first
-  event can take a later stamp than one registered after it, which puts a new
-  prompt inside an earlier turn's output. Replacing that with registration order
-  broke six tests, because ordering is load-bearing in the other direction too:
-  turns rebuilt from persisted events carry stored timestamps and are not
-  inserted in turn order, so the clock is what makes replay come out right. A
-  fix has to separate the two populations — replayed turns ordered by their
-  persisted sequence, live turns by registration — not pick one comparator.
+- **I2 — held.** `turnsFor` sorted by `startedAt`, a client-side `Date.now()`,
+  which reordered turns whose clock disagreed with their sequence and could put a
+  newly sent prompt inside an earlier turn's output. It now returns registration
+  order, which the Map already holds: replayed turns are built from persisted
+  rows in stored sequence, live turns are appended as they start, and
+  re-registering an id keeps its original position.
+
+  A first attempt at this assigned sequence numbers lazily inside the sort
+  comparator and broke six tests. That was the implementation, not the idea: the
+  comparator is not called in array order, so the numbers came out reversed. The
+  reasoning written here at the time — that stored timestamps make the clock
+  load-bearing for replay — was wrong and is corrected: across all 70 recorded
+  sessions, `ts` is monotonic in `seq`, so for real replay data the clock and the
+  sequence agree, and only synthesized live turns ever disagreed.
 - **I3 — held.** The signal was gated on `!hasAnything`, so the first assistant
   token removed the only sign that more was coming and a turn mid-sentence looked
   finished. A running turn now always says so, in one of two shapes: a worded
