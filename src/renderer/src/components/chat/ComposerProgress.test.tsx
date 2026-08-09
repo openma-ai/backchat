@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/i18n", () => ({
@@ -361,5 +362,19 @@ describe("ComposerProgress", () => {
         <ComposerProgress />,
       ),
     ).toBe("");
+  });
+});
+
+describe("the floating progress pills are opaque", () => {
+  it("never lets the message stream show through", () => {
+    const source = readFileSync(
+      new URL("./ComposerProgress.tsx", import.meta.url),
+      "utf8",
+    );
+
+    // These float over the transcript. A translucent surface let the chat text
+    // bleed through the pill, which read as a rendering fault.
+    expect(source).not.toMatch(/bg-bg-surface\/\d+/);
+    expect(source).toContain("bg-bg-surface text-xs tabular-nums");
   });
 });

@@ -121,8 +121,8 @@ export function ComposerProgress({
               })}`}
               className={cn(
                 "group flex h-8 items-center gap-2 rounded-full px-3",
-                "bg-bg-surface/65 text-xs tabular-nums text-fg-muted ring-1 ring-border/55",
-                "hover:bg-bg-surface hover:text-fg hover:ring-border",
+                "bg-bg-surface text-xs tabular-nums text-fg-muted shadow-sm ring-1 ring-border/55",
+                "hover:text-fg hover:ring-border",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/35",
                 "transition-colors",
               )}
@@ -160,8 +160,8 @@ export function ComposerProgress({
           data-progress-banner="true"
           className={cn(
             "composer-radius w-full",
-            "bg-bg-surface/70 text-sm leading-5 ring-1 ring-border/60",
-            "hover:bg-bg-surface/85 hover:ring-border/80",
+            "bg-bg-surface text-sm leading-5 shadow-sm ring-1 ring-border/60",
+            "hover:ring-border/80",
             "transition-colors",
           )}
           style={{ minHeight: `${capRows * 36 + 20}px` }}
@@ -302,8 +302,8 @@ function ActivityDock({
             aria-label={activityLabel}
             className={cn(
               "flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full px-3",
-              "bg-bg-surface/65 text-xs text-fg-muted ring-1 ring-border/55",
-              "hover:bg-bg-surface hover:text-fg hover:ring-border",
+              "bg-bg-surface text-xs text-fg-muted shadow-sm ring-1 ring-border/55",
+              "hover:text-fg hover:ring-border",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/35",
               "transition-colors",
             )}
