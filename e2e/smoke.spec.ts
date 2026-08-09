@@ -217,6 +217,20 @@ test.describe("backchat smoke", () => {
         { width: 16, height: 16, radius: 8 },
         { width: 16, height: 16, radius: 8 },
       ]);
+
+      // Nav rows and project rows share one icon rail; project children
+      // indent exactly one icon-box step deeper.
+      const iconBoxes = await Promise.all([
+        page.getByTestId("new-chat-button").locator(".sidebar-row-icon").boundingBox(),
+        navigation.locator(".sidebar-row-icon").first().boundingBox(),
+        navigation.locator(".sidebar-row-icon").last().boundingBox(),
+      ]);
+      for (const box of iconBoxes) expect(box).not.toBeNull();
+      const [navIcon, projectIcon, childIcon] = iconBoxes;
+      expect(Math.abs(projectIcon!.x - navIcon!.x)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(childIcon!.x - navIcon!.x - 16)).toBeLessThanOrEqual(0.5);
+      expect(projectIcon!.width).toBeCloseTo(navIcon!.width, 3);
+      expect(childIcon!.width).toBeCloseTo(navIcon!.width, 3);
   });
 
   test("keeps equal space around the runtime row", async ({ page }) => {
@@ -515,17 +529,51 @@ test.describe("backchat smoke", () => {
       const newChat = page.getByTestId("new-chat-button");
       const model = page.locator('button[aria-label^="Run on "]').first();
       await expect(newChat).toHaveAttribute("aria-current", "page");
-      const selectedBackground = await newChat.evaluate(
-        (element) => getComputedStyle(element).backgroundColor,
-      );
+
+      // The selected row is pre-composited (opaque) while an open control
+      // paints the translucent interaction wash over its own panel, so the
+      // contract is the rendered color, not the raw token string.
+      const composited = (locator: typeof newChat) =>
+        locator.evaluate((element) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 1;
+          canvas.height = 1;
+          const context = canvas.getContext("2d")!;
+          const alphaOf = (color: string) => {
+            context.clearRect(0, 0, 1, 1);
+            context.fillStyle = color;
+            context.fillRect(0, 0, 1, 1);
+            return context.getImageData(0, 0, 1, 1).data[3]!;
+          };
+          const layers = [getComputedStyle(element).backgroundColor];
+          let surface: Element | null = element.parentElement;
+          while (surface) {
+            const color = getComputedStyle(surface).backgroundColor;
+            layers.push(color);
+            if (alphaOf(color) === 255) break;
+            surface = surface.parentElement;
+          }
+          context.clearRect(0, 0, 1, 1);
+          for (const color of layers.reverse()) {
+            context.fillStyle = color;
+            context.fillRect(0, 0, 1, 1);
+          }
+          const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+          return { r, g, b, a };
+        });
+
+      const selectedBackground = await composited(newChat);
+      expect(selectedBackground.a).toBe(255);
 
       await model.click();
       await expect(page.getByRole("menu")).toBeVisible();
       await page.waitForTimeout(180);
-      const openBackground = await model.evaluate(
-        (element) => getComputedStyle(element).backgroundColor,
-      );
-      expect(openBackground).toBe(selectedBackground);
+      const openBackground = await composited(model);
+      // 8-bit canvas compositing and CSS color-mix round independently.
+      expect(openBackground.a).toBe(255);
+      expect(Math.abs(openBackground.r - selectedBackground.r)).toBeLessThanOrEqual(1);
+      expect(Math.abs(openBackground.g - selectedBackground.g)).toBeLessThanOrEqual(1);
+      expect(Math.abs(openBackground.b - selectedBackground.b)).toBeLessThanOrEqual(1);
   });
 
   test("uses the shared compact width for the project selector", async ({ page }) => {

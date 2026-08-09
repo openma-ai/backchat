@@ -322,12 +322,12 @@ export function Sidebar() {
             "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
             newChatActive
               ? "app-selected-surface text-fg"
-              : "text-fg hover:bg-[var(--control-bg-hover)]",
+              : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
             "transition-colors",
           )}
-          style={{ height: "var(--row-h)" }}
+          style={{ height: "var(--sidebar-row-h)" }}
         >
-          <span className="inline-flex size-4 shrink-0 items-center justify-center text-fg-muted">
+          <span className="sidebar-row-icon">
             <SquarePenIcon className="size-3.5" />
           </span>
           <span className={labelCls}>{t("sidebar.newChat")}</span>
@@ -351,9 +351,9 @@ export function Sidebar() {
             "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
             "transition-colors",
           )}
-          style={{ height: "var(--row-h)" }}
+          style={{ height: "var(--sidebar-row-h)" }}
         >
-          <span className="inline-flex size-4 shrink-0 items-center justify-center">
+          <span className="sidebar-row-icon">
             <SearchIcon className="size-3.5" />
           </span>
           <span className={labelCls}>{t("sidebar.search")}</span>
@@ -376,9 +376,9 @@ export function Sidebar() {
               ? "app-selected-surface text-fg"
               : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
           )}
-          style={{ height: "var(--row-h)" }}
+          style={{ height: "var(--sidebar-row-h)" }}
         >
-          <span className="inline-flex size-4 shrink-0 items-center justify-center">
+          <span className="sidebar-row-icon">
             <CalendarClockIcon className="size-3.5" />
           </span>
           <span className={labelCls}>{t("sidebar.scheduled")}</span>
@@ -397,22 +397,24 @@ export function Sidebar() {
         <nav className="app-no-drag px-2 pt-[var(--row-gap-y)]">
         {sessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
           <div>
-            <div className={cn("mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-fg-subtle", labelCls)}>
+            <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-xs font-medium text-fg-subtle", labelCls)}>
               {t("sidebar.chats")}
             </div>
             <button
               type="button"
               onClick={goHome}
-              className="block w-full px-2 py-2 text-left text-xs text-fg-muted hover:text-fg"
+              className="flex h-[var(--sidebar-row-h)] w-full items-center px-2 text-left text-xs text-fg-muted hover:text-fg"
             >
               {t("sidebar.startNewChat")}
             </button>
             <button
               type="button"
               onClick={() => setCreateProjectOpen(true)}
-              className="flex w-full items-center gap-2 px-2 py-2 text-left text-xs text-fg-muted hover:text-fg"
+              className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 px-2 text-left text-xs text-fg-muted hover:text-fg"
             >
-              <PlusIcon className="size-3.5" />
+              <span className="sidebar-row-icon">
+                <PlusIcon />
+              </span>
               {t("project.create")}
             </button>
           </div>
@@ -489,9 +491,9 @@ export function Sidebar() {
                       onClick={() => setCreateProjectOpen(true)}
                       aria-label={t("project.create")}
                       title={t("project.create")}
-                      className="flex size-5 items-center justify-center rounded text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg"
+                      className="sidebar-row-action"
                     >
-                      <PlusIcon className="size-3.5" />
+                      <PlusIcon aria-hidden="true" />
                     </button>
                   }
                 >
@@ -557,7 +559,6 @@ export function Sidebar() {
                     open={openSectionKeys.has("chats")}
                     onToggle={() => toggleSection("chats")}
                     labelCls={labelCls}
-                    last
                   >
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {chats.map((s) => (
@@ -608,9 +609,9 @@ export function Sidebar() {
                 ? "app-selected-surface text-fg"
                 : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
             )}
-            style={{ height: "var(--row-h)" }}
+            style={{ height: "var(--sidebar-row-h)" }}
           >
-            <span className="inline-flex size-4 shrink-0 items-center justify-center">
+            <span className="sidebar-row-icon">
               <Settings2Icon className="size-3.5" />
             </span>
             <span className={labelCls}>{t("sidebar.settings")}</span>
@@ -645,7 +646,6 @@ function SidebarSection({
   open,
   onToggle,
   labelCls,
-  last = false,
   children,
   action,
 }: {
@@ -653,36 +653,44 @@ function SidebarSection({
   open: boolean;
   onToggle: () => void;
   labelCls: string;
-  last?: boolean;
   children: ReactNode;
   action?: ReactNode;
 }) {
   return (
-    <section className={last ? undefined : "mb-3"}>
-      <div className="mb-1 flex min-h-5 items-center">
+    <section className="sidebar-section">
+      <div className="group/section mb-0.5 flex h-[var(--sidebar-row-h)] items-center">
         <button
           type="button"
           onClick={onToggle}
           aria-label={title}
           aria-expanded={open}
           className={cn(
-            "app-no-drag group flex min-h-5 min-w-0 flex-1 items-center gap-1 rounded px-2 text-left",
-            "text-[11px] font-medium tracking-wider text-fg-subtle",
-            "hover:bg-bg-surface/40 hover:text-fg-muted active:bg-bg-surface/60",
+            "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 px-2 text-left",
+            "text-xs font-medium text-fg-subtle",
+            "hover:text-fg-muted",
             "transition-colors duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
           )}
         >
           <span className={cn("min-w-0 truncate", labelCls)}>{title}</span>
-          <ChevronRightIcon
-            aria-hidden="true"
-            className={cn(
-              "size-3 shrink-0 transition-transform duration-[var(--motion-disclosure-duration)] ease-[var(--motion-disclosure-easing)]",
-              open && "rotate-90",
-              labelCls,
-            )}
-          />
+          <span className={cn("inline-flex shrink-0", labelCls)}>
+            <ChevronRightIcon
+              aria-hidden="true"
+              className={cn(
+                "size-3 transition-transform duration-[var(--motion-disclosure-duration)] ease-[var(--motion-disclosure-easing)]",
+                open && "rotate-90",
+                // A collapsed section keeps its chevron as the state cue; an
+                // open section stays quiet until the header is engaged.
+                open &&
+                  "opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100",
+              )}
+            />
+          </span>
         </button>
-        <span className={cn("mr-1 shrink-0", labelCls)}>{action}</span>
+        <span className={cn("mr-1 shrink-0", labelCls)}>
+          <span className="inline-flex opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100">
+            {action}
+          </span>
+        </span>
       </div>
       <AnimatedCollapse open={open}>{children}</AnimatedCollapse>
     </section>
@@ -717,7 +725,7 @@ function ProjectSidebarRow({
         "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg active:bg-[var(--control-bg-open)]",
         "transition-colors",
       )}
-      style={{ height: "var(--row-h)" }}
+      style={{ height: "var(--sidebar-row-h)" }}
     >
       <button
         type="button"
@@ -727,7 +735,9 @@ function ProjectSidebarRow({
         title={group.primaryRoot || group.label}
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
-        <ProjectIcon className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" />
+        <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
+          <ProjectIcon />
+        </span>
         <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
           {group.label}
         </span>
@@ -782,9 +792,9 @@ function ProjectSidebarRow({
           aria-label={t("sidebar.startProjectChat")}
           title={t("sidebar.startProjectChat")}
           onClick={onNewChat}
-          className="flex size-5 items-center justify-center rounded text-fg-muted hover:bg-bg-surface/80 hover:text-fg"
+          className="sidebar-row-action"
         >
-          <SquarePenIcon className="size-3.5" />
+          <SquarePenIcon aria-hidden="true" />
         </button>
       </span>
     </div>
@@ -818,7 +828,7 @@ function PairSidebarRow({
           : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
         "transition-colors",
       )}
-      style={{ height: "var(--row-h)" }}
+      style={{ height: "var(--sidebar-row-h)" }}
     >
       <button
         type="button"
@@ -826,7 +836,9 @@ function PairSidebarRow({
         aria-label={row.label || t("sidebar.pairChat")}
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
-        <UsersRoundIcon className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" />
+        <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
+          <UsersRoundIcon />
+        </span>
         <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
           {row.label || t("sidebar.pairChat")}
         </span>
@@ -947,7 +959,7 @@ function SessionRow({
               : !errored && "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
             "transition-colors",
           )}
-          style={{ height: "var(--row-h)" }}
+          style={{ height: "var(--sidebar-row-h)" }}
         >
           <button
             type="button"
@@ -956,11 +968,11 @@ function SessionRow({
             aria-label={row.label}
             className="flex min-w-0 flex-1 items-center gap-2 text-left"
           >
-            {row.agent_id ? (
-              <AgentIcon agentId={row.agent_id} iconUrl={agentIconUrl} className="size-3.5 shrink-0 text-fg-muted group-hover:text-fg" title={row.agent_id} />
-            ) : (
-              <span className="size-3.5 shrink-0" />
-            )}
+            <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
+              {row.agent_id ? (
+                <AgentIcon agentId={row.agent_id} iconUrl={agentIconUrl} className="size-3.5" title={row.agent_id} />
+              ) : null}
+            </span>
             <span className={cn("flex-1 truncate text-left", labelCls)}>{row.label}</span>
           </button>
 
@@ -1097,11 +1109,11 @@ function PairChatLauncher({ labelCls }: { labelCls: string }) {
           aria-label={t("sidebar.pairChat")}
           className={cn(
             "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
-            "text-fg hover:bg-[var(--control-bg-hover)] transition-colors",
+            "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg transition-colors",
           )}
-          style={{ height: "var(--row-h)" }}
+          style={{ height: "var(--sidebar-row-h)" }}
         >
-          <span className="inline-flex size-4 shrink-0 items-center justify-center text-fg-muted">
+          <span className="sidebar-row-icon">
             <UsersRoundIcon className="size-3.5" />
           </span>
           <span className={labelCls}>{t("sidebar.pairChat")}</span>

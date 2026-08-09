@@ -176,6 +176,30 @@
   height: var(--sidebar-row-action-icon-size);
 }
 
+/* Sidebar rhythm — 2px between rows inside a section, one clear 16px step
+   between sections. Sections carry no trailing margins of their own, so the
+   ladder cannot drift when sections render conditionally. */
+.sidebar-section + .sidebar-section {
+  margin-top: 16px;
+}
+
+/* Every sidebar row centers its 14px glyph inside one 16px box, so icon
+   edges and label starts stay on the same two rails from the nav rows at
+   the top through sessions, pairs, projects, and the footer. */
+.sidebar-row-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-row-icon > svg {
+  width: 14px;
+  height: 14px;
+}
+
 [data-composer-run-trigger] {
   padding-inline: var(--control-padding-inline);
 }
@@ -1441,9 +1465,14 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
        --top-row-h        38px — the stage chrome row (sidebar top, card
                           top breadcrumb). Three top rows on one baseline
                           (see check.mjs invariant).
-       --row-h            28px — every dense row: sidebar nav row,
-                          toolbar chip, settings tab. Single height,
-                          single source of truth.
+       --row-h            28px — every dense control row outside the
+                          sidebar: composer footer rows, side-chat tabs,
+                          runtime summary, toolbar chip, settings tab.
+                          Single height, single source of truth.
+       --sidebar-row-h    24px — sidebar list density: nav rows, session
+                          rows, section headers, and the footer all sit
+                          on this one 24px grid (2px gaps inside a
+                          section, one 16px step between sections).
        --command-row-h    40px — compact command palette rows; keeps the
                           24px icon and one-line description readable.
        --row-gap-y        8px — gap between an outer container's top edge
@@ -1459,6 +1488,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --traffic-light-w: 78px;
   --top-row-h: 38px;
   --row-h: var(--control-height-compact);
+  --sidebar-row-h: 24px;
   --command-row-h: 40px;
   --row-gap-y: 8px;
   /* Stage inset = the gray band between the cards and the viewport

@@ -276,11 +276,32 @@ describe("groupSidebarSessions", () => {
     const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
 
     expect(footer).toContain(
-      '<span className="inline-flex size-4 shrink-0 items-center justify-center">',
+      '<span className="sidebar-row-icon">',
     );
     expect(footer).toContain(
       '<Settings2Icon className="size-3.5" />',
     );
+  });
+
+  it("keeps every row icon on one shared 16px rail", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const styles = readFileSync(
+      resolve(__dirname, "../../styles/index.css"),
+      "utf8",
+    );
+
+    expect(styles).toContain(".sidebar-row-icon {");
+    for (const component of [
+      "function ProjectSidebarRow",
+      "function PairSidebarRow",
+      "function SessionRow",
+    ]) {
+      const start = source.indexOf(component);
+      expect(source.slice(start, start + 2400)).toContain("sidebar-row-icon");
+    }
+    // No row renders a bare glyph outside the shared box.
+    expect(source).not.toContain('className="size-3.5 shrink-0');
+    expect(source).not.toContain('"inline-flex size-4 shrink-0');
   });
 
   it("renders a dedicated Pinned section before every other conversation section", () => {
