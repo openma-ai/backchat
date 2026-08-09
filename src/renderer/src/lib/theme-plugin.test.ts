@@ -484,22 +484,22 @@ describe("theme plugin integration", () => {
     expect(styles).toContain("max-width: calc(var(--home-composer-width) - 32px);");
     expect(styles).toContain("container-type: inline-size;");
     expect(styles).toContain(
-      "grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));",
+      "grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));",
     );
     expect(styles).toContain("min-height: clamp(480px, 58vh, 620px)");
     expect(styles).toContain('[data-home-hero-surface="framed"]');
     expect(styles).toContain('[data-home-hero-surface="flush"]');
     expect(styles).toContain("min-height: var(--home-suggestion-card-height, 148px)");
     expect(styles).toContain(
-      ".home-suggestion-card {\n  min-height: var(--home-suggestion-card-height, clamp(88px, 20cqi, 112px));",
+      ".home-suggestion-card {\n  min-height: var(--home-suggestion-card-height, 112px);",
     );
     expect(styles).toContain(".home-suggestion-fallback-icon {\n  width: var(--home-suggestion-icon-size, 22px);");
     expect(styles).toContain("width: var(--home-suggestion-icon-size, 52px)");
     expect(styles).toContain(
-      "gap: var(--home-suggestion-gap, clamp(10px, 3cqi, 24px));",
+      "gap: var(--home-suggestion-gap, 24px);",
     );
     expect(styles).toContain(
-      "padding: var(--home-suggestion-card-padding, clamp(12px, 3cqi, 18px));",
+      "padding: var(--home-suggestion-card-padding, 18px);",
     );
     expect(styles).toContain("justify-content: center;");
     expect(styles).not.toContain(

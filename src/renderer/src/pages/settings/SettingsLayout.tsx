@@ -55,7 +55,7 @@ export function SettingsLayout() {
   );
 }
 
-export function SettingsSidebar() {
+export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -66,7 +66,7 @@ export function SettingsSidebar() {
     return TABS.filter((tab) => t(tab.labelKey).toLowerCase().includes(normalized));
   }, [query, t]);
   const backToApp = () => {
-    void navigate({ to: "/" });
+    void navigate({ to: returnTo as never });
   };
 
   return (

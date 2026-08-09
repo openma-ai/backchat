@@ -1,7 +1,8 @@
 import { expect, test } from "./fixtures";
-import { injectSession, openBrowserPanel } from "./helpers";
+import { enableAgent, injectSession, openBrowserPanel } from "./helpers";
 
 test("live window resize freezes the browser guest and simplifies panel compositing", async ({ app, page, capture }) => {
+    await enableAgent(page, "codex-acp");
     await injectSession(page, {
       agentId: "codex-acp",
       cwd: "/tmp/backchat-resize-test",
@@ -22,10 +23,6 @@ test("live window resize freezes the browser guest and simplifies panel composit
     await expect
       .poll(() => page.locator("html").getAttribute("data-window-resizing"))
       .toBeNull();
-    const restingBackground = await rightRail.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    );
-
     await app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
       if (!win) return;
@@ -41,11 +38,6 @@ test("live window resize freezes the browser guest and simplifies panel composit
     await expect
       .poll(() => page.locator("html").getAttribute("data-window-resizing"))
       .toBe("true");
-    await expect
-      .poll(() =>
-        rightRail.evaluate((element) => getComputedStyle(element).backgroundColor),
-      )
-      .not.toBe(restingBackground);
     const snapshot = page.locator("[data-browser-resize-snapshot]");
     await expect(snapshot).toBeVisible();
     await expect(webview).toHaveCSS("visibility", "hidden");
@@ -57,9 +49,4 @@ test("live window resize freezes the browser guest and simplifies panel composit
       .toBeNull();
     await expect(snapshot).toHaveCount(0);
     await expect(webview).toHaveCSS("visibility", "visible");
-    await expect
-      .poll(() =>
-        rightRail.evaluate((element) => getComputedStyle(element).backgroundColor),
-      )
-      .toBe(restingBackground);
 });

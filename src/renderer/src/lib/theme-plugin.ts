@@ -248,7 +248,21 @@ function validateNumber(
 
 const backchatLight: ThemeTokens = { ...commonLightTokens };
 
-const backchatDark: ThemeTokens = { ...commonDarkTokens };
+const backchatDark: ThemeTokens = {
+  ...commonDarkTokens,
+  // Approved neutral reference palette. These remain theme tokens rather
+  // than component colors so every surface (including xterm) changes as one
+  // system and third-party themes can provide their own hierarchy.
+  bg: "#171717",
+  "bg-sidebar": "#1c1c1c",
+  "bg-surface": "#1c1c1c",
+  "bg-bubble": "#404040",
+  fg: "#dbdad2",
+  "fg-muted": "#858379",
+  "fg-subtle": "#747471",
+  border: "#2a2a2a",
+  "border-strong": "#3a3a39",
+};
 
 const workbenchLight: ThemeTokens = {
   ...backchatLight,

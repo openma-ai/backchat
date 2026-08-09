@@ -1,23 +1,28 @@
+import { useState } from "react";
 import {
-  CheckIcon,
   ChevronDownIcon,
-  CloudIcon,
   FolderOpenIcon,
   GitBranchIcon,
-  MonitorIcon,
   XIcon,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Command,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 import { selectRecentProjectPaths } from "@/lib/composer-project-paths";
 import { useI18n } from "@/lib/i18n";
 import { folderName } from "@/lib/project-path";
-import { cn } from "@/lib/utils";
+import { RuntimeLocationControl } from "./RuntimeLocationControl";
 
 export function ProjectChipRow({
   isDraft,
@@ -33,6 +38,8 @@ export function ProjectChipRow({
   onClearCwd: () => void;
 }) {
   const { t } = useI18n();
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [projectPickerValue, setProjectPickerValue] = useState("");
   const { data: persisted = [] } = useQuery({
     queryKey: ["sessions-for-recent-cwds"],
     queryFn: () => window.backchat.sessionsList(50),
@@ -51,112 +58,114 @@ export function ProjectChipRow({
   });
 
   const cwdLabel = activeCwd ? folderName(activeCwd) : t("chat.chooseProject");
+  const noProjectCommandValue = `${t("chat.noProject")} no project`;
 
   return (
-    <div className="flex items-center gap-2 px-3 text-xs text-fg-muted">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          disabled={!isDraft}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2 py-1",
-            "hover:bg-bg-surface/60 focus:outline-none focus:bg-bg-surface/60",
-            "transition-colors disabled:cursor-default disabled:hover:bg-transparent",
-          )}
-          title={activeCwd || t("chat.chooseProjectFolder")}
-        >
-          <FolderOpenIcon className="size-3.5" />
-          <span className="max-w-[200px] truncate">{cwdLabel}</span>
-          {isDraft && <ChevronDownIcon className="size-3 opacity-60" />}
-        </DropdownMenuTrigger>
+    <div
+      className="composer-control-row-inset mb-[var(--composer-footer-gap)] flex shrink-0 items-center gap-[var(--control-gap-compact)] text-xs text-fg-muted"
+      style={{ height: "var(--row-h)" }}
+      data-composer-footer-controls="true"
+    >
+      <RuntimeLocationControl />
+
+      <Popover
+        open={isDraft && projectPickerOpen}
+        onOpenChange={(open) => {
+          const nextOpen = isDraft && open;
+          if (nextOpen) {
+            setProjectPickerValue(activeCwd || noProjectCommandValue);
+          }
+          setProjectPickerOpen(nextOpen);
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-composer-footer-control="project"
+            disabled={!isDraft}
+            className="app-compact-control min-w-0 bg-transparent"
+            title={activeCwd || t("chat.chooseProjectFolder")}
+          >
+            <span data-control-icon>
+              <FolderOpenIcon />
+            </span>
+            <span className="max-w-[200px] truncate">{cwdLabel}</span>
+            {isDraft && <ChevronDownIcon data-control-chevron />}
+          </Button>
+        </PopoverTrigger>
         {isDraft && (
-          <DropdownMenuContent
+          <PopoverContent
             align="start"
             sideOffset={6}
-            className="min-w-[260px]"
+            className="w-[var(--composer-menu-width)] max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0"
           >
-            {recents.length > 0 && (
-              <>
+            <Command
+              value={projectPickerValue}
+              onValueChange={setProjectPickerValue}
+            >
+              <CommandInput
+                autoFocus
+                placeholder={t("chat.chooseProject")}
+              />
+              <CommandList>
                 {recents.map((path) => (
-                  <DropdownMenuItem
+                  <CommandItem
                     key={path}
-                    onSelect={() => onSetCwd(path)}
-                    className="flex items-center gap-2 text-xs"
+                    value={path}
+                    data-checked={path === activeCwd}
+                    onSelect={() => {
+                      onSetCwd(path);
+                      setProjectPickerOpen(false);
+                    }}
+                    className="text-xs"
                     title={path}
                   >
                     <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-                    <span className="flex-1 truncate">
+                    <span className="min-w-0 flex-1 truncate">
                       {folderName(path)}
                     </span>
-                    {path === activeCwd && (
-                      <CheckIcon className="size-3.5 text-fg-muted" />
-                    )}
-                  </DropdownMenuItem>
+                  </CommandItem>
                 ))}
-                <div className="my-1 h-px bg-border/60" />
-              </>
-            )}
-            <DropdownMenuItem
-              onSelect={() => void onPickCwd()}
-              className="flex items-center gap-2 text-xs"
-            >
-              <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-              <span>{t("common.browse")}</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={onClearCwd}
-              className="flex items-center gap-2 text-xs"
-            >
-              <XIcon className="size-3.5 text-fg-subtle" />
-              <span>{t("chat.noProject")}</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
+                {recents.length > 0 && <CommandSeparator />}
+                <CommandItem
+                  value={`${t("common.browse")} browse`}
+                  onSelect={() => {
+                    setProjectPickerOpen(false);
+                    void onPickCwd();
+                  }}
+                  className="text-xs"
+                >
+                  <FolderOpenIcon className="size-3.5 text-fg-subtle" />
+                  <span>{t("common.browse")}</span>
+                </CommandItem>
+                <CommandItem
+                  value={noProjectCommandValue}
+                  data-checked={!activeCwd}
+                  onSelect={() => {
+                    onClearCwd();
+                    setProjectPickerOpen(false);
+                  }}
+                  className="text-xs"
+                >
+                  <XIcon className="size-3.5 text-fg-subtle" />
+                  <span>{t("chat.noProject")}</span>
+                </CommandItem>
+              </CommandList>
+            </Command>
+          </PopoverContent>
         )}
-      </DropdownMenu>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2 py-1",
-            "hover:bg-bg-surface/60 focus:outline-none focus:bg-bg-surface/60",
-            "transition-colors",
-          )}
-          title={t("chat.whereRuns")}
-        >
-          <MonitorIcon className="size-3.5" />
-          <span>{t("chat.local")}</span>
-          <ChevronDownIcon className="size-3 opacity-60" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          sideOffset={6}
-          className="min-w-[220px]"
-        >
-          <DropdownMenuItem className="flex items-center gap-2 text-xs">
-            <MonitorIcon className="size-3.5 text-fg-subtle" />
-            <span className="flex-1">{t("chat.local")}</span>
-            <CheckIcon className="size-3.5 text-fg-muted" />
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled
-            className="flex items-start gap-2 text-xs opacity-60"
-          >
-            <CloudIcon className="mt-0.5 size-3.5 text-fg-subtle" />
-            <div className="min-w-0 flex-1">
-              <div>{t("chat.cloud")}</div>
-              <div className="text-[11px] text-fg-subtle">
-                {t("chat.comingSoon")}
-              </div>
-            </div>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      </Popover>
 
       {branch && (
         <span
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1"
+          className="app-compact-control inline-flex"
           title={`Branch · ${branch}`}
         >
-          <GitBranchIcon className="size-3.5" />
+          <span data-control-icon>
+            <GitBranchIcon />
+          </span>
           <span className="max-w-[160px] truncate">{branch}</span>
         </span>
       )}

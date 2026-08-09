@@ -1,8 +1,9 @@
 import { expect, test } from "./fixtures";
 
-import { injectSession, openBrowserPanel } from "./helpers";
+import { enableAgent, injectSession, openBrowserPanel } from "./helpers";
 
 test("browser chrome is compact and exposes real page controls", async ({ page, capture }) => {
+    await enableAgent(page, "codex-acp");
     const taskId = await injectSession(page, {
       agentId: "codex-acp",
       cwd: "/tmp/backchat-browser-toolbar",
@@ -10,7 +11,9 @@ test("browser chrome is compact and exposes real page controls", async ({ page, 
     await openBrowserPanel(page);
 
     const browser = page.locator(`[data-browser-task="${taskId}"]`);
-    const tab = page.locator('button[title="New tab"]').first();
+    const panel = page.locator("aside[data-right-panel-expanded]");
+    const tab = panel.locator('[role="tab"][aria-selected="true"]');
+    const tabChip = tab.locator("..");
     const back = browser.getByRole("button", { name: "Back" });
     await expect(browser).toBeVisible();
     await expect(tab).toBeVisible();
@@ -22,7 +25,36 @@ test("browser chrome is compact and exposes real page controls", async ({ page, 
     const [tabBox, backBox] = await Promise.all([tab.boundingBox(), back.boundingBox()]);
     expect(tabBox).not.toBeNull();
     expect(backBox).not.toBeNull();
-    expect(backBox!.y - (tabBox!.y + tabBox!.height)).toBeLessThanOrEqual(12);
+    expect(backBox!.y - (tabBox!.y + tabBox!.height)).toBeGreaterThanOrEqual(4);
+    expect(backBox!.y - (tabBox!.y + tabBox!.height)).toBeLessThanOrEqual(18);
+
+    const materials = await Promise.all([panel, tabChip].map((locator) =>
+      locator.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = style.backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return {
+          backdropFilter: style.backdropFilter,
+          backgroundAlpha: context.getImageData(0, 0, 1, 1).data[3],
+          borderTopStyle: style.borderTopStyle,
+          borderTopWidth: Number.parseFloat(style.borderTopWidth),
+        };
+      }),
+    ));
+    expect(materials[0]).toMatchObject({
+      backdropFilter: "none",
+      backgroundAlpha: 255,
+    });
+    expect(materials[1]).toMatchObject({
+      backgroundAlpha: 255,
+      borderTopStyle: "solid",
+    });
+    expect(materials[1].borderTopWidth).toBeGreaterThan(0.5);
 
     await expect(
       browser.getByRole("button", { name: "Open in default browser" }),
@@ -102,6 +134,6 @@ test("browser chrome is compact and exposes real page controls", async ({ page, 
 
     await browser.getByRole("button", { name: "Browser menu" }).click();
     await page.getByRole("menuitem", { name: "Browser settings" }).click();
-    await expect(page.getByRole("heading", { name: "Browser" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Browser", exact: true })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Enable built-in browser" })).toBeVisible();
 });

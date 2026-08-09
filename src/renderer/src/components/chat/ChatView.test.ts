@@ -447,7 +447,8 @@ describe("home suggestions", () => {
     expect(emptyState).toContain('className="home-empty-content');
     expect(emptyState).toContain('data-chat-column="composer"');
     expect(emptyState).toContain("CHAT_COMPOSER_FRAME_CLASS");
-    expect(emptyState).toContain('"space-y-2 pb-4"');
+    expect(emptyState).toContain('"space-y-2"');
+    expect(emptyState).not.toContain("pb-4");
     expect(source).not.toContain("composerTransition");
     expect(source).not.toContain('"composer-slide-in"');
     expect(styles).not.toContain(
@@ -472,7 +473,7 @@ describe("home suggestions", () => {
     expect(emptyStackStyles).not.toContain("margin-top: -8vh;");
   });
 
-  it("places the project picker above the composer in every draft surface", () => {
+  it("places the draft runtime and project footer below the composer", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
     const firstComposerFrame = source.indexOf('data-chat-column="composer"');
     const secondComposerFrame = source.indexOf(
@@ -496,7 +497,7 @@ describe("home suggestions", () => {
     );
   });
 
-  it("uses only the active Agent logo in the compact run trigger", () => {
+  it("keeps Agent branding in the harness menu instead of the model trigger", () => {
     const controlsSource = readFileSync(
       resolve(__dirname, "ComposerSessionControls.tsx"),
       "utf8",
@@ -506,11 +507,16 @@ describe("home suggestions", () => {
       controlsSource.indexOf("function SessionConfigSubmenu"),
     );
 
-    expect(runChip).toContain("agentId={currentAgentId}");
-    expect(runChip).toContain("title={agentLabel}");
-    expect(runChip).not.toContain(
-      '<span className="truncate">{agentLabel}</span>',
+    const runTrigger = runChip.slice(
+      runChip.indexOf("<DropdownMenuTrigger"),
+      runChip.indexOf("</DropdownMenuTrigger>"),
     );
+    const harnessMenu = runChip.slice(runChip.indexOf("function SessionAgentSubmenu"));
+
+    expect(runTrigger).not.toContain("agentId={currentAgentId}");
+    expect(runTrigger).not.toContain("title={agentLabel}");
+    expect(harnessMenu).toContain("agentId={currentAgentId}");
+    expect(harnessMenu).toContain("title={currentAgentLabel}");
   });
 
   it("keeps the compact run trigger narrow and reveals the full model on hover", () => {
@@ -551,23 +557,19 @@ describe("home suggestions", () => {
     expect(new Set([local.Icon, cloud.Icon, remote.Icon])).toHaveLength(3);
   });
 
-  it("shows distinct local, cloud, and other-machine icons without enabling unavailable runtimes", () => {
-    const controlsSource = readFileSync(
-      resolve(__dirname, "ComposerSessionControls.tsx"),
+  it("keeps every runtime choice in the dedicated footer menu", () => {
+    const runtimeControl = readFileSync(
+      resolve(__dirname, "RuntimeLocationControl.tsx"),
       "utf8",
     );
-    const runtimeMenu = controlsSource.slice(
-      controlsSource.indexOf("function SessionRuntimeSubmenu"),
-      controlsSource.indexOf("function SessionAgentSubmenu"),
-    );
 
-    expect(runtimeMenu).toContain('icon={MonitorIcon}');
-    expect(runtimeMenu).toContain('label={t("chat.local")}');
-    expect(runtimeMenu).toContain('icon={CloudIcon}');
-    expect(runtimeMenu).toContain('label={t("chat.cloud")}');
-    expect(runtimeMenu).toContain('icon={ServerIcon}');
-    expect(runtimeMenu).toContain('label={t("chat.otherMachine")}');
-    expect(runtimeMenu.match(/disabled/g)).toHaveLength(2);
+    expect(runtimeControl).toContain("MonitorIcon");
+    expect(runtimeControl).toContain('t("chat.local")');
+    expect(runtimeControl).toContain("CloudIcon");
+    expect(runtimeControl).toContain('t("chat.cloud")');
+    expect(runtimeControl).toContain("ServerIcon");
+    expect(runtimeControl).toContain('t("chat.otherMachine")');
+    expect(runtimeControl.match(/disabled/g)).toHaveLength(2);
   });
 });
 
@@ -630,7 +632,7 @@ describe("slash command presentation", () => {
     expect(source).toContain('from "./ComposerSessionControls"');
     expect(controlsSource).toContain("buildRunMenuConfigOptionSections");
     expect(controlsSource).toContain("<DropdownMenuSub");
-    expect(controlsSource).toContain("<SessionRuntimeSubmenu");
+    expect(controlsSource).not.toContain("<SessionRuntimeSubmenu");
     expect(controlsSource).toContain("<SessionAgentSubmenu");
     expect(controlsSource).not.toContain(
       '<SessionRunSection title={t("chat.runtime")}',

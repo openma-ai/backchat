@@ -5,11 +5,18 @@ import {
   visibleCapabilityLabels,
 } from "@/components/shell/context-usage";
 import { cn } from "@/lib/utils";
+import { RuntimeLocationControl } from "./RuntimeLocationControl";
 
 type RuntimeMethodCapability = {
   label: string;
   supported: boolean | undefined;
 };
+
+function compactTokenCount(value: number): string {
+  if (value < 1_000) return String(Math.round(value));
+  const abbreviated = value / 1_000;
+  return `${abbreviated >= 10 ? Math.round(abbreviated) : abbreviated.toFixed(1)}k`;
+}
 
 function runtimeAgentIdentity(row: SessionRow): { name: string; version?: string } {
   const info = row.agentInfo;
@@ -59,7 +66,15 @@ export function SessionRuntimeSummary({
     ...methodCapabilityLabels(session),
   ]));
   const usage = session.usage ? contextUsagePresentation(session.usage) : undefined;
+  const usagePercentage = session.usage
+    ? Math.min(100, Math.max(0, Math.round((session.usage.used / session.usage.size) * 100)))
+    : 0;
   const terminated = runtimeStatus.state === "terminated";
+  const runtimeTitle = [
+    `${identity.name}${identity.version ? ` ${identity.version}` : ""}`,
+    runtimeStatus.label,
+    session.cwd || undefined,
+  ].filter(Boolean).join(" · ");
 
   return (
     <section
@@ -67,94 +82,86 @@ export function SessionRuntimeSummary({
       data-gui-feature="session.initialize-ready"
       data-session-runtime="true"
       data-session-id={session.id}
-      className="mx-4 mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border/60 bg-bg-surface/70 px-3 py-2 text-[11px] text-fg-muted"
+      className="mb-[var(--row-gap-y)] flex h-[var(--row-h)] shrink-0 items-center justify-between px-2 text-xs text-fg-muted"
     >
-      <span data-session-agent-name className="font-medium text-fg">
-        {identity.name}
-      </span>
-      {identity.version && (
-        <span data-session-agent-version>{identity.version}</span>
-      )}
-      {session.protocolVersion !== undefined && (
-        <span data-session-protocol>ACP v{session.protocolVersion}</span>
-      )}
-      <span
-        role="status"
-        aria-label={`Session status: ${runtimeStatus.label}`}
-        data-gui-feature="output.session-status-goal-queue"
-        data-session-status={runtimeStatus.state}
-        className={cn(
-          "rounded-full px-2 py-0.5 font-medium",
-          runtimeStatus.state === "running" && "bg-warning/15 text-warning",
-          runtimeStatus.state === "idle" && "bg-success/15 text-success",
-          runtimeStatus.state === "terminated" && "bg-danger/15 text-danger",
-        )}
-      >
-        {runtimeStatus.label}
-      </span>
-      {terminated && (
-        <span
-          aria-disabled="true"
-          data-gui-feature="session.close-terminated"
-          data-session-terminated="true"
-          className="font-medium text-danger"
-        >
-          Composer disabled
-        </span>
-      )}
-      <span
-        data-gui-feature="session.new-workspace"
-        data-session-cwd={session.cwd}
-        title={session.cwd}
-        className="max-w-[28rem] truncate"
-      >
-        CWD {session.cwd || "—"}
-      </span>
-      {(session.additionalDirectories ?? []).map((directory) => (
-        <span
-          key={directory}
-          data-session-additional-directory={directory}
-          title={directory}
-          className="max-w-[24rem] truncate"
-        >
-          + {directory}
-        </span>
-      ))}
-      {capabilities.length > 0 && (
-        <span data-session-capabilities className="contents">
-          {capabilities.map((capability) => (
-            <span
-              key={capability}
-              data-session-capability={capability}
-              className="rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
-            >
-              {capability}
-            </span>
-          ))}
-        </span>
-      )}
-      {usage && (
+      <RuntimeLocationControl title={runtimeTitle} />
+      {usage ? (
         <span
           aria-label={usage.title}
           data-gui-feature="output.usage-parent"
           data-usage-scope="parent"
           data-context-used={session.usage?.used}
           data-context-size={session.usage?.size}
-          className="font-medium text-fg"
+          title={usage.title}
+          className={cn(
+            "inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 tabular-nums",
+            usage.tone === "warning" && "text-warning",
+            usage.tone === "danger" && "text-danger",
+            usage.tone === "muted" && "text-fg-subtle",
+          )}
         >
-          {usage.title}
+          <span data-context-token-count="true">
+            {compactTokenCount(session.usage!.used)} / {compactTokenCount(session.usage!.size)}
+          </span>
+          <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden="true">
+            <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeWidth="2" />
+            <circle
+              cx="8"
+              cy="8"
+              r="6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              pathLength="100"
+              strokeDasharray={`${usagePercentage} 100`}
+            />
+          </svg>
+          <span className="sr-only">{usage.title}</span>
         </span>
-      )}
-      <span data-session-queue-depth={queueDepth}>Queue {queueDepth}</span>
-      {session.goal && (
+      ) : null}
+
+      <span data-session-runtime-details="true" className="sr-only">
+        <span data-session-agent-name>{identity.name}</span>
+        {identity.version && <span data-session-agent-version>{identity.version}</span>}
+        {session.protocolVersion !== undefined && (
+          <span data-session-protocol>ACP v{session.protocolVersion}</span>
+        )}
         <span
-          data-session-goal-status={session.goal.status}
-          title={session.goal.objective}
-          className="max-w-[28rem] truncate"
+          role="status"
+          aria-label={`Session status: ${runtimeStatus.label}`}
+          data-gui-feature="output.session-status-goal-queue"
+          data-session-status={runtimeStatus.state}
         >
-          Goal {session.goal.objective} · {session.goal.status}
+          {runtimeStatus.label}
         </span>
-      )}
+        {terminated && (
+          <span
+            aria-disabled="true"
+            data-gui-feature="session.close-terminated"
+            data-session-terminated="true"
+          >
+            Composer disabled
+          </span>
+        )}
+        <span data-gui-feature="session.new-workspace" data-session-cwd={session.cwd}>
+          CWD {session.cwd || "—"}
+        </span>
+        {(session.additionalDirectories ?? []).map((directory) => (
+          <span key={directory} data-session-additional-directory={directory}>
+            + {directory}
+          </span>
+        ))}
+        {capabilities.map((capability) => (
+          <span key={capability} data-session-capability={capability}>{capability}</span>
+        ))}
+        <span data-session-queue-depth={queueDepth}>Queue {queueDepth}</span>
+        {session.goal && (
+          <span data-session-goal-status={session.goal.status}>
+            Goal {session.goal.objective} · {session.goal.status}
+          </span>
+        )}
+      </span>
     </section>
   );
 }

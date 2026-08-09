@@ -48,9 +48,18 @@ describe("SessionRuntimeSummary", () => {
     expect(html).toContain('data-session-capability="session.close"');
     expect(html).toContain('data-gui-feature="output.usage-parent"');
     expect(html).toContain('data-usage-scope="parent"');
+    expect(html).toContain('data-context-token-count="true"');
+    expect(html).toContain("1.2k / 8.2k");
     expect(html).toContain("Context · 1,234 / 8,192 tokens · 0.42 USD");
     expect(html).toContain("Queue 2");
     expect(html).toContain("Goal Verify every harness · active");
+    expect(html).toContain('data-session-runtime-location="true"');
+    expect(html).toContain('data-composer-footer-control="runtime"');
+    expect(html).toContain('data-slot="dropdown-menu-trigger"');
+    expect(html).toContain('data-gui-feature="output.usage-parent"');
+    expect(html).toContain('data-session-runtime-details="true"');
+    expect(html).toContain("sr-only");
+    expect(html).not.toContain("bg-bg-surface/70");
   });
 
   it("renders a terminated state with an explicit disabled marker", () => {
@@ -71,5 +80,17 @@ describe("SessionRuntimeSummary", () => {
 
     expect(html).toContain('aria-label="Session status: Running"');
     expect(html).toContain('data-session-status="running"');
+  });
+
+  it("omits context UI when ACP has not emitted usage_update", () => {
+    const html = renderToStaticMarkup(
+      <SessionRuntimeSummary session={row({ usage: undefined })} />,
+    );
+
+    expect(html).not.toContain('data-gui-feature="output.usage-parent"');
+    expect(html).not.toContain('data-context-token-count="true"');
+    expect(html).not.toContain("stroke-dasharray");
+    expect(html).not.toContain("Context —");
+    expect(html).not.toContain('data-context-usage="unavailable"');
   });
 });

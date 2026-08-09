@@ -386,7 +386,7 @@ export function SideChatPanel() {
                 className={cn(
                   "inline-flex h-[var(--row-h)] max-w-48 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs",
                   mainSelected
-                    ? "liquid-glass-selected text-fg"
+                    ? "app-floating-tab text-fg"
                     : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
                   "transition-colors",
                 )}
@@ -1069,15 +1069,14 @@ function TabChip({
     <div
       className={cn(
         "group relative inline-flex h-[var(--row-h)] w-32 shrink-0 items-center rounded-md pl-2 pr-1 text-xs select-none",
-        // Active tab: filled surface + crisp text + subtle inset
-        // border so the chip reads as "lifted" from the bar even on
-        // first glance. Inactive: transparent until hover, with the
+        // Active tab: an opaque bordered surface with a small shadow, leaving
+        // the panel visible around all four sides. Inactive: transparent until hover, with the
         // foreground color still visible enough to be a click target
         // (image #95 — every tab read as inactive because the
         // bg-bg-surface/60 hover landed too close to the bg-bg-surface
         // active background).
         active
-          ? "liquid-glass-selected text-fg"
+          ? "app-floating-tab text-fg"
           : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
         "transition-colors",
       )}

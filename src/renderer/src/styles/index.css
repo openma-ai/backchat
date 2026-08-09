@@ -203,7 +203,8 @@ html.dark[data-window-resizing="true"] .liquid-glass {
    outer edge is exactly the same edge as the composer card. */
 .composer-overlay-panel {
   left: 0;
-  right: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .slash-command-section + .slash-command-section {
@@ -917,12 +918,12 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
 }
 
 .new-chat-page .home-suggestion-card {
-  min-height: clamp(96px, 13cqi, 112px);
+  min-height: max(var(--composer-resting-height), var(--home-suggestion-card-height, 0px));
   gap: clamp(10px, 2cqi, 18px);
   padding: clamp(12px, 2cqi, 18px);
 }
 
-@container (max-width: 960px) {
+@container (max-width: 640px) {
   .new-chat-page .home-suggestions,
   .new-chat-page .home-suggestions[data-suggestion-width="composer"],
   .new-chat-page .home-suggestions[data-suggestion-width="wide"] {

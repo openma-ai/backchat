@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures";
 import { enableAgent, injectEvent, injectSession } from "./helpers";
 
 test.describe("composer configuration", () => {
-  test("runtime and agent pickers are compact nested menus", async ({ page, bridge }) => {
+  test("agent and config pickers are compact nested menus", async ({ page, bridge }) => {
     await bridge.setAgentSetupFixture({
       agents: [
         {
@@ -64,10 +64,6 @@ test.describe("composer configuration", () => {
     await modelSummary.hover();
     await expect(page.getByRole("tooltip")).toHaveText(longModelName);
 
-    const runtimeIcon = runPicker.getByLabel("Local", { exact: true });
-    await runtimeIcon.hover();
-    await expect(page.getByRole("tooltip")).toHaveText("Local");
-
     await expect(
       page.getByRole("button", { name: "Fast mode", exact: true }),
     ).toHaveCount(0);
@@ -77,37 +73,71 @@ test.describe("composer configuration", () => {
     await expect(
       page.getByRole("menuitem", { name: "Fast Off", exact: true }),
     ).toBeVisible();
-
-    const runtimePicker = page.getByRole("menuitem", {
-      name: /^(Runtime|运行位置).*(Local|本机)$/,
-    });
-    await expect(runtimePicker).toHaveAttribute("aria-haspopup", "menu");
-    await runtimePicker.hover();
-    await expect(
-      page.getByRole("menuitem", {
-        name: /^(Local|本机).*(This machine|当前设备)$/,
-      }),
-    ).toBeVisible();
-    const cloudRuntime = page.getByRole("menuitem", {
-      name: /^(Cloud|云端).*(Coming soon|即将推出)$/,
-    });
-    await expect(cloudRuntime).toBeDisabled();
-    await expect(cloudRuntime.locator("svg.lucide-cloud")).toBeVisible();
-    const remoteRuntime = page.getByRole("menuitem", {
-      name: /^(Other machine|其他设备).*(Not connected|未连接)$/,
-    });
-    await expect(remoteRuntime).toBeDisabled();
-    await expect(remoteRuntime.locator("svg.lucide-server")).toBeVisible();
-
-    await page.keyboard.press("ArrowLeft");
     const agentPicker = page.getByRole("menuitem", {
       name: /(Harness|智能体) Claude$/,
     });
     await expect(agentPicker).toHaveAttribute("aria-haspopup", "menu");
     await agentPicker.hover();
     await expect(
-      page.getByRole("menuitem", { name: /Codex.*codex-acp/ }),
+      page.getByRole("menuitem", { name: "Codex", exact: true }),
     ).toBeVisible();
+  });
+
+  test("sizes the approval selector like the other composer menus", async ({ page, bridge }) => {
+    await bridge.setAgentSetupFixture({
+      agents: [{
+        id: "codex-acp",
+        label: "Codex",
+        command: "codex-acp",
+        detected: true,
+        available: true,
+        installed: true,
+      }],
+    });
+    await enableAgent(page, "codex-acp");
+    const sessionId = await injectSession(page, { agentId: "codex-acp" });
+    await injectEvent(page, {
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "e2e-mode-layout",
+      event: {
+        sessionUpdate: "config_option_update",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Session mode",
+            category: "mode",
+            type: "select",
+            currentValue: "agent",
+            options: [
+              { value: "read-only", name: "Ask for approval" },
+              { value: "agent", name: "Approve for me" },
+              { value: "agent-full-access", name: "Full access" },
+            ],
+          },
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-5.6-sol",
+            options: [{ value: "gpt-5.6-sol", name: "GPT-5.6-Sol" }],
+          },
+        ],
+      },
+    });
+
+    await page.getByRole("button", { name: "Approve for me", exact: true }).click();
+    const approvalMenu = page.getByRole("menu");
+    const approvalBox = await approvalMenu.boundingBox();
+    expect(approvalBox).not.toBeNull();
+    await page.keyboard.press("Escape");
+
+    await page.locator('button[aria-label^="Run on "]').first().click();
+    const configMenu = page.getByRole("menu");
+    const configBox = await configMenu.boundingBox();
+    expect(configBox).not.toBeNull();
+    expect(Math.abs(approvalBox!.width - configBox!.width)).toBeLessThanOrEqual(2);
   });
 
   test("model picker switches the active session config option", async ({ page, bridge }) => {

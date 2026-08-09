@@ -23,7 +23,7 @@ test.describe("composer slash commands", () => {
     await composer.input.fill("/");
 
     const panel = page.getByRole("listbox", { name: "Slash commands" });
-    await expect(panel).toHaveClass(/liquid-glass/);
+    await expect(panel).toHaveClass(/app-overlay-surface/);
     await expect(panel).toHaveClass(/composer-card/);
     const composerCard = page
       .locator('[data-chat-surface="main"] .composer-card')

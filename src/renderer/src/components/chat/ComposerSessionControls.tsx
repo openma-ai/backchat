@@ -117,7 +117,7 @@ export function SessionRunChip({
   const configLabel = configSummary
     ? selectedConfigOptionLabel(configSummary)
     : t("chat.configure");
-  const { Icon: RuntimeIcon, labelKey: runtimeLabelKey } =
+  const { labelKey: runtimeLabelKey } =
     runtimePresentation(runtimeKind);
   const runtimeLabel = t(runtimeLabelKey);
 
@@ -125,60 +125,36 @@ export function SessionRunChip({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled}
+        data-composer-run-trigger="true"
         className={cn(
-          "inline-flex max-w-[280px] items-center gap-1 rounded-md px-2 text-xs text-fg-muted",
-          "hover:bg-bg-surface/60 hover:text-fg",
-          "focus:outline-none focus:bg-bg-surface/60",
-          "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+          "app-compact-control inline-flex max-w-[250px] items-center pl-[var(--control-padding-inline)] text-xs",
+          "select-none bg-transparent",
+          "transition-colors group-hover/run-actions:text-fg group-hover/run-actions:transition-none disabled:opacity-50 disabled:cursor-not-allowed",
         )}
-        style={{ height: "32px" }}
         aria-label={
           noHarnessSetup
             ? `Run on ${runtimeLabel} with no harness setup`
             : `Run on ${runtimeLabel} with ${agentLabel} using ${configLabel}`
         }
       >
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0" aria-label={runtimeLabel}>
-                <RuntimeIcon className="size-3.5 text-fg-subtle" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">{runtimeLabel}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <span className="text-fg-subtle">·</span>
         {noHarnessSetup ? (
           <span className="shrink-0">{agentLabel}</span>
         ) : (
-          <AgentIcon
-            agentId={currentAgentId}
-            iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
-            className="size-3.5 shrink-0 text-fg-muted"
-            title={agentLabel}
-          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="min-w-0 max-w-[140px] truncate">
+                  {configLabel}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">{configLabel}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
-        {!noHarnessSetup && (
-          <>
-            <span className="text-fg-subtle">·</span>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="min-w-0 max-w-[140px] truncate">
-                    {configLabel}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top">{configLabel}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </>
-        )}
-        <ChevronDownIcon className="size-3.5 shrink-0 text-fg-subtle" />
+        <ChevronDownIcon className="size-3.5 shrink-0 text-current opacity-65 group-hover/run-actions:text-fg group-hover/run-actions:opacity-100" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="w-[280px]">
+      <DropdownMenuContent align="end" sideOffset={6} className="w-[var(--composer-menu-width)]">
         <div className="border-b border-border/50 py-1">
-          <SessionRuntimeSubmenu runtimeKind={runtimeKind} />
           <SessionAgentSubmenu
             agents={agents}
             currentAgentId={currentAgentId}
@@ -216,49 +192,6 @@ export function SessionRunChip({
   );
 }
 
-function SessionRuntimeSubmenu({
-  runtimeKind,
-}: {
-  runtimeKind: ComposerRuntimeKind;
-}) {
-  const { t } = useI18n();
-  const { Icon, labelKey } = runtimePresentation(runtimeKind);
-  return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
-        <Icon className="size-3.5 text-fg-subtle" />
-        <span>{t("chat.runtime")}</span>
-        <span className="ml-auto max-w-[120px] truncate text-fg-subtle">
-          {t(labelKey)}
-        </span>
-      </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[280px]">
-        <SessionRunItem
-          icon={MonitorIcon}
-          label={t("chat.local")}
-          hint={t("chat.thisMachine")}
-          active
-          onSelect={() => undefined}
-        />
-        <SessionRunItem
-          icon={CloudIcon}
-          label={t("chat.cloud")}
-          hint={t("chat.comingSoon")}
-          disabled
-          onSelect={() => undefined}
-        />
-        <SessionRunItem
-          icon={ServerIcon}
-          label={t("chat.otherMachine")}
-          hint={t("chat.notConnected")}
-          disabled
-          onSelect={() => undefined}
-        />
-      </DropdownMenuSubContent>
-    </DropdownMenuSub>
-  );
-}
-
 function SessionAgentSubmenu({
   agents,
   currentAgentId,
@@ -293,7 +226,7 @@ function SessionAgentSubmenu({
           {currentAgentLabel}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[280px]">
+      <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
         {agents.length > 0 ? (
           agents.map((agent) => (
             <SessionRunItem
@@ -345,7 +278,7 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[280px]">
+      <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
         {option.type === "select" ? (
           flattenSelectOptions(option).map((item) => (
             <SessionRunItem
@@ -438,13 +371,12 @@ export function PermissionModeChip({
       <DropdownMenuTrigger
         disabled={disabled}
         className={cn(
-          "inline-flex items-center gap-1 rounded-md px-2 text-xs",
+          "inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs",
           meta.toneClass,
           "hover:bg-bg-surface/60",
           "focus:outline-none focus:bg-bg-surface/60",
           "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         )}
-        style={{ height: "32px" }}
         aria-label={label}
       >
         <Icon className="size-3.5" />
@@ -454,7 +386,7 @@ export function PermissionModeChip({
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="min-w-[220px]"
+        className="w-[var(--composer-menu-width)]"
       >
         {(["auto", "ask", "read_only"] as const).map((nextMode) => {
           const item = MODE_META[nextMode];
@@ -550,7 +482,7 @@ function SessionModeControl({
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
         className={cn(
-          "inline-flex h-8 max-w-[180px] shrink-0 items-center gap-1 rounded-md px-2 text-xs",
+          "inline-flex h-7 max-w-[180px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs",
           "hover:bg-bg-surface/60 focus:outline-none focus:bg-bg-surface/60",
           "transition-colors disabled:cursor-not-allowed disabled:opacity-50",
           selectedPresentation.tone === "warning"
@@ -567,7 +499,7 @@ function SessionModeControl({
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="w-[360px] p-2"
+        className="w-[var(--composer-menu-width)] p-1"
       >
         {values.map((item) => {
           const presentation = localizedSessionModePresentation(
@@ -581,21 +513,21 @@ function SessionModeControl({
               key={item.value}
               onSelect={() => void pick(item.value)}
               className={cn(
-                "min-h-14 items-start gap-3 rounded-lg px-3 py-2",
+                "min-h-12 items-start gap-2 rounded-md px-2 py-1.5",
                 presentation.tone === "warning" && "text-warning",
               )}
             >
-              <ItemIcon className="mt-0.5 size-4 shrink-0" />
+              <ItemIcon className="mt-0.5 size-3.5 shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="text-sm">{presentation.label}</div>
+                <div className="text-xs">{presentation.label}</div>
                 {presentation.hint && (
-                  <div className="mt-0.5 text-xs leading-5 text-fg-subtle">
+                  <div className="mt-0.5 text-[11px] leading-4 text-fg-subtle">
                     {presentation.hint}
                   </div>
                 )}
               </div>
               {item.value === option.currentValue && (
-                <CheckIcon className="mt-0.5 size-4 shrink-0" />
+                <CheckIcon className="mt-0.5 size-3.5 shrink-0" />
               )}
             </DropdownMenuItem>
           );
@@ -643,7 +575,7 @@ export function ComposerSessionStateSlot({
     <span
       data-composer-session-state="true"
       data-session-state-kind={presentation.kind}
-      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-fg-muted"
+      className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted"
       title={presentation.title}
     >
       <Icon className="size-3.5" aria-hidden="true" />
@@ -700,7 +632,7 @@ function InlineComposerOptionControl({
         aria-pressed={option.currentValue}
         onClick={() => void onSetConfigOption?.(option.id, !option.currentValue)}
         className={cn(
-          "inline-flex h-8 max-w-[150px] shrink-0 items-center gap-1.5 rounded-md px-2 text-xs",
+          "inline-flex h-7 max-w-[150px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs",
           option.currentValue
             ? "bg-bg-surface text-fg"
             : "text-fg-muted hover:bg-bg-surface/60",
@@ -715,7 +647,7 @@ function InlineComposerOptionControl({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
-        className="inline-flex h-8 max-w-[180px] shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-fg-muted hover:bg-bg-surface/60"
+        className="inline-flex h-7 max-w-[180px] shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted hover:bg-bg-surface/60"
       >
         <WrenchIcon className="size-3.5 shrink-0" />
         <span className="truncate">{option.name}</span>
@@ -768,11 +700,13 @@ function SessionRunItem({
       )}
     >
       {agentId ? (
-        <AgentIcon
-          agentId={agentId}
-          iconUrl={agentIconUrl}
-          className="mt-0.5 size-3.5 shrink-0 text-fg-subtle"
-        />
+        <span aria-hidden="true" className="mt-0.5 shrink-0">
+          <AgentIcon
+            agentId={agentId}
+            iconUrl={agentIconUrl}
+            className="size-3.5 text-fg-subtle"
+          />
+        </span>
       ) : Icon ? (
         <Icon className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" />
       ) : null}

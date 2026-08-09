@@ -61,6 +61,8 @@ import {
 import { ComposerSessionMentionMenu } from "./ComposerSessionMentionMenu";
 import { ComposerBrokerAsk } from "./ComposerAskPanel";
 
+const composerTextBySession = new Map<string, string>();
+
 export function Composer({
   sessionId,
   sessionAgentId,
@@ -125,7 +127,17 @@ export function Composer({
   onCancel: () => void;
 }) {
   const { t } = useI18n();
-  const [text, setText] = useState("");
+  const composerTextKey = sessionId ?? "draft:pending";
+  const [text, setTextState] = useState(
+    () => composerTextBySession.get(composerTextKey) ?? "",
+  );
+  const setText = (next: string) => {
+    composerTextBySession.set(composerTextKey, next);
+    setTextState(next);
+  };
+  useEffect(() => {
+    setTextState(composerTextBySession.get(composerTextKey) ?? "");
+  }, [composerTextKey]);
   const [caret, setCaret] = useState(0);
   const [dismissedMentionText, setDismissedMentionText] = useState<string | null>(null);
   const [mentionPickerIndex, setMentionPickerIndex] = useState(0);
@@ -326,7 +338,6 @@ export function Composer({
   }, [disabled]);
 
   useEffect(() => {
-    setText("");
     setCaret(0);
     setSessionReferences([]);
     setMentionedFileAttachmentIds(new Set());
@@ -871,6 +882,7 @@ export function Composer({
               submitComposer(primaryIntent);
             }}
             disabled={!canSubmitNow}
+            data-composer-submit="true"
             aria-label={running ? primaryRunningAction?.ariaLabel : t("chat.send")}
             title={running ? primaryRunningAction?.title : t("chat.send")}
             className={cn(

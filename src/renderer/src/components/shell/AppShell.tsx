@@ -148,7 +148,7 @@ export function AppShell({
   return (
     <div
       className={cn(
-        "relative h-full bg-bg-sidebar text-fg",
+        "app-canvas-surface relative h-full text-fg",
         className,
       )}
       style={{

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AppShell,
@@ -157,6 +157,8 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   const isChat = location.pathname.startsWith("/chat/");
   const isPair = location.pathname.startsWith("/pair/");
   const isSettings = location.pathname.startsWith("/settings");
+  const returnToAppRef = useRef("/");
+  if (!isSettings) returnToAppRef.current = location.pathname;
   const settings = useSettings();
   const hasEnabledAgent =
     settings?.agents.some((agent) => agent.enabled) ?? false;
@@ -251,7 +253,9 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
         <RightRailExpansionContext.Provider value={rightExpansion}>
           <BottomBarCollapseContext.Provider value={bottomCollapse}>
             <AppShell
-              sidebar={isSettings ? <SettingsSidebar /> : <Sidebar />}
+              sidebar={isSettings
+                ? <SettingsSidebar returnTo={returnToAppRef.current} />
+                : <Sidebar />}
               topbar={
                 isChat ? (
                   <Topbar onCancel={cancelActive} />

@@ -105,6 +105,17 @@ test("right sidebar opens resources from a temporary New tab page", async ({ pag
   const panel = page.locator("aside[data-right-panel-expanded]");
   await page.getByRole("button", { name: "Expand panel" }).click();
   await expect(panel).toHaveAttribute("data-right-panel-expanded", "true");
+  const expandedRadii = await panel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      topLeft: Number.parseFloat(style.borderTopLeftRadius),
+      bottomLeft: Number.parseFloat(style.borderBottomLeftRadius),
+      topRight: Number.parseFloat(style.borderTopRightRadius),
+    };
+  });
+  expect(expandedRadii.topLeft).toBe(0);
+  expect(expandedRadii.bottomLeft).toBe(0);
+  expect(expandedRadii.topRight).toBeGreaterThan(0);
   const pinnedMainSession = panel.locator('[data-pinned-main-session="true"]');
   await expect(pinnedMainSession).toBeVisible();
   await expect(page.getByRole("button", { name: "Open terminal" })).toBeHidden();
