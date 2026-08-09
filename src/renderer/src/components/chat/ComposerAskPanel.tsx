@@ -156,9 +156,12 @@ export function ComposerBrokerAsk({
                     align="end"
                     // ACP option names are the agent's own copy and must render
                     // verbatim; Codex ships long ones ("Allow Commands Starting
-                    // With `…`"), so the menu wraps inside a bounded width
-                    // instead of overflowing the panel.
-                    className="w-[min(26rem,80vw)]"
+                    // With `…`"), so the menu wraps at a bounded width. The width
+                    // is a ceiling, not a size: the base content is bound to the
+                    // trigger width, and pinning a fixed 26rem turned a menu
+                    // holding one short option into a wide empty slab over the
+                    // command it was asking about.
+                    className="w-auto max-w-[min(26rem,80vw)]"
                   >
                     {moreOptions.map((option) => (
                       <DropdownMenuItem

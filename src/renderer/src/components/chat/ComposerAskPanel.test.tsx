@@ -248,9 +248,14 @@ describe("permission copy stays readable", () => {
     const menu = source.slice(source.indexOf("<DropdownMenuContent"));
     const props = menu.slice(0, menu.indexOf(">"));
 
-    // A fixed w-52 clipped and overlapped Codex's long option names.
+    // A fixed w-52 clipped and overlapped Codex's long option names, but a
+    // fixed 26rem was just as wrong in the other direction: the menu opens
+    // upward over the command being approved, so one short option must not
+    // reserve a wide empty slab. Bound the ceiling, let the width hug.
     expect(props).not.toContain("w-52");
-    expect(props).toContain("w-[min(26rem,80vw)]");
+    expect(props).toContain("max-w-[min(26rem,80vw)]");
+    expect(props).toContain("w-auto");
+    expect(props).not.toMatch(/className="[^"]*(?<!max-)w-\[min\(26rem,80vw\)\]/);
     expect(menu).toContain("whitespace-normal break-words");
     expect(source).toContain("{option.name}");
   });
