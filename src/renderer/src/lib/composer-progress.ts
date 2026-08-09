@@ -15,6 +15,9 @@ export interface ComposerProgressPresentation {
   elapsedSeconds?: number;
   /** Epoch ms the clock started, so the row can tick without new snapshots. */
   elapsedSince?: number;
+  /** A reported budget the activity is spending against, already formatted.
+   *  Only an activity the agent budgets has one; a turn does not. */
+  budgetLabel?: string;
   items?: ComposerProgressItem[];
   actions?: {
     edit?: boolean;

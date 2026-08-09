@@ -90,3 +90,35 @@ describe("a stalled goal", () => {
     expect(presentation.elapsedSeconds).toBe(0);
   });
 });
+describe("token budget on the goal row", () => {
+  test("shows what the agent reports it has spent against its budget", () => {
+    // Both numbers come from the agent and neither was ever rendered, so a goal
+    // near its limit looked the same as one with no limit.
+    const presentation = goalProgressPresentation(
+      {
+        objective: "Ship the release",
+        status: "active",
+        tokenBudget: 200000,
+        tokensUsed: 48000,
+      } as never,
+      labels,
+    );
+
+    expect(presentation.budgetLabel).toBe("48k/200k");
+  });
+
+  test("omits the budget when the agent reports none", () => {
+    const presentation = goalProgressPresentation(
+      {
+        objective: "Ship the release",
+        status: "active",
+        tokenBudget: null,
+        tokensUsed: 48000,
+      } as never,
+      labels,
+    );
+
+    expect(presentation.budgetLabel).toBeUndefined();
+  });
+});
+

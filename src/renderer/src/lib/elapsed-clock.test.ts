@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { elapsedSecondsFor, formatElapsed } from "./elapsed-clock";
+import { elapsedSecondsFor, formatElapsed, formatTokenBudget } from "./elapsed-clock";
 
 describe("elapsed time on a progress row", () => {
   it("stays readable past a minute", () => {
@@ -24,5 +24,28 @@ describe("elapsed time on a progress row", () => {
 
   it("has nothing to show without either", () => {
     expect(elapsedSecondsFor(undefined, undefined, 1)).toBeUndefined();
+  });
+});
+
+describe("formatTokenBudget", () => {
+  it("reads as used against the budget", () => {
+    expect(formatTokenBudget(0, 200000)).toBe("0/200k");
+    expect(formatTokenBudget(1500, 200000)).toBe("1.5k/200k");
+    expect(formatTokenBudget(48000, 200000)).toBe("48k/200k");
+    expect(formatTokenBudget(940, 4000)).toBe("940/4k");
+  });
+
+  it("says nothing without a budget to measure against", () => {
+    // Usage alone is a number with no scale, and a zero or absent budget is not
+    // a budget. Half a fraction would be worse than no fraction.
+    expect(formatTokenBudget(1500, null)).toBeNull();
+    expect(formatTokenBudget(1500, undefined)).toBeNull();
+    expect(formatTokenBudget(1500, 0)).toBeNull();
+    expect(formatTokenBudget(1500, -1)).toBeNull();
+  });
+
+  it("treats missing or nonsense usage as nothing spent", () => {
+    expect(formatTokenBudget(null, 200000)).toBe("0/200k");
+    expect(formatTokenBudget(Number.NaN, 200000)).toBe("0/200k");
   });
 });

@@ -1,3 +1,4 @@
+import { formatTokenBudget } from "./elapsed-clock";
 import type { ComposerProgressPresentation } from "./composer-progress";
 import type { SessionGoal } from "./session-types";
 
@@ -51,6 +52,11 @@ export function goalProgressPresentation(
     // became a number that never moved. The start time is passed instead and
     // the row derives from it every tick.
     elapsedSeconds: goal.timeUsedSeconds,
+    // The agent budgets a goal in tokens and reports both numbers. Showing
+    // neither made a goal near its limit look like one with no limit at all.
+    ...(formatTokenBudget(goal.tokensUsed, goal.tokenBudget)
+      ? { budgetLabel: formatTokenBudget(goal.tokensUsed, goal.tokenBudget)! }
+      : {}),
     ...(goal.createdAt ? { elapsedSince: goal.createdAt } : {}),
     items: [],
     actions: {

@@ -295,8 +295,10 @@ under investigation are marked; do not treat them as settled findings.
   composer renders, and a source guard keeps a second source from being
   reintroduced. `providerQueueDepth` remains in the store as data; it is no
   longer spoken as if it were ours.
-- **I6 partially held.** The clock derives from `createdAt` and ticks; goal
-  presentation still borrows the progress row built for turns.
+- **I6 partially held.** The clock derives from `createdAt` and ticks, and the
+  reported token budget is now shown as used-against-budget, which is a fact only
+  a budgeted activity has and a turn does not. Goal still borrows the progress
+  row for layout; what remains is presentation, not ownership.
 - **I7 held for config options; the restore mechanism was deliberately removed**
   after the reference client was found to reset plan mode on restart too, so the
   agreed behaviour is to reset, not to restore.

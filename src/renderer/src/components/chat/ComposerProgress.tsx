@@ -222,6 +222,15 @@ export function ComposerProgress({
                   · {formatElapsed(liveElapsed)}
                 </span>
               )}
+              {visibleModel.budgetLabel && (
+                <span
+                  data-progress-budget="true"
+                  className="shrink-0 tabular-nums text-fg-subtle"
+                  title={visibleModel.budgetLabel}
+                >
+                  · {visibleModel.budgetLabel}
+                </span>
+              )}
               {actions && (
                 <div className="flex shrink-0 items-center gap-0.5">
                   {actions.edit && (
