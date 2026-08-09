@@ -317,6 +317,14 @@ under investigation are marked; do not treat them as settled findings.
   behind them. Edit had no `onClick` at all and a tooltip blaming the adapter for
   a handler that was never wired.
 - **I9 held.**
+- **Floating surface opacity — measured, not asserted.** The progress row was
+  reported as see-through. Every surface in it is opaque in source, and an e2e
+  test now reads what the browser actually composited for the row that carries
+  the words. Getting that test to be a real guard took two attempts: the first
+  measured an empty wrapper, and the second parsed only `rgba()` while a
+  fractional utility compiles to `oklab(… / .65)` under this palette, so it
+  called a translucent row solid. It now fails when the row is made
+  translucent.
 - **I10 held** for plan, goal, and the sent-as-goal annotation.
 
 ## 8. Rules for changing any of this

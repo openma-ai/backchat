@@ -104,6 +104,73 @@ test.describe("composer progress semantics", () => {
     await expect(progress).toContainText("Keep the migration moving");
   });
 
+  test("renders the floating progress surface opaque over the transcript", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    const sessionId = await injectSession(page, { agentId: "codex-acp" });
+    await injectEvent(page, {
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          codex: {
+            goal: { objective: "Stay readable over the feed", status: "active" },
+          },
+        },
+      },
+    });
+
+    const progress = page.locator('[data-composer-progress="true"]');
+    await expect(progress).toBeVisible();
+
+    // This row floats over scrolling content, so any transparency in it shows
+    // the transcript through the words. Read what the browser composited rather
+    // than the class list, and read alpha out of whatever colour syntax the
+    // palette produced: a fractional utility compiles to rgba(), rgb(… / …) or
+    // oklab(… / …) depending on the theme, and a check that knows only one of
+    // those reports every translucent surface as solid.
+    const surfaces = await progress.evaluate((root) => {
+      const alphaOf = (color: string): number => {
+        if (!color || color === "transparent") return 0;
+        const slash = /\/\s*([0-9.]+%?)\s*\)/u.exec(color);
+        if (slash) {
+          const raw = slash[1]!;
+          return raw.endsWith("%") ? Number(raw.slice(0, -1)) / 100 : Number(raw);
+        }
+        const commas = /^rgba?\(([^)]+)\)$/u.exec(color);
+        if (commas) {
+          const parts = commas[1]!.split(",").map((part) => part.trim());
+          if (parts.length > 3) return Number(parts[3]);
+        }
+        return 1;
+      };
+      const painted: Array<{ role: string; background: string; alpha: number }> = [];
+      for (const element of [root, ...root.querySelectorAll("*")]) {
+        const el = element as HTMLElement;
+        const background = getComputedStyle(el).backgroundColor;
+        const alpha = alphaOf(background);
+        if (alpha > 0) {
+          painted.push({
+            role: el.hasAttribute("data-progress-banner")
+              ? "banner"
+              : el.tagName.toLowerCase(),
+            background,
+            alpha,
+          });
+        }
+      }
+      return painted;
+    });
+
+    // The row carrying the words has to be one of the surfaces measured, or this
+    // would pass by inspecting an empty wrapper.
+    expect(surfaces.some((surface) => surface.role === "banner")).toBe(true);
+    expect(surfaces.filter((surface) => surface.alpha < 1)).toEqual([]);
+  });
+
   test("stacks visible queue rows above Goal with Goal attached to the composer", async ({
     page,
     capture,
