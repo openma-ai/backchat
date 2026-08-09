@@ -61,9 +61,8 @@
   padding-inline: var(--composer-footer-padding-inline);
 }
 
-/* Tailwind's space-y writes its gap onto the preceding child. Match the
-   sidebar's ACP-update-to-Settings separation so the two footer stacks read
-   as one shared row system. */
+/* Tailwind's space-y writes its gap onto the preceding child. Keep the card's
+   lower gap on the same token as the footer row's lower breathing room. */
 .composer-stack-card {
   margin-bottom: var(--composer-card-footer-gap) !important;
 }
