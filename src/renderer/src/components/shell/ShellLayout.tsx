@@ -122,7 +122,8 @@ function useRightRailCollapseState(sessionId: string | null) {
   return useMemo(() => ({ collapsed, toggle, set }), [collapsed, toggle, set]);
 }
 
-function useRightRailExpansionState(sessionId: string | null) {  const [states, setStates] = useState<Map<string, RightRailExpansionState>>(
+function useRightRailExpansionState(sessionId: string | null) {
+  const [states, setStates] = useState<Map<string, RightRailExpansionState>>(
     () => new Map(),
   );
   const current = sessionId

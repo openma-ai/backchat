@@ -16,7 +16,8 @@ export function settleInterruptedToolStatus(
   return status;
 }
 
-export interface ChatToolPresentationInput {  kind?: string;
+export interface ChatToolPresentationInput {
+  kind?: string;
   status?: string;
   title?: string;
   locations?: Array<{ path?: string }>;
