@@ -20,6 +20,7 @@ import {
   ASSISTANT_MARKDOWN_CLASS,
   StreamdownText,
 } from "./ChatMarkdown";
+import { latestThoughtSegment } from "@openma/common/session-events/acp";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 
 export function TurnActivity({
@@ -143,56 +144,60 @@ export function TurnActivity({
           );
         })}
 
-        {toolGroups.trailing.length > 0 ? (
+        {toolGroups.trailing.length > 0 && (
           <ActivityToolGroup
             key={`activity-tools-trailing-${toolGroups.trailing.map((tool) => tool.toolCallId).join("-")}`}
             tools={toolGroups.trailing}
             sessionId={turn.sessionId}
             subagents={subagents}
           />
-        ) : (
-          <LatestThoughtStatus
-            turn={turn}
-            rendered={rendered}
-            policy={policy}
-            activeTool={activeTool}
-            isStreaming={isStreaming}
-            cwd={cwd}
-          />
         )}
+
+        {/* Not either/or with the trailing tools. A tool running is not a reason
+            to stop saying what the agent is thinking; the turn has not ended. */}
+        <LatestThoughtStatus
+          rendered={rendered}
+          policy={policy}
+          isStreaming={isStreaming}
+        />
       </ReasoningContent>
     </Reasoning>
   );
 }
 
 function LatestThoughtStatus({
-  turn,
   rendered,
   policy,
-  activeTool,
   isStreaming,
-  cwd,
 }: {
-  turn: Turn;
   rendered: TurnRender;
   policy: ActivityPresentationPolicy;
-  activeTool: ActivityTool | undefined;
   isStreaming: boolean;
-  cwd: string | null;
 }) {
-  if (
-    activeTool ||
-    !isStreaming ||
-    !policy.showLatestThoughtStatus ||
-    !rendered.currentThoughtText
-  ) {
+  // A running tool used to suppress this line, which left the reasoning block
+  // empty for the whole tool call: Codex keeps no thought items in the timeline,
+  // and the trigger only renders once streaming stops. The turn has not ended,
+  // so the thinking it is doing is exactly what to show.
+  // `currentThoughtText` empties as soon as a tool call arrives, because that
+  // thought is no longer the thing streaming. While the turn is still running
+  // the last thought is still what the agent is working from, so fall back to
+  // it — otherwise Codex, which keeps no thought items in the timeline, leaves
+  // the reasoning block empty for the whole tool call.
+  const lastThoughtItem = rendered.timeline.findLast(
+    (item) => item.kind === "thought",
+  );
+  const latest = rendered.currentThoughtText
+    || latestThoughtSegment(
+      lastThoughtItem?.kind === "thought" ? lastThoughtItem.text : "",
+    );
+  if (!isStreaming || !policy.showLatestThoughtStatus || !latest) {
     return null;
   }
 
   return (
     <div
       className="min-w-0 text-fg-muted"
-      data-current-activity={rendered.currentThoughtText}
+      data-current-activity={latest}
     >
       {/* One clamped line, not a streamed markdown block. `currentThoughtText`
           is `latestThoughtSegment()`'s output — trimmed and rejoined — so it is
@@ -202,7 +207,7 @@ function LatestThoughtStatus({
           line only ever showed one truncated line, so it can just be that
           line. */}
       <p className="truncate text-sm leading-5 text-fg-muted">
-        {rendered.currentThoughtText}
+        {latest}
       </p>
     </div>
   );

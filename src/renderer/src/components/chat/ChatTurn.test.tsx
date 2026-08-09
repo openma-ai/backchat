@@ -525,8 +525,13 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain('data-tool-group-size="3"');
+    // Not in the timeline — that is what lets the three tools group across it.
+    // It does appear once as the live status line: the turn is still running, so
+    // the last thought is still what the agent is working from.
     expect(html).not.toContain("Planning the next command");
-    expect(html).not.toContain("Planning the final command");
+    // The last one does appear, once, as the live status line: the turn is still
+    // running, so it is still what the agent is working from.
+    expect(html).toMatch(/>[^<]*Planning the final command/);
   });
 
   it("shows the latest in-progress action in a running tool group", () => {
@@ -864,5 +869,47 @@ describe("a prompt the composer sent as a command invocation", () => {
 
     expect(html).toContain("保护世界和平");
     expect(html).not.toContain("data-prompt-command");
+  });
+});
+
+describe("Codex thinking while a tool runs", () => {
+  beforeEach(() => {
+    sessionMock.agentId = "codex-acp";
+    sessionMock.commands = [];
+  });
+
+  it("keeps showing the latest thought instead of an empty reasoning box", () => {
+    // Codex keeps no thought items in the timeline and the trigger only appears
+    // once streaming stops, so suppressing this line during a tool call left
+    // the block empty for the whole call.
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "agent_thought_chunk",
+                messageId: "thought-1",
+                content: { type: "text", text: "Checking the workspace first" },
+              },
+              receivedAt: 1,
+            },
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "call-1",
+                kind: "execute",
+                status: "in_progress",
+                title: "pwd",
+              },
+              receivedAt: 2,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toMatch(/>[^<]*Checking the workspace first/);
   });
 });
