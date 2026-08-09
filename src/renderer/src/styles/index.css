@@ -1746,6 +1746,30 @@ body,
   }
 }
 
+/* ---------- Selection policy ----------
+   Backchat is an application shell, not a document. Chrome text (labels,
+   cards, menus, placeholders) never takes a browser selection, so a stray
+   drag cannot paint disconnected blue fragments across the UI. Content the
+   user owns opts back in: editors, the transcript, code, and anything a
+   surface explicitly marks data-selectable. */
+@layer base {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"],
+  .chat-turn-frame,
+  pre,
+  code,
+  [data-selectable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

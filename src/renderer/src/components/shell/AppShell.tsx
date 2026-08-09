@@ -4,6 +4,7 @@ import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
+import { installChromeSelectionGuard } from "@/lib/chrome-selection-guard";
 import { getThemePlugin } from "@/themes";
 import {
   TASK_LIFECYCLE_TOASTER_ID,
@@ -129,6 +130,11 @@ export function AppShell({
   React.useEffect(() => {
     setSidebarWidth(themeSidebarWidth);
   }, [themeId, themeSidebarWidth]);
+
+  // Repeated clicks on chrome controls must never spill a word/paragraph
+  // selection into the transcript (Chromium resolves multi-click selection
+  // through `user-select: none` chrome onto the nearest selectable text).
+  React.useEffect(() => installChromeSelectionGuard(document), []);
 
   // Where the bottom edge of the main column + the side rail sits when
   // the bottom panel is open. The panel is a floating rounded card

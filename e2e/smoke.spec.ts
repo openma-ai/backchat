@@ -99,6 +99,82 @@ test.describe("backchat smoke", () => {
       expect(Object.values(colors).every(({ alpha }) => alpha === 255)).toBe(true);
   });
 
+  test("multi-clicking a composer control never selects transcript text", async ({
+      page,
+  }) => {
+      await enableAgent(page, "codex-acp");
+      const sid = await injectSession(page, { agentId: "codex-acp" });
+      const turnId = "turn-selection-guard";
+      const responseText = "Limits: data not available yet";
+      await injectEvent(page, {
+        type: "session.event",
+        session_id: sid,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: responseText },
+        },
+      });
+      await injectEvent(page, {
+        type: "session.complete",
+        session_id: sid,
+        turn_id: turnId,
+      });
+      await expect(page.getByText(responseText, { exact: true })).toBeVisible();
+
+      const chip = page.locator('button[aria-label^="Run on "]').first();
+      const readSelection = () =>
+        page.evaluate(() => window.getSelection()?.toString() ?? "");
+
+      // Chromium multi-click selection resolves through select-none chrome
+      // onto the nearest transcript text; the shell guard must stop it.
+      await chip.dblclick();
+      expect(await readSelection()).toBe("");
+      await page.keyboard.press("Escape");
+      await chip.click({ clickCount: 3 });
+      expect(await readSelection()).toBe("");
+      await page.keyboard.press("Escape");
+
+      // A real text selection survives a plain chip click — that linkage is
+      // what carries a selection into "add to prompt".
+      await page.getByText(responseText, { exact: true }).dblclick();
+      expect(await readSelection()).not.toBe("");
+      await chip.click();
+      expect(await readSelection()).not.toBe("");
+      await page.keyboard.press("Escape");
+  });
+
+  test("keeps chrome text unselectable while editors keep real selections", async ({
+      page,
+  }) => {
+      const heading = page.getByRole("heading").first();
+      const composer = page.locator(".composer-card").first();
+      const [headingBox, composerBox] = await Promise.all([
+        heading.boundingBox(),
+        composer.boundingBox(),
+      ]);
+      expect(headingBox).not.toBeNull();
+      expect(composerBox).not.toBeNull();
+
+      // Drag from chrome text down into the composer — the exact gesture that
+      // used to leave disconnected blue fragments across the UI.
+      await page.mouse.move(headingBox!.x + 12, headingBox!.y + headingBox!.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(
+        composerBox!.x + composerBox!.width / 2,
+        composerBox!.y + 16,
+        { steps: 10 },
+      );
+      await page.mouse.up();
+
+      const policy = await page.evaluate(() => ({
+        selection: window.getSelection()?.toString() ?? "",
+        body: getComputedStyle(document.body).userSelect,
+        editor: getComputedStyle(document.querySelector("textarea")!).userSelect,
+      }));
+      expect(policy).toEqual({ selection: "", body: "none", editor: "text" });
+  });
+
   test("applies the Cursor-aligned default light palette and interaction overlays", async ({
       page,
   }) => {

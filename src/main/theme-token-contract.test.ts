@@ -67,6 +67,11 @@ describe("theme token contract", () => {
     expect(css).toContain(".app-panel-surface,");
     expect(css).toContain(".app-raised-surface,");
     expect(css).not.toContain("backdrop-filter:");
+    // Selection policy: the shell is an app, not a document. Only owned
+    // content (editors, transcript, code) takes a browser selection.
+    expect(css).toMatch(/body \{\n    -webkit-user-select: none;\n    user-select: none;\n  \}/);
+    expect(css).toContain(".chat-turn-frame,");
+    expect(css).toContain('[data-selectable="true"]');
     expect(css).toContain("--color-bg-bubble: var(--bg-bubble);");
     expect(message).toContain("group-[.is-user]:bg-bg-bubble");
   });
