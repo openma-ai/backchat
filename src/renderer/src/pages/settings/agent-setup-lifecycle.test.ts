@@ -20,7 +20,8 @@ function agent(overrides: Partial<AgentInfo>): AgentInfo {
 describe("deriveAgentSetupState", () => {
   it("publishes probe results to the composer agent query", () => {
     const source = readFileSync(resolve(__dirname, "Agents.tsx"), "utf8");
-    expect(source).toContain('queryClient.setQueryData(["agents"], next)');
+    expect(source).toContain('import { AGENTS_QUERY_KEY } from "@/lib/agent-query"');
+    expect(source).toContain("queryClient.setQueryData(AGENTS_QUERY_KEY, next)");
   });
 
   it("routes env-var auth to credential configuration instead of sign-in", () => {

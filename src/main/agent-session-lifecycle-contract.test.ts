@@ -105,6 +105,9 @@ describe("agent and session lifecycle contract", () => {
       "../renderer/src/components/chat/SessionRuntimeUpdateControl.tsx",
     );
     const sidebar = source("../renderer/src/components/shell/Sidebar.tsx");
+    const agentUpdate = source(
+      "../renderer/src/components/shell/AgentUpdateControl.tsx",
+    );
     const settingsAgents = source("../renderer/src/pages/settings/Agents.tsx");
 
     expect(channels).toContain('SessionRuntimeStatus: "session:runtimeStatus"');
@@ -120,8 +123,9 @@ describe("agent and session lifecycle contract", () => {
     expect(updateControl).toContain('toast.warning(t("acpUpdate.installed")');
     expect(updateControl).toContain('position: "top-right"');
     expect(updateControl).toContain("window.backchat.sessionRestart");
-    expect(sidebar).toContain('to="/settings/agents"');
-    expect(sidebar).toContain("updateAvailable");
+    expect(sidebar).toContain("<AgentUpdateControl agents={agents} />");
+    expect(sidebar).toContain('navigate({ to: "/settings/agents" })');
+    expect(agentUpdate).toContain("updateAvailable");
     expect(settingsAgents).toContain(
       'invalidateQueries({ queryKey: ["session-runtime"] })',
     );

@@ -9,11 +9,14 @@ import {
 describe("chat layout constraints", () => {
   it("keeps turns inside the composer's rounded-corner safe line", () => {
     expect(CHAT_COMPOSER_FRAME_CLASS).toContain("max-w-3xl");
-    expect(CHAT_COMPOSER_FRAME_CLASS).toContain("px-4");
+    expect(CHAT_COMPOSER_FRAME_CLASS).toContain("chat-composer-frame");
     expect(CHAT_TURN_FRAME_CLASS).toContain("max-w-3xl");
-    expect(CHAT_TURN_FRAME_CLASS).toContain("px-8");
+    expect(CHAT_TURN_FRAME_CLASS).toContain("chat-turn-frame");
     expect(CHAT_TURN_FRAME_CLASS).toContain("min-w-0");
-    expect(CHAT_TURN_FRAME_CLASS).not.toContain("px-3");
+    // Horizontal insets come from the shared icon-rail tokens in index.css,
+    // never from per-callsite padding utilities that can drift apart.
+    expect(CHAT_COMPOSER_FRAME_CLASS).not.toMatch(/\bpx-\d/);
+    expect(CHAT_TURN_FRAME_CLASS).not.toMatch(/\bpx-\d/);
   });
 
   it("keeps generated images inside the chat column", () => {

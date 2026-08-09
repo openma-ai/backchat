@@ -57,7 +57,7 @@ describe("session level GUI contract", () => {
     expect(sidePanelSource).toContain("parentAcpSessionId: canForkSideChat");
     expect(chatViewSource).toContain("useChatSubmission");
     expect(submissionSource).toContain(
-      "const parentLink = target.sideParent ?? target.subagent",
+      "const parentLink = target.forkParent ?? target.sideParent ?? target.subagent",
     );
     expect(submissionSource).toContain(
       'parentLink?.inheritance === "fork"',

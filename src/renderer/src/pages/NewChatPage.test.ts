@@ -45,7 +45,7 @@ describe("NewChatPage route boundary", () => {
     expect(controls.match(/<PopoverTrigger asChild>/g)).toHaveLength(1);
     expect(controls.match(/<Button[\s\S]*?variant="ghost"[\s\S]*?size="sm"/g)).toHaveLength(1);
     expect(controls).not.toContain("focus:bg-bg-surface");
-    expect(controls).toContain("composer-control-row-inset");
+    expect(controls).toContain("composer-footer-row-inset");
 
     const composer = readFileSync(
       resolve(__dirname, "../components/chat/Composer.tsx"),
@@ -57,7 +57,7 @@ describe("NewChatPage route boundary", () => {
   it("keeps suggestion cards and the resting composer at the same larger height", () => {
     const styles = readFileSync(resolve(__dirname, "../styles/index.css"), "utf8");
 
-    expect(styles).toContain("--composer-resting-height: 104px;");
+    expect(styles).toMatch(/--composer-resting-height: calc\(/);
     expect(styles).toMatch(
       /\.composer-card \{[\s\S]*?min-height: var\(--composer-resting-height\);/,
     );
