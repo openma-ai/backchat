@@ -39,7 +39,7 @@
 .app-selected-surface {
   position: relative;
   border: 0;
-  background: var(--interaction-bg-active);
+  background: var(--surface-selected);
   box-shadow: none;
   /* Never interpolate from a transparent resting row into this selected
      material; opaque surfaces must remain opaque on the very first frame. */
@@ -1358,6 +1358,10 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --surface-canvas: var(--bg);
   --surface-panel: var(--bg-surface);
   --surface-raised: var(--bg-bubble);
+  /* The same 8% interaction wash, pre-composited against the panel it lives
+     on. A selected row must be opaque (see `.app-selected-surface`) yet still
+     land on the exact color a hovered row shows. */
+  --surface-selected: color-mix(in srgb, var(--fg) 8%, var(--surface-panel));
   --surface-panel-border: color-mix(in srgb, var(--border) 72%, transparent);
   --surface-raised-border: color-mix(in srgb, var(--border-strong) 72%, transparent);
   /* Ordinary keyboard focus is structural, not branded. Themes may use
@@ -1366,8 +1370,10 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --focus-ring: var(--border-strong);
 
   /* Compact GUI controls share one geometry and one interaction state model.
-     Persistent selections and open menus use one active fill. Keyboard focus
-     uses the quieter hover fill instead of drawing a second outline. */
+     Hover, an open menu, and a persistent selection are one visual weight:
+     8% of the foreground laid over whatever surface the control sits on. A
+     row and the control inside it therefore never light up as two shades.
+     Keyboard focus uses that same fill instead of drawing a second outline. */
   --control-height-compact: 28px;
   --control-icon-size: 14px;
   --control-gap-compact: 2px;
@@ -1375,8 +1381,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
   --control-radius: 8px;
   --control-fg-rest: var(--fg-muted);
   --control-fg-active: var(--fg);
-  --interaction-bg-hover: color-mix(in srgb, var(--bg-bubble) 36%, transparent);
-  --interaction-bg-active: color-mix(in srgb, var(--bg-bubble) 52%, var(--bg-surface));
+  --interaction-bg-hover: color-mix(in srgb, var(--fg) 8%, transparent);
+  --interaction-bg-active: var(--interaction-bg-hover);
   --control-bg-hover: var(--interaction-bg-hover);
   --control-bg-open: var(--interaction-bg-active);
   --scrollbar-thumb: color-mix(in srgb, var(--fg-subtle) 72%, transparent);

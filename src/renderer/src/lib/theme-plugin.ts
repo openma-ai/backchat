@@ -248,27 +248,34 @@ function validateNumber(
 
 const backchatLight: ThemeTokens = {
   ...commonLightTokens,
-  // Reference-derived neutral hierarchy: the canvas, sidebar, controls, and
-  // selected material remain achromatic. Coral is reserved for primary action.
-  brand: "oklch(0.6218 0.1437 35.6)",
-  "brand-hover": "oklch(0.56 0.15 35.6)",
-  "brand-subtle": "oklch(0.95 0.025 35.6)",
-  "brand-fg": "#101010",
-  bg: "oklch(0.9627 0.0021 17.2)",
-  "bg-sidebar": "oklch(0.9269 0.0017 145.6)",
-  "bg-surface": "oklch(0.9881 0 0)",
-  "bg-bubble": "oklch(0.8781 0.0017 145.6)",
-  fg: "oklch(0.173 0 0)",
-  "fg-muted": "oklch(0.3523 0 0)",
-  "fg-subtle": "oklch(0.4386 0 0)",
-  border: "oklch(0.8853 0 0)",
-  "border-strong": "oklch(0.76 0 0)",
-  "shadow-md": "0 4px 10px -5px rgb(16 16 16 / 0.16)",
-  "shadow-sm": "0 1px 3px -2px rgb(16 16 16 / 0.12)",
-  "shadow-card-soft": "0 3px 8px -5px rgb(16 16 16 / 0.14)",
-  "shadow-card-press": "0 2px 5px -3px rgb(16 16 16 / 0.16)",
-  "shadow-input-rest": "0 1px 3px -2px rgb(16 16 16 / 0.14)",
-  "shadow-chip-press": "0 1px 2px -1px rgb(16 16 16 / 0.14)",
+  // Reference-derived neutral hierarchy, measured from the Cursor light
+  // workbench: the editor canvas is the lightest plane and the sidebar,
+  // panels, and composer share one slightly darker material. Everything
+  // structural is achromatic; OpenMA coral stays reserved for the primary
+  // action in a view. Interaction and boundary alpha derive from `fg`, so the
+  // whole neutral system moves together when a theme swaps the foreground.
+  brand: "#f84f32",
+  "brand-hover": "#e0442a",
+  "brand-subtle": "#fdeae5",
+  // Coral only clears AA against a near-black label, never against white.
+  "brand-fg": "#141414",
+  bg: "#fcfcfc",
+  "bg-sidebar": "#f3f3f3",
+  "bg-surface": "#f3f3f3",
+  "bg-bubble": "#e9e9e9",
+  fg: "#141414",
+  "fg-muted": "#555555",
+  "fg-subtle": "#6e6e6e",
+  // 8% / 20% of the foreground. Translucent boundaries keep one value legible
+  // on both the canvas and the darker panel material.
+  border: "#14141414",
+  "border-strong": "#14141433",
+  "shadow-md": "0 4px 10px -5px rgb(20 20 20 / 0.16)",
+  "shadow-sm": "0 1px 3px -2px rgb(20 20 20 / 0.12)",
+  "shadow-card-soft": "0 3px 8px -5px rgb(20 20 20 / 0.14)",
+  "shadow-card-press": "0 2px 5px -3px rgb(20 20 20 / 0.16)",
+  "shadow-input-rest": "0 1px 3px -2px rgb(20 20 20 / 0.14)",
+  "shadow-chip-press": "0 1px 2px -1px rgb(20 20 20 / 0.14)",
 };
 
 const backchatDark: ThemeTokens = {
@@ -332,10 +339,10 @@ export const backchatLightTheme = defineThemePlugin({
     author: "Backchat",
     description: "Neutral white-gray work surfaces with a focused coral accent.",
     preview: {
-      background: "#f4f2f2",
-      surface: "#fbfbfb",
-      foreground: "#101010",
-      accent: "#ce6246",
+      background: "#fcfcfc",
+      surface: "#f3f3f3",
+      foreground: "#141414",
+      accent: "#f84f32",
     },
     appearance: "light",
     tokens: backchatLight,
