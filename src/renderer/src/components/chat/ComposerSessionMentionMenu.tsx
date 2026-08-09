@@ -22,7 +22,7 @@ export function ComposerSessionMentionMenu({
   const { t } = useI18n();
   return (
     <div
-      className="session-mention-panel composer-overlay-panel liquid-glass composer-card absolute bottom-full z-30"
+      className="session-mention-panel composer-overlay-panel app-overlay-surface composer-card absolute bottom-full z-30"
       role="listbox"
       aria-label={t("chat.mentionSessions")}
     >

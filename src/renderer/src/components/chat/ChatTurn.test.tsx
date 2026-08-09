@@ -182,7 +182,8 @@ describe("TurnBlock", () => {
     const triggerClass = html.match(
       /data-slot="collapsible-trigger" class="([^"]+)"/,
     )?.[1];
-    expect(triggerClass).toContain("sticky top-0 z-10");
+    expect(triggerClass).not.toContain("sticky");
+    expect(triggerClass).not.toContain("top-0");
     expect(triggerClass).not.toContain("bg-bg");
     expect(triggerClass).not.toContain("py-1");
   });

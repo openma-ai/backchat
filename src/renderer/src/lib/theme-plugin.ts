@@ -348,9 +348,9 @@ export const backchatDarkTheme = defineThemePlugin({
     author: "Backchat",
     description: "Neutral dark work surfaces with a warm vermilion accent.",
     preview: {
-      background: "#252423",
-      surface: "#343332",
-      foreground: "#eeedeb",
+      background: "#171717",
+      surface: "#1c1c1c",
+      foreground: "#dbdad2",
       accent: "#f47958",
     },
     appearance: "dark",

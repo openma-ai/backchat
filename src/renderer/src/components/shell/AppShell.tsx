@@ -301,14 +301,8 @@ export function AppShell({
         </main>
       </div>
 
-      {/* Bottom panel — floating rounded card. Plain white card (NOT
-          liquid-glass) because xterm-addon-webgl draws on an opaque
-          framebuffer; layering a transparent glass card with an opaque
-          terminal inside reads as a "white slab inside a translucent
-          card" (image #10). Soft shadow approximates the lift the
-          liquid-glass cards get from their own box-shadow, so the
-          panel still reads as "floating on the stage" even though its
-          material is different. */}
+      {/* Bottom panel uses the same opaque material vocabulary as the rails;
+          xterm-addon-webgl also requires an opaque framebuffer. */}
       {bottomPanel && (
         <div
           className={cn(

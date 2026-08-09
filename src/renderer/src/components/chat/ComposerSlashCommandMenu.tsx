@@ -73,7 +73,7 @@ export function ComposerSlashCommandMenu({
 
   return (
     <div
-      className="composer-action-panel slash-command-panel composer-overlay-panel liquid-glass composer-card absolute bottom-full z-30"
+      className="composer-action-panel slash-command-panel composer-overlay-panel app-overlay-surface composer-card absolute bottom-full z-30"
       role="listbox"
       aria-label={t("chat.slashCommands")}
     >

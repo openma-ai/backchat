@@ -17,6 +17,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { PageSurface } from "@/components/shell/PageSurface";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 
@@ -98,41 +99,47 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
         </InputGroup>
       </div>
 
-      <nav className="app-no-drag sidebar-scrollbar min-h-0 flex-1 overflow-y-auto px-2">
-        {SECTION_ORDER.map((section) => {
-          const items = visibleTabs.filter((tab) => tab.section === section);
-          if (items.length === 0) return null;
-          return (
-            <div key={section} className="mb-4">
-              <div className="mb-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{t(SECTION_LABELS[section])}</div>
-              <ul className="space-y-0.5">
-                {items.map((tab) => {
-                  const active = location.pathname === tab.to;
-                  const Icon = tab.icon;
-                  return (
-                    <li key={tab.to}>
-                      <Link
-                        to={tab.to}
-                        className={cn(
-                          "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
-                          active
-                            ? "liquid-glass-selected text-fg"
-                            : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
-                        )}
-                      >
-                        <span className={iconSlotClass}>
-                          <Icon className="size-3.5" />
-                        </span>
-                        <span>{t(tab.labelKey)}</span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
-      </nav>
+      <ScrollArea
+        type="always"
+        data-settings-sidebar-scroll-area="true"
+        className="sidebar-scroll-area app-no-drag min-h-0 flex-1"
+      >
+        <nav className="px-2">
+          {SECTION_ORDER.map((section) => {
+            const items = visibleTabs.filter((tab) => tab.section === section);
+            if (items.length === 0) return null;
+            return (
+              <div key={section} className="mb-4">
+                <div className="mb-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{t(SECTION_LABELS[section])}</div>
+                <ul className="space-y-0.5">
+                  {items.map((tab) => {
+                    const active = location.pathname === tab.to;
+                    const Icon = tab.icon;
+                    return (
+                      <li key={tab.to}>
+                        <Link
+                          to={tab.to}
+                          className={cn(
+                            "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
+                            active
+                              ? "app-selected-surface text-fg"
+                              : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
+                          )}
+                        >
+                          <span className={iconSlotClass}>
+                            <Icon className="size-3.5" />
+                          </span>
+                          <span>{t(tab.labelKey)}</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </nav>
+      </ScrollArea>
     </div>
   );
 }

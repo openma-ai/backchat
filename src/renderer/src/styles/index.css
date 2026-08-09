@@ -318,7 +318,7 @@
 }
 
 .activity-disclosure-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ring) 40%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--focus-ring) 40%, transparent);
   outline-offset: 1px;
 }
 
@@ -381,7 +381,7 @@
 }
 
 .slash-command-item:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -527,7 +527,7 @@
 }
 
 .session-mention-item:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -1085,7 +1085,7 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
   background-color: var(--bg-bubble);
 }
 .home-suggestion-card:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 .home-suggestion-card:active {
@@ -1159,7 +1159,7 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
 
 .home-suggestion-select-back:focus-visible,
 .home-suggestion-option:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1245,7 +1245,7 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
 }
 
 .home-suggestion-slot-token:focus-within {
-  border-color: var(--ring);
+  border-color: var(--focus-ring);
   background: var(--bg);
 }
 
@@ -1700,12 +1700,12 @@ body,
   overflow: hidden;
 }
 
-/* Focus ring — brand-colored. @layer base lets per-element
+/* Focus ring — neutral by default. @layer base lets per-element
    focus-visible:outline-none variants override. Unlayered rules win over
    layered ones regardless of specificity, so the layer matters. */
 @layer base {
   *:focus-visible {
-    outline: 2px solid var(--ring);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }
@@ -1753,34 +1753,73 @@ body,
   background-clip: padding-box;
 }
 
-/* Sidebar conversation list keeps the platform scrollbar width. The gutter
-   belongs to this scrolling region only; header and footer spacing never
-   measure or mirror it. */
-.sidebar-scrollbar {
-  scrollbar-width: auto;
-  scrollbar-color: color-mix(in srgb, var(--fg) 35%, transparent) transparent;
+/* Product-owned sidebar scrollbar. Radix preserves native scrolling in the
+   viewport but hides the platform scrollbar; this overlay thumb therefore
+   has the same geometry on every OS and never contributes a layout gutter. */
+.sidebar-scroll-area [data-slot="scroll-area-viewport"] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.sidebar-scrollbar::-webkit-scrollbar {
+.sidebar-scroll-area [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.sidebar-scroll-area [data-slot="scroll-area-scrollbar"][data-orientation="vertical"] {
+  position: absolute;
+  z-index: 40;
+  inset-block: 0;
+  /* Radix writes right: 0 inline while calculating the track. Keep the full
+     hit lane on that edge; padding alone gives the painted thumb clearance. */
+  inset-inline-end: 0 !important;
   width: 8px;
-  background: transparent;
-}
-.sidebar-scrollbar::-webkit-scrollbar-track,
-.sidebar-scrollbar::-webkit-scrollbar-track-piece,
-.sidebar-scrollbar::-webkit-scrollbar-corner {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-.sidebar-scrollbar::-webkit-scrollbar-thumb {
-  border-radius: 999px;
+  padding-block: 0;
+  padding-inline: 2px;
   border: 0;
-  background: transparent;
+  opacity: 0;
+  transition:
+    opacity var(--dur-base) var(--ease-soft),
+    padding-inline var(--dur-quick) var(--ease-snap);
 }
-.sidebar-scrollbar:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--fg) 35%, transparent);
+.sidebar-scroll-area:hover [data-slot="scroll-area-scrollbar"],
+.sidebar-scroll-area:focus-within [data-slot="scroll-area-scrollbar"] {
+  opacity: 1;
 }
-.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--fg) 45%, transparent);
+.sidebar-scroll-area [data-slot="scroll-area-thumb"] {
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar-scroll-area [data-slot="scroll-area-scrollbar"]:hover,
+.sidebar-scroll-area [data-slot="scroll-area-scrollbar"][data-state="visible"]:active {
+  padding-inline: 1px;
+}
+.sidebar-scroll-area [data-slot="scroll-area-thumb"]:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.sidebar-scroll-boundary {
+  position: absolute;
+  z-index: 30;
+  right: 0;
+  left: 0;
+  height: var(--scroll-boundary-thickness);
+  pointer-events: none;
+  background: var(--scroll-boundary-color);
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+
+.sidebar-scroll-boundary[data-visible="true"] {
+  opacity: 1;
+}
+
+.sidebar-scroll-boundary-top {
+  top: 0;
+}
+
+.sidebar-scroll-boundary-bottom {
+  bottom: 0;
 }
 
 /* Primary content scroller — Codex-style short pill. App pages and chat

@@ -142,7 +142,7 @@ export function ComposerProgress({
             side="top"
             sideOffset={8}
             aria-label={visibleModel.label}
-            className="composer-action-panel composer-progress-panel liquid-glass composer-card w-[min(420px,calc(100vw-32px))]"
+            className="composer-action-panel composer-progress-panel app-overlay-surface composer-card w-[min(420px,calc(100vw-32px))]"
           >
             <ProgressItemList
               items={items}
@@ -328,7 +328,7 @@ function ActivityDock({
           side="top"
           sideOffset={8}
           aria-label={activityLabel}
-          className="composer-action-panel liquid-glass composer-card w-[min(420px,calc(100vw-32px))]"
+          className="composer-action-panel app-overlay-surface composer-card w-[min(420px,calc(100vw-32px))]"
         >
           <div className="space-y-3">
             {modules.map((module) => (

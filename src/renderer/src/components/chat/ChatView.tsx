@@ -433,15 +433,15 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       onClearCwd={() => setDraftProjectCwd(null)}
     />
   ) : null;
+  const runtimeFooter = active && active.status !== "draft" ? (
+    <SessionRuntimeSummary session={active} queueDepth={queuedTurnCount} />
+  ) : null;
 
   return (
     <div
       className="flex h-full min-h-0 flex-col"
       data-chat-surface={isSide ? "side" : "main"}
     >
-      {active && active.status !== "draft" && (
-        <SessionRuntimeSummary session={active} queueDepth={queuedTurnCount} />
-      )}
       {isEmpty ? (
         // Keep the empty-state ideas in the flexible content region while the
         // composer uses the exact same bottom frame as an active conversation.
@@ -480,7 +480,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             className={cn(
               CHAT_COMPOSER_FRAME_CLASS,
               "relative",
-              "space-y-2 pb-4",
+              "space-y-2",
               "home-composer-stack",
             )}
             style={
@@ -499,10 +499,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
                 onSuggestion={selectHomeSuggestionTemplate}
               />
             )}
-            {chipRow}
             {composerNotice}
             {composerProgress}
             {composer}
+            {chipRow}
+            {runtimeFooter}
           </div>
           {!isSide && <div className="home-corner-decoration" aria-hidden="true" />}
         </div>
@@ -554,13 +555,14 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             data-chat-column="composer"
             className={cn(
               CHAT_COMPOSER_FRAME_CLASS,
-              "space-y-2 pb-4",
+              "space-y-2",
             )}
           >
-            {chipRow}
             {composerNotice}
             {composerProgress}
             {composer}
+            {chipRow}
+            {runtimeFooter}
           </div>
         </>
       )}

@@ -17,7 +17,7 @@ test("live window resize freezes the browser guest and simplifies panel composit
     ).toBeEnabled();
 
     const rightRail = page
-      .locator("aside.liquid-glass")
+      .locator("aside.app-rail-surface")
       .filter({ has: closeSidePanel });
     await expect(rightRail).toBeVisible();
     await expect

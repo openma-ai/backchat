@@ -236,7 +236,7 @@ function PairComposer({ pair }: { pair: PairRow }) {
   return (
     <div
       data-chat-column="composer"
-      className={cn(CHAT_COMPOSER_FRAME_CLASS, "space-y-2 pb-4")}
+      className={cn(CHAT_COMPOSER_FRAME_CLASS, "space-y-2")}
     >
       <Composer
         agentPickerLabel={`${memberCount} agents`}

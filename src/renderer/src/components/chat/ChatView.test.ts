@@ -17,13 +17,13 @@ import { runtimePresentation } from "./ComposerSessionControls";
 import * as chatViewModule from "./ChatView";
 
 describe("chat module boundaries", () => {
-  it("projects strict session runtime evidence above both empty and active chat states", () => {
+  it("projects compact runtime evidence below the composer", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
 
     expect(source).toContain('from "./SessionRuntimeSummary"');
     expect(source).toContain("<SessionRuntimeSummary");
-    expect(source.indexOf("<SessionRuntimeSummary")).toBeLessThan(
-      source.indexOf("{isEmpty ? ("),
+    expect(source.lastIndexOf("{runtimeFooter}")).toBeGreaterThan(
+      source.indexOf("{composer}"),
     );
   });
 
@@ -489,12 +489,23 @@ describe("home suggestions", () => {
       source.indexOf("{active?.status === \"errored\""),
     );
 
-    expect(emptyComposer.indexOf("{chipRow}")).toBeLessThan(
+    expect(emptyComposer.indexOf("{chipRow}")).toBeGreaterThan(
       emptyComposer.indexOf("{composer}"),
     );
-    expect(conversationComposer.indexOf("{chipRow}")).toBeLessThan(
+    expect(conversationComposer.indexOf("{chipRow}")).toBeGreaterThan(
       conversationComposer.indexOf("{composer}"),
     );
+  });
+
+  it("keeps the composer body and internal action boxes compact", () => {
+    const composer = readFileSync(resolve(__dirname, "Composer.tsx"), "utf8");
+
+    expect(composer).toContain("min-h-[var(--composer-body-min-height)]");
+    expect(composer).not.toContain("min-h-[60px]");
+    expect(composer).toContain(
+      '"inline-flex size-[var(--control-height-compact)] shrink-0',
+    );
+    expect(composer).toContain('"inline-flex h-7 shrink-0');
   });
 
   it("keeps Agent branding in the harness menu instead of the model trigger", () => {

@@ -114,7 +114,7 @@ export function NewChatPage() {
         data-chat-column="composer"
         className={cn(
           CHAT_COMPOSER_FRAME_CLASS,
-          "home-composer-stack relative space-y-2 pb-4",
+          "home-composer-stack relative space-y-2",
         )}
         style={
           homeComposer?.width !== undefined
@@ -132,18 +132,6 @@ export function NewChatPage() {
             onSuggestion={selectTemplate}
           />
         )}
-        <ProjectChipRow
-          isDraft={true}
-          activeCwd={draftProjectCwd}
-          onPickCwd={async () => {
-            const next = await window.backchat.uiFsPickDir({
-              defaultPath: draftProjectCwd || undefined,
-            });
-            if (next) setDraftProjectCwd(next);
-          }}
-          onSetCwd={setDraftProjectCwd}
-          onClearCwd={() => setDraftProjectCwd(null)}
-        />
         <Composer
           sessionId={draft?.id}
           sessionAgentId={binding.sessionAgentId}
@@ -163,6 +151,18 @@ export function NewChatPage() {
           placeholder={homeComposerPlaceholder}
           onSubmit={onSubmit}
           onCancel={cancelActiveTurn}
+        />
+        <ProjectChipRow
+          isDraft={true}
+          activeCwd={draftProjectCwd}
+          onPickCwd={async () => {
+            const next = await window.backchat.uiFsPickDir({
+              defaultPath: draftProjectCwd || undefined,
+            });
+            if (next) setDraftProjectCwd(next);
+          }}
+          onSetCwd={setDraftProjectCwd}
+          onClearCwd={() => setDraftProjectCwd(null)}
         />
       </div>
       <div className="home-corner-decoration" aria-hidden="true" />

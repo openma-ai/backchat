@@ -42,7 +42,7 @@ describe("PairChatView composer", () => {
     expect(pairSource).not.toContain("bg-bg/40");
   });
 
-  it("renders logo-only pair marks in the app shell header, not the transcript", () => {
+  it("keeps each pair logo and transcript inside one continuously divided column", () => {
     const pairSource = readFileSync(
       resolve(
         __dirname,
@@ -65,14 +65,11 @@ describe("PairChatView composer", () => {
       "utf-8",
     );
 
-    expect(shellSource).toContain("PairTopbar");
-    expect(topbarSource).toContain("export function PairTopbar");
-    expect(topbarSource).toContain("AgentIcon");
-    expect(topbarSource).toContain("agentId={m.agent_id}");
-    expect(topbarSource).toContain("border-l border-border/60");
-    expect(pairSource).not.toContain("AgentIcon");
-    expect(pairSource).not.toContain("h-10 shrink-0");
-    expect(pairSource).not.toContain("session.agent_id}</span>");
-    expect(pairSource).not.toContain("border-b border-border/60 px-4 text-xs");
+    expect(shellSource).not.toContain("<PairTopbar />");
+    expect(topbarSource).not.toContain("export function PairTopbar");
+    expect(pairSource).toContain("AgentIcon");
+    expect(pairSource).toContain("agentId={session.agent_id}");
+    expect(pairSource).toContain('data-pair-column-header="true"');
+    expect(pairSource).toContain("border-l border-border/60");
   });
 });
