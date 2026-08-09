@@ -555,6 +555,35 @@ describe("TurnBlock", () => {
     expect(html).toContain("shrink-0 whitespace-nowrap");
   });
 
+  it("settles a tool call the agent stopped reporting on", () => {
+    // Killing the ACP process leaves the last tool_call at in_progress, and
+    // those events replay from disk unchanged. The turn is over, so nothing
+    // will ever finish it — showing a spinner and "运行中" forever is a lie.
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "run-killed",
+                kind: "execute",
+                status: "in_progress",
+                title: "AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read",
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain("已中断");
+    expect(html).not.toContain("运行中");
+    expect(html).toContain("AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read");
+  });
+
   it("renders an ACP MCP extension as inspectable raw protocol data", () => {
     const html = renderToStaticMarkup(
       <TurnBlock

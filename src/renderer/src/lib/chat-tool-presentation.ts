@@ -1,5 +1,22 @@
-export interface ChatToolPresentationInput {
-  kind?: string;
+/** Presentation status for a tool call the agent stopped reporting on — the
+ * process was killed, or the turn ended without a terminal update. The value
+ * matches the lifecycle vocabulary ToolRow already renders. */
+export const INTERRUPTED_TOOL_STATUS = "cancelled";
+
+/** Settle a tool status for a turn that is no longer running. A call still
+ * sitting at pending/in_progress after its turn ended will never receive an
+ * update, so showing it as "运行中" with a spinner is a lie that survives
+ * restarts — the events replay from disk in the same shape. */
+export function settleInterruptedToolStatus(
+  status: string | undefined,
+): string {
+  if (status === undefined || status === "pending" || status === "in_progress") {
+    return INTERRUPTED_TOOL_STATUS;
+  }
+  return status;
+}
+
+export interface ChatToolPresentationInput {  kind?: string;
   status?: string;
   title?: string;
   locations?: Array<{ path?: string }>;
@@ -18,6 +35,11 @@ export function pickToolVerb(
   kind: string | undefined,
   status: string | undefined,
 ): string {
+  // A call the agent never finished reporting on. ACP v1's ToolCallStatus is
+  // only pending/in_progress/completed/failed, so an interrupted call has no
+  // wire status of its own — the host settles it for presentation rather than
+  // claim it either ran to completion or failed.
+  if (status === INTERRUPTED_TOOL_STATUS) return "已中断";
   const inProgress = status === "in_progress";
   switch (kind) {
     case "read":
@@ -92,6 +114,9 @@ export function detectSkillName(
 export function pickToolActivityVerb(
   tool: ChatToolPresentationInput,
 ): string {
+  if (tool.status === INTERRUPTED_TOOL_STATUS) {
+    return pickToolVerb(tool.kind, tool.status);
+  }
   const status =
     tool.status === undefined ||
     tool.status === "pending" ||

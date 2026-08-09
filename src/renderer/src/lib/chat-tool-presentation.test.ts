@@ -7,8 +7,10 @@ import {
   pickToolActivityVerb,
   pickToolTarget,
   pickToolVerb,
+  settleInterruptedToolStatus,
   shortToolPath,
 } from "./chat-tool-presentation";
+import { isToolRunning } from "./activity-tool-groups";
 
 describe("chat tool presentation", () => {
   it("uses progress-aware verbs for known and unknown tool kinds", () => {
@@ -79,5 +81,39 @@ describe("chat tool presentation", () => {
       "…/src/index.ts",
     );
     expect(shortToolPath("src/index.ts")).toBe("src/index.ts");
+  });
+});
+
+describe("interrupted tool calls", () => {
+  it("settles a call the agent stopped reporting on", () => {
+    // ACP v1's ToolCallStatus is only pending/in_progress/completed/failed, so
+    // a killed process leaves no terminal update to replay. The host settles
+    // the status for presentation rather than claiming success or failure.
+    expect(settleInterruptedToolStatus(undefined)).toBe("cancelled");
+    expect(settleInterruptedToolStatus("pending")).toBe("cancelled");
+    expect(settleInterruptedToolStatus("in_progress")).toBe("cancelled");
+    expect(settleInterruptedToolStatus("completed")).toBe("completed");
+    expect(settleInterruptedToolStatus("failed")).toBe("failed");
+  });
+
+  it("never labels an interrupted call as running or as having run", () => {
+    expect(pickToolVerb("execute", "cancelled")).toBe("已中断");
+    expect(pickToolVerb("read", "cancelled")).toBe("已中断");
+    expect(pickToolActivityVerb({ kind: "execute", status: "cancelled" })).toBe(
+      "已中断",
+    );
+    // A skill read is still a read while live, but not once interrupted.
+    expect(
+      pickToolActivityVerb({
+        kind: "read",
+        status: "cancelled",
+        locations: [{ path: "/tmp/skills/documents/SKILL.md" }],
+      }),
+    ).toBe("已中断");
+  });
+
+  it("stops counting an interrupted call as active", () => {
+    expect(isToolRunning("in_progress")).toBe(true);
+    expect(isToolRunning("cancelled")).toBe(false);
   });
 });

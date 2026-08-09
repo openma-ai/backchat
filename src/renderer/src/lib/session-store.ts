@@ -36,6 +36,7 @@ import { setRightRailCollapsed } from "@/lib/right-rail";
 import {
   configOptionFromLegacySessionModes,
   normalizeAgentConfigOptions,
+  flattenSelectOptions,
   selectedModeIdFromConfigOptions,
   withSelectedSessionMode,
   type AcpSessionConfigOption,
@@ -2208,8 +2209,38 @@ export class SessionStore {
     }
   }
 
-  #settleBackgroundWorkItemsForTurn(sessionId: string, turn: Turn): void {
-    const toolCallIds = new Set(
+  /** Push back any config value this session remembers that the agent did not
+   * restore on resume. Only writable select options are touched, only when the
+   * agent still offers the remembered value, and the agent's own answer is the
+   * final word — its config_option_update lands after this call, so a value it
+   * deliberately changed is not fought over twice. */
+  #restoreUnrestoredConfigOptions(
+    sessionId: string,
+    remembered: readonly AcpSessionConfigOption[] | undefined,
+    reported: readonly AcpSessionConfigOption[] | undefined,
+  ): void {
+    if (!remembered?.length || !reported?.length) return;
+    for (const option of reported) {
+      if (option.type !== "select") continue;
+      const previous = remembered.find((entry) => entry.id === option.id);
+      if (!previous || previous.type !== "select") continue;
+      const wanted = previous.currentValue;
+      if (wanted === undefined || wanted === option.currentValue) continue;
+      const offered = flattenSelectOptions(option).some(
+        (choice) => choice.value === wanted,
+      );
+      if (!offered) continue;
+      void window.backchat
+        .sessionSetConfigOption({
+          session_id: sessionId,
+          config_id: option.id,
+          value: wanted,
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  #settleBackgroundWorkItemsForTurn(sessionId: string, turn: Turn): void {    const toolCallIds = new Set(
       turn.events.flatMap(({ payload }) => {
         const parsed = parseAcpEvent(payload);
         return parsed.kind === "tool_call" ? [parsed.tool.toolCallId] : [];
@@ -3064,6 +3095,17 @@ export class SessionStore {
             return legacyMode ? [legacyMode] : undefined;
           })();
         if (existing) {
+          // The agent MAY report session configuration state on resume (ACP v1
+          // session-setup), but it is not required to. codex-acp keeps the
+          // collaboration mode in a process-local map, so a restart silently
+          // drops plan mode and hands back an editable session. Anything this
+          // session already remembers and the agent did not restore is pushed
+          // back before the first prompt.
+          this.#restoreUnrestoredConfigOptions(
+            ev.session_id,
+            existing.configOptions,
+            configOptions,
+          );
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
             forkParent: undefined,

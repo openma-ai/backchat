@@ -5,6 +5,7 @@ import { SessionTurnFrame } from "@openma/common/session-ui";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useI18n } from "@/lib/i18n";
 import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
+import { settleInterruptedToolStatus } from "@/lib/chat-tool-presentation";
 import { latestPlanDocumentForEvents } from "@/lib/session-plan";
 import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
 import {
@@ -53,19 +54,31 @@ export const TurnBlock = memo(function TurnBlock({
     [agentId, turn.events],
   );
   const activityRendered = useMemo<TurnRender>(() => {
-    if (!planDocument?.sourceToolCallId) return rendered;
+    // A turn that stopped running will never receive another tool update, so
+    // settle anything still mid-flight instead of spinning forever. This also
+    // covers restarts, where the same events replay from disk unchanged.
+    const settled = turn.status === "running"
+      ? rendered
+      : {
+          ...rendered,
+          tools: rendered.tools.map((tool) => ({
+            ...tool,
+            status: settleInterruptedToolStatus(tool.status),
+          })),
+        };
+    if (!planDocument?.sourceToolCallId) return settled;
     const sourceToolCallId = planDocument.sourceToolCallId;
     return {
-      ...rendered,
-      tools: rendered.tools.filter(
+      ...settled,
+      tools: settled.tools.filter(
         (tool) => tool.toolCallId !== sourceToolCallId,
       ),
-      timeline: rendered.timeline.filter(
+      timeline: settled.timeline.filter(
         (item) =>
           item.kind !== "tool" || item.toolCallId !== sourceToolCallId,
       ),
     };
-  }, [planDocument?.sourceToolCallId, rendered]);
+  }, [planDocument?.sourceToolCallId, rendered, turn.status]);
   const isStreaming = turn.status === "running";
   const rawEvents = useMemo(
     () => inspectRawTurnEvents(turn.events),
