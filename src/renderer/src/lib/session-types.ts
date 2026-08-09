@@ -202,6 +202,10 @@ export interface SessionGoal {
   timeUsedSeconds?: number;
   /** Extension method the agent advertised for pausing or clearing this goal. */
   controlMethod?: string;
+  /** When the goal was set, in epoch ms. The adapter reports timeUsedSeconds as
+   *  worked time, which stays 0 for a goal it never charged time to, so the
+   *  wall clock has to come from here. */
+  createdAt?: number;
 }
 
 export type BrokerAsk =

@@ -5,6 +5,7 @@ import { goalProgressPresentation } from "./goal-progress";
 const labels = {
   active: "Pursuing goal",
   paused: "Goal paused",
+  stalled: "Goal stalled",
   complete: "Goal complete",
   blocked: "Goal blocked",
   fallback: "Goal",
@@ -55,5 +56,35 @@ describe("goalProgressPresentation", () => {
         labels,
       ).actions,
     ).toMatchObject({ pause: false, resume: true });
+  });
+});
+
+describe("a stalled goal", () => {
+  test("can be picked back up and says so", () => {
+    // The reference client shows "Goal stalled" with a resume control; without
+    // this the row had a label it never used and no way forward.
+    const presentation = goalProgressPresentation(
+      { objective: "使世界和平", status: "stalled" },
+      labels,
+    );
+
+    expect(presentation.label).toBe("Goal stalled");
+    expect(presentation.actions?.resume).toBe(true);
+    expect(presentation.actions?.pause).toBe(false);
+  });
+
+  test("counts from when the goal was set when no worked time is charged", () => {
+    const presentation = goalProgressPresentation(
+      {
+        objective: "使世界和平",
+        status: "active",
+        timeUsedSeconds: 0,
+        createdAt: Date.now() - 60_000,
+      },
+      labels,
+    );
+
+    expect(presentation.elapsedSince).toBeDefined();
+    expect(presentation.elapsedSeconds).toBeGreaterThan(50);
   });
 });

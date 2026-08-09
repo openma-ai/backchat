@@ -849,6 +849,10 @@ function normalizeSessionGoal(value: unknown): SessionGoal | null | undefined {
   // hardcoded from whichever build we happened to read.
   const controlMethod = stringValue(value.controlMethod)?.trim();
   if (controlMethod) goal.controlMethod = controlMethod;
+  const createdAt = value.createdAt;
+  if (typeof createdAt === "number" && Number.isFinite(createdAt) && createdAt > 0) {
+    goal.createdAt = createdAt;
+  }
   for (const [source, target] of [
     ["tokenBudget", "tokenBudget"],
     ["tokensUsed", "tokensUsed"],

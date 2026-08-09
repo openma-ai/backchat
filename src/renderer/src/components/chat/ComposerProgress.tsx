@@ -32,6 +32,7 @@ import {
 } from "@/lib/composer-progress";
 import type { ComposerActivityModule } from "@/lib/composer-activity-dock";
 import { useI18n } from "@/lib/i18n";
+import { elapsedSecondsFor, formatElapsed } from "@/lib/elapsed-clock";
 import { cn } from "@/lib/utils";
 
 export interface ComposerQueuedPrompt {
@@ -71,6 +72,18 @@ export function ComposerProgress({
   }, [presentationKey]);
   const visibleModel =
     model && dismissedPresentationKey !== presentationKey ? model : undefined;
+  // Tick locally: the agent publishes a snapshot on change, not once a second,
+  // so a row that derives its clock from a start time needs its own heartbeat.
+  const [now, setNow] = useState(() => Date.now());
+  const ticking = visibleModel?.elapsedSince != null;
+  useEffect(() => {
+    if (!ticking) return;
+    const handle = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(handle);
+  }, [ticking]);
+  const liveElapsed = visibleModel
+    ? elapsedSecondsFor(visibleModel.elapsedSeconds, visibleModel.elapsedSince, now)
+    : undefined;
   const dockModules = activityModules.filter(
     (module) => module.kind !== "background",
   );
@@ -201,12 +214,12 @@ export function ComposerProgress({
               <span className="min-w-0 flex-1 truncate text-fg-muted">
                 {visibleModel.title}
               </span>
-              {visibleModel.elapsedSeconds != null && (
+              {liveElapsed != null && (
                 <span
                   data-progress-elapsed="true"
                   className="shrink-0 tabular-nums text-fg-subtle"
                 >
-                  · {Math.max(0, Math.round(visibleModel.elapsedSeconds))}s
+                  · {formatElapsed(liveElapsed)}
                 </span>
               )}
               {actions && (

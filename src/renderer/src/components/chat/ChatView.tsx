@@ -8,7 +8,7 @@ import {
 } from "react";
 import { BugIcon, SendIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { prefillComposer } from "@/lib/composer-prefill";
+import { GoalEditDialog } from "./GoalEditDialog";
 import { toast } from "sonner";
 import {
   Conversation,
@@ -198,6 +198,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   // is authoritative at submit time, so stale local state cannot move a
   // global New chat into the previously active project.
   const [pickedCwd, setPickedCwd] = useState<string | null>(null);
+  const [goalEdit, setGoalEdit] = useState<string | null>(null);
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
   const {
     draft: suggestionDraft,
@@ -311,6 +312,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     ? goalProgressPresentation(active.goal, {
         active: t("chat.goalActive"),
         paused: t("chat.goalPaused"),
+        stalled: t("chat.goalStalled"),
         complete: t("chat.goalComplete"),
         blocked: t("chat.goalBlocked"),
         fallback: t("chat.goalStatus"),
@@ -329,21 +331,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
           },
           {
             cancelTurn: (input) => window.backchat.sessionCancel(input),
-            editGoal: (input) => {
-              // No clear first. codex-acp's setGoal is runGoalSet with the new
-              // objective and status active — it overwrites. The claim that an
-              // unfinished goal cannot be replaced came from the model saying so
-              // in a reply, not from the protocol, and acting on it meant the
-              // goal was destroyed the moment the pencil was clicked, even if
-              // the edit was then abandoned.
-              prefillComposer({
-                sessionId: input.session_id,
-                text: input.objective,
-                armCommand: active.availableCommands?.find(
-                  (command) => command.name === "goal",
-                ),
-              });
-            },
+            editGoal: (input) => setGoalEdit(input.objective),
             runCommand: async (input) => {
               try {
                 await window.backchat.sessionRunCommand(input);
@@ -415,6 +403,23 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         }
       : undefined;
   const composerProgress = (
+    <>
+    {goalEdit !== null && (
+      <GoalEditDialog
+        objective={goalEdit}
+        open
+        onOpenChange={(open) => { if (!open) setGoalEdit(null); }}
+        onSave={(objective) => {
+          // Sending the command is how ACP invokes it, and codex-acp's setGoal
+          // replaces the objective outright — no clear needed first.
+          void window.backchat.sessionRunCommand({
+            session_id: active!.id,
+            command: "goal",
+            args: objective,
+          });
+        }}
+      />
+    )}
     <ComposerProgress
       presentation={progressPresentation}
       callbacks={progressCallbacks}
@@ -422,6 +427,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       queuedPrompts={queuedPrompts}
       queueCallbacks={queueCallbacks}
     />
+    </>
   );
   // Project controls exist only while drafting. Once the session starts,
   // workspace ownership is locked and does not become ambient header chrome.

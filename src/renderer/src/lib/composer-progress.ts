@@ -13,6 +13,8 @@ export interface ComposerProgressPresentation {
   icon?: "target" | "plan" | "command";
   tone?: "neutral" | "success" | "danger";
   elapsedSeconds?: number;
+  /** Epoch ms the clock started, so the row can tick without new snapshots. */
+  elapsedSince?: number;
   items?: ComposerProgressItem[];
   actions?: {
     edit?: boolean;

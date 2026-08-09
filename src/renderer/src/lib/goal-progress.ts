@@ -4,10 +4,16 @@ import type { SessionGoal } from "./session-types";
 export interface GoalProgressLabels {
   active: string;
   paused: string;
+  stalled: string;
   complete: string;
   blocked: string;
   fallback: string;
 }
+
+/** Statuses that can be picked back up. `stalled` is one the adapter reports
+ *  for a goal nothing is advancing; the reference client offers resume for it,
+ *  and leaving it out here left the row with no way forward. */
+const RESUMABLE = new Set(["paused", "stalled"]);
 
 /** Adapt the session Goal domain into the reusable composer progress model.
  * Goal-specific status language and actions stop at this boundary. */
@@ -24,11 +30,13 @@ export function goalProgressPresentation(
         ? labels.active
         : status === "paused"
           ? labels.paused
-          : status === "complete" || status === "completed"
-            ? labels.complete
-            : status === "blocked"
-              ? labels.blocked
-              : labels.fallback,
+          : status === "stalled"
+            ? labels.stalled
+            : status === "complete" || status === "completed"
+              ? labels.complete
+              : status === "blocked"
+                ? labels.blocked
+                : labels.fallback,
     title: goal.objective,
     status,
     icon: "target",
@@ -38,12 +46,19 @@ export function goalProgressPresentation(
         : status === "blocked"
           ? "danger"
           : "neutral",
-    elapsedSeconds: goal.timeUsedSeconds,
+    // timeUsedSeconds is worked time and stays 0 for a goal the adapter never
+    // charged time to, which is why the row read "· 0s" for half an hour. Fall
+    // back to the wall clock since the goal was set.
+    elapsedSeconds: goal.timeUsedSeconds
+      || (goal.createdAt
+        ? Math.max(0, (Date.now() - goal.createdAt) / 1000)
+        : undefined),
+    ...(goal.createdAt ? { elapsedSince: goal.createdAt } : {}),
     items: [],
     actions: {
       edit: true,
       pause: status === "active" || status === "in_progress",
-      resume: status === "paused",
+      resume: RESUMABLE.has(status),
       dismiss: true,
     },
   };
