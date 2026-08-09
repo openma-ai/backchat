@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronRightIcon,
@@ -33,6 +34,7 @@ export function FileTree({
   onRootChange?: (path: string) => void;
   onOpenFile?: (path: string) => void;
 }) {
+  const { t } = useI18n();
   const onPickRoot = useCallback(async () => {
     const next = await window.backchat.uiFsPickDir({ defaultPath: rootPath });
     if (next && next !== rootPath) onRootChange?.(next);
@@ -49,7 +51,7 @@ export function FileTree({
           "transition-colors",
           "text-left",
         )}
-        title="Choose folder"
+        title={t("settings.chooseFolder")}
       >
         <FolderOpenIcon className="size-3.5 shrink-0" />
         <span className="truncate">{rootPath}</span>

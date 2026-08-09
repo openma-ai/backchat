@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import {
   useCallback,
   useEffect,
@@ -168,6 +169,7 @@ export function BrowserTab({
   onUrlChange?: (url: string) => void;
   onPageMeta?: (meta: { title?: string; faviconUrl?: string }) => void;
 }) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const localSourcePath = sourcePath ?? localPathFromFileUrl(initialUrl);
   // Electron's <webview> tag exposes a custom DOM interface (goBack,
@@ -843,7 +845,7 @@ export function BrowserTab({
                 e.currentTarget.select();
               }}
               onBlur={() => setUrlFocused(false)}
-              placeholder="Enter URL or search"
+              placeholder={t("shell.enterUrlOrSearch")}
               className={cn(
                 "h-7 w-full rounded-md border border-border/60 px-3 text-xs",
                 "bg-bg-surface/75 text-fg shadow-none placeholder:text-fg-subtle",
@@ -926,13 +928,13 @@ export function BrowserTab({
             ref={findInputRef}
             value={findQuery}
             onChange={(event) => setFindQuery(event.target.value)}
-            placeholder="Find in page"
+            placeholder={t("shell.findInPage")}
             className="h-7 min-w-0 flex-1 bg-transparent text-xs text-fg outline-none placeholder:text-fg-subtle"
           />
           <button
             type="button"
             onClick={closeFind}
-            aria-label="Close find"
+            aria-label={t("shell.closeFind")}
             className="inline-flex size-7 items-center justify-center rounded-md text-fg-muted hover:bg-bg-surface hover:text-fg"
           >
             <XIcon className="size-3.5" />
@@ -966,7 +968,7 @@ export function BrowserTab({
         {isPickingElement && !resizeSnapshot && (
           <div
             data-browser-annotation-overlay
-            aria-label="Browser annotation canvas"
+            aria-label={t("shell.browserAnnotationCanvas")}
             className="absolute inset-0 z-20 cursor-crosshair touch-none"
             onPointerDown={onPickerPointerDown}
             onPointerMove={onPickerPointerMove}
@@ -1149,6 +1151,7 @@ function BrowserStyleFields({
   onChange: (property: BrowserStyleProperty, value: string) => void;
   onReset: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="mt-3 border-t border-border/60 pt-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1159,8 +1162,8 @@ function BrowserStyleFields({
         <button
           type="button"
           onClick={onReset}
-          aria-label="Reset style changes"
-          title="Reset style changes"
+          aria-label={t("shell.resetStyleChanges")}
+          title={t("shell.resetStyleChanges")}
           className="inline-flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-bg-subtle hover:text-fg"
         >
           <RotateCwIcon className="size-3.5" />

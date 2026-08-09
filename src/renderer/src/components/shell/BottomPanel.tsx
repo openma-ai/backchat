@@ -1,3 +1,5 @@
+import { useI18n } from "@/lib/i18n";
+
 import { useCallback, useEffect, useState } from "react";
 import { PlusIcon, SquareTerminalIcon, XIcon } from "lucide-react";
 import { useBottomBarCollapse } from "@/components/shell/AppShell";
@@ -247,6 +249,7 @@ function TabBar({
   onClose: (id: string) => void;
   onClosePanel: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div
       // Header row — image #5 style: no border below, content sits on
@@ -304,8 +307,8 @@ function TabBar({
       <button
         type="button"
         onClick={onSpawn}
-        aria-label="New terminal"
-        title="New terminal"
+        aria-label={t("shell.newTerminal")}
+        title={t("shell.newTerminal")}
         className={cn(
           "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
           "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
@@ -318,8 +321,8 @@ function TabBar({
       <button
         type="button"
         onClick={onClosePanel}
-        aria-label="Close terminal panel"
-        title="Close terminal panel"
+        aria-label={t("shell.closeTerminalPanel")}
+        title={t("shell.closeTerminalPanel")}
         className={cn(
           "ml-auto inline-flex size-6 shrink-0 items-center justify-center rounded-md",
           "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
@@ -335,6 +338,7 @@ function TabBar({
 /** Shorten a cwd to its last path segment for the tab label. `~/foo/
  *  bar/baz` → `baz`. Falls back to "shell" for the root or empty. */
 function shortCwdLabel(cwd: string): string {
+  const { t } = useI18n();
   const trimmed = cwd.replace(/\/+$/, "");
   const last = trimmed.split("/").pop();
   return last || "shell";

@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import { useState } from "react";
 import { EyeIcon, EyeOffIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -169,6 +170,7 @@ function ServerForm({
   onCancel: () => void;
   onSave: (s: SettingsMcpServer) => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   const [f, setF] = useState<FormState>(() => initialFromServer(initial));
   const isStdio = f.type === "stdio";
   const valid = isStdio ? !!(f.name && f.command) : !!(f.name && f.url);
@@ -242,7 +244,7 @@ function ServerForm({
         <button
           type="button"
           onClick={onCancel}
-          aria-label="Close form"
+          aria-label={t("shell.closeForm")}
           className="text-fg-muted hover:text-fg"
         >
           <XIcon className="size-4" />
@@ -275,7 +277,7 @@ function ServerForm({
           className={inputClass}
           value={f.name}
           onChange={(e) => setF((p) => ({ ...p, name: e.target.value }))}
-          placeholder="Linear"
+          placeholder={t("settings.linear")}
         />
       </Field>
 
@@ -352,7 +354,7 @@ function ServerForm({
                   type="button"
                   onClick={() => removePair(p.id)}
                   className="shrink-0 text-fg-muted hover:text-danger"
-                  aria-label="Remove row"
+                  aria-label={t("settings.removeRow")}
                 >
                   <Trash2Icon className="size-3.5" />
                 </button>
@@ -385,6 +387,7 @@ function SecretInput({
   onValue: (v: string) => void;
   onToggleSecret: () => void;
 }) {
+  const { t } = useI18n();
   const [reveal, setReveal] = useState(false);
   return (
     <div className="relative flex-1">
@@ -393,7 +396,7 @@ function SecretInput({
         type={secret && !reveal ? "password" : "text"}
         value={value}
         onChange={(e) => onValue(e.target.value)}
-        placeholder="Value"
+        placeholder={t("settings.value")}
       />
       <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
         {secret && (

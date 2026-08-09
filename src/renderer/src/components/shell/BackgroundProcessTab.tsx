@@ -109,7 +109,7 @@ export function BackgroundProcessDetails({
             onClick={onStop}
             loading={killing}
             data-testid="background-terminal-stop"
-            aria-label="Stop background process"
+            aria-label={t("shell.stopBackgroundProcess")}
           >
             <XCircleIcon className="size-3.5" />
             {t("rightPanel.stop")}

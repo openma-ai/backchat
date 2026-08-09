@@ -700,6 +700,7 @@ function BottomPanelResizer({
   onResize: (next: number) => void;
   onResizingChange: (resizing: boolean) => void;
 }) {
+  const { t } = useI18n();
   const draggingRef = React.useRef(false);
   const stageInsetRef = React.useRef(6);
 
@@ -729,6 +730,7 @@ function BottomPanelResizer({
   };
 
   const stopDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+  const { t } = useI18n();
     if (!draggingRef.current) return;
     draggingRef.current = false;
     onResizingChange(false);
@@ -751,7 +753,7 @@ function BottomPanelResizer({
         "cursor-ns-resize group/resizer",
       )}
       style={{ height: "6px" }}
-      aria-label="Resize terminal panel"
+      aria-label={t("shell.resizeTerminalPanel")}
       role="separator"
       aria-orientation="horizontal"
     >

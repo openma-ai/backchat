@@ -1,8 +1,11 @@
+import { useI18n } from "@/lib/i18n";
+
 export function OpenmaStartupLoader() {
+  const { t } = useI18n();
   return (
     <svg
       role="status"
-      aria-label="Starting OpenMA"
+      aria-label={t("common.startingOpenma")}
       viewBox="240 244 548 454"
       className="h-[72px] w-[88px] overflow-visible fill-current text-fg-muted"
     >

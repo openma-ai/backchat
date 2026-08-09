@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -36,6 +37,7 @@ import {
 } from "./browser-settings";
 
 export function SettingsBrowserPage() {
+  const { t } = useI18n();
   const settings = useSettings();
   const [clearing, setClearing] = useState(false);
   const {
@@ -115,7 +117,7 @@ export function SettingsBrowserPage() {
         <Switch
           checked={browser.enabled}
           onCheckedChange={(checked) => update({ enabled: checked })}
-          aria-label="Enable built-in browser"
+          aria-label={t("settings.enableBuiltInBrowser")}
         />
       </div>
 
@@ -133,21 +135,21 @@ export function SettingsBrowserPage() {
         )}
         <div className="space-y-3">
           <BrowserBackendPanel
-            title="In-app browser"
+            title={t("settings.inAppBrowser")}
             icon={<MonitorIcon className="size-4" />}
             backend={browserBackendsModel.inApp}
           />
           <BrowserBackendPanel
-            title="Chrome extension"
+            title={t("settings.chromeExtension")}
             icon={<PuzzleIcon className="size-4" />}
             backend={browserBackendsModel.extension}
           />
         </div>
       </section>
 
-      <SettingsSection title="General" icon={<ShieldCheckIcon className="size-3.5" />}>
+      <SettingsSection title={t("settings.general")} icon={<ShieldCheckIcon className="size-3.5" />}>
         <SettingsRow
-          title="Web URLs and links"
+          title={t("settings.webUrlsAndLinks")}
           description="Links opened from chat"
           control={(
             <TargetSelect
@@ -157,7 +159,7 @@ export function SettingsBrowserPage() {
           )}
         />
         <SettingsRow
-          title="Local URLs"
+          title={t("settings.localUrls")}
           description="Localhost, loopback, and file links"
           control={(
             <TargetSelect
@@ -167,7 +169,7 @@ export function SettingsBrowserPage() {
           )}
         />
         <SettingsRow
-          title="Default zoom"
+          title={t("settings.defaultZoom")}
           description="Applied when a browser tab opens"
           control={(
             <CompactSelect
@@ -181,7 +183,7 @@ export function SettingsBrowserPage() {
           )}
         />
         <SettingsRow
-          title="Annotation screenshots"
+          title={t("shell.annotationScreenshots")}
           description="Screenshot evidence attached to page annotations"
           control={(
             <CompactSelect
@@ -197,7 +199,7 @@ export function SettingsBrowserPage() {
           )}
         />
         <SettingsRow
-          title="Site data"
+          title={t("settings.siteData")}
           description="Cookies, local storage, and cached files"
           control={(
             <Button
@@ -215,9 +217,9 @@ export function SettingsBrowserPage() {
         />
       </SettingsSection>
 
-      <SettingsSection title="Downloads" icon={<DownloadIcon className="size-3.5" />}>
+      <SettingsSection title={t("settings.downloads")} icon={<DownloadIcon className="size-3.5" />}>
         <SettingsRow
-          title="Location"
+          title={t("settings.location")}
           description={browser.download_path || "System Downloads folder"}
           descriptionMono={!!browser.download_path}
           control={(
@@ -228,13 +230,13 @@ export function SettingsBrowserPage() {
           )}
         />
         <SettingsRow
-          title="Ask where to save each file"
+          title={t("settings.askWhereToSaveFile")}
           description="Show a save dialog before downloads begin"
           control={(
             <Switch
               checked={browser.ask_before_download}
               onCheckedChange={(checked) => update({ ask_before_download: checked })}
-              aria-label="Ask where to save each download"
+              aria-label={t("settings.askWhereToSaveDownload")}
             />
           )}
         />

@@ -9,6 +9,7 @@
  * is at least 2 chars (single char would dump the entire index).
  */
 
+import { useI18n } from "@/lib/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -55,6 +56,7 @@ export function pushRecent(sessionId: string): void {
 }
 
 export function CommandPalette() {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHitInfo[]>([]);
@@ -179,7 +181,7 @@ export function CommandPalette() {
               ref={inputRef}
               value={query}
               onValueChange={setQuery}
-              placeholder="Type a command or search chats…"
+              placeholder={t("shell.commandPalettePlaceholder")}
               className="flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
             />
             <kbd className="rounded bg-bg-surface px-1.5 py-0.5 font-mono text-[11px] text-fg-subtle">

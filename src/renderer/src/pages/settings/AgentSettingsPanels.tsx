@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import { ExternalLinkIcon } from "lucide-react";
 
@@ -186,6 +187,7 @@ export function CustomAgentPanel({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  const { t } = useI18n();
   const inputClass = "h-7 rounded-md border border-border/60 bg-bg/80 px-2 text-xs text-fg outline-none focus:border-border-strong";
   const textareaClass = "min-h-16 rounded-md border border-border/60 bg-bg/80 px-2 py-1.5 font-mono text-xs text-fg outline-none focus:border-border-strong";
   return (
@@ -205,7 +207,7 @@ export function CustomAgentPanel({
           <input
             value={value.label}
             onChange={(event) => onChange({ ...value, label: event.target.value })}
-            placeholder="Studio ACP"
+            placeholder={t("settings.studioAcp")}
             className={inputClass}
           />
         </label>

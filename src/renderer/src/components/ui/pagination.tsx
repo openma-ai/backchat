@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
@@ -66,9 +67,10 @@ function PaginationPrevious({
   text = "Previous",
   ...props
 }: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
+  const { t } = useI18n();
   return (
     <PaginationLink
-      aria-label="Go to previous page"
+      aria-label={t("ui.goToPreviousPage")}
       size="default"
       className={cn("pl-1.5!", className)}
       {...props}
@@ -84,9 +86,10 @@ function PaginationNext({
   text = "Next",
   ...props
 }: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
+  const { t } = useI18n();
   return (
     <PaginationLink
-      aria-label="Go to next page"
+      aria-label={t("ui.goToNextPage")}
       size="default"
       className={cn("pr-1.5!", className)}
       {...props}

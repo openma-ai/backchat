@@ -1,3 +1,5 @@
+import { useI18n } from "@/lib/i18n";
+
 import {
   CameraIcon,
   CopyIcon,
@@ -54,13 +56,14 @@ export function BrowserMenu({
   onOpenPanel(panel: Exclude<BrowserDataPanel, null>): void;
   onOpenSettings(): void;
 }) {
+  const { t } = useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Browser menu"
-          title="Browser menu"
+          aria-label={t("shell.browserMenu")}
+          title={t("shell.browserMenu")}
           className={cn(
             "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
             "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
@@ -84,7 +87,7 @@ export function BrowserMenu({
           <span className="mr-auto">Zoom</span>
           <button
             type="button"
-            aria-label="Zoom out"
+            aria-label={t("shell.zoomOut")}
             onClick={() => onChangeZoom(-0.1)}
             className="inline-flex size-6 items-center justify-center rounded-md text-fg-muted hover:bg-bg-surface hover:text-fg"
           >
@@ -92,7 +95,7 @@ export function BrowserMenu({
           </button>
           <button
             type="button"
-            aria-label="Reset zoom"
+            aria-label={t("shell.resetZoom")}
             onClick={onResetZoom}
             className="min-w-10 rounded-md px-1 py-1 tabular-nums text-fg-muted hover:bg-bg-surface hover:text-fg"
           >
@@ -100,7 +103,7 @@ export function BrowserMenu({
           </button>
           <button
             type="button"
-            aria-label="Zoom in"
+            aria-label={t("shell.zoomIn")}
             onClick={() => onChangeZoom(0.1)}
             className="inline-flex size-6 items-center justify-center rounded-md text-fg-muted hover:bg-bg-surface hover:text-fg"
           >

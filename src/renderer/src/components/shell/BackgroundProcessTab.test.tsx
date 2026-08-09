@@ -61,7 +61,8 @@ describe("BackgroundProcessTab GUI contract", () => {
     expect(html).toContain('data-testid="background-terminal-output"');
     expect(html).toContain("42 tests passed");
     expect(html).toContain('data-testid="background-terminal-stop"');
-    expect(html).toContain('aria-label="Stop background process"');
+    // Translated; the contract is that the stop control is labelled at all.
+    expect(html).toContain('aria-label="shell.stopBackgroundProcess"');
   });
 
   it("keeps exit, failure, and cancellation outcomes visible", () => {
