@@ -57,6 +57,10 @@
   padding-inline: var(--composer-card-padding-inline);
 }
 
+.composer-footer-row-inset {
+  padding-inline: var(--composer-footer-padding-inline);
+}
+
 /* Tailwind's space-y writes its gap onto the preceding child. Match the
    sidebar's ACP-update-to-Settings separation so the two footer stacks read
    as one shared row system. */

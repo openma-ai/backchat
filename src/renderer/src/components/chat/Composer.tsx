@@ -621,7 +621,7 @@ export function Composer({
         ) : (
           <div
             data-slot="composer-inline-content"
-            className="flex min-h-[60px] w-full flex-wrap items-start gap-1.5"
+            className="flex min-h-[var(--composer-body-min-height)] w-full flex-wrap items-start gap-1.5"
           >
             <SessionReferenceStrip
               references={sessionReferences}
@@ -753,7 +753,9 @@ export function Composer({
               disabled={!!disabled}
               rows={1}
               className={cn(
-                selectedSkillCommand ? "min-h-[28px]" : "min-h-[60px]",
+                selectedSkillCommand
+                  ? "min-h-[var(--control-height-compact)]"
+                  : "min-h-[var(--composer-body-min-height)]",
                 sessionReferences.length > 0 || mentionedFileAttachmentIds.size > 0
                   ? "min-w-[12rem] flex-[1_1_12rem]"
                   : "w-full",
@@ -767,7 +769,7 @@ export function Composer({
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
           <button
             type="button"
             aria-label={t("chat.attachFiles")}
@@ -775,7 +777,7 @@ export function Composer({
             onClick={() => void pickAttachments()}
             disabled={!!disabled}
             className={cn(
-              "inline-flex size-8 shrink-0 items-center justify-center rounded-md",
+              "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
               "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
               "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
               "transition-colors",
@@ -803,7 +805,10 @@ export function Composer({
           />
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div
+          className="group/run-actions flex shrink-0 items-center gap-0.5"
+          data-composer-run-actions="true"
+        >
           {/* Agent picker — Radix DropdownMenu so the popover matches
               the app's chrome (not macOS-native blue-highlight system
               menu). Trigger shows the current agent label + chevron;

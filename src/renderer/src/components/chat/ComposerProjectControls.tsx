@@ -62,7 +62,7 @@ export function ProjectChipRow({
 
   return (
     <div
-      className="composer-control-row-inset mb-[var(--composer-footer-gap)] flex shrink-0 items-center gap-[var(--control-gap-compact)] text-xs text-fg-muted"
+      className="composer-footer-row-inset mb-[var(--composer-footer-gap)] flex shrink-0 items-center gap-[var(--control-gap-compact)] text-xs text-fg-muted"
       style={{ height: "var(--row-h)" }}
       data-composer-footer-controls="true"
     >

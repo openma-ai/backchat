@@ -168,6 +168,9 @@ export function Sidebar() {
     [agents],
   );
   const agentUpdateCount = agents.filter((agent) => agent.updateAvailable).length;
+  const agentUpdateLabel = `${agentUpdateCount} ACP ${
+    agentUpdateCount === 1 ? "update" : "updates"
+  } available`;
   // Single menu state for the whole sidebar — only one row's `…`
   // dropdown can be open at a time. Lifting this up avoids the
   // "right-click row A then row B leaves both menus open" bug.
@@ -613,30 +616,13 @@ export function Sidebar() {
           paddingRight: "8px",
         }}
       >
-        {agentUpdateCount > 0 && (
-          <Link
-            to="/settings/agents"
-            aria-label={`${agentUpdateCount} ACP ${
-              agentUpdateCount === 1 ? "update" : "updates"
-            } available`}
-            className="app-no-drag mb-0.5 flex w-full items-center gap-2 rounded-md px-2 text-xs text-warning hover:bg-warning-subtle/45"
-            style={{ height: "var(--row-h)" }}
-          >
-            <CircleArrowUpIcon className="size-3.5 shrink-0" />
-            <span className={labelCls}>ACP updates</span>
-            <span
-              className={cn(
-                "ml-auto rounded-full bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-warning",
-                labelCls,
-              )}
-            >
-              {agentUpdateCount}
-            </span>
-          </Link>
-        )}
         <Link
-          to="/settings"
+          to={agentUpdateCount > 0 ? "/settings/agents" : "/settings"}
           aria-label={t("sidebar.settings")}
+          aria-describedby={
+            agentUpdateCount > 0 ? "sidebar-agent-update-description" : undefined
+          }
+          title={agentUpdateCount > 0 ? agentUpdateLabel : undefined}
           className={cn(
             "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-xs",
             settingsActive
@@ -649,6 +635,21 @@ export function Sidebar() {
             <Settings2Icon className="size-3.5" />
           </span>
           <span className={labelCls}>{t("sidebar.settings")}</span>
+          {agentUpdateCount > 0 && (
+            <>
+              <span
+                aria-hidden="true"
+                data-sidebar-agent-update-count={agentUpdateCount}
+                className="ml-auto inline-flex h-5 min-w-5 items-center justify-center gap-1 rounded-full bg-warning-subtle px-1.5 text-[10px] font-medium tabular-nums text-warning"
+              >
+                <CircleArrowUpIcon className="size-3 shrink-0" />
+                {agentUpdateCount}
+              </span>
+              <span id="sidebar-agent-update-description" className="sr-only">
+                {agentUpdateLabel}
+              </span>
+            </>
+          )}
         </Link>
       </div>
       <CreateProjectDialog

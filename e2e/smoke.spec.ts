@@ -120,7 +120,7 @@ test.describe("backchat smoke", () => {
       expect(Math.abs(newChatCenter - settingsCenter)).toBeLessThanOrEqual(0.5);
   });
 
-  test("uses the sidebar footer gap between the composer and runtime row", async ({
+  test("keeps equal space around the runtime row and folds ACP updates into Settings", async ({
       page,
       bridge,
   }) => {
@@ -139,30 +139,37 @@ test.describe("backchat smoke", () => {
 
       const settings = page.getByRole("link", { name: "Settings", exact: true });
       const acpUpdate = page.getByRole("link", { name: "1 ACP update available" });
+      const updateBadge = settings.locator('[data-sidebar-agent-update-count="1"]');
       const runtime = page.locator('[data-composer-footer-control="runtime"]').first();
       const composer = page.locator(".composer-card").first();
+      const composerFrame = page.locator('[data-chat-column="composer"]').first();
       await Promise.all(
-        [settings, acpUpdate, runtime, composer].map((item) =>
+        [settings, updateBadge, runtime, composer, composerFrame].map((item) =>
           expect(item).toBeVisible(),
         ),
       );
+      await expect(acpUpdate).toHaveCount(0);
+      await expect(settings).toHaveAttribute("href", "/settings/agents");
 
-      const [settingsBox, acpUpdateBox, runtimeBox, composerBox] = await Promise.all([
+      const [settingsBox, runtimeBox, composerBox, composerFrameBox] = await Promise.all([
         settings.boundingBox(),
-        acpUpdate.boundingBox(),
         runtime.boundingBox(),
         composer.boundingBox(),
+        composerFrame.boundingBox(),
       ]);
       expect(settingsBox).not.toBeNull();
-      expect(acpUpdateBox).not.toBeNull();
       expect(runtimeBox).not.toBeNull();
       expect(composerBox).not.toBeNull();
+      expect(composerFrameBox).not.toBeNull();
       const composerBottom = composerBox!.y + composerBox!.height;
-      const acpUpdateBottom = acpUpdateBox!.y + acpUpdateBox!.height;
+      const runtimeBottom = runtimeBox!.y + runtimeBox!.height;
+      const composerFrameBottom = composerFrameBox!.y + composerFrameBox!.height;
+      const gapAboveRuntime = runtimeBox!.y - composerBottom;
+      const gapBelowRuntime = composerFrameBottom - runtimeBottom;
       const settingsCenter = settingsBox!.y + settingsBox!.height / 2;
       const runtimeCenter = runtimeBox!.y + runtimeBox!.height / 2;
-      expect(Math.abs(runtimeBox!.y - composerBottom - 2)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(composerBottom - acpUpdateBottom)).toBeLessThanOrEqual(2);
+      expect(gapAboveRuntime).toBeGreaterThan(0);
+      expect(Math.abs(gapAboveRuntime - gapBelowRuntime)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(runtimeCenter - settingsCenter)).toBeLessThanOrEqual(2);
   });
 

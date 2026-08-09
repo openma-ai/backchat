@@ -170,10 +170,11 @@ test.describe("settings agent setup lifecycle", () => {
     await page.getByRole("link", { name: "Settings" }).click();
     await page.getByRole("link", { name: "Agents", exact: true }).click();
     await page.getByRole("button", { name: "Back to app" }).click();
-    await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Back to app" }).click();
-    await expect(page.getByRole("link", { name: "1 ACP update available" })).toBeVisible();
-    await page.getByRole("link", { name: "1 ACP update available" }).click();
+    await expect(page.locator('[data-chat-surface="main"]')).toBeVisible();
+    const settingsWithUpdate = page.getByRole("link", { name: "Settings", exact: true });
+    await expect(settingsWithUpdate.locator('[data-sidebar-agent-update-count="1"]'))
+      .toBeVisible();
+    await settingsWithUpdate.click();
     await page.getByRole("button", { name: "Upgrade", exact: true }).click();
     await expect(page.getByText("Update available")).toHaveCount(0);
     await page.getByRole("button", { name: "Back to app" }).click();

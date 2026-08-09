@@ -33,7 +33,10 @@ export function RuntimeLocationControl({
           size="sm"
           data-composer-footer-control="runtime"
           data-session-runtime-location="true"
-          className={cn("app-compact-control min-w-0 bg-transparent", className)}
+          className={cn(
+            "app-compact-control runtime-location-control min-w-0 bg-transparent",
+            className,
+          )}
           title={title ?? t("chat.whereRuns")}
         >
           <span data-control-icon>
