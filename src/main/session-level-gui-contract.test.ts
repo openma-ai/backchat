@@ -140,7 +140,9 @@ describe("session level GUI contract", () => {
     expect(chatViewSource).toContain(
       'const isNativeSubagent = active?.sideKind === "subagent";',
     );
-    expect(chatViewSource).toContain("Native subagent is managed by its parent");
+    // The notice goes through the translator; the contract is that the view
+    // still refuses input for a native subagent and says why.
+    expect(chatViewSource).toContain('t("chat.nativeSubagentManaged")');
     expect(chatViewSource).toContain(
       'data-chat-surface={isSide ? "side" : "main"}',
     );
