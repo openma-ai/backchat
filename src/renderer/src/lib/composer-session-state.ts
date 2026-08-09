@@ -89,3 +89,21 @@ export function selectComposerSessionStatePresentation(
     .sort((left, right) => left.priority - right.priority)
     .find((candidate) => candidate.presentation)?.presentation;
 }
+
+/** Whether a sent-but-unconfirmed command should still hold its chip.
+ *
+ * Clearing the armed chip at submit time left the composer stateless for a
+ * beat: the real state chip only appears once the agent publishes its snapshot,
+ * a round trip later. So the armed chip stays until something replaces it —
+ * either the state it was entering, or a turn that came and went without one,
+ * which means the agent rejected it and there is no state to show. */
+export function armedCommandStillPending(state: {
+  sent: boolean;
+  observedRun: boolean;
+  stateActive: boolean;
+  running: boolean;
+}): boolean {
+  if (state.stateActive) return false;
+  if (!state.sent) return true;
+  return !(state.observedRun && !state.running);
+}

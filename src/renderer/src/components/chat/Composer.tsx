@@ -38,6 +38,7 @@ import { ComposerAnnotationStrip } from "./ComposerAnnotations";
 import { ComposerSessionStateSlot, InlineComposerOptionControls, PermissionModeChip, SessionRunChip } from "./ComposerSessionControls";
 import {
   armedCommandSessionStatePresentation,
+  armedCommandStillPending,
   goalSessionStatePresentation,
   selectComposerSessionStatePresentation,
 } from "@/lib/composer-session-state";
@@ -279,6 +280,30 @@ export function Composer({
   const [armedCommand, setArmedCommand] = useState<AcpAvailableCommand | null>(
     null,
   );
+  const armedSentRef = useRef(false);
+  const armedObservedRunRef = useRef(false);
+  const disarm = () => {
+    armedSentRef.current = false;
+    armedObservedRunRef.current = false;
+    setArmedCommand(null);
+  };
+  // Hold the chip across the round trip. The state it is entering only arrives
+  // with the agent's snapshot, so releasing at submit time left the composer
+  // with no state for a beat.
+  useEffect(() => {
+    if (!armedCommand) return;
+    if (armedSentRef.current && running) armedObservedRunRef.current = true;
+    if (
+      !armedCommandStillPending({
+        sent: armedSentRef.current,
+        observedRun: armedObservedRunRef.current,
+        stateActive: !!goal,
+        running: !!running,
+      })
+    ) {
+      disarm();
+    }
+  }, [armedCommand, goal, running]);
   const composerSessionState = selectComposerSessionStatePresentation([
     {
       // An armed command outranks the states it is about to enter: it is the
@@ -327,7 +352,7 @@ export function Composer({
     if (!composerSessionState) return undefined;
     // Disarming is local: nothing was sent, so nothing has to be undone.
     if (composerSessionState.kind === "armed_command") {
-      return () => setArmedCommand(null);
+      return disarm;
     }
     const applyConfig = (configId: string, value: string | boolean) => () => {
       if (lockedAgentId) {
@@ -702,7 +727,7 @@ export function Composer({
       sessionReferences,
     );
     rememberCurrentRun();
-    setArmedCommand(null);
+    if (armedCommand) armedSentRef.current = true;
     setText("");
     setSuggestionTemplate(null);
     setSuggestionSlotValue("");

@@ -1,4 +1,7 @@
-import { armedCommandSessionStatePresentation } from "./composer-session-state";
+import {
+  armedCommandSessionStatePresentation,
+  armedCommandStillPending,
+} from "./composer-session-state";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -183,5 +186,32 @@ describe("a command armed while it waits for its argument", () => {
         { goal: "Goal" },
       ),
     ).toMatchObject({ label: "review", title: "Review changes." });
+  });
+});
+
+describe("holding an armed chip until its state takes over", () => {
+  const at = (o: Partial<Parameters<typeof armedCommandStillPending>[0]>) =>
+    armedCommandStillPending({
+      sent: false, observedRun: false, stateActive: false, running: false, ...o,
+    });
+
+  it("holds while the user is still typing the argument", () => {
+    expect(at({})).toBe(true);
+  });
+
+  it("holds across the round trip, so the composer is never stateless", () => {
+    // Submitted, turn under way, agent has not published the goal yet.
+    expect(at({ sent: true, running: true })).toBe(true);
+    // Turn under way but `running` not yet reported by the store.
+    expect(at({ sent: true })).toBe(true);
+  });
+
+  it("lets go once the real state exists", () => {
+    expect(at({ sent: true, observedRun: true, running: true, stateActive: true })).toBe(false);
+  });
+
+  it("lets go when a turn came and went without the state", () => {
+    // Codex rejected the argument; keeping the chip would be a lie.
+    expect(at({ sent: true, observedRun: true, running: false })).toBe(false);
   });
 });
