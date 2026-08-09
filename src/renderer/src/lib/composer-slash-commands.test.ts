@@ -1,3 +1,4 @@
+import type { AcpAvailableCommand } from "./session-types";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,6 +13,7 @@ import {
   slashCommandQuery,
   withSessionStateCommands,
   withHostForkCommand,
+  pendingArgumentCommand,
 } from "./composer-slash-commands";
 import type { AcpSessionConfigOption } from "./session-config-options";
 
@@ -319,5 +321,57 @@ describe("codex session-state commands", () => {
       value: "plan",
     });
     expect(hostSessionStateAction(stripped, "gemini")).toBeUndefined();
+  });
+});
+
+describe("a command still waiting for its argument", () => {
+  const goal: AcpAvailableCommand = {
+    name: "goal",
+    description: "Set a goal.",
+    input: { hint: "[<objective>|clear|pause|resume]" },
+    _meta: { commandAction: { kind: "prefixPrompt", presentation: "state" } },
+  };
+  const plan: AcpAvailableCommand = {
+    name: "plan",
+    description: "Turn plan mode on.",
+    input: null,
+    _meta: {
+      commandAction: {
+        kind: "setConfigOption",
+        configId: "collaboration_mode",
+        value: "plan",
+        resetValue: "default",
+      },
+    },
+  };
+  const status: AcpAvailableCommand = {
+    name: "status",
+    description: "Show status.",
+    input: null,
+  };
+
+  it("holds a bare /goal back instead of spending a turn on an error", () => {
+    // Codex answers a bare /goal with `Command "/goal" requires
+    // [|clear|pause|resume]`, which costs a turn and teaches nothing.
+    expect(pendingArgumentCommand("/goal", [goal, plan, status])).toBe(goal);
+  });
+
+  it("lets /goal through once an argument is typed", () => {
+    expect(pendingArgumentCommand("/goal 完成世界和平", [goal])).toBeUndefined();
+  });
+
+  it("leaves a command that needs no argument alone", () => {
+    expect(pendingArgumentCommand("/status", [status])).toBeUndefined();
+  });
+
+  it("does not hold back a config switch", () => {
+    // /plan is complete on its own; arming it would strand the user.
+    expect(pendingArgumentCommand("/plan", [plan])).toBeUndefined();
+  });
+
+  it("ignores plain text and unknown commands", () => {
+    expect(pendingArgumentCommand("goal", [goal])).toBeUndefined();
+    expect(pendingArgumentCommand("/unknown", [goal])).toBeUndefined();
+    expect(pendingArgumentCommand("/", [goal])).toBeUndefined();
   });
 });

@@ -177,6 +177,31 @@ export function slashCommandConfigAction(
   return undefined;
 }
 
+/** A command whose argument the user has not typed yet. Codex publishes
+ * `/goal` as `prefixPrompt` with `input.hint` ("[<objective>|clear|pause|resume]"),
+ * so sending a bare `/goal` only earns an error turn — the objective is the
+ * point of the command. The composer arms it instead and spends the next
+ * message as its argument.
+ *
+ * Read from the declared `input`, never from the command name: ACP v1 has no
+ * `commandAction`, and a name-based rule would hijack a `/goal` that another
+ * harness means as a plain prompt. */
+export function pendingArgumentCommand(
+  text: string,
+  commands: readonly AcpAvailableCommand[],
+): AcpAvailableCommand | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("/") || /\s/u.test(trimmed)) return undefined;
+  const name = trimmed.slice(1);
+  if (!name) return undefined;
+  const command = commands.find((candidate) => candidate.name === name);
+  if (!command?.input) return undefined;
+  // A config switch is complete without an argument; only prompt-transport
+  // commands are waiting for text.
+  if (slashCommandConfigAction(command)) return undefined;
+  return command;
+}
+
 export function withHostForkCommand(
   commands: readonly AcpAvailableCommand[],
   enabled: boolean,

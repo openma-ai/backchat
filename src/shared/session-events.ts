@@ -305,6 +305,15 @@ export interface SessionSetConfigOptionParams {
   value: string | boolean;
 }
 
+/** Call an ACP extension method the agent advertised for this session. Codex
+ *  names the method that controls a goal inside the goal snapshot itself, so
+ *  the caller passes it through rather than the host hardcoding one. */
+export interface SessionRequestExtensionParams {
+  session_id: string;
+  method: string;
+  params?: Record<string, unknown>;
+}
+
 export interface SessionMode {
   id: string;
   name: string;

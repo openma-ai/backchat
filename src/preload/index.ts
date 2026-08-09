@@ -13,6 +13,7 @@ import type {
   SessionRunCommandParams,
   SessionRestartResult,
   SessionRuntimeStatus,
+  SessionRequestExtensionParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
@@ -43,6 +44,8 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.SessionRunCommand, p) as Promise<void>,
   sessionSetConfigOption: (p: SessionSetConfigOptionParams) =>
     ipcRenderer.invoke(InvokeChannel.SessionSetConfigOption, p) as Promise<void>,
+  sessionRequestExtension: (p: SessionRequestExtensionParams) =>
+    ipcRenderer.invoke(InvokeChannel.SessionRequestExtension, p) as Promise<void>,
   sessionCancel: (p) =>
     ipcRenderer.invoke(InvokeChannel.SessionCancel, p) as Promise<void>,
   sessionClose: (p) =>

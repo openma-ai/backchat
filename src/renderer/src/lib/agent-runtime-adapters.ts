@@ -814,11 +814,15 @@ function claudeRawMonitorEvents(event: unknown): RuntimeMonitorEvent[] {
 function codexSessionGoalUpdate(
   input: RuntimeSessionGoalInput,
 ): SessionGoal | null | undefined {
-  const codex = isRecord(input.meta?.codex) ? input.meta.codex : undefined;
-  if (!codex || !Object.prototype.hasOwnProperty.call(codex, "goal")) {
-    return undefined;
+  // The running adapter publishes the snapshot at `_meta.goal`; the version
+  // vendored under node_modules nests it under `_meta.codex.goal`. Real traffic
+  // decides which one exists, so read whichever the agent actually sent rather
+  // than trusting the bundled source.
+  for (const scope of [input.meta, isRecord(input.meta?.codex) ? input.meta.codex : undefined]) {
+    if (!scope || !Object.prototype.hasOwnProperty.call(scope, "goal")) continue;
+    return normalizeSessionGoal(scope.goal);
   }
-  return normalizeSessionGoal(codex.goal);
+  return undefined;
 }
 
 function codexSessionThreadStatusUpdate(
@@ -839,6 +843,12 @@ function normalizeSessionGoal(value: unknown): SessionGoal | null | undefined {
   if (!objective || !status) return undefined;
 
   const goal: SessionGoal = { objective, status };
+  // The snapshot names its own control method (`_session/goal` today,
+  // `_codex/session/goal_control` in the vendored build). Carrying it means
+  // exiting a goal calls what the agent advertised instead of a method name
+  // hardcoded from whichever build we happened to read.
+  const controlMethod = stringValue(value.controlMethod)?.trim();
+  if (controlMethod) goal.controlMethod = controlMethod;
   for (const [source, target] of [
     ["tokenBudget", "tokenBudget"],
     ["tokensUsed", "tokensUsed"],

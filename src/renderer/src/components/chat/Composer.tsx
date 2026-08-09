@@ -28,6 +28,7 @@ import {
   hostSessionStateAction,
   isHostForkSlashCommand,
   isSkillSlashCommand,
+  pendingArgumentCommand,
   slashCommandConfigAction,
   withHostForkCommand,
 } from "@/lib/composer-slash-commands";
@@ -274,7 +275,24 @@ export function Composer({
     ),
     [canFork, effectiveAvailableCommands, t],
   );
+  const [armedCommand, setArmedCommand] = useState<AcpAvailableCommand | null>(
+    null,
+  );
   const composerSessionState = selectComposerSessionStatePresentation([
+    {
+      // An armed command outranks the states it is about to enter: it is the
+      // thing the next Enter will do.
+      priority: 5,
+      presentation: armedCommand
+        ? {
+          id: `armed:${armedCommand.name}`,
+          kind: "armed_command",
+          label: `/${armedCommand.name}`,
+          title: armedCommand.input?.hint?.trim() || armedCommand.description,
+          icon: "goal" as const,
+        }
+        : undefined,
+    },
     {
       priority: 10,
       presentation: planModeSessionStatePresentation(
@@ -310,6 +328,10 @@ export function Composer({
    * the declared exit. */
   const sessionStateExit = (() => {
     if (!composerSessionState) return undefined;
+    // Disarming is local: nothing was sent, so nothing has to be undone.
+    if (composerSessionState.kind === "armed_command") {
+      return () => setArmedCommand(null);
+    }
     const applyConfig = (configId: string, value: string | boolean) => () => {
       if (lockedAgentId) {
         void onSetConfigOption?.(configId, value);
@@ -325,9 +347,9 @@ export function Composer({
     if (exit.kind === "setConfigOption") return applyConfig(exit.configId, exit.value);
     // A control prompt needs a live session to reach.
     if (!sessionId || !hasHarnessSetup) return undefined;
-    return () => {
+    const sendPrompt = (text: string) => {
       onSubmit(
-        exit.text,
+        text,
         undefined,
         primaryIntent,
         draftConfigValues,
@@ -335,6 +357,23 @@ export function Composer({
         [],
       );
     };
+    if (exit.kind === "extensionMethod") {
+      // Prefer the method the agent advertised: it leaves the state without
+      // spending a turn. Runtimes without an extension channel reject the
+      // call, so fall back to the transport the presentation declared.
+      return () => {
+        void window.backchat
+          .sessionRequestExtension({
+            session_id: sessionId,
+            method: exit.method,
+            ...(exit.params ? { params: exit.params } : {}),
+          })
+          .catch(() => {
+            if (exit.fallback) sendPrompt(exit.fallback.text);
+          });
+      };
+    }
+    return () => sendPrompt(exit.text);
   })();
   const {
     clearDismissal,
@@ -593,10 +632,26 @@ export function Composer({
 
   const submitComposer = (intent: AgentMessageIntent = primaryIntent) => {
     const t = submitText;
+    const bare = attachments.length === 0
+      && annotations.length === 0
+      && sessionReferences.length === 0;
+    // A command whose argument is still missing arms the composer instead of
+    // leaving as a prompt: Codex answers a bare `/goal` with an error turn.
+    if (bare && !armedCommand) {
+      const waiting = pendingArgumentCommand(t, composerAvailableCommands);
+      if (waiting) {
+        setArmedCommand(waiting);
+        setText("");
+        reportComposerContent("");
+        clearDismissal();
+        requestAnimationFrame(() => taRef.current?.focus());
+        return;
+      }
+    }
     // A bare session-state command (`/plan`) is a config switch even when
     // the picker was dismissed or never opened — it must not leave the app
     // as a prompt.
-    if (attachments.length === 0 && annotations.length === 0 && sessionReferences.length === 0) {
+    if (bare) {
       const stateCommand =
         composerAvailableCommands.find(
           (command) =>
@@ -641,7 +696,7 @@ export function Composer({
       actionDisabled: action?.disabled || !hasHarnessSetup,
     })) return;
     onSubmit(
-      t,
+      armedCommand ? `/${armedCommand.name} ${t}` : t,
       attachments,
       intent,
       draftConfigValues,
@@ -650,6 +705,7 @@ export function Composer({
       sessionReferences,
     );
     rememberCurrentRun();
+    setArmedCommand(null);
     setText("");
     setSuggestionTemplate(null);
     setSuggestionSlotValue("");

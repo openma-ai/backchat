@@ -17,6 +17,7 @@ export const InvokeChannel = {
   SessionUpdatePromptQueue: "session:updatePromptQueue",
   SessionRunCommand: "session:runCommand",
   SessionSetConfigOption: "session:setConfigOption",
+  SessionRequestExtension: "session:requestExtension",
   SessionCancel: "session:cancel",
   SessionClose: "session:close",
   SessionDispose: "session:dispose",

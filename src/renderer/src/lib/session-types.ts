@@ -200,6 +200,8 @@ export interface SessionGoal {
   tokenBudget?: number;
   tokensUsed?: number;
   timeUsedSeconds?: number;
+  /** Extension method the agent advertised for pausing or clearing this goal. */
+  controlMethod?: string;
 }
 
 export type BrokerAsk =

@@ -68,6 +68,7 @@ import type {
   SessionRestartMode,
   SessionRestartResult,
   SessionRuntimeStatus,
+  SessionRequestExtensionParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
@@ -1551,6 +1552,33 @@ export class SessionManager {
       // Bump last_used_at so the sidebar reorders.
       touchSession(p.session_id);
     }
+  }
+
+  /** Call an ACP extension method on this session. Agents advertise these in
+   *  their own payloads — Codex names the goal control method inside the goal
+   *  snapshot — so the method travels with the data instead of being pinned
+   *  here, where it would drift the moment the adapter renames it. */
+  async requestExtension(p: SessionRequestExtensionParams): Promise<void> {
+    const sess = this.#sessions.get(p.session_id);
+    if (!sess) {
+      throw new Error("no such session");
+    }
+    const method = p.method.trim();
+    if (!method.startsWith("_")) {
+      // ACP reserves the underscore prefix for extensions; anything else would
+      // be a core method reached through a side door.
+      throw new Error(`not an ACP extension method: ${p.method}`);
+    }
+    if (typeof sess.acp.requestExtension !== "function") {
+      // Older runtimes have no extension channel at all. Failing loudly lets
+      // the caller fall back to whatever transport it declared instead of
+      // silently dropping the request.
+      throw new Error("ACP runtime does not support extension requests");
+    }
+    await sess.acp.requestExtension(method, {
+      sessionId: sess.acpSessionId,
+      ...(p.params ?? {}),
+    });
   }
 
   async setConfigOption(p: SessionSetConfigOptionParams): Promise<void> {

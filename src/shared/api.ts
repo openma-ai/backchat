@@ -47,6 +47,7 @@ import type {
   SessionRestartMode,
   SessionRestartResult,
   SessionRuntimeStatus,
+  SessionRequestExtensionParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
   SessionStartResult,
@@ -441,6 +442,7 @@ export interface BackchatApi {
   sessionUpdatePromptQueue(p: SessionPromptQueueCommandParams): Promise<void>;
   sessionRunCommand(p: SessionRunCommandParams): Promise<void>;
   sessionSetConfigOption(p: SessionSetConfigOptionParams): Promise<void>;
+  sessionRequestExtension(p: SessionRequestExtensionParams): Promise<void>;
   sessionCancel(p: { session_id: string; turn_id: string }): Promise<void>;
   sessionClose(p: { session_id: string }): Promise<void>;
   sessionDispose(p: { session_id: string; remove_cwd?: boolean }): Promise<void>;

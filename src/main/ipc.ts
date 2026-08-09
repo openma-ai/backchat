@@ -29,6 +29,7 @@ import type {
   SessionRunCommandParams,
   SessionRestartResult,
   SessionRuntimeStatus,
+  SessionRequestExtensionParams,
   SessionSetConfigOptionParams,
   SessionStartParams,
 } from "../shared/session-events.js";
@@ -686,6 +687,11 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       }
       return sessionManager.setConfigOption(p);
     },
+  );
+  ipcMain.handle(
+    InvokeChannel.SessionRequestExtension,
+    (_e, p: SessionRequestExtensionParams) =>
+      sessionManager.requestExtension(p),
   );
   ipcMain.handle(
     InvokeChannel.SessionCancel,
