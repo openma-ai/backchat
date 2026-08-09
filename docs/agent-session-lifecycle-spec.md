@@ -317,6 +317,12 @@ guess whether start succeeded.
 
 ## 10. Turn
 
+Turn ownership, the ACP-authoritative boundary (`StopReason`), and the state
+machines for goal activities and config options live in
+[Turn Lifecycle and State Ownership](./turn-lifecycle-and-state.md). The diagram
+below is the host process view only; where the two disagree, that document
+wins.
+
 ```mermaid
 stateDiagram-v2
     [*] --> registered

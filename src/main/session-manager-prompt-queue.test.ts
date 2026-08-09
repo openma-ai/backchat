@@ -502,4 +502,95 @@ describe("SessionManager prompt queue", () => {
       }),
     );
   });
+
+  it("drains the queue once an out-of-band steering turn ends", async () => {
+    // Codex answers a steer by starting a turn of its own, which the host
+    // tracks separately from activePromptTurnId. That turn ending is still the
+    // moment the agent is free, so a queue that only watches the prompt turn
+    // sits full forever with nothing in flight.
+    const send = vi.fn();
+    const firstPromptDone = deferred();
+    const prompt = vi.fn(async function* (blocks: Array<{ type: string; text?: string }>) {
+      const text = blocks.find((block) => block.type === "text")?.text;
+      if (text === "first") await firstPromptDone.promise;
+    });
+    const steer = vi.fn(async () => "startedNewTurn" as const);
+    let emitOutOfBand: ((update: unknown) => void) | undefined;
+    runtimeStartMock.mockImplementation(async (options: {
+      onOutOfBandSessionUpdate?: (update: unknown) => void;
+    }) => {
+      emitOutOfBand = options.onOutOfBandSessionUpdate;
+      return {
+        acpSessionId: "acp-queue-oob",
+        configOptions: [],
+        prompt,
+        steer,
+        supportsSteering: true,
+        setMode: vi.fn(),
+        setConfigOption: vi.fn(),
+        isAlive: vi.fn(() => true),
+        dispose: vi.fn(),
+      };
+    });
+
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "codex-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({ session_id: "session-oob", agent_id: "codex-acp" });
+    const first = manager.prompt({
+      session_id: "session-oob",
+      turn_id: "turn-1",
+      text: "first",
+    });
+    await waitMicrotask();
+    const steered = manager.prompt({
+      session_id: "session-oob",
+      turn_id: "turn-2",
+      text: "steer now",
+    });
+    const queuedThird = manager.prompt({
+      session_id: "session-oob",
+      turn_id: "turn-3",
+      text: "third",
+    });
+    await waitMicrotask();
+
+    (manager.updatePromptQueue as (command: unknown) => void)({
+      session_id: "session-oob",
+      action: "steer",
+      turn_id: "turn-2",
+    });
+    await vi.waitFor(() => expect(steer).toHaveBeenCalledOnce());
+
+    // The prompt turn finishes while Codex's own turn is still running.
+    firstPromptDone.resolve();
+    await first;
+    expect(prompt).toHaveBeenCalledOnce();
+
+    // Codex reports its turn active, then idle: nothing is in flight now.
+    // Shapes taken from recorded traffic: the status is an object under
+    // _meta.codex.threadStatus and only ever rides a session_info_update.
+    emitOutOfBand?.({
+      sessionUpdate: "session_info_update",
+      _meta: { codex: { threadStatus: { type: "active", activeFlags: [] } } },
+    });
+    emitOutOfBand?.({
+      sessionUpdate: "session_info_update",
+      _meta: { codex: { threadStatus: { type: "idle" } } },
+    });
+    await steered;
+
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2));
+    expect(prompt).toHaveBeenNthCalledWith(
+      2,
+      [{ type: "text", text: "third" }],
+      expect.any(Object),
+    );
+    await queuedThird;
+  });
 });

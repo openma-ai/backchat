@@ -31,6 +31,12 @@
   `_meta.claudeCode.*`) and Codex (`codex-acp`, including its native
   multi-agent tool/events). Do not infer subagent semantics from similarly
   named tools in unrelated ACP agents without explicit evidence.
+- Before changing turn, queue, goal, or config-option behaviour, read
+  `docs/turn-lifecycle-and-state.md`. It records who owns each piece of state,
+  the ACP-authoritative turn boundary, the numbered invariants a change has to
+  keep, and which of them the code currently violates. A fix that widens a
+  guard must name the invariant that makes the wider guard correct.
+
 - Keep the three agent/session levels distinct:
   1. Native subagent: created by the provider/agent runtime, surfaced from
      structured ACP events or adapter `_meta`; the GUI must not create these.
