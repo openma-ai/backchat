@@ -97,7 +97,6 @@ export interface AcpAgentSetupServiceDeps {
   probeCwd?: string;
   authInspectionTimeoutMs?: number;
   capabilityInspectionTimeoutMs?: number;
-  npmVersionTimeoutMs?: number;
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
   refreshRegistry?: (opts: { refresh?: boolean }) => Promise<void>;
@@ -144,7 +143,6 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   private nextOperationId = 1;
   private probeCachePromise: Promise<Record<string, CachedAgentProbe>> | null = null;
   private probeCacheWrite: Promise<void> = Promise.resolve();
-  private readonly npmPackageVersionCache = new Map<string, string | null>();
   private readonly authCache = new Map<string, AcpAgentSetupAuth>();
   private readonly capabilityInspections =
     new Map<string, AcpAgentCapabilityInspection>();
@@ -206,9 +204,6 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   ): Promise<AcpAgentSetupInfo[]> {
     const operationId = `setup-${this.nextOperationId++}`;
     const operationStartedAt = Date.now();
-    if (plan.refreshRegistry) {
-      this.npmPackageVersionCache.clear();
-    }
     await this.refreshRegistry({ refresh: plan.refreshRegistry });
     const probeCache = await this.loadProbeCache();
     const entries = this.catalogEntries();
@@ -578,7 +573,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     const npmPackageName = entry.registryDistribution?.npx?.package
       ? npmPackageNameFromSpec(entry.registryDistribution.npx.package)
       : undefined;
-    const [metadata, installedNpmVersion, latestNpmVersion] = await Promise.all([
+    const [metadata, installedNpmVersion] = await Promise.all([
       entry.installSource === "registry" && entry.registryId
         ? readAcpRegistryInstallMetadata({
             registryId: entry.registryId,
@@ -589,13 +584,11 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       npmPackageName
         ? this.installedNpmPackageVersion(shimPath, npmPackageName)
         : Promise.resolve(undefined),
-      npmPackageName
-        ? this.latestNpmPackageVersion(npmPackageName)
-        : Promise.resolve(undefined),
     ]);
     const installedVersion = installedNpmVersion ?? metadata?.version;
-    const latestVersion = latestNpmVersion ?? registryLatestVersion;
-    const updateAvailable = entry.installSource === "registry" && !!latestVersion && installedVersion !== latestVersion;
+    const latestVersion = registryLatestVersion;
+    const updateAvailable = entry.installSource === "registry"
+      && isStrictlyNewerVersion(latestVersion, installedVersion);
     return {
       installed: true,
       ...(installedVersion ? { installedVersion } : {}),
@@ -628,48 +621,6 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         : undefined;
     } catch {
       return undefined;
-    }
-  }
-
-  private async latestNpmPackageVersion(
-    packageName: string,
-  ): Promise<string | undefined> {
-    if (this.npmPackageVersionCache.has(packageName)) {
-      return this.npmPackageVersionCache.get(packageName) ?? undefined;
-    }
-    const controller = new AbortController();
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const timeoutMs = this.deps.npmVersionTimeoutMs ?? 2_500;
-      const response = await Promise.race([
-        (this.deps.fetchImpl ?? fetch)(
-          `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
-          { signal: controller.signal },
-        ),
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(() => {
-            controller.abort();
-            reject(new Error(`NPM registry timed out after ${timeoutMs}ms`));
-          }, timeoutMs);
-        }),
-      ]);
-      if (!response.ok) {
-        throw new Error(`NPM registry unavailable: HTTP ${response.status}`);
-      }
-      const payload = await response.json() as {
-        version?: unknown;
-        "dist-tags"?: { latest?: unknown };
-      };
-      const version = payload.version ?? payload["dist-tags"]?.latest;
-      const normalized =
-        typeof version === "string" && version.length > 0 ? version : null;
-      this.npmPackageVersionCache.set(packageName, normalized);
-      return normalized ?? undefined;
-    } catch {
-      this.npmPackageVersionCache.set(packageName, null);
-      return undefined;
-    } finally {
-      if (timeout) clearTimeout(timeout);
     }
   }
 
@@ -749,6 +700,63 @@ function npmPackageNameFromSpec(packageSpec: string): string {
   }
   const versionIndex = packageSpec.lastIndexOf("@");
   return versionIndex > 0 ? packageSpec.slice(0, versionIndex) : packageSpec;
+}
+
+type ParsedSemver = {
+  core: readonly [number, number, number];
+  prerelease: readonly string[];
+};
+
+function isStrictlyNewerVersion(candidate?: string, current?: string): boolean {
+  if (!candidate || !current) return false;
+  const parsedCandidate = parseSemver(candidate);
+  const parsedCurrent = parseSemver(current);
+  if (!parsedCandidate || !parsedCurrent) return false;
+  return compareSemver(parsedCandidate, parsedCurrent) > 0;
+}
+
+function parseSemver(version: string): ParsedSemver | null {
+  const match = version.trim().match(
+    /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
+  );
+  if (!match) return null;
+  const core = match.slice(1, 4).map(Number);
+  if (core.some((part) => !Number.isSafeInteger(part))) return null;
+  return {
+    core: core as [number, number, number],
+    prerelease: match[4]?.split(".") ?? [],
+  };
+}
+
+function compareSemver(left: ParsedSemver, right: ParsedSemver): number {
+  for (let index = 0; index < left.core.length; index += 1) {
+    const difference = left.core[index]! - right.core[index]!;
+    if (difference !== 0) return difference;
+  }
+  if (left.prerelease.length === 0 || right.prerelease.length === 0) {
+    return right.prerelease.length - left.prerelease.length;
+  }
+  const length = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left.prerelease[index];
+    const rightPart = right.prerelease[index];
+    if (leftPart === undefined) return -1;
+    if (rightPart === undefined) return 1;
+    if (leftPart === rightPart) continue;
+    const leftIsNumeric = /^\d+$/.test(leftPart);
+    const rightIsNumeric = /^\d+$/.test(rightPart);
+    if (leftIsNumeric && rightIsNumeric) {
+      const normalizedLeft = leftPart.replace(/^0+(?=\d)/, "");
+      const normalizedRight = rightPart.replace(/^0+(?=\d)/, "");
+      if (normalizedLeft.length !== normalizedRight.length) {
+        return normalizedLeft.length - normalizedRight.length;
+      }
+      return normalizedLeft < normalizedRight ? -1 : 1;
+    }
+    if (leftIsNumeric !== rightIsNumeric) return leftIsNumeric ? -1 : 1;
+    return leftPart < rightPart ? -1 : 1;
+  }
+  return 0;
 }
 
 function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {

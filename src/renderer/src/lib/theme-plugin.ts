@@ -246,7 +246,31 @@ function validateNumber(
   }
 }
 
-const backchatLight: ThemeTokens = { ...commonLightTokens };
+const backchatLight: ThemeTokens = {
+  ...commonLightTokens,
+  // Long-session light surfaces use a restrained clay-tinted neutral ladder.
+  // The steps are intentionally wider than the shared fallback palette so
+  // panels, controls, and raised states stay legible without extra hairlines.
+  brand: "oklch(0.62 0.08 30)",
+  "brand-hover": "oklch(0.56 0.09 30)",
+  "brand-subtle": "oklch(0.95 0.025 30)",
+  "brand-fg": "#2a1a14",
+  bg: "oklch(0.985 0.003 30)",
+  "bg-sidebar": "oklch(0.95 0.006 30)",
+  "bg-surface": "oklch(0.968 0.004 30)",
+  "bg-bubble": "oklch(0.925 0.008 30)",
+  fg: "oklch(0.19 0.006 30)",
+  "fg-muted": "oklch(0.40 0.01 30)",
+  "fg-subtle": "oklch(0.47 0.008 30)",
+  border: "oklch(0.855 0.008 30)",
+  "border-strong": "oklch(0.76 0.012 30)",
+  "shadow-md": "0 4px 10px -5px rgb(42 26 20 / 0.18)",
+  "shadow-sm": "0 1px 3px -2px rgb(42 26 20 / 0.14)",
+  "shadow-card-soft": "0 3px 8px -5px rgb(42 26 20 / 0.16)",
+  "shadow-card-press": "0 2px 5px -3px rgb(42 26 20 / 0.18)",
+  "shadow-input-rest": "0 1px 3px -2px rgb(42 26 20 / 0.16)",
+  "shadow-chip-press": "0 1px 2px -1px rgb(42 26 20 / 0.16)",
+};
 
 const backchatDark: ThemeTokens = {
   ...commonDarkTokens,
@@ -307,12 +331,12 @@ export const backchatLightTheme = defineThemePlugin({
     id: "backchat-light",
     name: "Backchat Light",
     author: "Backchat",
-    description: "Neutral work surfaces with the original vermilion accent.",
+    description: "Quiet clay-tinted work surfaces with a restrained accent.",
     preview: {
-      background: "#fefefe",
-      surface: "#f4f3f1",
-      foreground: "#20201f",
-      accent: "#f84f32",
+      background: "#fcf9f9",
+      surface: "#f7f2f1",
+      foreground: "#161312",
+      accent: "#b17469",
     },
     appearance: "light",
     tokens: backchatLight,

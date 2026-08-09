@@ -113,6 +113,12 @@ async function loadThemeRuntime(): Promise<ThemeRuntimeModule> {
   return import("./theme").catch(() => ({}));
 }
 
+function oklchComponents(value: string): { lightness: number; chroma: number } {
+  const match = value.match(/^oklch\(([\d.]+)\s+([\d.]+)/);
+  if (!match) throw new Error(`Expected an OKLCH token, received: ${value}`);
+  return { lightness: Number(match[1]), chroma: Number(match[2]) };
+}
+
 describe("theme plugin contract", () => {
   it("ships a complete, unique set of built-in theme plugins", async () => {
     const { THEME_SPEC_VERSION, THEME_TOKEN_NAMES, builtInThemes } = await loadThemePlugins();
@@ -227,6 +233,29 @@ describe("theme plugin contract", () => {
     expect(style?.mode).toBe("dark");
     expect(style?.colorScheme).toBe("dark");
     expect(Object.keys(style?.tokens ?? {}).length).toBeGreaterThan(20);
+  });
+
+  it("gives the default light theme perceptible, restrained surface hierarchy", async () => {
+    const { getThemePlugin } = await loadThemePlugins();
+    const light = getThemePlugin?.("backchat-light", "light");
+    expect(light).toBeDefined();
+
+    const tokens = light!.tokens;
+    const canvas = oklchComponents(tokens.bg).lightness;
+    const panel = oklchComponents(tokens["bg-surface"]).lightness;
+    const sidebar = oklchComponents(tokens["bg-sidebar"]).lightness;
+    const raised = oklchComponents(tokens["bg-bubble"]).lightness;
+
+    expect(canvas - panel).toBeGreaterThanOrEqual(0.015);
+    expect(panel - sidebar).toBeGreaterThanOrEqual(0.01);
+    expect(sidebar - raised).toBeGreaterThanOrEqual(0.02);
+    expect(oklchComponents(tokens.border).lightness).toBeLessThanOrEqual(0.87);
+    expect(oklchComponents(tokens["border-strong"]).lightness).toBeLessThanOrEqual(0.78);
+    expect(oklchComponents(tokens["fg-subtle"]).lightness).toBeLessThanOrEqual(0.48);
+
+    const brand = oklchComponents(tokens.brand);
+    expect(brand.chroma).toBeGreaterThanOrEqual(0.06);
+    expect(brand.chroma).toBeLessThanOrEqual(0.1);
   });
 
   it("replaces every visual token and exposes the active theme on the root", async () => {

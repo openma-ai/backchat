@@ -556,7 +556,7 @@ describe("acp agent setup sdk", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("detects npx updates from the installed package and npm latest when registry metadata is static", async () => {
+  it("uses the ACP registry as the sole update source for managed npx agents", async () => {
     const root = join(tmpdir(), `openma-acp-npx-version-${process.pid}-${Date.now()}`);
     const binDir = join(root, "bin");
     const packageDir = join(
@@ -593,20 +593,16 @@ describe("acp agent setup sdk", () => {
     getKnownAgentsMock.mockReturnValue([{
       ...fakeEntry,
       spec: { command: "fake-agent" },
-      version: "registry-static",
+      version: "1.0.1",
       registryDistribution: {
-        npx: { package: "@test/fake-agent" },
+        npx: { package: "@test/fake-agent@1.0.1" },
       },
     }]);
     readAcpRegistryInstallMetadataMock.mockResolvedValue({
-      version: "registry-static",
+      version: "1.0.1",
     });
-    let latestVersion = "1.0.2";
     const fetchImpl = vi.fn(async (url: string | URL | Request) => {
-      expect(String(url)).toBe(
-        "https://registry.npmjs.org/%40test%2Ffake-agent/latest",
-      );
-      return new Response(JSON.stringify({ version: latestVersion }));
+      throw new Error(`Unexpected non-registry version request: ${String(url)}`);
     }) as typeof fetch;
     const service = createAcpAgentSetupService({
       acpBinDir: binDir,
@@ -621,24 +617,29 @@ describe("acp agent setup sdk", () => {
         id: "fake-agent",
         installed: true,
         installedVersion: "1.0.1",
-        latestVersion: "1.0.2",
-        updateAvailable: true,
+        latestVersion: "1.0.1",
       }),
     ]);
-    latestVersion = "1.0.3";
-    await expect(service.listAgents()).resolves.toEqual([
-      expect.objectContaining({ latestVersion: "1.0.2" }),
-    ]);
+    expect((await service.listAgents())[0]).not.toHaveProperty("updateAvailable");
     await expect(service.refreshEnabledAgents()).resolves.toEqual([
-      expect.objectContaining({ latestVersion: "1.0.3" }),
+      expect.objectContaining({ latestVersion: "1.0.1" }),
     ]);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({ name: "@test/fake-agent", version: "1.0.2" }),
+    );
+    const aheadOfRegistry = await service.listAgents();
+    expect(aheadOfRegistry[0]).toMatchObject({
+      installedVersion: "1.0.2",
+      latestVersion: "1.0.1",
+    });
+    expect(aheadOfRegistry[0]).not.toHaveProperty("updateAvailable");
     await rm(root, { recursive: true, force: true });
   });
 
-  it("falls back to ACP registry metadata when npm latest does not respond", {
-    timeout: 500,
-  }, async () => {
+  it("does not consult npm when ACP registry metadata is available", async () => {
     const root = join(
       tmpdir(),
       `openma-acp-npx-timeout-${process.pid}-${Date.now()}`,
@@ -661,16 +662,15 @@ describe("acp agent setup sdk", () => {
     readAcpRegistryInstallMetadataMock.mockResolvedValue({
       version: "1.0.0",
     });
-    const fetchImpl = vi.fn(
-      () => new Promise<Response>(() => undefined),
-    ) as typeof fetch;
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      throw new Error(`Unexpected non-registry version request: ${String(url)}`);
+    }) as typeof fetch;
     const service = createAcpAgentSetupService({
       acpBinDir: binDir,
       acpInstallRoot: root,
       registryCachePath: join(root, "registry.json"),
       refreshRegistry: async () => undefined,
       fetchImpl,
-      npmVersionTimeoutMs: 20,
     });
 
     await expect(service.listAgents()).resolves.toEqual([
@@ -680,10 +680,11 @@ describe("acp agent setup sdk", () => {
         updateAvailable: true,
       }),
     ]);
+    expect(fetchImpl).not.toHaveBeenCalled();
     await rm(root, { recursive: true, force: true });
   });
 
-  it("pins an npx upgrade to the latest package version even when the ACP registry version is static", async () => {
+  it("pins an npx upgrade to the version published by the ACP registry", async () => {
     const root = join(tmpdir(), `openma-acp-npx-upgrade-${process.pid}-${Date.now()}`);
     const binDir = join(root, "bin");
     const installDir = join(
@@ -721,13 +722,13 @@ describe("acp agent setup sdk", () => {
     getKnownAgentsMock.mockReturnValue([{
       ...fakeEntry,
       spec: { command: "fake-agent" },
-      version: "registry-static",
+      version: "1.0.2",
       registryDistribution: {
-        npx: { package: "@test/fake-agent" },
+        npx: { package: "@test/fake-agent@1.0.2" },
       },
     }]);
     readAcpRegistryInstallMetadataMock.mockResolvedValue({
-      version: "registry-static",
+      version: "1.0.1",
     });
     installAcpRegistryAgentMock.mockImplementation(async () => {
       await writeFile(
@@ -739,9 +740,9 @@ describe("acp agent setup sdk", () => {
       });
       return { commandPath: join(binDir, "fake-agent") };
     });
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ version: "1.0.2" }))
-    ) as typeof fetch;
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      throw new Error(`Unexpected non-registry version request: ${String(url)}`);
+    }) as typeof fetch;
     const service = createAcpAgentSetupService({
       acpBinDir: binDir,
       acpInstallRoot: root,
@@ -768,6 +769,7 @@ describe("acp agent setup sdk", () => {
       latestVersion: "1.0.2",
     });
     expect(agents[0]).not.toHaveProperty("updateAvailable");
+    expect(fetchImpl).not.toHaveBeenCalled();
     await rm(root, { recursive: true, force: true });
   });
 });

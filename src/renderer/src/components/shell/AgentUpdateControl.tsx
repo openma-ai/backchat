@@ -150,6 +150,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
         align="start"
         sideOffset={8}
         collisionPadding={8}
+        style={{ width: "var(--agent-update-popover-width)" }}
         className="max-w-[var(--radix-popover-content-available-width)]"
       >
         <PopoverHeader>

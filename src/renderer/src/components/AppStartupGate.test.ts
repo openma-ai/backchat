@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("app cold-start readiness gate", () => {
-  it("renders only the animated brand loader until the full agent barrier settles", () => {
+  it("renders cached inventory first and reconciles the background registry refresh", () => {
     const gate = readFileSync(
       resolve(__dirname, "AppStartupGate.tsx"),
       "utf8",
@@ -17,8 +17,11 @@ describe("app cold-start readiness gate", () => {
       "utf8",
     );
 
-    expect(gate).toContain('queryKey: ["agents"]');
-    expect(gate).toContain("window.backchat.agentsList()");
+    expect(gate).toContain("queryKey: AGENTS_QUERY_KEY");
+    expect(gate).toContain('readiness: "snapshot"');
+    expect(gate).toContain('readiness: "ready"');
+    expect(gate).toContain("queryClient.setQueryData");
+    expect(gate).not.toContain("queryFn: () => window.backchat.agentsList()");
     expect(gate).toContain("query.isPending");
     expect(gate).toContain("<OpenmaStartupLoader");
     expect(gate).not.toContain("Loading agents");
