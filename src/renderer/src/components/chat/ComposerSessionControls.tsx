@@ -15,6 +15,7 @@ import {
   TargetIcon,
   TerminalIcon,
   WrenchIcon,
+  XIcon,
   ZapIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -595,12 +596,48 @@ function sessionModeIcon(value: string): LucideIcon {
 
 export function ComposerSessionStateSlot({
   presentation,
+  onClear,
+  clearLabel,
 }: {
   presentation?: ComposerSessionStatePresentation;
+  onClear?: () => void;
+  clearLabel?: string;
 }) {
   if (!presentation) return null;
   const Icon =
     presentation.icon === "plan" ? LightbulbIcon : TargetIcon;
+  if (onClear) {
+    // Dismissible state reads as one pill: at rest it shows its own icon;
+    // hovering swaps the icon slot for a filled ⊗ and the whole chip is
+    // the exit button — no second affordance appears beside it.
+    return (
+      <button
+        type="button"
+        aria-label={clearLabel}
+        title={clearLabel}
+        onClick={onClear}
+        data-composer-session-state="true"
+        data-composer-session-state-clear="true"
+        data-session-state-kind={presentation.kind}
+        className="group/session-state inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted transition-colors hover:bg-[var(--control-bg-hover)] hover:text-fg focus-visible:bg-[var(--control-bg-hover)] focus-visible:text-fg"
+      >
+        <span className="relative flex size-3.5 shrink-0 items-center justify-center">
+          <Icon
+            aria-hidden="true"
+            className="size-3.5 transition-opacity group-hover/session-state:opacity-0 group-focus-visible/session-state:opacity-0"
+          />
+          <span
+            aria-hidden="true"
+            data-session-state-clear-glyph="true"
+            className="absolute inset-0 flex items-center justify-center rounded-full bg-fg-muted text-bg opacity-0 transition-opacity group-hover/session-state:opacity-100 group-focus-visible/session-state:opacity-100"
+          >
+            <XIcon className="size-2.5" strokeWidth={3} />
+          </span>
+        </span>
+        <span>{presentation.label}</span>
+      </button>
+    );
+  }
   return (
     <span
       data-composer-session-state="true"

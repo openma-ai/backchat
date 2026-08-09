@@ -3,6 +3,7 @@ import { expect, test } from "./fixtures";
 import {
   enableAgent,
   injectAvailableCommands,
+  injectEvent,
   injectSession,
 } from "./helpers";
 
@@ -78,6 +79,87 @@ test.describe("composer slash commands", () => {
     await composer.waitForPromptTexts(["/compact"]);
   });
 
+  test("plan switches session state locally and the chip can dismiss it", async ({ page, composer }) => {
+    await enableAgent(page, "codex-acp");
+    const sessionId = await injectSession(page, { agentId: "codex-acp" });
+    const collaborationOptions = (currentValue: string) => [{
+      id: "collaboration_mode",
+      name: "Mode",
+      category: "mode",
+      type: "select",
+      currentValue,
+      options: [
+        { value: "default", name: "Default" },
+        { value: "plan", name: "Plan" },
+      ],
+    }];
+    await injectEvent(page, {
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "e2e-plan-config",
+      event: {
+        sessionUpdate: "config_option_update",
+        configOptions: collaborationOptions("default"),
+      },
+    });
+    await injectAvailableCommands(page, sessionId, [{
+      name: "plan",
+      description: "Turn plan mode on.",
+      _meta: {
+        commandAction: {
+          kind: "setConfigOption",
+          configId: "collaboration_mode",
+          value: "plan",
+          resetValue: "default",
+        },
+      },
+    }]);
+
+    await composer.input.fill("/plan");
+    await composer.input.press("Enter");
+
+    // A session-state command never becomes a prompt.
+    await expect(composer.input).toHaveValue("");
+    await page.waitForTimeout(250);
+    expect(await composer.readPromptTexts()).toEqual([]);
+
+    // The agent acknowledges with a config update; the chip appears with
+    // its dismiss affordance.
+    await injectEvent(page, {
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "e2e-plan-config-ack",
+      event: {
+        sessionUpdate: "config_option_update",
+        configOptions: collaborationOptions("plan"),
+      },
+    });
+    const chip = page.locator('[data-composer-session-state="true"]');
+    await expect(chip).toBeVisible();
+    // The whole chip is the exit control; the ⊗ replaces the plan icon
+    // only while hovered.
+    await expect(chip).toHaveAttribute(
+      "data-composer-session-state-clear",
+      "true",
+    );
+    const clearGlyph = chip.locator('[data-session-state-clear-glyph="true"]');
+    await expect(clearGlyph).toHaveCSS("opacity", "0");
+    await chip.hover();
+    await expect(clearGlyph).toHaveCSS("opacity", "1");
+
+    await chip.click();
+    await injectEvent(page, {
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "e2e-plan-config-exit",
+      event: {
+        sessionUpdate: "config_option_update",
+        configOptions: collaborationOptions("default"),
+      },
+    });
+    await expect(chip).toHaveCount(0);
+  });
+
   test("escape dismisses the slash picker without editing the prompt", async ({ page, composer }) => {
     const sessionId = await injectSession(page);
     await injectAvailableCommands(page, sessionId, [
@@ -124,10 +206,25 @@ test.describe("composer slash commands", () => {
     await expect
       .poll(() => skillChip.evaluate((element) => getComputedStyle(element).backgroundColor))
       .toBe("rgba(0, 0, 0, 0)");
+
+    // The token is inline: it sits on the textarea's first text line and
+    // the caret continues after it via first-line indent.
+    const instructionInput = page.locator('textarea[placeholder="Add instructions…"]');
+    const [chipBox, inputBox, indent] = await Promise.all([
+      skillChip.boundingBox(),
+      instructionInput.boundingBox(),
+      instructionInput.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).textIndent),
+      ),
+    ]);
+    expect(chipBox).not.toBeNull();
+    expect(inputBox).not.toBeNull();
+    expect(Math.abs(chipBox!.y + chipBox!.height / 2 - (inputBox!.y + 16))).toBeLessThanOrEqual(8);
+    expect(indent).toBeGreaterThanOrEqual(chipBox!.width);
+
     await capture("skill-command-chip.png", "skill command chip");
     await composer.waitForPromptTexts([]);
 
-    const instructionInput = page.locator('textarea[placeholder="Add instructions…"]');
     await instructionInput.fill("make the dashboard feel polished");
     await instructionInput.press("Enter");
 

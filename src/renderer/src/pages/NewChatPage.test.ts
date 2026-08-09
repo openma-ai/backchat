@@ -21,10 +21,11 @@ describe("NewChatPage route boundary", () => {
       /\.new-chat-page \.home-suggestion-container[\s\S]*?max-width: min\(100%, var\(--home-composer-width\)\);/,
     );
     expect(styles).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
-    expect(styles).toContain("@container (max-width: 960px)");
+    expect(styles).not.toContain("@container (max-width: 960px)");
+    expect(styles).toContain("@container (max-width: 640px)");
     expect(styles).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
     expect(styles).toContain(".home-suggestion-card:nth-child(n + 4)");
-    expect(styles).toContain("@container (max-width: 640px)");
+    expect(styles).toContain("@container (max-width: 480px)");
     expect(styles).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
     expect(styles).toContain(".home-suggestion-card:nth-child(n + 3)");
   });

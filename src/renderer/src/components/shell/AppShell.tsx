@@ -313,7 +313,7 @@ export function AppShell({
         <div
           className={cn(
             "absolute overflow-hidden transform-gpu",
-            "rounded-2xl bg-bg border border-border/60",
+            "app-panel-surface rounded-2xl",
           )}
           style={{
             left: leftCollapsed

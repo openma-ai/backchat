@@ -245,7 +245,7 @@ export function TerminalTab({
       // the "all text flashes" the user sees. Layer promotion costs ~
       // one VRAM allocation but eliminates the repaint cost entirely.
       style={{
-        background: "var(--bg)",
+        background: "var(--bg-surface)",
         transform: "translateZ(0)",
         willChange: "transform",
       }}
@@ -253,7 +253,7 @@ export function TerminalTab({
       <div ref={hostRef} className="h-full w-full" />
       <span
         data-testid="foreground-terminal-status"
-        className="pointer-events-none absolute right-2 top-2 z-10 rounded-md bg-bg-surface/90 px-2 py-1 text-[10px] font-medium text-fg-muted ring-1 ring-border/60"
+        className="app-raised-surface pointer-events-none absolute right-2 top-2 z-10 rounded-md px-2 py-1 text-[10px] font-medium text-fg-muted ring-1 ring-border/60"
         aria-live="polite"
       >
         {presentation.label}
@@ -297,11 +297,11 @@ function resolveTheme() {
   const cs = getComputedStyle(document.documentElement);
   const v = (name: string) => cs.getPropertyValue(name).trim() || undefined;
   return {
-    // Matches the bottom panel's --bg card surface.
-    background: v("--bg"),
+    // Matches the bottom panel's panel material.
+    background: v("--bg-surface"),
     foreground: v("--fg"),
     cursor: v("--brand"),
-    cursorAccent: v("--bg"),
+    cursorAccent: v("--bg-surface"),
     // ANSI palette — pull from the existing semantic tokens so the
     // terminal's red/green/yellow match the rest of the app's danger /
     // success / warning hues. Falls back to xterm.js defaults when

@@ -44,24 +44,77 @@ export function normalizeAgentAvailableCommands(
   });
 }
 
+/** The host-owned `/plan` contract for Codex — shared by the synthesized
+ * catalogue entry and the composer's last-gate submit interception, so a
+ * slow agent catalogue can never let the literal text escape as a prompt. */
+export const HOST_PLAN_COMMAND: AcpAvailableCommand = {
+  name: "plan",
+  description: "Enter plan mode for this session",
+  kind: "session-state",
+  metadata: {
+    commandAction: {
+      kind: "setConfigOption",
+      configId: "collaboration_mode",
+      value: "plan",
+      resetValue: "default",
+    },
+  },
+};
+
 export function withSessionStateCommands(
   commands: readonly AcpAvailableCommand[],
   configOptions: readonly AcpSessionConfigOption[] | undefined,
   agentId: string,
+  options?: { assumePlanCapable?: boolean },
 ): AcpAvailableCommand[] {
+  // Drafts have no session config catalogue yet; modern Codex always
+  // supports the collaboration switch, so the host still owns `/plan`
+  // there and the picked value rides along as a draft config override.
   const hasPlanMode = agentId === "codex-acp"
-    && Boolean(findSelectConfigOption(configOptions, "collaboration_mode"));
+    && (Boolean(options?.assumePlanCapable)
+      || Boolean(findSelectConfigOption(configOptions, "collaboration_mode")));
   if (!hasPlanMode || commands.some((command) => command.name === "plan")) {
     return [...commands];
   }
-  return [
-    {
-      name: "plan",
-      description: "Enter plan mode for this session",
-      kind: "session-state",
-    },
-    ...commands,
+  return [HOST_PLAN_COMMAND, ...commands];
+}
+
+export interface SlashCommandConfigAction {
+  configId: string;
+  value: string | boolean;
+  resetValue?: string | boolean;
+}
+
+/** Codex marks session-state commands (`/plan`) with `_meta.commandAction`.
+ * Such a command is a local config switch: the client applies the config
+ * value and never submits the command text as a prompt. The same shape on
+ * `metadata` covers host-synthesized commands. */
+export function slashCommandConfigAction(
+  command: AcpAvailableCommand,
+): SlashCommandConfigAction | undefined {
+  const carriers = [
+    command.metadata,
+    (command as { _meta?: Record<string, unknown> })._meta,
   ];
+  for (const carrier of carriers) {
+    const action = carrier?.["commandAction"];
+    if (!action || typeof action !== "object") continue;
+    const record = action as Record<string, unknown>;
+    if (record["kind"] !== "setConfigOption") continue;
+    const configId = record["configId"];
+    if (typeof configId !== "string" || !configId) continue;
+    const value = record["value"];
+    if (typeof value !== "string" && typeof value !== "boolean") continue;
+    const resetValue = record["resetValue"];
+    return {
+      configId,
+      value,
+      ...(typeof resetValue === "string" || typeof resetValue === "boolean"
+        ? { resetValue }
+        : {}),
+    };
+  }
+  return undefined;
 }
 
 export function withHostForkCommand(

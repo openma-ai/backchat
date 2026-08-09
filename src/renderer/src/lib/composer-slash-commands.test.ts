@@ -7,6 +7,7 @@ import {
   matchesSlashCommand,
   normalizeAgentAvailableCommands,
   skillCommandLabel,
+  slashCommandConfigAction,
   slashCommandQuery,
   withSessionStateCommands,
   withHostForkCommand,
@@ -74,6 +75,63 @@ describe("composer slash commands", () => {
       [collaborationMode],
       "claude-agent-acp",
     ).map((command) => command.name)).toEqual(["compact"]);
+
+    // Session config is not known yet (draft / starting session): the host
+    // still owns /plan for Codex, and never for other agents.
+    expect(withSessionStateCommands(
+      [],
+      [],
+      "codex-acp",
+      { assumePlanCapable: true },
+    ).map((command) => command.name)).toEqual(["plan"]);
+    expect(withSessionStateCommands(
+      [],
+      [],
+      "claude-acp",
+      { assumePlanCapable: true },
+    )).toEqual([]);
+    expect(withSessionStateCommands([], [], "codex-acp")).toEqual([]);
+  });
+
+  it("treats session-state commands as local config switches, never prompts", () => {
+    const [synthesized] = withSessionStateCommands(
+      [],
+      [collaborationMode],
+      "codex-acp",
+    );
+    expect(slashCommandConfigAction(synthesized!)).toEqual({
+      configId: "collaboration_mode",
+      value: "plan",
+      resetValue: "default",
+    });
+
+    // Codex publishes the same contract under `_meta.commandAction`.
+    expect(slashCommandConfigAction({
+      name: "plan",
+      description: "Turn plan mode on.",
+      _meta: {
+        commandAction: {
+          kind: "setConfigOption",
+          configId: "collaboration_mode",
+          value: "plan",
+          resetValue: "default",
+        },
+      },
+    } as never)).toEqual({
+      configId: "collaboration_mode",
+      value: "plan",
+      resetValue: "default",
+    });
+
+    expect(slashCommandConfigAction({ name: "compact" })).toBeUndefined();
+    expect(slashCommandConfigAction({
+      name: "broken",
+      metadata: { commandAction: { kind: "setConfigOption", configId: "" } },
+    })).toBeUndefined();
+    expect(slashCommandConfigAction({
+      name: "other-kind",
+      metadata: { commandAction: { kind: "navigate", configId: "x", value: "y" } },
+    })).toBeUndefined();
   });
 
   it("owns /fork as a host action only when the current session can fork", () => {

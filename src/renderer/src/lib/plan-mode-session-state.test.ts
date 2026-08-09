@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { planModeSessionStatePresentation } from "./plan-mode-session-state";
+import {
+  planModeExitAction,
+  planModeSessionStatePresentation,
+} from "./plan-mode-session-state";
 
 const labels = { label: "Plan", title: "Plan mode is active" };
 
@@ -82,5 +85,73 @@ describe("planModeSessionStatePresentation adapter", () => {
     },
   ])("does not invent Plan Mode for $agentId outside its declared plan state", (state) => {
     expect(planModeSessionStatePresentation(state, labels)).toBeUndefined();
+  });
+});
+
+describe("planModeExitAction", () => {
+  const activePlan = {
+    id: "collaboration_mode",
+    name: "Collaboration mode",
+    type: "select" as const,
+    currentValue: "plan",
+    options: [
+      { value: "default", name: "Default" },
+      { value: "plan", name: "Plan" },
+    ],
+  };
+
+  it("prefers the reset value the agent's own command declares", () => {
+    expect(planModeExitAction({
+      configOptions: [activePlan],
+      availableCommands: [{
+        name: "plan",
+        metadata: {
+          commandAction: {
+            kind: "setConfigOption",
+            configId: "collaboration_mode",
+            value: "plan",
+            resetValue: "default",
+          },
+        },
+      }],
+    })).toEqual({ configId: "collaboration_mode", value: "default" });
+  });
+
+  it("falls back to the first non-plan option when no command names a reset", () => {
+    expect(planModeExitAction({ configOptions: [activePlan] })).toEqual({
+      configId: "collaboration_mode",
+      value: "default",
+    });
+  });
+
+  it("offers no exit when plan mode is not a writable config option", () => {
+    expect(planModeExitAction({ configOptions: undefined })).toBeUndefined();
+    expect(planModeExitAction({
+      configOptions: [{ ...activePlan, currentValue: "default" }],
+    })).toBeUndefined();
+  });
+
+  it("recognizes and clears a draft-only plan override", () => {
+    expect(planModeExitAction({
+      draftConfigValues: { collaboration_mode: "plan" },
+    })).toEqual({ configId: "collaboration_mode", value: "default" });
+    expect(planModeExitAction({
+      draftConfigValues: { collaboration_mode: "default" },
+    })).toBeUndefined();
+
+    expect(planModeSessionStatePresentation(
+      {
+        agentId: "codex-acp",
+        draftConfigValues: { collaboration_mode: "plan" },
+      },
+      labels,
+    )).toMatchObject({ kind: "plan_mode" });
+    expect(planModeSessionStatePresentation(
+      {
+        agentId: "claude-acp",
+        draftConfigValues: { collaboration_mode: "plan" },
+      },
+      labels,
+    )).toBeUndefined();
   });
 });

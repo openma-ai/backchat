@@ -266,7 +266,7 @@ function TabBar({
             className={cn(
               "group inline-flex shrink-0 items-center gap-1.5 rounded-md pl-2 pr-2 text-xs",
               isActive
-                ? "bg-bg-surface text-fg"
+                ? "app-raised-surface text-fg"
                 : "text-fg-muted hover:bg-bg-surface/60",
               !t.alive && "italic opacity-70",
               "transition-colors",

@@ -363,6 +363,7 @@ export type AvailableCommandFixture = {
   description?: string;
   input?: { hint?: string };
   kind?: string;
+  _meta?: Record<string, unknown>;
 };
 
 /** Seed the active session's slash-command catalogue through the ACP-shaped

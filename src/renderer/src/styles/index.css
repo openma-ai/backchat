@@ -1095,7 +1095,7 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
   }
 }
 
-@container (max-width: 640px) {
+@container (max-width: 480px) {
   .new-chat-page .home-suggestions,
   .new-chat-page .home-suggestions[data-suggestion-width="composer"],
   .new-chat-page .home-suggestions[data-suggestion-width="wide"] {

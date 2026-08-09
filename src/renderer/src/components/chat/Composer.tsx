@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -24,8 +24,10 @@ import { cn } from "@/lib/utils";
 import { describeRunningMessageAction } from "@/lib/composer-delivery";
 import { buildComposerSubmitText, canSubmitComposer, resolveComposerKeyAction } from "@/lib/composer-prompt";
 import {
+  HOST_PLAN_COMMAND,
   isHostForkSlashCommand,
   isSkillSlashCommand,
+  slashCommandConfigAction,
   withHostForkCommand,
 } from "@/lib/composer-slash-commands";
 import { promptAnnotationStore } from "@/lib/prompt-annotations";
@@ -36,7 +38,10 @@ import {
   goalSessionStatePresentation,
   selectComposerSessionStatePresentation,
 } from "@/lib/composer-session-state";
-import { planModeSessionStatePresentation } from "@/lib/plan-mode-session-state";
+import {
+  planModeExitAction,
+  planModeSessionStatePresentation,
+} from "@/lib/plan-mode-session-state";
 import {
   AttachmentPreviewStrip,
   MentionedFileStrip,
@@ -150,6 +155,10 @@ export function Composer({
   );
   const [sessionReferences, setSessionReferences] = useState<PromptSessionReference[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // Inline skill token: the chip overlays the first text line and the
+  // textarea indents its first line by the measured chip width.
+  const skillChipRef = useRef<HTMLSpanElement>(null);
+  const [skillIndent, setSkillIndent] = useState(0);
   const persistedSessions = useSessionStore(selectSessions);
   const supportsSteering = sessionId
     ? persistedSessions.find((session) => session.id === sessionId)?.supportsSteering
@@ -272,6 +281,7 @@ export function Composer({
           agentId: currentAgentId,
           currentModeId,
           configOptions: effectiveConfigOptions,
+          draftConfigValues,
         },
         {
           label: t("chat.plan"),
@@ -287,6 +297,11 @@ export function Composer({
       ),
     },
   ]);
+  const planExit = planModeExitAction({
+    configOptions: effectiveConfigOptions,
+    availableCommands: composerAvailableCommands,
+    draftConfigValues,
+  });
   const {
     clearDismissal,
     clearSelectedSkill,
@@ -304,6 +319,20 @@ export function Composer({
     text,
     availableCommands: composerAvailableCommands,
   });
+  useLayoutEffect(() => {
+    if (!selectedSkillCommand) {
+      setSkillIndent(0);
+      return;
+    }
+    const measure = () => {
+      const width = skillChipRef.current?.offsetWidth ?? 0;
+      setSkillIndent(width > 0 ? width + 8 : 0);
+    };
+    measure();
+    // Fonts and the chip's truncation settle a frame later.
+    const frame = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frame);
+  }, [selectedSkillCommand]);
   const {
     suggestionFillActive,
     suggestionTemplate,
@@ -371,6 +400,23 @@ export function Composer({
     }
     if (isSkillSlashCommand(cmd)) {
       selectSkillCommand(cmd);
+      setText("");
+      clearDismissal();
+      requestAnimationFrame(() => taRef.current?.focus());
+      return;
+    }
+    // Session-state commands (`/plan`) switch a config option locally.
+    // The command text never becomes a prompt — there is nothing to send.
+    const configAction = slashCommandConfigAction(cmd);
+    if (configAction) {
+      if (lockedAgentId) {
+        void onSetConfigOption?.(configAction.configId, configAction.value);
+      } else {
+        setDraftConfigValues((prev) => ({
+          ...prev,
+          [configAction.configId]: configAction.value,
+        }));
+      }
       setText("");
       clearDismissal();
       requestAnimationFrame(() => taRef.current?.focus());
@@ -497,6 +543,27 @@ export function Composer({
 
   const submitComposer = (intent: AgentMessageIntent = primaryIntent) => {
     const t = submitText;
+    // A bare session-state command (`/plan`) is a config switch even when
+    // the picker was dismissed or never opened — it must not leave the app
+    // as a prompt.
+    if (attachments.length === 0 && annotations.length === 0 && sessionReferences.length === 0) {
+      const stateCommand =
+        composerAvailableCommands.find(
+          (command) =>
+            slashCommandConfigAction(command) &&
+            `/${command.name}` === t.trim(),
+        ) ??
+        // The catalogue can lag behind a fast typist (agent list still
+        // loading). The host contract for Codex holds regardless.
+        (currentAgentId === "codex-acp" &&
+        `/${HOST_PLAN_COMMAND.name}` === t.trim()
+          ? HOST_PLAN_COMMAND
+          : undefined);
+      if (stateCommand) {
+        pickCommand(stateCommand);
+        return;
+      }
+    }
     const hasContent =
       t.trim().length > 0 ||
       attachments.length > 0 ||
@@ -572,15 +639,6 @@ export function Composer({
       ) : (
       <>
       <div className="flex min-h-[var(--composer-body-min-height)] w-full flex-col items-start gap-1.5 px-1">
-        {selectedSkillCommand && (
-          <SkillCommandChip
-            command={selectedSkillCommand}
-            onRemove={() => {
-              clearSelectedSkill();
-              requestAnimationFrame(() => taRef.current?.focus());
-            }}
-          />
-        )}
         {attachments.length > 0 && (
           <AttachmentPreviewStrip
             attachments={attachments}
@@ -635,7 +693,33 @@ export function Composer({
               }}
               onRemove={removeComposerAttachment}
             />
-            <textarea
+            <div
+              className={cn(
+                "relative flex min-w-0",
+                sessionReferences.length > 0 || mentionedFileAttachmentIds.size > 0
+                  ? "min-w-[12rem] flex-[1_1_12rem]"
+                  : "w-full",
+              )}
+            >
+              {/* The skill token reads as part of the prompt: it occupies the
+                  start of the first text line and the caret continues right
+                  after it. text-indent only offsets the first line, so
+                  wrapped lines reclaim the full width. */}
+              {selectedSkillCommand && (
+                <span
+                  ref={skillChipRef}
+                  className="absolute left-0 top-0 z-[1] flex h-7 max-w-[60%] items-center"
+                >
+                  <SkillCommandChip
+                    command={selectedSkillCommand}
+                    onRemove={() => {
+                      clearSelectedSkill();
+                      requestAnimationFrame(() => taRef.current?.focus());
+                    }}
+                  />
+                </span>
+              )}
+              <textarea
               ref={taRef}
               value={text}
               onChange={(e) => {
@@ -743,18 +827,17 @@ export function Composer({
               placeholder={selectedSkillCommand ? t("chat.addInstructions") : placeholder}
               disabled={!!disabled}
               rows={1}
+              style={{ textIndent: skillIndent ? `${skillIndent}px` : undefined }}
               className={cn(
                 selectedSkillCommand
                   ? "min-h-[var(--control-height-compact)]"
                   : "min-h-[var(--composer-body-min-height)]",
-                sessionReferences.length > 0 || mentionedFileAttachmentIds.size > 0
-                  ? "min-w-[12rem] flex-[1_1_12rem]"
-                  : "w-full",
-                "max-h-[240px] resize-none bg-transparent text-sm leading-7 text-fg outline-none",
+                "w-full max-h-[240px] resize-none bg-transparent text-sm leading-7 text-fg outline-none",
                 "placeholder:text-fg-subtle",
                 "[field-sizing:content]",
               )}
             />
+            </div>
           </div>
         )}
       </div>
@@ -785,7 +868,24 @@ export function Composer({
               setDraftConfigValues((prev) => ({ ...prev, [configId]: value }));
             }}
           />
-          <ComposerSessionStateSlot presentation={composerSessionState} />
+          <ComposerSessionStateSlot
+            presentation={composerSessionState}
+            onClear={
+              composerSessionState?.kind === "plan_mode" && planExit
+                ? () => {
+                    if (lockedAgentId) {
+                      void onSetConfigOption?.(planExit.configId, planExit.value);
+                    } else {
+                      setDraftConfigValues((prev) => ({
+                        ...prev,
+                        [planExit.configId]: planExit.value,
+                      }));
+                    }
+                  }
+                : undefined
+            }
+            clearLabel={t("chat.exitPlanMode")}
+          />
           <InlineComposerOptionControls
             disabled={!!running}
             configOptions={effectiveConfigOptions}

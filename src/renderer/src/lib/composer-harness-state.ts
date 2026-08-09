@@ -165,9 +165,13 @@ export function useComposerHarnessState({
           ),
         effectiveConfigOptions,
         harness.currentAgentId,
+        // Without a session-owned catalogue (draft, or a session still
+        // starting up) the host assumes modern Codex plan support.
+        { assumePlanCapable: !configOptions?.length },
       ),
     [
       availableCommands,
+      configOptions,
       effectiveConfigOptions,
       harness.currentAgentId,
       harness.currentEnabledAgent?.available_commands,
