@@ -15,8 +15,11 @@ describe("elapsed time on a progress row", () => {
     expect(elapsedSecondsFor(0, 1_000_000, 1_060_000)).toBe(60);
   });
 
-  it("prefers what the agent reported", () => {
-    expect(elapsedSecondsFor(12, 1_000_000, 1_060_000)).toBe(12);
+  it("keeps moving even when the agent reported a total", () => {
+    // A reported number cannot advance between snapshots, so a known start time
+    // wins; otherwise the row freezes at whatever the last snapshot said.
+    expect(elapsedSecondsFor(12, 1_000_000, 1_060_000)).toBe(60);
+    expect(elapsedSecondsFor(12, undefined, 1_060_000)).toBe(12);
   });
 
   it("has nothing to show without either", () => {

@@ -84,7 +84,9 @@ describe("a stalled goal", () => {
       labels,
     );
 
+    // The presentation must not freeze a Date.now() into elapsedSeconds: the
+    // row treats a reported value as authoritative and would never tick again.
     expect(presentation.elapsedSince).toBeDefined();
-    expect(presentation.elapsedSeconds).toBeGreaterThan(50);
+    expect(presentation.elapsedSeconds).toBe(0);
   });
 });

@@ -46,13 +46,11 @@ export function goalProgressPresentation(
         : status === "blocked"
           ? "danger"
           : "neutral",
-    // timeUsedSeconds is worked time and stays 0 for a goal the adapter never
-    // charged time to, which is why the row read "· 0s" for half an hour. Fall
-    // back to the wall clock since the goal was set.
-    elapsedSeconds: goal.timeUsedSeconds
-      || (goal.createdAt
-        ? Math.max(0, (Date.now() - goal.createdAt) / 1000)
-        : undefined),
+    // Only what the agent reported. Computing the wall clock here froze it: the
+    // row treats a reported value as authoritative, so a one-off Date.now()
+    // became a number that never moved. The start time is passed instead and
+    // the row derives from it every tick.
+    elapsedSeconds: goal.timeUsedSeconds,
     ...(goal.createdAt ? { elapsedSince: goal.createdAt } : {}),
     items: [],
     actions: {

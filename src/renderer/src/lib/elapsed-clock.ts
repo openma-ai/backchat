@@ -8,15 +8,16 @@ export function formatElapsed(totalSeconds: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-/** Seconds a row should show: whatever the agent reported, else the wall clock
- * since it started. An adapter that never charges worked time reports 0, which
- * is why a half-hour goal read "0s". */
+/** Seconds a row should show. A known start time wins, because it is the only
+ * source that can still be moving a second from now — the reference client's
+ * "23m 34s" is time since the goal was set. A reported total is used only when
+ * there is no start time, and an adapter that charges no worked time reports 0,
+ * which is why a half-hour goal read "0s". */
 export function elapsedSecondsFor(
   reported: number | undefined,
   since: number | undefined,
   now: number,
 ): number | undefined {
-  if (reported !== undefined && reported > 0) return reported;
-  if (since === undefined) return reported;
-  return Math.max(0, (now - since) / 1000);
+  if (since !== undefined) return Math.max(0, (now - since) / 1000);
+  return reported;
 }
