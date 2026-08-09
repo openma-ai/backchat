@@ -40,6 +40,8 @@ vi.mock("./session-cwd.js", () => ({
 }));
 
 vi.mock("./sql-store.js", () => ({
+  getSessionConfigValues: vi.fn(() => ({})),
+  setSessionConfigValue: vi.fn(),
   appendEvent: vi.fn(),
   appendEventsTx: vi.fn(),
   archiveSession: vi.fn(),
