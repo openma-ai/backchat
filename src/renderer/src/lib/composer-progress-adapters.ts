@@ -43,9 +43,9 @@ export function composerProgressCallbacksForSessionCapabilities(
     return {};
   }
 
-  // Editing reopens the objective in the composer. Codex refuses to overwrite
-  // an unfinished goal, so the old one is cleared first and the text handed
-  // back for a word to be changed rather than retyped.
+  // Editing reopens the objective so a word can be changed instead of the
+  // whole thing retyped. Sending replaces the goal outright, so nothing is
+  // destroyed until the user actually sends.
   const edit = context.objective && transport.editGoal
     ? () => transport.editGoal!({
       session_id: context.sessionId,

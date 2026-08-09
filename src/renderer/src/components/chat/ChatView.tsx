@@ -9,7 +9,6 @@ import {
 import { BugIcon, SendIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { prefillComposer } from "@/lib/composer-prefill";
-import { goalSessionStatePresentation } from "@/lib/composer-session-state";
 import { toast } from "sonner";
 import {
   Conversation,
@@ -330,18 +329,13 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
           },
           {
             cancelTurn: (input) => window.backchat.sessionCancel(input),
-            editGoal: async (input) => {
-              // Clear first: the agent refuses to overwrite an unfinished goal.
-              const exit = goalSessionStatePresentation(active.goal, "")?.exit;
-              if (exit?.kind === "extensionMethod") {
-                await window.backchat
-                  .sessionRequestExtension({
-                    session_id: input.session_id,
-                    method: exit.method,
-                    ...(exit.params ? { params: exit.params } : {}),
-                  })
-                  .catch(() => undefined);
-              }
+            editGoal: (input) => {
+              // No clear first. codex-acp's setGoal is runGoalSet with the new
+              // objective and status active — it overwrites. The claim that an
+              // unfinished goal cannot be replaced came from the model saying so
+              // in a reply, not from the protocol, and acting on it meant the
+              // goal was destroyed the moment the pencil was clicked, even if
+              // the edit was then abandoned.
               prefillComposer({
                 sessionId: input.session_id,
                 text: input.objective,
