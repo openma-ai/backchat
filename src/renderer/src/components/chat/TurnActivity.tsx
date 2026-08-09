@@ -194,21 +194,16 @@ function LatestThoughtStatus({
       className="min-w-0 text-fg-muted"
       data-current-activity={rendered.currentThoughtText}
     >
-      <StreamingMarkdown
-        key={
-          rendered.timeline.findLast((item) => item.kind === "thought")
-            ?.messageId ?? "thought"
-        }
-        turnId={turn.id}
-        kind="thought"
-        cwd={cwd}
-        className="text-fg-muted"
-        prefixSkip={Math.max(
-          0,
-          turn.thoughtText.length - rendered.currentThoughtText.length,
-        )}
-        paceReplay
-      />
+      {/* One clamped line, not a streamed markdown block. `currentThoughtText`
+          is `latestThoughtSegment()`'s output — trimmed and rejoined — so it is
+          not a suffix of `thoughtText`, and the length arithmetic that used to
+          drive a replay skip here could exceed the accumulator and render
+          nothing at all, leaving an empty box under the tool row. The status
+          line only ever showed one truncated line, so it can just be that
+          line. */}
+      <p className="truncate text-sm leading-5 text-fg-muted">
+        {rendered.currentThoughtText}
+      </p>
     </div>
   );
 }

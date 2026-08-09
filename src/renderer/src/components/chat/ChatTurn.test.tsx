@@ -369,6 +369,13 @@ describe("TurnBlock", () => {
 
     expect(html).not.toContain("Planning the first step");
     expect(html).toContain("Designing the final document");
+    // The text has to be element content, not just the data attribute. The
+    // status line used to stream through a replay skip computed by subtracting
+    // the trimmed latest segment's length from the whole thought text; when
+    // that skip covered the accumulator the line rendered nothing and left an
+    // empty box under the tool row, while this assertion still passed on the
+    // attribute alone.
+    expect(html).toMatch(/>[^<]*Designing the final document/);
     expect(html.indexOf("data-current-activity")).toBeGreaterThan(
       html.indexOf("The source is ready."),
     );
