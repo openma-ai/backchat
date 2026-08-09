@@ -65,23 +65,10 @@ vi.mock("@open-managed-agents-desktop/acp/probe", () => ({
   probeAgentAuthStatus: mocks.probeAgentAuthStatus,
 }));
 
-const rememberedConfigValues = new Map<string, Record<string, string | boolean>>();
-
 vi.mock("./sql-store.js", () => ({
   appendEvent: vi.fn(),
   appendEventsTx: vi.fn(),
   archiveSession: vi.fn(),
-  getSessionConfigValues: vi.fn(
-    (id: string) => rememberedConfigValues.get(id) ?? {},
-  ),
-  setSessionConfigValue: vi.fn(
-    (id: string, configId: string, value: string | boolean) => {
-      rememberedConfigValues.set(id, {
-        ...(rememberedConfigValues.get(id) ?? {}),
-        [configId]: value,
-      });
-    },
-  ),
   setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
   touchSession: vi.fn(),
@@ -1230,68 +1217,6 @@ describe("SessionManager prompt queue", () => {
       expect.objectContaining({ type: "session.error" }),
     );
     expect(manager.sessionCount()).toBe(1);
-  });
-
-  it("reasserts a remembered config value before announcing the session ready", async () => {
-    // ACP v1 session-setup says a resume response MAY carry mode/model/config
-    // state; codex-acp keeps its collaboration mode in a process-local map, so
-    // a restarted process reports an editable session. The reassert has to land
-    // before session.ready reaches the renderer, otherwise the composer shows
-    // the plan chip while a prompt could already be sent with full access.
-    const first = createControllableAcpSession();
-    first.session.setConfigOption = vi.fn(async () => []);
-    mocks.runtimeStart.mockResolvedValueOnce(first.session);
-    const manager = new SessionManager({
-      send: vi.fn(),
-      resolveMcpServers: () => [],
-      buildCallbacks: () => ({}),
-      resolveDefaults: () => ({}),
-      resolveAgentOverride: () => undefined,
-    });
-    await manager.start({
-      session_id: "sess-plan-resume",
-      agent_id: "codex-acp",
-      cwd: "/repo",
-    });
-    await manager.setConfigOption({
-      session_id: "sess-plan-resume",
-      config_id: "collaboration_mode",
-      value: "plan",
-    });
-    // A second manager instance is the restart: #sessions is per-process, so
-    // the renderer-side value is gone and only the persisted choice remains.
-    const order: string[] = [];
-    const resumed = createControllableAcpSession();
-    resumed.session.setConfigOption = vi.fn(async () => {
-      // A real agent answers over IPC, so the reply cannot land in the same
-      // microtask. Without that delay the assertion below would pass even for
-      // a fire-and-forget call.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      order.push("set_config_option");
-      return [];
-    });
-    mocks.runtimeStart.mockResolvedValueOnce(resumed.session);
-    const send = vi.fn((message: { type?: string }) => {
-      if (message.type === "session.ready") order.push("session.ready");
-    });
-    const resumeManager = new SessionManager({
-      send,
-      resolveMcpServers: () => [],
-      buildCallbacks: () => ({}),
-      resolveDefaults: () => ({}),
-      resolveAgentOverride: () => undefined,
-    });
-    await resumeManager.start({
-      session_id: "sess-plan-resume",
-      agent_id: "codex-acp",
-      cwd: "/repo",
-    });
-
-    expect(resumed.session.setConfigOption).toHaveBeenCalledWith(
-      "collaboration_mode",
-      "plan",
-    );
-    expect(order).toEqual(["set_config_option", "session.ready"]);
   });
 
   it("routes the existing mode control to session/set_mode for mode-only ACP agents", async () => {

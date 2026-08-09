@@ -56,9 +56,6 @@ export interface PersistedSession {
   pinned_at: number | null;
   /** Durable project container. Null for standalone and legacy cwd-only chats. */
   project_id: string | null;
-  /** JSON map of config option ids to the values the user set explicitly, so a
-   *  resume can reassert what the agent did not restore. */
-  config_values: string | null;
   /** When this session is a sub-member of a pair-chat, the wrapper pair
    *  row's id. Sidebar lists hide rows with `pair_id != null` and shows
    *  the pair row instead. */
@@ -165,8 +162,7 @@ export function openSessionDb(path: string): void {
       archived_at   INTEGER,
       pinned_at     INTEGER,
       pair_id       TEXT,
-      project_id    TEXT,
-      config_values TEXT
+      project_id    TEXT
     );
     CREATE INDEX IF NOT EXISTS sessions_last_used_idx
       ON sessions(archived_at, last_used_at DESC);
@@ -308,14 +304,6 @@ export function openSessionDb(path: string): void {
   }
   if (!sessionCols.has("title_manually_set")) {
     db.exec(`ALTER TABLE sessions ADD COLUMN title_manually_set INTEGER NOT NULL DEFAULT 0`);
-  }
-  // Config values the user set explicitly. The agent MAY report session
-  // configuration state on resume (ACP v1 session-setup) but is not required
-  // to, and codex-acp keeps its collaboration mode in a process-local map — so
-  // a restart drops plan mode. Persisting the user's own choices lets the
-  // resume sequence reassert them before the session is announced as ready.
-  if (!sessionCols.has("config_values")) {
-    db.exec(`ALTER TABLE sessions ADD COLUMN config_values TEXT`);
   }
   db.exec(`
     CREATE INDEX IF NOT EXISTS sessions_pinned_idx
@@ -645,41 +633,6 @@ export function renameSession(id: string, title: string): void {
   if (!trimmed) throw new Error("Session title is required");
   stmts().renameTitle.run(trimmed.slice(0, 500), id);
   writeSessionMetadata(id);
-}
-
-/** Config values the user set explicitly on this session, by option id. */
-export function getSessionConfigValues(
-  id: string,
-): Record<string, string | boolean> {
-  const row = getSession(id);
-  if (!row?.config_values) return {};
-  try {
-    const parsed = JSON.parse(row.config_values) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, string | boolean> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "string" || typeof value === "boolean") out[key] = value;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-/** Remember one explicit config choice so a resume can reassert it. The agent
- *  MAY restore session configuration itself (ACP v1 session-setup), and when
- *  it does the reassert is a no-op — but codex-acp keeps its collaboration
- *  mode in a process-local map, so plan mode would otherwise vanish. */
-export function setSessionConfigValue(
-  id: string,
-  configId: string,
-  value: string | boolean,
-): void {
-  const next = { ...getSessionConfigValues(id), [configId]: value };
-  if (!_db) throw new Error("session-store: openSessionDb() not called");
-  _db
-    .prepare(`UPDATE sessions SET config_values = ? WHERE id = ?`)
-    .run(JSON.stringify(next), id);
 }
 
 /** Conditional version — only writes the title if the row's current

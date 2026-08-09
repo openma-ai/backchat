@@ -84,8 +84,6 @@ import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
 import {
   appendEvent,
   archiveSession,
-  getSessionConfigValues,
-  setSessionConfigValue,
   setSessionTitle,
   setSessionTitleIfEmpty,
   touchSession,
@@ -244,32 +242,6 @@ export class SessionManager {
 
   setSender(send: Sender): void {
     this.#send = send;
-  }
-
-  /** Reapply the config values the user set on this session before announcing
-   * it ready. ACP v1 session-setup says a resume response MAY carry mode,
-   * model or config state — it is not required to, and codex-acp keeps its
-   * collaboration mode in a process-local map, so a restarted process hands
-   * back an editable session while the user believes they are still planning.
-   *
-   * This runs inside session start, before `session.ready` reaches the
-   * renderer and therefore before any prompt can be submitted. Doing it in the
-   * renderer instead left a window where the composer showed the plan chip
-   * while the agent was already free to edit. */
-  async #reassertPersistedConfig(
-    session_id: string,
-    acp: ActiveSession["acp"],
-  ): Promise<void> {
-    const remembered = getSessionConfigValues(session_id);
-    for (const [config_id, value] of Object.entries(remembered)) {
-      const live = acp.configOptions.find((option) => option.id === config_id);
-      if (live && live.currentValue === value) continue;
-      try {
-        await acp.setConfigOption(config_id, value);
-      } catch {
-        // The agent may no longer offer the option; its own catalogue wins.
-      }
-    }
   }
 
   #readyResult(
@@ -667,7 +639,6 @@ export class SessionManager {
         last_used_at: Date.now(),
         project_id: p.project_id?.trim() || null,
       });
-      await this.#reassertPersistedConfig(p.session_id, acpSession);
       const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
       if (process.env.NODE_ENV !== "test") {
@@ -1608,9 +1579,6 @@ export class SessionManager {
       return;
     }
     const configOptions = await sess.acp.setConfigOption(p.config_id, p.value);
-    // Remember the user's own choice so a resume can reassert it. The agent is
-    // free to move the value afterwards; only explicit user intent is stored.
-    setSessionConfigValue(p.session_id, p.config_id, p.value);
     this.#send({
       type: "session.event",
       session_id: p.session_id,

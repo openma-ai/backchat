@@ -5,8 +5,6 @@ import { PairManager } from "./pair-manager.js";
 import type { SessionManager } from "./session-manager.js";
 
 vi.mock("./sql-store.js", () => ({
-  getSessionConfigValues: vi.fn(() => ({})),
-  setSessionConfigValue: vi.fn(),
   listPairMembers: vi.fn(() => []),
   setPairTitleIfEmpty: vi.fn(),
   touchPairSession: vi.fn(),

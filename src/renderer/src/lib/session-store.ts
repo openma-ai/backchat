@@ -2208,7 +2208,8 @@ export class SessionStore {
     }
   }
 
-  #settleBackgroundWorkItemsForTurn(sessionId: string, turn: Turn): void {    const toolCallIds = new Set(
+  #settleBackgroundWorkItemsForTurn(sessionId: string, turn: Turn): void {
+    const toolCallIds = new Set(
       turn.events.flatMap(({ payload }) => {
         const parsed = parseAcpEvent(payload);
         return parsed.kind === "tool_call" ? [parsed.tool.toolCallId] : [];
