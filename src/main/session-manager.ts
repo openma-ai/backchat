@@ -1041,7 +1041,18 @@ export class SessionManager {
         sess.activePromptTurnId = null;
       }
       if (sess.restartPending && !sess.disposed) {
-        await this.#restartSessionNow(sess);
+        // This prompt has already finished. A restart failing afterwards is the
+        // session's news, not this turn's outcome, and letting it throw from a
+        // `finally` replaced a completed turn's result with an unrelated error.
+        try {
+          await this.#restartSessionNow(sess);
+        } catch (e) {
+          this.#send({
+            type: "session.error",
+            session_id: sess.id,
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
         return;
       }
       if (!sess.disposed) {
@@ -1726,6 +1737,34 @@ export class SessionManager {
     this.#onSessionPendingWorkCancelled?.(session_id);
   }
 
+  /** Tell the truth about prompts a restart could not carry over.
+   *
+   *  They were taken out of the session before it was torn down, so nothing
+   *  else can report on them. Each one gets the terminal statement its queued
+   *  row is waiting for, and each awaited completion is released — silence
+   *  would leave a row that never runs and a promise that never settles. */
+  #abandonQueuedPrompts(
+    sessionId: string,
+    prompts: ReadonlyArray<{
+      params: SessionPromptParams;
+      resolveCompletion: () => void;
+    }>,
+    message: string,
+  ): void {
+    for (const prompt of prompts) {
+      appendEvent(sessionId, "turn_cancelled", {
+        turn_id: prompt.params.turn_id,
+      });
+      this.#send({
+        type: "session.error",
+        session_id: sessionId,
+        turn_id: prompt.params.turn_id,
+        message,
+      });
+      prompt.resolveCompletion();
+    }
+  }
+
   async #restartSessionNow(sess: ActiveSession): Promise<void> {
     if (this.#sessions.get(sess.id) !== sess) return;
     const queuedPrompts = sess.queuedPrompts.map((prompt) => ({
@@ -1742,19 +1781,33 @@ export class SessionManager {
     this.#sessions.delete(sess.id);
     this.#onSessionPendingWorkCancelled?.(sess.id);
 
-    const result = await this.start({
-      ...previousStart,
-      session_id: sess.id,
-      agent_id: sess.agentId,
-      cwd: sess.cwd,
-      resume: { acp_session_id: acpSessionId },
-    });
-    if (result.status !== "ready") {
-      throw new Error(
-        result.status === "error"
-          ? result.message
-          : `ACP session restart ${result.status}`,
+    // Everything below owns prompts that no longer exist anywhere else: the
+    // queue was emptied above so the restarted session starts clean. Any exit
+    // that does not either resubmit or settle them drops work the user can still
+    // see queued, and leaves whoever awaited each prompt waiting forever.
+    let result: Awaited<ReturnType<SessionManager["start"]>>;
+    try {
+      result = await this.start({
+        ...previousStart,
+        session_id: sess.id,
+        agent_id: sess.agentId,
+        cwd: sess.cwd,
+        resume: { acp_session_id: acpSessionId },
+      });
+    } catch (e) {
+      this.#abandonQueuedPrompts(
+        sess.id,
+        queuedPrompts,
+        e instanceof Error ? e.message : String(e),
       );
+      throw e;
+    }
+    if (result.status !== "ready") {
+      const message = result.status === "error"
+        ? result.message
+        : `ACP session restart ${result.status}`;
+      this.#abandonQueuedPrompts(sess.id, queuedPrompts, message);
+      throw new Error(message);
     }
     this.#send({ type: "session.restarted", session_id: sess.id });
     for (const prompt of queuedPrompts) {

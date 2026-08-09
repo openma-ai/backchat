@@ -596,4 +596,65 @@ describe("SessionManager prompt queue", () => {
     );
     await queuedThird;
   });
+
+  it("settles queued prompts a failed restart could not carry over", async () => {
+    // The queue is emptied before the session is torn down, so those prompts
+    // exist nowhere else. A restart that fails after that point used to throw
+    // straight out, dropping the rows and leaving every awaited prompt pending
+    // forever — a queue that shows work nothing will ever run.
+    const send = vi.fn();
+    const firstPromptDone = deferred();
+    const prompt = vi.fn(async function* (blocks: Array<{ type: string; text?: string }>) {
+      const text = blocks.find((block) => block.type === "text")?.text;
+      if (text === "first") await firstPromptDone.promise;
+    });
+    let startCalls = 0;
+    runtimeStartMock.mockImplementation(async () => {
+      startCalls += 1;
+      if (startCalls > 1) throw new Error("agent refused to come back");
+      return {
+        acpSessionId: "acp-restart-drop",
+        configOptions: [],
+        prompt,
+        setMode: vi.fn(),
+        setConfigOption: vi.fn(),
+        isAlive: vi.fn(() => true),
+        dispose: vi.fn(),
+      };
+    });
+
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "codex-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({ session_id: "session-restart", agent_id: "codex-acp" });
+    const first = manager.prompt({
+      session_id: "session-restart",
+      turn_id: "turn-1",
+      text: "first",
+    });
+    await waitMicrotask();
+    const queued = manager.prompt({
+      session_id: "session-restart",
+      turn_id: "turn-2",
+      text: "second",
+    });
+    await waitMicrotask();
+
+    await manager.restartSession("session-restart", { mode: "after-turn" });
+    firstPromptDone.resolve();
+    await first;
+
+    // The queued prompt must be answered for, not silently forgotten.
+    await queued;
+    const reported = send.mock.calls
+      .map(([event]: [{ type: string; turn_id?: string; message?: string }]) => event)
+      .filter((event) => event.type === "session.error" && event.turn_id === "turn-2");
+    expect(reported).toHaveLength(1);
+    expect(reported[0]!.message).toContain("agent refused to come back");
+  });
 });

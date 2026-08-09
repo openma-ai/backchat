@@ -284,9 +284,19 @@ under investigation are marked; do not treat them as settled findings.
   they are not retried: treating idle as a standing level rather than an edge
   changed nothing, and widening `#drainPromptQueue` to also gate on
   `outOfBandSteeringTurn` cannot help, since adding a block condition can only
-  reduce the chances of draining. Whatever produced the symptom is elsewhere,
-  and the next attempt should start from recorded traffic for the affected
-  session rather than from a hand-built fixture.
+  reduce the chances of draining.
+
+  The symptom was then traced by reading every site that releases a turn against
+  every site that drains, and one path released nothing at all:
+  `#restartSessionNow` empties `queuedPrompts` before tearing the session down,
+  and a restart that failed after that threw straight out. The rows were gone,
+  the prompts were never resubmitted, and every caller awaiting one waited
+  forever — a queue showing work that nothing would ever run, which is both
+  halves of the reported symptom. Because that throw left from inside a
+  `finally`, it also replaced the completed turn's own outcome with an unrelated
+  error. Queued prompts a restart cannot carry now get the terminal statement
+  their row is waiting for and their completions are released, and a restart
+  failure is reported as the session's news rather than the turn's.
 - **I4 — held.** The composer said "1 queued…" above no rows because the count
   was `Math.max(hostQueueDepth, providerQueueDepth)`: two different facts, one of
   them the agent's own queue depth, which has no rows on this side to show. The
