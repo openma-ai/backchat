@@ -239,7 +239,15 @@ the spec's cancellation rules make client-side settling the client's job (§2.1)
 Recorded so the next change can tell a known gap from a new regression. Items
 under investigation are marked; do not treat them as settled findings.
 
-- **I1 violated.** `stopReason` never reaches the renderer (§4).
+- **I1 — held for completion.** `session.complete` already carried
+  `stop_reason`; the renderer dropped it. `Turn.stopReason` now keeps the agent's
+  word, and `turnStopNotice` turns the reasons that are not `end_turn` into a
+  visible notice: a turn stopped at a token limit, at the per-turn request limit,
+  or by a refusal reaches the client as an ordinary completion, so without it a
+  cut-off answer read as a finished one. A missing reason stays silent, because
+  older transports report only a bare completion boundary and a notice invented
+  for silence is worse than none. Cancellation keeps its own status and
+  presentation.
 - **I2 — held.** `turnsFor` sorted by `startedAt`, a client-side `Date.now()`,
   which reordered turns whose clock disagreed with their sequence and could put a
   newly sent prompt inside an earlier turn's output. It now returns registration

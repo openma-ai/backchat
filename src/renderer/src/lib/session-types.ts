@@ -369,6 +369,10 @@ export interface Turn {
   activeThoughtMessageId?: string;
   activeThoughtSegmentText?: string;
   status: "queued" | "running" | "complete" | "error" | "cancelled" | "unknown";
+  /** The agent's own word on why the turn ended, from the ACP PromptResponse.
+   *  A turn stopped by a token limit, a request limit, or a refusal is not the
+   *  same event as one the agent chose to end, and only it can tell us which. */
+  stopReason?: string;
   promptIntent?: AgentMessageIntent;
   requestedDelivery?: AgentMessageDelivery;
   effectiveDelivery?: AgentMessageDelivery;

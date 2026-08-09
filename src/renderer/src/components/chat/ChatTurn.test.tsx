@@ -318,6 +318,35 @@ describe("TurnBlock", () => {
     expect(html).not.toContain('data-streaming-continuation="true"');
   });
 
+  it("shows why a turn stopped when the agent did not choose to end it", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          assistantText: "A sentence that stops mid-",
+          stopReason: "max_tokens",
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-turn-stop-reason="max_tokens"');
+    expect(html).toContain("chat.stopMaxTokens");
+  });
+
+  it("says nothing about a turn the agent ended itself", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          assistantText: "A finished answer",
+          stopReason: "end_turn",
+        })}
+      />,
+    );
+
+    expect(html).not.toContain("data-turn-stop-reason");
+  });
+
   it("keeps only one current tool activity and renders it at the bottom of the working block", () => {
     const skillPath =
       "/Users/test/.codex/plugins/cache/openai-primary-runtime/documents/1/skills/documents/SKILL.md";

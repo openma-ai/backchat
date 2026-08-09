@@ -1,3 +1,4 @@
+import { turnStopNotice } from "@/lib/turn-stop-reason";
 import { memo, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRightFromLineIcon, AtSignIcon, TargetIcon } from "lucide-react";
@@ -82,6 +83,9 @@ export const TurnBlock = memo(function TurnBlock({
     };
   }, [planDocument?.sourceToolCallId, rendered, turn.status]);
   const isStreaming = turn.status === "running";
+  // The agent states why a turn ended; a limit or a refusal arrives as an
+  // ordinary completion and would otherwise read as a finished answer.
+  const stopNotice = turnStopNotice(turn);
   const rawEvents = useMemo(
     () => inspectRawTurnEvents(turn.events),
     [turn.events],
@@ -195,6 +199,19 @@ export const TurnBlock = memo(function TurnBlock({
             >
               <ArrowRightFromLineIcon className="size-4" aria-hidden="true" />
             </button>
+          )}
+
+          {stopNotice && (
+            <p
+              data-turn-stop-reason={turn.stopReason}
+              className={
+                stopNotice.tone === "refused"
+                  ? "text-xs leading-5 text-fg-muted"
+                  : "text-xs leading-5 text-warning"
+              }
+            >
+              {t(stopNotice.key)}
+            </p>
           )}
 
           {isStreaming && (

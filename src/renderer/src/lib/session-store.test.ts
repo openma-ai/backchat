@@ -2377,6 +2377,29 @@ describe("SessionStore prompt queue state", () => {
     ]);
   });
 
+  test("keeps the agent's stated stop reason on the finished turn", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-stop-reason";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-stop-reason",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-limited", sessionId, "write it all");
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-limited",
+      stop_reason: "max_tokens",
+    });
+
+    const turn = store.turnsFor(sessionId).find((t) => t.id === "turn-limited");
+    expect(turn?.status).toBe("complete");
+    expect(turn?.stopReason).toBe("max_tokens");
+  });
+
   test("deduplicates broker asks and clears them when the active turn terminates", () => {
     const store = new SessionStore();
     const sessionId = "sess-broker-lifecycle";

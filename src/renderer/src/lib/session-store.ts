@@ -3655,6 +3655,7 @@ export class SessionStore {
             activeThoughtMessageId: undefined,
             activeThoughtSegmentText: undefined,
             status: "complete",
+            ...(ev.stop_reason ? { stopReason: ev.stop_reason } : {}),
             endedAt: Date.now(),
           });
           this.#settleNativeSubagentsForTurn(ev.session_id, turn);
