@@ -1,4 +1,3 @@
----RESULT 1---
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -132,9 +131,12 @@ export function Composer({
   const [text, setTextState] = useState(
     () => composerTextBySession.get(composerTextKey) ?? "",
   );
-  const setText = (next: string) => {
-    composerTextBySession.set(composerTextKey, next);
-    setTextState(next);
+  const setText: typeof setTextState = (next) => {
+    setTextState((current) => {
+      const resolved = typeof next === "function" ? next(current) : next;
+      composerTextBySession.set(composerTextKey, resolved);
+      return resolved;
+    });
   };
   useEffect(() => {
     setTextState(composerTextBySession.get(composerTextKey) ?? "");
@@ -558,20 +560,9 @@ export function Composer({
       <div
         data-suggestion-fill-active={suggestionFillActive ? "true" : undefined}
         className={cn(
-        // Liquid-glass material — matches sidebar / side-chat rail /
-        // side-chat composer. Three of the four floating cards in this
-        // shell are liquid-glass; making the main composer match keeps
-        // the chrome coherent. (The bottom terminal panel is the one
-        // exception — it's a plain white card because xterm-addon-webgl
-        // can't render onto a transparent backdrop. See AppShell.tsx
-        // comment on that panel for the full rationale.)
-        //
-        // `composer-card` overrides .liquid-glass's 16/40 px far drop
-        // shadow — that shadow lands on the stage gap between this
-        // composer and the bottom terminal panel and reads as a
-        // visible horizontal band (image #12). Inset rims (the glass
-        // tells) are preserved.
-        "composer-radius relative flex flex-col gap-2 px-3 py-3 liquid-glass composer-card",
+        // Match the rails with an opaque surface. A restrained input shadow
+        // supplies depth without backdrop compositing or inset highlights.
+        "composer-control-row-inset composer-radius relative flex flex-col gap-[var(--composer-section-gap)] py-[var(--composer-card-padding-block)] app-composer-surface composer-card",
           "transition-shadow",
           suggestionFillActive && "composer-suggestion-fill suggestion-fill-active",
         )}
@@ -580,7 +571,7 @@ export function Composer({
         <ComposerBrokerAsk ask={pendingAsk} onResolve={onResolveAsk} />
       ) : (
       <>
-      <div className="flex min-h-[60px] w-full flex-col items-start gap-2 px-1">
+      <div className="flex min-h-[var(--composer-body-min-height)] w-full flex-col items-start gap-1.5 px-1">
         {selectedSkillCommand && (
           <SkillCommandChip
             command={selectedSkillCommand}
@@ -777,13 +768,13 @@ export function Composer({
             onClick={() => void pickAttachments()}
             disabled={!!disabled}
             className={cn(
-              "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
+              "inline-flex size-[var(--control-height-compact)] shrink-0 items-center justify-center rounded-md",
               "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
               "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
               "transition-colors",
             )}
           >
-            <PlusIcon className="size-4" />
+            <PlusIcon className="size-[var(--composer-attachment-icon-size)]" />
           </button>
           <PermissionModeChip
             disabled={!!running}
@@ -874,8 +865,8 @@ export function Composer({
               aria-label={t("chat.stop")}
               title={t("chat.stop")}
               className={cn(
-                "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2",
-                "text-fg-subtle hover:text-fg hover:bg-bg-surface",
+                "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
+                "text-fg-subtle hover:text-fg hover:bg-bg-surface group-hover/run-actions:text-fg group-hover/run-actions:transition-none",
                 "transition-colors",
               )}
             >
@@ -892,8 +883,8 @@ export function Composer({
             aria-label={running ? primaryRunningAction?.ariaLabel : t("chat.send")}
             title={running ? primaryRunningAction?.title : t("chat.send")}
             className={cn(
-              "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2",
-              "text-fg-subtle hover:text-fg hover:bg-bg-surface",
+              "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
+              "text-fg-subtle hover:text-fg hover:bg-bg-surface group-hover/run-actions:text-fg group-hover/run-actions:transition-none",
               "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
               "transition-colors",
             )}

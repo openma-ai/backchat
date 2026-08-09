@@ -77,7 +77,7 @@ export function ToolActivityIdentity({
       {leading ?? (
         <Icon
           className={cn(
-            "size-3.5 shrink-0",
+            "chat-activity-icon shrink-0",
             failed ? "text-danger" : "text-fg-muted",
           )}
         />

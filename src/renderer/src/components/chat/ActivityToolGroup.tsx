@@ -69,12 +69,12 @@ export function ActivityToolGroup({
       >
         <span
           data-tool-group-icon-slot
-          className="grid size-3.5 shrink-0 place-items-center"
+          className="grid size-[var(--chat-activity-icon-size)] shrink-0 place-items-center"
         >
           {running ? (
-            <Loader2Icon className="size-3.5 animate-spin" />
+            <Loader2Icon className="chat-activity-icon animate-spin" />
           ) : (
-            <ListChecksIcon className="size-3.5" />
+            <ListChecksIcon className="chat-activity-icon" />
           )}
         </span>
         <span className="shrink-0 whitespace-nowrap">
