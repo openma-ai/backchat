@@ -224,6 +224,23 @@ describe("groupSidebarSessions", () => {
     expect(updateControl).not.toContain("border-l");
   });
 
+  it("presents ACP updates as a quiet anchored popover instead of a modal", () => {
+    const source = readFileSync(
+      resolve(__dirname, "AgentUpdateControl.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain('from "@/components/ui/popover"');
+    expect(source).toContain('data-sidebar-agent-update-popover="true"');
+    expect(source).toContain('side="top"');
+    expect(source).toContain('align="end"');
+    expect(source).toContain("<AgentIcon");
+    expect(source).toContain('variant="ghost"');
+    expect(source).not.toContain("<Dialog");
+    expect(source).not.toContain("border-b");
+    expect(source).not.toContain("border-t");
+  });
+
   it("shares one canonical Agent cache between the sidebar, updater, and Settings", () => {
     const sidebar = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const updater = readFileSync(resolve(__dirname, "AgentUpdateControl.tsx"), "utf8");

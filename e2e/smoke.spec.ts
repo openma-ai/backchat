@@ -155,7 +155,7 @@ test.describe("backchat smoke", () => {
       expect(Math.abs(runtimeCenter - settingsCenter)).toBeLessThanOrEqual(2);
   });
 
-  test("separates Settings from ACP updates and upgrades directly from a dialog", async ({
+  test("separates Settings from ACP updates and upgrades directly from a popover", async ({
       page,
       bridge,
   }) => {
@@ -211,20 +211,23 @@ test.describe("backchat smoke", () => {
       expect(updateHovered[0]).toBe(resting[0]);
       expect(updateHovered[1]).not.toBe(resting[1]);
       await update.click();
-      const dialog = page.getByRole("dialog", { name: "ACP updates" });
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByText("Codex", { exact: true })).toBeVisible();
-      await expect(dialog.getByText("1.0.0 → 1.1.0", { exact: true })).toBeVisible();
+      const popover = page.locator('[data-sidebar-agent-update-popover="true"]');
+      await expect(popover).toBeVisible();
+      await expect(popover).toHaveAttribute("data-side", "top");
+      await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
+      await expect(popover.locator('[data-agent-update-label="codex-acp"]'))
+        .toHaveText("Codex");
+      await expect(popover.getByText("1.0.0 → 1.1.0", { exact: true })).toBeVisible();
 
-      await dialog.getByRole("button", { name: "Update Codex" }).click();
-      await expect(dialog.getByRole("button", { name: "Updating Codex" })).toBeDisabled();
-      await expect(dialog.getByRole("status")).toContainText("Codex updated to 1.1.0");
+      await popover.getByRole("button", { name: "Update Codex" }).click();
+      await expect(popover.getByRole("button", { name: "Updating Codex" })).toBeDisabled();
+      await expect(popover.getByRole("status")).toContainText("Codex updated to 1.1.0");
       await expect.poll(() => bridge.readAgentSetupCalls()).toEqual(
         expect.arrayContaining([{ type: "upgrade", id: "codex-acp" }]),
       );
 
       await page.keyboard.press("Escape");
-      await expect(dialog).toBeHidden();
+      await expect(popover).toBeHidden();
       await expect(page.getByRole("button", { name: "1 ACP update available" }))
         .toHaveCount(0);
 

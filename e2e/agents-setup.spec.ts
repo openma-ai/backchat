@@ -177,13 +177,13 @@ test.describe("settings agent setup lifecycle", () => {
     const updateControl = page.getByRole("button", { name: "1 ACP update available" });
     await expect(updateControl).toBeVisible();
     await updateControl.click();
-    const updateDialog = page.getByRole("dialog", { name: "ACP updates" });
-    await expect(updateDialog).toBeVisible();
-    await updateDialog.getByRole("button", { name: "Update Update Agent" }).click();
-    await expect(updateDialog.getByRole("status"))
+    const updatePopover = page.locator('[data-sidebar-agent-update-popover="true"]');
+    await expect(updatePopover).toBeVisible();
+    await updatePopover.getByRole("button", { name: "Update Update Agent" }).click();
+    await expect(updatePopover.getByRole("status"))
       .toContainText("Update Agent updated to 2.0.0");
     await page.keyboard.press("Escape");
-    await expect(updateDialog).toBeHidden();
+    await expect(updatePopover).toBeHidden();
 
     const composer = page.locator('[data-chat-column="composer"]');
     await expect(composer.getByText("ACP update installed")).toHaveCount(0);
