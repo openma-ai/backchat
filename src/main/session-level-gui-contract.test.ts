@@ -65,6 +65,26 @@ describe("session level GUI contract", () => {
     expect(submissionSource).toContain("fork: resolveChatFork(parentLink)");
   });
 
+  it("applies draft config overrides only after the promoted session starts", () => {
+    const submissionSource = readFileSync(
+      resolve(__dirname, "../renderer/src/lib/chat-submission.ts"),
+      "utf-8",
+    );
+    // `/plan` (and any draft config pick) only mutates composer state; the
+    // matching session events fire when the draft becomes a real session.
+    expect(submissionSource).toContain(
+      "for (const [config_id, value] of Object.entries(configOverrides))",
+    );
+    const startIndex = submissionSource.indexOf(
+      "await window.backchat.sessionStart",
+    );
+    const applyIndex = submissionSource.indexOf(
+      "await window.backchat.sessionSetConfigOption",
+    );
+    expect(startIndex).toBeGreaterThan(-1);
+    expect(applyIndex).toBeGreaterThan(startIndex);
+  });
+
   it("renders native subagents through the same conversation view as side chats", () => {
     const sidePanelSource = readFileSync(
       resolve(
