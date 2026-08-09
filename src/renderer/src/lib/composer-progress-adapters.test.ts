@@ -76,3 +76,40 @@ describe("composerProgressCallbacksForSessionCapabilities", () => {
     expect(callbacks).toEqual({});
   });
 });
+
+describe("editing a goal", () => {
+  const context = {
+    sessionId: "sess-1",
+    progressKind: "goal" as const,
+    status: "active",
+    objective: "使世界和平",
+    availableCommands: [{ name: "goal" }],
+  };
+
+  it("hands the objective back so a word can be changed", async () => {
+    const editGoal = vi.fn();
+    const callbacks = composerProgressCallbacksForSessionCapabilities(context, {
+      cancelTurn: vi.fn(),
+      runCommand: vi.fn(),
+      editGoal,
+    });
+
+    await callbacks.edit?.();
+
+    expect(editGoal).toHaveBeenCalledWith({
+      session_id: "sess-1",
+      objective: "使世界和平",
+    });
+  });
+
+  it("offers no edit when the host cannot carry it", () => {
+    // A permanently disabled control is a lie; without a transport there is
+    // simply no affordance.
+    expect(
+      composerProgressCallbacksForSessionCapabilities(context, {
+        cancelTurn: vi.fn(),
+        runCommand: vi.fn(),
+      }).edit,
+    ).toBeUndefined();
+  });
+});

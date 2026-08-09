@@ -217,7 +217,7 @@ export function ComposerProgress({
                       variant="ghost"
                       size="icon-xs"
                       disabled={!callbacks?.edit || pendingAction !== null}
-                      aria-label="Edit progress"
+                      aria-label={t("chat.editProgress")}
                       title="Editing requires adapter support"
                     >
                       <PencilIcon className="size-3.5" aria-hidden="true" />

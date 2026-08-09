@@ -22,6 +22,7 @@ import { removeSuggestionTemplateSlot, type ComposerSuggestionDraft } from "@/li
 import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
 import { describeRunningMessageAction } from "@/lib/composer-delivery";
+import { bindComposerPrefill } from "@/lib/composer-prefill";
 import { buildComposerSubmitText, canSubmitComposer, resolveComposerKeyAction } from "@/lib/composer-prompt";
 import {
   HOST_PLAN_COMMAND,
@@ -295,6 +296,19 @@ export function Composer({
     setArmedCommandState(next);
   };
   const armedSentRef = useRef(false);
+  // Editing a session state re-opens it here: the state is cleared by whoever
+  // asked, and the composer receives the old text so the user changes a word
+  // instead of retyping the whole objective.
+  useEffect(() => {
+    bindComposerPrefill((prefill) => {
+      if ((prefill.sessionId ?? null) !== (sessionId ?? null)) return;
+      setText(prefill.text);
+      reportComposerContent(prefill.text);
+      setArmedCommand(prefill.armCommand ?? null);
+      requestAnimationFrame(() => taRef.current?.focus());
+    });
+    return () => bindComposerPrefill(null);
+  });
   const armedObservedRunRef = useRef(false);
   const disarm = () => {
     armedSentRef.current = false;

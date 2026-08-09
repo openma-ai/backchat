@@ -8,6 +8,8 @@ import {
 } from "react";
 import { BugIcon, SendIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { prefillComposer } from "@/lib/composer-prefill";
+import { goalSessionStatePresentation } from "@/lib/composer-session-state";
 import { toast } from "sonner";
 import {
   Conversation,
@@ -323,10 +325,31 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             activeTurnId: active.activeTurnId,
             progressKind: progressPresentation.kind,
             status: progressPresentation.status,
+            objective: progressPresentation.title,
             availableCommands: active.availableCommands,
           },
           {
             cancelTurn: (input) => window.backchat.sessionCancel(input),
+            editGoal: async (input) => {
+              // Clear first: the agent refuses to overwrite an unfinished goal.
+              const exit = goalSessionStatePresentation(active.goal, "")?.exit;
+              if (exit?.kind === "extensionMethod") {
+                await window.backchat
+                  .sessionRequestExtension({
+                    session_id: input.session_id,
+                    method: exit.method,
+                    ...(exit.params ? { params: exit.params } : {}),
+                  })
+                  .catch(() => undefined);
+              }
+              prefillComposer({
+                sessionId: input.session_id,
+                text: input.objective,
+                armCommand: active.availableCommands?.find(
+                  (command) => command.name === "goal",
+                ),
+              });
+            },
             runCommand: async (input) => {
               try {
                 await window.backchat.sessionRunCommand(input);

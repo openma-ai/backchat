@@ -8,6 +8,8 @@ interface ProgressCallbackContext {
   activeTurnId?: string;
   progressKind: ComposerProgressPresentation["kind"];
   status?: string;
+  /** Current goal text, so editing can hand it back to the composer. */
+  objective?: string;
   availableCommands?: readonly { name: string }[];
 }
 
@@ -20,6 +22,10 @@ interface ProgressControlTransport {
     session_id: string;
     command: string;
     args?: string;
+  }): void | Promise<void>;
+  editGoal?(input: {
+    session_id: string;
+    objective: string;
   }): void | Promise<void>;
 }
 
@@ -37,9 +43,20 @@ export function composerProgressCallbacksForSessionCapabilities(
     return {};
   }
 
+  // Editing reopens the objective in the composer. Codex refuses to overwrite
+  // an unfinished goal, so the old one is cleared first and the text handed
+  // back for a word to be changed rather than retyped.
+  const edit = context.objective && transport.editGoal
+    ? () => transport.editGoal!({
+      session_id: context.sessionId,
+      objective: context.objective!,
+    })
+    : undefined;
+
   const status = context.status?.trim().toLowerCase();
   if (status === "paused") {
     return {
+      ...(edit ? { edit } : {}),
       resume: () =>
         transport.runCommand({
           session_id: context.sessionId,
@@ -51,6 +68,7 @@ export function composerProgressCallbacksForSessionCapabilities(
   if (status !== "active" && status !== "in_progress") return {};
 
   return {
+    ...(edit ? { edit } : {}),
     pause: async () => {
       if (context.activeTurnId) {
         await transport.cancelTurn({
