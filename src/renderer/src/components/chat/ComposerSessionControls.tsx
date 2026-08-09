@@ -18,7 +18,7 @@ import {
   ZapIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   DropdownMenu,
@@ -120,6 +120,15 @@ export function SessionRunChip({
   const { labelKey: runtimeLabelKey } =
     runtimePresentation(runtimeKind);
   const runtimeLabel = t(runtimeLabelKey);
+  // The tooltip repeats the chip's own label, so it only earns its place
+  // when the label is actually truncated. Hover is the only trigger; the
+  // measurement happens as the pointer arrives.
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [labelTruncated, setLabelTruncated] = useState(false);
+  const refreshLabelTruncation = useCallback(() => {
+    const label = labelRef.current;
+    setLabelTruncated(!!label && label.scrollWidth > label.clientWidth);
+  }, []);
 
   return (
     <DropdownMenu>
@@ -140,16 +149,35 @@ export function SessionRunChip({
         {noHarnessSetup ? (
           <span className="shrink-0">{agentLabel}</span>
         ) : (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="min-w-0 max-w-[140px] truncate">
-                  {configLabel}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">{configLabel}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <>
+            <span
+              data-composer-run-harness="true"
+              className="flex shrink-0 items-center"
+            >
+              <AgentIcon
+                agentId={currentAgentId}
+                iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
+                className="size-3.5 shrink-0"
+                title={agentLabel}
+              />
+            </span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    ref={labelRef}
+                    onMouseEnter={refreshLabelTruncation}
+                    className="min-w-0 max-w-[140px] truncate"
+                  >
+                    {configLabel}
+                  </span>
+                </TooltipTrigger>
+                {labelTruncated && (
+                  <TooltipContent side="top">{configLabel}</TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          </>
         )}
         <ChevronDownIcon className="size-3.5 shrink-0 text-current opacity-65 group-hover/model-selector:text-fg group-hover/model-selector:opacity-100" />
       </DropdownMenuTrigger>
@@ -374,7 +402,7 @@ export function PermissionModeChip({
           "inline-flex h-7 select-none items-center gap-1 rounded-md px-1.5 text-xs",
           meta.toneClass,
           "hover:bg-[var(--control-bg-hover)]",
-          "focus:outline-none focus:bg-[var(--control-bg-hover)]",
+          "focus:outline-none focus-visible:bg-[var(--control-bg-hover)]",
           "data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg",
           "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         )}
@@ -484,7 +512,7 @@ function SessionModeControl({
         disabled={disabled || !onSetConfigOption}
         className={cn(
           "inline-flex h-7 max-w-[180px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs",
-          "hover:bg-[var(--control-bg-hover)] focus:outline-none focus:bg-[var(--control-bg-hover)]",
+          "hover:bg-[var(--control-bg-hover)] focus:outline-none focus-visible:bg-[var(--control-bg-hover)]",
           "data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg",
           "transition-colors disabled:cursor-not-allowed disabled:opacity-50",
           selectedPresentation.tone === "warning"
@@ -649,7 +677,7 @@ function InlineComposerOptionControl({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
-        className="inline-flex h-7 max-w-[180px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted hover:bg-[var(--control-bg-hover)] focus:outline-none focus:bg-[var(--control-bg-hover)] data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg"
+        className="inline-flex h-7 max-w-[180px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted hover:bg-[var(--control-bg-hover)] focus:outline-none focus-visible:bg-[var(--control-bg-hover)] data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg"
       >
         <WrenchIcon className="size-3.5 shrink-0" />
         <span className="truncate">{option.name}</span>

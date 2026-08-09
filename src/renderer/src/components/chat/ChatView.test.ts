@@ -508,7 +508,7 @@ describe("home suggestions", () => {
     expect(composer).toContain('"inline-flex h-7 shrink-0');
   });
 
-  it("keeps Agent branding in the harness menu instead of the model trigger", () => {
+  it("marks the model trigger and the harness menu with the Agent identity", () => {
     const controlsSource = readFileSync(
       resolve(__dirname, "ComposerSessionControls.tsx"),
       "utf8",
@@ -524,8 +524,8 @@ describe("home suggestions", () => {
     );
     const harnessMenu = runChip.slice(runChip.indexOf("function SessionAgentSubmenu"));
 
-    expect(runTrigger).not.toContain("agentId={currentAgentId}");
-    expect(runTrigger).not.toContain("title={agentLabel}");
+    expect(runTrigger).toContain("agentId={currentAgentId}");
+    expect(runTrigger).toContain("title={agentLabel}");
     expect(harnessMenu).toContain("agentId={currentAgentId}");
     expect(harnessMenu).toContain("title={currentAgentLabel}");
   });
@@ -543,10 +543,12 @@ describe("home suggestions", () => {
     expect(runTrigger).not.toContain('{t("chat.local")}');
     expect(runTrigger).toContain("group-hover/model-selector:opacity-100");
     expect(runTrigger).toContain("group-hover/model-selector:text-fg");
-    expect(runTrigger).toContain("<TooltipProvider>");
-    expect(runTrigger).toContain("<TooltipTrigger asChild>");
+    // The harness mark identifies who runs the prompt; the tooltip repeats
+    // the chip label, so it may only open when the label is truncated.
+    expect(runTrigger).toContain("<AgentIcon");
+    expect(runTrigger).toContain("onMouseEnter={refreshLabelTruncation}");
     expect(runTrigger).toContain(
-      '<TooltipContent side="top">{configLabel}</TooltipContent>',
+      '{labelTruncated && (\n                  <TooltipContent side="top">{configLabel}</TooltipContent>\n                )}',
     );
     expect(runTrigger).toContain(
       'className="min-w-0 max-w-[140px] truncate"',
@@ -569,7 +571,9 @@ describe("home suggestions", () => {
     expect(controlsSource).not.toContain("group-hover/composer-actions");
     expect(controlsSource).not.toContain("group-hover/run-actions");
     expect(runTrigger).toContain("select-none");
-    expect(runTrigger).not.toContain("focus:bg-");
+    // Highlights answer the pointer or the open menu — a plain click must
+    // not leave any chip painted, so pointer focus never styles a trigger.
+    expect(controlsSource).not.toContain("focus:bg-");
     expect(runTrigger).toContain("app-compact-control");
   });
 

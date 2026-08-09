@@ -560,7 +560,7 @@ test.describe("backchat smoke", () => {
       await expect(page.locator('[data-composer-footer-control="runtime"]')).toBeVisible();
   });
 
-  test("uses a clean symmetric model trigger without a leading agent badge", async ({
+  test("marks the model trigger with the harness identity", async ({
       page,
       bridge,
   }) => {
@@ -577,13 +577,12 @@ test.describe("backchat smoke", () => {
       await enableAgent(page, "codex-acp");
 
       const runChip = page.locator('button[aria-label^="Run on "]').first();
-      await expect(runChip.locator('[aria-label="Codex"]')).toHaveCount(0);
+      // The harness mark identifies who runs the prompt; the label itself
+      // stays a plain model name without separator noise.
+      await expect(
+        runChip.locator('[data-composer-run-harness="true"]'),
+      ).toHaveCount(1);
       await expect(runChip).not.toContainText("·");
-      const padding = await runChip.evaluate((element) => {
-        const style = getComputedStyle(element);
-        return { left: style.paddingLeft, right: style.paddingRight };
-      });
-      expect(padding.left).toBe(padding.right);
   });
 
   test("uses the selected surface for an open compact selector", async ({

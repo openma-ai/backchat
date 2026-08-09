@@ -232,7 +232,9 @@ function DropdownMenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRightIcon className="ml-auto" />
+      {/* No auto margin: triggers place their own trailing value against
+          the chevron, so free space stays between label and value. */}
+      <ChevronRightIcon />
     </DropdownMenuPrimitive.SubTrigger>
   )
 }
