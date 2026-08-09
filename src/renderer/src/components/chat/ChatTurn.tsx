@@ -257,14 +257,19 @@ function subagentLinkLabel(activity: SubagentActivity): string {
 }
 
 function StreamingPlaceholder() {
+  const { t } = useI18n();
+  const label = t("chat.thinking");
+  // The translation carries its own ellipsis ("Thinking…" / "思考中…"); the
+  // animated dots replace it so the wait reads as motion in either language.
+  const stem = label.replace(/[.…。]+\s*$/u, "");
   return (
     <p
       className="text-sm font-normal leading-6 text-fg-muted"
-      aria-label="Thinking..."
+      aria-label={label}
       aria-live="polite"
     >
       <span aria-hidden="true">
-        Thinking
+        {stem}
         <span className="thinking-placeholder-dot">.</span>
         <span
           className="thinking-placeholder-dot"

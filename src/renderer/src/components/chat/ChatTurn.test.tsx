@@ -255,7 +255,11 @@ describe("TurnBlock", () => {
       <TurnBlock turn={turn({ status: "running" })} />,
     );
 
-    expect(html).toContain("Thinking");
+    // The mock translator echoes keys, so this proves the placeholder is
+    // localized rather than shipping a hardcoded English "Thinking" into a
+    // Chinese UI. The negative assertions elsewhere use the same key to prove
+    // the placeholder is gone once real thought text arrives.
+    expect(html).toContain("chat.thinking");
     expect(html).toContain("text-sm");
     expect(html).toContain("thinking-placeholder-dot");
     expect(html).not.toContain("aria-expanded");

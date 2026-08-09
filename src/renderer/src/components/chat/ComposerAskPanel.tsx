@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { resolveAskDismissal } from "@/lib/composer-ask-decision";
+import { useI18n } from "@/lib/i18n";
 import type { BrokerAsk } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 import type { ElicitationResponseInfo } from "@shared/api.js";
@@ -31,6 +32,7 @@ export function ComposerBrokerAsk({
   ask,
   onResolve,
 }: ComposerBrokerAskProps) {
+  const { t } = useI18n();
   const dismiss = () => {
     if (ask.kind === "elicitation") {
       void onResolve(null, undefined, { action: "cancel" });
@@ -77,7 +79,7 @@ export function ComposerBrokerAsk({
       <AskSheet
         title={permission.presentation.title}
         meta={permission.presentation.kind}
-        eyebrow="Approval required"
+        eyebrow={t("permission.approvalRequired")}
         toolKind={permission.presentation.kind}
         toolTarget={permissionToolTarget(
           permission.presentation.title,
@@ -94,7 +96,7 @@ export function ComposerBrokerAsk({
             )}
             {!permission.presentation.reason && (
               <p className="px-2 text-sm font-medium leading-5 text-fg">
-                Allow {permission.presentation.title} to run this action?
+                {t("permission.allowThisAction")}
               </p>
             )}
             {permission.presentation.command && (
@@ -143,16 +145,25 @@ export function ComposerBrokerAsk({
                     <Button
                       type="button"
                       size="sm"
-                      aria-label="More approval options"
+                      aria-label={t("permission.moreOptions")}
                       className="min-w-8 rounded-none border-0 bg-transparent px-2 text-current hover:bg-transparent"
                     >
                       <ChevronDownIcon className="size-3.5" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent side="top" align="end" className="w-52">
+                  <DropdownMenuContent
+                    side="top"
+                    align="end"
+                    // ACP option names are the agent's own copy and must render
+                    // verbatim; Codex ships long ones ("Allow Commands Starting
+                    // With `…`"), so the menu wraps inside a bounded width
+                    // instead of overflowing the panel.
+                    className="w-[min(26rem,80vw)]"
+                  >
                     {moreOptions.map((option) => (
                       <DropdownMenuItem
                         key={option.optionId}
+                        className="items-start whitespace-normal break-words"
                         variant={option.kind.startsWith("reject_") ? "destructive" : "default"}
                         onSelect={() => void onResolve(option.optionId)}
                       >
@@ -187,7 +198,7 @@ export function ComposerBrokerAsk({
         <AskSheet
           title={ask.ask.message}
           meta={ask.ask.url}
-          eyebrow="Confirmation required"
+          eyebrow={t("ask.confirmationRequired")}
           onClose={dismiss}
         >
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
@@ -197,14 +208,14 @@ export function ComposerBrokerAsk({
               size="sm"
               onClick={() => void onResolve(null, undefined, { action: "decline" })}
             >
-              Decline
+              {t("ask.decline")}
             </Button>
             <Button
               type="button"
               size="sm"
               onClick={() => void onResolve(null, undefined, { action: "accept" })}
             >
-              Open {elicitationUrlHost(ask.ask.url)}
+              {t("ask.open", { host: elicitationUrlHost(ask.ask.url, t("ask.externalPage")) })}
             </Button>
           </div>
         </AskSheet>
@@ -223,10 +234,10 @@ export function ComposerBrokerAsk({
   const write = ask.ask;
   return (
     <AskSheet
-      title="Write outside workspace?"
+      title={t("ask.writeOutsideWorkspace")}
       meta={write.path}
       footerMeta={`${write.byteSize}B`}
-      eyebrow="Filesystem approval"
+      eyebrow={t("ask.filesystemApproval")}
       onClose={dismiss}
     >
       {write.newPreview && (
@@ -236,10 +247,10 @@ export function ComposerBrokerAsk({
       )}
       <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
         <Button type="button" variant="ghost" size="sm" onClick={() => void onResolve(null, false)}>
-          Deny
+          {t("ask.deny")}
         </Button>
         <Button type="button" size="sm" onClick={() => void onResolve(null, true)}>
-          Allow write
+          {t("ask.allowWrite")}
         </Button>
       </div>
     </AskSheet>
@@ -251,21 +262,27 @@ export function InlineAskPanel(props: ComposerBrokerAskProps) {
   return <ComposerBrokerAsk {...props} />;
 }
 
-function elicitationUrlHost(url: string): string {
+function elicitationUrlHost(url: string, fallback: string): string {
   try {
-    return new URL(url).host || "external page";
+    return new URL(url).host || fallback;
   } catch {
-    return "external page";
+    return fallback;
   }
 }
 
 function permissionToolTarget(title: string, kind?: string): string | undefined {
-  const normalized = title.trim().toLowerCase();
+  const trimmed = title.trim();
+  // Codex sends a generic question as the tool-call title ("Approve this
+  // action?"). A question is a prompt, never a target label, and ACP v1's
+  // permission payload has no field separating the two — so presentation has
+  // to make the call rather than splice a sentence into a phrase.
+  if (/[?？]$/u.test(trimmed)) return undefined;
+  const normalized = trimmed.toLowerCase();
   if (
     (kind === "execute" || kind === "terminal")
     && ["bash", "shell", "terminal", "execute", "run command"].includes(normalized)
   ) return undefined;
-  return title;
+  return trimmed;
 }
 
 function eventTargetsComposerTransientSurface(event: KeyboardEvent): boolean {
@@ -301,6 +318,7 @@ function AskSheet({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <div
       data-composer-ask-slot="true"
@@ -339,7 +357,7 @@ function AskSheet({
             type="button"
             onClick={onClose}
             className="rounded-md p-1 text-fg-subtle transition-colors hover:bg-bg/60 hover:text-fg"
-            aria-label="Dismiss"
+            aria-label={t("ask.dismiss")}
           >
             <XIcon className="size-3.5" />
           </button>

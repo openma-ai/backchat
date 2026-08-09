@@ -195,3 +195,81 @@ describe("InlineAskPanel", () => {
     expect(html).not.toContain("Submit");
   });
 });
+
+describe("permission copy stays readable", () => {
+  const codexGenericAsk = (command: string) => ({
+    kind: "permission" as const,
+    ask: {
+      requestId: "permission-generic-1",
+      sessionId: "session-1",
+      toolCall: { title: "Approve this action?" },
+      presentation: {
+        // Codex sends a generic question here, not a tool name.
+        title: "Approve this action?",
+        kind: "execute",
+        command,
+      },
+      options: [
+        { optionId: "once", name: "Allow Once", kind: "allow_once" as const },
+        { optionId: "session", name: "Allow for Session", kind: "allow_always" as const },
+        {
+          optionId: "prefix",
+          // Codex's real option name: long, and rendered verbatim per ACP.
+          name: "Allow Commands Starting With `AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read`",
+          kind: "allow_always" as const,
+        },
+        { optionId: "reject", name: "Reject", kind: "reject_once" as const },
+      ],
+    },
+  });
+
+  it("never splices the agent's question into a phrase", () => {
+    const html = renderToStaticMarkup(
+      <InlineAskPanel ask={codexGenericAsk("ls -la")} onResolve={vi.fn()} />,
+    );
+
+    // The shipped bug read "Allow Approve this action? to run this action?".
+    expect(html).not.toContain("to run this action?");
+    expect(html).not.toContain("Allow Approve this action?");
+    expect(html).toContain("Allow this action?");
+  });
+
+  it("does not use a question as the tool target label", () => {
+    const html = renderToStaticMarkup(
+      <InlineAskPanel ask={codexGenericAsk("ls -la")} onResolve={vi.fn()} />,
+    );
+
+    expect(html).toContain('data-tool-activity-identity="execute"');
+    expect(html).not.toContain("Approve this action?");
+  });
+
+  it("keeps a long agent option name verbatim inside a bounded menu", () => {
+    const source = readFileSync(new URL("./ComposerAskPanel.tsx", import.meta.url), "utf8");
+    const menu = source.slice(source.indexOf("<DropdownMenuContent"));
+    const props = menu.slice(0, menu.indexOf(">"));
+
+    // A fixed w-52 clipped and overlapped Codex's long option names.
+    expect(props).not.toContain("w-52");
+    expect(props).toContain("w-[min(26rem,80vw)]");
+    expect(menu).toContain("whitespace-normal break-words");
+    expect(source).toContain("{option.name}");
+  });
+
+  it("routes every ask string through the translator", () => {
+    const source = readFileSync(new URL("./ComposerAskPanel.tsx", import.meta.url), "utf8");
+
+    for (const literal of [
+      '"Approval required"',
+      '"Confirmation required"',
+      '"Filesystem approval"',
+      '"Write outside workspace?"',
+      '"More approval options"',
+      '"Dismiss"',
+    ]) {
+      expect(source).not.toContain(literal);
+    }
+    expect(source).toContain('t("permission.approvalRequired")');
+    expect(source).toContain('t("permission.allowThisAction")');
+    expect(source).toContain('t("ask.dismiss")');
+  });
+});
