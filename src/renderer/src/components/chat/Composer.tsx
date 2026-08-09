@@ -71,6 +71,12 @@ import { ComposerSessionMentionMenu } from "./ComposerSessionMentionMenu";
 import { ComposerBrokerAsk } from "./ComposerAskPanel";
 
 const composerTextBySession = new Map<string, string>();
+/** Armed commands outlive their Composer instance. Submitting from a draft
+ *  navigates to the new session, which remounts this component — component
+ *  state would drop the chip exactly when the round trip needs it held. The
+ *  draft entry is handed to whichever session mounts next. */
+const armedCommandBySession = new Map<string, AcpAvailableCommand>();
+const DRAFT_ARMED_HANDOFF = "draft:armed-handoff";
 
 export function Composer({
   sessionId,
@@ -277,9 +283,17 @@ export function Composer({
     ),
     [canFork, effectiveAvailableCommands, t],
   );
-  const [armedCommand, setArmedCommand] = useState<AcpAvailableCommand | null>(
-    null,
+  const [armedCommand, setArmedCommandState] = useState<AcpAvailableCommand | null>(
+    () => armedCommandBySession.get(composerTextKey)
+      ?? armedCommandBySession.get(DRAFT_ARMED_HANDOFF)
+      ?? null,
   );
+  const setArmedCommand = (next: AcpAvailableCommand | null) => {
+    if (next) armedCommandBySession.set(composerTextKey, next);
+    else armedCommandBySession.delete(composerTextKey);
+    armedCommandBySession.delete(DRAFT_ARMED_HANDOFF);
+    setArmedCommandState(next);
+  };
   const armedSentRef = useRef(false);
   const armedObservedRunRef = useRef(false);
   const disarm = () => {
@@ -727,7 +741,12 @@ export function Composer({
       sessionReferences,
     );
     rememberCurrentRun();
-    if (armedCommand) armedSentRef.current = true;
+    if (armedCommand) {
+      armedSentRef.current = true;
+      // A draft submit lands on a new session id, so leave the chip where the
+      // next mount will find it.
+      if (!sessionId) armedCommandBySession.set(DRAFT_ARMED_HANDOFF, armedCommand);
+    }
     setText("");
     setSuggestionTemplate(null);
     setSuggestionSlotValue("");

@@ -12,11 +12,18 @@ export interface PromptCommandAnnotation {
   body: string;
 }
 
-/** Commands whose invocation is worth labelling, mapped to the state they
- * enter. Anything absent is left as plain prompt text rather than given
- * invented copy — the same table shape the armed composer chip uses, so adding
- * a command stays a data change. */
-const ANNOTATED_COMMAND_STATES: Record<string, "goal"> = { goal: "goal" };
+/** Commands whose invocation is worth labelling, per harness, with the control
+ * words their argument can be instead of content.
+ *
+ * Keyed by harness because ACP v1 has no marker for this: the official docs
+ * show a prompt-style /goal, so another agent's /goal is an ordinary prompt and
+ * must stay unlabelled. The control words are also kept here because a freshly
+ * created session has not published its catalogue yet — waiting for it would
+ * leave the first message showing raw `/goal …` until the round trip lands.
+ * A live hint still wins when there is one. */
+const ANNOTATED_COMMANDS: Record<string, Record<string, readonly string[]>> = {
+  "codex-acp": { goal: ["clear", "pause", "resume"] },
+};
 
 /** Literal choices a command's hint offers, as opposed to its placeholders.
  * Codex hints `[<objective>|clear|pause|resume]`: only `<objective>` is
@@ -34,23 +41,23 @@ function literalHintChoices(hint: string | undefined): string[] {
 
 export function promptCommandAnnotation(
   promptText: string | undefined,
+  agentId: string | undefined,
   commands: readonly {
     name: string;
     input?: { hint?: string } | null;
-  }[],
+  }[] = [],
 ): PromptCommandAnnotation | undefined {
   if (!promptText) return undefined;
   const match = /^\/([A-Za-z0-9_-]+)[ \t]+([\s\S]+)$/u.exec(promptText.trim());
   if (!match) return undefined;
   const [, command, body] = match;
-  // Only annotate a command this session actually advertises, so a message
-  // that merely starts with a slash is left alone.
-  const advertised = commands.find((candidate) => candidate.name === command);
-  if (!advertised) return undefined;
-  if (!ANNOTATED_COMMAND_STATES[command]) return undefined;
+  const known = agentId ? ANNOTATED_COMMANDS[agentId]?.[command] : undefined;
+  if (!known) return undefined;
   const trimmedBody = body.trim();
   if (!trimmedBody) return undefined;
-  if (literalHintChoices(advertised.input?.hint).includes(trimmedBody)) {
+  const advertised = commands.find((candidate) => candidate.name === command);
+  const controlWords = literalHintChoices(advertised?.input?.hint);
+  if ((controlWords.length > 0 ? controlWords : known).includes(trimmedBody)) {
     return undefined;
   }
   return { command, body: trimmedBody };

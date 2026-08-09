@@ -108,8 +108,8 @@ export const TurnBlock = memo(function TurnBlock({
   // they typed. Show the argument as the message and name the command beside
   // it instead of echoing plumbing back at them.
   const commandInvocation = useMemo(
-    () => promptCommandAnnotation(turn.promptText, availableCommands),
-    [availableCommands, turn.promptText],
+    () => promptCommandAnnotation(turn.promptText, agentId, availableCommands),
+    [agentId, availableCommands, turn.promptText],
   );
 
   return (
