@@ -425,6 +425,19 @@ export function Composer({
     requestAnimationFrame(() => taRef.current?.focus());
   };
 
+  /** Report composer content after a programmatic change. The textarea's own
+   * onChange is the only other reporter, so clearing text in code (a session
+   * state switch has nothing to send) would otherwise leave the home page
+   * stuck in its dismissed phase with the suggestions gone. */
+  const reportComposerContent = (nextText: string) => {
+    onUserInput(
+      nextText.trim().length > 0
+      || !!selectedSkillCommand
+      || attachments.length > 0
+      || annotations.length > 0,
+    );
+  };
+
   const pickCommand = (cmd: AcpAvailableCommand) => {
     if (isHostForkSlashCommand(cmd)) {
       setText("");
@@ -454,6 +467,7 @@ export function Composer({
         }));
       }
       setText("");
+      reportComposerContent("");
       clearDismissal();
       requestAnimationFrame(() => taRef.current?.focus());
       return;
@@ -763,10 +777,7 @@ export function Composer({
               const nextText = e.target.value;
               const nextCaret = e.target.selectionStart ?? nextText.length;
               cancelSuggestionFill();
-              onUserInput(nextText.trim().length > 0
-                || !!selectedSkillCommand
-                || attachments.length > 0
-              || annotations.length > 0);
+              reportComposerContent(nextText);
                 setText(nextText);
                 setCaret(nextCaret);
                 setDismissedMentionText(null);

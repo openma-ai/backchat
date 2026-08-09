@@ -254,7 +254,12 @@ describe("home suggestions", () => {
     const chatViewSource = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
     const composerSource = readFileSync(resolve(__dirname, "Composer.tsx"), "utf8");
     expect(chatViewSource).toContain("onUserInput={syncHomeSuggestionsForUserInput}");
-    expect(composerSource).toContain("onUserInput(nextText.trim().length > 0");
+    expect(composerSource).toContain("nextText.trim().length > 0");
+    expect(composerSource).toContain("reportComposerContent(nextText)");
+    // Entering a session state clears the composer in code, so it must report
+    // the emptiness too — otherwise the home page stays dismissed and the
+    // suggestions vanish behind a `/plan` chip.
+    expect(composerSource).toContain('reportComposerContent("")');
   });
 
   it("uses a two-stage suggestion flow without submitting or navigating", () => {

@@ -178,6 +178,11 @@ test.describe("composer slash commands", () => {
     await expect(
       page.locator('[data-composer-session-state="true"]'),
     ).toBeVisible();
+    // Entering a session state is not "starting to write": the home page
+    // keeps its suggestions, because the composer is empty again.
+    await expect(
+      page.locator(".home-suggestion-card").first(),
+    ).toBeVisible();
     await page.waitForTimeout(300);
     expect(
       await page.evaluate(
