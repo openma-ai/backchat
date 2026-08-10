@@ -19,6 +19,7 @@
 
 import { useEffect, useRef } from "react";
 import * as smd from "streaming-markdown";
+import { MARKDOWN_BLOCK_RHYTHM } from "./ChatMarkdown";
 import { sessionStore } from "@/lib/session-store";
 import { openBrowserAwareUrl } from "@/lib/browser-open";
 import { previewLocalFile } from "@/lib/file-preview";
@@ -203,31 +204,10 @@ export function StreamingMarkdown({
     <div
       ref={hostRef}
       className={cn(
-        // Match Streamdown's prose look so the streaming → final handoff
-        // is visually seamless. Streamdown's CSS is the source of truth;
-        // anything we do here is a near-twin until that final React
-        // render takes over and applies the canonical classes.
-        // Density matches the post-stream <StreamdownText> in ChatView —
-        // 13px + leading-6, paragraph my-1.5. codex-comparable.
+        // The same rhythm the settled surface uses, from one constant, so the
+        // handoff cannot change the geometry of the document.
         "streaming-md text-[13px] leading-6 text-fg",
-        "[&>p]:my-1.5 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0",
-        "[&>h1]:my-2 [&>h1]:text-base [&>h1]:font-semibold",
-        "[&>h2]:my-2 [&>h2]:text-sm [&>h2]:font-semibold",
-        "[&>h3]:my-2 [&>h3]:text-sm [&>h3]:font-semibold",
-        // Descendant selectors so a nested list keeps its markers, and so the
-        // streaming and settled renderings of the same markdown agree.
-        "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5",
-        "[&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5",
-        "[&_li]:my-0.5 [&_li>p]:my-0",
-        "[&_li]:my-0.5",
-        "[&>pre]:my-2 [&>pre]:rounded-lg [&>pre]:border [&>pre]:border-border/60 [&>pre]:bg-bg-surface/60 [&>pre]:px-3 [&>pre]:py-2 [&>pre]:font-mono [&>pre]:text-[12px] [&>pre]:leading-5 [&>pre]:overflow-x-auto",
-        "[&_code]:rounded [&_code]:bg-bg-surface/70 [&_code]:px-[0.35em] [&_code]:py-[0.1em] [&_code]:font-mono [&_code]:text-[0.9em]",
-        "[&>pre>code]:bg-transparent [&>pre>code]:px-0 [&>pre>code]:py-0 [&>pre>code]:text-[12px]",
-        "[&>blockquote]:my-2 [&>blockquote]:border-l-2 [&>blockquote]:border-border [&>blockquote]:pl-3 [&>blockquote]:text-fg-muted",
-        "[&_a]:text-fg [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-fg-muted",
-        "[&>hr]:my-3 [&>hr]:border-border/60",
-        "[&_strong]:font-semibold",
-        "[&_em]:italic",
+        MARKDOWN_BLOCK_RHYTHM,
         className,
       )}
     />

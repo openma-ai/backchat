@@ -266,7 +266,9 @@ describe("TurnBlock", () => {
     // Chinese UI. The negative assertions elsewhere use the same key to prove
     // the placeholder is gone once real thought text arrives.
     expect(html).toContain("chat.thinking");
-    expect(html).toContain("text-sm");
+    // The transcript's own text scale, not a size of its own: at 14px against
+    // 13px body text the wait line read as a different typeface.
+    expect(html).toContain("text-[13px]");
     expect(html).toContain("thinking-placeholder-dot");
     expect(html).not.toContain("aria-expanded");
     expect(html).not.toContain("brand-loader-dot");

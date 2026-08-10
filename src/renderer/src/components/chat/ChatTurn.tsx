@@ -263,6 +263,17 @@ function ReferencedSessionPrompt({ turn }: { turn: Turn }) {
           <p className="whitespace-pre-wrap">{turn.promptText}</p>
         )}
       </div>
+      {/* The prompt's own time and copy, mirrored to its side of the column. */}
+      <div
+        data-session-turn-prompt-meta="true"
+        className="flex min-h-6 items-center justify-end gap-1"
+      >
+        <TurnMetaActions
+          timestamp={turn.startedAt}
+          copyText={turn.promptText ?? ""}
+          align="end"
+        />
+      </div>
     </div>
   );
 }
@@ -352,6 +363,65 @@ function StreamingDots({ hidden }: { hidden?: boolean }) {
  * as the agent starting over. In practice a bare "..." says nothing: the line has
  * to name the state it is reporting, and the animation is what makes it read as
  * ongoing rather than stalled. */
+/** The time a message landed plus the actions that belong to it. One row, so
+ *  the prompt and the answer read as the same kind of thing on either side. */
+function TurnMetaActions({
+  timestamp,
+  copyText,
+  align,
+  children,
+}: {
+  timestamp?: number;
+  copyText: string;
+  align: "start" | "end";
+  children?: React.ReactNode;
+}) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    if (!copyText) return;
+    void navigator.clipboard?.writeText(copyText).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    });
+  };
+  return (
+    <>
+      {timestamp !== undefined && (
+        <time
+          data-turn-timestamp={String(timestamp)}
+          className={cn(
+            "text-xs leading-5 text-fg-subtle",
+            align === "start" ? "mr-1" : "ml-1",
+          )}
+        >
+          {new Date(timestamp).toLocaleTimeString(undefined, {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </time>
+      )}
+      {copyText.length > 0 && (
+        <button
+          type="button"
+          data-turn-copy-action="true"
+          aria-label={copied ? t("chat.answerCopied") : t("chat.copyAnswer")}
+          title={copied ? t("chat.answerCopied") : t("chat.copyAnswer")}
+          onClick={copy}
+          className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {copied ? (
+            <CheckIcon className="size-4" aria-hidden="true" />
+          ) : (
+            <CopyIcon className="size-4" aria-hidden="true" />
+          )}
+        </button>
+      )}
+      {children}
+    </>
+  );
+}
+
 function TurnFooter({
   turn,
   isStreaming,
@@ -366,19 +436,11 @@ function TurnFooter({
   onFork?: () => void;
 }) {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
   const answer = turn.assistantText.trim();
   const canFork = Boolean(onFork) && turn.status === "complete" && answer.length > 0;
   const endedAt = turn.status === "running" ? undefined : turn.endedAt;
   const layer =
     "col-start-1 row-start-1 flex min-w-0 items-center transition-opacity duration-[var(--dur-slow)] ease-[var(--ease-soft)]";
-  const copyAnswer = () => {
-    if (!answer) return;
-    void navigator.clipboard?.writeText(answer).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    });
-  };
   return (
     <div
       data-turn-footer="true"
@@ -398,52 +460,27 @@ function TurnFooter({
       <div
         className={cn(
           layer,
-          "justify-end gap-1",
+          // Left, with the transcript's own text. The answer's own actions do not
+          // belong on the prompt's side of the column.
+          "justify-start gap-1",
           isStreaming ? "pointer-events-none opacity-0" : "opacity-100",
         )}
         aria-hidden={isStreaming ? true : undefined}
       >
-        {endedAt !== undefined && (
-          <time
-            data-turn-ended-at={String(endedAt)}
-            className="mr-1 text-xs leading-5 text-fg-subtle"
-          >
-            {new Date(endedAt).toLocaleTimeString(undefined, {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </time>
-        )}
-        {answer.length > 0 && (
-          <button
-            type="button"
-            data-turn-copy-action="true"
-            aria-label={copied ? t("chat.answerCopied") : t("chat.copyAnswer")}
-            title={copied ? t("chat.answerCopied") : t("chat.copyAnswer")}
-            onClick={copyAnswer}
-            tabIndex={isStreaming ? -1 : undefined}
-            className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {copied ? (
-              <CheckIcon className="size-4" aria-hidden="true" />
-            ) : (
-              <CopyIcon className="size-4" aria-hidden="true" />
-            )}
-          </button>
-        )}
-        {canFork && (
-          <button
-            type="button"
-            data-turn-fork-action="true"
-            aria-label={t("chat.continueInNewChat")}
-            title={t("chat.continueInNewChat")}
-            onClick={onFork}
-            tabIndex={isStreaming ? -1 : undefined}
-            className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ArrowRightFromLineIcon className="size-4" aria-hidden="true" />
-          </button>
-        )}
+        <TurnMetaActions timestamp={endedAt} copyText={answer} align="start">
+          {canFork && (
+            <button
+              type="button"
+              data-turn-fork-action="true"
+              aria-label={t("chat.continueInNewChat")}
+              title={t("chat.continueInNewChat")}
+              onClick={onFork}
+              className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ArrowRightFromLineIcon className="size-4" aria-hidden="true" />
+            </button>
+          )}
+        </TurnMetaActions>
       </div>
     </div>
   );
@@ -455,7 +492,7 @@ function StreamingContinuation() {
   return (
     <p
       data-streaming-continuation="true"
-      className="text-sm leading-6 text-fg-subtle"
+      className="text-[13px] leading-6 text-fg-subtle"
       aria-label={label}
       aria-live="polite"
     >
@@ -475,7 +512,7 @@ function StreamingPlaceholder() {
   const stem = label.replace(/[.…。]+\s*$/u, "");
   return (
     <p
-      className="text-sm font-normal leading-6 text-fg-muted"
+      className="text-[13px] font-normal leading-6 text-fg-muted"
       aria-label={label}
       aria-live="polite"
     >

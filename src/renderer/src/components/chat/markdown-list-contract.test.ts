@@ -3,7 +3,10 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ASSISTANT_MARKDOWN_CLASS } from "./ChatMarkdown";
+import {
+  ASSISTANT_MARKDOWN_CLASS,
+  MARKDOWN_BLOCK_RHYTHM,
+} from "./ChatMarkdown";
 
 /** One markdown, one appearance.
  *
@@ -21,17 +24,24 @@ describe("markdown lists", () => {
   });
 
   it("styles nested lists too, on both renderers", () => {
+    expect(MARKDOWN_BLOCK_RHYTHM).toContain("[&_ul]:list-disc");
+    expect(MARKDOWN_BLOCK_RHYTHM).toContain("[&_ol]:list-decimal");
+    // A direct-child list rule silently misses anything one level deeper.
+    expect(MARKDOWN_BLOCK_RHYTHM).not.toContain("[&>ul]:list-disc");
+    expect(MARKDOWN_BLOCK_RHYTHM).not.toContain("[&>ol]:list-decimal");
+    expect(ASSISTANT_MARKDOWN_CLASS).toContain(MARKDOWN_BLOCK_RHYTHM);
+  });
+
+  it("gives both renderers one source for the block rhythm", () => {
+    // The two surfaces used to carry near-twin copies of these rules, which is
+    // how they came to disagree about headings, list items and tables by more
+    // than a hundred pixels on the same document.
     const streaming = readFileSync(
       resolve(__dirname, "StreamingMarkdown.tsx"),
       "utf8",
     );
-
-    for (const surface of [ASSISTANT_MARKDOWN_CLASS, streaming]) {
-      expect(surface).toContain("[&_ul]:list-disc");
-      expect(surface).toContain("[&_ol]:list-decimal");
-      // A direct-child list rule silently misses anything one level deeper.
-      expect(surface).not.toContain("[&>ul]:list-disc");
-      expect(surface).not.toContain("[&>ol]:list-decimal");
-    }
+    expect(streaming).toContain("MARKDOWN_BLOCK_RHYTHM");
+    expect(streaming).not.toContain("[&_ul]:list-disc");
+    expect(streaming).not.toContain("[&>p]:my-1.5");
   });
 });

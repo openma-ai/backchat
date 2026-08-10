@@ -21,16 +21,46 @@ import { InlineVisualizationView } from "./InlineVisualizationView";
 
 const MarkdownCwdContext = createContext<string | null>(null);
 
-export const ASSISTANT_MARKDOWN_CLASS = cn(
-  "text-[13px] leading-6 text-fg",
-  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-  "[&>p]:my-1.5 [&>ul]:my-1.5 [&>ol]:my-1.5 [&>pre]:my-2",
-  // Tailwind's preflight removes list markers, and this surface only set list
+/** One block rhythm for both markdown surfaces. The settled surface is rendered
+ *  by Streamdown, which puts its own utility classes on every element it emits
+ *  (`text-2xl` on h2, `py-1` on li, `px-4 py-2 text-sm` on td). Those classes
+ *  only exist in the stylesheet when our own source happens to use them too, so
+ *  the settled heading scale was part generated and part inherited — an h2 three
+ *  times the body size next to an h1 at body size. The streaming surface then
+ *  chased it with a hand-written near-twin, and the two disagreed by a hundred
+ *  pixels on the same document, which is what jumped when a turn settled.
+ *
+ *  Container-scoped element selectors outrank plain utility classes, so stating
+ *  the rhythm once here governs both renderers. */
+export const MARKDOWN_BLOCK_RHYTHM = cn(
+  "[&_h1]:mt-3 [&_h1]:mb-1.5 [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:leading-6",
+  "[&_h2]:mt-3 [&_h2]:mb-1.5 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:leading-6",
+  "[&_h3]:mt-2.5 [&_h3]:mb-1 [&_h3]:text-[13px] [&_h3]:font-semibold [&_h3]:leading-6",
+  "[&_h4]:mt-2 [&_h4]:mb-1 [&_h4]:text-[13px] [&_h4]:font-semibold [&_h4]:leading-6",
+  "[&_p]:my-1.5",
+  // Tailwind's preflight removes list markers, and these surfaces only set list
   // margins — so a markdown list rendered as unmarked lines that read as one
   // paragraph per item. Descendant selectors, because a nested list is not a
   // direct child and was losing its markers even where the top level kept them.
-  "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5",
-  "[&_li]:my-0.5 [&_li>p]:my-0",
+  "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5",
+  "[&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5",
+  "[&_li]:my-0.5 [&_li]:py-0 [&_li>p]:my-0",
+  "[&_pre]:my-2 [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border/60 [&_pre]:bg-bg-surface/60 [&_pre]:px-3 [&_pre]:py-2 [&_pre]:font-mono [&_pre]:text-[12px] [&_pre]:leading-5 [&_pre]:overflow-x-auto",
+  "[&_code]:rounded [&_code]:bg-bg-surface/70 [&_code]:px-[0.35em] [&_code]:py-[0.1em] [&_code]:font-mono [&_code]:text-[0.9em]",
+  "[&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:py-0 [&_pre_code]:text-[12px]",
+  "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-fg-muted",
+  "[&_table]:my-2 [&_table]:w-full [&_table]:border-collapse",
+  "[&_th]:border [&_th]:border-border/60 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-semibold [&_th]:leading-5",
+  "[&_td]:border [&_td]:border-border/60 [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_td]:leading-5",
+  "[&_hr]:my-3 [&_hr]:border-border/60",
+  "[&_a]:text-fg [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-fg-muted",
+  "[&_strong]:font-semibold [&_em]:italic",
+  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+);
+
+export const ASSISTANT_MARKDOWN_CLASS = cn(
+  "text-[13px] leading-6 text-fg",
+  MARKDOWN_BLOCK_RHYTHM,
 );
 
 export function MarkdownCwdProvider({
@@ -104,6 +134,18 @@ export function StreamdownText({
 }
 
 const streamdownOverrides = {
+  // Streamdown wraps a table in a bordered card with its own toolbar row. The
+  // streaming renderer emits a bare table, so the same document was 40px taller
+  // once it settled. A plain table on both sides, styled by the shared rhythm.
+  table: ({
+    className: _className,
+    children,
+    ...rest
+  }: HTMLAttributes<HTMLTableElement>) => (
+    <table {...rest} className="my-2 w-full border-collapse">
+      {children}
+    </table>
+  ),
   pre: ({
     className: _className,
     children,

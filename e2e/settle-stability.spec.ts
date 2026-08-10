@@ -89,7 +89,9 @@ test("settling a turn does not move what the turn already rendered", async ({
     turn_id: turnId,
     stop_reason: "end_turn",
   });
-  await expect(page.locator("[data-turn-ended-at]").first()).toBeAttached();
+  await expect(
+    page.locator("[data-session-turn-response] [data-turn-timestamp]").first(),
+  ).toBeAttached();
 
   expect(await activityBoxes(page)).toEqual(streaming);
 });

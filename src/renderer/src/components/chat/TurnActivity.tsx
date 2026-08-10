@@ -235,7 +235,10 @@ function LatestThoughtStatus({
           nothing at all, leaving an empty box under the tool row. The status
           line only ever showed one truncated line, so it can just be that
           line. */}
-      <p className="truncate text-sm leading-5 text-fg-muted">
+      {/* The transcript's own scale. This line said the same kind of thing as the
+          thought text above it but a size larger, which read as a different
+          typeface. */}
+      <p className="truncate text-[13px] leading-6 text-fg-muted">
         {shown.current}
       </p>
       </div>
