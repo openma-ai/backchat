@@ -4,10 +4,12 @@ export interface ActivityPresentationPolicy {
 }
 
 const CODEX_ACTIVITY_POLICY: ActivityPresentationPolicy = {
-  // Codex sends real reasoning — headed sections, several paragraphs — and this
-  // was false, so all of it was only ever squeezed into one truncated status
-  // line. The block itself was never rendered at all.
-  persistThoughtTimeline: true,
+  // For Codex, thinking is a passing state and not part of the record: the
+  // block shows what it is reasoning about now and is gone once it moves on.
+  // That is not the same as dropping it, which is what this used to mean — the
+  // block was never drawn at all and real reasoning, headed sections and
+  // several paragraphs of it, was only ever squeezed into one truncated line.
+  persistThoughtTimeline: false,
   groupToolsAcrossThoughts: true,
 };
 

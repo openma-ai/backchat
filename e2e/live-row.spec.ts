@@ -162,9 +162,12 @@ test("the live row is the agent talking, not a control", async ({ page }) => {
   // Only the command. Not how many tools it took to get here.
   await expect(row).not.toContainText(/tool calls|个工具调用/);
 
-  // A running command is still a tool call and keeps the row's icon. The
-  // fallback is the row talking about itself, and gets none.
+  // A running command is still a tool call and keeps the row's icon.
   expect(await row.locator("svg").count()).toBeGreaterThan(0);
+
+  // A closed tool is not the end of the tool work — the next call is usually
+  // already on its way — so the row keeps reporting tools rather than falling
+  // all the way back to "thinking".
   await send({
     sessionUpdate: "tool_call_update",
     toolCallId: "t3",
@@ -173,7 +176,7 @@ test("the live row is the agent talking, not a control", async ({ page }) => {
     title: "/bin/zsh -lc 'cargo test'",
   });
   await expect.poll(() => liveRow(page).then((r) => r.text)).toMatch(
-    /Thinking|思考中/,
+    /Running tools|正在运行工具/,
   );
-  expect(await row.locator("svg").count()).toBe(0);
+  expect(await row.locator("svg").count()).toBeGreaterThan(0);
 });

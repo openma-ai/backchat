@@ -90,12 +90,14 @@ export function TurnActivity({
   });
   const liveHeadline = live.kind === "running"
     ? live.command
-    : live.kind === "waiting"
-      ? t("chat.thinking")
-      : undefined;
+    : live.kind === "tools"
+      ? t("chat.runningTools")
+      : live.kind === "waiting"
+        ? t("chat.thinking")
+        : undefined;
   // A command it is running is still a tool call and keeps the row's icon; the
   // fallback is the row talking about itself, and gets none.
-  const liveHeadlineKind = live.kind === "running"
+  const liveHeadlineKind = live.kind === "running" || live.kind === "tools"
     ? ("command" as const)
     : live.kind === "waiting"
       ? ("thought" as const)
@@ -164,9 +166,14 @@ export function TurnActivity({
             );
           }
           if (item.kind === "thought") {
-            if (!policy.persistThoughtTimeline) return null;
             const isLiveTail =
               isStreaming && index === rendered.timeline.length - 1;
+            // Where thinking is a passing state rather than part of the record,
+            // only what the agent is thinking right now is drawn: the block
+            // appears while it reasons and is gone once it moves on. Dropping
+            // every thought instead — which is what this policy used to do —
+            // meant the block was never drawn at all.
+            if (!policy.persistThoughtTimeline && !isLiveTail) return null;
             // The agent's reasoning, rendered as the block it is. Marked so the
             // block itself is testable: it was policy-disabled for Codex and
             // squeezed into a single truncated line, and nothing failed.

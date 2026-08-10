@@ -14,11 +14,15 @@ import { isToolRunning, type ActivityTool } from "@/lib/activity-tool-groups";
  * holds for any turn.
  *
  * - `settled`   the turn has ended; the row has nothing to report and collapses
- * - `running`   a tool is running; the command is the report, and it outranks
- *               the rest because a thought streaming beside it left the command
- *               reported by nothing
+ * - `reasoning` the thinking block is streaming; the agent's own reasoning is
+ *               the best report there is, so it outranks everything. A tool
+ *               running underneath it still shows its own row and spinner, so
+ *               nothing goes unreported while the block speaks
+ * - `running`   a tool is running; the command is the report
  * - `answering` the answer is arriving; the text is the report
- * - `reasoning` the thinking block is streaming above; the block is the report
+ * - `tools`     tools have been running and the last one closed, but the turn
+ *               has not gone anywhere else yet; the gap between one tool
+ *               finishing and the next starting is still tool work
  * - `waiting`   the harness is working and none of the above is visible
  */
 export type LiveActivityState =
@@ -26,6 +30,7 @@ export type LiveActivityState =
   | { kind: "answering" }
   | { kind: "reasoning" }
   | { kind: "running"; command: string }
+  | { kind: "tools" }
   | { kind: "waiting" };
 
 export interface LiveActivityInput {
@@ -45,14 +50,16 @@ export function liveActivityState({
 }: LiveActivityInput): LiveActivityState {
   if (!isStreaming) return { kind: "settled" };
 
+  const last = rendered.timeline.at(-1);
+  if (last?.kind === "thought") return { kind: "reasoning" };
+
   const runningTool = liveTools.findLast((tool) => isToolRunning(tool.status));
   if (runningTool) {
     const command = describeCommand(runningTool).trim();
     if (command) return { kind: "running", command };
   }
 
-  const last = rendered.timeline.at(-1);
   if (last?.kind === "assistant_text") return { kind: "answering" };
-  if (last?.kind === "thought") return { kind: "reasoning" };
+  if (liveTools.length > 0) return { kind: "tools" };
   return { kind: "waiting" };
 }

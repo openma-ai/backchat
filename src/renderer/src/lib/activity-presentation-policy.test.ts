@@ -4,11 +4,10 @@ import { activityPresentationPolicy } from "./activity-presentation-policy";
 
 describe("activityPresentationPolicy", () => {
   it("dispatches Codex presentation behavior explicitly", () => {
-    // Codex sends real reasoning and it is rendered as a block like every other
-    // agent's. What is still specific to it is that a thought does not break a
-    // run of tools.
+    // Codex's thinking is a passing state: the block is drawn while it reasons
+    // and is not kept in the record afterwards.
     expect(activityPresentationPolicy("codex-acp")).toEqual({
-      persistThoughtTimeline: true,
+      persistThoughtTimeline: false,
       groupToolsAcrossThoughts: true,
     });
   });

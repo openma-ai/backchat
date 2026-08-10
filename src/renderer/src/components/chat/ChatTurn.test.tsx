@@ -603,10 +603,11 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain('data-tool-group-size="3"');
-    // The thoughts are rendered as blocks and the tools still group across
-    // them: grouping is about what the tools are, not about what is between.
-    expect(html).toContain("Planning the next command");
-    expect(html).toMatch(/>[^<]*Planning the final command/);
+    // Thinking is a passing state here, so a thought the agent has moved past
+    // leaves no block behind. The tools still group across them: grouping is
+    // about what the tools are, not about what was between.
+    expect(html).not.toContain("Planning the next command");
+    expect(html).not.toContain("Planning the final command");
   });
 
   it("shows the latest in-progress action in a running tool group", () => {
@@ -784,9 +785,10 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain("Finished.");
-    // The thought is a block of its own now; what it must not become is a
-    // second disclosure with its own completion label.
-    expect(html).toContain("Planning a temporary status");
+    // Once the agent has answered, the thinking it did on the way is not part
+    // of the record. What it must never become is a second disclosure with its
+    // own completion label.
+    expect(html).not.toContain("Planning a temporary status");
     expect(html).not.toContain("chat.thoughtComplete");
   });
 
@@ -958,10 +960,11 @@ describe("Codex thinking while a tool runs", () => {
     sessionMock.commands = [];
   });
 
-  it("keeps showing the latest thought instead of an empty reasoning box", () => {
-    // Codex keeps no thought items in the timeline and the trigger only appears
-    // once streaming stops, so suppressing this line during a tool call left
-    // the block empty for the whole call.
+  it("hands over to the running command instead of leaving an empty box", () => {
+    // Thinking is a passing state: once the tool starts, the tool is the news
+    // and the thought that led to it is over. What must not happen is what did
+    // happen here — the thought dropped, no block, and nothing said instead,
+    // leaving an empty reasoning box for the whole call.
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
@@ -990,6 +993,7 @@ describe("Codex thinking while a tool runs", () => {
       />,
     );
 
-    expect(html).toMatch(/>[^<]*Checking the workspace first/);
+    expect(html).not.toContain('data-thought-block="true"');
+    expect(html).toContain("pwd");
   });
 });

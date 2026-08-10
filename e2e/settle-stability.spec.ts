@@ -75,8 +75,10 @@ test("settling a turn does not move what the turn already rendered", async ({
   await injectEvent(page, chunk("PARA-TWO", "commentary"));
   await injectEvent(page, chunk("FINAL-ANSWER-TEXT", "final_answer"));
 
-  // Commentary, tool row, commentary, and the thinking block Codex now renders.
-  await expect.poll(() => activityBoxes(page), { timeout: 15_000 }).toHaveLength(4);
+  // Commentary, tool row, commentary. Codex's thinking block is not among them:
+  // it is a passing state, drawn while the agent reasons and gone once it moves
+  // on, so it is never one of the boxes a settling turn could shift.
+  await expect.poll(() => activityBoxes(page), { timeout: 15_000 }).toHaveLength(3);
   const streaming = await activityBoxes(page);
 
   await injectEvent(page, {

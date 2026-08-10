@@ -69,9 +69,10 @@ describe("liveActivityState", () => {
     ).toEqual({ kind: "reasoning" });
   });
 
-  it("still names the command when a thought streams beside a running tool", () => {
-    // Codex thinks while its tools run. Ranking the block above the command
-    // left the command reported by nothing at all.
+  it("lets the block speak even while a tool runs beneath it", () => {
+    // Codex thinks while its tools run, and the reasoning is the better report.
+    // The running tool is not lost: it keeps its own row and spinner in the
+    // block above, so this row does not have to repeat it.
     expect(
       liveActivityState({
         rendered: render([toolItem("t1"), thought()]),
@@ -79,7 +80,7 @@ describe("liveActivityState", () => {
         liveTools: [tool("t1", "in_progress")],
         describeCommand,
       }),
-    ).toEqual({ kind: "running", command: "cargo test" });
+    ).toEqual({ kind: "reasoning" });
   });
 
   it("names the running command when nothing else is arriving", () => {
@@ -93,7 +94,7 @@ describe("liveActivityState", () => {
     ).toEqual({ kind: "running", command: "cargo test" });
   });
 
-  it("falls back to waiting when the running tool has no command to name", () => {
+  it("still reports tool work when the running tool has no command to name", () => {
     expect(
       liveActivityState({
         rendered: render([toolItem("t1")]),
@@ -101,10 +102,13 @@ describe("liveActivityState", () => {
         liveTools: [tool("t1", "in_progress")],
         describeCommand: () => "   ",
       }),
-    ).toEqual({ kind: "waiting" });
+    ).toEqual({ kind: "tools" });
   });
 
-  it("waits when the tools have all finished and nothing is arriving", () => {
+  it("keeps reporting tool work in the gap after the last tool closes", () => {
+    // A closed tool is not the end of the tool work: the next call is usually
+    // already on its way, and reading "thinking" in that gap said the turn had
+    // moved on when it had not.
     expect(
       liveActivityState({
         rendered: render([toolItem("t1")]),
@@ -112,10 +116,10 @@ describe("liveActivityState", () => {
         liveTools: [tool("t1", "completed")],
         describeCommand,
       }),
-    ).toEqual({ kind: "waiting" });
+    ).toEqual({ kind: "tools" });
   });
 
-  it("waits at the very start of a turn", () => {
+  it("waits only when the turn has done nothing at all yet", () => {
     expect(
       liveActivityState({
         rendered: render([]),
