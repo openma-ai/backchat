@@ -239,7 +239,13 @@ the spec's cancellation rules make client-side settling the client's job (§2.1)
 Recorded so the next change can tell a known gap from a new regression. Items
 under investigation are marked; do not treat them as settled findings.
 
-- **I1 — held for completion.** `session.complete` already carried
+- **I1 — held for completion, live and replayed.** The reason is persisted on the
+  canonical `turn.completed` row and replay was dropping it, so a turn cut off at
+  a limit came back from a restart looking like an ordinary finished answer: two
+  views of one turn disagreeing. Replay now carries it onto the turn. The
+  `turn_cancelled` row type that five call sites write is read by nothing — the
+  cancellation fact travels as canonical `turn.cancelled` — so the new abandoned-
+  queue path does not add a sixth spelling of a fact it cannot replay. `session.complete` already carried
   `stop_reason`; the renderer dropped it. `Turn.stopReason` now keeps the agent's
   word, and `turnStopNotice` turns the reasons that are not `end_turn` into a
   visible notice: a turn stopped at a token limit, at the per-turn request limit,

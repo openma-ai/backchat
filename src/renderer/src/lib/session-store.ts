@@ -2809,6 +2809,16 @@ export class SessionStore {
         current.endedAt = Math.max(current.endedAt ?? current.startedAt, r.ts);
         if (canonical.type === "turn.completed") {
           current.status = "complete";
+          // The stop reason is on disk and was being dropped, so a turn cut off
+          // at a limit or declined came back from a restart looking like an
+          // ordinary finished answer — the live view said one thing and the
+          // replayed view another about the same turn.
+          const completedData = isPlainRecord(canonical.data)
+            ? canonical.data
+            : undefined;
+          if (typeof completedData?.["stop_reason"] === "string") {
+            current.stopReason = completedData["stop_reason"];
+          }
           // A provider-owned session.running fact can precede the host-owned
           // turn terminal in the persisted stream (Pi reports exactly this).
           // Replay must respect the later terminal just like the live reducer,

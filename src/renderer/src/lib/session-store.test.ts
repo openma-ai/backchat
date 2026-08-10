@@ -2400,6 +2400,41 @@ describe("SessionStore prompt queue state", () => {
     expect(turn?.stopReason).toBe("max_tokens");
   });
 
+  test("replay keeps the stop reason a finished turn was persisted with", () => {
+    // Live and replayed views of one turn have to say the same thing: the reason
+    // is on disk in the canonical turn.completed row, and dropping it made a
+    // truncated answer come back from a restart looking finished.
+    const store = new SessionStore();
+    const sessionId = "sess-replay-stop";
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "write it all" }),
+        ts: 1000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify({
+          schema: "oma.event.v1",
+          event_id: "turn-completed-1",
+          session_id: sessionId,
+          turn_id: "turn-1",
+          source: { kind: "harness", harness: "codex-acp", adapter: "acp" },
+          occurred_at: "2026-08-06T00:00:02.000Z",
+          type: "turn.completed",
+          data: { stop_reason: "max_tokens" },
+        }),
+        ts: 2000,
+      },
+    ]);
+
+    const turn = store.turnsFor(sessionId).at(-1);
+    expect(turn?.status).toBe("complete");
+    expect(turn?.stopReason).toBe("max_tokens");
+  });
+
   test("deduplicates broker asks and clears them when the active turn terminates", () => {
     const store = new SessionStore();
     const sessionId = "sess-broker-lifecycle";

@@ -1752,9 +1752,9 @@ export class SessionManager {
     message: string,
   ): void {
     for (const prompt of prompts) {
-      appendEvent(sessionId, "turn_cancelled", {
-        turn_id: prompt.params.turn_id,
-      });
+      // Only the sent event is recorded, through the canonical enricher that
+      // persists it. Writing a second, differently named row here would put two
+      // spellings of one fact on disk, and the row type nothing replays reads.
       this.#send({
         type: "session.error",
         session_id: sessionId,
