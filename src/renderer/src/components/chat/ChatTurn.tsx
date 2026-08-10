@@ -1,11 +1,18 @@
 import { isToolRunning } from "@/lib/activity-tool-groups";
 import { turnStopNotice } from "@/lib/turn-stop-reason";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRightFromLineIcon, AtSignIcon, TargetIcon } from "lucide-react";
+import {
+  ArrowRightFromLineIcon,
+  AtSignIcon,
+  CheckIcon,
+  CopyIcon,
+  TargetIcon,
+} from "lucide-react";
 import { SessionTurnFrame } from "@openma/common/session-ui";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
 import { settleInterruptedToolStatus } from "@/lib/chat-tool-presentation";
 import { promptCommandAnnotation } from "@/lib/prompt-command-annotation";
@@ -192,19 +199,6 @@ export const TurnBlock = memo(function TurnBlock({
             isStreaming={isStreaming}
           />
 
-          {onFork && turn.status === "complete" && turn.assistantText.trim() && (
-            <button
-              type="button"
-              data-turn-fork-action="true"
-              aria-label={t("chat.continueInNewChat")}
-              title={t("chat.continueInNewChat")}
-              onClick={onFork}
-              className="ml-auto inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <ArrowRightFromLineIcon className="size-4" aria-hidden="true" />
-            </button>
-          )}
-
           {stopNotice && (
             <p
               data-turn-stop-reason={turn.stopReason}
@@ -218,20 +212,18 @@ export const TurnBlock = memo(function TurnBlock({
             </p>
           )}
 
-          {/* A running tool is already the live status, and saying "thinking"
-              underneath it added a second, vaguer voice for the same wait. */}
-          {isStreaming && !hasRunningTool && (
-            hasAnything
-              // A running turn has to look running for as long as it runs.
-              // Gating the only signal on "nothing visible yet" meant the first
-              // token made a turn mid-sentence look finished, which is what
-              // invited the next prompt on top of it. With content present the
-              // wait is a continuation, so it trails the output as motion
-              // alone: repeating the word would read as starting over, and a
-              // heading above live activity is what this deliberately is not.
-              ? <StreamingContinuation />
-              : <StreamingPlaceholder />
-          )}
+          {/* One row that outlives the turn's state change. The live wait and
+              the finished turn's actions occupy the same cell and cross-fade,
+              so settling no longer removes a line and relays everything above
+              it. A running tool is already the live status, so the word steps
+              aside for it rather than doubling it. */}
+          <TurnFooter
+            turn={turn}
+            isStreaming={isStreaming}
+            showLiveWord={!hasRunningTool}
+            hasAnything={hasAnything}
+            onFork={onFork}
+          />
       </SessionTurnFrame>
     </>
   );
@@ -360,6 +352,103 @@ function StreamingDots({ hidden }: { hidden?: boolean }) {
  * as the agent starting over. In practice a bare "..." says nothing: the line has
  * to name the state it is reporting, and the animation is what makes it read as
  * ongoing rather than stalled. */
+function TurnFooter({
+  turn,
+  isStreaming,
+  showLiveWord,
+  hasAnything,
+  onFork,
+}: {
+  turn: Turn;
+  isStreaming: boolean;
+  showLiveWord: boolean;
+  hasAnything: boolean;
+  onFork?: () => void;
+}) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const answer = turn.assistantText.trim();
+  const canFork = Boolean(onFork) && turn.status === "complete" && answer.length > 0;
+  const endedAt = turn.status === "running" ? undefined : turn.endedAt;
+  const layer =
+    "col-start-1 row-start-1 flex min-w-0 items-center transition-opacity duration-[var(--dur-slow)] ease-[var(--ease-soft)]";
+  const copyAnswer = () => {
+    if (!answer) return;
+    void navigator.clipboard?.writeText(answer).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    });
+  };
+  return (
+    <div
+      data-turn-footer="true"
+      className="grid min-h-6 grid-cols-1 grid-rows-1"
+    >
+      <div
+        className={cn(layer, isStreaming ? "opacity-100" : "pointer-events-none opacity-0")}
+        aria-hidden={isStreaming ? undefined : true}
+      >
+        {isStreaming && showLiveWord && (
+          // A running turn has to look running for as long as it runs. With
+          // content present the wait is a continuation, so it trails the output
+          // as motion alone: repeating the word would read as starting over.
+          hasAnything ? <StreamingContinuation /> : <StreamingPlaceholder />
+        )}
+      </div>
+      <div
+        className={cn(
+          layer,
+          "justify-end gap-1",
+          isStreaming ? "pointer-events-none opacity-0" : "opacity-100",
+        )}
+        aria-hidden={isStreaming ? true : undefined}
+      >
+        {endedAt !== undefined && (
+          <time
+            data-turn-ended-at={String(endedAt)}
+            className="mr-1 text-xs leading-5 text-fg-subtle"
+          >
+            {new Date(endedAt).toLocaleTimeString(undefined, {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </time>
+        )}
+        {answer.length > 0 && (
+          <button
+            type="button"
+            data-turn-copy-action="true"
+            aria-label={copied ? t("chat.answerCopied") : t("chat.copyAnswer")}
+            title={copied ? t("chat.answerCopied") : t("chat.copyAnswer")}
+            onClick={copyAnswer}
+            tabIndex={isStreaming ? -1 : undefined}
+            className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {copied ? (
+              <CheckIcon className="size-4" aria-hidden="true" />
+            ) : (
+              <CopyIcon className="size-4" aria-hidden="true" />
+            )}
+          </button>
+        )}
+        {canFork && (
+          <button
+            type="button"
+            data-turn-fork-action="true"
+            aria-label={t("chat.continueInNewChat")}
+            title={t("chat.continueInNewChat")}
+            onClick={onFork}
+            tabIndex={isStreaming ? -1 : undefined}
+            className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ArrowRightFromLineIcon className="size-4" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StreamingContinuation() {
   const { t } = useI18n();
   const label = t("chat.thinking");

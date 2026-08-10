@@ -136,7 +136,10 @@ export function ToolRow({
         onClick={hasBody ? handleSummaryClick : undefined}
         aria-expanded={open}
         className={cn(
-          "activity-disclosure-row",
+          // The running status pill is taller than the row's text, so the row
+          // shrank the moment a tool completed and pulled everything below it
+          // up. One height for both states.
+          "activity-disclosure-row min-h-6",
           hasBody ? "cursor-pointer hover:bg-[var(--control-bg-hover)]" : "cursor-default",
         )}
       >

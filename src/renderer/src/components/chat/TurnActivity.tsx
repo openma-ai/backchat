@@ -22,6 +22,7 @@ import {
 } from "./ChatMarkdown";
 import { latestThoughtSegment } from "@openma/common/session-events/acp";
 import { StreamingMarkdown } from "./StreamingMarkdown";
+import { useRef } from "react";
 
 export function TurnActivity({
   turn,
@@ -68,15 +69,30 @@ export function TurnActivity({
   let assistantPrefix = 0;
   return (
     <Reasoning isStreaming={isStreaming} defaultOpen={true}>
-      {!isStreaming && (
-        <ReasoningTrigger
-          showIcon={false}
-          getThinkingMessage={() => (
-            <span className="text-fg-muted">{completeLabel}</span>
-          )}
-        />
-      )}
-      <ReasoningContent className={cn("space-y-1", isStreaming && "pt-0")}>
+      {/* Always mounted, so settling changes what this row says instead of
+          adding a row and pushing the whole block down. While the turn runs it
+          is transparent and unclickable: the summary belongs to a finished
+          turn, and a word above live activity is what this row is not. */}
+      <ReasoningTrigger
+        showIcon={false}
+        aria-hidden={isStreaming ? true : undefined}
+        tabIndex={isStreaming ? -1 : undefined}
+        className={cn(
+          // A fixed row height, so an empty label while streaming occupies
+          // exactly what the finished label will.
+          "min-h-5 transition-opacity duration-[var(--dur-slow)] ease-[var(--ease-soft)]",
+          isStreaming && "pointer-events-none opacity-0",
+        )}
+        getThinkingMessage={() => (
+          <span className="text-fg-muted">
+            {isStreaming ? "" : completeLabel}
+          </span>
+        )}
+      />
+      {/* The padding no longer depends on the turn's state: the summary row above
+          is always mounted, so dropping it while streaming only made everything
+          below shift when the turn settled. */}
+      <ReasoningContent className="space-y-1">
         {rendered.timeline.map((item, index) => {
           if (item.kind === "assistant_text") {
             const prefix = assistantPrefix;
@@ -191,15 +207,27 @@ function LatestThoughtStatus({
     || latestThoughtSegment(
       lastThoughtItem?.kind === "thought" ? lastThoughtItem.text : "",
     );
-  if (!isStreaming || !policy.showLatestThoughtStatus || !latest) {
-    return null;
-  }
+  // Removing this row when the turn settled pulled everything below it up by a
+  // line in a single frame. The row stays mounted and collapses instead, and it
+  // keeps the last line it showed so there is something to animate out.
+  const shown = useRef("");
+  if (latest) shown.current = latest;
+  const show = isStreaming && policy.showLatestThoughtStatus && Boolean(latest);
+  if (!shown.current) return null;
 
   return (
     <div
-      className="min-w-0 text-fg-muted"
-      data-current-activity={latest}
+      className={cn(
+        "grid min-w-0 text-fg-muted",
+        "transition-[grid-template-rows,opacity] duration-[var(--dur-slow)] ease-[var(--ease-soft)]",
+        show ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+      )}
+      data-activity-status-row="true"
+      aria-hidden={show ? undefined : true}
+      {...(show ? {} : { inert: true })}
+      {...(show ? { "data-current-activity": shown.current } : {})}
     >
+      <div className="min-h-0 overflow-hidden">
       {/* One clamped line, not a streamed markdown block. `currentThoughtText`
           is `latestThoughtSegment()`'s output — trimmed and rejoined — so it is
           not a suffix of `thoughtText`, and the length arithmetic that used to
@@ -208,8 +236,9 @@ function LatestThoughtStatus({
           line only ever showed one truncated line, so it can just be that
           line. */}
       <p className="truncate text-sm leading-5 text-fg-muted">
-        {latest}
+        {shown.current}
       </p>
+      </div>
     </div>
   );
 }
