@@ -206,7 +206,7 @@ export function StreamingMarkdown({
       className={cn(
         // The same rhythm the settled surface uses, from one constant, so the
         // handoff cannot change the geometry of the document.
-        "streaming-md text-[13px] leading-6 text-fg",
+        "streaming-md font-chat text-[13px] leading-6 text-fg",
         MARKDOWN_BLOCK_RHYTHM,
         className,
       )}

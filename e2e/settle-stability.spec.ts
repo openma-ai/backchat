@@ -75,7 +75,8 @@ test("settling a turn does not move what the turn already rendered", async ({
   await injectEvent(page, chunk("PARA-TWO", "commentary"));
   await injectEvent(page, chunk("FINAL-ANSWER-TEXT", "final_answer"));
 
-  await expect.poll(() => activityBoxes(page), { timeout: 15_000 }).toHaveLength(3);
+  // Commentary, tool row, commentary, and the thinking block Codex now renders.
+  await expect.poll(() => activityBoxes(page), { timeout: 15_000 }).toHaveLength(4);
   const streaming = await activityBoxes(page);
 
   await injectEvent(page, {

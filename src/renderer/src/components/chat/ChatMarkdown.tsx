@@ -59,7 +59,10 @@ export const MARKDOWN_BLOCK_RHYTHM = cn(
 );
 
 export const ASSISTANT_MARKDOWN_CLASS = cn(
-  "text-[13px] leading-6 text-fg",
+  // The chat stack, wherever this markdown lands. The rule that picks it applies
+  // to the prompt and the answer, so the same agent prose rendered inside the
+  // work block came out in the UI font — one paragraph in two typefaces.
+  "font-chat text-[13px] leading-6 text-fg",
   MARKDOWN_BLOCK_RHYTHM,
 );
 

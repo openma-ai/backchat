@@ -5,11 +5,11 @@ import {
 } from "@/components/ai-elements/reasoning";
 import {
   groupActivityTools,
-  isToolRunning,
   projectActivityTools,
   type ActivityTool,
 } from "@/lib/activity-tool-groups";
 import { pickToolActivityTarget } from "@/lib/chat-tool-presentation";
+import { liveActivityState } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
 import {
   activityPresentationPolicy,
@@ -23,7 +23,6 @@ import {
   ASSISTANT_MARKDOWN_CLASS,
   StreamdownText,
 } from "./ChatMarkdown";
-import { latestThoughtSegment } from "@openma/common/session-events/acp";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { useRef } from "react";
 
@@ -79,27 +78,28 @@ export function TurnActivity({
     trailingTools.map((tool) => tool.toolCallId),
   );
   const liveTools = [...trailingTools, ...toolGroups.trailing];
-  const runningTool = liveTools.findLast((tool) => isToolRunning(tool.status));
-  // What the last row says, in descending order of how much it actually knows:
-  // the thought the agent is working from, the command it is running, and only
-  // then the fact that it is thinking at all.
-  // A thought the agent has already spoken past is not what it is thinking now.
-  const lastThoughtIndex = rendered.timeline.reduce(
-    (last, item, index) => (item.kind === "thought" ? index : last),
-    -1,
-  );
-  const currentThought = lastThoughtIndex > lastSpokenIndex
-    ? latestThoughtLine(rendered)
-    : rendered.currentThoughtText;
-  const liveHeadline = !isStreaming
-    ? undefined
-    : currentThought
-      || (runningTool
-        ? pickToolActivityTarget(runningTool, (name) =>
-          t("tool.skillSuffix", { name }),
-        )
-        : "")
-      || t("chat.thinking");
+  // One closed set of states, decided in one place. Every one of these used to
+  // be its own boolean here, and the combinations nobody named are where the
+  // duplicated sentences came from.
+  const live = liveActivityState({
+    rendered,
+    isStreaming,
+    liveTools,
+    describeCommand: (tool) =>
+      pickToolActivityTarget(tool, (name) => t("tool.skillSuffix", { name })),
+  });
+  const liveHeadline = live.kind === "running"
+    ? live.command
+    : live.kind === "waiting"
+      ? t("chat.thinking")
+      : undefined;
+  // A command it is running is still a tool call and keeps the row's icon; the
+  // fallback is the row talking about itself, and gets none.
+  const liveHeadlineKind = live.kind === "running"
+    ? ("command" as const)
+    : live.kind === "waiting"
+      ? ("thought" as const)
+      : undefined;
   const hasActivity =
     hasThought ||
     commentaryItems.length > 0 ||
@@ -167,27 +167,38 @@ export function TurnActivity({
             if (!policy.persistThoughtTimeline) return null;
             const isLiveTail =
               isStreaming && index === rendered.timeline.length - 1;
+            // The agent's reasoning, rendered as the block it is. Marked so the
+            // block itself is testable: it was policy-disabled for Codex and
+            // squeezed into a single truncated line, and nothing failed.
             if (isLiveTail) {
               return (
-                <StreamingMarkdown
+                <div
                   key={`activity-thought-live-${item.messageId ?? index}`}
-                  turnId={turn.id}
-                  kind="thought"
-                  cwd={cwd}
-                  className="text-fg-muted"
-                  paceReplay
-                />
+                  data-thought-block="true"
+                >
+                  <StreamingMarkdown
+                    turnId={turn.id}
+                    kind="thought"
+                    cwd={cwd}
+                    className="text-fg-muted"
+                    paceReplay
+                  />
+                </div>
               );
             }
             return (
-              <StreamdownText
+              <div
                 key={`activity-thought-${item.messageId ?? index}`}
-                className="text-[13px] leading-6 text-fg-muted"
-                text={item.text}
-                cwd={cwd}
-                sessionId={turn.sessionId}
-                surfacePrefix={`${turn.id}-thought-${index}`}
-              />
+                data-thought-block="true"
+              >
+                <StreamdownText
+                  className="font-chat text-[13px] leading-6 text-fg-muted"
+                  text={item.text}
+                  cwd={cwd}
+                  sessionId={turn.sessionId}
+                  surfacePrefix={`${turn.id}-thought-${index}`}
+                />
+              </div>
             );
           }
           const group = toolGroups.byStartIndex.get(index);
@@ -221,6 +232,7 @@ export function TurnActivity({
               sessionId={turn.sessionId}
               subagents={subagents}
               headline={liveHeadline}
+              headlineKind={liveHeadlineKind}
             />
           ) : (
             <LiveStatusRow text={liveHeadline} />
@@ -231,28 +243,6 @@ export function TurnActivity({
   );
 }
 
-/** `currentThoughtText` empties as soon as a tool call arrives, because that
- *  thought is no longer the thing streaming. While the turn is still running the
- *  last thought is still what the agent is working from, so fall back to it —
- *  otherwise Codex, which keeps no thought items in the timeline, says nothing
- *  at all for the whole tool call. */
-function latestThoughtLine(rendered: TurnRender): string {
-  const lastThoughtItem = rendered.timeline.findLast(
-    (item) => item.kind === "thought",
-  );
-  return (
-    rendered.currentThoughtText
-    || latestThoughtSegment(
-      lastThoughtItem?.kind === "thought" ? lastThoughtItem.text : "",
-    )
-  );
-}
-
-/** The last row of the work block: what the agent is doing right now. It is
- *  always here while the turn runs; the tool calls that fold into it are not,
- *  so it keeps the same geometry with or without them and nothing moves when a
- *  tool arrives. It collapses its own height when the turn ends rather than
- *  vanishing and pulling the answer up a line. */
 function LiveStatusRow({ text }: { text?: string }) {
   const shown = useRef("");
   if (text) shown.current = text;
@@ -271,13 +261,9 @@ function LiveStatusRow({ text }: { text?: string }) {
       <div className="min-h-0 overflow-hidden">
         <div className="py-0.5">
           <div className="activity-disclosure-row min-h-6">
-            <span
-              data-tool-group-icon-slot
-              className="grid size-[var(--chat-activity-icon-size)] shrink-0 place-items-center"
-            />
             {/* One clamped line, not a streamed markdown block: the status only
                 ever showed one truncated line. */}
-            <p className="min-w-0 flex-1 truncate text-[13px] leading-6 text-fg-muted">
+            <p className="min-w-0 flex-1 truncate font-chat text-[13px] leading-6 text-fg-muted">
               {shown.current}
             </p>
           </div>

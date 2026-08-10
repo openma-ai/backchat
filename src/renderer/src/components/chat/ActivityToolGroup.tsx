@@ -7,6 +7,10 @@ import { useRef, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 
 import {
+  capitalizeToolLabel,
+  toolRunSummaryKeys,
+} from "@/lib/chat-tool-presentation";
+import {
   isToolRunning,
   type ActivityTool,
 } from "@/lib/activity-tool-groups";
@@ -24,6 +28,7 @@ export function ActivityToolGroup({
   sessionId,
   subagents,
   headline,
+  headlineKind,
 }: {
   tools: ActivityTool[];
   sessionId: string;
@@ -33,6 +38,10 @@ export function ActivityToolGroup({
    *  belongs on this row — the tools and the thought are one answer to "what is
    *  it doing", and two rows made them look like two. */
   headline?: string;
+  /** Whose words the headline is. The agent's own thinking is prose and gets no
+   *  icon and nothing after it; a command it is running is still a tool call and
+   *  keeps the row's furniture. */
+  headlineKind?: "thought" | "command";
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -73,25 +82,39 @@ export function ActivityToolGroup({
         onClick={toggleOpen}
         className="activity-disclosure-row min-h-6 text-[13px]"
       >
-        <span
-          data-tool-group-icon-slot
-          className="grid size-[var(--chat-activity-icon-size)] shrink-0 place-items-center"
-        >
-          {running ? (
-            <Loader2Icon className="chat-activity-icon animate-spin" />
-          ) : (
-            <ListChecksIcon className="chat-activity-icon" />
-          )}
-        </span>
+        {/* The live row is the agent talking, not a control: no icon in front of
+            its words, and nothing after them. What it is running is the whole
+            message — how many tools that took is not. */}
+        {headlineKind !== "thought" && (
+          <span
+            data-tool-group-icon-slot
+            className="grid size-[var(--chat-activity-icon-size)] shrink-0 place-items-center"
+          >
+            {running ? (
+              <Loader2Icon className="chat-activity-icon animate-spin" />
+            ) : (
+              <ListChecksIcon className="chat-activity-icon" />
+            )}
+          </span>
+        )}
         {!headline && (
           <span className="shrink-0 whitespace-nowrap">
             {running || tools.length === 1
               ? latestVerb
-              : t("chat.toolCallCount", { count: tools.length })}
+              : capitalizeToolLabel(
+                toolRunSummaryKeys(tools)
+                  .map((key) => t(key))
+                  .join(t("chat.toolRunJoin")),
+              )}
           </span>
         )}
         <span
-          className="min-w-0 flex-1 truncate text-fg-muted/70"
+          className={cn(
+            "min-w-0 flex-1 truncate text-fg-muted/70",
+            // The headline is the agent's own words when it has any, so it takes
+            // the transcript's typography rather than the control row's.
+            headline && "font-chat text-[13px] leading-6",
+          )}
           {...(headline ? { "data-current-activity": headline } : {})}
         >
           {headline
@@ -99,22 +122,25 @@ export function ActivityToolGroup({
               t("tool.skillSuffix", { name }),
             )}
         </span>
-        {(running || headline) && tools.length > 1 && (
+        {/* Not how many tools it took: what it is doing now. */}
+        {!headline && running && tools.length > 1 && (
           <span className="shrink-0 whitespace-nowrap text-fg-subtle">
             {t("chat.toolCallCount", { count: tools.length })}
           </span>
         )}
-        <span
-          data-tool-group-icon-slot
-          className="ml-auto grid size-5 shrink-0 place-items-center"
-        >
-          <ChevronRightIcon
-            className={cn(
-              "size-3.5 text-fg-subtle transition-transform",
-              open && "rotate-90",
-            )}
-          />
-        </span>
+        {headlineKind !== "thought" && (
+          <span
+            data-tool-group-icon-slot
+            className="ml-auto grid size-5 shrink-0 place-items-center"
+          >
+            <ChevronRightIcon
+              className={cn(
+                "size-3.5 text-fg-subtle transition-transform",
+                open && "rotate-90",
+              )}
+            />
+          </span>
+        )}
       </button>
       {open && (
         <div className="ml-4 mt-1 border-l border-border/40 pl-2">

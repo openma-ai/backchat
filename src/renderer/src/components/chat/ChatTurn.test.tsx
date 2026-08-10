@@ -444,18 +444,19 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html).not.toContain("Planning the first step");
-    expect(html).toContain("Designing the final document");
-    // The text has to be element content, not just the data attribute. The
-    // status line used to stream through a replay skip computed by subtracting
-    // the trimmed latest segment's length from the whole thought text; when
-    // that skip covered the accumulator the line rendered nothing and left an
-    // empty box under the tool row, while this assertion still passed on the
-    // attribute alone.
-    expect(html).toMatch(/>[^<]*Designing the final document/);
-    expect(html.indexOf("data-current-activity")).toBeGreaterThan(
+    // Codex sends real reasoning — headed sections, several paragraphs — and it
+    // is rendered as the block it is. The policy used to drop that block and
+    // squeeze the whole thing into one truncated status line. The text itself
+    // streams into this surface after mount, so what static markup can prove is
+    // that the block exists and that no status line duplicates it.
+    expect(html).toContain('data-thought-block="true"');
+    expect(html.indexOf('data-thought-block="true"')).toBeGreaterThan(
       html.indexOf("The source is ready."),
     );
+    // And the live row does not echo it. The block is the first rung of the
+    // ladder it degrades along, so repeating its tail underneath printed the
+    // same sentence twice.
+    expect(html).not.toContain("data-current-activity");
   });
 
   it("deduplicates repeated completed activity summaries", () => {
@@ -534,6 +535,8 @@ describe("TurnBlock", () => {
     // One row height for a group, a single tool and the live status alike, so
     // folding tools into the last row cannot change where that row sits.
     expect(triggerClass).toContain("min-h-6");
+    // Two per tool row — leading icon and chevron — and none for the live row
+    // when it is carrying the agent's own words rather than a tool call.
     expect(html.match(/data-tool-group-icon-slot="true"/g)).toHaveLength(2);
   });
 
@@ -600,12 +603,9 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain('data-tool-group-size="3"');
-    // Not in the timeline — that is what lets the three tools group across it.
-    // It does appear once as the live status line: the turn is still running, so
-    // the last thought is still what the agent is working from.
-    expect(html).not.toContain("Planning the next command");
-    // The last one does appear, once, as the live status line: the turn is still
-    // running, so it is still what the agent is working from.
+    // The thoughts are rendered as blocks and the tools still group across
+    // them: grouping is about what the tools are, not about what is between.
+    expect(html).toContain("Planning the next command");
     expect(html).toMatch(/>[^<]*Planning the final command/);
   });
 
@@ -640,12 +640,13 @@ describe("TurnBlock", () => {
       />,
     );
 
-    // The last row says what it is doing, not how it is doing it: the thought
-    // it is working from, else the command it is running, else that it is
-    // thinking. The folded tools keep their count on the right.
+    // The last row says what it is doing, not how it is doing it: the thought it
+    // is working from, else the command it is running, else that it is thinking.
+    // It is the agent talking, not a control — no icon before its words, and no
+    // tool count after them.
     expect(html).toContain('data-tool-group-size="2"');
     expect(html).toContain('data-current-activity="Active command"');
-    expect(html).toContain("chat.toolCallCount");
+    expect(html).not.toContain("chat.toolCallCount");
   });
 
   it("settles a tool call the agent stopped reporting on", () => {
@@ -783,7 +784,9 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain("Finished.");
-    expect(html).not.toContain("Planning a temporary status");
+    // The thought is a block of its own now; what it must not become is a
+    // second disclosure with its own completion label.
+    expect(html).toContain("Planning a temporary status");
     expect(html).not.toContain("chat.thoughtComplete");
   });
 

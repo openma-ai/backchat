@@ -184,3 +184,47 @@ export function shortToolPath(path: string): string {
   if (parts.length <= 2) return path;
   return `…/${parts.slice(-2).join("/")}`;
 }
+
+/** What a run of tool calls did, as words. A count says how much happened and
+ *  nothing about what: "2 tool calls" is a receipt, not a sentence. Distinct
+ *  kinds keep the order they first ran in, so the summary reads like the work. */
+export function toolRunSummaryKeys(
+  tools: readonly ChatToolPresentationInput[],
+): TranslationKey[] {
+  const keys: TranslationKey[] = [];
+  for (const tool of tools) {
+    const key = toolSummaryKey(tool);
+    if (!keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
+function toolSummaryKey(tool: ChatToolPresentationInput): TranslationKey {
+  if (detectSkillName(tool)) return "toolSummary.read";
+  switch (tool.kind) {
+    case "read":
+      return "toolSummary.read";
+    case "edit":
+      return "toolSummary.edit";
+    case "delete":
+      return "toolSummary.delete";
+    case "move":
+      return "toolSummary.move";
+    case "search":
+    case "grep":
+      return "toolSummary.search";
+    case "execute":
+    case "terminal":
+      return "toolSummary.execute";
+    case "fetch":
+    case "web":
+      return "toolSummary.fetch";
+    case "think":
+      return "toolSummary.think";
+    case "list":
+    case "tree":
+      return "toolSummary.list";
+    default:
+      return "toolSummary.other";
+  }
+}
