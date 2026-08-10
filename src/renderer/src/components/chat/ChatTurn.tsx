@@ -94,6 +94,19 @@ export const TurnBlock = memo(function TurnBlock({
   const hasRunningTool = activityRendered.tools.some((tool) =>
     isToolRunning(tool.status),
   );
+  // "Thinking" is the fallback for a silence: the harness is still working, but
+  // nothing it does is visible. Anything the turn is actually emitting — the
+  // answer, a tool, a thought — speaks for itself, and the word underneath it
+  // was a second, vaguer voice for the same wait.
+  const lastTimelineItem = activityRendered.timeline.at(-1);
+  const answerArriving = lastTimelineItem
+    ? lastTimelineItem.kind === "assistant_text"
+    : turn.assistantText.length > 0;
+  const thoughtArriving =
+    lastTimelineItem?.kind === "thought" ||
+    Boolean(activityRendered.currentThoughtText);
+  const waitIsTheOnlyNews =
+    !hasRunningTool && !answerArriving && !thoughtArriving;
   // The agent states why a turn ended; a limit or a refusal arrives as an
   // ordinary completion and would otherwise read as a finished answer.
   const stopNotice = turnStopNotice(turn);
@@ -215,13 +228,13 @@ export const TurnBlock = memo(function TurnBlock({
           {/* One row that outlives the turn's state change. The live wait and
               the finished turn's actions occupy the same cell and cross-fade,
               so settling no longer removes a line and relays everything above
-              it. A running tool is already the live status, so the word steps
-              aside for it rather than doubling it. */}
+              it. The wait only speaks for a silence: a running tool and arriving
+              text are each already the live status, and saying "thinking" under
+              either was a second, vaguer voice for the same wait. */}
           <TurnFooter
             turn={turn}
             isStreaming={isStreaming}
-            showLiveWord={!hasRunningTool}
-            hasAnything={hasAnything}
+            showLiveWord={waitIsTheOnlyNews}
             onFork={onFork}
           />
       </SessionTurnFrame>
@@ -426,13 +439,11 @@ function TurnFooter({
   turn,
   isStreaming,
   showLiveWord,
-  hasAnything,
   onFork,
 }: {
   turn: Turn;
   isStreaming: boolean;
   showLiveWord: boolean;
-  hasAnything: boolean;
   onFork?: () => void;
 }) {
   const { t } = useI18n();
@@ -450,12 +461,7 @@ function TurnFooter({
         className={cn(layer, isStreaming ? "opacity-100" : "pointer-events-none opacity-0")}
         aria-hidden={isStreaming ? undefined : true}
       >
-        {isStreaming && showLiveWord && (
-          // A running turn has to look running for as long as it runs. With
-          // content present the wait is a continuation, so it trails the output
-          // as motion alone: repeating the word would read as starting over.
-          hasAnything ? <StreamingContinuation /> : <StreamingPlaceholder />
-        )}
+        {isStreaming && showLiveWord && <StreamingPlaceholder />}
       </div>
       <div
         className={cn(
@@ -483,24 +489,6 @@ function TurnFooter({
         </TurnMetaActions>
       </div>
     </div>
-  );
-}
-
-function StreamingContinuation() {
-  const { t } = useI18n();
-  const label = t("chat.thinking");
-  return (
-    <p
-      data-streaming-continuation="true"
-      className="text-[13px] leading-6 text-fg-subtle"
-      aria-label={label}
-      aria-live="polite"
-    >
-      <span aria-hidden="true">
-        {label.replace(/[.…。]+\s*$/u, "")}
-        <StreamingDots />
-      </span>
-    </p>
   );
 }
 

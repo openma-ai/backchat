@@ -250,10 +250,10 @@ describe("TurnBlock", () => {
       />,
     );
 
-    // No Reasoning disclosure without a thought event. The trailing live line may
-    // name the state it reports; what must not exist is the reasoning trigger.
+    // No Reasoning disclosure without a thought event, and no wait line either:
+    // the answer arriving is what a running turn looks like.
     expect(html).not.toContain("aria-expanded");
-    expect(html).toContain('data-streaming-continuation="true"');
+    expect(html).not.toContain("chat.thinking");
   });
 
   it("shows a lightweight thinking label for an empty running turn", () => {
@@ -293,10 +293,10 @@ describe("TurnBlock", () => {
     }
   });
 
-  it("keeps saying it is running after the first token arrives", () => {
-    // The signal used to be gated on nothing being visible yet, so the first
-    // token removed it and a turn mid-sentence looked finished — which is what
-    // invited the next prompt to be sent on top of it.
+  it("says nothing under an answer that is still arriving", () => {
+    // "Thinking" is the fallback for a silence. While the answer streams, the
+    // text is the live status, and the word under it was a second, vaguer voice
+    // for the same wait.
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
@@ -306,12 +306,11 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html).toContain('data-streaming-continuation="true"');
-    // It names the state — dots alone said nothing — and never sits above output.
-    expect(html).toContain("chat.thinking");
-    expect(html.indexOf("Half a sentence so far")).toBeLessThan(
-      html.indexOf('data-streaming-continuation="true"'),
-    );
+    // The previous form of this assertion compared indexOf() against the wait
+    // line; this fixture carries no events, so the answer never rendered and
+    // indexOf returned -1, which is less than anything. It proved nothing.
+    expect(html).toContain('data-session-turn-status="running"');
+    expect(html).not.toContain("chat.thinking");
   });
 
   it("stops saying it is running once the turn ends", () => {
