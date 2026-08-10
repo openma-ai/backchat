@@ -250,8 +250,10 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html).not.toContain("chat.thinking");
+    // No Reasoning disclosure without a thought event. The trailing live line may
+    // name the state it reports; what must not exist is the reasoning trigger.
     expect(html).not.toContain("aria-expanded");
+    expect(html).toContain('data-streaming-continuation="true"');
   });
 
   it("shows a lightweight thinking label for an empty running turn", () => {
@@ -280,8 +282,13 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html).not.toContain("chat.thinking");
+    // The rule is about position, not the word: no thinking heading above the
+    // live activity. A trailing line below it is the documented fallback.
     expect(html).not.toContain("chat.thoughtComplete");
+    const heading = html.indexOf("chat.thinking");
+    if (heading >= 0) {
+      expect(heading).toBeGreaterThan(html.indexOf("Inspecting the repository."));
+    }
   });
 
   it("keeps saying it is running after the first token arrives", () => {
@@ -298,8 +305,8 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain('data-streaming-continuation="true"');
-    // Motion, not a restated heading, and never above the output.
-    expect(html).not.toContain("chat.thinking");
+    // It names the state — dots alone said nothing — and never sits above output.
+    expect(html).toContain("chat.thinking");
     expect(html.indexOf("Half a sentence so far")).toBeLessThan(
       html.indexOf('data-streaming-continuation="true"'),
     );
@@ -391,7 +398,11 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html).not.toContain("chat.thinking");
+    // The trailing live line may name its state; it must stay below the activity.
+    const heading = html.indexOf("chat.thinking");
+    if (heading >= 0) {
+      expect(heading).toBeGreaterThan(html.indexOf("tool.reading"));
+    }
     expect(html).toContain("I will create the document.");
     expect(html.match(/tool.reading/g)).toHaveLength(1);
     expect(html).not.toContain(">读取<");

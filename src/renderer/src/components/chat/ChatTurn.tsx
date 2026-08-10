@@ -348,18 +348,26 @@ function StreamingDots({ hidden }: { hidden?: boolean }) {
   );
 }
 
-/** The tail of a turn that is still producing output. Carries no words: the
- *  output above it already says what is happening. */
+/** The tail of a turn that is still producing output.
+ *
+ * It used to be dots alone, on the reasoning that repeating the word would read
+ * as the agent starting over. In practice a bare "..." says nothing: the line has
+ * to name the state it is reporting, and the animation is what makes it read as
+ * ongoing rather than stalled. */
 function StreamingContinuation() {
   const { t } = useI18n();
+  const label = t("chat.thinking");
   return (
     <p
       data-streaming-continuation="true"
       className="text-sm leading-6 text-fg-subtle"
-      aria-label={t("chat.stillWorking")}
+      aria-label={label}
       aria-live="polite"
     >
-      <StreamingDots />
+      <span aria-hidden="true">
+        {label.replace(/[.…。]+\s*$/u, "")}
+        <StreamingDots />
+      </span>
     </p>
   );
 }

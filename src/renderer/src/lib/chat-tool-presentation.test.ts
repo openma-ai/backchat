@@ -122,3 +122,43 @@ describe("interrupted tool calls", () => {
     expect(isToolRunning("cancelled")).toBe(false);
   });
 });
+describe("an executing tool names the command, not the tool", () => {
+  it("prefers the reported command over a generic title", () => {
+    // Codex titles its shell tool `bash`, so a running command read as
+    // "Running bash" — the name of the tool instead of the thing being run.
+    expect(
+      pickToolTarget({
+        kind: "execute",
+        title: "bash",
+        rawInput: { command: "/Users/me/.cache/codex-runtimes/dev --check" },
+      }),
+    ).toBe("/Users/me/.cache/codex-runtimes/dev --check");
+  });
+
+  it("unwraps a shell invocation to the script it carries", () => {
+    // `bash -lc "..."` is transport. What ran is the script inside it.
+    expect(
+      pickToolTarget({
+        kind: "terminal",
+        title: "bash",
+        rawInput: { command: ["bash", "-lc", "pnpm test -- --run"] },
+      }),
+    ).toBe("pnpm test -- --run");
+  });
+
+  it("keeps the title when no command was reported", () => {
+    expect(pickToolTarget({ kind: "execute", title: "bash" })).toBe("bash");
+  });
+
+  it("leaves non-executing tools alone", () => {
+    // A read reports a path, and its command field means nothing here.
+    expect(
+      pickToolTarget({
+        kind: "read",
+        title: "Read SKILL.md",
+        rawInput: { command: "cat SKILL.md" },
+      }),
+    ).toBe("Read SKILL.md");
+  });
+});
+

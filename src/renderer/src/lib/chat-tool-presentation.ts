@@ -79,7 +79,30 @@ export function toolVerbKey(
   }
 }
 
+/** The command an execute tool is running, when the adapter reports one.
+ *
+ * Codex titles its shell tool `bash`, so a running command showed as
+ * "Running bash" — the name of the tool instead of the thing the user is being
+ * asked to watch. Adapters send the command either as a string or as an argv
+ * array, and a `bash -lc` wrapper is transport, not the command itself. */
+function executedCommand(tool: ChatToolPresentationInput): string {
+  const raw = tool.rawInput as { command?: unknown } | null | undefined;
+  const command = raw?.command;
+  if (typeof command === "string") return command.trim();
+  if (!Array.isArray(command)) return "";
+  const argv = command.filter((part): part is string => typeof part === "string");
+  const shellIndex = argv.findIndex((part) => part === "-lc" || part === "-c");
+  const script = shellIndex >= 0 ? argv[shellIndex + 1] : undefined;
+  return (script ?? argv.join(" ")).trim();
+}
+
+const EXECUTING_KINDS = new Set(["execute", "terminal"]);
+
 export function pickToolTarget(tool: ChatToolPresentationInput): string {
+  if (tool.kind && EXECUTING_KINDS.has(tool.kind)) {
+    const command = executedCommand(tool);
+    if (command) return command;
+  }
   if (tool.title) return tool.title;
   if (tool.locations?.length && tool.locations[0]?.path) {
     return shortToolPath(tool.locations[0].path);
