@@ -992,7 +992,13 @@ export function Composer({
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+        {/* The row clips so a long chip truncates instead of spilling. It was
+            exactly as tall as its controls, so a focused control's outline —
+            drawn 1.7px outside it — lost its top, bottom and left edges and the
+            surviving right edge read as a stray background behind the button.
+            The negative margin keeps the row where it was while the padding
+            gives the clip box room for the ring. */}
+        <div className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden p-1">
           <button
             type="button"
             aria-label={t("chat.attachFiles")}
