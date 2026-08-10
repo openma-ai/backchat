@@ -87,28 +87,21 @@ export function ComposerBrokerAsk({
         )}
         onClose={dismiss}
       >
-        {(permission.presentation.reason || permission.presentation.command) && (
-          <div className="min-w-0">
-            {permission.presentation.reason && (
-              <p className="px-2 text-sm font-medium leading-5 text-fg">
-                {permission.presentation.reason}
-              </p>
-            )}
-            {!permission.presentation.reason && (
-              <p className="px-2 text-sm font-medium leading-5 text-fg">
-                {t("permission.allowThisAction")}
-              </p>
-            )}
-            {permission.presentation.command && (
-              <ToolInputBlock
-                id={permission.requestId}
-                variant="approval"
-              >
-                {permission.presentation.command}
-              </ToolInputBlock>
-            )}
-          </div>
-        )}
+        {/* A card that asks for approval always says what for. The whole body
+            used to be gated on the agent having sent a reason or a command, so
+            an agent that sent neither produced a card with a tool name, two
+            buttons, and nothing to judge — and the fallback sentence written for
+            exactly that case sat inside the gate that excluded it. */}
+        <div className="min-w-0">
+          <p className="px-2 text-sm font-medium leading-5 text-fg">
+            {permission.presentation.reason || t("permission.allowThisAction")}
+          </p>
+          {permission.presentation.command && (
+            <ToolInputBlock id={permission.requestId} variant="approval">
+              {permission.presentation.command}
+            </ToolInputBlock>
+          )}
+        </div>
         <div
           className="mt-3 flex flex-wrap items-center justify-end gap-2"
           data-codex-approval-actions="true"

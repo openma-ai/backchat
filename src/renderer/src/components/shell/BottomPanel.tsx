@@ -338,7 +338,6 @@ function TabBar({
 /** Shorten a cwd to its last path segment for the tab label. `~/foo/
  *  bar/baz` → `baz`. Falls back to "shell" for the root or empty. */
 function shortCwdLabel(cwd: string): string {
-  const { t } = useI18n();
   const trimmed = cwd.replace(/\/+$/, "");
   const last = trimmed.split("/").pop();
   return last || "shell";

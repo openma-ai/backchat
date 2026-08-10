@@ -730,7 +730,6 @@ function BottomPanelResizer({
   };
 
   const stopDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-  const { t } = useI18n();
     if (!draggingRef.current) return;
     draggingRef.current = false;
     onResizingChange(false);

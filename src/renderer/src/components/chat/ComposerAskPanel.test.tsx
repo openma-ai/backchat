@@ -196,6 +196,34 @@ describe("InlineAskPanel", () => {
   });
 });
 
+describe("a permission card always says what it is asking", () => {
+  it("falls back to a sentence when the agent sends neither reason nor command", () => {
+    // The body used to be gated on reason || command, which excluded the very
+    // fallback written for their absence: a Terminal permission with neither
+    // rendered a tool name, two buttons, and nothing to judge.
+    const html = renderToStaticMarkup(
+      <InlineAskPanel
+        ask={{
+          kind: "permission",
+          ask: {
+            requestId: "permission-bare-1",
+            sessionId: "session-1",
+            toolCall: { title: "Terminal" },
+            presentation: { title: "Terminal", kind: "execute" },
+            options: [
+              { optionId: "once", name: "Allow", kind: "allow_once" },
+              { optionId: "reject", name: "Decline", kind: "reject_once" },
+            ],
+          },
+        }}
+        onResolve={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Allow this action?");
+  });
+});
+
 describe("permission copy stays readable", () => {
   const codexGenericAsk = (command: string) => ({
     kind: "permission" as const,
