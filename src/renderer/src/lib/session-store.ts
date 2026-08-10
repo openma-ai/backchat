@@ -252,7 +252,12 @@ export class SessionStore {
   /** Keep only one event per uninterrupted text/thought run. ACP adapters
    *  commonly emit one event per token; retaining each token makes both the
    *  event array and reduceTurn work grow without adding timeline detail.
-   *  Tool/plan events still break runs because they remain between segments. */
+   *  Tool/plan events still break runs because they remain between segments.
+   *
+   *  Returns whether this text opened a new segment rather than extending the
+   *  last one. A new segment needs one React publish to mount its own live
+   *  tail; without it the segment exists in the event list but nothing renders
+   *  it, and the text stays invisible until the next structural event. */
   #appendStreamEvent(
     turn: Turn,
     kind: "text" | "thought",
@@ -262,7 +267,7 @@ export class SessionStore {
       messageId?: string;
       phase?: "commentary" | "final_answer";
     },
-  ): void {
+  ): boolean {
     const last = turn.events.at(-1);
     const parsedLast = last ? parseAcpEvent(last.payload) : null;
     const sameMessage =
@@ -288,7 +293,7 @@ export class SessionStore {
         },
         receivedAt: last!.receivedAt,
       };
-      return;
+      return false;
     }
     turn.events.push({
       payload: {
@@ -303,6 +308,7 @@ export class SessionStore {
       },
       receivedAt,
     });
+    return true;
   }
 
   getVersion = (): number => this.#version;
@@ -3371,10 +3377,16 @@ export class SessionStore {
             // per token. React is deliberately asleep in this branch; the
             // next structural event/turn completion publishes the compacted
             // event list.
-            this.#appendStreamEvent(turn, parsed.kind, text, Date.now(), {
-              messageId: parsed.messageId,
-              ...(parsed.kind === "text" ? { phase: parsed.phase } : {}),
-            });
+            const openedSegment = this.#appendStreamEvent(
+              turn,
+              parsed.kind,
+              text,
+              Date.now(),
+              {
+                messageId: parsed.messageId,
+                ...(parsed.kind === "text" ? { phase: parsed.phase } : {}),
+              },
+            );
             if (parsed.kind === "text" && runtimeAdapter?.assistantBackgroundWorkItemUpdates) {
               for (const update of runtimeAdapter.assistantBackgroundWorkItemUpdates(text)) {
                 for (const event of runtimeWorkItemUpdateToOpenMAEvents(update, {
@@ -3390,6 +3402,12 @@ export class SessionStore {
             if (
               shouldMountThought ||
               assistantNeedsMount ||
+              // A tool call breaks the text run, so the text after it is a new
+              // segment with no mounted live tail of its own. Only the first
+              // text of a turn used to publish, which left every later
+              // commentary segment invisible for as long as it streamed — it
+              // appeared, already whole, at the next structural event.
+              (parsed.kind === "text" && openedSegment) ||
               (parsed.kind === "text" && wasShowingThought)
             ) {
               // Selectors shallow-compare Turn identities. Replace this one
