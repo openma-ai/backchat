@@ -105,8 +105,13 @@ export const TurnBlock = memo(function TurnBlock({
   const thoughtArriving =
     lastTimelineItem?.kind === "thought" ||
     Boolean(activityRendered.currentThoughtText);
+  // The work block's last row now always says what the turn is doing, so the
+  // footer only speaks for a turn that has no work block at all — otherwise the
+  // same word appeared twice, once in each.
+  const hasWorkBlock =
+    activityRendered.tools.length > 0 || turn.thoughtText.trim().length > 0;
   const waitIsTheOnlyNews =
-    !hasRunningTool && !answerArriving && !thoughtArriving;
+    !hasRunningTool && !answerArriving && !thoughtArriving && !hasWorkBlock;
   // The agent states why a turn ended; a limit or a refusal arrives as an
   // ordinary completion and would otherwise read as a finished answer.
   const stopNotice = turnStopNotice(turn);
@@ -455,7 +460,10 @@ function TurnFooter({
   return (
     <div
       data-turn-footer="true"
-      className="grid min-h-6 grid-cols-1 grid-rows-1"
+      // A fixed height, not a minimum: the actions layer is laid out even while
+      // it is transparent, so the row grew by the height of a button the moment
+      // there was an answer to copy — and everything below it moved.
+      className="grid h-7 grid-cols-1 grid-rows-1"
     >
       <div
         className={cn(layer, isStreaming ? "opacity-100" : "pointer-events-none opacity-0")}

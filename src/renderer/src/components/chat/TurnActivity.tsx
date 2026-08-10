@@ -5,9 +5,12 @@ import {
 } from "@/components/ai-elements/reasoning";
 import {
   groupActivityTools,
+  isToolRunning,
   projectActivityTools,
   type ActivityTool,
 } from "@/lib/activity-tool-groups";
+import { pickToolActivityTarget } from "@/lib/chat-tool-presentation";
+import { useI18n } from "@/lib/i18n";
 import {
   activityPresentationPolicy,
   type ActivityPresentationPolicy,
@@ -41,6 +44,7 @@ export function TurnActivity({
   cwd: string | null;
   completeLabel: string;
 }) {
+  const { t } = useI18n();
   const policy = activityPresentationPolicy(agentId);
   const commentaryItems = rendered.timeline.filter(
     (item) => item.kind === "assistant_text" && item.phase === "commentary",
@@ -59,6 +63,43 @@ export function TurnActivity({
     activeTool,
     groupAcrossThoughts: policy.groupToolsAcrossThoughts,
   });
+  // Everything after the last thing the agent said is one stretch of work, and
+  // the user reads it as one: "what it is doing now". Rendered as separate rows
+  // it was a growing list of finished commands with the live line stranded at
+  // the bottom, so the trailing run is merged into that live block instead.
+  const lastSpokenIndex = rendered.timeline.reduce(
+    (last, item, index) => (item.kind === "assistant_text" ? index : last),
+    -1,
+  );
+  const trailingTools = [...toolGroups.byStartIndex.entries()]
+    .filter(([index]) => index > lastSpokenIndex)
+    .sort(([a], [b]) => a - b)
+    .flatMap(([, tools]) => tools);
+  const trailingToolIds = new Set(
+    trailingTools.map((tool) => tool.toolCallId),
+  );
+  const liveTools = [...trailingTools, ...toolGroups.trailing];
+  const runningTool = liveTools.findLast((tool) => isToolRunning(tool.status));
+  // What the last row says, in descending order of how much it actually knows:
+  // the thought the agent is working from, the command it is running, and only
+  // then the fact that it is thinking at all.
+  // A thought the agent has already spoken past is not what it is thinking now.
+  const lastThoughtIndex = rendered.timeline.reduce(
+    (last, item, index) => (item.kind === "thought" ? index : last),
+    -1,
+  );
+  const currentThought = lastThoughtIndex > lastSpokenIndex
+    ? latestThoughtLine(rendered)
+    : rendered.currentThoughtText;
+  const liveHeadline = !isStreaming
+    ? undefined
+    : currentThought
+      || (runningTool
+        ? pickToolActivityTarget(runningTool, (name) =>
+          t("tool.skillSuffix", { name }),
+        )
+        : "")
+      || t("chat.thinking");
   const hasActivity =
     hasThought ||
     commentaryItems.length > 0 ||
@@ -151,6 +192,10 @@ export function TurnActivity({
           }
           const group = toolGroups.byStartIndex.get(index);
           if (!group) return null;
+          // Merged into the live block below.
+          if (group.some((tool) => trailingToolIds.has(tool.toolCallId))) {
+            return null;
+          }
           return (
             <ActivityToolGroup
               key={`activity-tools-${group.map((tool) => tool.toolCallId).join("-")}`}
@@ -161,86 +206,82 @@ export function TurnActivity({
           );
         })}
 
-        {toolGroups.trailing.length > 0 && (
-          <ActivityToolGroup
-            key={`activity-tools-trailing-${toolGroups.trailing.map((tool) => tool.toolCallId).join("-")}`}
-            tools={toolGroups.trailing}
-            sessionId={turn.sessionId}
-            subagents={subagents}
-          />
-        )}
-
-        {/* Not either/or with the trailing tools. A tool running is not a reason
-            to stop saying what the agent is thinking; the turn has not ended. */}
-        <LatestThoughtStatus
-          rendered={rendered}
-          policy={policy}
-          isStreaming={isStreaming}
-        />
+        {/* One block for the current stretch of work: the tools that have run
+            since the agent last spoke, and what it is doing now. Not either/or —
+            a tool running is not a reason to stop saying what it is thinking. */}
+        {/* One row for the current stretch of work. The tools that have run
+            since the agent last spoke and the thought it is working from are one
+            answer to "what is it doing"; two rows made them look like two, and
+            the live line was stranded under a growing list of finished commands. */}
+        <div data-activity-live-work="true" className="space-y-1">
+          {liveTools.length > 0 ? (
+            <ActivityToolGroup
+              key={`activity-tools-live-${liveTools.map((tool) => tool.toolCallId).join("-")}`}
+              tools={liveTools}
+              sessionId={turn.sessionId}
+              subagents={subagents}
+              headline={liveHeadline}
+            />
+          ) : (
+            <LiveStatusRow text={liveHeadline} />
+          )}
+        </div>
       </ReasoningContent>
     </Reasoning>
   );
 }
 
-function LatestThoughtStatus({
-  rendered,
-  policy,
-  isStreaming,
-}: {
-  rendered: TurnRender;
-  policy: ActivityPresentationPolicy;
-  isStreaming: boolean;
-}) {
-  // A running tool used to suppress this line, which left the reasoning block
-  // empty for the whole tool call: Codex keeps no thought items in the timeline,
-  // and the trigger only renders once streaming stops. The turn has not ended,
-  // so the thinking it is doing is exactly what to show.
-  // `currentThoughtText` empties as soon as a tool call arrives, because that
-  // thought is no longer the thing streaming. While the turn is still running
-  // the last thought is still what the agent is working from, so fall back to
-  // it — otherwise Codex, which keeps no thought items in the timeline, leaves
-  // the reasoning block empty for the whole tool call.
+/** `currentThoughtText` empties as soon as a tool call arrives, because that
+ *  thought is no longer the thing streaming. While the turn is still running the
+ *  last thought is still what the agent is working from, so fall back to it —
+ *  otherwise Codex, which keeps no thought items in the timeline, says nothing
+ *  at all for the whole tool call. */
+function latestThoughtLine(rendered: TurnRender): string {
   const lastThoughtItem = rendered.timeline.findLast(
     (item) => item.kind === "thought",
   );
-  const latest = rendered.currentThoughtText
+  return (
+    rendered.currentThoughtText
     || latestThoughtSegment(
       lastThoughtItem?.kind === "thought" ? lastThoughtItem.text : "",
-    );
-  // Removing this row when the turn settled pulled everything below it up by a
-  // line in a single frame. The row stays mounted and collapses instead, and it
-  // keeps the last line it showed so there is something to animate out.
-  const shown = useRef("");
-  if (latest) shown.current = latest;
-  const show = isStreaming && policy.showLatestThoughtStatus && Boolean(latest);
-  if (!shown.current) return null;
+    )
+  );
+}
 
+/** The last row of the work block: what the agent is doing right now. It is
+ *  always here while the turn runs; the tool calls that fold into it are not,
+ *  so it keeps the same geometry with or without them and nothing moves when a
+ *  tool arrives. It collapses its own height when the turn ends rather than
+ *  vanishing and pulling the answer up a line. */
+function LiveStatusRow({ text }: { text?: string }) {
+  const shown = useRef("");
+  if (text) shown.current = text;
+  if (!shown.current) return null;
   return (
     <div
+      data-activity-status-row="true"
       className={cn(
         "grid min-w-0 text-fg-muted",
         "transition-[grid-template-rows,opacity] duration-[var(--dur-slow)] ease-[var(--ease-soft)]",
-        show ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        text ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
       )}
-      data-activity-status-row="true"
-      aria-hidden={show ? undefined : true}
-      {...(show ? {} : { inert: true })}
-      {...(show ? { "data-current-activity": shown.current } : {})}
+      aria-hidden={text ? undefined : true}
+      {...(text ? { "data-current-activity": shown.current } : { inert: true })}
     >
       <div className="min-h-0 overflow-hidden">
-      {/* One clamped line, not a streamed markdown block. `currentThoughtText`
-          is `latestThoughtSegment()`'s output — trimmed and rejoined — so it is
-          not a suffix of `thoughtText`, and the length arithmetic that used to
-          drive a replay skip here could exceed the accumulator and render
-          nothing at all, leaving an empty box under the tool row. The status
-          line only ever showed one truncated line, so it can just be that
-          line. */}
-      {/* The transcript's own scale. This line said the same kind of thing as the
-          thought text above it but a size larger, which read as a different
-          typeface. */}
-      <p className="truncate text-[13px] leading-6 text-fg-muted">
-        {shown.current}
-      </p>
+        <div className="py-0.5">
+          <div className="activity-disclosure-row min-h-6">
+            <span
+              data-tool-group-icon-slot
+              className="grid size-[var(--chat-activity-icon-size)] shrink-0 place-items-center"
+            />
+            {/* One clamped line, not a streamed markdown block: the status only
+                ever showed one truncated line. */}
+            <p className="min-w-0 flex-1 truncate text-[13px] leading-6 text-fg-muted">
+              {shown.current}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

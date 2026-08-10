@@ -23,16 +23,22 @@ export function ActivityToolGroup({
   tools,
   sessionId,
   subagents,
+  headline,
 }: {
   tools: ActivityTool[];
   sessionId: string;
   subagents: SubagentActivity[];
+  /** What to say for the stretch of work that is still going: the thought it is
+   *  working from, else the command it is running, else that it is thinking. It
+   *  belongs on this row — the tools and the thought are one answer to "what is
+   *  it doing", and two rows made them look like two. */
+  headline?: string;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const stick = useStickToBottomContext();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  if (tools.length === 1) {
+  if (tools.length === 1 && !headline) {
     const tool = tools[0]!;
     return (
       <ToolRow
@@ -65,7 +71,7 @@ export function ActivityToolGroup({
         type="button"
         aria-expanded={open}
         onClick={toggleOpen}
-        className="activity-disclosure-row py-1 text-[13px]"
+        className="activity-disclosure-row min-h-6 text-[13px]"
       >
         <span
           data-tool-group-icon-slot
@@ -77,15 +83,23 @@ export function ActivityToolGroup({
             <ListChecksIcon className="chat-activity-icon" />
           )}
         </span>
-        <span className="shrink-0 whitespace-nowrap">
-          {running
-            ? latestVerb
-            : t("chat.toolCallCount", { count: tools.length })}
+        {!headline && (
+          <span className="shrink-0 whitespace-nowrap">
+            {running || tools.length === 1
+              ? latestVerb
+              : t("chat.toolCallCount", { count: tools.length })}
+          </span>
+        )}
+        <span
+          className="min-w-0 flex-1 truncate text-fg-muted/70"
+          {...(headline ? { "data-current-activity": headline } : {})}
+        >
+          {headline
+            ?? pickToolActivityTarget(latest, (name) =>
+              t("tool.skillSuffix", { name }),
+            )}
         </span>
-        <span className="min-w-0 flex-1 truncate text-fg-muted/70">
-          {pickToolActivityTarget(latest, (name) => t("tool.skillSuffix", { name }))}
-        </span>
-        {running && (
+        {(running || headline) && tools.length > 1 && (
           <span className="shrink-0 whitespace-nowrap text-fg-subtle">
             {t("chat.toolCallCount", { count: tools.length })}
           </span>

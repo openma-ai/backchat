@@ -399,18 +399,16 @@ describe("TurnBlock", () => {
       />,
     );
 
-    // The trailing live line may name its state; it must stay below the activity.
-    const heading = html.indexOf("chat.thinking");
-    if (heading >= 0) {
-      expect(heading).toBeGreaterThan(html.indexOf("tool.reading"));
-    }
+    // One live row, below what the agent said, carrying the tool that ran since.
     expect(html).toContain("I will create the document.");
-    expect(html.match(/tool.reading/g)).toHaveLength(1);
-    expect(html).not.toContain(">读取<");
-    expect(html).not.toContain("Planning the document.");
-    expect(html.indexOf("tool.reading")).toBeGreaterThan(
+    expect(html.match(/data-activity-live-work="true"/g)).toHaveLength(1);
+    expect(html.indexOf('data-activity-live-work="true"')).toBeGreaterThan(
       html.indexOf("I will create the document."),
     );
+    // A thought the agent has already spoken past is not what it is thinking
+    // now, so it is not what the live row reports.
+    expect(html).not.toContain("Planning the document.");
+    expect(html).not.toContain(">读取<");
   });
 
   it("shows only the latest live thought status at the bottom", () => {
@@ -533,7 +531,9 @@ describe("TurnBlock", () => {
 
     expect(triggerClass).toContain("activity-disclosure-row");
     expect(triggerClass).not.toContain("px-2");
-    expect(triggerClass).toContain("py-1");
+    // One row height for a group, a single tool and the live status alike, so
+    // folding tools into the last row cannot change where that row sits.
+    expect(triggerClass).toContain("min-h-6");
     expect(html.match(/data-tool-group-icon-slot="true"/g)).toHaveLength(2);
   });
 
@@ -640,10 +640,12 @@ describe("TurnBlock", () => {
       />,
     );
 
+    // The last row says what it is doing, not how it is doing it: the thought
+    // it is working from, else the command it is running, else that it is
+    // thinking. The folded tools keep their count on the right.
     expect(html).toContain('data-tool-group-size="2"');
-    expect(html).toContain("tool.running");
-    expect(html).toContain("Active command");
-    expect(html).toContain("shrink-0 whitespace-nowrap");
+    expect(html).toContain('data-current-activity="Active command"');
+    expect(html).toContain("chat.toolCallCount");
   });
 
   it("settles a tool call the agent stopped reporting on", () => {

@@ -9,7 +9,14 @@ async function activityBoxes(page: import("@playwright/test").Page) {
       document.querySelector(".reasoning-collapse-inner > div");
     if (!content) return [];
     return Array.from(content.children)
-      .filter((el) => !el.hasAttribute("data-activity-status-row"))
+      // Everything above the live row. That row is the turn's own report of what
+      // it is doing now, and it is meant to collapse when the turn ends; what
+      // must not move is everything the user was already reading.
+      .filter(
+        (el) =>
+          !el.hasAttribute("data-activity-status-row") &&
+          !el.hasAttribute("data-activity-live-work"),
+      )
       .map((el) => {
         const rect = el.getBoundingClientRect();
         return `${Math.round(rect.top)}+${Math.round(rect.height)}`;
