@@ -72,10 +72,38 @@ export function StreamingMarkdown({
     // re-render the current accumulator.
     host.replaceChildren();
     const parser = smd.parser(smd.default_renderer(host));
+    // streaming-markdown holds the last character back until it knows whether it
+    // opens a token, so the newest character of every pause stayed invisible
+    // until the next chunk arrived. The parser has no flush, so the held
+    // character is painted here as a plain text node and removed again before
+    // the parser is written to — its state is never touched.
+    let heldTail: Text | null = null;
+    let lastWritten = "";
+    const clearTail = () => {
+      heldTail?.remove();
+      heldTail = null;
+    };
+    const deepestLast = (node: Element): Element => {
+      let current = node;
+      while (current.lastElementChild) current = current.lastElementChild;
+      return current;
+    };
+    const showTail = () => {
+      clearTail();
+      const character = Array.from(lastWritten).at(-1);
+      if (!character) return;
+      heldTail = document.createTextNode(character);
+      deepestLast(host).append(heldTail);
+    };
     const pacer = createStreamTextPacer({
-      write: (text) => smd.parser_write(parser, text),
+      write: (text) => {
+        clearTail();
+        lastWritten = text;
+        smd.parser_write(parser, text);
+      },
       schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
       cancel: (handle) => window.clearTimeout(handle as number),
+      onDrain: showTail,
     });
     // First handler invocation is the synchronous replay of the current
     // accumulator (see sessionStore.subscribeTurnStream). For
@@ -100,8 +128,14 @@ export function StreamingMarkdown({
         // mount. Reasoning is the exception: it mounts on the first thought
         // chunk, so that first replay should still reveal character by
         // character instead of flashing the whole adapter chunk.
-        if (paceReplay) pacer.enqueue(text);
-        else smd.parser_write(parser, text);
+        if (paceReplay) {
+          pacer.enqueue(text);
+        } else {
+          clearTail();
+          lastWritten = text;
+          smd.parser_write(parser, text);
+          showTail();
+        }
         return;
       }
       // Direct DOM mutation. No setState, no React render. Chunk boundaries
@@ -180,8 +214,11 @@ export function StreamingMarkdown({
         "[&>h1]:my-2 [&>h1]:text-base [&>h1]:font-semibold",
         "[&>h2]:my-2 [&>h2]:text-sm [&>h2]:font-semibold",
         "[&>h3]:my-2 [&>h3]:text-sm [&>h3]:font-semibold",
-        "[&>ul]:my-1.5 [&>ul]:list-disc [&>ul]:pl-5",
-        "[&>ol]:my-1.5 [&>ol]:list-decimal [&>ol]:pl-5",
+        // Descendant selectors so a nested list keeps its markers, and so the
+        // streaming and settled renderings of the same markdown agree.
+        "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5",
+        "[&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5",
+        "[&_li]:my-0.5 [&_li>p]:my-0",
         "[&_li]:my-0.5",
         "[&>pre]:my-2 [&>pre]:rounded-lg [&>pre]:border [&>pre]:border-border/60 [&>pre]:bg-bg-surface/60 [&>pre]:px-3 [&>pre]:py-2 [&>pre]:font-mono [&>pre]:text-[12px] [&>pre]:leading-5 [&>pre]:overflow-x-auto",
         "[&_code]:rounded [&_code]:bg-bg-surface/70 [&_code]:px-[0.35em] [&_code]:py-[0.1em] [&_code]:font-mono [&_code]:text-[0.9em]",

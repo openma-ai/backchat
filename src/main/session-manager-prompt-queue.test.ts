@@ -631,7 +631,13 @@ describe("SessionManager prompt queue", () => {
       resolveAgentOverride: () => undefined,
     });
 
-    await manager.start({ session_id: "session-restart", agent_id: "codex-acp" });
+    // A real directory, because the restart path re-enters start() with the
+    // session's own cwd and a missing folder is now reported before spawning.
+    await manager.start({
+      session_id: "session-restart",
+      agent_id: "codex-acp",
+      cwd: process.cwd(),
+    });
     const first = manager.prompt({
       session_id: "session-restart",
       turn_id: "turn-1",
@@ -657,5 +663,36 @@ describe("SessionManager prompt queue", () => {
       .filter((event) => event.type === "session.error" && event.turn_id === "turn-2");
     expect(reported).toHaveLength(1);
     expect(reported[0]!.message).toContain("agent refused to come back");
+  });
+
+  it("names the missing project folder instead of failing inside the child", async () => {
+    // A project directory can be deleted between sessions. Spawning there fails
+    // in the child, and the first write to its closed pipe surfaced as
+    // `write EPIPE` — a transport symptom standing in for a plain missing path.
+    const send = vi.fn();
+    runtimeStartMock.mockImplementation(async () => {
+      throw new Error("should not spawn into a missing directory");
+    });
+
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "codex-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "session-missing-cwd",
+      agent_id: "codex-acp",
+      cwd: "/tmp/backchat-does-not-exist-9c1f2a",
+      workspace_mode: "project",
+    } as never);
+
+    expect(result.status).toBe("error");
+    expect((result as { message?: string }).message).toContain(
+      "/tmp/backchat-does-not-exist-9c1f2a",
+    );
+    expect(runtimeStartMock).not.toHaveBeenCalled();
   });
 });

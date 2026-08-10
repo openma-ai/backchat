@@ -8,6 +8,11 @@ interface StreamTextPacerOptions {
   write(text: string): void;
   schedule(callback: () => void, delayMs: number): unknown;
   cancel(handle: unknown): void;
+  /** Called when the queue empties, so a caller can reveal whatever the
+   *  downstream parser is still holding back. streaming-markdown withholds the
+   *  final character until more text arrives or the document ends, which made
+   *  the last character of every pause appear a beat late. */
+  onDrain?(): void;
 }
 
 function nextDelayMs(backlog: number): number {
@@ -20,6 +25,7 @@ export function createStreamTextPacer({
   write,
   schedule,
   cancel,
+  onDrain,
 }: StreamTextPacerOptions): StreamTextPacer {
   const pending: string[] = [];
   let scheduled: unknown = null;
@@ -34,6 +40,7 @@ export function createStreamTextPacer({
     scheduled = null;
     const character = pending.shift();
     if (character !== undefined) write(character);
+    if (pending.length === 0) onDrain?.();
     requestTick();
   };
 
@@ -51,6 +58,7 @@ export function createStreamTextPacer({
       if (pending.length > 0) {
         write(pending.join(""));
         pending.length = 0;
+        onDrain?.();
       }
     },
     dispose() {

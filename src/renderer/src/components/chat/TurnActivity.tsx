@@ -92,6 +92,7 @@ export function TurnActivity({
                     kind="assistant"
                     cwd={cwd}
                     prefixSkip={prefix}
+                    paceReplay
                   />
                 ) : (
                   <StreamdownText

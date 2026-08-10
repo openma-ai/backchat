@@ -1,3 +1,4 @@
+import { isToolRunning } from "@/lib/activity-tool-groups";
 import { turnStopNotice } from "@/lib/turn-stop-reason";
 import { memo, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -83,6 +84,9 @@ export const TurnBlock = memo(function TurnBlock({
     };
   }, [planDocument?.sourceToolCallId, rendered, turn.status]);
   const isStreaming = turn.status === "running";
+  const hasRunningTool = activityRendered.tools.some((tool) =>
+    isToolRunning(tool.status),
+  );
   // The agent states why a turn ended; a limit or a refusal arrives as an
   // ordinary completion and would otherwise read as a finished answer.
   const stopNotice = turnStopNotice(turn);
@@ -214,7 +218,9 @@ export const TurnBlock = memo(function TurnBlock({
             </p>
           )}
 
-          {isStreaming && (
+          {/* A running tool is already the live status, and saying "thinking"
+              underneath it added a second, vaguer voice for the same wait. */}
+          {isStreaming && !hasRunningTool && (
             hasAnything
               // A running turn has to look running for as long as it runs.
               // Gating the only signal on "nothing visible yet" meant the first

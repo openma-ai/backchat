@@ -25,6 +25,12 @@ export const ASSISTANT_MARKDOWN_CLASS = cn(
   "text-[13px] leading-6 text-fg",
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
   "[&>p]:my-1.5 [&>ul]:my-1.5 [&>ol]:my-1.5 [&>pre]:my-2",
+  // Tailwind's preflight removes list markers, and this surface only set list
+  // margins — so a markdown list rendered as unmarked lines that read as one
+  // paragraph per item. Descendant selectors, because a nested list is not a
+  // direct child and was losing its markers even where the top level kept them.
+  "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5",
+  "[&_li]:my-0.5 [&_li>p]:my-0",
 );
 
 export function MarkdownCwdProvider({

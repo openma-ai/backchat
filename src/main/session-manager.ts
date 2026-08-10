@@ -491,6 +491,21 @@ export class SessionManager {
       sessionCwd =
         p.cwd ?? (await ensureSessionCwd(p.session_id));
     }
+    // A project folder can be gone by the time its session is opened again.
+    // Spawning there fails inside the child, and the first write to its closed
+    // pipe surfaced as `write EPIPE` — a transport symptom standing in for a
+    // plain missing directory. Only a declared project or inherited workspace is
+    // checked: that is a folder the user chose and can delete, while the managed
+    // path was just created by `ensureSessionCwd` and a bare resume keeps
+    // whatever behaviour it had.
+    const declaresProjectWorkspace =
+      p.workspace_mode === "project" || p.workspace_mode === "inherited";
+    if (declaresProjectWorkspace && !(await directoryExists(sessionCwd))) {
+      return this.#errorResult(
+        p.session_id,
+        `Working directory no longer exists: ${sessionCwd}`,
+      );
+    }
     const runtimeAgentEnv = await prepareAcpToolEnvironment(
       agent.id,
       agentEnv,
@@ -2319,4 +2334,14 @@ function derivePromptLabel(text: string): string {
   const firstLine = trimmed.split(/\r?\n/)[0]!;
   if (firstLine.length <= 40) return firstLine;
   return firstLine.slice(0, 39).trimEnd() + "…";
+}
+
+/** Whether a spawn cwd is still a directory we can start an agent in. */
+async function directoryExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }

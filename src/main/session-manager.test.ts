@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+
+/** A directory that really exists, for starts that declare a project workspace. */
+const PROJECT_ROOT = process.cwd();
 import { join } from "node:path";
 import type { AcpSession, SessionOptions } from "@open-managed-agents-desktop/acp";
 import { acpEventUiRoute, SessionManager } from "./session-manager";
@@ -245,7 +248,10 @@ describe("SessionManager prompt queue", () => {
     await manager.start({
       session_id: "sess-restart-now",
       agent_id: "codex-acp",
-      cwd: "/repo",
+      // A declared project workspace points at a folder the user chose, and a
+      // missing one is now reported before spawning — so the fixture uses a real
+      // directory instead of a path that never existed.
+      cwd: process.cwd(),
       workspace_mode: "project",
     });
 
@@ -261,7 +267,7 @@ describe("SessionManager prompt queue", () => {
     expect(manager.sessionCount()).toBe(1);
     expect(mocks.runtimeStart).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        agent: expect.objectContaining({ cwd: "/repo" }),
+        agent: expect.objectContaining({ cwd: PROJECT_ROOT }),
         resumeAcpSessionId: "acp-before-upgrade",
       }),
     );
@@ -294,7 +300,10 @@ describe("SessionManager prompt queue", () => {
     await manager.start({
       session_id: "sess-restart-after-turn",
       agent_id: "codex-acp",
-      cwd: "/repo",
+      // A declared project workspace points at a folder the user chose, and a
+      // missing one is now reported before spawning — so the fixture uses a real
+      // directory instead of a path that never existed.
+      cwd: process.cwd(),
       workspace_mode: "project",
     });
     const active = manager.prompt({
@@ -743,11 +752,14 @@ describe("SessionManager prompt queue", () => {
       session_id: "sess-multi-root",
       agent_id: "codex-acp",
       workspace_mode: "project",
-      cwd: "/work/app",
+      // A declared project workspace must exist, so the primary root is real.
+      // The secondary roots are only forwarded, and one of them repeats the
+      // primary so the dedup against the spawn cwd stays under test.
+      cwd: PROJECT_ROOT,
       additional_directories: [
         "/work/docs",
         "/work/backend",
-        "/work/app",
+        PROJECT_ROOT,
         "/work/docs",
       ],
       project_id: "proj-workspace",
@@ -755,14 +767,14 @@ describe("SessionManager prompt queue", () => {
 
     expect(mocks.runtimeStart).toHaveBeenCalledWith(
       expect.objectContaining({
-        agent: expect.objectContaining({ cwd: "/work/app" }),
+        agent: expect.objectContaining({ cwd: PROJECT_ROOT }),
         additionalDirectories: ["/work/docs", "/work/backend"],
       }),
     );
     expect(vi.mocked(upsertSession)).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "sess-multi-root",
-        cwd: "/work/app",
+        cwd: PROJECT_ROOT,
         project_id: "proj-workspace",
       }),
     );

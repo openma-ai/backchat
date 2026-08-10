@@ -72,6 +72,11 @@ function renderAnswerTimeline(
             kind="assistant"
             cwd={cwd}
             prefixSkip={prefix}
+            // A segment that opens after a tool break already holds the chunk
+            // that created it, and writing that at once made every paragraph
+            // after the first appear as a block while the first one streamed.
+            // The turn is still running, so the reader is watching this now.
+            paceReplay
           />
         </div>
       );
