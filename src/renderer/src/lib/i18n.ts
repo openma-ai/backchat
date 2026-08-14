@@ -105,6 +105,9 @@ const en = {
   "settings.about": "About",
   "settings.backToApp": "Back to app",
   "settings.search": "Search settings...",
+  "settings.agentSearch": "Search agents…",
+  "settings.agentSearchLabel": "Search agents",
+  "settings.agentSearchClear": "Clear agent search",
   "settings.available": "{count} available",
   "activity.title": "Activity",
   "activity.description":
@@ -626,6 +629,9 @@ const zhCN: Partial<Record<TranslationKey, string>> = {
   "settings.about": "关于",
   "settings.backToApp": "返回应用",
   "settings.search": "搜索设置…",
+  "settings.agentSearch": "搜索智能体…",
+  "settings.agentSearchLabel": "搜索智能体",
+  "settings.agentSearchClear": "清除智能体搜索",
   "settings.available": "{count} 个可用",
   "activity.title": "活动统计",
   "activity.description":

@@ -85,6 +85,57 @@ const waitingAgentConfigured = {
 };
 
 test.describe("settings agent setup lifecycle", () => {
+  test("pins DeepSeek Harness and filters the catalog from the page header", async ({ page, bridge }) => {
+    await bridge.setAgentSetupFixture({
+      agents: [
+        {
+          id: "codex-acp",
+          label: "Codex",
+          command: "codex-acp",
+          detected: false,
+          available: false,
+          installable: true,
+        },
+        {
+          id: "dsh-acp",
+          label: "DeepSeek Harness",
+          command: "dsh-acp",
+          installHint: "npm install -g @openma/deepseek-harness-acp",
+          detected: false,
+          available: false,
+          installable: true,
+        },
+        {
+          id: "claude-acp",
+          label: "Claude",
+          command: "claude-agent-acp",
+          detected: false,
+          available: false,
+          installable: true,
+        },
+      ],
+    });
+
+    await page.getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("link", { name: "Agents", exact: true }).click();
+
+    const registry = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "Registry" }),
+    });
+    await expect(registry.locator("ul > li").first()).toContainText("DeepSeek Harness");
+
+    const search = page.getByRole("searchbox", { name: "Search agents" });
+    await expect(search).toBeVisible();
+    await search.fill("openma");
+    await expect(registry.getByText("DeepSeek Harness", { exact: true })).toBeVisible();
+    await expect(registry.getByText("Codex", { exact: true })).toHaveCount(0);
+    await expect(registry).toContainText("1 of 3 matching");
+
+    await page.getByRole("button", { name: "Clear agent search" }).click();
+    await expect(search).toHaveValue("");
+    await expect(registry.getByText("Codex", { exact: true })).toBeVisible();
+  });
+
   test("keeps ACP auth setup semantics aligned in the GUI", async ({ page, bridge }) => {
       await bridge.setAgentSetupFixture({
         agents: [envAgent, terminalAgent, multiAgent, waitingAgentNeedsAuth],

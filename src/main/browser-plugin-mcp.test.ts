@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { InitializeResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import {
   callBrowserMcpTool,
@@ -562,12 +563,13 @@ describe("Browser MCP HTTP server", () => {
       token: "secret-token",
     });
     try {
-      await expect(postJson(server.url, {
+      const initialize = await postJson(server.url, {
         jsonrpc: "2.0",
         id: 1,
         method: "initialize",
         params: {},
-      }, "secret-token")).resolves.toMatchObject({
+      }, "secret-token");
+      expect(initialize).toMatchObject({
         jsonrpc: "2.0",
         id: 1,
         result: {
@@ -576,6 +578,11 @@ describe("Browser MCP HTTP server", () => {
           serverInfo: { name: "backchat-browser" },
         },
       });
+      const initializeResult = (initialize as { result: unknown }).result;
+      expect(
+        InitializeResultSchema.safeParse(initializeResult),
+        "initialize must return the standard MCP InitializeResult shape",
+      ).toMatchObject({ success: true });
 
       await expect(postJson(server.url, {
         jsonrpc: "2.0",

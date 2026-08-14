@@ -130,7 +130,26 @@ describe("ACP agent setup registry", () => {
       "auggie",
       "hermes",
       "openclaw",
+      "dsh-acp",
     ]));
+  });
+
+  it("ships an installable DeepSeek Harness distribution before the official registry entry lands", async () => {
+    await loadRegistry({
+      cachePath: join(tmpdir(), `backchat-missing-registry-${process.pid}-${Date.now()}.json`),
+      ttlMs: 0,
+      cacheOnly: true,
+    }).catch(() => undefined);
+
+    expect(getKnownAgents().find((agent) => agent.id === "dsh-acp")).toMatchObject({
+      id: "dsh-acp",
+      featured: true,
+      registryId: "dsh-acp",
+      installSource: "registry",
+      registryDistribution: {
+        npx: { package: "@openma/deepseek-harness-acp" },
+      },
+    });
   });
 
   it("resolves registry agents from Backchat's managed ACP bin directory before PATH", async () => {

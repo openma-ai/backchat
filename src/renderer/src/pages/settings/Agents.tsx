@@ -6,14 +6,18 @@ import {
   PencilIcon,
   PlusIcon,
   RefreshCwIcon,
+  SearchIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { isAgentEnabled } from "@/lib/enabled-agents";
+import { useI18n } from "@/lib/i18n";
 import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";
 import { deriveAgentSetupState } from "./agent-setup-lifecycle";
@@ -35,6 +39,10 @@ import {
   sortAgentsByInstalling,
   type AgentAction,
 } from "./agent-action-state";
+import {
+  filterAgentCatalog,
+  prioritizeAgentCatalog,
+} from "./agent-catalog-state";
 import { AgentRow } from "./AgentSettingsRow";
 
 // Downloads may run concurrently, but each completed install updates the same
@@ -64,6 +72,7 @@ function enableInstalledAgent(agentId: string): Promise<void> {
  * user can copy/paste the command into their terminal.
  */
 export function SettingsAgents() {
+  const { t } = useI18n();
   const settings = useSettings();
   const queryClient = useQueryClient();
   const [configuringAgentId, setConfiguringAgentId] = useState<string | null>(null);
@@ -71,6 +80,7 @@ export function SettingsAgents() {
   const [selectedAuthMethodByAgent, setSelectedAuthMethodByAgent] = useState<Record<string, string>>({});
   const [customForm, setCustomForm] = useState<CustomAgentFormState | null>(null);
   const [pendingActions, setPendingActions] = useState<AgentAction[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const { data: agents = [], isLoading: agentsLoading, error: agentsError } = useQuery({
     queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList({ readiness: "snapshot" }),
@@ -130,17 +140,27 @@ export function SettingsAgents() {
     },
   });
 
-  const available = agents.filter((a) => a.available ?? a.detected);
+  const availableAgents = agents.filter((a) => a.available ?? a.detected);
   const installingAgentIds = new Set(
     pendingActions.flatMap((item) =>
       item.type === "install" && item.id ? [item.id] : [],
     ),
   );
-  const unavailable = sortAgentsByInstalling(
+  const unavailableAgents = sortAgentsByInstalling(
     agents.filter((a) => !(a.available ?? a.detected)),
     installingAgentIds,
   );
-  const customRows = settings ? customAgentRows(settings) : [];
+  const allCustomRows = settings ? customAgentRows(settings) : [];
+  const available = prioritizeAgentCatalog(
+    filterAgentCatalog(availableAgents, searchQuery),
+    "dsh-acp",
+  );
+  const unavailable = prioritizeAgentCatalog(
+    filterAgentCatalog(unavailableAgents, searchQuery),
+    "dsh-acp",
+  );
+  const customRows = filterAgentCatalog(allCustomRows, searchQuery);
+  const hasSearchQuery = searchQuery.trim().length > 0;
 
   const saveCustomAgent = async () => {
     if (!settings || !customForm) return;
@@ -199,6 +219,34 @@ export function SettingsAgents() {
             {pendingActions.some((item) => item.type === "refresh") ? "Checking…" : "Check again"}
           </Button>
         </div>
+        <div className="mt-4 flex max-w-sm items-center gap-1">
+          <div className="relative min-w-0 flex-1">
+            <SearchIcon
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle"
+            />
+            <Input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.currentTarget.value)}
+              placeholder={t("settings.agentSearch")}
+              aria-label={t("settings.agentSearchLabel")}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          {hasSearchQuery && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setSearchQuery("")}
+              aria-label={t("settings.agentSearchClear")}
+              className="size-8 text-fg-subtle hover:text-fg"
+            >
+              <XIcon className="size-3.5" />
+            </Button>
+          )}
+        </div>
         {action.error && (
           <StatusNotice tone="danger" className="mt-2">
             {action.error instanceof Error ? action.error.message : String(action.error)}
@@ -212,7 +260,13 @@ export function SettingsAgents() {
       </header>
 
       <section>
-        <SectionHeading className="mb-4" label="Available agents" detail={`${available.length} available`} />
+        <SectionHeading
+          className="mb-4"
+          label="Available agents"
+          detail={hasSearchQuery
+            ? `${available.length} of ${availableAgents.length} matching`
+            : `${available.length} available`}
+        />
         {agentsLoading ? (
           <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
             <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
@@ -220,11 +274,17 @@ export function SettingsAgents() {
           </div>
         ) : available.length === 0 ? (
           <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
-            <CpuIcon className="size-4 shrink-0 text-fg-subtle" />
+            {hasSearchQuery
+              ? <SearchIcon className="size-4 shrink-0 text-fg-subtle" />
+              : <CpuIcon className="size-4 shrink-0 text-fg-subtle" />}
             <div className="min-w-0">
-              <p className="text-sm font-medium text-fg">No agent available</p>
+              <p className="text-sm font-medium text-fg">
+                {hasSearchQuery ? "No available agents match" : "No agent available"}
+              </p>
               <p className="mt-0.5 text-xs text-fg-muted">
-                Install and enable an ACP agent from Registry first.
+                {hasSearchQuery
+                  ? `Try another search instead of “${searchQuery.trim()}”.`
+                  : "Install and enable an ACP agent from Registry first."}
               </p>
             </div>
           </div>
@@ -270,7 +330,9 @@ export function SettingsAgents() {
         <div className="mb-4 flex items-center justify-between gap-3">
           <SectionHeading
             label="Registry"
-            detail={unavailable.length > 0
+            detail={hasSearchQuery
+              ? `${unavailable.length} of ${unavailableAgents.length} matching`
+              : unavailable.length > 0
               ? `${unavailable.length} installable ACP agent${unavailable.length === 1 ? "" : "s"}`
               : "Managed agent packages"}
           />
@@ -293,30 +355,37 @@ export function SettingsAgents() {
           </div>
         ) : unavailable.length === 0 ? (
           <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
-            <DownloadIcon className="size-4 shrink-0 text-fg-subtle" />
+            {hasSearchQuery
+              ? <SearchIcon className="size-4 shrink-0 text-fg-subtle" />
+              : <DownloadIcon className="size-4 shrink-0 text-fg-subtle" />}
             <div className="min-w-0">
-              <p className="text-sm font-medium text-fg">Registry is empty</p>
+              <p className="text-sm font-medium text-fg">
+                {hasSearchQuery ? "No registry agents match" : "Registry is empty"}
+              </p>
               <p className="mt-0.5 text-xs text-fg-muted">
-                No additional ACP agents are available from the local registry.
+                {hasSearchQuery
+                  ? `Try another search instead of “${searchQuery.trim()}”.`
+                  : "No additional ACP agents are available from the local registry."}
               </p>
             </div>
           </div>
         ) : (
           <ul className="space-y-1">
             {unavailable.map((a) => (
-              <AgentRow
-                key={a.id}
-                agent={a}
-                enabled={false}
-                waitingForAuth={waitingAuthAgentId === a.id}
-                selectedMethodId={selectedAuthMethodByAgent[a.id]}
-                activeActions={pendingActions}
-                onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
-                onInstall={() => action.mutate({ type: "install", id: a.id })}
-                onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
-                onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
-                onOpenSetup={() => setConfiguringAgentId((id) => id === a.id ? null : a.id)}
-              />
+              <li key={a.id}>
+                <AgentRow
+                  agent={a}
+                  enabled={false}
+                  waitingForAuth={waitingAuthAgentId === a.id}
+                  selectedMethodId={selectedAuthMethodByAgent[a.id]}
+                  activeActions={pendingActions}
+                  onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
+                  onInstall={() => action.mutate({ type: "install", id: a.id })}
+                  onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
+                  onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
+                  onOpenSetup={() => setConfiguringAgentId((id) => id === a.id ? null : a.id)}
+                />
+              </li>
             ))}
           </ul>
         )}
@@ -328,7 +397,9 @@ export function SettingsAgents() {
           <div className="flex items-center justify-between gap-3">
             <SectionHeading
               label="Custom agent servers"
-              detail={customRows.length > 0
+              detail={hasSearchQuery
+                ? `${customRows.length} of ${allCustomRows.length} matching`
+                : customRows.length > 0
                 ? `${customRows.length} command-backed ACP server${customRows.length === 1 ? "" : "s"}`
                 : "Local commands outside the registry"}
             />

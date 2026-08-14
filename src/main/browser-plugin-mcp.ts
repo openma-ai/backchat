@@ -11,6 +11,7 @@ import type {
 
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 const BROWSER_MCP_SERVER_NAME = "backchat-browser";
+const BROWSER_MCP_SERVER_VERSION = "1.0.0";
 const BROWSER_DOCUMENTATION = `Backchat Browser tools expose the Browser plugin contract through MCP.
 
 Safety:
@@ -803,7 +804,10 @@ async function handleJsonRpcMessage(
         return jsonRpcResult(request.id, {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: { tools: {} },
-          serverInfo: { name: BROWSER_MCP_SERVER_NAME },
+          serverInfo: {
+            name: BROWSER_MCP_SERVER_NAME,
+            version: BROWSER_MCP_SERVER_VERSION,
+          },
         });
       case "tools/list":
         return jsonRpcResult(request.id, { tools: listBrowserMcpTools() });

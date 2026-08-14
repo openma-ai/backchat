@@ -37,6 +37,15 @@ jobs:
       - name: Type-check
         run: pnpm run typecheck
 
+      - name: Run release regression tests
+        run: |
+          pnpm exec vitest run \
+            src/main/browser-plugin-mcp.test.ts \
+            packages/acp/src/registry.test.ts \
+            packages/acp-agent-setup/src/index.test.ts \
+            src/renderer/src/pages/settings/agent-catalog-state.test.ts \
+            src/main/renderer-i18n-contract.test.ts
+
       - name: Build DMG
         run: |
           pnpm exec electron-vite build

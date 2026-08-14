@@ -257,12 +257,15 @@ export const OVERLAY_AGENTS: KnownAgentEntry[] = [
     featured: true,
     // Registry-protocol agent (npx distribution): app-managed install into
     // the managed ACP bin dir. Official entry pending
-    // (agentclientprotocol/registry#506); until it lands, the npm install
-    // path below covers installation and the merge layer then picks up
-    // icon/version/distribution automatically.
+    // (agentclientprotocol/registry#506); until it lands, the embedded npx
+    // distribution below covers installation and the merge layer then picks
+    // up icon/version/distribution automatically.
     registryId: "dsh-acp",
     installSource: "registry",
     install: { kind: "npm", package: "@openma/deepseek-harness-acp" },
+    registryDistribution: {
+      npx: { package: "@openma/deepseek-harness-acp" },
+    },
     installHint: "npm install -g @openma/deepseek-harness-acp",
     homepage: "https://github.com/openma-ai/deepseek-harness-acp",
   },
