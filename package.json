@@ -66,7 +66,8 @@
     "streamdown": "^2.5.0",
     "streaming-markdown": "^0.2.15",
     "use-stick-to-bottom": "^1.1.4",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.64.2",

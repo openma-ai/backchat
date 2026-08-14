@@ -112,6 +112,9 @@ importers:
       ws:
         specifier: ^8.21.1
         version: 8.21.1
+      zod-to-json-schema:
+        specifier: ^3.25.2
+        version: 3.25.2(zod@4.4.3)
     devDependencies:
       '@agentclientprotocol/claude-agent-acp':
         specifier: 0.64.2
@@ -1213,7 +1216,7 @@ packages:
     os: [win32]
 
   '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/e5e6f9e68d49e646afe38eae0b579b1ac4320c29':
-    resolution: {gitHosted: true, integrity: sha512-Dzi2cH8ADZJUNIwUFLQPFLQ0tK6o02xwAC/aA6WyNSyHS79FU0VyCOfjxq+tTPlRQUE4PjNsaxVk6B+qTDD0jw==, tarball: https://codeload.github.com/openma-ai/openma-common/tar.gz/e5e6f9e68d49e646afe38eae0b579b1ac4320c29}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/openma-ai/openma-common/tar.gz/e5e6f9e68d49e646afe38eae0b579b1ac4320c29}
     version: 0.4.0
     engines: {node: '>=20'}
     peerDependencies:
