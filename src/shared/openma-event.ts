@@ -14,6 +14,7 @@ export interface OpenMAEventBridgeOptions {
   occurredAt: string;
   harness?: string;
   adapter?: string;
+  sessionSetupMeta?: Record<string, unknown> | null;
 }
 
 /**
@@ -432,6 +433,27 @@ function canonicalAcpUpdateEvent(
           tone: notice.tone,
           ...(adapterMeta ? { adapter_meta: adapterMeta } : {}),
         },
+      });
+    }
+    const piAcp = asRecord(asRecord(options.sessionSetupMeta)?.piAcp);
+    const startupInfo = stringValue(piAcp?.startupInfo);
+    if (
+      options.harness === "pi-acp"
+      && !message.turn_id
+      && startupInfo
+      && text === startupInfo
+    ) {
+      return createVendorEvent({
+        event_id: base.event_id,
+        session_id: base.session_id,
+        source: base.source,
+        occurred_at: base.occurred_at,
+        raw: base.raw,
+        harness: "pi-acp",
+        namespace: "session_setup",
+        name: "startup_info",
+        correlation: { session_id: message.session_id },
+        data: { text },
       });
     }
   }

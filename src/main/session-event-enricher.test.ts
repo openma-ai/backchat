@@ -69,6 +69,55 @@ describe("session event canonical enricher", () => {
     });
   });
 
+  it("maps Pi's out-of-band startup info to session metadata instead of an assistant message", () => {
+    const startupInfo = [
+      "pi v0.80.7",
+      "---",
+      "",
+      "## Skills",
+      "- /Users/dev/.pi/agent/skills/example/SKILL.md",
+    ].join("\n");
+    const enrich = createSessionEventEnricher(() => "2026-08-08T12:03:40.520Z");
+    enrich({
+      type: "session.ready",
+      session_id: "sess-pi-startup",
+      acp_session_id: "acp-pi-startup",
+      agent_id: "pi-acp",
+      cwd: "/repo",
+      session_setup_meta: { piAcp: { startupInfo } },
+    });
+
+    const result = enrich({
+      type: "session.event",
+      session_id: "sess-pi-startup",
+      turn_id: "",
+      event: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: startupInfo },
+      },
+    });
+
+    expect(result.openma_event).toMatchObject({
+      type: "vendor.event",
+      session_id: "sess-pi-startup",
+      source: { kind: "harness", harness: "pi-acp", adapter: "acp" },
+      data: {
+        kind: "vendor",
+        harness: "pi-acp",
+        namespace: "session_setup",
+        name: "startup_info",
+        data: { text: startupInfo },
+      },
+      raw: {
+        method: "session/update",
+        event_type: "agent_message_chunk",
+      },
+    });
+    expect(result.openma_event).not.toMatchObject({
+      type: "agent.message_chunk",
+    });
+  });
+
   it("assigns distinct canonical ids to repeated identical ACP chunks", () => {
     const enrich = createSessionEventEnricher(() => "2026-08-05T00:00:00.000Z");
     enrich({

@@ -1,11 +1,48 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createOpenMAEvent } from "@openma/common/session-events/openma";
+import {
+  createOpenMAEvent,
+  createVendorEvent,
+} from "@openma/common/session-events/openma";
 import { reduceTurn } from "@openma/common/session-events/acp";
 import { attachOpenMAEvent } from "@shared/openma-event.js";
 import { SessionStore } from "./session-store";
 
 describe("SessionStore canonical OpenMA events", () => {
+  it("does not create a transcript turn for Pi startup metadata", () => {
+    const store = new SessionStore();
+    const startupInfo = "pi v0.80.7\n---\n\n## Skills\n- /tmp/SKILL.md";
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-pi-startup",
+      acp_session_id: "acp-pi-startup",
+      agent_id: "pi-acp",
+      cwd: "/tmp/project",
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-pi-startup",
+      turn_id: "",
+      event: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: startupInfo },
+      },
+      openma_event: createVendorEvent({
+        event_id: "pi-startup-info",
+        session_id: "sess-pi-startup",
+        source: { kind: "harness", harness: "pi-acp", adapter: "acp" },
+        occurred_at: "2026-08-08T12:03:40.520Z",
+        harness: "pi-acp",
+        namespace: "session_setup",
+        name: "startup_info",
+        correlation: { session_id: "sess-pi-startup" },
+        data: { text: startupInfo },
+      }),
+    });
+
+    expect(store.turnsFor("sess-pi-startup")).toEqual([]);
+  });
+
   it("persists renderer-derived native Agent canonical events through the host boundary", () => {
     const persist = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("window", {

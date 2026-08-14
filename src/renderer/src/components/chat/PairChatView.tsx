@@ -34,6 +34,7 @@ import {
   sessionStore,
   useSessionStore,
   selectTurnsFor,
+  type SessionStore,
   type SessionRow,
   type PairRow,
 } from "@/lib/session-store";
@@ -192,45 +193,17 @@ function PairComposer({ pair }: { pair: PairRow }) {
   ) => {
     const displayText = derivePairPromptDisplayText(text, attachments, sessionReferences.length);
     if (!displayText || locked) return;
-    // Pair chat is a renderer grouping over ordinary sessions. Start
-    // each member through the normal session API, then prompt each
-    // member with its own turn id so the shared turn store does not
-    // collide.
-    for (const m of members) {
-      if (m.status === "draft") {
-        sessionStore.promoteDraft(m.id, m.agent_id, m.label);
-      }
-      if (m.status === "draft" || (m.status === "ready" && !m.activeTurnId)) {
-        const startResult = await window.backchat.sessionStart({
-          session_id: m.id,
-          agent_id: m.agent_id,
-          workspace_mode: m.status === "draft" ? "managed" : undefined,
-          cwd: m.cwd || undefined,
-          resume: m.acp_session_id
-            ? { acp_session_id: m.acp_session_id }
-            : undefined,
-        });
-        if (startResult.status !== "ready") return;
-      }
-    }
-    const targets = sessionStore.registerPairTurn(
-      pair.id,
+    await submitPairPrompt({
+      store: sessionStore,
+      pair,
+      members,
+      text,
       displayText,
-      sessionReferences,
       attachments,
-    );
-    if (!targets) return;
-    await Promise.allSettled(
-      targets.map((target) =>
-        window.backchat.sessionPrompt({
-          session_id: target.session_id,
-          turn_id: target.turn_id,
-          text,
-          ...(attachments.length > 0 ? { attachments } : {}),
-          ...(sessionReferences.length > 0 ? { session_references: sessionReferences } : {}),
-        }),
-      ),
-    );
+      sessionReferences,
+      sessionStart: window.backchat.sessionStart,
+      sessionPrompt: window.backchat.sessionPrompt,
+    });
   };
 
   return (
@@ -267,6 +240,89 @@ function PairComposer({ pair }: { pair: PairRow }) {
         }}
       />
     </div>
+  );
+}
+
+export async function submitPairPrompt({
+  store,
+  pair,
+  members,
+  text,
+  displayText,
+  attachments,
+  sessionReferences,
+  sessionStart,
+  sessionPrompt,
+}: {
+  store: SessionStore;
+  pair: PairRow;
+  members: SessionRow[];
+  text: string;
+  displayText: string;
+  attachments: PromptAttachment[];
+  sessionReferences: PromptSessionReference[];
+  sessionStart: typeof window.backchat.sessionStart;
+  sessionPrompt: typeof window.backchat.sessionPrompt;
+}): Promise<void> {
+  // Register first so both panes paint the user bubble in the same tick as
+  // submit, even when cold-starting an ACP process takes several seconds.
+  const targets = store.registerPairTurn(
+    pair.id,
+    displayText,
+    sessionReferences,
+    attachments,
+  );
+  if (!targets) return;
+  const failedSessionIds = new Set<string>();
+
+  for (const member of members) {
+    if (member.status === "draft") {
+      store.promoteDraft(member.id, member.agent_id, member.label);
+    }
+    if (
+      member.status !== "draft"
+      && (member.status !== "ready" || member.activeTurnId)
+    ) {
+      continue;
+    }
+    const startResult = await sessionStart({
+      session_id: member.id,
+      agent_id: member.agent_id,
+      workspace_mode: member.status === "draft" ? "managed" : undefined,
+      cwd: member.cwd || undefined,
+      resume: member.acp_session_id
+        ? { acp_session_id: member.acp_session_id }
+        : undefined,
+    });
+    if (startResult.status !== "ready") {
+      const target = targets.find(({ session_id }) => session_id === member.id);
+      if (target) {
+        failedSessionIds.add(member.id);
+        store.apply({
+          type: "session.error",
+          session_id: member.id,
+          turn_id: target.turn_id,
+          message: startResult.status === "error"
+            ? startResult.message
+            : "Session start cancelled",
+        });
+      }
+    }
+  }
+
+  await Promise.allSettled(
+    targets
+      .filter((target) => !failedSessionIds.has(target.session_id))
+      .map((target) =>
+        sessionPrompt({
+          session_id: target.session_id,
+          turn_id: target.turn_id,
+          text,
+          ...(attachments.length > 0 ? { attachments } : {}),
+          ...(sessionReferences.length > 0
+            ? { session_references: sessionReferences }
+            : {}),
+        })),
   );
 }
 

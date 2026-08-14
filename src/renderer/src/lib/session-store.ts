@@ -502,6 +502,15 @@ export class SessionStore {
       }
       return true;
     }
+    if (
+      event.type === "vendor.event"
+      && data.kind === "vendor"
+      && data.harness === "pi-acp"
+      && data.namespace === "session_setup"
+      && data.name === "startup_info"
+    ) {
+      return true;
+    }
     if (event.type === "session.running") {
       const threadStatus = isPlainRecord(data.thread_status)
         && typeof data.thread_status.type === "string"

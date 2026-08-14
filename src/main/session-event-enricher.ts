@@ -36,6 +36,10 @@ export function createSessionEventEnricher(
   initialSequenceForSession: (sessionId: string) => number = () => 0,
 ): (message: SessionEventOut) => SessionEventOut {
   const harnessBySessionId = new Map<string, string>();
+  const sessionSetupMetaBySessionId = new Map<
+    string,
+    Record<string, unknown> | null
+  >();
   const sequenceBySessionId = new Map<string, number>();
 
   return (message) => {
@@ -53,6 +57,10 @@ export function createSessionEventEnricher(
     sequenceBySessionId.set(message.session_id, sequence);
     if (message.type === "session.ready") {
       harnessBySessionId.set(message.session_id, message.agent_id);
+      sessionSetupMetaBySessionId.set(
+        message.session_id,
+        message.session_setup_meta ?? null,
+      );
     }
     const attached = message.openma_event
       ? message
@@ -60,6 +68,7 @@ export function createSessionEventEnricher(
           occurredAt: now(),
           harness: harnessBySessionId.get(message.session_id),
           adapter: "acp",
+          sessionSetupMeta: sessionSetupMetaBySessionId.get(message.session_id),
         });
     const enriched = attached.openma_event
       ? {
@@ -78,6 +87,7 @@ export function createSessionEventEnricher(
 
     if (message.type === "session.disposed") {
       harnessBySessionId.delete(message.session_id);
+      sessionSetupMetaBySessionId.delete(message.session_id);
       sequenceBySessionId.delete(message.session_id);
     }
     return enriched;
