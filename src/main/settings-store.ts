@@ -114,6 +114,15 @@ const SettingsSchema = z.object({
     ask_before_download: z.boolean().default(false),
     autofill_enabled: z.boolean().default(false),
   }).optional(),
+  skills_plugins: z.object({
+    schedules_enabled: z.boolean().default(true),
+    bundled_skills_enabled: z.boolean().default(true),
+    disabled_plugins: z.array(z.string().min(1)).default([]),
+  }).default({
+    schedules_enabled: true,
+    bundled_skills_enabled: true,
+    disabled_plugins: [],
+  }),
   agents: z.array(AgentOverrideSchema).default([]),
   mcp_servers: z.array(McpServerSchema).default([]),
 });
@@ -128,9 +137,18 @@ export type AgentOverride = z.infer<typeof AgentOverrideSchema>;
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({
   default: {},
   appearance: {},
+  skills_plugins: {
+    schedules_enabled: true,
+    bundled_skills_enabled: true,
+    disabled_plugins: [],
+  },
   agents: [],
   mcp_servers: [],
 });
+
+export function parseSettings(value: unknown): Settings {
+  return SettingsSchema.parse(value);
+}
 
 export function hasDeprecatedAgentDefault(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;

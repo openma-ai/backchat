@@ -407,6 +407,9 @@ if (!gotLock) {
       acpBinDir,
       acpInstallRoot: acpRoot,
       scheduleDbPath: join(root, "schedules.db"),
+      bundledSkillsRoot: app.isPackaged
+        ? join(process.resourcesPath, "skills")
+        : join(mainDir, "../../skills"),
       browserMcpServerForTask: (taskId) =>
         browserHarnessMcpBridge.descriptor(taskId),
       sessionEventSink: (event) => omaBridge?.handleSessionEvent(event),

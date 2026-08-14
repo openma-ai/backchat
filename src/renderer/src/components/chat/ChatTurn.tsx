@@ -54,6 +54,7 @@ export const TurnBlock = memo(function TurnBlock({ turn }: { turn: Turn }) {
       promptText={turn.promptText}
       status={turn.status}
       errorMessage={turn.errorMessage}
+      className="!mb-8 !space-y-4 [&_[data-session-turn-prompt]>div]:!px-3 [&_[data-session-turn-prompt]>div]:!py-2"
       errorNotice={
         turn.status === "error" ? (
           <StatusNotice tone="danger">

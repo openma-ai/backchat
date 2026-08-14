@@ -19,10 +19,17 @@ async function installPlugin(
 ): Promise<void> {
   const root = join(pluginsRoot, name);
   await mkdir(join(root, ".codex-plugin"), { recursive: true });
+  await mkdir(join(root, "skills", `${name}-skill`), { recursive: true });
   await writeFile(join(root, ".codex-plugin", "plugin.json"), JSON.stringify({
     name,
     mcpServers: "./.mcp.json",
+    skills: "./skills",
   }), "utf8");
+  await writeFile(
+    join(root, "skills", `${name}-skill`, "SKILL.md"),
+    `---\nname: ${name}-skill\ndescription: ${name} workflow\n---\n`,
+    "utf8",
+  );
   await writeFile(join(root, ".mcp.json"), JSON.stringify({
     [serverName]: {
       type: "http",
@@ -78,5 +85,24 @@ describe("CodexPluginRuntime", () => {
       "plugin:first:tools",
     ]);
     expect(merged).not.toBe(configured);
+  });
+
+  it("excludes globally disabled plugin capabilities without changing discovery", async () => {
+    const pluginsRoot = await temporaryDirectory();
+    await installPlugin(pluginsRoot, "first", "tools");
+    await installPlugin(pluginsRoot, "second", "more-tools");
+    const runtime = new CodexPluginRuntime([pluginsRoot]);
+    runtime.start();
+
+    expect(runtime.mcpServers(["first"]).map((server) => server.id)).toEqual([
+      "plugin:second:more-tools",
+    ]);
+    expect(runtime.skills(["first"]).map((skill) => skill.name)).toEqual([
+      "second-skill",
+    ]);
+    expect(runtime.snapshot().plugins.map((plugin) => plugin.manifest.name)).toEqual([
+      "first",
+      "second",
+    ]);
   });
 });

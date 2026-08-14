@@ -32,10 +32,12 @@ import { SettingsAppearance } from "@/pages/settings/Appearance";
 import { SettingsBrowserPage } from "@/pages/settings/Browser";
 import { SettingsAbout } from "@/pages/settings/About";
 import { SettingsMcpServers } from "@/pages/settings/McpServers";
+import { SettingsSkillsPlugins } from "@/pages/settings/SkillsPlugins";
 import { Archive as SettingsArchive } from "@/pages/settings/Archive";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
 import { SettingsActivity } from "@/pages/settings/Activity";
 import { ScheduledPage } from "@/pages/Scheduled";
+import { ManagedAgentsLabPage } from "@/pages/ManagedAgentsLab";
 
 function RootRoute() {
   const location = useLocation();
@@ -72,6 +74,12 @@ const scheduledRoute = createRoute({
   component: ScheduledPage,
 });
 
+const managedAgentsLabRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/managed-agents",
+  component: ManagedAgentsLabPage,
+});
+
 const settingsRoot = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -100,6 +108,11 @@ const settingsMcp = createRoute({
   path: "/mcp-servers",
   component: SettingsMcpServers,
 });
+const settingsSkillsPlugins = createRoute({
+  getParentRoute: () => settingsRoot,
+  path: "/skills-plugins",
+  component: SettingsSkillsPlugins,
+});
 const settingsAppearance = createRoute({
   getParentRoute: () => settingsRoot,
   path: "/appearance",
@@ -126,10 +139,12 @@ const routeTree = rootRoute.addChildren([
   chatRoute,
   pairRoute,
   scheduledRoute,
+  managedAgentsLabRoute,
   settingsRoot.addChildren([
     settingsActivity,
     settingsAgents,
     settingsMcp,
+    settingsSkillsPlugins,
     settingsBrowser,
     settingsAppearance,
     settingsArchive,

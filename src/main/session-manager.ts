@@ -129,6 +129,9 @@ export interface SessionManagerDeps {
         envOverride?: Record<string, string>;
       }
     | undefined;
+  /** Prepare host-managed files in the resolved cwd before the ACP child
+   * starts. BackChat uses this to reconcile native skill symlinks. */
+  prepareSessionCwd?: (agentId: string, cwd: string) => Promise<void>;
 }
 
 export class SessionManager {
@@ -137,6 +140,7 @@ export class SessionManager {
   #buildCallbacks: SessionManagerDeps["buildCallbacks"];
   #resolveDefaults: SessionManagerDeps["resolveDefaults"];
   #resolveAgentOverride: SessionManagerDeps["resolveAgentOverride"];
+  #prepareSessionCwd: NonNullable<SessionManagerDeps["prepareSessionCwd"]>;
   #spawner = new NodeSpawner();
   #runtime = new AcpRuntimeImpl(this.#spawner);
   #sessions = new Map<string, ActiveSession>();
@@ -150,6 +154,7 @@ export class SessionManager {
     this.#buildCallbacks = deps.buildCallbacks;
     this.#resolveDefaults = deps.resolveDefaults;
     this.#resolveAgentOverride = deps.resolveAgentOverride;
+    this.#prepareSessionCwd = deps.prepareSessionCwd ?? (async () => undefined);
   }
 
   setSender(send: Sender): void {
@@ -323,6 +328,7 @@ export class SessionManager {
       if (this.#cancelledStarts.has(p.session_id)) {
         return { status: "cancelled", session_id: p.session_id };
       }
+      await this.#prepareSessionCwd(agent.id, sessionCwd);
       const runtimeStartedAt = Date.now();
       const acpSession = await this.#runtime.start({
         agent: {

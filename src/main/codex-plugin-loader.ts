@@ -188,6 +188,20 @@ function loadSkills(
   });
 }
 
+/** Load standalone skill directories without requiring a plugin manifest. */
+export function discoverCodexPluginSkills(
+  pluginName: string,
+  root: string,
+): CodexPluginSkill[] {
+  if (!existsSync(root)) return [];
+  const pluginRoot = realpathSync(root);
+  return loadSkills(
+    pluginName,
+    pluginRoot,
+    collectSkillFiles([pluginRoot]),
+  );
+}
+
 function expandPluginRoot(value: string, pluginRoot: string): string {
   return value
     .replaceAll("${PLUGIN_ROOT}", pluginRoot)

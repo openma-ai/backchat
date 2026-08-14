@@ -1,3 +1,6 @@
+import Anthropic from "@anthropic-ai/sdk";
+import type { ManagedAgentsLabModelOption } from "../shared/managed-agents-lab.js";
+
 export interface OpenManagedCloudRuntimeOptions {
   baseUrl: string;
   apiKey: string;
@@ -14,106 +17,137 @@ export interface CloudSessionCreateResult {
   sessionId: string;
 }
 
-/** Thin OpenManaged API adapter kept separate from Backchat's local ACP host.
- * It is intentionally not wired to the Cloud composer yet (that remains
- * Coming Soon), but its future UI path will use this same API rather than a
- * second Backchat cloud service. */
+export interface TunnelUnsupportedResult {
+  status: 501;
+  type: "not_implemented";
+  message: string;
+}
+
+/** Official Claude Managed Agents SDK adapter for Backchat's cloud surface.
+ * The SDK owns request paths, beta headers, error decoding, pagination, and
+ * SSE parsing; Backchat only maps those typed operations into its UI model. */
 export class OpenManagedCloudRuntimeClient {
-  #baseUrl: string;
-  #apiKey: string;
-  #fetch: typeof fetch;
+  #client: Anthropic;
 
   constructor(options: OpenManagedCloudRuntimeOptions) {
-    this.#baseUrl = options.baseUrl.replace(/\/$/, "");
-    this.#apiKey = options.apiKey;
-    this.#fetch = options.fetchImpl ?? fetch;
+    this.#client = new Anthropic({
+      apiKey: options.apiKey,
+      baseURL: options.baseUrl.replace(/\/$/, ""),
+      ...(options.fetchImpl ? { fetch: options.fetchImpl } : {}),
+      maxRetries: 0,
+    });
+  }
+
+  /** List the tenant's configured model handles through the same control
+   * plane endpoint and credential used for Managed Agents operations. */
+  async listModels(): Promise<ManagedAgentsLabModelOption[]> {
+    const models: ManagedAgentsLabModelOption[] = [];
+    for await (const model of this.#client.beta.models.list({ limit: 100 })) {
+      models.push({
+        id: model.id,
+        displayName: model.display_name || model.id,
+      });
+    }
+    return models;
+  }
+
+  async verifyTunnelsUnsupported(): Promise<TunnelUnsupportedResult> {
+    try {
+      const tunnel = await this.#client.beta.tunnels.create({
+        display_name: "Backchat capability probe",
+      });
+      await this.#client.beta.tunnels.archive(tunnel.id);
+      throw new Error("MCP Tunnels unexpectedly returned a tunnel instead of 501");
+    } catch (error) {
+      const apiError = error as {
+        status?: number;
+        error?: {
+          type?: string;
+          error?: { type?: string; message?: string };
+        };
+      };
+      const detail = apiError.error?.error;
+      if (
+        apiError.status === 501 &&
+        detail?.type === "not_implemented" &&
+        typeof detail.message === "string"
+      ) {
+        return {
+          status: 501,
+          type: "not_implemented",
+          message: detail.message,
+        };
+      }
+      throw error;
+    }
+  }
+
+  async createAgent(input: {
+    name: string;
+    model: string;
+    system: string;
+  }): Promise<{ agentId: string }> {
+    const agent = await this.#client.beta.agents.create(input);
+    return { agentId: agent.id };
+  }
+
+  async archiveAgent(agentId: string): Promise<void> {
+    await this.#client.beta.agents.archive(agentId);
+  }
+
+  async createEnvironment(input: { name: string }): Promise<{ environmentId: string }> {
+    const environment = await this.#client.beta.environments.create({
+      name: input.name,
+      config: { type: "cloud" },
+    });
+    return { environmentId: environment.id };
+  }
+
+  async archiveEnvironment(environmentId: string): Promise<void> {
+    await this.#client.beta.environments.archive(environmentId);
   }
 
   async createSession(input: CloudSessionCreateInput): Promise<CloudSessionCreateResult> {
-    const body = {
+    const session = await this.#client.beta.sessions.create({
       agent: input.agentId,
       environment_id: input.environmentId,
       title: input.title ?? "",
-    };
-    const response = await this.#request("/v1/sessions", {
-      method: "POST",
-      body: JSON.stringify(body),
     });
-    const payload = await response.json() as { id?: unknown };
-    if (typeof payload.id !== "string" || !payload.id) {
-      throw new Error("OpenManaged session create response did not contain an id");
-    }
-    return { sessionId: payload.id };
+    return { sessionId: session.id };
   }
 
-  async *prompt(sessionId: string, text: string): AsyncIterable<Record<string, unknown>> {
-    const response = await this.#request(
-      `/v1/sessions/${encodeURIComponent(sessionId)}/messages`,
-      {
-        method: "POST",
-        headers: { accept: "text/event-stream" },
-        body: JSON.stringify({ content: text }),
-      },
-    );
-    if (!response.body) throw new Error("OpenManaged prompt response has no event stream");
+  async *prompt(
+    sessionId: string,
+    text: string,
+    signal?: AbortSignal,
+  ): AsyncIterable<Record<string, unknown>> {
+    const stream = await this.#client.beta.sessions.events.stream(sessionId, {
+      event_deltas: ["agent.message"],
+    }, { signal });
+    await this.#client.beta.sessions.events.send(sessionId, {
+      events: [{
+        type: "user.message",
+        content: [{ type: "text", text }],
+      }],
+    }, { signal });
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      while (true) {
-        const boundary = buffer.indexOf("\n\n");
-        if (boundary < 0) break;
-        const chunk = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        const dataLine = chunk.split(/\r?\n/).find((line) => line.startsWith("data: "));
-        if (!dataLine) continue;
-        try {
-          const parsed = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
-          yield parsed;
-          if (parsed.type === "session.status_idle") return;
-        } catch {
-          // Ignore malformed provider frames; the persisted event stream is
-          // still the source of truth for diagnostics and replay.
-        }
-      }
+    for await (const event of stream) {
+      const frame = event as unknown as Record<string, unknown>;
+      yield frame;
+      if (frame.type === "session.status_idle") return;
     }
   }
 
   async interrupt(sessionId: string, threadId?: string): Promise<void> {
-    await this.#request(`/v1/sessions/${encodeURIComponent(sessionId)}/events`, {
-      method: "POST",
-      body: JSON.stringify({
-        events: [{
-          type: "user.interrupt",
-          ...(threadId ? { session_thread_id: threadId } : {}),
-        }],
-      }),
+    await this.#client.beta.sessions.events.send(sessionId, {
+      events: [{
+        type: "user.interrupt",
+        ...(threadId ? { session_thread_id: threadId } : {}),
+      }],
     });
   }
 
   async dispose(sessionId: string): Promise<void> {
-    await this.#request(`/v1/sessions/${encodeURIComponent(sessionId)}`, {
-      method: "DELETE",
-    });
-  }
-
-  async #request(path: string, init: RequestInit): Promise<Response> {
-    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
-      ...init,
-      headers: {
-        "x-api-key": this.#apiKey,
-        "user-agent": "Mozilla/5.0 (compatible; Backchat/0.0.1; +https://openma.dev)",
-        "content-type": "application/json",
-        ...init.headers,
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`OpenManaged ${response.status}: ${(await response.text()).slice(0, 500)}`);
-    }
-    return response;
+    await this.#client.beta.sessions.delete(sessionId);
   }
 }

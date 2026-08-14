@@ -83,6 +83,22 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.ActivityStats) as Promise<
       import("../shared/api.js").ActivityStatsInfo
     >,
+  managedAgentsLabModels: (p) =>
+    ipcRenderer.invoke(InvokeChannel.ManagedAgentsLabModels, p) as Promise<
+      import("../shared/managed-agents-lab.js").ManagedAgentsLabModelOption[]
+    >,
+  managedAgentsLabStart: (p) =>
+    ipcRenderer.invoke(InvokeChannel.ManagedAgentsLabStart, p) as Promise<{ runId: string }>,
+  managedAgentsLabCancel: (p) =>
+    ipcRenderer.invoke(InvokeChannel.ManagedAgentsLabCancel, p) as Promise<void>,
+  onManagedAgentsLabEvent: (handler) => {
+    const listener = (
+      _e: IpcRendererEvent,
+      event: import("../shared/managed-agents-lab.js").ManagedAgentsLabEvent,
+    ) => handler(event);
+    ipcRenderer.on(PushChannel.ManagedAgentsLabEvent, listener);
+    return () => ipcRenderer.removeListener(PushChannel.ManagedAgentsLabEvent, listener);
+  },
   schedulesList: () =>
     ipcRenderer.invoke(InvokeChannel.SchedulesList) as Promise<
       import("../shared/schedules.js").ScheduleInfo[]
@@ -123,6 +139,10 @@ const api: BackchatApi = {
   settingsGet: () => ipcRenderer.invoke(InvokeChannel.SettingsGet) as Promise<Settings>,
   settingsPatch: (partial) =>
     ipcRenderer.invoke(InvokeChannel.SettingsPatch, partial) as Promise<void>,
+  skillsPluginsList: () =>
+    ipcRenderer.invoke(InvokeChannel.SkillsPluginsList) as Promise<
+      import("../shared/skill-plugins.js").SkillsPluginsCatalog
+    >,
   onSettingsChanged: (handler) => {
     const listener = (_e: IpcRendererEvent, s: Settings) => handler(s);
     ipcRenderer.on(PushChannel.SettingsChanged, listener);

@@ -48,6 +48,14 @@ export async function launchAppWithHome(
     args: [join(repoRoot, "out/main/index.js")],
     env: {
       ...process.env,
+      // Electron 42 on macOS 26 can ignore Playwright's command-line
+      // `--inspect=0` even though the Node CLI inspect fuse is enabled.
+      // Supplying the same ephemeral inspector through NODE_OPTIONS keeps
+      // Playwright's main-process handshake working; the CLI flag still wins
+      // on Electron builds that handle it normally.
+      NODE_OPTIONS: [process.env["NODE_OPTIONS"], "--inspect=0"]
+        .filter(Boolean)
+        .join(" "),
       BACKCHAT_TEST_HOOKS: "1",
       BACKCHAT_HOME: home,
       // Skip the renderer-side persistence load so each test starts

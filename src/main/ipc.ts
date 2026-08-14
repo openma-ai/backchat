@@ -32,6 +32,7 @@ import type {
   PairStartParams,
 } from "../shared/pair-events.js";
 import type { Settings, SettingsMcpServer } from "../shared/settings.js";
+import type { SkillsPluginsCatalog } from "../shared/skill-plugins.js";
 import type { CreateScheduleInput, UpdateScheduleInput } from "../shared/schedules.js";
 import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
@@ -43,7 +44,7 @@ import { removeSessionCwd } from "./session-cwd.js";
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
 import { openmaRoot } from "./storage-root.js";
 import { forwardSessionEventToPet } from "./pet-hook-bridge.js";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   cancelPendingFor,
   createTerminal,
@@ -72,7 +73,9 @@ import { browserWebviewTools } from "./browser-view-broker.js";
 import { buildAcpMcpServers } from "./acp-mcp-injection.js";
 import { McpAppRuntime } from "./mcp-app-runtime.js";
 import { CodexPluginRuntime } from "./codex-plugin-runtime.js";
+import { discoverCodexPluginSkills } from "./codex-plugin-loader.js";
 import { PluginSkillsMcpBridge } from "./plugin-skills-mcp.js";
+import { reconcileSkillLinks } from "./skill-link-injector.js";
 import type { McpAppRequestInput, McpAppResolveInput } from "../shared/mcp-app.js";
 import {
   readInlineVisualizationFile,
@@ -82,6 +85,8 @@ import { registerSandboxDocument } from "./mcp-app-document-store.js";
 // Side-effect import: current-tab browser data, downloads, screenshots and
 // privacy controls. Each handler revalidates the guest ownership boundary.
 import "./browser-data-broker.js";
+// Side-effect import: official Claude Managed Agents SDK demo surface.
+import "./managed-agents-lab-ipc.js";
 import { ScheduleStore } from "./schedule-store.js";
 import { ScheduleEngine } from "./schedule-engine.js";
 import { ScheduledTaskExecutor } from "./scheduled-task-executor.js";
@@ -99,6 +104,10 @@ interface RegisterDeps {
   browserMcpServerForTask?: (taskId: string) => unknown;
   /** Codex-compatible plugin bundle roots. Defaults to ~/.oma/plugins. */
   pluginRoots?: readonly string[];
+  /** Packaged BackChat skill directory. */
+  bundledSkillsRoot?: string;
+  /** Global ledger for links BackChat owns. Defaults to ~/.oma/skill-links. */
+  skillLinkStateRoot?: string;
   /** Optional second consumer of the singleton SessionManager event stream.
    *  OMA bridge uses this to relay cloud-owned sessions while the renderer
    *  keeps receiving the exact same events. */
@@ -159,12 +168,25 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   for (const error of pluginCatalog.errors) {
     process.stderr.write(`! Codex plugin skipped (${error.root}): ${error.message}\n`);
   }
-  const pluginSkillsMcpBridge = new PluginSkillsMcpBridge(
-    () => pluginRuntime.skills(),
-  );
+  const bundledSkills = deps.bundledSkillsRoot
+    ? discoverCodexPluginSkills("backchat", deps.bundledSkillsRoot)
+    : [];
+  const enabledSkills = () => {
+    const settings = settingsStore.get();
+    return [
+      ...(settings.skills_plugins.bundled_skills_enabled ? bundledSkills : []),
+      ...pluginRuntime.skills(settings.skills_plugins.disabled_plugins),
+    ];
+  };
+  const pluginSkillsMcpBridge = new PluginSkillsMcpBridge(enabledSkills);
   await pluginSkillsMcpBridge.start();
-  const allConfiguredMcpServers = (): SettingsMcpServer[] =>
-    pluginRuntime.withConfiguredMcpServers(settingsStore.get().mcp_servers);
+  const allConfiguredMcpServers = (): SettingsMcpServer[] => {
+    const settings = settingsStore.get();
+    return pluginRuntime.withConfiguredMcpServers(
+      settings.mcp_servers,
+      settings.skills_plugins.disabled_plugins,
+    );
+  };
   const allAgentMcpServers = (): SettingsMcpServer[] => [
     ...allConfiguredMcpServers(),
     pluginSkillsMcpBridge.descriptor(),
@@ -240,13 +262,20 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     // MCP servers come from settings now — Phase 8 finishes the per-agent
     // override matrix; for now we pass every configured server through to
     // every spawn. ACP McpServer shape matches our SettingsMcpServer.
-    resolveMcpServers: (_agentId, taskId) => buildAcpMcpServers(
-      allAgentMcpServers(),
-      [
-        deps.browserMcpServerForTask?.(taskId) as SettingsMcpServer | undefined,
-        scheduleMcpBridge?.descriptor(taskId),
-      ].filter((server): server is SettingsMcpServer => !!server),
-    ),
+    resolveMcpServers: (_agentId, taskId) => {
+      const settings = settingsStore.get();
+      return buildAcpMcpServers(
+        allAgentMcpServers(),
+        [
+          settings.browser?.enabled === false
+            ? undefined
+            : deps.browserMcpServerForTask?.(taskId) as SettingsMcpServer | undefined,
+          settings.skills_plugins.schedules_enabled
+            ? scheduleMcpBridge?.descriptor(taskId)
+            : undefined,
+        ].filter((server): server is SettingsMcpServer => !!server),
+      );
+    },
     resolveDefaults: () => {
       const s = settingsStore.get();
       return {
@@ -268,6 +297,25 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         argsOverride: o.args_override,
         envOverride,
       };
+    },
+    prepareSessionCwd: async (agentId, cwd) => {
+      const result = await reconcileSkillLinks({
+        cwd,
+        agentId,
+        stateRoot: deps.skillLinkStateRoot ?? join(openmaRoot(), "skill-links"),
+        skills: enabledSkills().map((skill) => ({
+          id: skill.pluginName === "backchat"
+            ? `builtin:${skill.name}`
+            : `plugin:${skill.pluginName}:${skill.name}`,
+          name: skill.name,
+          directory: dirname(skill.file),
+        })),
+      });
+      if (result.conflicts.length > 0) {
+        process.stderr.write(
+          `! BackChat left ${result.conflicts.length} user-owned skill path(s) unchanged in ${cwd}\n`,
+        );
+      }
     },
     // Phase 6: permission / fs / terminal brokers — wired so the agent
     // can actually read files, write files, run commands. Defaults are no
@@ -630,6 +678,35 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     InvokeChannel.SettingsPatch,
     (_e, partial: Partial<Settings>) => settingsStore.patch(partial),
   );
+  ipcMain.handle(InvokeChannel.SkillsPluginsList, (): SkillsPluginsCatalog => {
+    const settings = settingsStore.get();
+    const disabled = new Set(settings.skills_plugins.disabled_plugins);
+    return {
+      bundled_skills: bundledSkills.map((skill) => ({
+        id: skill.name,
+        name: skill.name,
+        description: skill.description,
+      })),
+      installed_plugins: pluginRuntime.snapshot().plugins.map((plugin) => {
+        const displayName = plugin.manifest.interface?.["displayName"];
+        return {
+          id: plugin.manifest.name,
+          name: typeof displayName === "string"
+            ? displayName
+            : plugin.manifest.name,
+          description: plugin.manifest.description ?? "",
+          ...(plugin.manifest.version
+            ? { version: plugin.manifest.version }
+            : {}),
+          skill_count: plugin.skills.length,
+          mcp_server_count: plugin.mcpServers.length,
+          app_count: plugin.paths.apps.length,
+          enabled: !disabled.has(plugin.manifest.name),
+        };
+      }),
+      errors: pluginRuntime.snapshot().errors.map((error) => ({ ...error })),
+    };
+  });
   ipcMain.handle(
     InvokeChannel.McpAppResolve,
     (_e, input: McpAppResolveInput) => mcpAppRuntime.resolve(input),
@@ -673,9 +750,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // Push every settings mutation out to all open windows. Subscribed once
   // at registration; never unsubscribed (the store lives for the process
   // lifetime).
-  let mcpServerSnapshot = JSON.stringify(settingsStore.get().mcp_servers);
+  let mcpServerSnapshot = JSON.stringify(allConfiguredMcpServers());
   settingsStore.subscribe((s) => {
-    const nextMcpServerSnapshot = JSON.stringify(s.mcp_servers);
+    const nextMcpServerSnapshot = JSON.stringify(allConfiguredMcpServers());
     if (nextMcpServerSnapshot !== mcpServerSnapshot) {
       mcpServerSnapshot = nextMcpServerSnapshot;
       void mcpAppRuntime.close();

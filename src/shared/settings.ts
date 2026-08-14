@@ -56,6 +56,31 @@ export interface SettingsAgentOverride {
   env: Array<{ name: string; value: string }>;
 }
 
+export interface SettingsSkillsPlugins {
+  /** Expose BackChat's task scheduling MCP tools to newly opened sessions. */
+  schedules_enabled: boolean;
+  /** Inject BackChat's packaged skills into the active agent's cwd. */
+  bundled_skills_enabled: boolean;
+  /** Installed plugin manifest names excluded from MCP and skill injection. */
+  disabled_plugins: string[];
+}
+
+export const DEFAULT_SKILLS_PLUGINS: SettingsSkillsPlugins = {
+  schedules_enabled: true,
+  bundled_skills_enabled: true,
+  disabled_plugins: [],
+};
+
+export function skillsPluginsSettings(
+  value?: Partial<SettingsSkillsPlugins>,
+): SettingsSkillsPlugins {
+  return {
+    ...DEFAULT_SKILLS_PLUGINS,
+    ...value,
+    disabled_plugins: [...(value?.disabled_plugins ?? [])],
+  };
+}
+
 export type SettingsMcpServer =
   | {
       id: string;
@@ -77,6 +102,7 @@ export interface Settings {
   default: SettingsDefault;
   appearance: SettingsAppearance;
   browser?: SettingsBrowser;
+  skills_plugins?: SettingsSkillsPlugins;
   agents: SettingsAgentOverride[];
   mcp_servers: SettingsMcpServer[];
 }

@@ -72,6 +72,28 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("Turn failed.");
   });
 
+  it("separates chat messages while keeping the user bubble compact", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          promptText: "A compact prompt",
+          assistantText: "A clearly separated response",
+          status: "complete",
+        })}
+      />,
+    );
+    const turnClass = html.match(/<article class="([^"]+)"/)?.[1] ?? "";
+
+    expect(turnClass).toContain("!mb-8");
+    expect(turnClass).toContain("!space-y-4");
+    expect(turnClass).toContain(
+      "[&amp;_[data-session-turn-prompt]&gt;div]:!px-3",
+    );
+    expect(turnClass).toContain(
+      "[&amp;_[data-session-turn-prompt]&gt;div]:!py-2",
+    );
+  });
+
   it("renders the broker error message for a failed turn", () => {
     const html = renderToStaticMarkup(
       <TurnBlock

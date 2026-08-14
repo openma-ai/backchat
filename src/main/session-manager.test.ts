@@ -104,6 +104,36 @@ describe("SessionManager prompt queue", () => {
     await prompting;
   });
 
+  it("prepares native skill links before starting the ACP runtime", async () => {
+    mocks.runtimeStart.mockClear();
+    const fake = createControllableAcpSession();
+    const calls: string[] = [];
+    mocks.runtimeStart.mockImplementationOnce(async () => {
+      calls.push("runtime");
+      return fake.session;
+    });
+    const prepareSessionCwd = vi.fn(async () => {
+      calls.push("skills");
+    });
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      prepareSessionCwd,
+    });
+
+    await manager.start({
+      session_id: "sess-native-skills",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    expect(prepareSessionCwd).toHaveBeenCalledWith("codex-acp", "/repo");
+    expect(calls).toEqual(["skills", "runtime"]);
+  });
+
   it("cancels session-scoped broker work when an active turn is cancelled", async () => {
     mocks.runtimeStart.mockClear();
     const fake = createControllableAcpSession();

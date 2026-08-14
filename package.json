@@ -25,11 +25,14 @@
     "smoke:codex-acp-native": "tsx scripts/smoke-codex-acp-native.ts",
     "test:e2e": "electron-vite build && playwright test",
     "test:verify": "pnpm run typecheck && pnpm run test && pnpm run test:e2e:fast",
-    "package": "electron-vite build && electron-builder",
+    "package": "pnpm run package:release",
+    "package:release": "tsx scripts/release.ts",
+    "package:local": "electron-vite build && electron-builder",
     "package:dir": "electron-vite build && electron-builder --dir",
     "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.115.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@lobehub/icons": "^5.10.0",
@@ -107,6 +110,15 @@
     },
     "files": [
       "out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "skills",
+        "to": "skills",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "asarUnpack": [
       "**/*.node"

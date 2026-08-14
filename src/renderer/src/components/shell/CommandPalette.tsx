@@ -20,6 +20,7 @@ import {
   SunIcon,
   SearchIcon,
   CornerDownLeftIcon,
+  CloudIcon,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -302,6 +303,19 @@ export function CommandPalette() {
                   <SearchIcon className="size-3.5 text-fg-subtle opacity-0" />
                 </CmdSlot>
                 <span className="flex-1 text-fg">Home</span>
+              </Command.Item>
+              <Command.Item
+                value="nav-managed-agents-lab cloud sdk"
+                onSelect={() => {
+                  void navigate({ to: "/managed-agents" });
+                  setOpen(false);
+                }}
+                className={itemClass}
+              >
+                <CmdSlot>
+                  <CloudIcon className="size-3.5 text-fg-subtle" />
+                </CmdSlot>
+                <span className="flex-1 text-fg">Managed Agents Lab</span>
               </Command.Item>
               <Command.Item
                 value="nav-settings"

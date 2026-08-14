@@ -32,6 +32,9 @@ export const InvokeChannel = {
   SideWorkspaceDelete: "sideWorkspace:delete",
   SessionsSearch: "sessions:search",
   ActivityStats: "activity:stats",
+  ManagedAgentsLabModels: "managedAgentsLab:models",
+  ManagedAgentsLabStart: "managedAgentsLab:start",
+  ManagedAgentsLabCancel: "managedAgentsLab:cancel",
   SchedulesList: "schedules:list",
   SchedulesCreate: "schedules:create",
   SchedulesUpdate: "schedules:update",
@@ -45,6 +48,7 @@ export const InvokeChannel = {
   SessionsDelete: "sessions:delete",
   SettingsGet: "settings:get",
   SettingsPatch: "settings:patch",
+  SkillsPluginsList: "skillsPlugins:list",
   McpAppResolve: "mcpApp:resolve",
   McpAppRequest: "mcpApp:request",
   InlineVisualizationRead: "inlineVisualization:read",
@@ -172,6 +176,8 @@ export const PushChannel = {
   BrowserDownloadsChanged: "browserData:downloadsChanged",
   /** A watched generative-UI fragment changed on disk. */
   InlineVisualizationChanged: "inlineVisualization:changed",
+  /** Official Claude Managed Agents SDK protocol and stream events. */
+  ManagedAgentsLabEvent: "managedAgentsLab:event",
 } as const;
 
 export type InvokeChannelName = (typeof InvokeChannel)[keyof typeof InvokeChannel];

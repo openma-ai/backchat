@@ -5,7 +5,7 @@ import { OpenmaStartupLoader } from "@/components/OpenmaStartupLoader";
 export function AppStartupGate({ children }: { children: ReactNode }) {
   const query = useQuery({
     queryKey: ["agents"],
-    queryFn: () => window.backchat.agentsList(),
+    queryFn: () => window.backchat.agentsList({ readiness: "snapshot" }),
     staleTime: 60_000,
     retry: false,
   });

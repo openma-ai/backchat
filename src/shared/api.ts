@@ -14,6 +14,13 @@ import type {
   SessionStartResult,
 } from "./session-events.js";
 import type { Settings } from "./settings.js";
+import type { SkillsPluginsCatalog } from "./skill-plugins.js";
+import type {
+  ManagedAgentsLabEvent,
+  ManagedAgentsLabConnectionInput,
+  ManagedAgentsLabModelOption,
+  ManagedAgentsLabStartInput,
+} from "./managed-agents-lab.js";
 import type {
   CreateScheduleInput,
   ScheduleInfo,
@@ -344,6 +351,13 @@ export interface BackchatApi {
   sessionsSearch(query: string, limit?: number): Promise<SearchHitInfo[]>;
   /** Local-only activity analytics derived from the session SQLite index. */
   activityStats(): Promise<ActivityStatsInfo>;
+  /** Run the official Claude Managed Agents SDK in the isolated main process. */
+  managedAgentsLabModels(
+    p: ManagedAgentsLabConnectionInput,
+  ): Promise<ManagedAgentsLabModelOption[]>;
+  managedAgentsLabStart(p: ManagedAgentsLabStartInput): Promise<{ runId: string }>;
+  managedAgentsLabCancel(p: { runId: string }): Promise<void>;
+  onManagedAgentsLabEvent(handler: (event: ManagedAgentsLabEvent) => void): () => void;
 
   /** Local background task schedules shared by every ACP harness. */
   schedulesList(): Promise<ScheduleInfo[]>;
@@ -379,6 +393,9 @@ export interface BackchatApi {
   settingsGet(): Promise<Settings>;
   /** Shallow merge — top-level keys replaced wholesale. */
   settingsPatch(partial: Partial<Settings>): Promise<void>;
+  /** BackChat bundled skills plus Codex-compatible plugins discovered from
+   *  the global plugin root. */
+  skillsPluginsList(): Promise<SkillsPluginsCatalog>;
   /** Notified on every patch. Returns an unsubscribe fn. */
   onSettingsChanged(handler: (s: Settings) => void): () => void;
 

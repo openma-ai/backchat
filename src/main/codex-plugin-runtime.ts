@@ -39,12 +39,18 @@ export class CodexPluginRuntime {
     return this.#catalog;
   }
 
-  mcpServers(): readonly SettingsMcpServer[] {
-    return this.#catalog.mcpServers;
+  mcpServers(disabledPlugins: readonly string[] = []): readonly SettingsMcpServer[] {
+    const disabled = new Set(disabledPlugins);
+    return this.#catalog.plugins
+      .filter((plugin) => !disabled.has(plugin.manifest.name))
+      .flatMap((plugin) => plugin.mcpServers);
   }
 
-  skills(): CodexPluginSkill[] {
-    return this.#catalog.plugins.flatMap((plugin) => plugin.skills);
+  skills(disabledPlugins: readonly string[] = []): CodexPluginSkill[] {
+    const disabled = new Set(disabledPlugins);
+    return this.#catalog.plugins
+      .filter((plugin) => !disabled.has(plugin.manifest.name))
+      .flatMap((plugin) => plugin.skills);
   }
 
   /**
@@ -54,11 +60,12 @@ export class CodexPluginRuntime {
    */
   withConfiguredMcpServers(
     configured: readonly SettingsMcpServer[],
+    disabledPlugins: readonly string[] = [],
   ): SettingsMcpServer[] {
     const ids = new Set(configured.map((server) => server.id));
     return [
       ...configured,
-      ...this.#catalog.mcpServers.filter((server) => !ids.has(server.id)),
+      ...this.mcpServers(disabledPlugins).filter((server) => !ids.has(server.id)),
     ];
   }
 }

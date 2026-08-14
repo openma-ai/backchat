@@ -1,0 +1,46 @@
+appId: dev.openma.backchat
+productName: Backchat
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
+directories:
+  output: release/${version}
+  buildResources: build
+
+files:
+  - out/**/*
+
+extraResources:
+  - from: skills
+    to: skills
+    filter:
+      - "**/*"
+
+asarUnpack:
+  - "**/*.node"
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+  type: distribution
+  hardenedRuntime: true
+  strictVerify: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+
+win:
+  target:
+    - nsis
+  signAndEditExecutable: true
+  verifyUpdateCodeSignature: true
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
+    rfc3161TimeStampServer: http://timestamp.digicert.com
+
+linux:
+  target:
+    - AppImage
+  category: Development

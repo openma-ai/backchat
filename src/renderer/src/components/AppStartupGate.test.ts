@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("app cold-start readiness gate", () => {
-  it("renders only the animated brand loader until the full agent barrier settles", () => {
+  it("renders only the animated brand loader until the agent snapshot settles", () => {
     const gate = readFileSync(
       resolve(__dirname, "AppStartupGate.tsx"),
       "utf8",
@@ -18,7 +18,6 @@ describe("app cold-start readiness gate", () => {
     );
 
     expect(gate).toContain('queryKey: ["agents"]');
-    expect(gate).toContain("window.backchat.agentsList()");
     expect(gate).toContain("query.isPending");
     expect(gate).toContain("<OpenmaStartupLoader");
     expect(gate).not.toContain("Loading agents");

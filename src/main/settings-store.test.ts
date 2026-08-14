@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   hasDeprecatedAgentDefault,
   migrateDeprecatedWorkspacePath,
+  parseSettings,
 } from "./settings-store";
 
 describe("settings migrations", () => {
@@ -15,6 +16,11 @@ describe("settings migrations", () => {
       default: { permission_mode: "ask" },
     })).toBe(false);
     expect(DEFAULT_SETTINGS.default).not.toHaveProperty("agent_id");
+    expect(DEFAULT_SETTINGS.skills_plugins).toEqual({
+      schedules_enabled: true,
+      bundled_skills_enabled: true,
+      disabled_plugins: [],
+    });
   });
 
   it("clears the invisible legacy default workspace", () => {
@@ -42,6 +48,16 @@ describe("settings migrations", () => {
     expect(migrateDeprecatedWorkspacePath(DEFAULT_SETTINGS)).toEqual({
       changed: false,
       settings: DEFAULT_SETTINGS,
+    });
+  });
+
+  it("adds skills and plugin defaults to an existing config", () => {
+    const { skills_plugins: _omitted, ...existingConfig } = DEFAULT_SETTINGS;
+
+    expect(parseSettings(existingConfig).skills_plugins).toEqual({
+      schedules_enabled: true,
+      bundled_skills_enabled: true,
+      disabled_plugins: [],
     });
   });
 });
