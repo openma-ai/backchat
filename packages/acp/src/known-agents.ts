@@ -250,6 +250,19 @@ export const OVERLAY_AGENTS: KnownAgentEntry[] = [
     installHint: "npm install -g openclaw",
     homepage: "https://github.com/openclaw/openclaw",
   },
+  {
+    id: "dsh-acp",
+    label: "DeepSeek Harness",
+    spec: { command: "dsh-acp" },
+    featured: true,
+    systemPath: true,
+    // Official registry entry pending (agentclientprotocol/registry#506);
+    // once merged, the merge layer picks up its icon/version automatically.
+    registryId: "dsh-acp",
+    install: { kind: "npm", package: "@openma/deepseek-harness-acp" },
+    installHint: "npm install -g @openma/deepseek-harness-acp",
+    homepage: "https://github.com/openma-ai/deepseek-harness-acp",
+  },
 ];
 
 export function resolveOverlayAgent(id: string): KnownAgentEntry | null {
