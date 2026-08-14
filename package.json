@@ -1,6 +1,6 @@
 {
   "name": "backchat",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Local-first desktop client for any ACP agent",
   "author": "backchat contributors",
@@ -66,8 +66,7 @@
     "streamdown": "^2.5.0",
     "streaming-markdown": "^0.2.15",
     "use-stick-to-bottom": "^1.1.4",
-    "ws": "^8.21.1",
-    "zod-to-json-schema": "^3.25.2"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.64.2",
@@ -88,7 +87,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "electron": "^42.3.1",
-    "electron-builder": "^26.8.1",
+    "electron-builder": "^26.15.7",
     "electron-vite": "^5.0.0",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",

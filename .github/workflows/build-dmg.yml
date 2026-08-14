@@ -42,35 +42,11 @@ jobs:
           pnpm exec electron-vite build
           pnpm exec electron-builder --publish never
 
-      - name: Smoke-test packaged application
+      - name: Verify packaged runtime imports
         run: |
-          app="release/0.0.1/mac-arm64/Backchat.app/Contents/MacOS/Backchat"
-          profile=$(mktemp -d "${RUNNER_TEMP}/backchat-package-smoke-XXXXXX")
-          log="${RUNNER_TEMP}/backchat-package-smoke.log"
-          "$app" --user-data-dir="$profile" >"$log" 2>&1 &
-          app_pid=$!
-
-          for _ in {1..10}; do
-            sleep 1
-            if ! kill -0 "$app_pid" 2>/dev/null; then
-              cat "$log"
-              exit 1
-            fi
-          done
-
-          kill "$app_pid" 2>/dev/null || true
-          for _ in {1..5}; do
-            if ! kill -0 "$app_pid" 2>/dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          kill -9 "$app_pid" 2>/dev/null || true
-          wait "$app_pid" 2>/dev/null || true
-          if grep -E "ERR_MODULE_NOT_FOUND|Uncaught Exception" "$log"; then
-            cat "$log"
-            exit 1
-          fi
+          app=$(find release -type f -path "*/Backchat.app/Contents/MacOS/Backchat" -print -quit)
+          test -n "$app"
+          node scripts/verify-packaged-runtime.mjs "$app"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
