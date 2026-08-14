@@ -58,8 +58,15 @@ jobs:
             fi
           done
 
-          kill "$app_pid"
-          wait "$app_pid" || true
+          kill "$app_pid" 2>/dev/null || true
+          for _ in {1..5}; do
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          kill -9 "$app_pid" 2>/dev/null || true
+          wait "$app_pid" 2>/dev/null || true
           if grep -E "ERR_MODULE_NOT_FOUND|Uncaught Exception" "$log"; then
             cat "$log"
             exit 1
