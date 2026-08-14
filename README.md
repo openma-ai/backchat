@@ -5,7 +5,19 @@
 <h1 align="center">Backchat</h1>
 
 <p align="center">
+  <a href="https://github.com/openma-ai/deepseek-harness-acp"><img src="https://img.shields.io/badge/dsh--plugin-supported-4D6BFE?style=flat-square" alt="dsh-plugin supported" /></a>
+  <img src="https://img.shields.io/badge/protocol-ACP-7C3AED?style=flat-square" alt="Agent Client Protocol" />
+  <img src="https://img.shields.io/badge/data-local--first-059669?style=flat-square" alt="Local-first" />
+  <img src="https://img.shields.io/badge/app-desktop-334155?style=flat-square" alt="Desktop app" />
+</p>
+
+<p align="center">
   <strong>A calm, local-first desktop workspace for Agent Client Protocol (ACP) agents.</strong>
+</p>
+
+<p align="center">
+  <strong>New: <a href="https://github.com/openma-ai/deepseek-harness-acp">DeepSeek Harness</a> is now supported through <code>dsh-acp</code>.</strong><br />
+  <sub>Run DeepSeek alongside your other ACP agents from the same local-first workspace.</sub>
 </p>
 
 Backchat gives developer agents a shared desktop without taking away the things
@@ -75,6 +87,7 @@ Backchat currently ships registry entries for:
 | --- | --- | --- |
 | Claude Code | `claude-acp` | Claude Code through the official ACP adapter |
 | Codex CLI | `codex-acp` | Codex through `codex-acp` |
+| [DeepSeek Harness](https://github.com/openma-ai/deepseek-harness-acp) | [`dsh-acp`](https://github.com/openma-ai/deepseek-harness-acp) | DeepSeek through its registry-protocol ACP harness |
 | Gemini CLI | `gemini` | Gemini CLI's ACP mode |
 | OpenCode | `opencode` | OpenCode's ACP mode |
 | Hermes | `hermes` | Hermes ACP entry |
