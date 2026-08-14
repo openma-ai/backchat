@@ -16,8 +16,8 @@
 </p>
 
 <p align="center">
-  <strong>New: <a href="https://github.com/openma-ai/deepseek-harness-acp">DeepSeek Harness</a> is now supported through <code>dsh-acp</code>.</strong><br />
-  <sub>Run DeepSeek alongside your other ACP agents from the same local-first workspace.</sub>
+  <strong>New: <a href="https://github.com/openma-ai/deepseek-harness-acp">DeepSeek Harness</a> support through <code>dsh-plugin</code> and <code>dsh-acp</code>.</strong><br />
+  <sub>Use your existing dsh profile or the standalone ACP server from the same local-first workspace.</sub>
 </p>
 
 Backchat gives developer agents a shared desktop without taking away the things
@@ -30,8 +30,8 @@ conversation, tools, files, browser, and terminal in one place.
 
 ## Why Backchat
 
-- **One workspace, many agents.** Run Claude Code, Codex CLI, Gemini CLI,
-  OpenCode, Hermes, or OpenClaw from the same desktop surface.
+- **One workspace, many agents.** Run Claude Code, Codex CLI, DeepSeek Harness,
+  Gemini CLI, OpenCode, Hermes, or OpenClaw from the same desktop surface.
 - **Local-first by default.** Prompts, transcripts, project metadata, and local
   app state stay on your machine. The selected agent is responsible for talking
   to its model provider.
@@ -87,11 +87,25 @@ Backchat currently ships registry entries for:
 | --- | --- | --- |
 | Claude Code | `claude-acp` | Claude Code through the official ACP adapter |
 | Codex CLI | `codex-acp` | Codex through `codex-acp` |
-| [DeepSeek Harness](https://github.com/openma-ai/deepseek-harness-acp) | [`dsh-acp`](https://github.com/openma-ai/deepseek-harness-acp) | DeepSeek through its registry-protocol ACP harness |
+| [DeepSeek Harness](https://github.com/openma-ai/deepseek-harness-acp) | `dsh-acp` or `dsh --profile acp` | Standalone ACP server or dsh profile plugin |
 | Gemini CLI | `gemini` | Gemini CLI's ACP mode |
 | OpenCode | `opencode` | OpenCode's ACP mode |
 | Hermes | `hermes` | Hermes ACP entry |
 | OpenClaw | `openclaw` | OpenClaw ACP entry |
+
+DeepSeek Harness can be connected in either form:
+
+```bash
+# Standalone ACP server
+npm install -g @openma/deepseek-harness-acp
+dsh-acp login
+
+# Or install it into an existing dsh profile
+dsh plugin --profile acp add -w @openma/deepseek-harness-acp
+```
+
+See [openma-ai/deepseek-harness-acp](https://github.com/openma-ai/deepseek-harness-acp)
+for authentication, profile, model, permission, and MCP configuration.
 
 Agent binaries are discovered or configured from **Settings → Agents**. The
 registry and setup layer are deliberately separate from the chat UI, so adding
