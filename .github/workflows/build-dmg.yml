@@ -38,7 +38,9 @@ jobs:
         run: pnpm run typecheck
 
       - name: Build DMG
-        run: pnpm run package
+        run: |
+          pnpm exec electron-vite build
+          pnpm exec electron-builder --publish never
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
