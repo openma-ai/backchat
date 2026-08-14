@@ -1,7 +1,6 @@
 import { useI18n } from "@/lib/i18n";
 import {
   BrainIcon,
-  ChevronRightIcon,
   FileEditIcon,
   FileTextIcon,
   FolderTreeIcon,
@@ -29,10 +28,8 @@ import type { SubagentActivity } from "@/lib/session-store";
 import { resolveToolImageSource } from "@/lib/tool-content-source";
 import { cn } from "@/lib/utils";
 import { SubagentAvatar } from "@/components/SubagentAvatar";
-import {
-  ToolActivityIdentity,
-  ToolInputBlock,
-} from "./ToolActivityPrimitives";
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
+import { ToolActivityIdentity, ToolInputBlock } from "./ToolActivityPrimitives";
 
 const McpAppView = lazy(async () => {
   const module = await import("./McpAppView");
@@ -41,12 +38,15 @@ const McpAppView = lazy(async () => {
 
 function hasMcpAppResource(tool: ToolEntry): boolean {
   const ui = tool.meta?.ui;
-  const nested = ui && typeof ui === "object" && !Array.isArray(ui)
-    ? (ui as Record<string, unknown>).resourceUri
-    : undefined;
+  const nested =
+    ui && typeof ui === "object" && !Array.isArray(ui)
+      ? (ui as Record<string, unknown>).resourceUri
+      : undefined;
   const legacy = tool.meta?.["ui/resourceUri"];
-  return (typeof nested === "string" && nested.startsWith("ui://")) ||
-    (typeof legacy === "string" && legacy.startsWith("ui://"));
+  return (
+    (typeof nested === "string" && nested.startsWith("ui://")) ||
+    (typeof legacy === "string" && legacy.startsWith("ui://"))
+  );
 }
 
 function toolLifecycleStatus(status: string): {
@@ -140,7 +140,9 @@ export function ToolRow({
           // shrank the moment a tool completed and pulled everything below it
           // up. One height for both states.
           "activity-disclosure-row min-h-6",
-          hasBody ? "cursor-pointer hover:bg-[var(--control-bg-hover)]" : "cursor-default",
+          hasBody
+            ? "cursor-pointer hover:bg-[var(--control-bg-hover)]"
+            : "cursor-default",
         )}
       >
         <ToolActivityIdentity
@@ -148,31 +150,31 @@ export function ToolRow({
           label={verb}
           target={target}
           failed={status === "failed"}
-          leading={subagent
-            ? <SubagentAvatar avatarId={subagent.avatarId} className="size-[18px]" />
-            : undefined}
-          trailing={lifecycle.value === "completed" ? undefined : (
-            <span
-              className={cn(
-                "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
-                lifecycle.value === "failed"
-                  ? "bg-danger-subtle text-danger"
-                  : "bg-bg-surface text-fg-muted",
-              )}
-              data-tool-status-label={lifecycle.value}
-            >
-              {lifecycle.label}
-            </span>
-          )}
+          leading={
+            subagent ? (
+              <SubagentAvatar
+                avatarId={subagent.avatarId}
+                className="size-[18px]"
+              />
+            ) : undefined
+          }
+          trailing={
+            lifecycle.value === "completed" ? undefined : (
+              <span
+                className={cn(
+                  "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                  lifecycle.value === "failed"
+                    ? "bg-danger-subtle text-danger"
+                    : "bg-bg-surface text-fg-muted",
+                )}
+                data-tool-status-label={lifecycle.value}
+              >
+                {lifecycle.label}
+              </span>
+            )
+          }
         />
-        {hasBody && (
-          <ChevronRightIcon
-            className={cn(
-              "size-3 shrink-0 text-fg-subtle transition-transform",
-              open && "rotate-90",
-            )}
-          />
-        )}
+        {hasBody && <DisclosureChevron open={open} />}
       </button>
 
       {open && tool.rawInput !== undefined && (
@@ -231,15 +233,12 @@ export function ToolRow({
 export function ToolRawOutputBody({ rawOutput }: { rawOutput: unknown }) {
   if (rawOutput && typeof rawOutput === "object" && !Array.isArray(rawOutput)) {
     const receipt = rawOutput as Record<string, unknown>;
-    const stdout = typeof receipt["stdout"] === "string"
-      ? receipt["stdout"]
-      : null;
-    const stderr = typeof receipt["stderr"] === "string"
-      ? receipt["stderr"]
-      : null;
-    const exitCode = typeof receipt["exit_code"] === "number"
-      ? receipt["exit_code"]
-      : null;
+    const stdout =
+      typeof receipt["stdout"] === "string" ? receipt["stdout"] : null;
+    const stderr =
+      typeof receipt["stderr"] === "string" ? receipt["stderr"] : null;
+    const exitCode =
+      typeof receipt["exit_code"] === "number" ? receipt["exit_code"] : null;
     if (stdout !== null) {
       return (
         <div className="space-y-1.5" data-tool-output-body="true">

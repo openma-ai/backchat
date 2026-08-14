@@ -128,19 +128,11 @@ export function detectCodexNativeAgentToolEvent(
     ];
   }
 
-  const codexSubagentUpdate = detectCodexSubagentLifecycle(tool);
+  const codexSubagentUpdate = detectCodexSubagentActivity(tool);
   if (codexSubagentUpdate) return [codexSubagentUpdate];
 
-  const meta = objectValue(tool.meta);
-  const codexMeta = objectValue(meta.codex);
-  const collaborationMeta = objectValue(codexMeta.collaboration);
-  const name = normalizeToolName(
-    collaborationMeta.tool ?? tool.toolName ?? tool.title,
-  );
-
-  if (name === "spawn_agent" || name === "spawnagent") return [detectCodexSpawn(tool)];
-  if (name === "wait_agent" || name === "wait") return detectCodexWait(tool);
-  if (name === "close_agent" || name === "closeagent") return [detectCodexClose(tool)];
+  const codexCollaborationUpdates = detectCodexCollaboration(tool);
+  if (codexCollaborationUpdates.length > 0) return codexCollaborationUpdates;
 
   if (context?.provider === "codex") return detectContextualResult(tool, context);
   return [];
@@ -262,38 +254,23 @@ export function detectClaudeCodeNativeAgentTranscript(
   return [];
 }
 
-function detectCodexSubagentLifecycle(
+function detectCodexSubagentActivity(
   tool: ToolLike,
 ): NativeAgentUpdate | undefined {
-  const input = objectValue(tool.rawInput);
   const meta = objectValue(tool.meta);
   const codexMeta = objectValue(meta.codex);
   const subagentMeta = objectValue(codexMeta.subagent);
-  const childId =
-    asString(subagentMeta.threadId) ??
-    asString(subagentMeta.thread_id) ??
-    asString(input.agentThreadId) ??
-    asString(input.agent_thread_id);
-  const agentPath =
-    asString(subagentMeta.path) ??
-    asString(input.agentPath) ??
-    asString(input.agent_path);
-  const activity = (
-    asString(subagentMeta.activity) ??
-    asString(input.activityKind) ??
-    asString(input.activity_kind)
-  )?.toLowerCase();
+  const childId = asString(subagentMeta.threadId);
+  const agentPath = asString(subagentMeta.path);
+  const activity = asString(subagentMeta.activity);
 
   if (!childId || !activity) return undefined;
+  if (
+    activity !== "started"
+    && activity !== "interacted"
+    && activity !== "interrupted"
+  ) return undefined;
 
-  const failed = activity === "failed" || activity === "error";
-  const cancelled =
-    activity === "cancelled"
-    || activity === "canceled"
-    || (activity === "interrupted" && tool.status === "completed");
-  const closed = activity === "closed";
-  const complete =
-    activity === "completed" || activity === "complete" || closed;
   const nickname = agentPath?.split("/").filter(Boolean).at(-1);
 
   return {
@@ -303,15 +280,49 @@ function detectCodexSubagentLifecycle(
     childId,
     task: agentPath,
     nickname,
-    status: failed
-      ? "error"
-      : cancelled
-        ? "cancelled"
-        : complete
-          ? "complete"
-          : "running",
-    closed: closed || undefined,
+    status: activity === "interrupted" ? "cancelled" : "running",
   };
+}
+
+function detectCodexCollaboration(tool: ToolLike): NativeAgentUpdate[] {
+  const meta = objectValue(tool.meta);
+  const collaboration = objectValue(objectValue(meta.codex).collaboration);
+  const collaborationTool = asString(collaboration.tool);
+  const receiverThreadIds = stringArray(collaboration.receiverThreadIds);
+  if (!collaborationTool || receiverThreadIds.length === 0) return [];
+
+  const nativeTool = {
+    ...tool,
+    rawInput: {
+      ...objectValue(tool.rawInput),
+      receiverThreadIds,
+    },
+  };
+
+  switch (collaborationTool) {
+    case "spawnAgent": {
+      const spawned = detectCodexSpawn(nativeTool);
+      const input = objectValue(nativeTool.rawInput);
+      const state = codexStateUpdates(
+        receiverThreadIds,
+        input.agentsStates,
+      )[0];
+      return [{
+        ...spawned,
+        status: state?.status ?? spawned.status,
+        result: state?.result,
+        errorMessage: state?.errorMessage ?? spawned.errorMessage,
+      }];
+    }
+    case "sendInput":
+    case "resumeAgent":
+    case "wait":
+      return detectCodexWait(nativeTool);
+    case "closeAgent":
+      return [detectCodexClose(nativeTool)];
+    default:
+      return [];
+  }
 }
 
 export function detectNativeAgentRawEvent(event: unknown): NativeAgentUpdate[] {
@@ -628,15 +639,26 @@ function codexStateUpdates(childIds: string[], states: unknown): NativeAgentUpda
       operation: "codex_wait",
       childId,
       status:
-        state === "completed"
+        state === "completed" || state === "shutdown"
           ? "complete"
-          : state === "failed" || state === "error"
+          : state === "failed"
+              || state === "error"
+              || state === "errored"
+              || state === "notFound"
             ? "error"
-            : state === "cancelled" || state === "canceled"
+            : state === "cancelled"
+                || state === "canceled"
+                || state === "interrupted"
               ? "cancelled"
               : "running",
-      result: state === "completed" ? message : undefined,
-      errorMessage: state === "failed" || state === "error" ? message : undefined,
+      result: state === "completed" || state === "shutdown" ? message : undefined,
+      errorMessage:
+        state === "failed"
+        || state === "error"
+        || state === "errored"
+        || state === "notFound"
+          ? message
+          : undefined,
     };
   });
 }

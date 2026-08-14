@@ -3,279 +3,342 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
+import { ListChecksIcon, Loader2Icon } from "lucide-react";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { isToolRunning, type ActivityTool } from "@/lib/activity-tool-groups";
 import {
-  groupActivityTools,
-  projectActivityTools,
-  type ActivityTool,
-} from "@/lib/activity-tool-groups";
-import { pickToolActivityTarget } from "@/lib/chat-tool-presentation";
-import { liveActivityState } from "@/lib/live-activity";
+  capitalizeToolLabel,
+  pickToolActivityTarget,
+  toolRunSummaryKeys,
+  toolActivityVerbKey,
+} from "@/lib/chat-tool-presentation";
 import { useI18n } from "@/lib/i18n";
-import {
-  activityPresentationPolicy,
-  type ActivityPresentationPolicy,
-} from "@/lib/activity-presentation-policy";
-import type { TurnRender } from "@/lib/reduce-turn";
+import { parseAcpEvent, type TurnRender } from "@/lib/reduce-turn";
 import type { SubagentActivity, Turn } from "@/lib/session-store";
-import { cn } from "@/lib/utils";
-import { ActivityToolGroup } from "./ActivityToolGroup";
 import {
-  ASSISTANT_MARKDOWN_CLASS,
-  StreamdownText,
-} from "./ChatMarkdown";
+  CollapsibleEventSequence,
+  type CollapsibleEventNode,
+} from "./CollapsibleEventSequence";
+import { ASSISTANT_MARKDOWN_CLASS, StreamdownText } from "./ChatMarkdown";
 import { StreamingMarkdown } from "./StreamingMarkdown";
-import { useRef } from "react";
+import { projectThoughtEvent, ThoughtEventRow } from "./ThoughtEventRow";
+import { ToolRow } from "./ToolPresentation";
+import { FadeScrollViewport } from "./FadeScrollViewport";
 
-export function TurnActivity({
+/**
+ * Collapses every part of a turn except its final answer. A turn containing
+ * only a final answer has no process bar at all.
+ */
+export function TurnProcessBar({
   turn,
   rendered,
   subagents,
-  agentId,
   isStreaming,
   cwd,
-  completeLabel,
+  leadingContent,
+  trailingContent,
+  hasSupplementalActivity = false,
 }: {
   turn: Turn;
   rendered: TurnRender;
   subagents: SubagentActivity[];
-  agentId?: string;
   isStreaming: boolean;
   cwd: string | null;
-  completeLabel: string;
+  leadingContent?: ReactNode;
+  trailingContent?: ReactNode;
+  hasSupplementalActivity?: boolean;
 }) {
   const { t } = useI18n();
-  const policy = activityPresentationPolicy(agentId);
+  const [processOpen, setProcessOpen] = useState(isStreaming);
+  const elapsedSeconds = useTurnElapsedSeconds(turn, isStreaming);
+  useEffect(() => {
+    // The process is live content while the turn is running, not a disclosure
+    // the user can close. Once the turn settles it becomes a closed summary.
+    setProcessOpen(isStreaming);
+  }, [isStreaming]);
   const commentaryItems = rendered.timeline.filter(
     (item) => item.kind === "assistant_text" && item.phase === "commentary",
   );
-  const hasThought =
-    turn.thoughtText.trim().length > 0 &&
-    (policy.persistThoughtTimeline ||
-      (isStreaming && Boolean(rendered.currentThoughtText)));
-  const { activeTool, visibleToolIds } = projectActivityTools(
-    rendered,
-    isStreaming,
+  const hasThought = turn.thoughtText.trim().length > 0;
+  const toolsById = new Map(
+    rendered.tools.map((tool) => [tool.toolCallId, tool] as const),
   );
-  const toolGroups = groupActivityTools({
+  const describeCommand = (tool: ActivityTool) =>
+    pickToolActivityTarget(tool, (name) => t("tool.skillSuffix", { name }));
+  const activityGroups = projectActivityEventGroups({
     rendered,
-    visibleToolIds,
-    activeTool,
-    groupAcrossThoughts: policy.groupToolsAcrossThoughts,
+    toolsById,
   });
-  // Everything after the last thing the agent said is one stretch of work, and
-  // the user reads it as one: "what it is doing now". Rendered as separate rows
-  // it was a growing list of finished commands with the live line stranded at
-  // the bottom, so the trailing run is merged into that live block instead.
-  const lastSpokenIndex = rendered.timeline.reduce(
-    (last, item, index) => (item.kind === "assistant_text" ? index : last),
-    -1,
-  );
-  const trailingTools = [...toolGroups.byStartIndex.entries()]
-    .filter(([index]) => index > lastSpokenIndex)
-    .sort(([a], [b]) => a - b)
-    .flatMap(([, tools]) => tools);
-  const trailingToolIds = new Set(
-    trailingTools.map((tool) => tool.toolCallId),
-  );
-  const liveTools = [...trailingTools, ...toolGroups.trailing];
-  // One closed set of states, decided in one place. Every one of these used to
-  // be its own boolean here, and the combinations nobody named are where the
-  // duplicated sentences came from.
-  const live = liveActivityState({
-    rendered,
-    isStreaming,
-    liveTools,
-    describeCommand: (tool) =>
-      pickToolActivityTarget(tool, (name) => t("tool.skillSuffix", { name })),
-  });
-  const liveHeadline = live.kind === "running"
-    ? live.command
-    : live.kind === "tools"
-      ? t("chat.runningTools")
-      : live.kind === "waiting"
-        ? t("chat.thinking")
-        : undefined;
-  // A command it is running is still a tool call and keeps the row's icon; the
-  // fallback is the row talking about itself, and gets none.
-  const liveHeadlineKind = live.kind === "running" || live.kind === "tools"
-    ? ("command" as const)
-    : live.kind === "waiting"
-      ? ("thought" as const)
-      : undefined;
-  const hasActivity =
+  const liveTail = rendered.timeline.at(-1);
+  const isThinking = isStreaming && liveTail?.kind === "thought";
+  const liveThoughtPrefix = isThinking
+    ? Math.max(0, turn.thoughtText.length - liveTail.text.length)
+    : 0;
+  const isTextStreaming = isStreaming && liveTail?.kind === "assistant_text";
+  const isToolProjectedRunning =
+    isStreaming &&
+    liveTail?.kind === "tool" &&
+    isToolRunning(toolsById.get(liveTail.toolCallId)?.status);
+  const showThinkingFallback =
+    isStreaming && !isTextStreaming && !isThinking && !isToolProjectedRunning;
+  const thoughtDurations = projectThoughtDurations(turn);
+  const hasProcess =
     hasThought ||
     commentaryItems.length > 0 ||
-    visibleToolIds.size > 0 ||
-    Boolean(activeTool);
-  if (!hasActivity) return null;
+    rendered.tools.length > 0 ||
+    hasSupplementalActivity ||
+    showThinkingFallback;
+  if (!hasProcess) return null;
 
   let assistantPrefix = 0;
   return (
-    <Reasoning isStreaming={isStreaming} defaultOpen={true}>
-      {/* Always mounted, so settling changes what this row says instead of
-          adding a row and pushing the whole block down. While the turn runs it
-          is transparent and unclickable: the summary belongs to a finished
-          turn, and a word above live activity is what this row is not. */}
+    <Reasoning
+      isStreaming={isStreaming}
+      open={processOpen}
+      onOpenChange={(open) => {
+        if (!isStreaming) setProcessOpen(open);
+      }}
+    >
       <ReasoningTrigger
+        disabled={isStreaming}
+        aria-disabled={isStreaming}
         showIcon={false}
-        aria-hidden={isStreaming ? true : undefined}
-        tabIndex={isStreaming ? -1 : undefined}
-        className={cn(
-          // A fixed row height, so an empty label while streaming occupies
-          // exactly what the finished label will.
-          "min-h-5 transition-opacity duration-[var(--dur-slow)] ease-[var(--ease-soft)]",
-          isStreaming && "pointer-events-none opacity-0",
-        )}
         getThinkingMessage={() => (
-          <span className="text-fg-muted">
-            {isStreaming ? "" : completeLabel}
+          <span className="min-w-0 flex-1 truncate text-left text-fg-muted">
+            {t(isStreaming ? "chat.workingFor" : "chat.workedFor", {
+              seconds: elapsedSeconds,
+            })}
           </span>
         )}
       />
-      {/* The padding no longer depends on the turn's state: the summary row above
-          is always mounted, so dropping it while streaming only made everything
-          below shift when the turn settled. */}
-      <ReasoningContent className="space-y-1">
-        {rendered.timeline.map((item, index) => {
-          if (item.kind === "assistant_text") {
-            const prefix = assistantPrefix;
-            assistantPrefix += item.text.length;
-            if (item.phase !== "commentary") return null;
-            const isLiveTail =
-              isStreaming && index === rendered.timeline.length - 1;
-            return (
-              <div key={`activity-text-${index}`} className="min-w-0">
-                {isLiveTail ? (
-                  <StreamingMarkdown
-                    turnId={turn.id}
-                    kind="assistant"
-                    cwd={cwd}
-                    prefixSkip={prefix}
-                    paceReplay
-                  />
-                ) : (
-                  <StreamdownText
-                    className={ASSISTANT_MARKDOWN_CLASS}
-                    text={item.text}
-                    cwd={cwd}
-                    sessionId={turn.sessionId}
-                    surfacePrefix={`${turn.id}-activity-${index}`}
-                  />
-                )}
-              </div>
-            );
-          }
-          if (item.kind === "thought") {
-            const isLiveTail =
-              isStreaming && index === rendered.timeline.length - 1;
-            // Where thinking is a passing state rather than part of the record,
-            // only what the agent is thinking right now is drawn: the block
-            // appears while it reasons and is gone once it moves on. Dropping
-            // every thought instead — which is what this policy used to do —
-            // meant the block was never drawn at all.
-            if (!policy.persistThoughtTimeline && !isLiveTail) return null;
-            // The agent's reasoning, rendered as the block it is. Marked so the
-            // block itself is testable: it was policy-disabled for Codex and
-            // squeezed into a single truncated line, and nothing failed.
-            if (isLiveTail) {
+      <ReasoningContent>
+        <FadeScrollViewport level="primary" contentClassName="space-y-1">
+          {leadingContent}
+          {rendered.timeline.map((item, index) => {
+            if (item.kind === "assistant_text") {
+              const prefix = assistantPrefix;
+              assistantPrefix += item.text.length;
+              if (item.phase !== "commentary") return null;
+              const isLiveTail =
+                isStreaming && index === rendered.timeline.length - 1;
               return (
-                <div
-                  key={`activity-thought-live-${item.messageId ?? index}`}
-                  data-thought-block="true"
-                >
-                  <StreamingMarkdown
-                    turnId={turn.id}
-                    kind="thought"
-                    cwd={cwd}
-                    className="text-fg-muted"
-                    paceReplay
-                  />
+                <div key={`activity-text-${index}`} className="min-w-0">
+                  {isLiveTail ? (
+                    <StreamingMarkdown
+                      turnId={turn.id}
+                      kind="assistant"
+                      cwd={cwd}
+                      prefixSkip={prefix}
+                      paceReplay
+                    />
+                  ) : (
+                    <StreamdownText
+                      className={ASSISTANT_MARKDOWN_CLASS}
+                      text={item.text}
+                      cwd={cwd}
+                      sessionId={turn.sessionId}
+                      surfacePrefix={`${turn.id}-activity-${index}`}
+                    />
+                  )}
                 </div>
               );
             }
-            return (
-              <div
-                key={`activity-thought-${item.messageId ?? index}`}
-                data-thought-block="true"
-              >
-                <StreamdownText
-                  className="font-chat text-[13px] leading-6 text-fg-muted"
-                  text={item.text}
-                  cwd={cwd}
-                  sessionId={turn.sessionId}
-                  surfacePrefix={`${turn.id}-thought-${index}`}
-                />
-              </div>
+            const group = activityGroups.get(index);
+            if (!group) return null;
+            const groupTools = group.flatMap((child) =>
+              "tool" in child ? [child.tool] : [],
             );
-          }
-          const group = toolGroups.byStartIndex.get(index);
-          if (!group) return null;
-          // Merged into the live block below.
-          if (group.some((tool) => trailingToolIds.has(tool.toolCallId))) {
-            return null;
-          }
-          return (
-            <ActivityToolGroup
-              key={`activity-tools-${group.map((tool) => tool.toolCallId).join("-")}`}
-              tools={group}
-              sessionId={turn.sessionId}
-              subagents={subagents}
-            />
-          );
-        })}
-
-        {/* One block for the current stretch of work: the tools that have run
-            since the agent last spoke, and what it is doing now. Not either/or —
-            a tool running is not a reason to stop saying what it is thinking. */}
-        {/* One row for the current stretch of work. The tools that have run
-            since the agent last spoke and the thought it is working from are one
-            answer to "what is it doing"; two rows made them look like two, and
-            the live line was stranded under a growing list of finished commands. */}
-        <div data-activity-live-work="true" className="space-y-1">
-          {liveTools.length > 0 ? (
-            <ActivityToolGroup
-              key={`activity-tools-live-${liveTools.map((tool) => tool.toolCallId).join("-")}`}
-              tools={liveTools}
-              sessionId={turn.sessionId}
-              subagents={subagents}
-              headline={liveHeadline}
-              headlineKind={liveHeadlineKind}
-            />
-          ) : (
-            <LiveStatusRow text={liveHeadline} />
+            const completedSummaries = toolRunSummaryKeys(groupTools).map(
+              (key) => t(key),
+            );
+            let active = false;
+            const nodes: CollapsibleEventNode[] = group.map((child) => {
+              if (!("tool" in child)) {
+                const live =
+                  isThinking && child.index === rendered.timeline.length - 1;
+                active = live;
+                const durationSeconds =
+                  thoughtDurations.get(
+                    thoughtTimingKey(child.item.messageId),
+                  ) ?? 0;
+                const projection = projectThoughtEvent({
+                  turnId: turn.id,
+                  text: child.item.text,
+                  live,
+                  prefixSkip: liveThoughtPrefix,
+                  liveFallback: t("chat.thinking"),
+                  completedLabel: t("chat.thoughtFor", {
+                    seconds: durationSeconds,
+                  }),
+                });
+                return {
+                  key: child.item.messageId ?? `thought-${child.index}`,
+                  projection,
+                  content: (
+                    <ThoughtEventRow
+                      turn={turn}
+                      text={child.item.text}
+                      index={child.index}
+                      cwd={cwd}
+                      live={live}
+                      prefixSkip={liveThoughtPrefix}
+                      durationSeconds={durationSeconds}
+                    />
+                  ),
+                };
+              }
+              const tool = child.tool;
+              active =
+                isStreaming &&
+                child.index === rendered.timeline.length - 1 &&
+                isToolRunning(tool.status);
+              const target =
+                describeCommand(tool) || tool.title || t("activity.tool");
+              return {
+                key: tool.toolCallId,
+                projection: {
+                  leading: isToolRunning(tool.status) ? (
+                    <Loader2Icon className="chat-activity-icon animate-spin" />
+                  ) : (
+                    <ListChecksIcon className="chat-activity-icon" />
+                  ),
+                  summary: `${t(toolActivityVerbKey(tool))} ${target}`.trim(),
+                },
+                content: (
+                  <ToolRow
+                    tool={tool}
+                    sessionId={turn.sessionId}
+                    subagent={subagentForToolCall(subagents, tool.toolCallId)}
+                  />
+                ),
+              };
+            });
+            return (
+              <CollapsibleEventSequence
+                key={`event-sequence-${index}`}
+                nodes={nodes}
+                active={active}
+                completedProjection={{
+                  leading: (
+                    <ListChecksIcon className="chat-activity-icon text-fg-muted" />
+                  ),
+                  summary: capitalizeToolLabel(
+                    completedSummaries.length > 0
+                      ? completedSummaries.join(t("chat.toolRunJoin"))
+                      : t("toolSummary.think"),
+                  ),
+                }}
+              />
+            );
+          })}
+          {showThinkingFallback && (
+            <div className="py-0.5" data-thinking-fallback="true">
+              <p
+                className="min-h-6 truncate text-left font-chat text-[13px] leading-6 text-fg-muted"
+                aria-live="polite"
+              >
+                {t("chat.thinking")}
+              </p>
+            </div>
           )}
-        </div>
+          {trailingContent}
+        </FadeScrollViewport>
       </ReasoningContent>
     </Reasoning>
   );
 }
 
-function LiveStatusRow({ text }: { text?: string }) {
-  const shown = useRef("");
-  if (text) shown.current = text;
-  if (!shown.current) return null;
-  return (
-    <div
-      data-activity-status-row="true"
-      className={cn(
-        "grid min-w-0 text-fg-muted",
-        "transition-[grid-template-rows,opacity] duration-[var(--dur-slow)] ease-[var(--ease-soft)]",
-        text ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
-      )}
-      aria-hidden={text ? undefined : true}
-      {...(text ? { "data-current-activity": shown.current } : { inert: true })}
-    >
-      <div className="min-h-0 overflow-hidden">
-        <div className="py-0.5">
-          <div className="activity-disclosure-row min-h-6">
-            {/* One clamped line, not a streamed markdown block: the status only
-                ever showed one truncated line. */}
-            <p className="min-w-0 flex-1 truncate font-chat text-[13px] leading-6 text-fg-muted">
-              {shown.current}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+type TimelineItem = TurnRender["timeline"][number];
+type ThoughtTimelineItem = Extract<TimelineItem, { kind: "thought" }>;
+type ToolTimelineItem = Extract<TimelineItem, { kind: "tool" }>;
+
+type ProjectedActivityChild =
+  | { item: ThoughtTimelineItem; index: number }
+  | { item: ToolTimelineItem; index: number; tool: ActivityTool };
+
+function projectActivityEventGroups({
+  rendered,
+  toolsById,
+}: {
+  rendered: TurnRender;
+  toolsById: ReadonlyMap<string, ActivityTool>;
+}): ReadonlyMap<number, ProjectedActivityChild[]> {
+  const groups = new Map<number, ProjectedActivityChild[]>();
+  let start: number | undefined;
+  let children: ProjectedActivityChild[] = [];
+  const flush = () => {
+    if (start !== undefined && children.length > 0) groups.set(start, children);
+    start = undefined;
+    children = [];
+  };
+
+  rendered.timeline.forEach((item, index) => {
+    if (item.kind === "assistant_text") {
+      flush();
+      return;
+    }
+    if (item.kind === "thought") {
+      if (start === undefined) start = index;
+      children.push({ item, index });
+      return;
+    }
+    const tool = toolsById.get(item.toolCallId);
+    if (!tool) return;
+    if (start === undefined) start = index;
+    children.push({ item, index, tool });
+  });
+  flush();
+  return groups;
+}
+
+function subagentForToolCall(
+  subagents: SubagentActivity[],
+  toolCallId: string,
+): SubagentActivity | undefined {
+  return subagents.find(
+    (activity) => activity.native?.toolCallId === toolCallId,
   );
+}
+
+function thoughtTimingKey(messageId?: string): string {
+  return messageId ? `message:${messageId}` : "anonymous";
+}
+
+function projectThoughtDurations(turn: Turn): ReadonlyMap<string, number> {
+  const spans = new Map<string, { startedAt: number; lastIndex: number }>();
+  turn.events.forEach((event, index) => {
+    const parsed = parseAcpEvent(event.payload);
+    if (parsed.kind !== "thought") return;
+    const key = thoughtTimingKey(parsed.messageId);
+    const span = spans.get(key);
+    if (span) span.lastIndex = index;
+    else spans.set(key, { startedAt: event.receivedAt, lastIndex: index });
+  });
+
+  return new Map(
+    [...spans].map(([key, span]) => {
+      const endedAt =
+        turn.events[span.lastIndex + 1]?.receivedAt ??
+        turn.endedAt ??
+        Date.now();
+      const seconds = Math.max(1, Math.ceil((endedAt - span.startedAt) / 1000));
+      return [key, seconds] as const;
+    }),
+  );
+}
+
+function useTurnElapsedSeconds(turn: Turn, isStreaming: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isStreaming]);
+
+  const eventEnd = turn.events.at(-1)?.receivedAt;
+  const end = isStreaming ? now : (turn.endedAt ?? eventEnd ?? turn.startedAt);
+  return Math.max(0, Math.ceil((end - turn.startedAt) / 1000));
 }

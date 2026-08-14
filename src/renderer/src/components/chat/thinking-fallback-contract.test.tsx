@@ -19,6 +19,11 @@ vi.mock("@/lib/session-store", async (importOriginal) => {
 });
 
 vi.mock("use-stick-to-bottom", () => ({
+  useStickToBottom: () => ({
+    contentRef: { current: null },
+    scrollRef: { current: null },
+    isAtBottom: true,
+  }),
   useStickToBottomContext: () => ({
     contentRef: { current: null },
     scrollRef: { current: null },

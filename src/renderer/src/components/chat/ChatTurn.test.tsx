@@ -12,9 +12,7 @@ const sessionMock = vi.hoisted(() => ({
 vi.mock("@/lib/i18n", () => ({
   useI18n: () => ({
     t: (key: string, values?: Record<string, unknown>) =>
-      key === "chat.workedFor"
-        ? `worked ${String(values?.seconds)}s`
-        : key,
+      key === "chat.workedFor" ? `worked ${String(values?.seconds)}s` : key,
   }),
 }));
 
@@ -38,6 +36,11 @@ vi.mock("@/lib/session-store", async (importOriginal) => {
 });
 
 vi.mock("use-stick-to-bottom", () => ({
+  useStickToBottom: () => ({
+    contentRef: { current: null },
+    scrollRef: { current: null },
+    isAtBottom: true,
+  }),
   useStickToBottomContext: () => ({
     contentRef: { current: null },
     scrollRef: { current: null },
@@ -289,7 +292,9 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("chat.thoughtComplete");
     const heading = html.indexOf("chat.thinking");
     if (heading >= 0) {
-      expect(heading).toBeGreaterThan(html.indexOf("Inspecting the repository."));
+      expect(heading).toBeGreaterThan(
+        html.indexOf("Inspecting the repository."),
+      );
     }
   });
 
@@ -485,17 +490,19 @@ describe("TurnBlock", () => {
   });
 
   it("collapses consecutive tool calls into one activity group", () => {
-    const events = ["components", "renderer", "dialog"].map((target, index) => ({
-      payload: {
-        sessionUpdate: "tool_call",
-        toolCallId: `search-${index}`,
-        kind: "search",
-        status: "completed",
-        title: `Searched for ${target}`,
-        rawInput: { query: target },
-      },
-      receivedAt: index + 1,
-    }));
+    const events = ["components", "renderer", "dialog"].map(
+      (target, index) => ({
+        payload: {
+          sessionUpdate: "tool_call",
+          toolCallId: `search-${index}`,
+          kind: "search",
+          status: "completed",
+          title: `Searched for ${target}`,
+          rawInput: { query: target },
+        },
+        receivedAt: index + 1,
+      }),
+    );
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
@@ -665,7 +672,8 @@ describe("TurnBlock", () => {
                 toolCallId: "run-killed",
                 kind: "execute",
                 status: "in_progress",
-                title: "AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read",
+                title:
+                  "AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read",
               },
               receivedAt: 1,
             },
@@ -676,7 +684,9 @@ describe("TurnBlock", () => {
 
     expect(html).toContain("tool.interrupted");
     expect(html).not.toContain("tool.running");
-    expect(html).toContain("AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read");
+    expect(html).toContain(
+      "AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read",
+    );
   });
 
   it("renders an ACP MCP extension as inspectable raw protocol data", () => {
@@ -933,7 +943,9 @@ describe("a prompt the composer sent as a command invocation", () => {
 
   it("shows the objective and names the command beside it", () => {
     const html = renderToStaticMarkup(
-      <TurnBlock turn={turn({ promptText: "/goal 保护世界和平", status: "complete" })} />,
+      <TurnBlock
+        turn={turn({ promptText: "/goal 保护世界和平", status: "complete" })}
+      />,
     );
 
     // The composer added the prefix, so echoing "/goal ..." back would show
@@ -946,7 +958,9 @@ describe("a prompt the composer sent as a command invocation", () => {
 
   it("leaves an ordinary prompt untouched", () => {
     const html = renderToStaticMarkup(
-      <TurnBlock turn={turn({ promptText: "保护世界和平", status: "complete" })} />,
+      <TurnBlock
+        turn={turn({ promptText: "保护世界和平", status: "complete" })}
+      />,
     );
 
     expect(html).toContain("保护世界和平");

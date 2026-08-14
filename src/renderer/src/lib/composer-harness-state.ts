@@ -94,6 +94,7 @@ export function useComposerHarnessState({
   availableCommands,
   running,
   supportsSteering,
+  promptQueueEnabled = true,
 }: {
   sessionAgentId?: string;
   lockedAgentId: string | null;
@@ -103,6 +104,7 @@ export function useComposerHarnessState({
   availableCommands?: AcpAvailableCommand[];
   running: boolean | undefined;
   supportsSteering?: boolean;
+  promptQueueEnabled?: boolean;
 }) {
   const [draftConfigValues, setDraftConfigValues] = useState<
     Record<string, string | boolean>
@@ -185,7 +187,11 @@ export function useComposerHarnessState({
       })
     : null;
   const primaryIntent: AgentMessageIntent =
-    running && defaultRunningAction?.disabled ? "queue" : "submit";
+    running && !promptQueueEnabled && supportsSteering
+      ? "steer"
+      : running && defaultRunningAction?.disabled
+        ? "queue"
+        : "submit";
   const primaryRunningAction = running
     ? describeRunningMessageAction({
         agentId: harness.currentAgentId,

@@ -20,9 +20,10 @@ import { isToolRunning, type ActivityTool } from "@/lib/activity-tool-groups";
  *               nothing goes unreported while the block speaks
  * - `running`   a tool is running; the command is the report
  * - `answering` the answer is arriving; the text is the report
- * - `tools`     tools have been running and the last one closed, but the turn
- *               has not gone anywhere else yet; the gap between one tool
- *               finishing and the next starting is still tool work
+ * - `tools`     the last tool closed and nothing has replaced it yet, so the
+ *               line it was showing stays: the gap between one call finishing
+ *               and the next starting is not news, and swapping in a generic
+ *               phrase there threw away the only specific thing on the row
  * - `waiting`   the harness is working and none of the above is visible
  */
 export type LiveActivityState =
@@ -30,7 +31,7 @@ export type LiveActivityState =
   | { kind: "answering" }
   | { kind: "reasoning" }
   | { kind: "running"; command: string }
-  | { kind: "tools" }
+  | { kind: "tools"; command: string }
   | { kind: "waiting" };
 
 export interface LiveActivityInput {
@@ -60,6 +61,10 @@ export function liveActivityState({
   }
 
   if (last?.kind === "assistant_text") return { kind: "answering" };
-  if (liveTools.length > 0) return { kind: "tools" };
+  const lastTool = liveTools.at(-1);
+  if (lastTool) {
+    const command = describeCommand(lastTool).trim();
+    if (command) return { kind: "tools", command };
+  }
   return { kind: "waiting" };
 }

@@ -94,6 +94,7 @@ export function Composer({
   goal,
   pendingAsk,
   currentModeId,
+  promptQueueEnabled = true,
   onUserInput = () => undefined,
   configOptions,
   onPickAgent,
@@ -119,6 +120,7 @@ export function Composer({
   goal?: SessionGoal;
   pendingAsk?: BrokerAsk;
   currentModeId?: string;
+  promptQueueEnabled?: boolean;
   onUserInput?: (hasContent: boolean) => void;
   configOptions?: AcpSessionConfigOption[];
   onPickAgent: (agentId: string) => void;
@@ -271,6 +273,7 @@ export function Composer({
     availableCommands,
     running,
     supportsSteering,
+    promptQueueEnabled,
   });
   const composerAvailableCommands = useMemo(
     () => withHostForkCommand(

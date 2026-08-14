@@ -94,7 +94,7 @@ describe("liveActivityState", () => {
     ).toEqual({ kind: "running", command: "cargo test" });
   });
 
-  it("still reports tool work when the running tool has no command to name", () => {
+  it("holds the last line when the running tool has no command to name", () => {
     expect(
       liveActivityState({
         rendered: render([toolItem("t1")]),
@@ -102,13 +102,14 @@ describe("liveActivityState", () => {
         liveTools: [tool("t1", "in_progress")],
         describeCommand: () => "   ",
       }),
-    ).toEqual({ kind: "tools" });
+    ).toEqual({ kind: "waiting" });
   });
 
-  it("keeps reporting tool work in the gap after the last tool closes", () => {
+  it("holds the last tool's own line in the gap after it closes", () => {
     // A closed tool is not the end of the tool work: the next call is usually
-    // already on its way, and reading "thinking" in that gap said the turn had
-    // moved on when it had not.
+    // already on its way. Reading "thinking" in that gap said the turn had
+    // moved on when it had not, and a generic "running tools" threw away the
+    // only specific thing the row had to say.
     expect(
       liveActivityState({
         rendered: render([toolItem("t1")]),
@@ -116,7 +117,7 @@ describe("liveActivityState", () => {
         liveTools: [tool("t1", "completed")],
         describeCommand,
       }),
-    ).toEqual({ kind: "tools" });
+    ).toEqual({ kind: "tools", command: "cargo test" });
   });
 
   it("waits only when the turn has done nothing at all yet", () => {

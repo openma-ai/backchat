@@ -139,6 +139,14 @@ export class SessionStore {
    *  Retain them by session id until the matching row is restored. */
   #pendingAsksBeforeSession = new Map<string, BrokerAsk[]>();
   #turns = new Map<string, Turn>();
+  /** Steer input is visible immediately, but ACP keeps streaming the current
+   * model/tool cycle under the original prompt request. Hold the accepted
+   * steer until that model call completes, then project the next call's
+   * events onto its transcript row. */
+  #pendingSteeringTurns = new Map<string, string[]>();
+  #steeringEventTargets = new Map<string, string>();
+  #steeringBoundariesArmed = new Set<string>();
+  #modelCallsReadyForOutput = new Set<string>();
   /** Pair-chats. Each pair owns N member session ids; the members
    *  themselves live in `#sessions` like any other session — the pair
    *  is just metadata. Routing is by id: navigating to /pair/<id>
@@ -1862,7 +1870,10 @@ export class SessionStore {
     attachments: PromptAttachment[] = [],
   ): void {
     const row = this.#sessions.get(sessionId);
-    const isQueued = !!row?.activeTurnId;
+    const waitsForSteeringBoundary =
+      !!row?.activeTurnId && delivery?.effectiveDelivery === "llm_boundary";
+    const isQueued =
+      !!row?.activeTurnId && !waitsForSteeringBoundary;
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
@@ -1876,7 +1887,11 @@ export class SessionStore {
       events: [],
       assistantText: "",
       thoughtText: "",
-      status: isQueued ? "queued" : "running",
+      status: isQueued
+        ? "queued"
+        : waitsForSteeringBoundary
+          ? "complete"
+          : "running",
       promptIntent: delivery?.intent,
       requestedDelivery: delivery?.requestedDelivery,
       effectiveDelivery: delivery?.effectiveDelivery,
@@ -1886,7 +1901,7 @@ export class SessionStore {
     this.#mutateSession(sessionId, (s) => ({
       ...s,
       activeTurnId: s.activeTurnId ?? turnId,
-      queuedTurnIds: s.activeTurnId
+      queuedTurnIds: isQueued
         ? [...(s.queuedTurnIds ?? []), turnId]
         : s.queuedTurnIds,
       status: "running",
@@ -1904,6 +1919,109 @@ export class SessionStore {
     if (turn?.status === "queued") {
       this.#turns.set(turnId, { ...turn, status: "running" });
     }
+  }
+
+  #acceptSteeringTurn(
+    sessionId: string,
+    activeTurnId: string,
+    steeringTurnId: string,
+  ): void {
+    const key = steeringProjectionKey(sessionId, activeTurnId);
+    const pending = this.#pendingSteeringTurns.get(key) ?? [];
+    if (!pending.includes(steeringTurnId)) {
+      this.#pendingSteeringTurns.set(key, [...pending, steeringTurnId]);
+    }
+    const currentTarget = this.#steeringEventTargets.get(key) ?? activeTurnId;
+    const currentTurn = this.#turns.get(currentTarget);
+    if (
+      this.#modelCallsReadyForOutput.has(key)
+      || !currentTurn
+      || currentTurn.events.length === 0
+    ) {
+      this.#steeringBoundariesArmed.add(key);
+    }
+  }
+
+  #projectSteeringEventTurnId(
+    sessionId: string,
+    sourceTurnId: string,
+    event: unknown,
+  ): string {
+    const key = steeringProjectionKey(sessionId, sourceTurnId);
+    const current = this.#steeringEventTargets.get(key) ?? sourceTurnId;
+    const pending = this.#pendingSteeringTurns.get(key);
+    const type = sessionUpdateType(event);
+    if (type === "usage_update") {
+      this.#modelCallsReadyForOutput.add(key);
+      if (pending?.length) this.#steeringBoundariesArmed.add(key);
+      return current;
+    }
+    if (!isModelOutputBoundary(event)) return current;
+
+    const boundaryArmed = this.#steeringBoundariesArmed.has(key);
+    if (type === "tool_call") {
+      // A tool start is the tail of the model call that requested it. It only
+      // belongs to the steer when a prior completion already armed the next
+      // call; otherwise it arms the call that follows the tool result.
+      this.#modelCallsReadyForOutput.add(key);
+      if (pending?.length && !boundaryArmed) {
+        this.#steeringBoundariesArmed.add(key);
+      }
+    } else {
+      this.#modelCallsReadyForOutput.delete(key);
+    }
+    if (!pending?.length || !boundaryArmed) return current;
+
+    const next = pending.at(-1)!;
+    for (const completedId of [current, ...pending.slice(0, -1)]) {
+      if (completedId === next) continue;
+      const completed = this.#turns.get(completedId);
+      if (completed?.status === "running") {
+        this.#turns.set(completedId, {
+          ...completed,
+          events: [...completed.events],
+          activeThoughtMessageId: undefined,
+          activeThoughtSegmentText: undefined,
+          status: "complete",
+          endedAt: Date.now(),
+        });
+      }
+    }
+    this.#pendingSteeringTurns.delete(key);
+    this.#steeringBoundariesArmed.delete(key);
+    this.#steeringEventTargets.set(key, next);
+    const nextTurn = this.#turns.get(next);
+    if (nextTurn) {
+      this.#turns.set(next, {
+        ...nextTurn,
+        status: "running",
+        endedAt: undefined,
+      });
+    }
+    return next;
+  }
+
+  #settleSteeringProjection(
+    sessionId: string,
+    sourceTurnId: string,
+  ): string {
+    const key = steeringProjectionKey(sessionId, sourceTurnId);
+    const target = this.#steeringEventTargets.get(key) ?? sourceTurnId;
+    for (const pendingId of this.#pendingSteeringTurns.get(key) ?? []) {
+      const pending = this.#turns.get(pendingId);
+      if (pending?.status === "running") {
+        this.#turns.set(pendingId, {
+          ...pending,
+          status: "complete",
+          endedAt: Date.now(),
+        });
+      }
+    }
+    this.#pendingSteeringTurns.delete(key);
+    this.#steeringEventTargets.delete(key);
+    this.#steeringBoundariesArmed.delete(key);
+    this.#modelCallsReadyForOutput.delete(key);
+    return target;
   }
 
   #advanceAfterTurn(sessionId: string, turnId: string, opts?: { unread?: boolean }): void {
@@ -2754,6 +2872,9 @@ export class SessionStore {
     }
 
     let current: Turn | null = null;
+    let pendingSteering: Turn[] = [];
+    let steeringBoundaryArmed = false;
+    let modelCallReadyForOutput = false;
     let order = 0;
     for (const { row: r, data, canonical } of prepared) {
       if (canonical) {
@@ -2790,7 +2911,7 @@ export class SessionStore {
           if (inputKind === "prompt" || inputKind === "steering") {
             if (current) this.#turns.set(current.id, current);
             const tid = `replay-${sessionId}-${order++}`;
-            current = {
+            const next: Turn = {
               id: tid,
               sessionId,
               promptText: typeof input.text === "string" ? input.text : "",
@@ -2807,10 +2928,55 @@ export class SessionStore {
               startedAt: r.ts,
               endedAt: r.ts,
             };
+            if (inputKind === "steering") {
+              this.#turns.set(tid, next);
+              pendingSteering.push(next);
+              if (
+                modelCallReadyForOutput
+                || !current
+                || current.events.length === 0
+              ) {
+                steeringBoundaryArmed = true;
+              }
+            } else {
+              pendingSteering = [];
+              steeringBoundaryArmed = false;
+              modelCallReadyForOutput = false;
+              current = next;
+            }
           }
           continue;
         }
 
+        const parsedCanonical = parseAcpEvent(canonical);
+        const startsModelOutput =
+          parsedCanonical.kind === "text"
+          || parsedCanonical.kind === "thought"
+          || canonical.type === "tool.started"
+          || canonical.type === "plan.updated"
+          || canonical.type === "plan.completed";
+        const boundaryWasArmed = steeringBoundaryArmed;
+        if (canonical.type === "usage.updated") {
+          modelCallReadyForOutput = true;
+          if (pendingSteering.length > 0) steeringBoundaryArmed = true;
+        } else if (canonical.type === "tool.started") {
+          modelCallReadyForOutput = true;
+          if (pendingSteering.length > 0 && !boundaryWasArmed) {
+            steeringBoundaryArmed = true;
+          }
+        } else if (startsModelOutput) {
+          modelCallReadyForOutput = false;
+        }
+        if (
+          pendingSteering.length > 0
+          && startsModelOutput
+          && boundaryWasArmed
+        ) {
+          if (current) this.#turns.set(current.id, current);
+          current = pendingSteering.at(-1)!;
+          pendingSteering = [];
+          steeringBoundaryArmed = false;
+        }
         if (!current) continue;
         current.endedAt = Math.max(current.endedAt ?? current.startedAt, r.ts);
         if (canonical.type === "turn.completed") {
@@ -2867,7 +3033,6 @@ export class SessionStore {
         // Content and structural transcript facts are kept in the existing
         // Turn event list. The reducer already understands the canonical
         // envelope, so replay does not need to reconstruct an ACP payload.
-        const parsedCanonical = parseAcpEvent(canonical);
         if (parsedCanonical.kind === "text") {
           const split = splitAcpSystemNoticeText(parsedCanonical.text);
           if (split.notice) {
@@ -3255,6 +3420,11 @@ export class SessionStore {
           }));
           break;
         }
+        const eventTurnId = this.#projectSteeringEventTurnId(
+          ev.session_id,
+          ev.turn_id,
+          ev.event,
+        );
         const runtimeAdapter = resolveAgentRuntimeAdapter(
           this.#sessions.get(ev.session_id)?.agent_id,
         );
@@ -3265,7 +3435,7 @@ export class SessionStore {
           this.#ingestNativeAgentTranscript(
             ev.session_id,
             nestedTranscript,
-            ev.turn_id,
+            eventTurnId,
           );
           // A child-correlated usage update belongs to the native work item,
           // not to the parent session usage snapshot. The same rule keeps
@@ -3284,16 +3454,16 @@ export class SessionStore {
             monitorEvent,
             {
               sessionId: ev.session_id,
-              turnId: ev.turn_id || undefined,
+              turnId: eventTurnId || undefined,
               occurredAt: new Date().toISOString(),
               adapter: runtimeAdapter!.provider,
             },
           ), { persist: true });
         }
-        let turn = this.#turns.get(ev.turn_id);
+        let turn = this.#turns.get(eventTurnId);
         if (!turn) {
           turn = {
-            id: ev.turn_id,
+            id: eventTurnId,
             sessionId: ev.session_id,
             promptText: "",
             events: [],
@@ -3302,7 +3472,7 @@ export class SessionStore {
             status: "running",
             startedAt: Date.now(),
           };
-          this.#turns.set(ev.turn_id, turn);
+          this.#turns.set(eventTurnId, turn);
         }
 
         // Fast path for streaming text — bypass React. assistant_message_chunk
@@ -3354,7 +3524,7 @@ export class SessionStore {
                 ? next.slice(turn.assistantText.length)
                 : "";
               turn.assistantText = next;
-              if (delta) this.#emitStream(ev.turn_id, { kind: "assistant", text: delta });
+              if (delta) this.#emitStream(eventTurnId, { kind: "assistant", text: delta });
             } else {
               if (thoughtMessageChanged || thoughtSectionBreak) {
                 turn.activeThoughtMessageId = parsed.messageId;
@@ -3371,7 +3541,7 @@ export class SessionStore {
                 ? next.slice(turn.thoughtText.length)
                 : "";
               turn.thoughtText = next;
-              if (delta) this.#emitStream(ev.turn_id, { kind: "thought", text: delta });
+              if (delta) this.#emitStream(eventTurnId, { kind: "thought", text: delta });
             }
             // Preserve timeline ordering without retaining one array entry
             // per token. React is deliberately asleep in this branch; the
@@ -3391,7 +3561,7 @@ export class SessionStore {
               for (const update of runtimeAdapter.assistantBackgroundWorkItemUpdates(text)) {
                 for (const event of runtimeWorkItemUpdateToOpenMAEvents(update, {
                   sessionId: ev.session_id,
-                  turnId: ev.turn_id,
+                  turnId: eventTurnId,
                   occurredAt: new Date().toISOString(),
                   adapter: runtimeAdapter.provider,
                 })) {
@@ -3414,7 +3584,7 @@ export class SessionStore {
               // object exactly once so the streaming answer or Reasoning
               // block actually mounts; later chunks keep mutating the
               // replacement in place.
-              this.#turns.set(ev.turn_id, {
+              this.#turns.set(eventTurnId, {
                 ...turn,
                 events: [...turn.events],
               });
@@ -3435,7 +3605,7 @@ export class SessionStore {
                 activeThoughtSegmentText: undefined,
               }
             : turn;
-        this.#turns.set(ev.turn_id, {
+        this.#turns.set(eventTurnId, {
           ...nextTurn,
           events: [...turn.events, { payload: semanticEvent, receivedAt: Date.now() }],
         });
@@ -3446,7 +3616,7 @@ export class SessionStore {
           if (backgroundLevel) {
             this.#reconcileBackgroundWorkItemLevel(
               ev.session_id,
-              ev.turn_id,
+              eventTurnId,
               runtimeAdapter.provider,
               backgroundLevel,
             );
@@ -3454,14 +3624,14 @@ export class SessionStore {
           this.#ingestNativeAgentUpdates(
             ev.session_id,
             runtimeAdapter.nativeAgentRawUpdates(ev.event),
-            { turnId: ev.turn_id },
+            { turnId: eventTurnId },
           );
           for (const update of runtimeAdapter.backgroundWorkItemRawUpdates?.(
             ev.event,
           ) ?? []) {
             this.#ingestRuntimeWorkItemUpdate(
               ev.session_id,
-              ev.turn_id,
+              eventTurnId,
               runtimeAdapter.provider,
               update,
             );
@@ -3485,7 +3655,7 @@ export class SessionStore {
           // reducing the turn so provider adapters receive the complete
           // logical tool event.
           const tool = reduceTurn(
-            this.#turns.get(ev.turn_id)?.events ?? [],
+            this.#turns.get(eventTurnId)?.events ?? [],
           ).tools.find(
             (candidate) => candidate.toolCallId === parsed.tool.toolCallId,
           ) ?? parsed.tool;
@@ -3497,20 +3667,20 @@ export class SessionStore {
             ev.session_id,
             parsed.tool,
             tool,
-            ev.turn_id,
+            eventTurnId,
           );
           const workItemAdapter = runtimeAdapter ?? genericAcpRuntimeAdapter;
           for (const update of workItemAdapter.planToolUpdates(tool)) {
             const planEvent = runtimePlanUpdateToOpenMAEvent(update, {
               sessionId: ev.session_id,
-              turnId: ev.turn_id,
+              turnId: eventTurnId,
               occurredAt: new Date().toISOString(),
               adapter: workItemAdapter.provider,
             });
             if (this.#ingestOpenMAEvent(planEvent, { persist: true })) {
-              const currentTurn = this.#turns.get(ev.turn_id);
+              const currentTurn = this.#turns.get(eventTurnId);
               if (currentTurn) {
-                this.#turns.set(ev.turn_id, {
+                this.#turns.set(eventTurnId, {
                   ...currentTurn,
                   events: [
                     ...currentTurn.events,
@@ -3526,7 +3696,7 @@ export class SessionStore {
           )) {
             this.#ingestRuntimeWorkItemUpdate(
               ev.session_id,
-              ev.turn_id,
+              eventTurnId,
               workItemAdapter.provider,
               update,
             );
@@ -3590,12 +3760,22 @@ export class SessionStore {
               status: "complete",
               effectiveDelivery: ev.effective_delivery,
               deliveryDegraded: ev.delivery_degraded ?? false,
-              endedAt: Date.now(),
             });
           }
-          this.#advanceAfterTurn(ev.session_id, ev.turn_id);
+          this.#acceptSteeringTurn(
+            ev.session_id,
+            ev.active_turn_id,
+            ev.turn_id,
+          );
         } else if (ev.outcome === "startedNewTurn") {
-          this.#markTurnRunning(ev.turn_id);
+          const turn = this.#turns.get(ev.turn_id);
+          if (turn) {
+            this.#turns.set(ev.turn_id, {
+              ...turn,
+              status: "running",
+              endedAt: undefined,
+            });
+          }
           this.#mutateSession(ev.session_id, (session) => {
             const queuedTurnIds = (session.queuedTurnIds ?? []).filter(
               (turnId) => turnId !== ev.turn_id,
@@ -3615,7 +3795,12 @@ export class SessionStore {
         break;
       }
       case "session.tool_cancelled": {
-        const turn = this.#turns.get(ev.turn_id);
+        const projectedTurnId = this.#projectSteeringEventTurnId(
+          ev.session_id,
+          ev.turn_id,
+          { sessionUpdate: "tool_call_update" },
+        );
+        const turn = this.#turns.get(projectedTurnId);
         if (turn) {
           turn.events.push({
             payload: ev.openma_event ?? {
@@ -3638,9 +3823,13 @@ export class SessionStore {
         break;
       }
       case "session.cancelled": {
-        const turn = this.#turns.get(ev.turn_id);
+        const projectedTurnId = this.#settleSteeringProjection(
+          ev.session_id,
+          ev.turn_id,
+        );
+        const turn = this.#turns.get(projectedTurnId);
         if (turn) {
-          this.#turns.set(ev.turn_id, {
+          this.#turns.set(projectedTurnId, {
             ...turn,
             status: "cancelled",
             endedAt: Date.now(),
@@ -3650,7 +3839,11 @@ export class SessionStore {
         break;
       }
       case "session.complete": {
-        const turn = this.#turns.get(ev.turn_id);
+        const projectedTurnId = this.#settleSteeringProjection(
+          ev.session_id,
+          ev.turn_id,
+        );
+        const turn = this.#turns.get(projectedTurnId);
         if (turn) {
           const runtimeAdapter = resolveAgentRuntimeAdapter(
             this.#sessions.get(ev.session_id)?.agent_id,
@@ -3659,7 +3852,7 @@ export class SessionStore {
             this.#ingestNativeAgentUpdates(
               ev.session_id,
               runtimeAdapter.assistantNativeAgentUpdates(turn.assistantText),
-              { turnId: ev.turn_id },
+              { turnId: projectedTurnId },
             );
           }
           const assistantArtifacts = runtimeAdapter?.assistantArtifacts?.(
@@ -3673,7 +3866,7 @@ export class SessionStore {
               assistantArtifacts.sources,
             );
           }
-          this.#turns.set(ev.turn_id, {
+          this.#turns.set(projectedTurnId, {
             ...turn,
             // Streaming chunks compact into turn.events in place to avoid a
             // React render per token. Publish a fresh array at the terminal
@@ -3751,9 +3944,13 @@ export class SessionStore {
       }
       case "session.error": {
         if (ev.turn_id) {
-          const turn = this.#turns.get(ev.turn_id);
+          const projectedTurnId = this.#settleSteeringProjection(
+            ev.session_id,
+            ev.turn_id,
+          );
+          const turn = this.#turns.get(projectedTurnId);
           if (turn) {
-            this.#turns.set(ev.turn_id, {
+            this.#turns.set(projectedTurnId, {
               ...turn,
               status: "error",
               errorMessage: ev.message,
@@ -3795,6 +3992,27 @@ export class SessionStore {
           this.#sideActiveId = null;
         }
         this.#sessions.delete(ev.session_id);
+        const projectionPrefix = `${ev.session_id.length}:${ev.session_id}:`;
+        for (const key of this.#pendingSteeringTurns.keys()) {
+          if (key.startsWith(projectionPrefix)) {
+            this.#pendingSteeringTurns.delete(key);
+          }
+        }
+        for (const key of this.#steeringEventTargets.keys()) {
+          if (key.startsWith(projectionPrefix)) {
+            this.#steeringEventTargets.delete(key);
+          }
+        }
+        for (const key of this.#steeringBoundariesArmed) {
+          if (key.startsWith(projectionPrefix)) {
+            this.#steeringBoundariesArmed.delete(key);
+          }
+        }
+        for (const key of this.#modelCallsReadyForOutput) {
+          if (key.startsWith(projectionPrefix)) {
+            this.#modelCallsReadyForOutput.delete(key);
+          }
+        }
         this.#openmaEventsBySession.delete(ev.session_id);
         const noticeTimer = this.#noticeTimers.get(ev.session_id);
         if (noticeTimer) clearTimeout(noticeTimer);
@@ -4171,6 +4389,25 @@ function normalizeSessionUsage(
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function steeringProjectionKey(sessionId: string, activeTurnId: string): string {
+  return `${sessionId.length}:${sessionId}:${activeTurnId}`;
+}
+
+/** ACP has no standard "the next model call consumed this steer" update.
+ * After `_session/steering` acknowledges `injected`, the first update that can
+ * only be produced by a model call is the boundary. Tool progress/completion
+ * deliberately does not qualify: it still belongs to the preceding call. */
+function isModelOutputBoundary(event: unknown): boolean {
+  const type = sessionUpdateType(event);
+  return (
+    type === "agent_thought_chunk"
+    || type === "agent_message_chunk"
+    || type === "tool_call"
+    || type === "plan"
+    || type === "plan_update"
+  );
 }
 
 function numberValue(value: unknown): number | undefined {

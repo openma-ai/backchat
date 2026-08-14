@@ -185,46 +185,63 @@ export function shortToolPath(path: string): string {
   return `…/${parts.slice(-2).join("/")}`;
 }
 
-/** What a run of tool calls did, as words. A count says how much happened and
- *  nothing about what: "2 tool calls" is a receipt, not a sentence. Distinct
- *  kinds keep the order they first ran in, so the summary reads like the work. */
+/** What a run of tool calls did, as words. ACP's `kind` is the semantic source
+ * of truth here: titles, commands, and provider tool names are presentation
+ * data and must not be guessed into a different action. Kinds keep the order
+ * in which they first ran and select singular/plural copy from their counts. */
 export function toolRunSummaryKeys(
   tools: readonly ChatToolPresentationInput[],
 ): TranslationKey[] {
-  const keys: TranslationKey[] = [];
+  const counts = new Map<ToolSummaryKind, number>();
   for (const tool of tools) {
-    const key = toolSummaryKey(tool);
-    if (!keys.includes(key)) keys.push(key);
+    const kind = toolSummaryKind(tool.kind);
+    counts.set(kind, (counts.get(kind) ?? 0) + 1);
   }
-  return keys;
+  return [...counts].map(([kind, count]) =>
+    `toolSummary.${kind}.${count === 1 ? "one" : "many"}` as TranslationKey,
+  );
 }
 
-function toolSummaryKey(tool: ChatToolPresentationInput): TranslationKey {
-  if (detectSkillName(tool)) return "toolSummary.read";
-  switch (tool.kind) {
+type ToolSummaryKind =
+  | "read"
+  | "edit"
+  | "delete"
+  | "move"
+  | "search"
+  | "execute"
+  | "fetch"
+  | "think"
+  | "list"
+  | "switchMode"
+  | "other";
+
+function toolSummaryKind(kind: string | undefined): ToolSummaryKind {
+  switch (kind) {
     case "read":
-      return "toolSummary.read";
+      return "read";
     case "edit":
-      return "toolSummary.edit";
+      return "edit";
     case "delete":
-      return "toolSummary.delete";
+      return "delete";
     case "move":
-      return "toolSummary.move";
+      return "move";
     case "search":
     case "grep":
-      return "toolSummary.search";
+      return "search";
     case "execute":
     case "terminal":
-      return "toolSummary.execute";
+      return "execute";
     case "fetch":
     case "web":
-      return "toolSummary.fetch";
+      return "fetch";
     case "think":
-      return "toolSummary.think";
+      return "think";
     case "list":
     case "tree":
-      return "toolSummary.list";
+      return "list";
+    case "switch_mode":
+      return "switchMode";
     default:
-      return "toolSummary.other";
+      return "other";
   }
 }

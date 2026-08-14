@@ -12,12 +12,12 @@ import { Streamdown } from "streamdown";
 
 import { openBrowserAwareUrl } from "@/lib/browser-open";
 import { splitInlineVisualizations } from "@/lib/inline-visualization";
-import {
-  resolveMarkdownLinkTarget,
-} from "@/lib/markdown-link-target";
+import { resolveMarkdownLinkTarget } from "@/lib/markdown-link-target";
 import { cn } from "@/lib/utils";
 import { previewLocalFile } from "@/lib/file-preview";
 import { InlineVisualizationView } from "./InlineVisualizationView";
+import { MarkdownLinkFavicon } from "./MarkdownLinkFavicon";
+import { MarkdownLinkMenu } from "./MarkdownLinkMenu";
 
 const MarkdownCwdContext = createContext<string | null>(null);
 
@@ -53,7 +53,8 @@ export const MARKDOWN_BLOCK_RHYTHM = cn(
   "[&_th]:border [&_th]:border-border/60 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-semibold [&_th]:leading-5",
   "[&_td]:border [&_td]:border-border/60 [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_td]:leading-5",
   "[&_hr]:my-3 [&_hr]:border-border/60",
-  "[&_a]:text-fg [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-fg-muted",
+  "[&_a]:text-fg [&_a]:underline [&_a]:underline-offset-2 [&_a:hover]:text-fg-muted",
+  "[&_a[data-markdown-http-link]]:text-info [&_a[data-markdown-http-link]:hover]:text-info/80",
   "[&_strong]:font-semibold [&_em]:italic",
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
 );
@@ -120,17 +121,17 @@ export function StreamdownText({
   return (
     <>
       {segments.map((segment, index) =>
-        segment.kind === "markdown"
-          ? renderMarkdown(segment.text, `markdown-${index}`)
-          : (
-              <InlineVisualizationView
-                key={`visualization-${index}`}
-                file={segment.file}
-                cwd={cwd}
-                sessionId={sessionId}
-                surfaceId={`inline-vis-${surfacePrefix}-${index}`}
-              />
-            ),
+        segment.kind === "markdown" ? (
+          renderMarkdown(segment.text, `markdown-${index}`)
+        ) : (
+          <InlineVisualizationView
+            key={`visualization-${index}`}
+            file={segment.file}
+            cwd={cwd}
+            sessionId={sessionId}
+            surfaceId={`inline-vis-${surfacePrefix}-${index}`}
+          />
+        ),
       )}
     </>
   );
@@ -164,11 +165,7 @@ const streamdownOverrides = {
       {children}
     </pre>
   ),
-  code: ({
-    className,
-    children,
-    ...rest
-  }: HTMLAttributes<HTMLElement>) => {
+  code: ({ className, children, ...rest }: HTMLAttributes<HTMLElement>) => {
     if (className?.startsWith("language-")) {
       return (
         <code {...rest} className={className}>
@@ -221,14 +218,27 @@ export function MarkdownAnchor({
     }
     void previewLocalFile(target.path);
   };
-  return (
+  const anchor = (
     <a
       {...rest}
       href={url}
       onClick={onClick}
-      className="text-fg underline underline-offset-2 hover:text-fg-muted"
+      className={
+        target.kind === "http"
+          ? "text-info underline underline-offset-2 hover:text-info/80"
+          : "text-fg underline underline-offset-2 hover:text-fg-muted"
+      }
+      data-markdown-http-link={target.kind === "http" ? "true" : undefined}
     >
+      {target.kind === "http" && <MarkdownLinkFavicon url={target.url} />}
       {children}
     </a>
+  );
+  if (target.kind !== "http") return anchor;
+  const label = typeof children === "string" ? children : undefined;
+  return (
+    <MarkdownLinkMenu url={target.url} label={label}>
+      {anchor}
+    </MarkdownLinkMenu>
   );
 }

@@ -128,7 +128,9 @@
   box-shadow: none;
 }
 
-.app-compact-control:focus-visible:not([data-state="open"]):not([aria-expanded="true"]) {
+.app-compact-control:focus-visible:not([data-state="open"]):not(
+    [aria-expanded="true"]
+  ) {
   color: var(--control-fg-active);
   background: var(--control-bg-hover);
 }
@@ -328,6 +330,8 @@
   display: flex;
   width: 100%;
   min-width: 0;
+  -webkit-user-select: none;
+  user-select: none;
   align-items: center;
   gap: 6px;
   border-radius: 4px;
@@ -344,6 +348,67 @@
 .activity-disclosure-row:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--focus-ring) 40%, transparent);
   outline-offset: 1px;
+}
+
+.activity-disclosure-chevron {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  flex: 0 0 20px;
+  place-items: center;
+}
+
+.activity-timeline-viewport {
+  --activity-timeline-max-height: min(320px, 36vh);
+  --activity-scroll-fade-size: 20px;
+  position: relative;
+  min-width: 0;
+}
+
+.activity-timeline-viewport[data-fade-scroll-viewport="secondary"] {
+  --activity-timeline-max-height: min(220px, 26vh);
+  --activity-scroll-fade-size: 16px;
+}
+
+.activity-timeline-scroller {
+  max-height: var(--activity-timeline-max-height);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
+.activity-scroll-fade {
+  position: absolute;
+  z-index: 1;
+  right: 10px;
+  left: 0;
+  height: var(--activity-scroll-fade-size);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.activity-scroll-fade[data-visible="true"] {
+  opacity: 1;
+}
+
+.activity-scroll-fade-top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--surface-canvas), transparent);
+}
+
+.activity-scroll-fade-bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--surface-canvas), transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-disclosure-chevron > svg,
+  .activity-scroll-fade {
+    transition: none;
+  }
 }
 
 .slash-command-panel {
@@ -615,21 +680,33 @@
 }
 
 [data-sonner-toast].cn-toast[data-type="error"] {
-  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong)) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--danger) 55%,
+    var(--border-strong)
+  ) !important;
   box-shadow:
     inset 3px 0 0 var(--danger),
     0 4px 8px rgb(0 0 0 / 0.28) !important;
 }
 
 [data-sonner-toast].cn-toast[data-type="warning"] {
-  border-color: color-mix(in srgb, var(--warning) 42%, var(--border-strong)) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--warning) 42%,
+    var(--border-strong)
+  ) !important;
   box-shadow:
     inset 2px 0 0 var(--warning),
     0 4px 8px rgb(0 0 0 / 0.24) !important;
 }
 
 [data-sonner-toast].cn-toast[data-type="success"] {
-  border-color: color-mix(in srgb, var(--success) 38%, var(--border-strong)) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--success) 38%,
+    var(--border-strong)
+  ) !important;
   box-shadow:
     inset 2px 0 0 var(--success),
     0 4px 8px rgb(0 0 0 / 0.24) !important;
@@ -675,7 +752,8 @@ html[data-theme-asset-app-background="true"] .theme-app-background {
   opacity: 0;
   transition: opacity var(--dur-base) var(--ease-soft);
 }
-html[data-theme-asset-sidebar-background="true"] .theme-sidebar-background::before {
+html[data-theme-asset-sidebar-background="true"]
+  .theme-sidebar-background::before {
   opacity: 0.82;
 }
 
@@ -695,7 +773,9 @@ html[data-theme-asset-empty-state="true"] .theme-empty-state-art {
   width: 112px;
   height: 112px;
 }
-html[data-theme-asset-empty-state="true"] .theme-empty-state-art .openma-home-mark {
+html[data-theme-asset-empty-state="true"]
+  .theme-empty-state-art
+  .openma-home-mark {
   display: none;
 }
 
@@ -764,12 +844,14 @@ html[data-theme-asset-home-hero-background="true"] .home-hero-panel {
   background-size: cover;
 }
 
-html[data-theme-asset-home-hero-background="true"] .home-hero-panel[data-home-hero-surface="framed"] {
+html[data-theme-asset-home-hero-background="true"]
+  .home-hero-panel[data-home-hero-surface="framed"] {
   border: 1px solid var(--border-strong);
   border-radius: 20px;
 }
 
-html[data-theme-asset-home-hero-background="true"] .home-hero-panel[data-home-hero-surface="flush"] {
+html[data-theme-asset-home-hero-background="true"]
+  .home-hero-panel[data-home-hero-surface="flush"] {
   border: 0;
   border-radius: 0;
 }
@@ -812,7 +894,9 @@ html[data-theme-asset-home-hero-background="true"] .home-hero-panel[data-home-he
   font-size: 12px;
   letter-spacing: 0.04em;
 }
-html[data-theme-asset-home-hero-background="true"] .home-hero-panel .theme-empty-state-art {
+html[data-theme-asset-home-hero-background="true"]
+  .home-hero-panel
+  .theme-empty-state-art {
   display: none;
 }
 html[data-theme-asset-home-hero-background="true"] .home-hero-copy {
@@ -825,21 +909,25 @@ html[data-theme-asset-home-hero-background="true"] .home-hero-copy {
   align-items: flex-start;
   text-align: left;
 }
-html[data-theme-asset-home-hero-background="true"] .home-hero-copy[data-slogan-horizontal="center"] {
+html[data-theme-asset-home-hero-background="true"]
+  .home-hero-copy[data-slogan-horizontal="center"] {
   justify-self: center;
   align-items: center;
   text-align: center;
 }
-html[data-theme-asset-home-hero-background="true"] .home-hero-copy[data-slogan-horizontal="right"] {
+html[data-theme-asset-home-hero-background="true"]
+  .home-hero-copy[data-slogan-horizontal="right"] {
   justify-self: end;
   align-items: flex-end;
   text-align: right;
 }
-html[data-theme-asset-home-hero-background="true"] .home-hero-copy[data-slogan-vertical="top"] {
+html[data-theme-asset-home-hero-background="true"]
+  .home-hero-copy[data-slogan-vertical="top"] {
   align-self: start;
   margin-top: 58px;
 }
-html[data-theme-asset-home-hero-background="true"] .home-hero-copy[data-slogan-vertical="bottom"] {
+html[data-theme-asset-home-hero-background="true"]
+  .home-hero-copy[data-slogan-vertical="bottom"] {
   align-self: end;
 }
 html[data-theme-asset-home-hero-background="true"] .home-hero-title {
@@ -912,7 +1000,8 @@ html[data-theme-asset-home-hero-background="true"] .home-suggestion-icon {
   height: var(--home-suggestion-icon-size, 52px);
 }
 
-html[data-theme-asset-home-hero-background="true"] .home-suggestion-fallback-icon {
+html[data-theme-asset-home-hero-background="true"]
+  .home-suggestion-fallback-icon {
   width: var(--home-suggestion-icon-size, 26px);
   height: var(--home-suggestion-icon-size, 26px);
 }
@@ -959,7 +1048,8 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration {
   pointer-events: none;
 }
 
-html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::before {
+html[data-theme-asset-home-corner-decoration="true"]
+  .home-corner-decoration::before {
   content: "";
   position: absolute;
   inset: 8px 8px 34px;
@@ -969,7 +1059,8 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::be
   background-size: 310%;
 }
 
-html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::after {
+html[data-theme-asset-home-corner-decoration="true"]
+  .home-corner-decoration::after {
   content: "♥";
   position: absolute;
   right: 12px;
@@ -1004,19 +1095,31 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
 
 [data-suggestion-kind="understand"] {
   --home-suggestion-icon: var(--theme-asset-suggestion-understand-icon, none);
-  --home-suggestion-background: var(--theme-asset-suggestion-understand-background, none);
+  --home-suggestion-background: var(
+    --theme-asset-suggestion-understand-background,
+    none
+  );
 }
 [data-suggestion-kind="shape"] {
   --home-suggestion-icon: var(--theme-asset-suggestion-shape-icon, none);
-  --home-suggestion-background: var(--theme-asset-suggestion-shape-background, none);
+  --home-suggestion-background: var(
+    --theme-asset-suggestion-shape-background,
+    none
+  );
 }
 [data-suggestion-kind="refine"] {
   --home-suggestion-icon: var(--theme-asset-suggestion-refine-icon, none);
-  --home-suggestion-background: var(--theme-asset-suggestion-refine-background, none);
+  --home-suggestion-background: var(
+    --theme-asset-suggestion-refine-background,
+    none
+  );
 }
 [data-suggestion-kind="unblock"] {
   --home-suggestion-icon: var(--theme-asset-suggestion-unblock-icon, none);
-  --home-suggestion-background: var(--theme-asset-suggestion-unblock-background, none);
+  --home-suggestion-background: var(
+    --theme-asset-suggestion-unblock-background,
+    none
+  );
 }
 
 .home-suggestions {
@@ -1085,7 +1188,10 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
 }
 
 .new-chat-page .home-suggestion-card {
-  min-height: max(var(--composer-resting-height), var(--home-suggestion-card-height, 0px));
+  min-height: max(
+    var(--composer-resting-height),
+    var(--home-suggestion-card-height, 0px)
+  );
   gap: clamp(10px, 2cqi, 18px);
   padding: clamp(12px, 2cqi, 18px);
 }
@@ -1329,16 +1435,32 @@ html[data-theme-asset-home-corner-decoration="true"] .home-corner-decoration::af
   }
 }
 
-html[data-theme-asset-suggestion-understand-icon="true"] [data-suggestion-kind="understand"] .home-suggestion-icon,
-html[data-theme-asset-suggestion-shape-icon="true"] [data-suggestion-kind="shape"] .home-suggestion-icon,
-html[data-theme-asset-suggestion-refine-icon="true"] [data-suggestion-kind="refine"] .home-suggestion-icon,
-html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unblock"] .home-suggestion-icon {
+html[data-theme-asset-suggestion-understand-icon="true"]
+  [data-suggestion-kind="understand"]
+  .home-suggestion-icon,
+html[data-theme-asset-suggestion-shape-icon="true"]
+  [data-suggestion-kind="shape"]
+  .home-suggestion-icon,
+html[data-theme-asset-suggestion-refine-icon="true"]
+  [data-suggestion-kind="refine"]
+  .home-suggestion-icon,
+html[data-theme-asset-suggestion-unblock-icon="true"]
+  [data-suggestion-kind="unblock"]
+  .home-suggestion-icon {
   display: block;
 }
-html[data-theme-asset-suggestion-understand-icon="true"] [data-suggestion-kind="understand"] .home-suggestion-fallback-icon,
-html[data-theme-asset-suggestion-shape-icon="true"] [data-suggestion-kind="shape"] .home-suggestion-fallback-icon,
-html[data-theme-asset-suggestion-refine-icon="true"] [data-suggestion-kind="refine"] .home-suggestion-fallback-icon,
-html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unblock"] .home-suggestion-fallback-icon {
+html[data-theme-asset-suggestion-understand-icon="true"]
+  [data-suggestion-kind="understand"]
+  .home-suggestion-fallback-icon,
+html[data-theme-asset-suggestion-shape-icon="true"]
+  [data-suggestion-kind="shape"]
+  .home-suggestion-fallback-icon,
+html[data-theme-asset-suggestion-refine-icon="true"]
+  [data-suggestion-kind="refine"]
+  .home-suggestion-fallback-icon,
+html[data-theme-asset-suggestion-unblock-icon="true"]
+  [data-suggestion-kind="unblock"]
+  .home-suggestion-fallback-icon {
   display: none;
 }
 
@@ -1397,7 +1519,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
      land on the exact color a hovered row shows. */
   --surface-selected: color-mix(in srgb, var(--fg) 8%, var(--surface-panel));
   --surface-panel-border: color-mix(in srgb, var(--border) 72%, transparent);
-  --surface-raised-border: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  --surface-raised-border: color-mix(
+    in srgb,
+    var(--border-strong) 72%,
+    transparent
+  );
   /* Ordinary keyboard focus is structural, not branded. Themes may use
      `--ring` for explicit emphasis, while generic controls always resolve
      through this neutral boundary token. */
@@ -1615,7 +1741,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
 }
 
 .side-tab-scroll[data-fade-left="false"][data-fade-right="true"] {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - 16px),
+    transparent
+  );
   mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
 }
 
@@ -1639,8 +1769,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"] [data-suggestion-kind="unb
 @theme {
   --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
   --font-sans: "Geist Variable", -apple-system, "Segoe UI", sans-serif;
-  --font-chat: -apple-system, BlinkMacSystemFont, "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --font-chat:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono Variable", "SF Mono", Menlo, Consolas, monospace;
 
   --color-brand: var(--brand);
@@ -1838,7 +1969,8 @@ body,
   width: 0;
   height: 0;
 }
-.sidebar-scroll-area [data-slot="scroll-area-scrollbar"][data-orientation="vertical"] {
+.sidebar-scroll-area
+  [data-slot="scroll-area-scrollbar"][data-orientation="vertical"] {
   position: absolute;
   z-index: 40;
   inset-block: 0;
@@ -1864,7 +1996,8 @@ body,
   transition: background-color var(--dur-quick) var(--ease-snap);
 }
 .sidebar-scroll-area [data-slot="scroll-area-scrollbar"]:hover,
-.sidebar-scroll-area [data-slot="scroll-area-scrollbar"][data-state="visible"]:active {
+.sidebar-scroll-area
+  [data-slot="scroll-area-scrollbar"][data-state="visible"]:active {
   padding-inline: 1px;
 }
 .sidebar-scroll-area [data-slot="scroll-area-thumb"]:hover {
@@ -1947,8 +2080,15 @@ body,
    0.5↔1) because the dots dim further (0.25) and back, giving a clear "moving"
    feel. Used by the brand-mark loader inside Button and inline empty states. */
 @keyframes brand-loader-dot {
-  0%, 100% { opacity: 0.25; transform: translateY(0); }
-  50%      { opacity: 1;    transform: translateY(-1px); }
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
 }
 .brand-loader-dot {
   display: inline-block;
@@ -1961,34 +2101,56 @@ body,
 }
 @media (prefers-reduced-motion: reduce) {
   .brand-loader-dot,
-  .openma-startup-loader-dot { animation: none; opacity: 0.6; }
+  .openma-startup-loader-dot {
+    animation: none;
+    opacity: 0.6;
+  }
 }
 
 /* Empty-turn wait state. Keep "Thinking" typographically stable while the
    three periods breathe in sequence; this shows activity without moving
    surrounding content or impersonating a real reasoning block. */
 @keyframes thinking-placeholder-dot {
-  0%, 20%, 100% { opacity: 0.25; }
-  50%           { opacity: 1; }
+  0%,
+  20%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 .thinking-placeholder-dot {
   display: inline-block;
   animation: thinking-placeholder-dot 1350ms var(--ease-soft) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .thinking-placeholder-dot { animation: none; opacity: 0.7; }
+  .thinking-placeholder-dot {
+    animation: none;
+    opacity: 0.7;
+  }
 }
 
 /* Skeleton placeholder pulse — quieter than animate-pulse (Tailwind's default
    goes opacity 0.5↔1, which reads as "flashing" in long lists). This stays
    subtle: 0.4↔0.65 with the same soft easing as the rest. */
 @keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.4;  }
-  50%      { opacity: 0.65; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.65;
+  }
 }
-.skeleton-pulse { animation: skeleton-pulse 1500ms var(--ease-soft) infinite; }
+.skeleton-pulse {
+  animation: skeleton-pulse 1500ms var(--ease-soft) infinite;
+}
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-pulse { animation: none; opacity: 0.55; }
+  .skeleton-pulse {
+    animation: none;
+    opacity: 0.55;
+  }
 }
 
 /* Agent icon breathing halo — only renders while a session is running. A
@@ -1997,7 +2159,8 @@ body,
    (green/yellow/red) with one tasteful signal: the icon is alive, and
    you can see it breathing. */
 @keyframes agent-breath {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.35;
     transform: scale(0.85);
     box-shadow: 0 0 0 0 var(--brand);
@@ -2013,18 +2176,32 @@ body,
   animation: agent-breath 2400ms var(--ease-soft) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .agent-breath { animation: none; opacity: 0.4; }
+  .agent-breath {
+    animation: none;
+    opacity: 0.4;
+  }
 }
 
 /* Message reveal — when a turn renders a new bubble or block, fade + tiny
    slide-up. Lives on .reveal-in (one-shot via React mount). */
 @keyframes reveal-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
-.reveal-in { animation: reveal-in var(--dur-slow) var(--ease-soft) both; }
+.reveal-in {
+  animation: reveal-in var(--dur-slow) var(--ease-soft) both;
+}
 @media (prefers-reduced-motion: reduce) {
-  .reveal-in { animation: none; opacity: 1; }
+  .reveal-in {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* ---------- Reduced motion ----------
@@ -2079,7 +2256,8 @@ body,
   opacity: 0;
   visibility: hidden;
   transition:
-    grid-template-rows var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    grid-template-rows var(--motion-disclosure-duration)
+      var(--motion-disclosure-easing),
     opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
     visibility 0s linear var(--motion-disclosure-duration);
 }
@@ -2089,7 +2267,8 @@ body,
   opacity: 1;
   visibility: visible;
   transition:
-    grid-template-rows var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    grid-template-rows var(--motion-disclosure-duration)
+      var(--motion-disclosure-easing),
     opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
     visibility 0s linear 0s;
 }
@@ -2098,7 +2277,8 @@ body,
   min-height: 0;
   overflow: hidden;
   transform: translateY(-2px);
-  transition: transform var(--motion-disclosure-duration) var(--motion-disclosure-easing);
+  transition: transform var(--motion-disclosure-duration)
+    var(--motion-disclosure-easing);
 }
 
 .animated-collapse[data-state="open"] > .animated-collapse-inner {
@@ -2136,11 +2316,13 @@ body,
 }
 
 .reasoning-collapse[data-state="open"] {
-  animation: reasoning-collapse-open var(--motion-disclosure-duration) var(--motion-disclosure-easing) both;
+  animation: reasoning-collapse-open var(--motion-disclosure-duration)
+    var(--motion-disclosure-easing) both;
 }
 
 .reasoning-collapse[data-state="closed"] {
-  animation: reasoning-collapse-closed var(--motion-disclosure-duration) var(--motion-disclosure-easing) both;
+  animation: reasoning-collapse-closed var(--motion-disclosure-duration)
+    var(--motion-disclosure-easing) both;
 }
 
 .reasoning-collapse-inner {

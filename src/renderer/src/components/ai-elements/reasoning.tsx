@@ -6,8 +6,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { cn, preserveScrollAnchor } from "@/lib/utils";
-import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { BrainIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import {
   createContext,
@@ -134,12 +135,12 @@ export const Reasoning = memo(
           stopScroll: stick.stopScroll,
         });
       },
-      [setIsOpen, stick.contentRef, stick.scrollRef, stick.stopScroll]
+      [setIsOpen, stick.contentRef, stick.scrollRef, stick.stopScroll],
     );
 
     const contextValue = useMemo(
       () => ({ duration, isOpen, isStreaming, setIsOpen, triggerRef }),
-      [duration, isOpen, isStreaming, setIsOpen]
+      [duration, isOpen, isStreaming, setIsOpen],
     );
 
     return (
@@ -154,7 +155,7 @@ export const Reasoning = memo(
         </Collapsible>
       </ReasoningContext.Provider>
     );
-  }
+  },
 );
 
 export type ReasoningTriggerProps = ComponentProps<
@@ -188,8 +189,8 @@ export const ReasoningTrigger = memo(
       <CollapsibleTrigger
         ref={triggerRef}
         className={cn(
-          "flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
-          className
+          "flex w-full select-none items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
+          className,
         )}
         {...props}
       >
@@ -197,17 +198,12 @@ export const ReasoningTrigger = memo(
           <>
             {showIcon && <BrainIcon className="size-4" />}
             {getThinkingMessage(isStreaming, duration)}
-            <ChevronDownIcon
-              className={cn(
-                "size-4 transition-transform",
-                isOpen ? "rotate-180" : "rotate-0"
-              )}
-            />
+            <DisclosureChevron open={isOpen} />
           </>
         )}
       </CollapsibleTrigger>
     );
-  }
+  },
 );
 
 export type ReasoningContentProps = ComponentProps<
@@ -237,7 +233,7 @@ export const ReasoningContent = memo(
         </div>
       </CollapsibleContent>
     );
-  }
+  },
 );
 
 Reasoning.displayName = "Reasoning";

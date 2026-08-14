@@ -70,7 +70,7 @@
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.64.2",
-    "@agentclientprotocol/codex-acp": "1.1.9",
+    "@agentclientprotocol/codex-acp": "1.1.14",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.100.14",

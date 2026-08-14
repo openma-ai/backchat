@@ -1,4 +1,3 @@
-import { isToolRunning } from "@/lib/activity-tool-groups";
 import { turnStopNotice } from "@/lib/turn-stop-reason";
 import { memo, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -27,13 +26,10 @@ import {
   type SubagentActivity,
   type Turn,
 } from "@/lib/session-store";
-import {
-  shouldShowTransientThought,
-  turnWorkDurationSeconds,
-} from "@/lib/turn-presentation";
+import { shouldShowTransientThought } from "@/lib/turn-presentation";
 import { useMarkdownCwd } from "./ChatMarkdown";
 import { TurnAnswer } from "./TurnAnswer";
-import { TurnActivity } from "./TurnActivity";
+import { TurnProcessBar } from "./TurnActivity";
 import { PlanDocumentActivity } from "./PlanDocumentActivity";
 import {
   inspectRawTurnEvents,
@@ -91,27 +87,6 @@ export const TurnBlock = memo(function TurnBlock({
     };
   }, [planDocument?.sourceToolCallId, rendered, turn.status]);
   const isStreaming = turn.status === "running";
-  const hasRunningTool = activityRendered.tools.some((tool) =>
-    isToolRunning(tool.status),
-  );
-  // "Thinking" is the fallback for a silence: the harness is still working, but
-  // nothing it does is visible. Anything the turn is actually emitting — the
-  // answer, a tool, a thought — speaks for itself, and the word underneath it
-  // was a second, vaguer voice for the same wait.
-  const lastTimelineItem = activityRendered.timeline.at(-1);
-  const answerArriving = lastTimelineItem
-    ? lastTimelineItem.kind === "assistant_text"
-    : turn.assistantText.length > 0;
-  const thoughtArriving =
-    lastTimelineItem?.kind === "thought" ||
-    Boolean(activityRendered.currentThoughtText);
-  // The work block's last row now always says what the turn is doing, so the
-  // footer only speaks for a turn that has no work block at all — otherwise the
-  // same word appeared twice, once in each.
-  const hasWorkBlock =
-    activityRendered.tools.length > 0 || turn.thoughtText.trim().length > 0;
-  const waitIsTheOnlyNews =
-    !hasRunningTool && !answerArriving && !thoughtArriving && !hasWorkBlock;
   // The agent states why a turn ended; a limit or a refusal arrives as an
   // ordinary completion and would otherwise read as a finished answer.
   const stopNotice = turnStopNotice(turn);
@@ -180,34 +155,36 @@ export const TurnBlock = memo(function TurnBlock({
             </p>
           )}
 
-          {planDocument && (
-            <PlanDocumentActivity
-              document={planDocument}
-              cwd={cwd}
-              sessionId={turn.sessionId}
-            />
-          )}
-
-          <TurnActivity
+          <TurnProcessBar
             turn={turn}
             rendered={activityRendered}
             subagents={subagents}
-            agentId={agentId}
             isStreaming={isStreaming}
             cwd={cwd}
-            completeLabel={t("chat.workedFor", {
-              seconds: turnWorkDurationSeconds(turn),
-            })}
-          />
-
-          <RawEventInspector events={rawEvents} />
-
-          <TurnSubagentLinks
-            turn={turn}
-            renderedToolCallIds={activityRendered.tools.map(
-              (tool) => tool.toolCallId,
+            hasSupplementalActivity={
+              Boolean(planDocument) ||
+              rawEvents.length > 0 ||
+              hasTurnSubagentLinks(activityRendered, subagents)
+            }
+            leadingContent={planDocument ? (
+              <PlanDocumentActivity
+                document={planDocument}
+                cwd={cwd}
+                sessionId={turn.sessionId}
+              />
+            ) : undefined}
+            trailingContent={(
+              <>
+                <RawEventInspector events={rawEvents} />
+                <TurnSubagentLinks
+                  turn={turn}
+                  renderedToolCallIds={activityRendered.tools.map(
+                    (tool) => tool.toolCallId,
+                  )}
+                  subagents={subagents}
+                />
+              </>
             )}
-            subagents={subagents}
           />
 
           <TurnAnswer
@@ -230,16 +207,11 @@ export const TurnBlock = memo(function TurnBlock({
             </p>
           )}
 
-          {/* One row that outlives the turn's state change. The live wait and
-              the finished turn's actions occupy the same cell and cross-fade,
-              so settling no longer removes a line and relays everything above
-              it. The wait only speaks for a silence: a running tool and arriving
-              text are each already the live status, and saying "thinking" under
-              either was a second, vaguer voice for the same wait. */}
+          {/* One row that outlives the turn's state change. The running layer is
+              intentionally empty: live state belongs to its atomic event row. */}
           <TurnFooter
             turn={turn}
             isStreaming={isStreaming}
-            showLiveWord={waitIsTheOnlyNews}
             onFork={onFork}
           />
       </SessionTurnFrame>
@@ -351,28 +323,22 @@ function TurnSubagentLinks({
   );
 }
 
-function subagentLinkLabel(activity: SubagentActivity): string {
-  return subagentActivityLabel(activity);
+function hasTurnSubagentLinks(
+  rendered: TurnRender,
+  subagents: SubagentActivity[],
+): boolean {
+  const toolCallIds = new Set(
+    rendered.tools.map((tool) => tool.toolCallId),
+  );
+  return subagents.some(
+    (activity) =>
+      activity.native?.toolCallId &&
+      toolCallIds.has(activity.native.toolCallId),
+  );
 }
 
-function StreamingDots({ hidden }: { hidden?: boolean }) {
-  return (
-    <span aria-hidden={hidden === false ? undefined : "true"}>
-      <span className="thinking-placeholder-dot">.</span>
-      <span
-        className="thinking-placeholder-dot"
-        style={{ animationDelay: "180ms" }}
-      >
-        .
-      </span>
-      <span
-        className="thinking-placeholder-dot"
-        style={{ animationDelay: "360ms" }}
-      >
-        .
-      </span>
-    </span>
-  );
+function subagentLinkLabel(activity: SubagentActivity): string {
+  return subagentActivityLabel(activity);
 }
 
 /** The tail of a turn that is still producing output.
@@ -443,12 +409,10 @@ function TurnMetaActions({
 function TurnFooter({
   turn,
   isStreaming,
-  showLiveWord,
   onFork,
 }: {
   turn: Turn;
   isStreaming: boolean;
-  showLiveWord: boolean;
   onFork?: () => void;
 }) {
   const { t } = useI18n();
@@ -469,7 +433,6 @@ function TurnFooter({
         className={cn(layer, isStreaming ? "opacity-100" : "pointer-events-none opacity-0")}
         aria-hidden={isStreaming ? undefined : true}
       >
-        {isStreaming && showLiveWord && <StreamingPlaceholder />}
       </div>
       <div
         className={cn(
@@ -497,37 +460,5 @@ function TurnFooter({
         </TurnMetaActions>
       </div>
     </div>
-  );
-}
-
-function StreamingPlaceholder() {
-  const { t } = useI18n();
-  const label = t("chat.thinking");
-  // The translation carries its own ellipsis ("Thinking…" / "思考中…"); the
-  // animated dots replace it so the wait reads as motion in either language.
-  const stem = label.replace(/[.…。]+\s*$/u, "");
-  return (
-    <p
-      className="text-[13px] font-normal leading-6 text-fg-muted"
-      aria-label={label}
-      aria-live="polite"
-    >
-      <span aria-hidden="true">
-        {stem}
-        <span className="thinking-placeholder-dot">.</span>
-        <span
-          className="thinking-placeholder-dot"
-          style={{ animationDelay: "180ms" }}
-        >
-          .
-        </span>
-        <span
-          className="thinking-placeholder-dot"
-          style={{ animationDelay: "360ms" }}
-        >
-          .
-        </span>
-      </span>
-    </p>
   );
 }

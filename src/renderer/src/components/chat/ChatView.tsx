@@ -265,6 +265,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       goal={active?.goal}
       pendingAsk={active?.pendingAsks?.[0]}
       currentModeId={active?.currentModeId}
+      promptQueueEnabled={showPromptQueue}
       onUserInput={syncHomeSuggestionsForUserInput}
       onPickAgent={setPickedAgentId}
       configOptions={active?.configOptions}
@@ -282,7 +283,9 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
               : active.status === "running" || hasActiveTurn
               ? queuedTurnCount > 0
                   ? t("chat.queuedCount", { count: queuedTurnCount })
-                  : t("chat.addToQueue")
+                  : !showPromptQueue && active?.supportsSteering
+                    ? t("chat.steer")
+                    : t("chat.addToQueue")
                 : isEmpty
                   ? homeComposerPlaceholder
                 : t("chat.reply")

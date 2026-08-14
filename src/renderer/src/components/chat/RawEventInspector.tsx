@@ -14,17 +14,10 @@ export interface InspectableRawEvent {
   error?: unknown;
 }
 
-const KNOWN_ACP_UPDATE_TYPES = new Set([
-  "agent_message_chunk",
-  "agent_thought_chunk",
-  "available_commands_update",
-  "config_option_update",
-  "current_mode_update",
-  "plan",
-  "session_info_update",
-  "tool_call",
-  "tool_call_update",
-  "usage_update",
+const INSPECTABLE_PROTOCOL_EVENT_TYPES = new Set([
+  "acp.extension_notification",
+  "acp.extension_request",
+  "acp.mcp_notification",
 ]);
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -47,10 +40,9 @@ function errorValue(payload: unknown): unknown {
   return record?.error ?? record?.errorMessage ?? record?.error_message;
 }
 
-function isMcpExtension(type: string, method: string): boolean {
-  return type === "acp.mcp_notification"
-    || type.includes("mcp")
-    || method.startsWith("mcp/");
+function inspectableRawKind(type: string): RawEventKind | null {
+  if (!INSPECTABLE_PROTOCOL_EVENT_TYPES.has(type)) return null;
+  return type === "acp.mcp_notification" ? "mcp-extension" : "vendor-raw";
 }
 
 function inspectPayload(payload: unknown): InspectableRawEvent | null {
@@ -62,9 +54,11 @@ function inspectPayload(payload: unknown): InspectableRawEvent | null {
     if (vendor?.kind !== "vendor") return null;
     const method = stringValue(vendor.name) ?? "(unknown)";
     const type = stringValue(vendor.namespace) ?? "vendor.event";
+    const kind = inspectableRawKind(type);
+    if (!kind) return null;
     const data = vendor.data;
     return {
-      kind: isMcpExtension(type, method) ? "mcp-extension" : "vendor-raw",
+      kind,
       method,
       type,
       payload: data,
@@ -78,9 +72,11 @@ function inspectPayload(payload: unknown): InspectableRawEvent | null {
     if (raw?.kind !== "raw") return null;
     const method = stringValue(raw.method) ?? "(unknown)";
     const type = stringValue(raw.event_type) ?? "raw.event";
+    const kind = inspectableRawKind(type);
+    if (!kind) return null;
     const data = raw.payload;
     return {
-      kind: isMcpExtension(type, method) ? "mcp-extension" : "vendor-raw",
+      kind,
       method,
       type,
       payload: data,
@@ -102,17 +98,13 @@ function inspectPayload(payload: unknown): InspectableRawEvent | null {
     ?? stringValue(inner.sessionUpdate)
     ?? stringValue(inner.event_type);
   if (!type) return null;
-
-  const isExtension = type === "acp.extension_notification"
-    || type === "acp.extension_request"
-    || type === "acp.mcp_notification"
-    || type.startsWith("_");
-  if (!isExtension && KNOWN_ACP_UPDATE_TYPES.has(type)) return null;
+  const kind = inspectableRawKind(type);
+  if (!kind) return null;
 
   const method = stringValue(inner.method) ?? "session/update";
   const data = inner.params ?? inner.payload ?? inner;
   return {
-    kind: isMcpExtension(type, method) ? "mcp-extension" : "vendor-raw",
+    kind,
     method,
     type,
     payload: data,

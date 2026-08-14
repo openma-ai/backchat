@@ -17,14 +17,22 @@
  * subscribe to that subchannel.
  */
 
-import { useEffect, useRef } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import * as smd from "streaming-markdown";
+import { ContextMenu } from "radix-ui";
 import { MARKDOWN_BLOCK_RHYTHM } from "./ChatMarkdown";
 import { sessionStore } from "@/lib/session-store";
 import { openBrowserAwareUrl } from "@/lib/browser-open";
 import { previewLocalFile } from "@/lib/file-preview";
 import { cn } from "@/lib/utils";
 import { createStreamTextPacer } from "./stream-text-pacer";
+import { decorateStreamingHttpLinks } from "./MarkdownLinkFavicon";
+import { MarkdownLinkMenuContent } from "./MarkdownLinkMenu";
 
 interface Props {
   turnId: string;
@@ -58,6 +66,10 @@ export function StreamingMarkdown({
   paceReplay = false,
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [contextLink, setContextLink] = useState<{
+    url: string;
+    label?: string;
+  } | null>(null);
   // Stash cwd in a ref so the click handler always sees the latest
   // value without forcing the parser to remount when cwd changes mid-
   // stream (which would lose all the DOM mutations and reset the chat
@@ -86,7 +98,11 @@ export function StreamingMarkdown({
     };
     const deepestLast = (node: Element): Element => {
       let current = node;
-      while (current.lastElementChild) current = current.lastElementChild;
+      while (current.lastElementChild) {
+        const next = current.lastElementChild;
+        if (next.matches("img, br, hr")) break;
+        current = next;
+      }
       return current;
     };
     const showTail = () => {
@@ -101,6 +117,7 @@ export function StreamingMarkdown({
         clearTail();
         lastWritten = text;
         smd.parser_write(parser, text);
+        decorateStreamingHttpLinks(host);
       },
       schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
       cancel: (handle) => window.clearTimeout(handle as number),
@@ -135,6 +152,7 @@ export function StreamingMarkdown({
           clearTail();
           lastWritten = text;
           smd.parser_write(parser, text);
+          decorateStreamingHttpLinks(host);
           showTail();
         }
         return;
@@ -170,7 +188,12 @@ export function StreamingMarkdown({
       let path: string | null = null;
       if (/^file:\/\//i.test(url)) path = url.slice(7);
       else if (url.startsWith("/")) path = url;
-      else if (url.startsWith("#") || url.startsWith("?") || url.startsWith("mailto:")) return;
+      else if (
+        url.startsWith("#") ||
+        url.startsWith("?") ||
+        url.startsWith("mailto:")
+      )
+        return;
       else {
         const base = cwdRef.current;
         if (!base) return;
@@ -200,16 +223,38 @@ export function StreamingMarkdown({
     };
   }, [turnId, kind, prefixSkip, paceReplay]);
 
+  const onContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    const anchor = target?.closest("a") as HTMLAnchorElement | null;
+    const url = (anchor?.getAttribute("href") ?? "").trim();
+    if (!anchor || !/^https?:\/\//i.test(url)) {
+      event.preventDefault();
+      return;
+    }
+    setContextLink({ url, label: anchor.textContent?.trim() || undefined });
+  };
+
   return (
-    <div
-      ref={hostRef}
-      className={cn(
-        // The same rhythm the settled surface uses, from one constant, so the
-        // handoff cannot change the geometry of the document.
-        "streaming-md font-chat text-[13px] leading-6 text-fg",
-        MARKDOWN_BLOCK_RHYTHM,
-        className,
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <div
+          ref={hostRef}
+          onContextMenu={onContextMenu}
+          className={cn(
+            // The same rhythm the settled surface uses, from one constant, so the
+            // handoff cannot change the geometry of the document.
+            "streaming-md font-chat text-[13px] leading-6 text-fg",
+            MARKDOWN_BLOCK_RHYTHM,
+            className,
+          )}
+        />
+      </ContextMenu.Trigger>
+      {contextLink && (
+        <MarkdownLinkMenuContent
+          url={contextLink.url}
+          label={contextLink.label}
+        />
       )}
-    />
+    </ContextMenu.Root>
   );
 }

@@ -23,6 +23,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import {
   composerProgressSummary,
@@ -316,39 +321,42 @@ function ActivityDock({
       className="mb-2.5 flex h-8 max-w-full items-center justify-center gap-1.5"
     >
       <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            data-activity-pill="true"
-            data-activity-module={primary.kind}
-            data-activity-module-id={primary.id}
-            data-activity-module-status={activityModuleStatus(primary)}
-            data-activity-module-count={modules.length}
-            data-activity-modules={modules.map((module) => module.kind).join(" ")}
-            aria-label={activityLabel}
-            className={cn(
-              "flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full px-3",
-              "bg-bg-surface text-xs text-fg-muted shadow-sm ring-1 ring-border/55",
-              "hover:text-fg hover:ring-border",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/35",
-              "transition-colors",
-            )}
-          >
-            <ActivityModuleIcon
-              kind={primary.kind}
-              className="size-3.5 shrink-0 text-info"
-            />
-            <span className="truncate font-medium">{primary.label}</span>
-            <span className="shrink-0 tabular-nums text-fg-subtle">
-              {primary.summary}
-            </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                data-activity-pill="true"
+                data-activity-module={primary.kind}
+                data-activity-module-id={primary.id}
+                data-activity-module-status={activityModuleStatus(primary)}
+                data-activity-module-count={modules.length}
+                data-activity-modules={modules.map((module) => module.kind).join(" ")}
+                aria-label={activityLabel}
+                className={cn(
+                  "flex size-8 shrink-0 select-none items-center justify-center rounded-md",
+                  "bg-transparent text-fg-muted",
+                  "hover:bg-[var(--control-bg-hover)] hover:text-fg",
+                  "active:bg-[var(--control-bg-open)]",
+                  "focus-visible:bg-[var(--control-bg-hover)] focus-visible:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/35",
+                  "transition-colors",
+                )}
+              >
+                <ActivityModuleIcon
+                  kind={primary.kind}
+                  className="size-3.5 shrink-0 text-info"
+                />
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            <span className="font-medium">{primary.label}</span>
+            <span className="tabular-nums opacity-70">{primary.summary}</span>
             {additionalCount > 0 && (
-              <span className="shrink-0 text-fg-subtle">
-                +{additionalCount}
-              </span>
+              <span className="opacity-70">+{additionalCount}</span>
             )}
-          </button>
-        </PopoverTrigger>
+          </TooltipContent>
+        </Tooltip>
         <PopoverContent
           align="center"
           side="top"
