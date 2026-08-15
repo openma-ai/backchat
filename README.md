@@ -7,12 +7,12 @@
 <p align="center">
   <a href="https://github.com/openma-ai/deepseek-harness-acp"><img src="https://img.shields.io/badge/dsh--plugin-supported-4D6BFE?style=flat-square" alt="dsh-plugin supported" /></a>
   <img src="https://img.shields.io/badge/protocol-ACP-7C3AED?style=flat-square" alt="Agent Client Protocol" />
-  <img src="https://img.shields.io/badge/data-local--first-059669?style=flat-square" alt="Local-first" />
+  <img src="https://img.shields.io/badge/chat-multi--agent-059669?style=flat-square" alt="Multi-agent chat" />
   <img src="https://img.shields.io/badge/app-desktop-334155?style=flat-square" alt="Desktop app" />
 </p>
 
 <p align="center">
-  <strong>A calm, local-first desktop workspace for Agent Client Protocol (ACP) agents.</strong>
+  <strong>A multi-agent desktop for Agent Client Protocol (ACP) harnesses, tools, and outputs.</strong>
 </p>
 
 <p align="center">
@@ -21,12 +21,12 @@
 
 <p align="center">
   <strong>New: <a href="https://github.com/openma-ai/deepseek-harness-acp">DeepSeek Harness</a> support through <code>dsh-plugin</code> and <code>dsh-acp</code>.</strong><br />
-  <sub>Use your existing dsh profile or the standalone ACP server from the same local-first workspace.</sub>
+  <sub>Use your existing dsh profile or the standalone ACP server from the same desktop.</sub>
 </p>
 
 Backchat gives developer agents a shared desktop without taking away the things
-that make each harness useful. Choose a project, choose an agent, and keep the
-conversation, tools, files, browser, and terminal in one place.
+that make each harness useful. Bring multiple agents into one conversation and
+keep the built-in browser, files, terminal, MCP Apps, and Codex plugins close.
 
 <p align="center">
   <img src="artifacts/theme-system/default-spec-v1.png" alt="Backchat home screen with project and agent selection" width="900" />
@@ -36,9 +36,6 @@ conversation, tools, files, browser, and terminal in one place.
 
 - **One workspace, many agents.** Run Claude Code, Codex CLI, DeepSeek Harness,
   Gemini CLI, OpenCode, Hermes, or OpenClaw from the same desktop surface.
-- **Local-first by default.** Prompts, transcripts, project metadata, and local
-  app state stay on your machine. The selected agent is responsible for talking
-  to its model provider.
 - **Agent-aware, not vendor-shaped.** Backchat surfaces the capabilities,
   commands, models, modes, and permissions reported by the active harness
   instead of inventing a generic capability layer.
@@ -48,11 +45,12 @@ conversation, tools, files, browser, and terminal in one place.
 - **Projects can span related folders.** One primary folder supplies the chat
   cwd, Git context, and project instructions; secondary folders extend the
   agent's file scope through ACP `additionalDirectories`.
-- **Tools that stay in the flow.** Configure MCP servers once and use them from
-  every session. Open a browser, inspect files, start a terminal, attach images,
-  and render interactive MCP Apps without leaving the conversation.
-- **Parallel thinking.** Use multi-agent chats, side chats, ACP forks, and
-  native subagent activity when the underlying harness exposes it.
+- **Built-in tools that stay in the flow.** Browse the web, inspect files, start
+  a terminal, attach images, and work without leaving the conversation.
+- **Native extensions and apps.** Render interactive MCP Apps directly in a
+  turn and use Codex plugins without flattening them into generic text output.
+- **Multi-agent conversations.** Bring several harnesses into one chat, or use
+  side chats, ACP forks, and native subagent activity when available.
 - **Repeatable work.** Create one-time or recurring schedules that run against a
   project and harness, with local run history.
 
