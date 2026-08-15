@@ -5,16 +5,19 @@ import {
   ChevronRight,
   Download,
   FolderGit2,
+  Globe,
   GitFork,
   Laptop,
-  LockKeyhole,
-  PanelRight,
+  Puzzle,
   TerminalSquare,
+  UsersRound,
 } from "lucide-react";
 import homeScreenshotUrl from "../../artifacts/theme-system/default-spec-v1.png";
 import activityScreenshotUrl from "../../artifacts/activity-states/06-complete-expanded.png";
 import pipScreenshotUrl from "../../artifacts/interactive-containers/03-picture-in-picture.png";
-import backchatLogoUrl from "../../docs/assets/backchat-logo.png";
+import { BrandLockup } from "./BrandLockup";
+import { homepageCopy } from "./homepage-copy";
+import { alternateLocale, localePath, type SiteLocale } from "./site";
 
 const githubUrl = "https://github.com/openma-ai/backchat";
 const macBuildsUrl = `${githubUrl}/releases/download/preview/Backchat-preview-arm64.dmg`;
@@ -60,15 +63,6 @@ const agents = [
   { name: "OpenClaw", entry: "openclaw", detail: "OpenClaw ACP entry" },
 ];
 
-function BrandLockup() {
-  return (
-    <span className="brand-lockup">
-      <img src={backchatLogoUrl} alt="" width="32" height="32" />
-      <span>Backchat</span>
-    </span>
-  );
-}
-
 function ProductFrame({
   src,
   alt,
@@ -91,23 +85,31 @@ function ProductFrame({
   );
 }
 
-export function Homepage() {
+export function Homepage({ locale = "en" }: { locale?: SiteLocale }) {
+  const copy = homepageCopy[locale];
+  const homeUrl = localePath(locale, "/");
+  const deepSeekUrl = localePath(locale, "/deepseek/");
+  const languageUrl = localePath(alternateLocale(locale), "/");
+
   return (
     <div className="site-shell" id="top">
       <a className="skip-link" href="#main-content">
-        Skip to content
+        {copy.skip}
       </a>
 
       <header className="site-header">
         <div className="site-header-inner">
-          <a className="brand-link" href="#top" aria-label="Backchat home">
+          <a className="brand-link" href={homeUrl} aria-label={copy.homeLabel}>
             <BrandLockup />
           </a>
-          <nav className="primary-nav" aria-label="Primary navigation">
-            <a href="#product">Product</a>
-            <a href="#agents">Agents</a>
-            <a href="#download">Download</a>
-            <a className="nav-github" href={githubUrl} target="_blank" rel="noreferrer">
+          <nav className="primary-nav" aria-label={copy.navLabel}>
+            <a href="#product">{copy.nav.product}</a>
+            <a href="#agents">{copy.nav.agents}</a>
+            <a href="#download">{copy.nav.download}</a>
+            <a className="language-link" href={languageUrl} hrefLang={alternateLocale(locale)}>
+              {copy.nav.language}
+            </a>
+            <a className="nav-github" href={githubUrl} target="_blank" rel="noreferrer" aria-label="Backchat on GitHub">
               <GitFork aria-hidden="true" size={16} />
               <span>GitHub</span>
             </a>
@@ -119,53 +121,53 @@ export function Homepage() {
         <section className="hero section-wrap" aria-labelledby="hero-title">
           <a
             className="announcement"
-            href="https://github.com/openma-ai/deepseek-harness-acp"
-            target="_blank"
-            rel="noreferrer"
+            href={deepSeekUrl}
           >
-            <span>New</span>
-            DeepSeek Harness is now supported
+            <span>{copy.announcementBadge}</span>
+            {copy.announcement}
             <ChevronRight aria-hidden="true" size={14} />
           </a>
 
           <div className="hero-copy">
-            <p className="eyebrow">LOCAL-FIRST · ACP-NATIVE</p>
-            <h1 id="hero-title">One workspace. Every agent.</h1>
-            <p className="hero-lede">
-              Backchat brings Claude Code, Codex, DeepSeek Harness, and other ACP
-              agents into one calm desktop—without taking your work off your machine.
-            </p>
+            <p className="eyebrow">{copy.eyebrow}</p>
+            <h1 id="hero-title" aria-label={copy.heroTitle}>
+              {copy.heroTitleLines.map((line) => (
+                <span className="hero-title-line" key={line}>{line}</span>
+              ))}
+            </h1>
+            <p className="hero-lede">{copy.heroLede}</p>
             <div className="hero-actions">
               <a className="button button-primary" href={macBuildsUrl}>
                 <Download aria-hidden="true" size={17} />
-                Download for macOS
+                <span>{copy.downloadMac}</span>
               </a>
               <a className="button button-secondary" href={githubUrl}>
-                View on GitHub
+                <span>{copy.viewGithub}</span>
                 <ArrowRight aria-hidden="true" size={16} />
               </a>
             </div>
             <p className="hero-meta">
-              Apple Silicon preview <span aria-hidden="true">·</span> v0.0.3{" "}
-              <span aria-hidden="true">·</span> Open source
+              {copy.heroMeta.map((item, index) => (
+                <span key={item}>{index > 0 && <span aria-hidden="true">· </span>}{item}</span>
+              ))}
             </p>
           </div>
 
-          <div className="hero-product" aria-label="Backchat desktop preview">
+          <div className="hero-product" aria-label={copy.heroPreviewLabel}>
             <ProductFrame
               src={homeScreenshotUrl}
-              alt="Backchat desktop home"
+              alt={copy.heroImageAlt}
               label="Backchat / New chat"
               className="product-frame-hero"
             />
             <p className="image-caption">
-              Pick a project, pick a harness, and start with the agent's real capabilities.
+              {copy.heroCaption}
             </p>
           </div>
         </section>
 
         <section className="agent-cloud section-wrap" aria-labelledby="agent-cloud-title">
-          <p id="agent-cloud-title">A shared desktop for the agents you already use</p>
+          <p id="agent-cloud-title">{copy.agentCloud}</p>
           <ul aria-label="Supported agent harnesses">
             {agents.map((agent) => (
               <li key={agent.name}>{agent.name}</li>
@@ -175,31 +177,25 @@ export function Homepage() {
 
         <section className="product-section section-wrap" id="product" aria-labelledby="product-title">
           <div className="section-intro">
-            <p className="section-kicker">THE PRODUCT</p>
-            <h2 id="product-title">The conversation stays central. The tools stay close.</h2>
-            <p>
-              Backchat is a desktop client, not another agent dashboard. Files, terminals,
-              browser tabs, side chats, and rich outputs appear when the work needs them.
-            </p>
+            <p className="section-kicker">{copy.productKicker}</p>
+            <h2 id="product-title">{copy.productTitle}</h2>
+            <p>{copy.productLede}</p>
           </div>
 
           <article className="story-row">
             <div className="story-copy">
               <span className="story-index">01</span>
-              <h3>See the work, not a wall of logs.</h3>
-              <p>
-                Thinking and tool calls fold into a readable activity history. Follow the
-                current action while it runs; open the details only when you need them.
-              </p>
+              <h3>{copy.storyOneTitle}</h3>
+              <p>{copy.storyOneBody}</p>
               <ul className="check-list">
-                <li><Check aria-hidden="true" size={15} /> Grouped tool activity</li>
-                <li><Check aria-hidden="true" size={15} /> Streaming thoughts</li>
-                <li><Check aria-hidden="true" size={15} /> Stable conversation timeline</li>
+                {copy.storyOneChecks.map((item) => (
+                  <li key={item}><Check aria-hidden="true" size={15} /><span>{item}</span></li>
+                ))}
               </ul>
             </div>
             <ProductFrame
               src={activityScreenshotUrl}
-              alt="Grouped agent activity in Backchat"
+              alt={copy.storyOneAlt}
               label="Backchat / Activity"
             />
           </article>
@@ -207,21 +203,20 @@ export function Homepage() {
           <article className="story-row story-row-reverse">
             <div className="story-copy">
               <span className="story-index">02</span>
-              <h3>Outputs have somewhere to live.</h3>
-              <p>
-                Open project files, keep a terminal nearby, or let an interactive MCP App
-                expand into the side rail and picture-in-picture without leaving the task.
-              </p>
-              <div className="capability-list" aria-label="Workspace capabilities">
-                <span><FolderGit2 aria-hidden="true" size={16} /> Project files</span>
-                <span><TerminalSquare aria-hidden="true" size={16} /> Terminal</span>
-                <span><PanelRight aria-hidden="true" size={16} /> Side chats</span>
-                <span><Blocks aria-hidden="true" size={16} /> MCP Apps</span>
+              <h3>{copy.storyTwoTitle}</h3>
+              <p>{copy.storyTwoBody}</p>
+              <div className="capability-list" aria-label={copy.capabilitiesLabel}>
+                <span><UsersRound aria-hidden="true" size={16} /><span>{copy.capabilities[0]}</span></span>
+                <span><Globe aria-hidden="true" size={16} /><span>{copy.capabilities[1]}</span></span>
+                <span><FolderGit2 aria-hidden="true" size={16} /><span>{copy.capabilities[2]}</span></span>
+                <span><TerminalSquare aria-hidden="true" size={16} /><span>{copy.capabilities[3]}</span></span>
+                <span><Blocks aria-hidden="true" size={16} /><span>{copy.capabilities[4]}</span></span>
+                <span><Puzzle aria-hidden="true" size={16} /><span>{copy.capabilities[5]}</span></span>
               </div>
             </div>
             <ProductFrame
               src={pipScreenshotUrl}
-              alt="Interactive output shown beside a Backchat conversation"
+              alt={copy.storyTwoAlt}
               label="Backchat / Outputs"
               className="product-frame-dark"
             />
@@ -230,15 +225,11 @@ export function Homepage() {
 
         <section className="truth-section section-wrap" aria-labelledby="truth-title">
           <div className="truth-copy">
-            <p className="section-kicker">LIVE TRUTH</p>
-            <h2 id="truth-title">Agent-aware, not vendor-shaped.</h2>
-            <p>
-              Models, commands, modes, permissions, and session controls come from the
-              selected harness. Backchat does not invent a generic capability layer and
-              pretend every agent works the same way.
-            </p>
+            <p className="section-kicker">{copy.truthKicker}</p>
+            <h2 id="truth-title">{copy.truthTitle}</h2>
+            <p>{copy.truthBody}</p>
           </div>
-          <div className="truth-terminal" aria-label="Example live harness capabilities">
+          <div className="truth-terminal" aria-label={copy.truthLabel}>
             <div className="truth-terminal-title">
               <span>session / capabilities</span>
               <span>live</span>
@@ -255,44 +246,37 @@ export function Homepage() {
 
         <section className="agents-section section-wrap" id="agents" aria-labelledby="agents-title">
           <div className="section-intro section-intro-compact">
-            <p className="section-kicker">YOUR HARNESS, YOUR CHOICE</p>
-            <h2 id="agents-title">Bring the agent. Keep its strengths.</h2>
-            <p>
-              Backchat discovers or installs ACP-compatible harnesses from Settings, then
-              keeps their setup separate from the conversation itself.
-            </p>
+            <p className="section-kicker">{copy.agentsKicker}</p>
+            <h2 id="agents-title">{copy.agentsTitle}</h2>
+            <p>{copy.agentsBody}</p>
           </div>
-          <div className="agent-table" role="table" aria-label="Supported agents">
+          <div className="agent-table" role="table" aria-label={copy.agentsTableLabel}>
             <div className="agent-table-head" role="row">
-              <span role="columnheader">Agent</span>
-              <span role="columnheader">ACP entry</span>
-              <span role="columnheader">Connection</span>
+              {copy.columns.map((column) => <span role="columnheader" key={column}>{column}</span>)}
             </div>
-            {agents.map((agent) => (
+            {agents.map((agent, index) => (
               <div className="agent-table-row" role="row" key={agent.name}>
-                <strong role="cell">{agent.name}</strong>
+                <strong role="cell">
+                  {agent.name === "DeepSeek Harness" ? <a href={deepSeekUrl}>{agent.name}</a> : agent.name}
+                </strong>
                 <code role="cell">{agent.entry}</code>
-                <span role="cell">{agent.detail}</span>
+                <span role="cell">{copy.agentDetails[index]}</span>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="local-section section-wrap" aria-labelledby="local-title">
+        <section className="local-section section-wrap" aria-labelledby="native-title">
           <div className="local-mark" aria-hidden="true">
-            <LockKeyhole size={24} />
+            <Blocks size={24} />
           </div>
           <div>
-            <p className="section-kicker">LOCAL-FIRST BY DEFAULT</p>
-            <h2 id="local-title">Your workspace stays yours.</h2>
+            <p className="section-kicker">{copy.nativeKicker}</p>
+            <h2 id="native-title">{copy.nativeTitle}</h2>
           </div>
-          <p>
-            Prompts, transcripts, projects, schedules, and app state live on your machine.
-            The agent you choose remains responsible for its own model connection.
-          </p>
-          <div className="local-paths" aria-label="Local Backchat files">
-            <code>~/.oma/config.toml</code>
-            <code>~/.oma/sessions.db</code>
+          <p>{copy.nativeBody}</p>
+          <div className="local-paths" aria-label={copy.nativeItemsLabel}>
+            {copy.nativeItems.map((item) => <span key={item}>{item}</span>)}
           </div>
         </section>
 
@@ -300,19 +284,16 @@ export function Homepage() {
           <div className="download-icon" aria-hidden="true">
             <Laptop size={27} />
           </div>
-          <p className="section-kicker">DESKTOP PREVIEW</p>
-          <h2 id="download-title">Bring your agents into one quiet room.</h2>
-          <p>
-            Backchat is pre-release and under active development. Download the current
-            macOS build, or package a native Windows or Linux build on your own machine.
-          </p>
+          <p className="section-kicker">{copy.downloadKicker}</p>
+          <h2 id="download-title">{copy.downloadTitle}</h2>
+          <p>{copy.downloadBody}</p>
           <div className="download-actions">
             <a className="button button-primary" href={macBuildsUrl}>
               <Download aria-hidden="true" size={17} />
-              Download latest build
+              <span>{copy.downloadLatest}</span>
             </a>
             <a className="text-link" href={`${githubUrl}#quick-start`}>
-              Build from source <ArrowRight aria-hidden="true" size={15} />
+              <span>{copy.buildSource}</span><ArrowRight aria-hidden="true" size={15} />
             </a>
           </div>
           <p className="download-meta">macOS · Apple Silicon · v0.0.3</p>
@@ -320,13 +301,10 @@ export function Homepage() {
           <div className="build-runbooks" id="build-runbooks" aria-labelledby="build-runbooks-title">
             <div className="runbook-intro">
               <div>
-                <p className="section-kicker">WINDOWS + LINUX</p>
-                <h3 id="build-runbooks-title">Package Backchat where you will run it.</h3>
+                <p className="section-kicker">{copy.runbookKicker}</p>
+                <h3 id="build-runbooks-title">{copy.runbookTitle}</h3>
               </div>
-              <p>
-                Choose the recipe for your operating system. Each one builds Backchat
-                from source and creates a native, unsigned installer on that machine.
-              </p>
+              <p>{copy.runbookBody}</p>
             </div>
 
             <div className="runbook-grid">
@@ -347,15 +325,15 @@ export function Homepage() {
                   <ol className="runbook-steps">
                     <li>
                       <span>01</span>
-                      <div><strong>Prepare</strong><p>{runbook.requirements}</p></div>
+                      <div><strong>{copy.prepare}</strong><p>{runbook.platform === "Windows" ? copy.windowsRequirements : copy.linuxRequirements}</p></div>
                     </li>
                     <li>
                       <span>02</span>
-                      <div><strong>Build</strong><p>Run the complete command block below.</p></div>
+                      <div><strong>{copy.build}</strong><p>{copy.buildInstruction}</p></div>
                     </li>
                     <li>
                       <span>03</span>
-                      <div><strong>Collect</strong><p><code>{runbook.output}</code></p></div>
+                      <div><strong>{copy.collect}</strong><p><code>{runbook.output}</code></p></div>
                     </li>
                   </ol>
 
@@ -370,8 +348,7 @@ export function Homepage() {
             </div>
 
             <p className="runbook-note">
-              Package on the target operating system. If a native dependency falls back
-              to compilation, install that platform&apos;s standard C/C++ build tools and retry.
+              {copy.runbookNote}
             </p>
           </div>
         </section>
@@ -379,8 +356,9 @@ export function Homepage() {
 
       <footer className="site-footer section-wrap">
         <BrandLockup />
-        <p>A calm, local-first desktop workspace for ACP agents.</p>
+        <p>{copy.footer}</p>
         <div className="footer-links">
+          <a href={deepSeekUrl}>{copy.deepSeekGuide}</a>
           <a href={githubUrl}>GitHub</a>
           <a href="https://agentclientprotocol.com/">Agent Client Protocol</a>
           <a href={`${githubUrl}/issues`}>Issues</a>
