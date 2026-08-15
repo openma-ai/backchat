@@ -67,9 +67,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          dmgs=$(find release -type f -name '*.dmg')
-          test -n "$dmgs"
-          gh release create "${GITHUB_REF_NAME}" $dmgs --generate-notes --verify-tag
+          versioned=$(find release -type f -name 'Backchat-*-arm64.dmg' ! -name 'Backchat-arm64.dmg' ! -name 'Backchat-preview-arm64.dmg' -print)
+          test -n "$versioned"
+          stable="$(dirname "$versioned")/Backchat-arm64.dmg"
+          cp "$versioned" "$stable"
+          gh release create "${GITHUB_REF_NAME}" "$versioned" "$stable" --generate-notes --verify-tag
 
       - name: Verify packaged first prompt
         continue-on-error: true

@@ -152,11 +152,11 @@ pnpm test:verify    # typecheck + full unit tests + fast E2E lane
 
 Pull requests run `test:ci` and `test:e2e:fast`. Pushes to `main` also build an
 unsigned macOS DMG, then check that the packaged app can import its runtime and
-complete a first prompt. Publishing a `v*` GitHub release deploys
-https://backchat.openma.dev with download links for that tagged DMG. Set
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as repository secrets so the
-official Wrangler action can publish. GitHub's official Dependency Review,
-CodeQL, and Dependabot for Actions run alongside those gates.
+complete a first prompt. The website download button always points at
+https://github.com/openma-ai/backchat/releases/latest/download/Backchat-arm64.dmg
+; tagged releases upload that stable filename next to the versioned DMG.
+GitHub's official Dependency Review, CodeQL, and Dependabot for Actions run
+alongside those gates.
 
 The desktop shell is built with Electron, TypeScript, React, Vite, Tailwind
 CSS, and shadcn/ui. The ACP runtime is vendored from

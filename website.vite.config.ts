@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { desktopVersion, macArm64DmgUrl } from "./src/website/release";
+import { desktopVersion } from "./src/website/release";
 
 const websiteRoot = resolve(__dirname, "src/website");
 
@@ -9,9 +9,7 @@ function stampDesktopRelease(): Plugin {
   return {
     name: "stamp-desktop-release",
     transformIndexHtml(html) {
-      return html
-        .replaceAll("__DESKTOP_VERSION__", desktopVersion)
-        .replaceAll("__MAC_ARM64_DMG_URL__", macArm64DmgUrl);
+      return html.replaceAll("__DESKTOP_VERSION__", desktopVersion);
     },
   };
 }

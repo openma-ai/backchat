@@ -61,6 +61,7 @@ describe("github ci", () => {
     expect(dmg).toContain("pnpm run test:ci");
     expect(dmg).toContain("verify-packaged-runtime.mjs");
     expect(dmg).toContain("verify-packaged-first-prompt.mjs");
-    expect(dmg).toContain("find release -type f -name '*.dmg'");
+    expect(dmg).toContain("Backchat-arm64.dmg");
+    expect(dmg).toContain("gh release create");
   });
 });
