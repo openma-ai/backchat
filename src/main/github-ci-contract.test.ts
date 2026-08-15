@@ -43,6 +43,19 @@ describe("github ci", () => {
     expect(dependabot).toContain("package-ecosystem: github-actions");
   });
 
+  it("deploys the website after a versioned GitHub release", () => {
+    const website = readFileSync(
+      resolve(".github/workflows/deploy-website.yml"),
+      "utf8",
+    );
+    expect(website).toMatch(/^\s*release:/m);
+    expect(website).toContain("published");
+    expect(website).toContain("workflow_dispatch");
+    expect(website).toContain("pnpm run website:build");
+    expect(website).toMatch(/uses: cloudflare\/wrangler-action@v\d+/);
+    expect(website).toContain("secrets.CLOUDFLARE_API_TOKEN");
+  });
+
   it("keeps packaged-runtime and first-prompt verification on the DMG job", () => {
     expect(dmg).toContain("./.github/actions/setup-node-pnpm");
     expect(dmg).toContain("pnpm run test:ci");

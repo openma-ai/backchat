@@ -10,11 +10,11 @@ import {
 } from "lucide-react";
 import { BrandLockup } from "./BrandLockup";
 import { deepSeekCopy } from "./deepseek-copy";
+import { githubRepoUrl, macArm64DmgUrl } from "./release";
 import { alternateLocale, localePath, type SiteLocale } from "./site";
 
-const githubUrl = "https://github.com/openma-ai/backchat";
+const githubUrl = githubRepoUrl;
 const adapterUrl = "https://github.com/openma-ai/deepseek-harness-acp";
-const macBuildsUrl = `${githubUrl}/releases/download/preview/Backchat-preview-arm64.dmg`;
 const standaloneCommands = `node --version
 npm install -g @openma/deepseek-harness-acp
 dsh-acp login`;
@@ -63,7 +63,7 @@ export function DeepSeekGuide({ locale = "en" }: { locale?: SiteLocale }) {
           <h1 id="guide-title">{copy.title}</h1>
           <p className="guide-lede">{copy.lede}</p>
           <div className="hero-actions">
-            <a className="button button-primary" href={macBuildsUrl}><Download aria-hidden="true" size={17} /><span>{copy.openBackchat}</span></a>
+            <a className="button button-primary" href={macArm64DmgUrl}><Download aria-hidden="true" size={17} /><span>{copy.openBackchat}</span></a>
             <a className="button button-secondary" href={adapterUrl} target="_blank" rel="noreferrer"><span>{copy.viewSource}</span><ExternalLink aria-hidden="true" size={15} /></a>
           </div>
           <ul className="guide-meta" aria-label="Guide requirements">
@@ -141,7 +141,7 @@ export function DeepSeekGuide({ locale = "en" }: { locale?: SiteLocale }) {
         <section className="guide-cta section-wrap">
           <h2>{copy.ctaTitle}</h2><p>{copy.ctaBody}</p>
           <div className="hero-actions">
-            <a className="button button-primary" href={macBuildsUrl}><Download aria-hidden="true" size={17} /><span>{copy.openBackchat}</span></a>
+            <a className="button button-primary" href={macArm64DmgUrl}><Download aria-hidden="true" size={17} /><span>{copy.openBackchat}</span></a>
             <a className="text-link" href={homeUrl}><ArrowLeft aria-hidden="true" size={15} /><span>{copy.backHome}</span></a>
           </div>
         </section>

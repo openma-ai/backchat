@@ -17,10 +17,10 @@ import activityScreenshotUrl from "../../artifacts/activity-states/06-complete-e
 import pipScreenshotUrl from "../../artifacts/interactive-containers/03-picture-in-picture.png";
 import { BrandLockup } from "./BrandLockup";
 import { homepageCopy } from "./homepage-copy";
+import { macArm64DmgUrl, desktopVersion, githubRepoUrl } from "./release";
 import { alternateLocale, localePath, type SiteLocale } from "./site";
 
-const githubUrl = "https://github.com/openma-ai/backchat";
-const macBuildsUrl = `${githubUrl}/releases/download/preview/Backchat-preview-arm64.dmg`;
+const githubUrl = githubRepoUrl;
 
 const packageRunbooks = [
   {
@@ -137,7 +137,7 @@ export function Homepage({ locale = "en" }: { locale?: SiteLocale }) {
             </h1>
             <p className="hero-lede">{copy.heroLede}</p>
             <div className="hero-actions">
-              <a className="button button-primary" href={macBuildsUrl}>
+              <a className="button button-primary" href={macArm64DmgUrl}>
                 <Download aria-hidden="true" size={17} />
                 <span>{copy.downloadMac}</span>
               </a>
@@ -147,7 +147,7 @@ export function Homepage({ locale = "en" }: { locale?: SiteLocale }) {
               </a>
             </div>
             <p className="hero-meta">
-              {copy.heroMeta.map((item, index) => (
+              {[copy.heroMeta[0], `v${desktopVersion}`, copy.heroMeta[1]].map((item, index) => (
                 <span key={item}>{index > 0 && <span aria-hidden="true">· </span>}{item}</span>
               ))}
             </p>
@@ -288,7 +288,7 @@ export function Homepage({ locale = "en" }: { locale?: SiteLocale }) {
           <h2 id="download-title">{copy.downloadTitle}</h2>
           <p>{copy.downloadBody}</p>
           <div className="download-actions">
-            <a className="button button-primary" href={macBuildsUrl}>
+            <a className="button button-primary" href={macArm64DmgUrl}>
               <Download aria-hidden="true" size={17} />
               <span>{copy.downloadLatest}</span>
             </a>
@@ -296,7 +296,7 @@ export function Homepage({ locale = "en" }: { locale?: SiteLocale }) {
               <span>{copy.buildSource}</span><ArrowRight aria-hidden="true" size={15} />
             </a>
           </div>
-          <p className="download-meta">macOS · Apple Silicon · v0.0.3</p>
+          <p className="download-meta">macOS · Apple Silicon · v{desktopVersion}</p>
 
           <div className="build-runbooks" id="build-runbooks" aria-labelledby="build-runbooks-title">
             <div className="runbook-intro">

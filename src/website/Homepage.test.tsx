@@ -7,6 +7,7 @@ import { preview } from "vite";
 import { describe, expect, it } from "vitest";
 import { Homepage } from "./Homepage";
 import { DeepSeekGuide } from "./DeepSeekGuide";
+import { macArm64DmgUrl } from "./release";
 
 const projectRoot = resolve(__dirname, "../..");
 const outputHtml = resolve(projectRoot, "dist/website/index.html");
@@ -41,7 +42,9 @@ describe("Backchat website", () => {
     expect(html).toContain('rel="canonical" href="https://backchat.openma.dev/"');
     expect(html).toContain('property="og:url" content="https://backchat.openma.dev/"');
     expect(html).toContain("One workspace. Every agent.");
-    expect(html).toContain('application/ld+json');
+    expect(html).toContain("application/ld+json");
+    expect(html).toContain(macArm64DmgUrl);
+    expect(html).not.toContain("Backchat-preview-arm64.dmg");
     expect(existsSync(outputHeaders)).toBe(true);
     expect(readFileSync(outputHeaders, "utf8")).toContain("X-Content-Type-Options: nosniff");
     expect(existsSync(deepSeekHtml)).toBe(true);
@@ -127,8 +130,9 @@ describe("Backchat website", () => {
     expect(html).toContain('href="/deepseek/"');
     expect(html).toContain("Gemini CLI");
     expect(html).toContain(
-      'href="https://github.com/openma-ai/backchat/releases/download/preview/Backchat-preview-arm64.dmg"',
+      `href="${macArm64DmgUrl}"`,
     );
+    expect(html).not.toContain("/releases/download/preview/");
     expect(html).toContain("Download for macOS");
     expect(html).toContain("Download latest build");
     expect(html).not.toContain("/actions/workflows/build-dmg.yml");
