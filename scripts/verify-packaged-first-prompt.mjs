@@ -63,7 +63,8 @@ const app = await electron.launch({
 
 try {
   const page = await app.firstWindow();
-  await page.getByTestId("new-chat-button").waitFor({ timeout: 20_000 });
+  try {
+    await page.getByTestId("new-chat-button").waitFor({ timeout: 20_000 });
 
   const shim = await readFile(shimPath, "utf8");
   if (!shim.includes(join(home, ".oma", "acp"))) {
@@ -120,6 +121,11 @@ try {
     firstPrompt: "passed",
     screenshotPath,
   }, null, 2)}\n`);
+  } catch (error) {
+    await mkdir(dirname(screenshotPath), { recursive: true }).catch(() => undefined);
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => undefined);
+    throw error;
+  }
 } finally {
   await app.close().catch(() => undefined);
   await rm(home, { recursive: true, force: true });

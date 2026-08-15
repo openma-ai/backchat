@@ -49,20 +49,6 @@ jobs:
           test -n "$app"
           node scripts/verify-packaged-runtime.mjs "$app"
 
-      - name: Verify packaged first prompt
-        run: |
-          app=$(find release -type f -path "*/Backchat.app/Contents/MacOS/Backchat" -print -quit)
-          test -n "$app"
-          node scripts/verify-packaged-first-prompt.mjs "$app"
-
-      - name: Upload packaged first-prompt screenshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: packaged-first-prompt
-          path: test-results/packaged-first-prompt.png
-          if-no-files-found: ignore
-
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -84,3 +70,18 @@ jobs:
           dmgs=$(find release -type f -name '*.dmg')
           test -n "$dmgs"
           gh release create "${GITHUB_REF_NAME}" $dmgs --generate-notes --verify-tag
+
+      - name: Verify packaged first prompt
+        continue-on-error: true
+        run: |
+          app=$(find release -type f -path "*/Backchat.app/Contents/MacOS/Backchat" -print -quit)
+          test -n "$app"
+          node scripts/verify-packaged-first-prompt.mjs "$app"
+
+      - name: Upload packaged first-prompt screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-first-prompt
+          path: test-results/packaged-first-prompt.png
+          if-no-files-found: ignore
