@@ -61,22 +61,24 @@ export function goalSessionStatePresentation(
   };
 }
 
-/** Labels for a command the composer is holding until its argument arrives.
+/** Session-state commands the composer may arm into the shared Goal/Plan slot.
  * A chip is a state, not a token: showing `/goal` leaks the wire form the
  * composer prefixes for the user, and it would read differently from the chip
- * that replaces it once the goal exists. The table maps a command to the state
- * it is about to enter, so adding another one is a data change. */
+ * that replaces it once the goal exists. Commands that merely take an argument
+ * (`/login`, `/model`) stay in the prompt. Adding another state is a data
+ * change. */
 const ARMED_COMMAND_STATE_LABELS: Record<string, "goal"> = { goal: "goal" };
 
 export function armedCommandSessionStatePresentation(
   command: { name: string; description?: string; input?: { hint?: string } | null },
   labels: { goal: string },
-): ComposerSessionStatePresentation {
+): ComposerSessionStatePresentation | undefined {
   const stateLabel = ARMED_COMMAND_STATE_LABELS[command.name];
+  if (!stateLabel) return undefined;
   return {
     id: `armed:${command.name}`,
     kind: "armed_command",
-    label: stateLabel ? labels[stateLabel] : command.name,
+    label: labels[stateLabel],
     title: command.input?.hint?.trim() || command.description,
     icon: "goal",
   };

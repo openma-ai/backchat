@@ -364,9 +364,14 @@ describe("a command still waiting for its argument", () => {
     expect(pendingArgumentCommand("/status", [status])).toBeUndefined();
   });
 
-  it("does not hold back a config switch", () => {
-    // /plan is complete on its own; arming it would strand the user.
-    expect(pendingArgumentCommand("/plan", [plan])).toBeUndefined();
+  it("does not hold back a credential login as if it were a session state", () => {
+    const login: AcpAvailableCommand = {
+      name: "login",
+      description: "Save an API key.",
+      input: { hint: "<api-key>" },
+    };
+    // The command still needs an argument; the Goal/Plan slot must not claim it.
+    expect(pendingArgumentCommand("/login", [login])).toBe(login);
   });
 
   it("ignores plain text and unknown commands", () => {

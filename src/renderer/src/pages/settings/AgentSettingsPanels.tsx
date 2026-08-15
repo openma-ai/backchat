@@ -4,7 +4,9 @@ import { ExternalLinkIcon } from "lucide-react";
 
 import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { StatusNotice } from "@/components/ui/status-notice";
 import { patchSettings } from "@/lib/settings-store";
 import { selectedAuthMethod } from "./agent-setup-lifecycle";
 import {
@@ -18,31 +20,40 @@ export function AgentAuthSetupPanel({
   selectedMethodId,
   waitingForAuth,
   pending,
+  error,
   onMethodIdChange,
   onStart,
   onClose,
   onSaved,
+  className,
 }: {
   agent: AgentInfo;
   settings: Settings;
   selectedMethodId?: string;
   waitingForAuth: boolean;
   pending: boolean;
+  error?: string;
   onMethodIdChange: (methodId: string) => void;
-  onStart: (methodId?: string) => void;
+  onStart: (methodId?: string, options?: { values?: Record<string, string> }) => void;
   onClose: () => void;
   onSaved: () => void;
+  className?: string;
 }) {
   const methods = agent.auth?.methods ?? [];
   const method = selectedAuthMethod(agent, selectedMethodId);
   const methodType = method?.type ?? "agent";
   const vars = method?.vars ?? [];
+  const isLocalEnvForm = methodType === "env_var";
+  const isAuthenticateForm = method?.form === "fields";
   const initialValues = useMemo(() => {
     const existing = settings.agents.find((item) => item.id === agent.id);
     const env = new Map(existing?.env.map((item) => [item.name, item.value]) ?? []);
     return Object.fromEntries(vars.map((variable) => [variable.name, env.get(variable.name) ?? ""]));
   }, [agent.id, settings.agents, vars]);
   const [values, setValues] = useState<Record<string, string>>(initialValues);
+  const requiredFilled = vars
+    .filter((variable) => variable.optional !== true)
+    .every((variable) => (values[variable.name] ?? "").trim().length > 0);
   const save = async () => {
     await patchSettings({
       agents: upsertAgentEnv(settings, agent.id, values),
@@ -54,7 +65,10 @@ export function AgentAuthSetupPanel({
     : waitingForAuth ? "Continue sign in" : "Continue";
 
   return (
-    <div className="ml-9 mt-1 rounded-xl border border-border/40 bg-bg-surface/55 px-3 py-3 text-xs text-fg-muted shadow-card-soft">
+    <div className={cn(
+      "mt-1 rounded-xl border border-border/40 bg-bg-surface/55 px-3 py-3 text-xs text-fg-muted shadow-card-soft",
+      className ?? "ml-9",
+    )}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-medium text-fg">Set up {agent.label}</div>
@@ -106,20 +120,24 @@ export function AgentAuthSetupPanel({
         <p className="mt-3 max-w-[64ch] leading-5">{method.description}</p>
       )}
 
-      {methodType === "env_var" ? (
+      {isLocalEnvForm || isAuthenticateForm ? (
         <>
           <p className="mt-2 text-[11px] leading-4 text-fg-subtle">
-            Saved as this Agent&apos;s local environment override and passed only when OpenMA starts it.
+            {isLocalEnvForm
+              ? "Saved as this Agent's local environment override and passed only when OpenMA starts it."
+              : "Submitted through ACP authenticate. Backchat does not keep these values."}
           </p>
           <div className="mt-3 grid gap-2">
             {vars.map((variable) => (
               <label key={variable.name} className="grid gap-1">
-                <span className="font-mono text-[11px] text-fg-subtle">
-                  {variable.name}
+                <span className={`${isLocalEnvForm ? "font-mono" : ""} text-[11px] text-fg-subtle`}>
+                  {isLocalEnvForm ? variable.name : (variable.label ?? variable.name)}
                   {variable.optional ? " (optional)" : ""}
                 </span>
                 <input
-                  type={variable.secret === false ? "text" : "password"}
+                  type={isLocalEnvForm
+                    ? (variable.secret === false ? "text" : "password")
+                    : (variable.secret === true ? "password" : "text")}
                   value={values[variable.name] ?? ""}
                   onChange={(event) =>
                     setValues((prev) => ({ ...prev, [variable.name]: event.target.value }))
@@ -139,7 +157,13 @@ export function AgentAuthSetupPanel({
         </p>
       )}
 
-      {waitingForAuth && (
+      {error && (
+        <StatusNotice tone="danger" appearance="surface" className="mt-3">
+          {error}
+        </StatusNotice>
+      )}
+
+      {waitingForAuth && !isAuthenticateForm && (
         <div className="mt-3 rounded-lg bg-brand/8 px-2.5 py-2 text-[11px] leading-4 text-fg-muted">
           Finish setup outside OpenMA. The next real session will use the new credentials.
         </div>
@@ -155,9 +179,19 @@ export function AgentAuthSetupPanel({
           <span />
         )}
         <div className="flex items-center gap-1.5">
-          {methodType === "env_var" ? (
+          {isLocalEnvForm ? (
             <Button type="button" size="sm" onClick={save} disabled={pending} className="h-7 px-2 text-xs">
               Save
+            </Button>
+          ) : isAuthenticateForm ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => onStart(method?.id, { values })}
+              disabled={pending || !method || !requiredFilled}
+              className="h-7 px-2 text-xs"
+            >
+              {pending ? "Saving…" : "Save"}
             </Button>
           ) : (
             <Button

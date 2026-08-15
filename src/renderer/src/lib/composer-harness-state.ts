@@ -18,6 +18,7 @@ import {
 } from "./composer-slash-commands";
 import type { AcpAvailableCommand } from "./session-store";
 import { useSettings } from "./settings-store";
+import { AGENTS_QUERY_KEY } from "./agent-query";
 import {
   configValuesFromOptions,
   readRecentRunPreferences,
@@ -33,6 +34,31 @@ export interface ComposerHarnessState {
   currentAgent?: AgentInfo;
   currentEnabledAgent?: AgentInfo;
   hasHarnessSetup: boolean;
+}
+
+export function composerAuthNeeded(
+  agent?: { auth?: { status?: string; message?: string } } | null,
+  session?: {
+    authRequired?: boolean;
+    auth?: { status?: string; message?: string };
+  } | null,
+): boolean {
+  if (session?.auth?.status === "configured") return false;
+  if (session?.authRequired) return true;
+  const status = session?.auth?.status ?? agent?.auth?.status;
+  return status === "needs-auth" || status === "unknown";
+}
+
+export function composerActionDisabled({
+  runningActionDisabled = false,
+  hasHarnessSetup,
+  authNeeded,
+}: {
+  runningActionDisabled?: boolean;
+  hasHarnessSetup: boolean;
+  authNeeded: boolean;
+}): boolean {
+  return runningActionDisabled || !hasHarnessSetup || authNeeded;
 }
 
 export function deriveComposerHarnessState({
@@ -114,7 +140,7 @@ export function useComposerHarnessState({
   );
   const settings = useSettings();
   const { data: agents = [] } = useQuery({
-    queryKey: ["agents"],
+    queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList(),
     staleTime: 60_000,
   });

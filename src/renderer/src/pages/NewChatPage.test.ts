@@ -14,6 +14,10 @@ describe("NewChatPage route boundary", () => {
     expect(page).toContain('data-page="new-chat"');
     expect(page).toContain("<EmptyStateIntro");
     expect(page).toContain("<Composer");
+    expect(page).toContain('from "@/components/chat/ComposerAuthSetup"');
+    expect(page).toContain("authSetupOpen");
+    expect(page).toContain("onRequestAuth");
+    expect(page.indexOf("<ComposerAuthSetup")).toBeLessThan(page.indexOf("<Composer\n"));
     expect(page).not.toContain("<Conversation");
     expect(chatPage).toContain("return <ChatView />");
     expect(styles).toContain(".new-chat-page .home-suggestion-container");

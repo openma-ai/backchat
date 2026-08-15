@@ -80,6 +80,10 @@ import type {
   ElicitationUrlResponseInfo,
 } from "../shared/api.js";
 import { extractAcpSystemNotice } from "../shared/acp-system-notices.js";
+import {
+  isAuthenticationFailureMessage,
+  sanitizeAuthenticationMessage,
+} from "../shared/auth-errors.js";
 import type { AgentMessageDelivery } from "../shared/agent-interaction.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
 import {
@@ -97,6 +101,11 @@ import { extensionRequestHandlerForHarness } from "./acp-extension-adapters.js";
 import { elicitationCallbackForSession } from "./acp-client-callback-adapters.js";
 
 export type Sender = (msg: SessionEventOut) => void;
+
+type SessionAuthObservation = NonNullable<
+  Extract<SessionEventOut, { type: "session.error" }>["auth"]
+>;
+
 
 interface ActiveSession {
   id: string;
@@ -210,6 +219,24 @@ export interface SessionManagerDeps {
   resolveInstalledAgentVersion?: (
     agentId: string,
   ) => string | undefined | Promise<string | undefined>;
+  /** Write live ACP auth evidence back to the setup snapshot.
+   *  SessionManager must not probe or authenticate. */
+  observeAuth?: (
+    agentId: string,
+    observation: {
+      status: "configured" | "needs-auth" | "unknown";
+      message?: string;
+    },
+  ) => Promise<SessionAuthObservation | void> | SessionAuthObservation | void;
+  /** Write live session config evidence back to the setup snapshot. */
+  observeSessionConfig?: (
+    agentId: string,
+    snapshot: {
+      config_options?: unknown[];
+      available_commands?: unknown[];
+      session_modes?: unknown;
+    },
+  ) => Promise<void> | void;
 }
 
 export class SessionManager {
@@ -222,6 +249,8 @@ export class SessionManager {
   #resolveAgentOverride: SessionManagerDeps["resolveAgentOverride"];
   #resolveInstalledAgentVersion:
     NonNullable<SessionManagerDeps["resolveInstalledAgentVersion"]>;
+  #observeAuth: SessionManagerDeps["observeAuth"];
+  #observeSessionConfig: SessionManagerDeps["observeSessionConfig"];
   #spawner = new NodeSpawner();
   #runtime = new AcpRuntimeImpl(this.#spawner);
   #sessions = new Map<string, ActiveSession>();
@@ -239,6 +268,8 @@ export class SessionManager {
     this.#resolveAgentOverride = deps.resolveAgentOverride;
     this.#resolveInstalledAgentVersion =
       deps.resolveInstalledAgentVersion ?? (() => undefined);
+    this.#observeAuth = deps.observeAuth;
+    this.#observeSessionConfig = deps.observeSessionConfig;
   }
 
   setSender(send: Sender): void {
@@ -311,10 +342,80 @@ export class SessionManager {
     return result;
   }
 
-  #errorResult(session_id: string, message: string): SessionStartResult {
+  async #errorResult(
+    session_id: string,
+    message: string,
+    options?: { error?: unknown; agentId?: string },
+  ): Promise<SessionStartResult> {
     this.#transition(session_id, { type: "session.error", message });
-    this.#send({ type: "session.error", session_id, message });
+    await this.#sendSessionError({
+      session_id,
+      message,
+      error: options?.error,
+      agentId: options?.agentId,
+    });
     return { status: "error", session_id, message };
+  }
+
+  async #observeConfiguredAuth(agentId: string): Promise<void> {
+    if (!this.#observeAuth) return;
+    try {
+      await this.#observeAuth(agentId, { status: "configured" });
+    } catch {
+      // Setup-cache write-back must not fail the live session.
+    }
+  }
+
+  async #observeLiveSessionConfig(
+    agentId: string,
+    snapshot: {
+      config_options?: unknown[];
+      available_commands?: unknown[];
+      session_modes?: unknown;
+    },
+  ): Promise<void> {
+    if (!this.#observeSessionConfig) return;
+    try {
+      await this.#observeSessionConfig(agentId, snapshot);
+    } catch {
+      // Setup-cache write-back must not fail the live session.
+    }
+  }
+
+  async #sendSessionError(p: {
+    session_id: string;
+    message: string;
+    turn_id?: string;
+    error?: unknown;
+    agentId?: string;
+  }): Promise<void> {
+    const authRequired = isAuthRequiredError(p.error)
+      || isAuthenticationFailureMessage(p.message);
+    const message = sanitizeAuthenticationMessage(p.message);
+    let auth: SessionAuthObservation | undefined;
+    if (authRequired && p.agentId && this.#observeAuth) {
+      try {
+        auth = await this.#observeAuth(p.agentId, {
+          status: "needs-auth",
+          message,
+        }) ?? undefined;
+      } catch {
+        auth = undefined;
+      }
+    }
+    this.#send({
+      type: "session.error",
+      session_id: p.session_id,
+      ...(p.turn_id ? { turn_id: p.turn_id } : {}),
+      message,
+      ...(authRequired
+        ? {
+            code: "auth_required" as const,
+            ...(p.agentId ? { agent_id: p.agentId } : {}),
+            ...(auth ? { auth } : {}),
+          }
+        : {}),
+    });
   }
 
   has(id: string): boolean {
@@ -657,6 +758,11 @@ export class SessionManager {
       });
       const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
+      await this.#observeConfiguredAuth(agent.id);
+      await this.#observeLiveSessionConfig(agent.id, {
+        config_options: [...acpSession.configOptions],
+        ...(acpSession.modes ? { session_modes: acpSession.modes } : {}),
+      });
       if (process.env.NODE_ENV !== "test") {
         const readyAt = Date.now();
         process.stderr.write(
@@ -693,6 +799,7 @@ export class SessionManager {
       return this.#errorResult(
         p.session_id,
         e instanceof Error ? e.message : String(e),
+        { error: e, agentId: p.agent_id },
       );
     }
   }
@@ -1197,6 +1304,12 @@ export class SessionManager {
   ): void {
     if (isAvailableCommandsUpdate(event)) {
       sess.latestAvailableCommandsUpdate = event;
+      const commands = availableCommandsFromUpdate(event);
+      if (commands) {
+        void this.#observeLiveSessionConfig(sess.agentId, {
+          available_commands: commands,
+        });
+      }
     }
     this.#send({
       type: "session.event",
@@ -1497,11 +1610,11 @@ export class SessionManager {
           turnId: p.turn_id,
           message: promptErr,
         });
-        this.#send({
-          type: "session.error",
+        await this.#sendSessionError({
           session_id: p.session_id,
           turn_id: p.turn_id,
           message: promptErr,
+          agentId: sess.agentId,
         });
       } else if (
         sess.agentId === "pi-acp" &&
@@ -1555,11 +1668,12 @@ export class SessionManager {
           turnId: p.turn_id,
           message,
         });
-        this.#send({
-          type: "session.error",
+        await this.#sendSessionError({
           session_id: p.session_id,
           turn_id: p.turn_id,
           message,
+          error: e,
+          agentId: sess.agentId,
         });
       }
     } finally {
@@ -1890,11 +2004,19 @@ function formatErrorChain(error: unknown): string {
   return messages.join(" <- ").slice(0, 4_000);
 }
 
+function isAuthRequiredError(error: unknown): boolean {
+  if (typeof error === "string") return isAuthenticationFailureMessage(error);
+  if (!error || typeof error !== "object") return false;
+  if ((error as { code?: unknown }).code === -32000) return true;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" && isAuthenticationFailureMessage(message);
+}
+
 function sanitizeDiagnosticLine(line: string): string {
   return line
     .replace(/\bBearer\s+\S+/gi, "Bearer [redacted]")
     .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "sk-[redacted]")
-    .replace(/\b(api[_-]?key|token|secret)\s*[=:]\s*\S+/gi, "$1=[redacted]")
+    .replace(/\b(api[\s_-]*key|token|secret)\s*[=:]\s*\S+/gi, "$1=[redacted]")
     .slice(0, 4_000);
 }
 
@@ -1940,6 +2062,16 @@ function isAvailableCommandsUpdate(event: unknown): boolean {
       && (event as { sessionUpdate?: unknown }).sessionUpdate
         === "available_commands_update",
   );
+}
+
+function availableCommandsFromUpdate(event: unknown): unknown[] | undefined {
+  if (!isAvailableCommandsUpdate(event)) return undefined;
+  const typed = event as {
+    availableCommands?: unknown;
+    available_commands?: unknown;
+  };
+  const commands = typed.availableCommands ?? typed.available_commands;
+  return Array.isArray(commands) ? commands : undefined;
 }
 
 function acpEventPersistenceType(event: unknown): string | null {

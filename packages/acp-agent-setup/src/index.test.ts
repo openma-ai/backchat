@@ -475,6 +475,123 @@ describe("acp agent setup sdk", () => {
     });
   });
 
+  it("persists probed auth so a restarted list still shows Sign in", async () => {
+    const root = join(tmpdir(), `openma-acp-auth-cache-${process.pid}-${Date.now()}`);
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "needs-auth",
+        methodId: "terminal-login",
+        methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
+      },
+    });
+
+    const deps = {
+      acpBinDir: join(root, "bin"),
+      acpInstallRoot: join(root, "acp"),
+      registryCachePath: join(root, "registry.json"),
+      probeCachePath: join(root, "probe-cache.json"),
+    };
+    await mkdir(deps.acpBinDir, { recursive: true });
+
+    const probingService = createAcpAgentSetupService(deps);
+    await probingService.warmup();
+    const restartedService = createAcpAgentSetupService(deps);
+    const restored = await restartedService.listAgents();
+
+    expect(restored[0]?.auth).toMatchObject({
+      status: "needs-auth",
+      methodId: "terminal-login",
+      methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("writes observed session auth back onto the global agent snapshot", async () => {
+    const root = join(tmpdir(), `openma-acp-observe-auth-${process.pid}-${Date.now()}`);
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "configured",
+        methodId: "terminal-login",
+        methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
+      },
+    });
+
+    const deps = {
+      acpBinDir: join(root, "bin"),
+      acpInstallRoot: join(root, "acp"),
+      registryCachePath: join(root, "registry.json"),
+      probeCachePath: join(root, "probe-cache.json"),
+    };
+    await mkdir(deps.acpBinDir, { recursive: true });
+    const service = createAcpAgentSetupService(deps);
+    await service.warmup();
+
+    const observed = await service.observeAuth("fake-agent", {
+      status: "needs-auth",
+      message: "Authentication required",
+    });
+    const listed = await service.listAgents();
+    const restarted = createAcpAgentSetupService(deps);
+    const restored = await restarted.listAgents();
+
+    expect(observed).toMatchObject({
+      status: "needs-auth",
+      message: expect.stringContaining("Authentication required"),
+      methodId: "terminal-login",
+      methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
+    });
+    expect(listed[0]?.auth).toMatchObject({
+      status: "needs-auth",
+      methodId: "terminal-login",
+    });
+    expect(restored[0]?.auth).toMatchObject({
+      status: "needs-auth",
+      methodId: "terminal-login",
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("writes observed live session config back onto the global agent snapshot", async () => {
+    const root = join(tmpdir(), `openma-acp-observe-config-${process.pid}-${Date.now()}`);
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: { status: "configured" },
+    });
+
+    const deps = {
+      acpBinDir: join(root, "bin"),
+      acpInstallRoot: join(root, "acp"),
+      registryCachePath: join(root, "registry.json"),
+      probeCachePath: join(root, "probe-cache.json"),
+    };
+    await mkdir(deps.acpBinDir, { recursive: true });
+    const service = createAcpAgentSetupService(deps);
+    await service.warmup();
+
+    await service.observeSessionConfig("fake-agent", {
+      config_options: [{ id: "model", type: "select", currentValue: "kimi" }],
+      available_commands: [{ name: "status" }],
+    });
+    const listed = await service.listAgents();
+    const restarted = createAcpAgentSetupService(deps);
+    const restored = await restarted.listAgents();
+
+    expect(listed[0]?.config_options).toEqual([
+      { id: "model", type: "select", currentValue: "kimi" },
+    ]);
+    expect(listed[0]?.available_commands).toEqual([{ name: "status" }]);
+    expect(restored[0]?.config_options).toEqual([
+      { id: "model", type: "select", currentValue: "kimi" },
+    ]);
+    expect(restored[0]?.available_commands).toEqual([{ name: "status" }]);
+    await rm(root, { recursive: true, force: true });
+  });
+
   it("records completed authentication without a follow-up capability probe", async () => {
     authenticateAgentMock.mockResolvedValue({ status: "completed" });
     probeAgentAuthStatusMock.mockResolvedValue({ status: "configured" });
@@ -498,13 +615,57 @@ describe("acp agent setup sdk", () => {
       ),
     });
 
-    const agents = await service.authenticateAgent("fake-agent", { methodId: "login" });
+    const agents = await service.authenticateAgent("fake-agent", {
+      methodId: "api-key",
+      secret: "sk-test-abcdef",
+    });
 
+    expect(authenticateAgentMock).toHaveBeenCalledWith(expect.objectContaining({
+      methodId: "api-key",
+      secret: "sk-test-abcdef",
+    }));
     expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
     expect(probeAgentSessionConfigMock).not.toHaveBeenCalled();
     expect(agents[0]?.auth).toMatchObject({
       status: "configured",
-      methodId: "login",
+      methodId: "api-key",
+    });
+  });
+
+  it("forwards authenticate form values without a follow-up capability probe", async () => {
+    authenticateAgentMock.mockResolvedValue({ status: "completed" });
+
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(
+        tmpdir(),
+        `sdk-post-gateway-auth-${process.pid}-${Date.now()}.json`,
+      ),
+    });
+
+    const agents = await service.authenticateAgent("fake-agent", {
+      methodId: "custom-endpoint",
+      values: {
+        baseUrl: "https://www.example.com",
+        "api-key": "TOKEN",
+        providerName: "custom",
+      },
+    });
+
+    expect(authenticateAgentMock).toHaveBeenCalledWith(expect.objectContaining({
+      methodId: "custom-endpoint",
+      values: {
+        baseUrl: "https://www.example.com",
+        "api-key": "TOKEN",
+        providerName: "custom",
+      },
+    }));
+    expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
+    expect(probeAgentSessionConfigMock).not.toHaveBeenCalled();
+    expect(agents[0]?.auth).toMatchObject({
+      status: "configured",
+      methodId: "custom-endpoint",
     });
   });
 

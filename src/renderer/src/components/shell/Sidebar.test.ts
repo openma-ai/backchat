@@ -179,6 +179,28 @@ describe("groupSidebarSessions", () => {
     expect(pairRow).toContain("<DropdownMenu");
   });
 
+  it("confirms archive when the chat still has a live scheduled task", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+
+    expect(source).toContain("requestArchive(");
+    expect(source).toContain("<ArchiveScheduledChatDialog");
+    expect(source).not.toContain("sessionStore.archive(row.id)");
+    expect(source).not.toContain("sessionStore.archive(session.id)");
+  });
+
+  it("shows a display-only schedule clock in the session row action slot", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const sessionRow = source.slice(
+      source.indexOf("function SessionRow"),
+      source.indexOf("function PairChatLauncher"),
+    );
+
+    expect(sessionRow).toContain('data-sidebar-schedule-indicator="true"');
+    expect(sessionRow).toContain("pointer-events-none");
+    expect(sessionRow).toContain("CalendarClockIcon");
+    expect(sessionRow).toContain("opacity-0 group-hover:opacity-100");
+  });
+
   it("links the multi-Agent picker to Agent settings with the settings icon", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const launcher = source.slice(source.indexOf("function PairChatLauncher"));
@@ -302,6 +324,29 @@ describe("groupSidebarSessions", () => {
     // No row renders a bare glyph outside the shared box.
     expect(source).not.toContain('className="size-3.5 shrink-0');
     expect(source).not.toContain('"inline-flex size-4 shrink-0');
+  });
+
+  it("puts the running spinner in the same reserved trailing slot as the schedule clock", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const styles = readFileSync(
+      resolve(__dirname, "../../styles/index.css"),
+      "utf8",
+    );
+    const sessionRow = source.slice(
+      source.indexOf("function SessionRow"),
+      source.indexOf("function PairChatLauncher"),
+    );
+    const trailing = sessionRow.slice(sessionRow.indexOf("sidebar-row-trailing"));
+
+    expect(styles).toContain(".sidebar-row-trailing {");
+    expect(styles).toContain("width: var(--sidebar-row-action-size);");
+    expect(sessionRow).toContain("sidebar-row-trailing");
+    expect(trailing.split("sidebar-row-trailing").length - 1).toBe(1);
+    expect(trailing).toContain("{running ?");
+    expect(trailing.indexOf("Loader2Icon")).toBeGreaterThan(trailing.indexOf("sidebar-row-trailing"));
+    expect(trailing.indexOf("data-sidebar-schedule-indicator")).toBeGreaterThan(
+      trailing.indexOf("Loader2Icon"),
+    );
   });
 
   it("renders a dedicated Pinned section before every other conversation section", () => {

@@ -46,8 +46,13 @@ import { useSidebarCollapse } from "@/components/shell/AppShell";
 import { folderName, projectKeyForCwd } from "@/lib/project-path";
 import { useI18n } from "@/lib/i18n";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
+import { SCHEDULES_QUERY_KEY, scheduledSourceSessionIds } from "@/lib/scheduled-task-presentation";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { RenameDialog } from "./RenameDialog";
+import {
+  ArchiveScheduledChatDialog,
+  useArchiveSessions,
+} from "./ArchiveScheduledChatDialog";
 import { AgentUpdateControl } from "./AgentUpdateControl";
 import type { ProjectInfo } from "@shared/projects.js";
 
@@ -176,6 +181,12 @@ export function Sidebar() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  const {
+    pending: pendingArchive,
+    requestArchive,
+    confirmArchive,
+    cancelArchive,
+  } = useArchiveSessions();
   const [openProjectKeys, setOpenProjectKeys] = useState<Set<string>>(
     () => new Set(),
   );
@@ -187,6 +198,14 @@ export function Sidebar() {
     queryFn: () => window.backchat.projectsList(),
     staleTime: 30_000,
   });
+  const scheduledSessionIds = scheduledSourceSessionIds(
+    useQuery({
+      queryKey: SCHEDULES_QUERY_KEY,
+      queryFn: () => window.backchat.schedulesList(),
+      staleTime: 5_000,
+      refetchInterval: 4_000,
+    }).data ?? [],
+  );
   const grouped = useMemo(
     () => groupSidebarSessions(sessions, savedProjects),
     [savedProjects, sessions],
@@ -437,11 +456,13 @@ export function Sidebar() {
                             row={s}
                             agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
+                            hasSchedule={scheduledSessionIds.has(s.id)}
                             labelCls={labelCls}
                             onSelect={() => onSelectSession(s.id)}
                             onRename={() =>
                               requestRename({ kind: "session", id: s.id, title: s.label })
                             }
+                            onArchive={() => void requestArchive([s.id])}
                             menuOpen={openMenuId === s.id}
                             onMenuOpenChange={(open) =>
                               setOpenMenuId(open ? s.id : null)
@@ -514,8 +535,8 @@ export function Sidebar() {
                                   : onNewProjectChat(project.primaryRoot)
                               }
                               onArchiveChats={() => {
-                                project.sessions.forEach((session) =>
-                                  sessionStore.archive(session.id),
+                                void requestArchive(
+                                  project.sessions.map((session) => session.id),
                                 );
                               }}
                               menuOpen={openMenuId === `project:${project.key}`}
@@ -533,11 +554,13 @@ export function Sidebar() {
                                       row={s}
                                       agentIconUrl={agentIconUrls.get(s.agent_id)}
                                       active={s.id === activeId && location.pathname.startsWith("/chat/")}
+                                      hasSchedule={scheduledSessionIds.has(s.id)}
                                       labelCls={labelCls}
                                       onSelect={() => onSelectSession(s.id)}
                                       onRename={() =>
                                         requestRename({ kind: "session", id: s.id, title: s.label })
                                       }
+                                      onArchive={() => void requestArchive([s.id])}
                                       menuOpen={openMenuId === s.id}
                                       onMenuOpenChange={(openMenu) =>
                                         setOpenMenuId(openMenu ? s.id : null)
@@ -567,11 +590,13 @@ export function Sidebar() {
                             row={s}
                             agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
+                            hasSchedule={scheduledSessionIds.has(s.id)}
                             labelCls={labelCls}
                             onSelect={() => onSelectSession(s.id)}
                             onRename={() =>
                               requestRename({ kind: "session", id: s.id, title: s.label })
                             }
+                            onArchive={() => void requestArchive([s.id])}
                             menuOpen={openMenuId === s.id}
                             onMenuOpenChange={(open) =>
                               setOpenMenuId(open ? s.id : null)
@@ -636,6 +661,15 @@ export function Sidebar() {
           if (!open) setRenameTarget(null);
         }}
         onRename={submitRename}
+      />
+      <ArchiveScheduledChatDialog
+        open={pendingArchive !== null}
+        taskNames={pendingArchive?.taskNames ?? []}
+        sessionCount={pendingArchive?.sessionIds.length ?? 0}
+        onOpenChange={(open) => {
+          if (!open) cancelArchive();
+        }}
+        onConfirm={confirmArchive}
       />
     </div>
   );
@@ -920,18 +954,22 @@ function SessionRow({
   row,
   agentIconUrl,
   active,
+  hasSchedule = false,
   labelCls,
   onSelect,
   onRename,
+  onArchive,
   menuOpen,
   onMenuOpenChange,
 }: {
   row: SessionRow;
   agentIconUrl?: string;
   active: boolean;
+  hasSchedule?: boolean;
   labelCls: string;
   onSelect: () => void;
   onRename: () => void;
+  onArchive: () => void;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
 }) {
@@ -976,53 +1014,74 @@ function SessionRow({
             <span className={cn("flex-1 truncate text-left", labelCls)}>{row.label}</span>
           </button>
 
-          <span className="ml-auto inline-flex w-5 shrink-0 items-center justify-end">
+          <span className="sidebar-row-trailing">
             {running ? (
-              <Loader2Icon className="size-3 animate-spin text-fg-subtle" />
-            ) : !active && row.unread ? (
-              <span className="size-1.5 rounded-full" style={{ backgroundColor: "oklch(0.62 0.16 240)" }} />
+              <span className="sidebar-row-action pointer-events-none" aria-hidden="true">
+                <Loader2Icon className="animate-spin" />
+              </span>
             ) : (
-              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={t("sidebar.sessionActions")}
-                    onClick={(e) => e.stopPropagation()}
-                    data-sidebar-row-action="true"
+              <>
+                {hasSchedule && (
+                  <span
+                    data-sidebar-schedule-indicator="true"
+                    aria-hidden="true"
                     className={cn(
-                      "sidebar-row-action transition-opacity",
-                      menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                      "sidebar-row-action pointer-events-none absolute inset-0",
+                      menuOpen
+                        ? "opacity-0"
+                        : "opacity-100 group-hover:opacity-0",
                     )}
                   >
-                    <MoreHorizontalIcon aria-hidden="true" />
-                  </button>
-                </DropdownMenuTrigger>
-                 <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
-                  <DropdownMenuItem
-                    onSelect={onRename}
-                    className="flex items-center gap-2 py-1 text-xs"
-                  >
-                    <SquarePenIcon className="size-3.5" />
-                    <span>{t("sidebar.rename")}</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
-                  <DropdownMenuItem
-                    onSelect={() => (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id))}
-                    className="flex items-center gap-2 py-1 text-xs"
-                  >
-                    {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
-                    <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
-                  <DropdownMenuItem
-                    onSelect={() => sessionStore.archive(row.id)}
-                    className="flex items-center gap-2 py-1 text-xs"
-                  >
-                    <ArchiveIcon className="size-3.5" />
-                    <span>{t("sidebar.archive")}</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <CalendarClockIcon />
+                  </span>
+                )}
+                {!hasSchedule && !active && row.unread ? (
+                  <span className="size-1.5 rounded-full" style={{ backgroundColor: "oklch(0.62 0.16 240)" }} />
+                ) : (
+                  <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={t("sidebar.sessionActions")}
+                        onClick={(e) => e.stopPropagation()}
+                        data-sidebar-row-action="true"
+                        className={cn(
+                          "sidebar-row-action transition-opacity",
+                          menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                          hasSchedule && !menuOpen && "pointer-events-none group-hover:pointer-events-auto",
+                        )}
+                      >
+                        <MoreHorizontalIcon aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
+                      <DropdownMenuItem
+                        onSelect={onRename}
+                        className="flex items-center gap-2 py-1 text-xs"
+                      >
+                        <SquarePenIcon className="size-3.5" />
+                        <span>{t("sidebar.rename")}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
+                      <DropdownMenuItem
+                        onSelect={() => (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id))}
+                        className="flex items-center gap-2 py-1 text-xs"
+                      >
+                        {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
+                        <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
+                      <DropdownMenuItem
+                        onSelect={onArchive}
+                        className="flex items-center gap-2 py-1 text-xs"
+                      >
+                        <ArchiveIcon className="size-3.5" />
+                        <span>{t("sidebar.archive")}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </>
             )}
           </span>
         </div>
@@ -1048,7 +1107,7 @@ function SessionRow({
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-border/60" />
           <ContextMenu.Item
-            onSelect={() => sessionStore.archive(row.id)}
+            onSelect={onArchive}
             className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <ArchiveIcon className="size-3.5" />

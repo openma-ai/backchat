@@ -37,6 +37,46 @@ describe("chat module boundaries", () => {
     );
   });
 
+  it("opens harness sign-in from the composer and keeps the form above it", () => {
+    const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
+    const composer = readFileSync(resolve(__dirname, "Composer.tsx"), "utf8");
+    const composerAuth = readFileSync(
+      resolve(__dirname, "ComposerAuthSetup.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain('from "./ComposerAuthSetup"');
+    expect(source).toContain("const composerAuthSetup =");
+    expect(source).toContain("authSetupOpen");
+    expect(source).toContain("onRequestAuth");
+    expect(source.indexOf("{composerAuthSetup}")).toBeLessThan(
+      source.indexOf("{composer}"),
+    );
+    expect(source).toContain("active?.authRequired");
+    expect(source).not.toContain("t(\"chat.sessionErrored\") && active?.authRequired");
+    expect(composer).toContain("ComposerAuthControls");
+    expect(composer.indexOf("<PermissionModeChip")).toBeLessThan(
+      composer.indexOf("<ComposerAuthControls"),
+    );
+    expect(composer.indexOf("<ComposerAuthControls")).toBeLessThan(
+      composer.indexOf("<SessionRunChip"),
+    );
+    expect(composer.indexOf("data-composer-run-actions")).toBeLessThan(
+      composer.indexOf("<ComposerAuthControls"),
+    );
+    expect(composer).toContain("disabled={!!disabled || authNeeded}");
+    expect(composer).toContain('t("chat.signInToChat")');
+    expect(composer).toContain("composerActionDisabled");
+    expect(composer).toContain('agentsList({ refresh: true })');
+    expect(composerAuth).toContain("open");
+    expect(composerAuth).toContain("AgentAuthSetupPanel");
+    expect(composerAuth).toContain("AGENTS_QUERY_KEY");
+    expect(composerAuth).toContain("agentAuthenticate");
+    expect(composerAuth).toContain("values");
+    expect(composerAuth).toContain("clearAuthRequired");
+    expect(composerAuth).toContain("auth.error");
+  });
+
   it("delegates the composer implementation to its dedicated module", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
 
@@ -551,7 +591,7 @@ describe("home suggestions", () => {
       '{labelTruncated && (\n                  <TooltipContent side="top">{configLabel}</TooltipContent>\n                )}',
     );
     expect(runTrigger).toContain(
-      'className="min-w-0 max-w-[140px] truncate"',
+      '"min-w-0 max-w-[140px] truncate"',
     );
   });
 
@@ -677,7 +717,7 @@ describe("slash command presentation", () => {
       '<TooltipContent side="top">{configLabel}</TooltipContent>',
     );
     expect(controlsSource).toContain(
-      'className="min-w-0 max-w-[140px] truncate"',
+      '"min-w-0 max-w-[140px] truncate"',
     );
     expect(controlsSource).toContain('t("chat.model")');
     expect(controlsSource).toContain('t("chat.effort")');

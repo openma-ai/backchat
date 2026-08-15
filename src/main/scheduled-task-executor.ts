@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { ScheduleInfo } from "../shared/schedules.js";
+import { wrapScheduledTaskPrompt } from "../shared/scheduled-task-prompt.js";
 import type {
   SessionPromptParams,
   SessionStartParams,
@@ -52,7 +53,11 @@ export class ScheduledTaskExecutor {
     await this.#prompt({
       session_id: sessionId,
       turn_id: this.#createId(),
-      text: schedule.prompt,
+      text: wrapScheduledTaskPrompt({
+        id: schedule.id,
+        name: schedule.name,
+        prompt: schedule.prompt,
+      }),
     });
     return { sessionId };
   }

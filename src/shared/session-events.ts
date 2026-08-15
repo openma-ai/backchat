@@ -556,6 +556,7 @@ export type SessionEventOut = (
           name?: string;
           description?: string;
           type?: string;
+          form?: "fields";
           vars?: Array<{
             name: string;
             label?: string;

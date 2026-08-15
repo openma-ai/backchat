@@ -123,6 +123,29 @@ describe("deriveAgentSetupState", () => {
     }));
 
     expect(state.statusText).toBe("Update available");
+    expect(state.versionText).toBe("1.0.0 → 2.0.0");
     expect(state.setupAction).toEqual({ kind: "upgrade", label: "Upgrade" });
+  });
+
+  it("keeps auth status and still exposes the installed version", () => {
+    const state = deriveAgentSetupState(agent({
+      installedVersion: "0.4.6",
+      auth: {
+        status: "configured",
+        message: "Authentication configured.",
+      },
+    }));
+
+    expect(state.statusText).toBe("Auth configured");
+    expect(state.versionText).toBe("0.4.6");
+  });
+
+  it("shows the installed version beside status instead of burying it in copy", () => {
+    const state = deriveAgentSetupState(agent({
+      installedVersion: "0.0.33",
+    }));
+
+    expect(state.statusText).toBe("Installed");
+    expect(state.versionText).toBe("0.0.33");
   });
 });

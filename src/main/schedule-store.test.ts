@@ -147,6 +147,46 @@ describe("ScheduleStore", () => {
     store.close();
   });
 
+  it("deletes every schedule owned by a source session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openma-schedules-"));
+    roots.push(root);
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-19T01:00:00.000Z");
+    const store = new ScheduleStore(join(root, "schedules.db"));
+    const keep = store.create({
+      name: "Keep",
+      prompt: "Keep",
+      trigger: { type: "at", at: "2026-07-20T10:00:00+08:00" },
+      target: "current_task",
+      sourceSessionId: "task-keep",
+      agentId: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.create({
+      name: "Drop A",
+      prompt: "Drop A",
+      trigger: { type: "at", at: "2026-07-20T11:00:00+08:00" },
+      target: "current_task",
+      sourceSessionId: "task-drop",
+      agentId: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.create({
+      name: "Drop B",
+      prompt: "Drop B",
+      trigger: { type: "interval", everyMs: 60_000 },
+      target: "current_task",
+      sourceSessionId: "task-drop",
+      agentId: "codex-acp",
+      cwd: "/tmp/project",
+    });
+
+    store.deleteBySourceSession("task-drop");
+
+    expect(store.list().map((item) => item.id)).toEqual([keep.id]);
+    store.close();
+  });
+
   it("skips missed recurring intervals instead of replaying a backlog", async () => {
     const root = await mkdtemp(join(tmpdir(), "openma-schedules-"));
     roots.push(root);

@@ -1,3 +1,4 @@
+import { PageScaffold } from "@/components/shell/PageScaffold";
 import { useI18n } from "@/lib/i18n";
 import { useState } from "react";
 import { EyeIcon, EyeOffIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
@@ -15,6 +16,7 @@ import type { SettingsMcpServer } from "@shared/settings.js";
  * for secret values, and inline edit of existing servers.
  */
 export function SettingsMcpServers() {
+  const { t } = useI18n();
   const settings = useSettings();
   const [editing, setEditing] = useState<SettingsMcpServer | "new" | null>(null);
   if (!settings) return null;
@@ -33,22 +35,21 @@ export function SettingsMcpServers() {
   };
 
   return (
-    <div className="space-y-5 text-xs">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-sm font-medium text-fg">MCP Servers</h1>
-          <p className="mt-1 max-w-[64ch] text-[11px] leading-5 text-fg-muted">
-            Tools & data sources every chat session connects to. Forwarded
-            verbatim to <span className="font-mono">session/new</span>.
-          </p>
-        </div>
-        {editing === null && (
-          <Button size="sm" onClick={() => setEditing("new")}>
-            <PlusIcon className="size-3.5" />
-            Add server
-          </Button>
-        )}
-      </header>
+    <PageScaffold
+      title={t("settings.mcpServers")}
+      description={(
+        <>
+          Tools & data sources every chat session connects to. Forwarded
+          verbatim to <span className="font-mono">session/new</span>.
+        </>
+      )}
+      actions={editing === null ? (
+        <Button size="sm" onClick={() => setEditing("new")}>
+          <PlusIcon className="size-3.5" />
+          Add server
+        </Button>
+      ) : undefined}
+    >
 
       {editing !== null && (
         <ServerForm
@@ -101,7 +102,7 @@ export function SettingsMcpServers() {
           ))}
         </ul>
       )}
-    </div>
+    </PageScaffold>
   );
 }
 

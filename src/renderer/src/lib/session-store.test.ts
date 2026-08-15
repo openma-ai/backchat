@@ -2195,6 +2195,170 @@ describe("SessionStore event reducers", () => {
     expect(turn?.assistantText).toBe("Done");
   });
 
+  test("auth_required settles the live turn without locking the composer", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-auth-required",
+      acp_session_id: "acp-auth-required",
+      agent_id: "dsh-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn("turn-auth-required", "sess-auth-required", "hello");
+
+    store.apply({
+      type: "session.error",
+      session_id: "sess-auth-required",
+      message: "Authentication required",
+      code: "auth_required",
+      agent_id: "dsh-acp",
+      auth: {
+        status: "needs-auth",
+        message: "Authentication required",
+        methods: [{ id: "login", name: "Login", type: "terminal" }],
+      },
+    });
+
+    expect(store.get("sess-auth-required")).toMatchObject({
+      status: "ready",
+      authRequired: true,
+      activeTurnId: undefined,
+      auth: {
+        status: "needs-auth",
+        message: "Authentication required",
+      },
+    });
+    expect(store.turnsFor("sess-auth-required")[0]).toMatchObject({
+      status: "error",
+      errorMessage: "Authentication required",
+    });
+  });
+
+  test("Authentication required settles the live turn even without an auth_required code", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-auth-message",
+      acp_session_id: "acp-auth-message",
+      agent_id: "dsh-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn("turn-auth-message", "sess-auth-message", "hello");
+
+    store.apply({
+      type: "session.error",
+      session_id: "sess-auth-message",
+      message: "Authentication required",
+    });
+
+    expect(store.get("sess-auth-message")).toMatchObject({
+      status: "ready",
+      authRequired: true,
+      activeTurnId: undefined,
+      lastError: undefined,
+    });
+    expect(store.turnsFor("sess-auth-message")[0]?.status).toBe("error");
+  });
+
+  test("wrapped invalid-key turn failures reopen auth instead of locking the chat", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-auth-invalid-key",
+      acp_session_id: "acp-auth-invalid-key",
+      agent_id: "dsh-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn("turn-auth-invalid-key", "sess-auth-invalid-key", "hi");
+
+    store.apply({
+      type: "session.error",
+      session_id: "sess-auth-invalid-key",
+      turn_id: "turn-auth-invalid-key",
+      message: "Internal error: turn failed: Authentication Fails, Your api key: fadf is invalid",
+    });
+
+    expect(store.get("sess-auth-invalid-key")).toMatchObject({
+      status: "ready",
+      authRequired: true,
+      activeTurnId: undefined,
+      lastError: undefined,
+      auth: {
+        status: "needs-auth",
+        message: "Internal error: turn failed: Authentication Fails, Your api key=[redacted] is invalid",
+      },
+    });
+    expect(store.turnsFor("sess-auth-invalid-key")[0]).toMatchObject({
+      status: "error",
+      errorMessage: "Internal error: turn failed: Authentication Fails, Your api key=[redacted] is invalid",
+    });
+  });
+
+  test("replays an authentication session.error without locking the composer", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-replay-auth-required";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-auth-required",
+      agent_id: "dsh-acp",
+      cwd: "/tmp/project",
+    });
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "hello" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify(createOpenMAEvent({
+          event_id: "canonical-auth-error",
+          type: "session.error",
+          session_id: sessionId,
+          source: { kind: "harness", harness: "dsh-acp", adapter: "acp" },
+          occurred_at: "2026-08-05T00:00:02.000Z",
+          data: { message: "Authentication required" },
+        })),
+        ts: 2_000,
+      },
+    ]);
+
+    expect(store.get(sessionId)).toMatchObject({
+      status: "ready",
+      authRequired: true,
+      lastError: undefined,
+    });
+  });
+
+  test("session.ready clears a previous auth_required block", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-auth-clear", "dsh-acp", "dsh");
+    store.apply({
+      type: "session.error",
+      session_id: "sess-auth-clear",
+      message: "Authentication required",
+      code: "auth_required",
+      agent_id: "dsh-acp",
+      auth: { status: "needs-auth", message: "Authentication required" },
+    });
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-auth-clear",
+      acp_session_id: "acp-auth-clear",
+      agent_id: "dsh-acp",
+      cwd: "/tmp/project",
+    });
+
+    expect(store.get("sess-auth-clear")).toMatchObject({
+      status: "ready",
+      authRequired: false,
+      auth: { status: "configured" },
+    });
+  });
+
 });
 
 describe("SessionStore slash commands", () => {

@@ -469,6 +469,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       };
     },
     resolveInstalledAgentVersion,
+    observeAuth: (agentId, observation) => agentSetup.observeAuth(agentId, observation),
+    observeSessionConfig: (agentId, snapshot) => agentSetup.observeSessionConfig(agentId, snapshot),
     // Phase 6: permission / fs / terminal brokers — wired so the agent
     // can actually read files, write files, run commands. Defaults are no
     // longer "deny" — they go to a renderer modal (permission, out-of-cwd
@@ -599,12 +601,23 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   });
   ipcMain.handle(
     InvokeChannel.AgentAuthenticate,
-    (_e, p: { id: string; methodId?: string }): Promise<AgentInfo[]> | AgentInfo[] => {
+    (_e, p: {
+      id: string;
+      methodId?: string;
+      secret?: string;
+      values?: Record<string, string>;
+      gateway?: { baseUrl: string; headers?: Record<string, string>; providerName?: string };
+    }): Promise<AgentInfo[]> | AgentInfo[] => {
       if (testAgentSetupFixture) {
         recordTestAgentSetupCall({ type: "auth", id: p.id, methodId: p.methodId });
         return testAgentSetupResult("authenticateResults", p.id);
       }
-      return agentSetup.authenticateAgent(p.id, { methodId: p.methodId });
+      return agentSetup.authenticateAgent(p.id, {
+        methodId: p.methodId,
+        ...(p.secret ? { secret: p.secret } : {}),
+        ...(p.values ? { values: p.values } : {}),
+        ...(p.gateway ? { gateway: p.gateway } : {}),
+      });
     },
   );
   ipcMain.handle(InvokeChannel.SessionStart, (_e, p: SessionStartParams) => {
@@ -848,8 +861,11 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     pinSession(p.session_id));
   ipcMain.handle(InvokeChannel.SessionsUnpin, (_e, p: { session_id: string }) =>
     unpinSession(p.session_id));
-  ipcMain.handle(InvokeChannel.SessionsArchive, (_e, p: { session_id: string }) =>
-    archiveSession(p.session_id));
+  ipcMain.handle(InvokeChannel.SessionsArchive, (_e, p: { session_id: string }) => {
+    scheduleStore.deleteBySourceSession(p.session_id);
+    scheduleEngine.reschedule();
+    archiveSession(p.session_id);
+  });
   ipcMain.handle(InvokeChannel.SessionsUnarchive, (_e, p: { session_id: string }) =>
     unarchiveSession(p.session_id));
   ipcMain.handle(
@@ -879,6 +895,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       } catch {
         /* dir might be gone already — fine */
       }
+      scheduleStore.deleteBySourceSession(p.session_id);
+      scheduleEngine.reschedule();
       deleteSession(p.session_id);
     },
   );

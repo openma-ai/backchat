@@ -38,6 +38,7 @@ import { browserSettings } from "@shared/browser-settings.js";
 import { cn } from "@/lib/utils";
 import { previewLocalFile } from "@/lib/file-preview";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { SCHEDULES_QUERY_KEY } from "@/lib/scheduled-task-presentation";
 import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
 import {
   selectActive,
@@ -126,7 +127,7 @@ export function SideChatPanel() {
     refetchInterval: 1_500,
   }).data ?? [];
   const schedules = (useQuery({
-    queryKey: ["schedules", mainActive?.id],
+    queryKey: SCHEDULES_QUERY_KEY,
     queryFn: () => window.backchat.schedulesList(),
     enabled: !!mainActive?.id,
     refetchInterval: 2_000,
@@ -319,8 +320,19 @@ export function SideChatPanel() {
   }, [mainActive]);
 
   const openSchedule = useCallback((schedule: ScheduleInfo) => {
-    sessionStore.openSideTab("schedule", schedule.id, schedule.name);
-  }, []);
+    if (!mainActive) return;
+    const existing = sessionStore.sideTabs().find(
+      (tab) => tab.type === "schedule" && tab.payload === schedule.id,
+    );
+    sessionStore.openSideTabForTask(
+      mainActive.id,
+      "schedule",
+      schedule.id,
+      schedule.name,
+      existing?.id,
+    );
+    selectPanel();
+  }, [mainActive, selectPanel]);
 
   const closeTab = useCallback((tab: SideTab) => {
     // Tear down the underlying resource before removing the tab.

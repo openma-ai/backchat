@@ -1,13 +1,14 @@
+import { PageScaffold } from "@/components/shell/PageScaffold";
+import { useI18n } from "@/lib/i18n";
+
 /**
  * Settings → About. Static metadata + links. Phase 9 adds a "Check for
  * updates" button hooked to electron-updater.
  */
 export function SettingsAbout() {
+  const { t } = useI18n();
   return (
-    <div className="space-y-5 text-xs">
-      <header>
-        <h1 className="text-sm font-medium text-fg">About</h1>
-      </header>
+    <PageScaffold title={t("settings.about")}>
       <dl className="overflow-hidden rounded-xl border border-border/45 bg-bg/70 text-xs shadow-card-soft">
         <Row label="App">Backchat 0.0.1</Row>
         <Row label="Engine">Electron 42 · React 19 · TanStack Router</Row>
@@ -22,7 +23,7 @@ export function SettingsAbout() {
         their own model providers — review their docs for what leaves the
         machine.
       </p>
-    </div>
+    </PageScaffold>
   );
 }
 

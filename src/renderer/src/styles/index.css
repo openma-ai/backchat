@@ -178,6 +178,19 @@
   height: var(--sidebar-row-action-icon-size);
 }
 
+/* One reserved trailing slot: running spinner and schedule clock occupy
+   this same box so their centers stay on one column across rows. */
+.sidebar-row-trailing {
+  position: relative;
+  display: inline-flex;
+  width: var(--sidebar-row-action-size);
+  height: var(--sidebar-row-action-size);
+  flex: 0 0 var(--sidebar-row-action-size);
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+
 /* Sidebar rhythm — 2px between rows inside a section, one clear 16px step
    between sections. Sections carry no trailing margins of their own, so the
    ladder cannot drift when sections render conditionally. */
@@ -1858,6 +1871,17 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Grayscale smoothing thins every stroke, which costs far more on light text
+   over a dark canvas than the reverse: the glyph core reaches the foreground
+   token but the strokes around it wash out to mid-gray, so correctly
+   specified text still reads as dim. Dark mode therefore keeps the
+   platform's stroke dilation. Light mode stays on grayscale smoothing, where
+   dilation instead makes dark-on-light text look overweight. */
+html.dark body {
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 /* Chat prose is multilingual long-form content. A native system stack keeps

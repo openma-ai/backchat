@@ -48,6 +48,16 @@ export interface AuthenticateAgentOptions {
   backgroundAuthTimeoutMs?: number;
   spawner?: Spawner;
   methodId?: string;
+  /** Codex-shaped Agent Auth: sent as `_meta["api-key"].apiKey`. */
+  secret?: string;
+  /** Generic in-app form values. Encoded from the method's `_meta` convention. */
+  values?: Record<string, string>;
+  /** Codex-shaped Agent Auth: sent as `_meta.gateway`. */
+  gateway?: {
+    baseUrl: string;
+    headers?: Record<string, string>;
+    providerName?: string;
+  };
   launchInteractiveAuth?: (options: TerminalAuthLaunchOptions) => Promise<void>;
 }
 
@@ -68,6 +78,8 @@ export interface ProbeAgentAuthMethod {
   name?: string;
   description?: string;
   type: string;
+  /** In-app fields submitted through `authenticate` `_meta`. */
+  form?: "fields";
   vars?: Array<{
     name: string;
     label?: string;
@@ -104,12 +116,13 @@ const ACP_CLIENT_CAPABILITIES: ClientCapabilities = {
   terminal: true,
   auth: {
     terminal: true,
+    _meta: { gateway: true },
   },
   _meta: {
     "terminal-auth": true,
     terminal_output: true,
   },
-};
+} as ClientCapabilities;
 
 function authMethodType(method: AuthMethod): string {
   const type = (method as { type?: unknown }).type;
@@ -232,6 +245,78 @@ function terminalAuthFromMethod(
   };
 }
 
+function apiKeyAuthMeta(method: AuthMethod): Record<string, unknown> | null {
+  const meta = authMethodMeta(method);
+  if (!meta) return null;
+  const block = meta["api-key"];
+  return isRecord(block) ? block : null;
+}
+
+function apiKeyFormVars(method: AuthMethod): ProbeAgentAuthMethod["vars"] | undefined {
+  if (!apiKeyAuthMeta(method)) return undefined;
+  return [{ name: "api-key", label: "API key", secret: true }];
+}
+
+function gatewayAuthMeta(method: AuthMethod): Record<string, unknown> | null {
+  const meta = authMethodMeta(method);
+  if (!meta) return null;
+  const block = meta.gateway;
+  return isRecord(block) ? block : null;
+}
+
+function gatewayFormVars(method: AuthMethod): ProbeAgentAuthMethod["vars"] | undefined {
+  if (!gatewayAuthMeta(method)) return undefined;
+  return [
+    { name: "baseUrl", label: "Base URL" },
+    { name: "api-key", label: "API key", secret: true },
+    { name: "providerName", label: "Provider", optional: true },
+  ];
+}
+
+function authenticateMetaFromMethod(
+  method: AuthMethod,
+  values: Record<string, string>,
+): Record<string, unknown> | undefined {
+  const gateway = gatewayAuthMeta(method);
+  if (gateway) {
+    const baseUrl = (values.baseUrl ?? "").trim();
+    const key = (values["api-key"] ?? "").trim();
+    const providerName = (values.providerName ?? "").trim();
+    if (!baseUrl) return undefined;
+    return {
+      gateway: {
+        baseUrl,
+        headers: key ? { Authorization: `Bearer ${key}` } : {},
+        ...(providerName ? { providerName } : {}),
+      },
+    };
+  }
+  const apiKey = apiKeyAuthMeta(method);
+  if (apiKey) {
+    const secret = (values["api-key"] ?? "").trim();
+    if (!secret) return undefined;
+    return { "api-key": { apiKey: secret } };
+  }
+  return undefined;
+}
+
+function formValuesFromOptions(options: AuthenticateAgentOptions): Record<string, string> {
+  const values = { ...(options.values ?? {}) };
+  const secret = typeof options.secret === "string" ? options.secret.trim() : "";
+  if (secret && !values["api-key"]) values["api-key"] = secret;
+  const gateway = options.gateway;
+  if (gateway) {
+    if (gateway.baseUrl && !values.baseUrl) values.baseUrl = gateway.baseUrl;
+    if (gateway.providerName && !values.providerName) values.providerName = gateway.providerName;
+    const authorization = gateway.headers?.Authorization ?? gateway.headers?.authorization;
+    if (authorization && !values["api-key"]) {
+      const bearer = authorization.match(/^Bearer\s+(.+)$/i);
+      values["api-key"] = (bearer?.[1] ?? authorization).trim();
+    }
+  }
+  return values;
+}
+
 function authEnvVars(method: AuthMethod): ProbeAgentAuthMethod["vars"] | undefined {
   if (authMethodType(method) !== "env_var") return undefined;
   const vars = (method as AuthMethod & { vars?: unknown }).vars;
@@ -261,14 +346,17 @@ function selectAuthMethod(authMethods: unknown, methodId?: string): AuthMethod |
   return methods.find((method) => method.id === methodId) ?? null;
 }
 
+function isAuthFailureMessage(message: string | undefined): boolean {
+  return typeof message === "string"
+    && /authentication required\b|authentication fails\b|invalid api key|api key[:\s=][^\n]*\binvalid\b/i.test(message);
+}
+
 function isAuthRequiredError(error: unknown): boolean {
+  if (typeof error === "string") return isAuthFailureMessage(error);
   if (!error || typeof error !== "object") return false;
   const typed = error as { code?: unknown; message?: unknown };
-  return (
-    typed.code === ACP_AUTH_REQUIRED_CODE &&
-    typeof typed.message === "string" &&
-    /^Authentication required\b/i.test(typed.message)
-  );
+  if (typed.code === ACP_AUTH_REQUIRED_CODE) return true;
+  return isAuthFailureMessage(typeof typed.message === "string" ? typed.message : undefined);
 }
 
 function authMethodName(method: AuthMethod | null): string | undefined {
@@ -327,14 +415,16 @@ function publicAuthMethods(
   cwd: string,
 ): ProbeAgentAuthMethod[] {
   return methods.map((method) => {
-    const vars = credentialVars(method);
+    const vars = apiKeyFormVars(method) ?? gatewayFormVars(method) ?? credentialVars(method);
     const type = isCredentialPromptAuthMethod(method) ? "env_var" : authMethodType(method);
+    const form = apiKeyAuthMeta(method) || gatewayAuthMeta(method) ? "fields" as const : undefined;
     const terminalLaunch = type === "terminal" ? terminalAuthFromMethod(method, agent, env, cwd) : null;
     return {
       id: method.id,
       ...(authMethodName(method) ? { name: authMethodName(method) } : {}),
       ...(authMethodDescription(method) ? { description: authMethodDescription(method) } : {}),
       type,
+      ...(form ? { form } : {}),
       ...(vars ? { vars } : {}),
       ...(authMethodLink(method) ? { link: authMethodLink(method) } : {}),
       ...(terminalLaunch ? { terminalLaunch } : {}),
@@ -590,6 +680,9 @@ function unauthenticatedDiagnostic(lines: string[]): string | null {
     if (/\bagent may not work\b/i.test(plain) && /\bcredentials?\b/i.test(plain)) {
       return plain;
     }
+    if (isAuthFailureMessage(plain)) {
+      return plain;
+    }
   }
   return null;
 }
@@ -722,6 +815,18 @@ export async function probeAgentSessionConfig(
               },
             };
           }
+          const message = acpErrorMessage(error);
+          if (isAuthFailureMessage(message)) {
+            return {
+              configOptions: [],
+              availableCommands: [],
+              auth: {
+                status: "needs-auth" as const,
+                ...methodFields,
+                message,
+              },
+            };
+          }
           throw error;
         }
       })(),
@@ -831,6 +936,17 @@ export async function authenticateAgent(options: AuthenticateAgentOptions): Prom
           throw new Error(vars
             ? `ACP auth method ${method.id} requires credential variables (${vars}) and cannot be started as a sign-in flow.`
             : `ACP auth method ${method.id} requires credential variables and cannot be started as a sign-in flow.`);
+        }
+        const values = formValuesFromOptions(options);
+        const authenticateMeta = authenticateMetaFromMethod(method, values);
+        if (authenticateMeta) {
+          await Promise.resolve(agent.authenticate({
+            methodId: method.id,
+            _meta: authenticateMeta,
+          })).catch((error) => {
+            throw withAcpDetails(error);
+          });
+          return { status: "completed" as const };
         }
         const terminalAuth = terminalAuthFromMethod(method, options.agent, env, cwd);
         if (terminalAuth) {
@@ -946,15 +1062,23 @@ export async function probeAgentAuthStatus(
             ...methodFields,
           };
         } catch (error) {
-          if (!isAuthRequiredError(error)) {
+          if (isAuthRequiredError(error)) {
             return {
-              status: "unknown" as const,
-              message: acpErrorMessage(error),
+              status: "needs-auth" as const,
+              ...methodFields,
+            };
+          }
+          const message = acpErrorMessage(error);
+          if (isAuthFailureMessage(message)) {
+            return {
+              status: "needs-auth" as const,
+              message,
               ...methodFields,
             };
           }
           return {
-            status: "needs-auth" as const,
+            status: "unknown" as const,
+            message,
             ...methodFields,
           };
         }

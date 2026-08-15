@@ -7,6 +7,7 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { useI18n, type Locale, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ActivityStatsInfo, HarnessActivityInfo } from "@shared/api";
+import { PageScaffold } from "@/components/shell/PageScaffold";
 import { activityLevel, buildActivityGrid, formatUnitCount, type ActivityMetric } from "./activity-grid";
 import { harnessDisplayName } from "./harness-display";
 
@@ -33,18 +34,16 @@ export function SettingsActivity() {
   });
 
   return (
-    <div className="space-y-5 text-xs">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-sm font-medium text-fg">{t("activity.title")}</h1>
-          <p className="mt-1 max-w-[68ch] text-[11px] leading-5 text-fg-muted">
-            {t("activity.description")}
-          </p>
-          <p className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-fg-subtle">
-            <DatabaseIcon className="size-3" aria-hidden="true" />
-            {t("activity.localOnly")}
-          </p>
-        </div>
+    <PageScaffold
+      title={t("activity.title")}
+      description={t("activity.description")}
+      meta={(
+        <p className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-fg-subtle">
+          <DatabaseIcon className="size-3" aria-hidden="true" />
+          {t("activity.localOnly")}
+        </p>
+      )}
+      actions={(
         <Button
           type="button"
           variant="ghost"
@@ -56,7 +55,8 @@ export function SettingsActivity() {
           <RefreshCwIcon className={cn("size-3.5", query.isFetching && "animate-spin")} />
           {t("activity.refresh")}
         </Button>
-      </header>
+      )}
+    >
 
       {query.isLoading ? <LoadingPanel /> : query.data ? (
         <ActivityPanel
@@ -76,7 +76,7 @@ export function SettingsActivity() {
           </Button>
         </div>
       )}
-    </div>
+    </PageScaffold>
   );
 }
 

@@ -5,6 +5,7 @@ import type { ThemeModePreference, ThemePlugin } from "@/lib/theme-plugin";
 import { builtInThemes } from "@/themes";
 import { useTheme } from "@/lib/theme";
 import { useI18n, type LanguagePreference } from "@/lib/i18n";
+import { PageScaffold } from "@/components/shell/PageScaffold";
 import { mergeAppearanceSettings } from "./appearance-settings";
 import {
   Select,
@@ -31,15 +32,10 @@ export function SettingsAppearance() {
   const previewTheme = effective === "dark" ? selectedDark : selectedLight;
 
   return (
-    <div className="mx-auto max-w-[960px] space-y-8 text-xs">
-      <header>
-        <h1 className="text-2xl font-medium tracking-[-0.02em] text-fg">
-          {t("appearance.title")}
-        </h1>
-        <p className="mt-2 max-w-[68ch] text-xs leading-5 text-fg-muted">
-          {t("appearance.description")}
-        </p>
-      </header>
+    <PageScaffold
+      title={t("appearance.title")}
+      description={t("appearance.description")}
+    >
 
       <Section label={t("appearance.theme")}>
         <div className="grid grid-cols-3 gap-3">
@@ -142,7 +138,7 @@ export function SettingsAppearance() {
           />
         </Section>
       </div>
-    </div>
+    </PageScaffold>
   );
 }
 

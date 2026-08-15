@@ -59,6 +59,11 @@ export function AgentRow({
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="truncate font-medium">{agent.label}</span>
           <span className="shrink-0 font-mono text-[11px] text-fg-subtle">{agent.id}</span>
+          {setup.versionText && (
+            <span className="shrink-0 font-mono text-[11px] text-fg-subtle">
+              {setup.versionText}
+            </span>
+          )}
           {enabled && (
             <span className="shrink-0 rounded bg-success-subtle/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
               Enabled

@@ -438,7 +438,8 @@ test.describe("backchat smoke", () => {
 
       await settings.click();
       await page.getByRole("link", { name: "Agents", exact: true }).click();
-      await expect(page.getByText("Installed 1.1.0", { exact: true })).toBeVisible();
+      await expect(page.getByText("Installed", { exact: true })).toBeVisible();
+      await expect(page.getByText("1.1.0", { exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Upgrade", exact: true }))
         .toHaveCount(0);
   });

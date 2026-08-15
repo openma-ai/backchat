@@ -33,10 +33,10 @@ const MarkdownCwdContext = createContext<string | null>(null);
  *  Container-scoped element selectors outrank plain utility classes, so stating
  *  the rhythm once here governs both renderers. */
 export const MARKDOWN_BLOCK_RHYTHM = cn(
-  "[&_h1]:mt-3 [&_h1]:mb-1.5 [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:leading-6",
-  "[&_h2]:mt-3 [&_h2]:mb-1.5 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:leading-6",
-  "[&_h3]:mt-2.5 [&_h3]:mb-1 [&_h3]:text-[13px] [&_h3]:font-semibold [&_h3]:leading-6",
-  "[&_h4]:mt-2 [&_h4]:mb-1 [&_h4]:text-[13px] [&_h4]:font-semibold [&_h4]:leading-6",
+  "[&_h1]:mt-3 [&_h1]:mb-1.5 [&_h1]:text-[16px] [&_h1]:font-semibold [&_h1]:leading-7",
+  "[&_h2]:mt-3 [&_h2]:mb-1.5 [&_h2]:text-[15px] [&_h2]:font-semibold [&_h2]:leading-7",
+  "[&_h3]:mt-2.5 [&_h3]:mb-1 [&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:leading-7",
+  "[&_h4]:mt-2 [&_h4]:mb-1 [&_h4]:text-[14px] [&_h4]:font-semibold [&_h4]:leading-7",
   "[&_p]:my-1.5",
   // Tailwind's preflight removes list markers, and these surfaces only set list
   // margins — so a markdown list rendered as unmarked lines that read as one
@@ -45,13 +45,13 @@ export const MARKDOWN_BLOCK_RHYTHM = cn(
   "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5",
   "[&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5",
   "[&_li]:my-0.5 [&_li]:py-0 [&_li>p]:my-0",
-  "[&_pre]:my-2 [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border/60 [&_pre]:bg-bg-surface/60 [&_pre]:px-3 [&_pre]:py-2 [&_pre]:font-mono [&_pre]:text-[12px] [&_pre]:leading-5 [&_pre]:overflow-x-auto",
+  "[&_pre]:my-2 [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border/60 [&_pre]:bg-bg-surface/60 [&_pre]:px-3 [&_pre]:py-2 [&_pre]:font-mono [&_pre]:text-[13px] [&_pre]:leading-6 [&_pre]:overflow-x-auto",
   "[&_code]:rounded [&_code]:bg-bg-surface/70 [&_code]:px-[0.35em] [&_code]:py-[0.1em] [&_code]:font-mono [&_code]:text-[0.9em]",
-  "[&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:py-0 [&_pre_code]:text-[12px]",
+  "[&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:py-0 [&_pre_code]:text-[13px]",
   "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-fg-muted",
   "[&_table]:my-2 [&_table]:w-full [&_table]:border-collapse",
-  "[&_th]:border [&_th]:border-border/60 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-semibold [&_th]:leading-5",
-  "[&_td]:border [&_td]:border-border/60 [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_td]:leading-5",
+  "[&_th]:border [&_th]:border-border/60 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[13px] [&_th]:font-semibold [&_th]:leading-6",
+  "[&_td]:border [&_td]:border-border/60 [&_td]:px-2 [&_td]:py-1 [&_td]:text-[13px] [&_td]:leading-6",
   "[&_hr]:my-3 [&_hr]:border-border/60",
   "[&_a]:text-fg [&_a]:underline [&_a]:underline-offset-2 [&_a:hover]:text-fg-muted",
   "[&_a[data-markdown-http-link]]:text-info [&_a[data-markdown-http-link]:hover]:text-info/80",
@@ -59,11 +59,23 @@ export const MARKDOWN_BLOCK_RHYTHM = cn(
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
 );
 
+/** The reading tier. The chat stack, wherever this markdown lands: the rule
+ *  that picks it applies to the prompt and the answer, so the same agent prose
+ *  rendered inside the work block came out in the UI font — one paragraph in
+ *  two typefaces.
+ *
+ *  14px sits one step above the 13px activity/metadata tier that surrounds it.
+ *  The transcript is the only long-form surface in the product and it is
+ *  frequently CJK, which needs more pixels per glyph than Latin to hold its
+ *  strokes; at 13px those strokes fell below one device pixel and the prose
+ *  read as dim rather than as small.
+ *
+ *  Both renderers state this from the one constant. A literal repeated in the
+ *  streaming twin is how the two surfaces drifted apart before. */
+export const MARKDOWN_PROSE_TYPE = "font-chat text-[14px] leading-7 text-fg";
+
 export const ASSISTANT_MARKDOWN_CLASS = cn(
-  // The chat stack, wherever this markdown lands. The rule that picks it applies
-  // to the prompt and the answer, so the same agent prose rendered inside the
-  // work block came out in the UI font — one paragraph in two typefaces.
-  "font-chat text-[13px] leading-6 text-fg",
+  MARKDOWN_PROSE_TYPE,
   MARKDOWN_BLOCK_RHYTHM,
 );
 

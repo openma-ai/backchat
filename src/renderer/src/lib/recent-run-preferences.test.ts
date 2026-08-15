@@ -40,6 +40,21 @@ const options: AcpSessionConfigOption[] = [
   },
 ];
 
+const agentPresetOptions: AcpSessionConfigOption[] = [
+  ...options,
+  {
+    id: "agent",
+    name: "Agent",
+    type: "select",
+    currentValue: "standard",
+    options: [
+      { value: "standard", name: "Standard" },
+      { value: "code", name: "Code" },
+      { value: "cordis", name: "Cordis" },
+    ],
+  },
+];
+
 describe("recent run preferences", () => {
   it("parses invalid persisted data as an empty preference", () => {
     expect(parseRecentRunPreferences(null)).toEqual({
@@ -64,6 +79,21 @@ describe("recent run preferences", () => {
     }, "codex-acp", options)).toEqual({
       model: "gpt-5.6",
       "fast-mode": true,
+    });
+  });
+
+  it("does not restore the Agent preset; new chats keep the harness default", () => {
+    expect(recentConfigOverrides({
+      agentId: "dsh-acp",
+      configByAgent: {
+        "dsh-acp": {
+          model: "gpt-5.6",
+          agent: "cordis",
+          preset: "minimal",
+        },
+      },
+    }, "dsh-acp", agentPresetOptions)).toEqual({
+      model: "gpt-5.6",
     });
   });
 

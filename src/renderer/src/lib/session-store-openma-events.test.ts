@@ -2078,8 +2078,10 @@ describe("SessionStore canonical OpenMA events", () => {
 
     expect(store.openmaEventsFor("pair-error-member")).toContainEqual(failure);
     expect(store.get("pair-error-member")).toMatchObject({
-      status: "errored",
-      lastError: "Authentication required",
+      status: "ready",
+      authRequired: true,
+      lastError: undefined,
+      auth: { status: "needs-auth", message: "Authentication required" },
     });
   });
 });

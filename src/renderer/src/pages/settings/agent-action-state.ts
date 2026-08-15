@@ -2,6 +2,13 @@ export type AgentAction = {
   type: "install" | "upgrade" | "uninstall" | "auth" | "refresh";
   id?: string;
   methodId?: string;
+  secret?: string;
+  values?: Record<string, string>;
+  gateway?: {
+    baseUrl: string;
+    headers?: Record<string, string>;
+    providerName?: string;
+  };
 };
 
 export function agentActionKey(action: AgentAction): string {

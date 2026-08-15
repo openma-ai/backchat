@@ -54,6 +54,7 @@ import { useChatSubmission } from "@/lib/chat-submission";
 import { useHomeSuggestionState } from "@/lib/home-suggestion-state";
 import { useChatSessionActions } from "@/lib/chat-session-actions";
 import { Composer } from "./Composer";
+import { ComposerAuthSetup } from "./ComposerAuthSetup";
 import { ComposerNotice } from "./ComposerNotice";
 import { ComposerProgress } from "./ComposerProgress";
 import { SessionRuntimeSummary } from "./SessionRuntimeSummary";
@@ -193,6 +194,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   const [pickedCwd, setPickedCwd] = useState<string | null>(null);
   const [goalEdit, setGoalEdit] = useState<string | null>(null);
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
+  const [authSetupOpen, setAuthSetupOpen] = useState(false);
   const {
     draft: suggestionDraft,
     selection: homeSuggestionSelection,
@@ -212,6 +214,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       active?.status === "draft" ? active.chosenCwd ?? null : null,
     );
     setPickedAgentId(null);
+    setAuthSetupOpen(false);
   }, [active?.chosenCwd, active?.id, active?.status]);
 
   const onSubmit = useChatSubmission({
@@ -261,6 +264,8 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       attachmentDefaultPath={active?.cwd || pickedCwd || undefined}
       lockedAgentId={composerAgentBinding.lockedAgentId}
       pickedAgentId={pickedAgentId}
+      sessionAuthRequired={!!active?.authRequired}
+      sessionAuth={active?.auth}
       suggestionDraft={suggestionDraft}
       goal={active?.goal}
       pendingAsk={active?.pendingAsks?.[0]}
@@ -294,10 +299,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       onCancel={cancelActiveTurn}
       canFork={canForkCurrentSession}
       onFork={continueInNewChat}
+      onRequestAuth={() => setAuthSetupOpen(true)}
     />
   );
   const composerNotice =
-    active?.status === "errored" ? (
+    active?.authRequired ? null : active?.status === "errored" ? (
       <StatusNotice tone="danger" appearance="quiet">
         {active.lastError ?? t("chat.sessionErrored")}
       </StatusNotice>
@@ -308,6 +314,17 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         onDismiss={() => sessionStore.dismissNotice(active.id, active.notice?.id)}
       />
     ) : null;
+  const composerAuthSetup = (
+    <ComposerAuthSetup
+      open={authSetupOpen}
+      sessionId={active?.id}
+      sessionAgentId={composerAgentBinding.sessionAgentId}
+      pickedAgentId={pickedAgentId}
+      authRequired={!!active?.authRequired}
+      sessionAuth={active?.auth}
+      onClose={() => setAuthSetupOpen(false)}
+    />
+  );
   const progressPresentation = active?.goal
     ? goalProgressPresentation(active.goal, {
         active: t("chat.goalActive"),
@@ -520,6 +537,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
                 onSuggestion={selectHomeSuggestionTemplate}
               />
             )}
+            {composerAuthSetup}
             {composerNotice}
             {composerProgress}
             {composer}
@@ -579,6 +597,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
               "space-y-2",
             )}
           >
+            {composerAuthSetup}
             {composerNotice}
             {composerProgress}
             {composer}

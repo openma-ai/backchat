@@ -27,6 +27,10 @@ import type {
 import type { BrowserPluginStateEvent } from "@shared/browser-plugin.js";
 import { splitAcpSystemNoticeText } from "@shared/acp-system-notices.js";
 import {
+  isAuthenticationFailureMessage,
+  sanitizeAuthenticationMessage,
+} from "@shared/auth-errors.js";
+import {
   createOpenMAEvent,
   reduceWorkItems,
   type OpenMAEvent,
@@ -603,6 +607,16 @@ export class SessionStore {
             && typeof data.provider_error.message === "string"
               ? data.provider_error.message
               : "Agent session failed";
+      if (isAuthenticationFailureMessage(message)) {
+        this.apply({
+          type: "session.error",
+          session_id: event.session_id,
+          message,
+          code: "auth_required",
+          ...(event.turn_id ? { turn_id: event.turn_id } : {}),
+        });
+        return true;
+      }
       this.#mutateSession(event.session_id, (session) => ({
         ...session,
         status: "errored",
@@ -978,6 +992,17 @@ export class SessionStore {
     this.#mutateSession(sessionId, (session) => ({
       ...session,
       notice: undefined,
+    }));
+    this.#emit();
+  }
+
+  clearAuthRequired(sessionId: string): void {
+    this.#mutateSession(sessionId, (session) => ({
+      ...session,
+      authRequired: false,
+      auth: session.auth
+        ? { ...session.auth, status: "configured" }
+        : { status: "configured", message: "Authentication completed" },
     }));
     this.#emit();
   }
@@ -3282,6 +3307,14 @@ export class SessionStore {
             supportsNes: ev.supports_nes ?? s.supportsNes,
             status: s.activeTurnId ? "running" : "ready",
             lastError: undefined,
+            authRequired: false,
+            auth: {
+              status: "configured",
+              message: "ACP auth is configured.",
+              ...(s.auth?.methodId ? { methodId: s.auth.methodId } : {}),
+              ...(s.auth?.methodName ? { methodName: s.auth.methodName } : {}),
+              ...(s.auth?.methods ? { methods: s.auth.methods } : {}),
+            },
             pendingAsks:
               pendingBeforeReady?.length
                 ? [...(s.pendingAsks ?? []), ...pendingBeforeReady]
@@ -3316,6 +3349,8 @@ export class SessionStore {
             supportsProviders: ev.supports_providers,
             supportsNes: ev.supports_nes,
             pendingAsks: pendingBeforeReady,
+            authRequired: false,
+            auth: { status: "configured", message: "ACP auth is configured." },
           });
         }
         if (!this.#activeId) this.#activeId = ev.session_id;
@@ -3943,33 +3978,44 @@ export class SessionStore {
         break;
       }
       case "session.error": {
-        if (ev.turn_id) {
+        const authRequired = ev.code === "auth_required"
+          || isAuthenticationFailureMessage(ev.message);
+        const message = sanitizeAuthenticationMessage(ev.message);
+        const turnId = ev.turn_id
+          ?? (authRequired ? this.#sessions.get(ev.session_id)?.activeTurnId : undefined);
+        if (turnId) {
           const projectedTurnId = this.#settleSteeringProjection(
             ev.session_id,
-            ev.turn_id,
+            turnId,
           );
           const turn = this.#turns.get(projectedTurnId);
           if (turn) {
             this.#turns.set(projectedTurnId, {
               ...turn,
               status: "error",
-              errorMessage: ev.message,
+              errorMessage: message,
               endedAt: Date.now(),
             });
           }
-          this.#advanceAfterTurn(ev.session_id, ev.turn_id);
+          this.#advanceAfterTurn(ev.session_id, turnId);
           this.#recordSubagentActivity(ev.session_id, {
             status: "error",
-            errorMessage: ev.message,
+            errorMessage: message,
           });
-          this.#dropPairPendingForSession(ev.session_id, ev.turn_id);
+          this.#dropPairPendingForSession(ev.session_id, turnId);
         }
         this.#mutateSession(ev.session_id, (s) => ({
           ...s,
-          // Session-wide errors (no turn_id) usually mean start failed —
-          // unknown agent, missing binary, ACP handshake refused.
-          status: ev.turn_id ? s.status : "errored",
-          lastError: ev.message,
+          // Auth is recoverable from this chat. Other session-wide errors
+          // (unknown agent, missing binary, handshake refused) still lock.
+          status: authRequired
+            ? (s.activeTurnId ? "running" : "ready")
+            : ev.turn_id ? s.status : "errored",
+          lastError: authRequired ? undefined : message,
+          authRequired: authRequired ? true : s.authRequired,
+          auth: ev.auth ?? (authRequired
+            ? { status: "needs-auth", message }
+            : s.auth),
         }));
         break;
       }

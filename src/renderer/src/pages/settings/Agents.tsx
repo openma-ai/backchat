@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useSettings, patchSettings } from "@/lib/settings-store";
+import { PageScaffold } from "@/components/shell/PageScaffold";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { isAgentEnabled } from "@/lib/enabled-agents";
 import { useI18n } from "@/lib/i18n";
@@ -108,7 +109,13 @@ export function SettingsAgents() {
       if (input.type === "upgrade" && input.id) return window.backchat.agentUpgrade(input.id);
       if (input.type === "uninstall" && input.id) return window.backchat.agentUninstall(input.id);
       if (input.type === "auth" && input.id) {
-        return window.backchat.agentAuthenticate({ id: input.id, methodId: input.methodId });
+        return window.backchat.agentAuthenticate({
+          id: input.id,
+          methodId: input.methodId,
+          ...(input.secret ? { secret: input.secret } : {}),
+          ...(input.values ? { values: input.values } : {}),
+          ...(input.gateway ? { gateway: input.gateway } : {}),
+        });
       }
       if (input.type === "refresh") {
         return window.backchat.agentsList({ refresh: true });
@@ -117,9 +124,10 @@ export function SettingsAgents() {
     },
     onMutate: (variables) => {
       const key = agentActionKey(variables);
+      const { secret: _secret, values: _values, gateway: _gateway, ...stored } = variables;
       setPendingActions((current) => [
         ...current.filter((item) => agentActionKey(item) !== key),
-        variables,
+        stored,
       ]);
     },
     onSuccess: (next, variables) => {
@@ -128,6 +136,9 @@ export function SettingsAgents() {
       if (variables.type === "auth" && variables.id) {
         const agent = next.find((item) => item.id === variables.id);
         setWaitingAuthAgentId(agent?.auth?.status === "configured" ? null : variables.id);
+        if (agent?.auth?.status === "configured") {
+          setConfiguringAgentId((id) => id === variables.id ? null : id);
+        }
       } else if (variables.type === "install" || variables.type === "uninstall" || variables.type === "upgrade") {
         setWaitingAuthAgentId(null);
       }
@@ -197,29 +208,24 @@ export function SettingsAgents() {
   };
 
   return (
-    <div className="space-y-10 text-xs">
-      <header className="space-y-2">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-sm font-medium text-fg">Agents</h1>
-            <p className="mt-1 max-w-[62ch] text-[11px] leading-5 text-fg-muted">
-              Enable the ACP agents you want available. New chats restore the
-              agent and model configuration you used most recently.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => action.mutate({ type: "refresh" })}
-            disabled={pendingActions.length > 0}
-            className="h-7 gap-1.5 px-2 text-xs text-fg-muted hover:text-fg"
-          >
-            <RefreshCwIcon className="size-3.5" />
-            {pendingActions.some((item) => item.type === "refresh") ? "Checking…" : "Check again"}
-          </Button>
-        </div>
-        <div className="mt-4 flex max-w-sm items-center gap-1">
+    <PageScaffold
+      title={t("settings.agents")}
+      description="Enable the ACP agents you want available. New chats restore the agent and model configuration you used most recently."
+      actions={(
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => action.mutate({ type: "refresh" })}
+          disabled={pendingActions.length > 0}
+          className="h-7 gap-1.5 px-2 text-xs text-fg-muted hover:text-fg"
+        >
+          <RefreshCwIcon className="size-3.5" />
+          {pendingActions.some((item) => item.type === "refresh") ? "Checking…" : "Check again"}
+        </Button>
+      )}
+    >
+      <div className="flex max-w-sm items-center gap-1">
           <div className="relative min-w-0 flex-1">
             <SearchIcon
               aria-hidden="true"
@@ -248,16 +254,15 @@ export function SettingsAgents() {
           )}
         </div>
         {action.error && (
-          <StatusNotice tone="danger" className="mt-2">
+          <StatusNotice tone="danger">
             {action.error instanceof Error ? action.error.message : String(action.error)}
           </StatusNotice>
         )}
         {agentsError && (
-          <StatusNotice tone="danger" className="mt-2">
+          <StatusNotice tone="danger">
             {agentsError instanceof Error ? agentsError.message : String(agentsError)}
           </StatusNotice>
         )}
-      </header>
 
       <section>
         <SectionHeading
@@ -312,10 +317,20 @@ export function SettingsAgents() {
                     selectedMethodId={selectedAuthMethodByAgent[a.id]}
                     waitingForAuth={waitingAuthAgentId === a.id}
                     pending={pendingActions.some((item) => item.id === a.id)}
+                    error={
+                      action.error && pendingActions.some((item) => item.id === a.id && item.type === "auth")
+                        ? (action.error instanceof Error ? action.error.message : String(action.error))
+                        : undefined
+                    }
                     onMethodIdChange={(methodId) =>
                       setSelectedAuthMethodByAgent((prev) => ({ ...prev, [a.id]: methodId }))
                     }
-                    onStart={(methodId) => action.mutate({ type: "auth", id: a.id, methodId })}
+                    onStart={(methodId, options) => action.mutate({
+                      type: "auth",
+                      id: a.id,
+                      methodId,
+                      ...(options?.values ? { values: options.values } : {}),
+                    })}
                     onClose={() => setConfiguringAgentId(null)}
                     onSaved={() => setConfiguringAgentId(null)}
                   />
@@ -492,7 +507,7 @@ export function SettingsAgents() {
         </section>
         </>
       )}
-    </div>
+    </PageScaffold>
   );
 }
 

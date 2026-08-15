@@ -52,6 +52,7 @@ interface ScheduleStatements {
   finishRun: StatementSync;
   listRuns: StatementSync;
   delete: StatementSync;
+  deleteBySourceSession: StatementSync;
 }
 
 export class ScheduleStore {
@@ -139,6 +140,9 @@ export class ScheduleStore {
         ORDER BY started_at DESC
       `),
       delete: this.#db.prepare(`DELETE FROM schedules WHERE id = ?`),
+      deleteBySourceSession: this.#db.prepare(
+        `DELETE FROM schedules WHERE source_session_id = ?`,
+      ),
     };
   }
 
@@ -329,6 +333,10 @@ export class ScheduleStore {
 
   delete(id: string): void {
     this.#statements.delete.run(id);
+  }
+
+  deleteBySourceSession(sessionId: string): void {
+    this.#statements.deleteBySourceSession.run(sessionId);
   }
 
   close(): void {

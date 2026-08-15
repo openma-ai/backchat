@@ -256,6 +256,25 @@ export function isFastModeConfigOption(
   );
 }
 
+/** dsh-acp advertises the agent-preset roster as `id: "agent"`, `name: "Agent"`.
+ * ACP has no icon field, so the composer special-cases this option. */
+export function isAgentPresetConfigOption(
+  option: AcpSessionConfigOption,
+): boolean {
+  const normalizedId = option.id.trim().toLowerCase().replaceAll("_", "-");
+  const normalizedName = option.name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return (
+    normalizedId === "agent"
+    || normalizedId === "preset"
+    || normalizedId === "agent-preset"
+    || normalizedName === "agent"
+    || normalizedName === "preset"
+  );
+}
+
 export function findModeConfigOption(
   options: readonly AcpSessionConfigOption[] | undefined,
 ): (AcpSessionConfigOption & { type: "select" }) | undefined {

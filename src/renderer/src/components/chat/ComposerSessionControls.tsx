@@ -17,6 +17,8 @@ import {
   WrenchIcon,
   XIcon,
   ZapIcon,
+  LogInIcon,
+  RefreshCwIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -43,6 +45,7 @@ import {
   configModeOptionPresentation,
   findModeConfigOption,
   flattenSelectOptions,
+  isAgentPresetConfigOption,
   isFastModeConfigOption,
   selectedConfigOptionLabel,
   type AcpSessionConfigOption,
@@ -51,6 +54,11 @@ import { useI18n, type TranslationKey } from "@/lib/i18n";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
+import {
+  agentPresetIcon,
+  DshPresetStandardIcon,
+  type DshPresetIcon,
+} from "./dsh-preset-icons";
 
 export type ComposerAgentOption = {
   id: string;
@@ -62,6 +70,68 @@ export type ComposerAgentOption = {
 };
 
 export type ComposerRuntimeKind = "local" | "cloud" | "remote";
+
+const COMPOSER_ICON_BUTTON_CLASS = cn(
+  "inline-flex size-[var(--control-height-compact)] shrink-0 items-center justify-center rounded-md",
+  "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
+  "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+  "transition-colors",
+);
+
+/** Toolbar chips stay transparent at rest. Hover and an open menu wash;
+ * leftover :focus-visible after closing the menu must not look selected. */
+const COMPOSER_TOOLBAR_CHIP_CLASS = cn(
+  "inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-md bg-transparent px-1.5 text-xs",
+  "appearance-none shadow-none",
+  "hover:bg-[var(--control-bg-hover)]",
+  "focus:outline-none",
+  "data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg",
+  "transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+);
+
+export function ComposerAuthControls({
+  authNeeded,
+  refreshing = false,
+  onSignIn,
+  onRefresh,
+}: {
+  authNeeded: boolean;
+  refreshing?: boolean;
+  onSignIn: () => void;
+  onRefresh: () => void;
+}) {
+  const { t } = useI18n();
+  if (!authNeeded) return null;
+  return (
+    <>
+      <button
+        type="button"
+        data-composer-auth-refresh="true"
+        aria-label={t("chat.refreshAuth")}
+        disabled={refreshing}
+        onClick={onRefresh}
+        className={COMPOSER_ICON_BUTTON_CLASS}
+      >
+        <RefreshCwIcon className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        data-composer-auth-signin="true"
+        onClick={onSignIn}
+        disabled={refreshing}
+        className={cn(
+          "inline-flex h-[var(--control-height-compact)] shrink-0 items-center gap-1 rounded-md px-1.5",
+          "text-xs text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
+          "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+          "transition-colors",
+        )}
+      >
+        <LogInIcon className="size-3.5" />
+        <span>{t("chat.signIn")}</span>
+      </button>
+    </>
+  );
+}
 
 export function runtimePresentation(kind: ComposerRuntimeKind): {
   Icon: LucideIcon;
@@ -88,6 +158,7 @@ export function SessionRunChip({
   onPickAgent,
   onSetConfigOption,
   onResetConfigOptions,
+  authNeeded = false,
 }: {
   disabled: boolean;
   locked: boolean;
@@ -99,6 +170,7 @@ export function SessionRunChip({
   configOptions?: AcpSessionConfigOption[];
   onSetConfigOption: (configId: string, value: string | boolean) => void;
   onResetConfigOptions?: () => void;
+  authNeeded?: boolean;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -140,6 +212,7 @@ export function SessionRunChip({
           "app-compact-control group/model-selector inline-flex max-w-[250px] items-center pl-[var(--control-padding-inline)] text-xs",
           "select-none bg-transparent",
           "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+          authNeeded && "text-danger",
         )}
         aria-label={
           noHarnessSetup
@@ -148,12 +221,12 @@ export function SessionRunChip({
         }
       >
         {noHarnessSetup ? (
-          <span className="shrink-0">{agentLabel}</span>
+          <span className={cn("shrink-0", authNeeded && "text-danger")}>{agentLabel}</span>
         ) : (
           <>
             <span
               data-composer-run-harness="true"
-              className="flex shrink-0 items-center"
+              className={cn("flex shrink-0 items-center", authNeeded && "text-danger")}
             >
               <AgentIcon
                 agentId={currentAgentId}
@@ -168,7 +241,7 @@ export function SessionRunChip({
                   <span
                     ref={labelRef}
                     onMouseEnter={refreshLabelTruncation}
-                    className="min-w-0 max-w-[140px] truncate"
+                    className={cn("min-w-0 max-w-[140px] truncate", authNeeded && "text-danger")}
                   >
                     {configLabel}
                   </span>
@@ -312,13 +385,19 @@ function SessionConfigSubmenu({
           flattenSelectOptions(option).map((item) => (
             <SessionRunItem
               key={`${option.id}:${item.value}`}
-              icon={Icon}
+              icon={
+                isAgentPresetConfigOption(option)
+                  ? agentPresetIcon(item.value)
+                  : Icon
+              }
               label={item.name}
               hint={
-                item.groupName ??
-                item.description ??
-                option.description ??
-                option.name
+                isAgentPresetConfigOption(option)
+                  ? undefined
+                  : item.groupName ??
+                    item.description ??
+                    option.description ??
+                    option.name
               }
               active={item.value === option.currentValue}
               onSelect={() => onSetConfigOption(option.id, item.value)}
@@ -342,7 +421,8 @@ function SessionConfigSubmenu({
   );
 }
 
-function configOptionIcon(option: AcpSessionConfigOption): LucideIcon {
+function configOptionIcon(option: AcpSessionConfigOption): LucideIcon | DshPresetIcon {
+  if (isAgentPresetConfigOption(option)) return DshPresetStandardIcon;
   switch (option.category) {
     case "model":
       return BrainIcon;
@@ -399,14 +479,7 @@ export function PermissionModeChip({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled}
-        className={cn(
-          "inline-flex h-7 select-none items-center gap-1 rounded-md px-1.5 text-xs",
-          meta.toneClass,
-          "hover:bg-[var(--control-bg-hover)]",
-          "focus:outline-none focus-visible:bg-[var(--control-bg-hover)]",
-          "data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg",
-          "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-        )}
+        className={cn(COMPOSER_TOOLBAR_CHIP_CLASS, meta.toneClass)}
         aria-label={label}
       >
         <Icon className="size-3.5" />
@@ -417,6 +490,7 @@ export function PermissionModeChip({
         align="start"
         sideOffset={6}
         className="w-[var(--composer-menu-width)]"
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {(["auto", "ask", "read_only"] as const).map((nextMode) => {
           const item = MODE_META[nextMode];
@@ -512,10 +586,8 @@ function SessionModeControl({
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
         className={cn(
-          "inline-flex h-7 max-w-[180px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs",
-          "hover:bg-[var(--control-bg-hover)] focus:outline-none focus-visible:bg-[var(--control-bg-hover)]",
-          "data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg",
-          "transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+          COMPOSER_TOOLBAR_CHIP_CLASS,
+          "max-w-[180px]",
           selectedPresentation.tone === "warning"
             ? "text-warning"
             : "text-fg-muted",
@@ -531,6 +603,7 @@ function SessionModeControl({
         align="start"
         sideOffset={6}
         className="w-[var(--composer-menu-width)] p-1"
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {values.map((item) => {
           const presentation = localizedSessionModePresentation(
@@ -710,11 +783,53 @@ function InlineComposerOptionControl({
       </button>
     );
   }
+  const currentLabel = selectedConfigOptionLabel(option);
+  if (isAgentPresetConfigOption(option)) {
+    const SelectedIcon = agentPresetIcon(option.currentValue);
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          disabled={disabled || !onSetConfigOption}
+          aria-label={currentLabel}
+          className={cn(
+            COMPOSER_TOOLBAR_CHIP_CLASS,
+            "max-w-[180px] text-fg-muted",
+          )}
+        >
+          <SelectedIcon className="size-3.5 shrink-0" />
+          <span className="truncate">{currentLabel}</span>
+          <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          sideOffset={6}
+          className="w-[var(--composer-menu-width)] p-1"
+          onCloseAutoFocus={(event) => event.preventDefault()}
+        >
+          {flattenSelectOptions(option).map((item) => {
+            const ItemIcon = agentPresetIcon(item.value);
+            return (
+              <SessionRunItem
+                key={item.value}
+                icon={ItemIcon}
+                label={item.name}
+                active={item.value === option.currentValue}
+                onSelect={() => onSetConfigOption?.(option.id, item.value)}
+              />
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
-        className="inline-flex h-7 max-w-[180px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted hover:bg-[var(--control-bg-hover)] focus:outline-none focus-visible:bg-[var(--control-bg-hover)] data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg"
+        className={cn(
+          COMPOSER_TOOLBAR_CHIP_CLASS,
+          "max-w-[180px] text-fg-muted",
+        )}
       >
         <WrenchIcon className="size-3.5 shrink-0" />
         <span className="truncate">{option.name}</span>
@@ -723,7 +838,12 @@ function InlineComposerOptionControl({
         </span>
         <ChevronDownIcon className="size-3.5 shrink-0" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} className="w-[260px]">
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        className="w-[260px]"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
         {flattenSelectOptions(option).map((item) => (
           <SessionRunItem
             key={item.value}
@@ -748,7 +868,7 @@ function SessionRunItem({
   disabled,
   onSelect,
 }: {
-  icon?: LucideIcon;
+  icon?: LucideIcon | DshPresetIcon;
   agentId?: string;
   agentIconUrl?: string;
   label: string;

@@ -245,6 +245,7 @@ function createWindow(): BrowserWindow {
   win.on("focus", () => syncTrafficLight(win));
 
   win.once("ready-to-show", () => {
+    if (!testHooksEnabled) win.maximize();
     if (!testHooksEnabled || showE2eWindow) win.show();
   });
 

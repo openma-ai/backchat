@@ -283,15 +283,27 @@ const backchatDark: ThemeTokens = {
   // Approved neutral reference palette. These remain theme tokens rather
   // than component colors so every surface (including xterm) changes as one
   // system and third-party themes can provide their own hierarchy.
+  //
+  // The surfaces stay where they were; the foreground ladder is pinned to
+  // contrast instead of taste. Against both `bg` and `bg-surface` the three
+  // tiers land at roughly 13:1 / 7.4:1 / 5.5:1, so `fg-muted` and `fg-subtle`
+  // clear WCAG AA for small text on every panel they are used on. The
+  // previous warm grays sat at 4.5:1 and 3.6:1, which read as "the screen is
+  // too dim" rather than as a hierarchy.
+  //
+  // `fg` stops short of white on purpose. CJK prose carries far more strokes
+  // per glyph than Latin, so a pure-white body text blooms against a near
+  // black canvas; 14.75:1 sits in the same range as other dark reading
+  // surfaces without that halation.
   bg: "#171717",
   "bg-sidebar": "#1c1c1c",
   "bg-surface": "#1c1c1c",
   "bg-bubble": "#404040",
-  fg: "#dbdad2",
-  "fg-muted": "#858379",
-  "fg-subtle": "#747471",
-  border: "#2a2a2a",
-  "border-strong": "#3a3a39",
+  fg: "#ebe9e1",
+  "fg-muted": "#adab9f",
+  "fg-subtle": "#949288",
+  border: "#333331",
+  "border-strong": "#4a4a47",
 };
 
 const workbenchLight: ThemeTokens = {
@@ -357,7 +369,7 @@ export const backchatDarkTheme = defineThemePlugin({
     preview: {
       background: "#171717",
       surface: "#1c1c1c",
-      foreground: "#dbdad2",
+      foreground: "#ebe9e1",
       accent: "#f47958",
     },
     appearance: "dark",

@@ -13,6 +13,7 @@ vi.mock("@/lib/i18n", () => ({
   useI18n: () => ({
     t: (key: string, values?: Record<string, unknown>) =>
       key === "chat.workedFor" ? `worked ${String(values?.seconds)}s` : key,
+    locale: "en",
   }),
 }));
 
@@ -49,6 +50,7 @@ vi.mock("use-stick-to-bottom", () => ({
 }));
 
 import { TurnBlock } from "./ChatTurn";
+import { wrapScheduledTaskPrompt } from "@/lib/scheduled-task-presentation";
 
 function turn(overrides: Partial<Turn>): Turn {
   return {
@@ -1009,5 +1011,70 @@ describe("Codex thinking while a tool runs", () => {
 
     expect(html).not.toContain('data-thought-block="true"');
     expect(html).toContain("pwd");
+  });
+});
+
+describe("scheduled task message bars", () => {
+  it("renders a created scheduled-task bar with an Open control", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          assistantText: "Done.",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "sched-create-1",
+                title: "Create schedule",
+                toolName: "schedule_create",
+                status: "completed",
+                rawOutput: JSON.stringify({
+                  id: "sched-1",
+                  name: "每天7点闹钟",
+                  prompt: "wake up",
+                  trigger: {
+                    type: "rrule",
+                    rule: "RRULE:FREQ=DAILY;BYHOUR=7;BYMINUTE=0",
+                    timezone: "UTC",
+                  },
+                }),
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-schedule-card="sched-1"');
+    expect(html).toContain("每天7点闹钟");
+    expect(html).toContain("Daily at 7:00 AM");
+    expect(html).toContain("scheduled.open");
+    expect(html).toContain("lucide-calendar-clock");
+  });
+
+  it("keeps a scheduled fire as a user message but renders the tag, not the raw XML", () => {
+    const prompt = wrapScheduledTaskPrompt({
+      id: "sched-1",
+      name: "临时提醒",
+      prompt: "提醒用户：你刚才说要办的事，现在 21:54 到了，别忘了！",
+    });
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          promptText: prompt,
+          assistantText: "⏰ 提醒时间到！",
+          status: "complete",
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-scheduled-task-prompt="true"');
+    expect(html).toContain("is-user");
+    expect(html).toContain("临时提醒");
+    expect(html).toContain("提醒用户：你刚才说要办的事，现在 21:54 到了，别忘了！");
+    expect(html).not.toContain("&lt;scheduled_task");
+    expect(html).not.toContain("<scheduled_task");
   });
 });

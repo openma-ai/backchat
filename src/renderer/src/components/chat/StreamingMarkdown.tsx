@@ -25,7 +25,7 @@ import {
 } from "react";
 import * as smd from "streaming-markdown";
 import { ContextMenu } from "radix-ui";
-import { MARKDOWN_BLOCK_RHYTHM } from "./ChatMarkdown";
+import { MARKDOWN_BLOCK_RHYTHM, MARKDOWN_PROSE_TYPE } from "./ChatMarkdown";
 import { sessionStore } from "@/lib/session-store";
 import { openBrowserAwareUrl } from "@/lib/browser-open";
 import { previewLocalFile } from "@/lib/file-preview";
@@ -241,9 +241,11 @@ export function StreamingMarkdown({
           ref={hostRef}
           onContextMenu={onContextMenu}
           className={cn(
-            // The same rhythm the settled surface uses, from one constant, so the
-            // handoff cannot change the geometry of the document.
-            "streaming-md font-chat text-[13px] leading-6 text-fg",
+            // The same type tier and rhythm the settled surface uses, both from
+            // one constant, so the handoff cannot change the geometry of the
+            // document.
+            "streaming-md",
+            MARKDOWN_PROSE_TYPE,
             MARKDOWN_BLOCK_RHYTHM,
             className,
           )}

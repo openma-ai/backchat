@@ -609,6 +609,356 @@ describe("SessionManager prompt queue", () => {
     });
   });
 
+  it("classifies ACP auth_required start failures and writes them back as recoverable auth", async () => {
+    mocks.runtimeStart.mockReset();
+    const error = Object.assign(new Error("Authentication required"), { code: -32000 });
+    mocks.runtimeStart.mockRejectedValueOnce(error);
+    const observeAuth = vi.fn(async () => ({
+      status: "needs-auth" as const,
+      message: "Authentication required (login).",
+      methodId: "login",
+      methods: [{ id: "login", name: "Login", type: "terminal" }],
+    }));
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      observeAuth,
+    });
+
+    await expect(manager.start({
+      session_id: "sess-auth-start",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    })).resolves.toMatchObject({
+      status: "error",
+      session_id: "sess-auth-start",
+      message: "Authentication required",
+    });
+
+    expect(observeAuth).toHaveBeenCalledWith("dsh-acp", {
+      status: "needs-auth",
+      message: "Authentication required",
+    });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.error",
+      session_id: "sess-auth-start",
+      code: "auth_required",
+      agent_id: "dsh-acp",
+      auth: {
+        status: "needs-auth",
+        message: "Authentication required (login).",
+        methodId: "login",
+        methods: [{ id: "login", name: "Login", type: "terminal" }],
+      },
+    }));
+  });
+
+  it("observes configured auth after a successful ACP start", async () => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const observeAuth = vi.fn(async () => ({
+      status: "configured" as const,
+      message: "ACP auth is configured.",
+    }));
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      observeAuth,
+    });
+
+    await manager.start({
+      session_id: "sess-auth-ready",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    });
+
+    expect(observeAuth).toHaveBeenCalledWith("dsh-acp", { status: "configured" });
+  });
+
+  it("writes live session config back onto the global agent snapshot", async () => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession({
+      configOptions: [{
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "deepseek-v4-flash",
+        options: [{ value: "deepseek-v4-flash", name: "DeepSeek V4 Flash" }],
+      }],
+    });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const observeSessionConfig = vi.fn();
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      observeSessionConfig,
+    });
+
+    await manager.start({
+      session_id: "sess-config-ready",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    });
+
+    expect(observeSessionConfig).toHaveBeenCalledWith("dsh-acp", expect.objectContaining({
+      config_options: [expect.objectContaining({ id: "model" })],
+    }));
+  });
+
+  it("classifies ACP auth_required prompt failures without hanging the turn", async () => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession();
+    const error = Object.assign(new Error("Authentication required"), { code: -32000 });
+    fake.session.prompt = async function* () {
+      throw error;
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const observeAuth = vi.fn(async () => ({
+      status: "needs-auth" as const,
+      message: "Authentication required",
+      methods: [{ id: "login", name: "Login", type: "terminal" }],
+    }));
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      observeAuth,
+    });
+
+    await manager.start({
+      session_id: "sess-auth-prompt",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    });
+    observeAuth.mockClear();
+    send.mockClear();
+
+    await manager.prompt({
+      session_id: "sess-auth-prompt",
+      turn_id: "turn-auth-prompt",
+      text: "hello",
+    });
+
+    expect(observeAuth).toHaveBeenCalledWith("dsh-acp", {
+      status: "needs-auth",
+      message: "Authentication required",
+    });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.error",
+      session_id: "sess-auth-prompt",
+      turn_id: "turn-auth-prompt",
+      code: "auth_required",
+      agent_id: "dsh-acp",
+      message: "Authentication required",
+    }));
+  });
+
+  it("classifies Authentication required start failures even when the RPC code is stripped", async () => {
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockRejectedValueOnce(new Error("Authentication required"));
+    const observeAuth = vi.fn(async () => ({
+      status: "needs-auth" as const,
+      message: "Authentication required.",
+    }));
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      observeAuth,
+    });
+
+    await expect(manager.start({
+      session_id: "sess-auth-message",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    })).resolves.toMatchObject({
+      status: "error",
+      session_id: "sess-auth-message",
+      message: "Authentication required",
+    });
+
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.error",
+      session_id: "sess-auth-message",
+      code: "auth_required",
+      agent_id: "dsh-acp",
+    }));
+  });
+
+  it("classifies ACP promptError auth failures without hanging the turn", async () => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession();
+    fake.session.prompt = async function* () {
+      yield { type: "promptError", error: "Authentication required" };
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const observeAuth = vi.fn(async () => ({
+      status: "needs-auth" as const,
+      message: "Authentication required",
+    }));
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      observeAuth,
+    });
+
+    await manager.start({
+      session_id: "sess-auth-prompt-event",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    });
+    observeAuth.mockClear();
+    send.mockClear();
+
+    await manager.prompt({
+      session_id: "sess-auth-prompt-event",
+      turn_id: "turn-auth-prompt-event",
+      text: "hello",
+    });
+
+    expect(observeAuth).toHaveBeenCalledWith("dsh-acp", {
+      status: "needs-auth",
+      message: "Authentication required",
+    });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.error",
+      session_id: "sess-auth-prompt-event",
+      turn_id: "turn-auth-prompt-event",
+      code: "auth_required",
+      agent_id: "dsh-acp",
+    }));
+  });
+
+  it("classifies wrapped invalid-key promptError events as recoverable auth", async () => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession();
+    fake.session.prompt = async function* () {
+      yield {
+        type: "promptError",
+        error: "Internal error: turn failed: Authentication Fails, Your api key: fadf is invalid",
+      };
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const observeAuth = vi.fn(async () => ({
+      status: "needs-auth" as const,
+      message: "Authentication Fails",
+      methods: [{ id: "api-key", name: "API Key" }],
+    }));
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      observeAuth,
+    });
+
+    await manager.start({
+      session_id: "sess-auth-invalid-key-event",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    });
+    observeAuth.mockClear();
+    send.mockClear();
+
+    await manager.prompt({
+      session_id: "sess-auth-invalid-key-event",
+      turn_id: "turn-auth-invalid-key-event",
+      text: "hi",
+    });
+
+    expect(observeAuth).toHaveBeenCalledWith("dsh-acp", {
+      status: "needs-auth",
+      message: expect.stringMatching(/Authentication Fails/i),
+    });
+    const errorEvent = send.mock.calls
+      .map(([event]) => event)
+      .find((event) => event?.type === "session.error");
+    expect(errorEvent).toMatchObject({
+      type: "session.error",
+      session_id: "sess-auth-invalid-key-event",
+      turn_id: "turn-auth-invalid-key-event",
+      code: "auth_required",
+      agent_id: "dsh-acp",
+    });
+    expect(errorEvent?.message).not.toMatch(/\bfadf\b/);
+  });
+
+  it("classifies wrapped invalid-key turn failures as recoverable auth", async () => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession();
+    fake.session.prompt = async function* () {
+      throw new Error("Internal error: turn failed: Authentication Fails, Your api key: fadf is invalid");
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const observeAuth = vi.fn(async () => ({
+      status: "needs-auth" as const,
+      message: "Authentication Fails",
+      methods: [{ id: "api-key", name: "API Key" }],
+    }));
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      observeAuth,
+    });
+
+    await manager.start({
+      session_id: "sess-auth-invalid-key",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    });
+    observeAuth.mockClear();
+    send.mockClear();
+
+    await manager.prompt({
+      session_id: "sess-auth-invalid-key",
+      turn_id: "turn-auth-invalid-key",
+      text: "hi",
+    });
+
+    expect(observeAuth).toHaveBeenCalledWith("dsh-acp", {
+      status: "needs-auth",
+      message: expect.stringMatching(/Authentication Fails/i),
+    });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.error",
+      session_id: "sess-auth-invalid-key",
+      turn_id: "turn-auth-invalid-key",
+      code: "auth_required",
+      agent_id: "dsh-acp",
+    }));
+    const errorEvent = send.mock.calls
+      .map(([event]) => event)
+      .find((event) => event?.type === "session.error");
+    expect(errorEvent?.message).not.toMatch(/\bfadf\b/);
+  });
+
   it("cancels an in-flight start without leaving a zombie ACP process", async () => {
     mocks.runtimeStart.mockClear();
     const fake = createControllableAcpSession();
@@ -3118,6 +3468,7 @@ function createControllableAcpSession(opts: {
   abortRejects?: boolean;
   promptEvents?: unknown[];
   eventsAfterAbort?: unknown[];
+  configOptions?: AcpSession["configOptions"];
 } = {}): {
   session: AcpSession;
   prompts: unknown[];
@@ -3142,7 +3493,7 @@ function createControllableAcpSession(opts: {
     agentCapabilities: opts.agentCapabilities ?? {},
     initializeMeta: opts.initializeMeta ?? null,
     sessionSetupMeta: opts.sessionSetupMeta ?? null,
-    configOptions: [],
+    configOptions: opts.configOptions ?? [],
     modes: opts.modes ?? null,
     prompt(
       input: string | readonly unknown[],

@@ -27,6 +27,10 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { RenameDialog } from "./RenameDialog";
+import {
+  ArchiveScheduledChatDialog,
+  useArchiveSessions,
+} from "./ArchiveScheduledChatDialog";
 import { SessionRuntimeUpdateControl } from "@/components/chat/SessionRuntimeUpdateControl";
 
 /**
@@ -41,14 +45,21 @@ export function Topbar(_props: { onCancel: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [renameOpen, setRenameOpen] = useState(false);
+  const {
+    pending: pendingArchive,
+    requestArchive,
+    confirmArchive,
+    cancelArchive,
+  } = useArchiveSessions();
   const isChat = location.pathname.startsWith("/chat/");
   if (!active || !isChat) return null;
 
   const pinned = active.pinnedAt != null;
   const archive = () => {
-    sessionStore.archive(active.id);
-    sessionStore.setActive(null);
-    void navigate({ to: "/" });
+    void requestArchive([active.id], () => {
+      sessionStore.setActive(null);
+      void navigate({ to: "/" });
+    });
   };
 
   const closeSession = async () => {
@@ -121,6 +132,15 @@ export function Topbar(_props: { onCancel: () => void }) {
          currentTitle={active.label}
          onOpenChange={setRenameOpen}
          onRename={(title) => sessionStore.rename(active.id, title)}
+       />
+       <ArchiveScheduledChatDialog
+         open={pendingArchive !== null}
+         taskNames={pendingArchive?.taskNames ?? []}
+         sessionCount={pendingArchive?.sessionIds.length ?? 0}
+         onOpenChange={(open) => {
+           if (!open) cancelArchive();
+         }}
+         onConfirm={confirmArchive}
        />
      </div>
   );

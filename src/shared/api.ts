@@ -84,6 +84,13 @@ import type {
 import type { ProjectInfo, ProjectSaveParams } from "./projects.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 
+/** Codex-shaped Agent Auth payload sent as `authenticate._meta.gateway`. */
+export interface AgentGatewayAuth {
+  baseUrl: string;
+  headers?: Record<string, string>;
+  providerName?: string;
+}
+
 export interface AgentInfo {
   id: string;
   label: string;
@@ -115,6 +122,7 @@ export interface AgentInfo {
       name?: string;
       description?: string;
       type?: string;
+      form?: "fields";
       vars?: Array<{
         name: string;
         label?: string;
@@ -435,7 +443,13 @@ export interface BackchatApi {
   agentInstall(id: string): Promise<AgentInfo[]>;
   agentUpgrade(id: string): Promise<AgentInfo[]>;
   agentUninstall(id: string): Promise<AgentInfo[]>;
-  agentAuthenticate(p: { id: string; methodId?: string }): Promise<AgentInfo[]>;
+  agentAuthenticate(p: {
+    id: string;
+    methodId?: string;
+    secret?: string;
+    values?: Record<string, string>;
+    gateway?: AgentGatewayAuth;
+  }): Promise<AgentInfo[]>;
 
   sessionStart(p: SessionStartParams): Promise<SessionStartResult>;
   sessionPrompt(p: SessionPromptParams): Promise<void>;

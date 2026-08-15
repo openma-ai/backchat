@@ -7,6 +7,7 @@ import {
   findModeConfigOption,
   flattenSelectOptions,
   isFastModeConfigOption,
+  isAgentPresetConfigOption,
   selectedConfigOptionLabel,
   type AcpSessionConfigOption,
 } from "./session-config-options";
@@ -153,6 +154,26 @@ describe("session config options", () => {
     expect(findModeConfigOption(options)).toEqual(modeOption);
     expect(isFastModeConfigOption(options[2]!)).toBe(true);
     expect(isFastModeConfigOption(options[3]!)).toBe(true);
+    expect(isAgentPresetConfigOption({
+      id: "agent",
+      name: "Agent",
+      type: "select",
+      currentValue: "standard",
+      options: [{ value: "standard", name: "Standard" }],
+    })).toBe(true);
+    expect(isAgentPresetConfigOption({
+      id: "preset",
+      name: "Preset",
+      type: "select",
+      currentValue: "standard",
+      options: [{ value: "standard", name: "Standard" }],
+    })).toBe(true);
+    expect(isAgentPresetConfigOption({
+      id: "telemetry",
+      name: "Telemetry",
+      type: "boolean",
+      currentValue: false,
+    })).toBe(false);
     expect(
       buildRunMenuConfigOptionSections(options).flatMap((section) =>
         section.options.map((option) => option.id),

@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRightFromLineIcon,
   AtSignIcon,
+  CalendarClockIcon,
   CheckIcon,
   CopyIcon,
   TargetIcon,
@@ -31,6 +32,8 @@ import { useMarkdownCwd } from "./ChatMarkdown";
 import { TurnAnswer } from "./TurnAnswer";
 import { TurnProcessBar } from "./TurnActivity";
 import { PlanDocumentActivity } from "./PlanDocumentActivity";
+import { TurnScheduleCards } from "./ScheduledTaskMessageBar";
+import { parseScheduledTaskPrompt, type ScheduledTaskPromptSurface } from "@/lib/scheduled-task-presentation";
 import {
   inspectRawTurnEvents,
   RawEventInspector,
@@ -119,15 +122,22 @@ export const TurnBlock = memo(function TurnBlock({
     () => promptCommandAnnotation(turn.promptText, agentId, availableCommands),
     [agentId, availableCommands, turn.promptText],
   );
+  const scheduledPrompt = useMemo(
+    () => parseScheduledTaskPrompt(turn.promptText),
+    [turn.promptText],
+  );
 
   return (
     <>
       {hasSessionReferences && <ReferencedSessionPrompt turn={turn} />}
+      {scheduledPrompt && !hasSessionReferences && (
+        <ScheduledTaskUserPrompt turn={turn} surface={scheduledPrompt} />
+      )}
       <SessionTurnFrame
         turnId={turn.id}
         sessionId={turn.sessionId}
         promptText={
-          hasSessionReferences
+          hasSessionReferences || scheduledPrompt
             ? undefined
             : commandInvocation?.body ?? turn.promptText
         }
@@ -143,7 +153,7 @@ export const TurnBlock = memo(function TurnBlock({
           ) : undefined
         }
       >
-          {commandInvocation && !hasSessionReferences && (
+          {commandInvocation && !hasSessionReferences && !scheduledPrompt && (
             // Sits directly under the prompt bubble: the frame renders children
             // after it. Right-aligned to stay with the message it describes.
             <p
@@ -194,6 +204,11 @@ export const TurnBlock = memo(function TurnBlock({
             isStreaming={isStreaming}
           />
 
+          <TurnScheduleCards
+            sessionId={turn.sessionId}
+            tools={activityRendered.tools}
+          />
+
           {stopNotice && (
             <p
               data-turn-stop-reason={turn.stopReason}
@@ -218,6 +233,42 @@ export const TurnBlock = memo(function TurnBlock({
     </>
   );
 });
+
+function ScheduledTaskUserPrompt({
+  turn,
+  surface,
+}: {
+  turn: Turn;
+  surface: ScheduledTaskPromptSurface;
+}) {
+  return (
+    <div
+      className="group is-user mb-2 ml-auto flex w-full max-w-[95%] flex-col items-end gap-2"
+      data-session-turn-prompt="true"
+      data-scheduled-task-prompt="true"
+    >
+      <div className="is-user:dark ml-auto flex w-fit min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-lg bg-secondary px-3 py-2 text-sm text-foreground">
+        <p className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
+          <CalendarClockIcon className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 truncate">{surface.name}</span>
+        </p>
+        {surface.prompt.length > 0 && (
+          <p className="whitespace-pre-wrap">{surface.prompt}</p>
+        )}
+      </div>
+      <div
+        data-session-turn-prompt-meta="true"
+        className="flex min-h-6 items-center justify-end gap-1"
+      >
+        <TurnMetaActions
+          timestamp={turn.startedAt}
+          copyText={surface.prompt}
+          align="end"
+        />
+      </div>
+    </div>
+  );
+}
 
 function ReferencedSessionPrompt({ turn }: { turn: Turn }) {
   const navigate = useNavigate();

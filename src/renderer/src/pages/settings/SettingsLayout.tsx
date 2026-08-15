@@ -16,7 +16,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { PageSurface } from "@/components/shell/PageSurface";
+import { ContentPage } from "@/components/shell/PageScaffold";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -48,11 +48,9 @@ const iconSlotClass = "flex w-4 shrink-0 items-center justify-center";
 
 export function SettingsLayout() {
   return (
-    <PageSurface>
-      <div className="w-full px-8 pb-16 pt-8">
-        <Outlet />
-      </div>
-    </PageSurface>
+    <ContentPage>
+      <Outlet />
+    </ContentPage>
   );
 }
 

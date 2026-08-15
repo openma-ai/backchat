@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { PageScaffold } from "@/components/shell/PageScaffold";
 import { browserSettings } from "@shared/browser-settings.js";
 import type { SettingsBrowser } from "@shared/settings.js";
 import { Badge } from "@/components/ui/badge";
@@ -81,14 +82,10 @@ export function SettingsBrowserPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[820px] space-y-7 text-xs">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-base font-medium text-fg">Browser</h1>
-          <p className="mt-1 text-[11px] text-fg-muted">
-            Manage the task-scoped browser and agent-facing browser backends.
-          </p>
-        </div>
+    <PageScaffold
+      title={t("settings.browser")}
+      description="Manage the task-scoped browser and agent-facing browser backends."
+      actions={(
         <Button
           type="button"
           variant="ghost"
@@ -102,7 +99,8 @@ export function SettingsBrowserPage() {
           />
           Refresh
         </Button>
-      </header>
+      )}
+    >
 
       <div className="flex items-center gap-3 rounded-lg border border-border/55 bg-bg/72 px-3.5 py-3 shadow-card-soft">
         <span className="inline-flex size-9 items-center justify-center rounded-md bg-bg-surface text-fg">
@@ -241,7 +239,7 @@ export function SettingsBrowserPage() {
           )}
         />
       </SettingsSection>
-    </div>
+    </PageScaffold>
   );
 }
 

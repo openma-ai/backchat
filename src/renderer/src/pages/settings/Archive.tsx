@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArchiveRestoreIcon, Trash2Icon } from "lucide-react";
+import { PageScaffold } from "@/components/shell/PageScaffold";
+import { useI18n } from "@/lib/i18n";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { cn } from "@/lib/utils";
 import { sessionStore } from "@/lib/session-store";
@@ -21,6 +23,7 @@ import type { PersistedSessionInfo } from "@shared/api.js";
  * the unarchived row appears in the Sidebar right away.
  */
 export function Archive() {
+  const { t } = useI18n();
   const [rows, setRows] = useState<PersistedSessionInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -78,15 +81,10 @@ export function Archive() {
   );
 
   return (
-    <div className="space-y-5 text-xs">
-      <header>
-        <h1 className="text-sm font-medium text-fg">Archived sessions</h1>
-        <p className="mt-1 max-w-2xl text-[11px] leading-5 text-fg-muted">
-        Restore returns a session to the sidebar. Delete permanently
-        removes the chat history and any files under its session
-        directory — this can&apos;t be undone.
-        </p>
-      </header>
+    <PageScaffold
+      title={t("settings.archivedChats")}
+      description="Restore returns a session to the sidebar. Delete permanently removes the chat history and any files under its session directory — this can't be undone."
+    >
 
       {rows === null && (
         <div className="text-xs text-fg-subtle">Loading…</div>
@@ -178,7 +176,7 @@ export function Archive() {
           })}
         </ul>
       )}
-    </div>
+    </PageScaffold>
   );
 }
 

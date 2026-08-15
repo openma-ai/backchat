@@ -13,6 +13,14 @@ describe("ShellLayout route chrome", () => {
     expect(shell).toContain('paddingTop: hasTopbar ? undefined : "var(--stage-inset)"');
   });
 
+  it("keeps scheduled on the same no-topbar chrome as settings", () => {
+    const layout = readFileSync(resolve(__dirname, "ShellLayout.tsx"), "utf8");
+
+    expect(layout).not.toContain("isScheduled");
+    expect(layout).not.toContain("scheduled-chrome");
+    expect(layout).toContain(") : null");
+  });
+
   it("mounts side chat, terminal, and their buttons only on chat routes", () => {
     const layout = readFileSync(resolve(__dirname, "ShellLayout.tsx"), "utf8");
     const shell = readFileSync(resolve(__dirname, "AppShell.tsx"), "utf8");

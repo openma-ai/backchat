@@ -78,6 +78,32 @@ class AuthRequiredProbeAgent implements Agent {
   }
 }
 
+class InvalidKeyProbeAgent implements Agent {
+  async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
+    return {
+      protocolVersion: PROTOCOL_VERSION,
+      authMethods: [{ id: "api-key", name: "API Key" }],
+      agentCapabilities: { promptCapabilities: {} },
+    };
+  }
+
+  async newSession(_params: NewSessionRequest): Promise<NewSessionResponse> {
+    throw new Error("Internal error: turn failed: Authentication Fails, Your api key: fadf is invalid");
+  }
+
+  async authenticate() {
+    return {};
+  }
+
+  async prompt(_params: PromptRequest): Promise<PromptResponse> {
+    return { stopReason: "end_turn" };
+  }
+
+  async cancel() {
+    return undefined;
+  }
+}
+
 class EnvVarProbeAgent implements Agent {
   newSessionCalls = 0;
   authenticateCalls = 0;
@@ -103,6 +129,76 @@ class EnvVarProbeAgent implements Agent {
 
   async authenticate() {
     this.authenticateCalls++;
+    return {};
+  }
+
+  async prompt(_params: PromptRequest): Promise<PromptResponse> {
+    return { stopReason: "end_turn" };
+  }
+
+  async cancel() {
+    return undefined;
+  }
+}
+
+class ApiKeyProbeAgent implements Agent {
+  authenticateCalls: unknown[] = [];
+
+  async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
+    return {
+      protocolVersion: PROTOCOL_VERSION,
+      authMethods: [{
+        id: "api-key",
+        name: "API Key",
+        description: "Save an API key to the harness credential store",
+        _meta: { "api-key": { provider: "openai" } },
+      } as never],
+      agentCapabilities: { promptCapabilities: {} },
+    };
+  }
+
+  async newSession(_params: NewSessionRequest): Promise<NewSessionResponse> {
+    throw RequestError.authRequired();
+  }
+
+  async authenticate(params: unknown) {
+    this.authenticateCalls.push(params);
+    return {};
+  }
+
+  async prompt(_params: PromptRequest): Promise<PromptResponse> {
+    return { stopReason: "end_turn" };
+  }
+
+  async cancel() {
+    return undefined;
+  }
+}
+
+class GatewayProbeAgent implements Agent {
+  authenticateCalls: unknown[] = [];
+  initializeCalls: unknown[] = [];
+
+  async initialize(params: InitializeRequest): Promise<InitializeResponse> {
+    this.initializeCalls.push(params);
+    return {
+      protocolVersion: PROTOCOL_VERSION,
+      authMethods: [{
+        id: "gateway",
+        name: "Custom model gateway",
+        description: "Use a custom OpenAI-compatible gateway",
+        _meta: { gateway: { protocol: "openai", restartRequired: "false" } },
+      } as never],
+      agentCapabilities: { promptCapabilities: {} },
+    };
+  }
+
+  async newSession(_params: NewSessionRequest): Promise<NewSessionResponse> {
+    throw RequestError.authRequired();
+  }
+
+  async authenticate(params: unknown) {
+    this.authenticateCalls.push(params);
     return {};
   }
 
@@ -226,6 +322,18 @@ describe("ACP auth probe", () => {
     });
   });
 
+  it("reports wrapped invalid-key session failures as needs-auth", async () => {
+    await expect(probeAgentAuthStatus({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner: connectProbeAgent(() => new InvalidKeyProbeAgent()),
+    })).resolves.toMatchObject({
+      status: "needs-auth",
+      methodId: "api-key",
+      methodName: "API Key",
+    });
+  });
+
   it("reports missing env-var credentials without creating a session", async () => {
     const agent = new EnvVarProbeAgent();
 
@@ -264,6 +372,184 @@ describe("ACP auth probe", () => {
       methodName: "OpenAI API key",
     });
     expect(agent.newSessionCalls).toBe(1);
+  });
+
+  it("surfaces Codex-shaped api-key methods as an in-app agent form", async () => {
+    await expect(probeAgentAuthStatus({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner: connectProbeAgent(() => new ApiKeyProbeAgent()),
+    })).resolves.toEqual({
+      status: "needs-auth",
+      methodId: "api-key",
+      methodName: "API Key",
+      methods: [{
+        id: "api-key",
+        name: "API Key",
+        description: "Save an API key to the harness credential store",
+        type: "agent",
+        form: "fields",
+        vars: [{ name: "api-key", label: "API key", secret: true }],
+      }],
+    });
+  });
+
+  it("sends an API key through authenticate _meta instead of env overrides", async () => {
+    const agent = new ApiKeyProbeAgent();
+
+    await expect(authenticateAgent({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner: connectProbeAgent(() => agent),
+      methodId: "api-key",
+      secret: "sk-test-abcdef",
+    })).resolves.toEqual({ status: "completed" });
+    expect(agent.authenticateCalls).toEqual([{
+      methodId: "api-key",
+      _meta: { "api-key": { apiKey: "sk-test-abcdef" } },
+    }]);
+  });
+
+  it("surfaces Codex-shaped gateway methods as an in-app agent form", async () => {
+    const agent = new GatewayProbeAgent();
+    await expect(probeAgentAuthStatus({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner: connectProbeAgent(() => agent),
+    })).resolves.toEqual({
+      status: "needs-auth",
+      methodId: "gateway",
+      methodName: "Custom model gateway",
+      methods: [{
+        id: "gateway",
+        name: "Custom model gateway",
+        description: "Use a custom OpenAI-compatible gateway",
+        type: "agent",
+        form: "fields",
+        vars: [
+          { name: "baseUrl", label: "Base URL" },
+          { name: "api-key", label: "API key", secret: true },
+          { name: "providerName", label: "Provider", optional: true },
+        ],
+      }],
+    });
+    expect(agent.initializeCalls).toEqual([expect.objectContaining({
+      clientCapabilities: expect.objectContaining({
+        auth: expect.objectContaining({
+          _meta: { gateway: true },
+        }),
+      }),
+    })]);
+  });
+
+  it("encodes authenticate _meta from form values using the method _meta, not the method id", async () => {
+    class ConventionProbeAgent implements Agent {
+      authenticateCalls: unknown[] = [];
+      constructor(private readonly method: Record<string, unknown>) {}
+      async initialize(): Promise<InitializeResponse> {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          authMethods: [this.method as never],
+          agentCapabilities: { promptCapabilities: {} },
+        };
+      }
+      async newSession(): Promise<NewSessionResponse> {
+        throw RequestError.authRequired();
+      }
+      async authenticate(params: unknown) {
+        this.authenticateCalls.push(params);
+        return {};
+      }
+      async prompt(): Promise<PromptResponse> {
+        return { stopReason: "end_turn" };
+      }
+      async cancel() {
+        return undefined;
+      }
+    }
+
+    const keyed = new ConventionProbeAgent({
+      id: "provider-login",
+      name: "Provider key",
+      _meta: { "api-key": { provider: "anthropic" } },
+    });
+    await expect(authenticateAgent({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner: connectProbeAgent(() => keyed),
+      methodId: "provider-login",
+      values: { "api-key": "sk-ant" },
+    })).resolves.toEqual({ status: "completed" });
+    expect(keyed.authenticateCalls).toEqual([{
+      methodId: "provider-login",
+      _meta: { "api-key": { apiKey: "sk-ant" } },
+    }]);
+
+    const gateway = new ConventionProbeAgent({
+      id: "custom-endpoint",
+      name: "Custom endpoint",
+      _meta: { gateway: { protocol: "openai" } },
+    });
+    await expect(authenticateAgent({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner: connectProbeAgent(() => gateway),
+      methodId: "custom-endpoint",
+      values: {
+        baseUrl: "https://www.example.com",
+        "api-key": "TOKEN",
+        providerName: "custom",
+      },
+    })).resolves.toEqual({ status: "completed" });
+    expect(gateway.authenticateCalls).toEqual([{
+      methodId: "custom-endpoint",
+      _meta: {
+        gateway: {
+          baseUrl: "https://www.example.com",
+          headers: { Authorization: "Bearer TOKEN" },
+          providerName: "custom",
+        },
+      },
+    }]);
+
+    const unknown = new ConventionProbeAgent({
+      id: "gateway",
+      name: "Looks like a gateway",
+    });
+    await expect(authenticateAgent({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner: connectProbeAgent(() => unknown),
+      methodId: "gateway",
+      values: { baseUrl: "https://www.example.com", "api-key": "TOKEN" },
+    })).resolves.toEqual({ status: "completed" });
+    expect(unknown.authenticateCalls).toEqual([{ methodId: "gateway" }]);
+  });
+
+  it("sends gateway settings through authenticate _meta", async () => {
+    const agent = new GatewayProbeAgent();
+
+    await expect(authenticateAgent({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-probe-test",
+      spawner: connectProbeAgent(() => agent),
+      methodId: "gateway",
+      gateway: {
+        baseUrl: "https://www.example.com",
+        headers: { Authorization: "Bearer TOKEN" },
+        providerName: "custom",
+      },
+    })).resolves.toEqual({ status: "completed" });
+    expect(agent.authenticateCalls).toEqual([{
+      methodId: "gateway",
+      _meta: {
+        gateway: {
+          baseUrl: "https://www.example.com",
+          headers: { Authorization: "Bearer TOKEN" },
+          providerName: "custom",
+        },
+      },
+    }]);
   });
 
   it("refuses to run authenticate for env-var credential methods", async () => {

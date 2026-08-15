@@ -131,6 +131,52 @@ function oklchComponents(value: string): { lightness: number; chroma: number } {
   return { lightness: Number(match[1]), chroma: Number(match[2]) };
 }
 
+/** Relative luminance per WCAG 2.1, for the hex and OKLCH forms themes use. */
+function relativeLuminance(color: string): number {
+  const linear = color.startsWith("#") ? hexToLinearRgb(color) : oklchToLinearRgb(color);
+  const [r, g, b] = linear;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function hexToLinearRgb(color: string): [number, number, number] {
+  const hex = color.slice(1);
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex.slice(0, 6);
+  const channels = [0, 2, 4].map((offset) => Number.parseInt(full.slice(offset, offset + 2), 16) / 255);
+  return channels.map((c) =>
+    c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4),
+  ) as [number, number, number];
+}
+
+function oklchToLinearRgb(color: string): [number, number, number] {
+  const match = color.match(/^oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+  if (!match) throw new Error(`Unsupported color token: ${color}`);
+  const lightness = Number(match[1]);
+  const chroma = Number(match[2]);
+  const hue = (Number(match[3]) * Math.PI) / 180;
+  const a = chroma * Math.cos(hue);
+  const b = chroma * Math.sin(hue);
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ].map((channel) => Math.min(1, Math.max(0, channel))) as [number, number, number];
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const a = relativeLuminance(foreground);
+  const b = relativeLuminance(background);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
 describe("theme plugin contract", () => {
   it("ships a complete, unique set of built-in theme plugins", async () => {
     const { THEME_SPEC_VERSION, THEME_TOKEN_NAMES, builtInThemes } = await loadThemePlugins();
@@ -256,17 +302,46 @@ describe("theme plugin contract", () => {
       "bg-sidebar": "#1c1c1c",
       "bg-surface": "#1c1c1c",
       "bg-bubble": "#404040",
-      fg: "#dbdad2",
-      "fg-muted": "#858379",
-      "fg-subtle": "#747471",
-      border: "#2a2a2a",
-      "border-strong": "#3a3a39",
+      fg: "#ebe9e1",
+      "fg-muted": "#adab9f",
+      "fg-subtle": "#949288",
+      border: "#333331",
+      "border-strong": "#4a4a47",
     });
     expect(dark?.preview).toMatchObject({
       background: "#171717",
       surface: "#1c1c1c",
-      foreground: "#dbdad2",
+      foreground: "#ebe9e1",
     });
+  });
+
+  it("keeps every dark foreground tier readable on the canvas and on panels", async () => {
+    const { getThemePlugin } = await loadThemePlugins();
+
+    for (const themeId of ["backchat-dark", "workbench-dark"]) {
+      const tokens = getThemePlugin?.(themeId, "dark")?.tokens;
+      expect(tokens, themeId).toBeDefined();
+      if (!tokens) continue;
+
+      // Secondary and tertiary copy carry most of the product's labels,
+      // descriptions, and hints at 12px. A tier that drops below AA reads as a
+      // dim display rather than as de-emphasis, so contrast is an invariant of
+      // the palette, not a per-component concern.
+      for (const surface of ["bg", "bg-surface", "bg-sidebar"]) {
+        for (const tier of ["fg", "fg-muted", "fg-subtle"]) {
+          const ratio = contrastRatio(tokens[tier], tokens[surface]);
+          expect(ratio, `${themeId} ${tier} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+
+      // The tiers must still read as three distinct weights.
+      expect(contrastRatio(tokens.fg, tokens.bg), themeId).toBeGreaterThan(
+        contrastRatio(tokens["fg-muted"], tokens.bg) + 1,
+      );
+      expect(contrastRatio(tokens["fg-muted"], tokens.bg), themeId).toBeGreaterThan(
+        contrastRatio(tokens["fg-subtle"], tokens.bg),
+      );
+    }
   });
 
   it("matches Cursor's light hierarchy while reserving OpenMA coral for branded actions", async () => {

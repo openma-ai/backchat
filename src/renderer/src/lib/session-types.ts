@@ -87,6 +87,29 @@ export interface SessionRow {
    */
   status: "draft" | "persisted" | "starting" | "ready" | "running" | "errored" | "disposed";
   lastError?: string;
+  /** True when the current harness needs sign-in. Distinct from `errored`
+   *  so the composer stays usable and can show the setup panel. */
+  authRequired?: boolean;
+  auth?: {
+    status: "configured" | "needs-auth" | "unknown";
+    message: string;
+    methodId?: string;
+    methodName?: string;
+    methods?: Array<{
+      id: string;
+      name?: string;
+      description?: string;
+      type?: string;
+      form?: "fields";
+      vars?: Array<{
+        name: string;
+        label?: string;
+        secret?: boolean;
+        optional?: boolean;
+      }>;
+      link?: string;
+    }>;
+  };
   createdAt: number;
   /** turn_id of the in-flight prompt, if any. */
   activeTurnId?: string;

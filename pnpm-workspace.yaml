@@ -15,6 +15,7 @@ allowBuilds:
   electron: true
   esbuild: true
   electron-winstaller: true
+  workerd: set this to true or false
 
 minimumReleaseAgeExclude:
   - '@agentclientprotocol/claude-agent-acp@0.64.2'

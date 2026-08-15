@@ -1,5 +1,6 @@
 import {
   flattenSelectOptions,
+  isAgentPresetConfigOption,
   type AcpSessionConfigOption,
 } from "./session-config-options";
 
@@ -79,6 +80,9 @@ export function recentConfigOverrides(
   if (!recent || !options?.length) return {};
   const restored: Record<string, RunConfigValue> = {};
   for (const option of options) {
+    // New chats keep the harness Agent preset (dsh-acp: standard). Last-used
+    // model / effort / permission still restore; the preset does not.
+    if (isAgentPresetConfigOption(option)) continue;
     const value = recent[option.id];
     if (option.type === "boolean" && typeof value === "boolean") {
       restored[option.id] = value;

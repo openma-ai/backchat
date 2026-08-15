@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarClockIcon,
   CheckCircle2Icon,
-  ChevronDownIcon,
   CirclePauseIcon,
   Clock3Icon,
   HistoryIcon,
@@ -20,9 +20,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageSurface } from "@/components/shell/PageSurface";
+import { ContentPage, PageScaffold } from "@/components/shell/PageScaffold";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
+import {
+  SCHEDULES_QUERY_KEY,
+  formatScheduleListMeta,
+  scheduleRowsForTab,
+  scheduleSourceSessionLabel,
+  type SchedulePageTab,
+} from "@/lib/scheduled-task-presentation";
 import { buildScheduleTrigger, type ScheduleTriggerDraft } from "@/lib/scheduled-page-model";
 import type {
   ScheduleInfo,
@@ -66,11 +73,17 @@ function newForm(sourceSessionId = ""): ScheduleFormState {
   };
 }
 
+const SCHEDULE_TABS: { id: SchedulePageTab; label: TranslationKey }[] = [
+  { id: "all", label: "scheduled.all" },
+  { id: "active", label: "scheduled.active" },
+  { id: "paused", label: "scheduled.paused" },
+];
+
 export function ScheduledPage() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const schedules = useQuery({
-    queryKey: ["schedules"],
+    queryKey: SCHEDULES_QUERY_KEY,
     queryFn: () => window.backchat.schedulesList(),
     refetchInterval: 15_000,
   });
@@ -84,14 +97,10 @@ export function ScheduledPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<SchedulePageTab>("all");
 
   const sourceSessions = sessions.data ?? [];
-  const rows = schedules.data ?? [];
-  const counts = useMemo(() => ({
-    active: rows.filter((item) => item.status === "active").length,
-    paused: rows.filter((item) => item.status === "paused").length,
-    completed: rows.filter((item) => item.status === "completed").length,
-  }), [rows]);
+  const rows = scheduleRowsForTab(schedules.data ?? [], tab);
 
   const openCreate = () => {
     setEditingId(null);
@@ -158,7 +167,7 @@ export function ScheduledPage() {
           notificationPolicy: form.notificationPolicy,
         });
       }
-      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      await queryClient.invalidateQueries({ queryKey: SCHEDULES_QUERY_KEY });
       setFormOpen(false);
       toast.success(editingId ? t("scheduled.updated") : t("scheduled.created"));
     } catch (error) {
@@ -176,7 +185,7 @@ export function ScheduledPage() {
         id: schedule.id,
         status: schedule.status === "active" ? "paused" : "active",
       });
-      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      await queryClient.invalidateQueries({ queryKey: SCHEDULES_QUERY_KEY });
     } catch (error) {
       toast.error(t("scheduled.updateFailed"), {
         description: error instanceof Error ? error.message : String(error),
@@ -189,7 +198,7 @@ export function ScheduledPage() {
     try {
       await window.backchat.schedulesDelete({ id: schedule.id });
       if (expandedId === schedule.id) setExpandedId(null);
-      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      await queryClient.invalidateQueries({ queryKey: SCHEDULES_QUERY_KEY });
     } catch (error) {
       toast.error(t("scheduled.deleteFailed"), {
         description: error instanceof Error ? error.message : String(error),
@@ -198,41 +207,53 @@ export function ScheduledPage() {
   };
 
   return (
-    <PageSurface>
-      <div className="w-full px-8 pb-16 pt-8">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <CalendarClockIcon className="size-4 text-info" aria-hidden="true" />
-              <h1 className="text-base font-medium text-fg">{t("scheduled.title")}</h1>
-            </div>
-            <p className="mt-1 max-w-[68ch] text-[11px] leading-5 text-fg-muted">
-              {t("scheduled.description")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+    <ContentPage>
+      <PageScaffold
+        title={t("scheduled.title")}
+        description={t("scheduled.description")}
+        actions={(
+          <>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               onClick={() => void schedules.refetch()}
               disabled={schedules.isFetching}
+              aria-label={t("scheduled.refresh")}
+              title={t("scheduled.refresh")}
               className="text-fg-muted"
             >
               <RefreshCwIcon className={cn("size-3.5", schedules.isFetching && "animate-spin")} />
-              {t("scheduled.refresh")}
             </Button>
             <Button size="sm" onClick={openCreate} disabled={sourceSessions.length === 0}>
               <PlusIcon className="size-3.5" />
               {t("scheduled.new")}
             </Button>
-          </div>
-        </header>
-
-        <dl className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-y border-border/45 py-3 text-[11px]">
-          <StatusCount label={t("scheduled.active")} value={counts.active} tone="active" />
-          <StatusCount label={t("scheduled.paused")} value={counts.paused} tone="paused" />
-          <StatusCount label={t("scheduled.completed")} value={counts.completed} tone="completed" />
-        </dl>
+          </>
+        )}
+      >
+        <div role="tablist" aria-label={t("scheduled.title")} className="flex gap-5">
+          {SCHEDULE_TABS.map((item) => {
+            const selected = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setTab(item.id)}
+                className={cn(
+                  "relative pb-2 text-[13px] transition-colors",
+                  selected ? "font-medium text-fg" : "text-fg-muted hover:text-fg",
+                )}
+              >
+                {t(item.label)}
+                {selected && (
+                  <span className="absolute inset-x-0 bottom-0 h-px bg-fg" aria-hidden="true" />
+                )}
+              </button>
+            );
+          })}
+        </div>
 
         {formOpen && (
           <ScheduleForm
@@ -246,10 +267,10 @@ export function ScheduledPage() {
           />
         )}
 
-        <section className="mt-5 overflow-hidden rounded-xl border border-border/55 bg-bg/72">
+        <section className="mt-2">
           {schedules.isLoading ? (
-            <div className="space-y-3 p-4">
-              {[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 w-full rounded-lg" />)}
+            <div className="space-y-3 py-4">
+              {[0, 1, 2].map((item) => <Skeleton key={item} className="h-14 w-full rounded-lg" />)}
             </div>
           ) : schedules.isError ? (
             <EmptyState
@@ -266,11 +287,12 @@ export function ScheduledPage() {
                 : t("scheduled.emptyHint")}
             />
           ) : (
-            <ul className="divide-y divide-border/40">
+            <ul className="mt-1">
               {rows.map((schedule) => (
                 <ScheduleRow
                   key={schedule.id}
                   schedule={schedule}
+                  sourceLabel={scheduleSourceSessionLabel(sourceSessions, schedule.sourceSessionId)}
                   expanded={expandedId === schedule.id}
                   onToggleRuns={() => setExpandedId((id) => id === schedule.id ? null : schedule.id)}
                   onEdit={() => openEdit(schedule)}
@@ -281,8 +303,8 @@ export function ScheduledPage() {
             </ul>
           )}
         </section>
-      </div>
-    </PageSurface>
+      </PageScaffold>
+    </ContentPage>
   );
 }
 
@@ -307,7 +329,7 @@ function ScheduleForm({ form, setForm, sessions, editing, saving, onCancel, onSa
         : t("scheduled.rruleHint");
 
   return (
-    <section className="mt-5 rounded-xl border border-border/60 bg-bg-surface/45 p-4 sm:p-5">
+    <section className="mt-5 rounded-xl bg-bg-surface/40 p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xs font-medium text-fg">
@@ -406,8 +428,9 @@ function ScheduleForm({ form, setForm, sessions, editing, saving, onCancel, onSa
   );
 }
 
-function ScheduleRow({ schedule, expanded, onToggleRuns, onEdit, onToggleStatus, onDelete }: {
+function ScheduleRow({ schedule, sourceLabel, expanded, onToggleRuns, onEdit, onToggleStatus, onDelete }: {
   schedule: ScheduleInfo;
+  sourceLabel: string;
   expanded: boolean;
   onToggleRuns: () => void;
   onEdit: () => void;
@@ -415,42 +438,64 @@ function ScheduleRow({ schedule, expanded, onToggleRuns, onEdit, onToggleStatus,
   onDelete: () => void;
 }) {
   const { locale, t } = useI18n();
+  const meta = formatScheduleListMeta(schedule, locale);
   return (
-    <li>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5 sm:px-5">
-        <span className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-lg",
-          schedule.status === "active" ? "bg-info-subtle text-info" : "bg-bg-surface text-fg-subtle",
-        )}>
-          {schedule.status === "active" ? <Clock3Icon className="size-4" /> : schedule.status === "paused" ? <CirclePauseIcon className="size-4" /> : <CheckCircle2Icon className="size-4" />}
+    <li className="group">
+      <div className="flex items-start gap-3 rounded-lg px-1.5 py-3 hover:bg-bg-surface/55">
+        <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-bg-surface text-fg-muted">
+          {schedule.status === "paused"
+            ? <CirclePauseIcon className="size-3.5" />
+            : <Clock3Icon className="size-3.5" />}
         </span>
-        <div className="min-w-[220px] flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-xs font-medium text-fg" title={schedule.name}>{schedule.name}</h3>
-            <StatusBadge status={schedule.status} />
-          </div>
-          <p className="mt-1 truncate text-[10px] text-fg-subtle" title={schedule.prompt}>{schedule.prompt}</p>
+        <div className="min-w-0 flex-1">
+          <Link
+            to="/chat/$sessionId"
+            params={{ sessionId: schedule.sourceSessionId }}
+            aria-label={t("scheduled.openSource")}
+            title={sourceLabel}
+            className="block min-w-0"
+          >
+            <span className="block truncate text-[13px] font-medium text-fg" title={schedule.name}>
+              {schedule.name}
+            </span>
+          </Link>
+          <button
+            type="button"
+            onClick={onToggleRuns}
+            className="block w-full min-w-0 text-left"
+          >
+            <span className="mt-0.5 block truncate text-[11px] text-fg-muted" title={meta}>
+              {meta}
+            </span>
+            <span className="mt-0.5 block truncate text-[11px] text-fg-subtle" title={schedule.prompt}>
+              {schedule.prompt}
+            </span>
+          </button>
         </div>
-        <div className="min-w-[170px] text-[10px] text-fg-muted">
-          <p className="font-medium text-fg">{triggerSummary(schedule, locale)}</p>
-          <p className="mt-0.5">{schedule.nextRunAt ? t("scheduled.nextRun", { date: formatDate(schedule.nextRunAt, locale) }) : t("scheduled.noNextRun")}</p>
-        </div>
-        <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon-xs" onClick={onToggleRuns} aria-label={t("scheduled.runs")} title={t("scheduled.runs")}> 
+        <div
+          className={cn(
+            "flex shrink-0 items-center gap-0.5 pt-0.5 transition-opacity",
+            expanded ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+          )}
+        >
+          <Button variant="ghost" size="icon-xs" onClick={onToggleRuns} aria-label={t("scheduled.runs")} title={t("scheduled.runs")}>
             <HistoryIcon className="size-3.5" />
           </Button>
           <Button variant="ghost" size="icon-xs" onClick={onEdit} aria-label={t("scheduled.editTitle")} title={t("scheduled.editTitle")}>
             <PencilIcon className="size-3.5" />
           </Button>
-          {schedule.status !== "completed" && (
-            <Button variant="ghost" size="icon-xs" onClick={onToggleStatus} aria-label={schedule.status === "active" ? t("scheduled.pause") : t("scheduled.resume")} title={schedule.status === "active" ? t("scheduled.pause") : t("scheduled.resume")}>
-              {schedule.status === "active" ? <CirclePauseIcon className="size-3.5" /> : <PlayIcon className="size-3.5" />}
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={onToggleStatus}
+            aria-label={schedule.status === "active" ? t("scheduled.pause") : t("scheduled.resume")}
+            title={schedule.status === "active" ? t("scheduled.pause") : t("scheduled.resume")}
+          >
+            {schedule.status === "active" ? <CirclePauseIcon className="size-3.5" /> : <PlayIcon className="size-3.5" />}
+          </Button>
           <Button variant="ghost" size="icon-xs" onClick={onDelete} aria-label={t("common.remove")} title={t("common.remove")} className="text-fg-subtle hover:text-destructive">
             <Trash2Icon className="size-3.5" />
           </Button>
-          <ChevronDownIcon className={cn("ml-1 size-3 text-fg-subtle transition-transform", expanded && "rotate-180")} />
         </div>
       </div>
       {expanded && <RunHistory scheduleId={schedule.id} />}
@@ -465,7 +510,7 @@ function RunHistory({ scheduleId }: { scheduleId: string }) {
     queryFn: () => window.backchat.scheduleRunsList({ schedule_id: scheduleId }),
   });
   return (
-    <div className="border-t border-border/35 bg-bg-surface/30 px-5 py-3">
+    <div className="ml-11 rounded-lg bg-bg-surface/40 px-3 py-3">
       <h4 className="text-[10px] font-medium text-fg-muted">{t("scheduled.recentRuns")}</h4>
       {query.isLoading ? <Skeleton className="mt-2 h-8 w-full rounded-md" /> : !query.data?.length ? (
         <p className="mt-2 text-[10px] text-fg-subtle">{t("scheduled.noRuns")}</p>
@@ -500,51 +545,14 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function StatusBadge({ status }: { status: ScheduleInfo["status"] }) {
-  const { t } = useI18n();
-  return (
-    <span className={cn(
-      "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium",
-      status === "active" ? "bg-success-subtle/70 text-success" : status === "paused" ? "bg-warning-subtle/60 text-warning" : "bg-bg-surface text-fg-subtle",
-    )}>
-      {t(`scheduled.${status}` as "scheduled.active")}
-    </span>
-  );
-}
-
-function StatusCount({ label, value, tone }: { label: string; value: number; tone: "active" | "paused" | "completed" }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={cn("size-1.5 rounded-full", tone === "active" ? "bg-success" : tone === "paused" ? "bg-warning" : "bg-fg-subtle")} />
-      <dt className="text-fg-muted">{label}</dt>
-      <dd className="font-medium tabular-nums text-fg">{value}</dd>
-    </div>
-  );
-}
-
 function EmptyState({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center px-6 text-center">
-      <span className="grid size-9 place-items-center rounded-lg bg-bg-surface text-fg-subtle">{icon}</span>
+    <div className="flex min-h-40 flex-col items-center justify-center px-6 text-center">
+      <span className="grid size-9 place-items-center rounded-full bg-bg-surface text-fg-subtle">{icon}</span>
       <p className="mt-3 text-xs font-medium text-fg">{title}</p>
-      <p className="mt-1 max-w-md text-[10px] leading-4 text-fg-muted">{description}</p>
+      <p className="mt-1 max-w-md text-[11px] leading-4 text-fg-muted">{description}</p>
     </div>
   );
-}
-
-function triggerSummary(schedule: ScheduleInfo, locale: string): string {
-  const trigger = schedule.trigger;
-  if (trigger.type === "at") return formatDate(Date.parse(trigger.at), locale);
-  if (trigger.type === "interval") return `Every ${formatDuration(trigger.everyMs)}`;
-  if (trigger.type === "cron") return `cron ${trigger.expression}`;
-  return trigger.rule.replace(/^RRULE:/i, "");
-}
-
-function formatDuration(ms: number): string {
-  const minutes = ms / 60_000;
-  if (minutes < 60) return `${minutes}m`;
-  if (minutes % 60 === 0) return `${minutes / 60}h`;
-  return `${minutes}m`;
 }
 
 function formatDate(at: number, locale: string): string {

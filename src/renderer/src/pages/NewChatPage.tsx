@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { Composer } from "@/components/chat/Composer";
+import { ComposerAuthSetup } from "@/components/chat/ComposerAuthSetup";
 import { ProjectChipRow } from "@/components/chat/ComposerProjectControls";
 import {
   EmptyStateIntro,
@@ -41,6 +42,7 @@ export function NewChatPage() {
   );
   const [pickedCwd, setPickedCwd] = useState<string | null>(null);
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
+  const [authSetupOpen, setAuthSetupOpen] = useState(false);
 
   // Root navigation always owns one in-memory draft. Creating it is local and
   // synchronous; no ACP process starts until Composer submits the first turn.
@@ -52,6 +54,7 @@ export function NewChatPage() {
   useEffect(() => {
     setPickedCwd(draft?.chosenCwd ?? null);
     setPickedAgentId(null);
+    setAuthSetupOpen(false);
   }, [draft?.chosenCwd, draft?.id]);
 
   const {
@@ -132,6 +135,15 @@ export function NewChatPage() {
             onSuggestion={selectTemplate}
           />
         )}
+        <ComposerAuthSetup
+          open={authSetupOpen}
+          sessionId={draft?.id}
+          sessionAgentId={binding.sessionAgentId}
+          pickedAgentId={pickedAgentId}
+          authRequired={!!draft?.authRequired}
+          sessionAuth={draft?.auth}
+          onClose={() => setAuthSetupOpen(false)}
+        />
         <Composer
           sessionId={draft?.id}
           sessionAgentId={binding.sessionAgentId}
@@ -141,6 +153,8 @@ export function NewChatPage() {
           attachmentDefaultPath={draft?.cwd || pickedCwd || undefined}
           lockedAgentId={binding.lockedAgentId}
           pickedAgentId={pickedAgentId}
+          sessionAuthRequired={!!draft?.authRequired}
+          sessionAuth={draft?.auth}
           suggestionDraft={suggestionDraft}
           currentModeId={draft?.currentModeId}
           onUserInput={syncForUserInput}
@@ -148,6 +162,7 @@ export function NewChatPage() {
           configOptions={draft?.configOptions}
           onSetConfigOption={setSessionConfigOption}
           onResolveAsk={resolveAsk}
+          onRequestAuth={() => setAuthSetupOpen(true)}
           placeholder={homeComposerPlaceholder}
           onSubmit={onSubmit}
           onCancel={cancelActiveTurn}

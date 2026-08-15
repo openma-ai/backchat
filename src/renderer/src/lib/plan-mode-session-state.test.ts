@@ -179,13 +179,29 @@ describe("a command armed while it waits for its argument", () => {
     });
   });
 
-  it("falls back to the command's own name when no state is known", () => {
+  it("does not arm a credential command into the Goal/Plan slot", () => {
+    // `/login` declares `input` so the composer can collect an argument, but
+    // that is not a session state. Showing it in this slot made DeepSeek
+    // Harness login look like Goal.
+    expect(
+      armedCommandSessionStatePresentation(
+        {
+          name: "login",
+          description: "Save a DeepSeek API key into the harness credential store",
+          input: { hint: "<api-key>" },
+        },
+        { goal: "Goal" },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("does not fall back to a raw command name for unknown argument commands", () => {
     expect(
       armedCommandSessionStatePresentation(
         { name: "review", description: "Review changes.", input: { hint: "" } },
         { goal: "Goal" },
       ),
-    ).toMatchObject({ label: "review", title: "Review changes." });
+    ).toBeUndefined();
   });
 });
 

@@ -17,6 +17,7 @@ export interface AgentSetupState {
   authNeeded: boolean;
   canEnable: boolean;
   statusText: string;
+  versionText: string | null;
   setupAction: AgentSetupAction;
   authAction: AgentAuthAction;
   authMethod?: NonNullable<NonNullable<AgentInfo["auth"]>["methods"]>[number];
@@ -74,6 +75,7 @@ export function deriveAgentSetupState(
     authNeeded,
     canEnable: available && !authNeeded,
     statusText: statusText(agent, { waitingForAuth }),
+    versionText: versionText(agent),
     setupAction,
     authAction,
     ...(authMethod ? { authMethod } : {}),
@@ -106,8 +108,14 @@ function statusText(
   if (agent.auth?.status === "configured") return "Auth configured";
   if (agent.available ?? agent.detected) {
     if (agent.updateAvailable) return "Update available";
-    if (agent.installedVersion) return `Installed ${agent.installedVersion}`;
     return agent.installed ? "Installed" : "Ready";
   }
   return agent.installable ? "Not installed" : "Missing";
+}
+
+function versionText(agent: AgentInfo): string | null {
+  if (agent.installedVersion && agent.latestVersion && agent.updateAvailable) {
+    return `${agent.installedVersion} → ${agent.latestVersion}`;
+  }
+  return agent.installedVersion ?? null;
 }

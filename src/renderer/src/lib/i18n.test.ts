@@ -60,6 +60,30 @@ describe("i18n", () => {
     expect(translate?.("en", "chat.suggestionUnblock")).toBe("Help me get unstuck");
     expect(translate?.("en", "chat.fast")).toBe("Fast");
     expect(translate?.("zh-CN", "chat.fast")).toBe("Fast");
+    expect(translate?.("en", "chat.signInToChat")).toBe("Sign in to chat");
+    expect(translate?.("zh-CN", "chat.signInToChat")).toBe("请先登录");
+    expect(translate?.("en", "chat.signIn")).toBe("Sign in");
+    expect(translate?.("zh-CN", "chat.signIn")).toBe("登录");
+    expect(translate?.("en", "scheduled.open")).toBe("Open");
+    expect(translate?.("zh-CN", "scheduled.open")).toBe("打开");
+    expect(translate?.("en", "scheduled.archiveTitle")).toBe(
+      "Archive chat and remove scheduled task?",
+    );
+    expect(translate?.("en", "scheduled.archiveBody", { name: "每天7点闹钟" })).toBe(
+      "This chat has an active scheduled task, 每天7点闹钟.",
+    );
+    expect(translate?.("en", "scheduled.archiveHint")).toBe(
+      "Archiving the chat will also remove it and stop future runs.",
+    );
+    expect(translate?.("en", "scheduled.archiveConfirm")).toBe("Archive and remove");
+    expect(translate?.("zh-CN", "scheduled.archiveTitle")).toBe(
+      "归档对话并删除定时任务？",
+    );
+    expect(translate?.("zh-CN", "scheduled.archiveConfirm")).toBe("归档并删除");
+    expect(translate?.("en", "scheduled.openSource")).toBe("Open chat");
+    expect(translate?.("zh-CN", "scheduled.openSource")).toBe("打开对话");
+    expect(translate?.("en", "scheduled.all")).toBe("All");
+    expect(translate?.("zh-CN", "scheduled.all")).toBe("全部");
   });
 
   it("persists a language preference in appearance settings", () => {

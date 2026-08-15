@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ScheduledTaskExecutor } from "./scheduled-task-executor.js";
 import type { ScheduleInfo } from "../shared/schedules.js";
+import { wrapScheduledTaskPrompt } from "../shared/scheduled-task-prompt.js";
 
 function schedule(overrides: Partial<ScheduleInfo> = {}): ScheduleInfo {
   return {
@@ -45,7 +46,11 @@ describe("ScheduledTaskExecutor", () => {
     expect(prompt).toHaveBeenCalledWith({
       session_id: "task-1",
       turn_id: "turn-1",
-      text: "Check the deployment",
+      text: wrapScheduledTaskPrompt({
+        id: "schedule-1",
+        name: "Follow up",
+        prompt: "Check the deployment",
+      }),
     });
   });
 
@@ -74,7 +79,11 @@ describe("ScheduledTaskExecutor", () => {
     expect(prompt).toHaveBeenCalledWith({
       session_id: "scheduled-task-1",
       turn_id: "turn-1",
-      text: "Check the deployment",
+      text: wrapScheduledTaskPrompt({
+        id: "schedule-1",
+        name: "Follow up",
+        prompt: "Check the deployment",
+      }),
     });
   });
 });

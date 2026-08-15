@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import type {
@@ -10,14 +11,16 @@ import type {
 import type { ElicitationResponseInfo } from "@shared/api.js";
 import type { AgentMessageIntent } from "@shared/agent-interaction.js";
 import type { AcpSessionConfigOption } from "@/lib/session-config-options";
-import type { SessionGoal } from "@/lib/session-types";
+import type { SessionGoal, SessionRow } from "@/lib/session-types";
 import {
   selectSessions,
+  sessionStore,
   useSessionStore,
   type AcpAvailableCommand,
   type BrokerAsk,
 } from "@/lib/session-store";
 import { useI18n } from "@/lib/i18n";
+import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { removeSuggestionTemplateSlot, type ComposerSuggestionDraft } from "@/lib/home-suggestion-flow";
 import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
@@ -35,7 +38,7 @@ import {
 import { promptAnnotationStore } from "@/lib/prompt-annotations";
 import { useComposerContextState } from "@/lib/composer-context-state";
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
-import { ComposerSessionStateSlot, InlineComposerOptionControls, PermissionModeChip, SessionRunChip } from "./ComposerSessionControls";
+import { ComposerAuthControls, ComposerSessionStateSlot, InlineComposerOptionControls, PermissionModeChip, SessionRunChip } from "./ComposerSessionControls";
 import {
   armedCommandSessionStatePresentation,
   armedCommandStillPending,
@@ -55,7 +58,7 @@ import {
 } from "./ComposerContentParts";
 import { ComposerSlashCommandMenu } from "./ComposerSlashCommandMenu";
 import { useComposerSuggestionState } from "@/lib/composer-suggestion-state";
-import { useComposerHarnessState } from "@/lib/composer-harness-state";
+import { useComposerHarnessState, composerActionDisabled, composerAuthNeeded } from "@/lib/composer-harness-state";
 import { useComposerSlashState } from "@/lib/composer-slash-state";
 import {
   filterSessionMentionCandidates,
@@ -90,6 +93,8 @@ export function Composer({
   attachmentDefaultPath,
   lockedAgentId,
   pickedAgentId,
+  sessionAuthRequired = false,
+  sessionAuth,
   suggestionDraft,
   goal,
   pendingAsk,
@@ -102,6 +107,7 @@ export function Composer({
   onResolveAsk,
   canFork = false,
   onFork,
+  onRequestAuth,
   onSubmit,
   onCancel,
 }: {
@@ -116,6 +122,8 @@ export function Composer({
   attachmentDefaultPath?: string;
   lockedAgentId: string | null;
   pickedAgentId: string | null;
+  sessionAuthRequired?: boolean;
+  sessionAuth?: SessionRow["auth"];
   suggestionDraft?: ComposerSuggestionDraft | null;
   goal?: SessionGoal;
   pendingAsk?: BrokerAsk;
@@ -132,6 +140,7 @@ export function Composer({
   ) => void | Promise<void>;
   canFork?: boolean;
   onFork?: () => void;
+  onRequestAuth?: () => void;
   onSubmit: (
     text: string,
     attachments?: PromptAttachment[],
@@ -275,6 +284,26 @@ export function Composer({
     supportsSteering,
     promptQueueEnabled,
   });
+  const queryClient = useQueryClient();
+  const authNeeded = composerAuthNeeded(currentAgent, {
+    authRequired: sessionAuthRequired,
+    auth: sessionAuth,
+  });
+  const actionDisabled = composerActionDisabled({
+    runningActionDisabled: primaryRunningAction?.disabled,
+    hasHarnessSetup,
+    authNeeded,
+  });
+  const refreshAuth = useMutation({
+    mutationFn: () => window.backchat.agentsList({ refresh: true }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(AGENTS_QUERY_KEY, next);
+      const updated = next.find((item) => item.id === currentAgentId);
+      if (updated?.auth?.status === "configured" && sessionId) {
+        sessionStore.clearAuthRequired(sessionId);
+      }
+    },
+  });
   const composerAvailableCommands = useMemo(
     () => withHostForkCommand(
       effectiveAvailableCommands,
@@ -309,6 +338,14 @@ export function Composer({
   // with no state for a beat.
   useEffect(() => {
     if (!armedCommand) return;
+    if (
+      !armedCommandSessionStatePresentation(armedCommand, {
+        goal: t("chat.goalStatus"),
+      })
+    ) {
+      disarm();
+      return;
+    }
     if (armedSentRef.current && running) armedObservedRunRef.current = true;
     if (
       !armedCommandStillPending({
@@ -320,7 +357,7 @@ export function Composer({
     ) {
       disarm();
     }
-  }, [armedCommand, goal, running]);
+  }, [armedCommand, goal, running, t]);
   const composerSessionState = selectComposerSessionStatePresentation([
     {
       // An armed command outranks the states it is about to enter: it is the
@@ -563,7 +600,7 @@ export function Composer({
       text: commandText,
       disabled: !!disabled,
       running,
-      actionDisabled: primaryRunningAction?.disabled || !hasHarnessSetup,
+      actionDisabled,
     })) return;
     onSubmit(
       commandText,
@@ -670,15 +707,22 @@ export function Composer({
   });
 
   const submitComposer = (intent: AgentMessageIntent = primaryIntent) => {
-    const t = submitText;
+    const promptText = submitText;
     const bare = attachments.length === 0
       && annotations.length === 0
       && sessionReferences.length === 0;
     // A command whose argument is still missing arms the composer instead of
     // leaving as a prompt: Codex answers a bare `/goal` with an error turn.
     if (bare && !armedCommand) {
-      const waiting = pendingArgumentCommand(t, composerAvailableCommands);
-      if (waiting) {
+      const waiting = pendingArgumentCommand(promptText, composerAvailableCommands);
+      // Only Goal (and later Plan-as-argument) occupy the session-state slot.
+      // `/login` also declares `input`, but sending it as a prompt is correct.
+      if (
+        waiting
+        && armedCommandSessionStatePresentation(waiting, {
+          goal: t("chat.goalStatus"),
+        })
+      ) {
         setArmedCommand(waiting);
         setText("");
         reportComposerContent("");
@@ -696,12 +740,12 @@ export function Composer({
           (command) =>
             (slashCommandConfigAction(command)
               ?? hostSessionStateAction(command, currentAgentId))
-            && `/${command.name}` === t.trim(),
+            && `/${command.name}` === promptText.trim(),
         ) ??
         // The catalogue can lag behind a fast typist (agent list still
         // loading). The host contract for Codex holds regardless.
         (currentAgentId === "codex-acp" &&
-        `/${HOST_PLAN_COMMAND.name}` === t.trim()
+        `/${HOST_PLAN_COMMAND.name}` === promptText.trim()
           ? HOST_PLAN_COMMAND
           : undefined);
       if (stateCommand) {
@@ -710,7 +754,7 @@ export function Composer({
       }
     }
     const hasContent =
-      t.trim().length > 0 ||
+      promptText.trim().length > 0 ||
       attachments.length > 0 ||
       annotations.length > 0 ||
       sessionReferences.length > 0;
@@ -726,16 +770,20 @@ export function Composer({
         })
       : null;
     if (!canSubmitComposer({
-      text: t,
+      text: promptText,
       attachments,
       annotations,
       sessionReferenceCount: sessionReferences.length,
       disabled: !!disabled,
       running,
-      actionDisabled: action?.disabled || !hasHarnessSetup,
+      actionDisabled: composerActionDisabled({
+        runningActionDisabled: action?.disabled,
+        hasHarnessSetup,
+        authNeeded,
+      }),
     })) return;
     onSubmit(
-      armedCommand ? `/${armedCommand.name} ${t}` : t,
+      armedCommand ? `/${armedCommand.name} ${promptText}` : promptText,
       attachments,
       intent,
       draftConfigValues,
@@ -768,7 +816,7 @@ export function Composer({
     sessionReferenceCount: sessionReferences.length,
     disabled: !!disabled,
     running,
-    actionDisabled: primaryRunningAction?.disabled || !hasHarnessSetup,
+    actionDisabled,
   });
   /** The run-action slot shows a stop only when there is nothing to send:
    *  a draft always keeps its send/queue meaning so Enter and the button
@@ -814,7 +862,7 @@ export function Composer({
             inputRef={suggestionSlotInputRef}
             template={suggestionTemplate}
             value={suggestionSlotValue}
-            disabled={!!disabled}
+            disabled={!!disabled || authNeeded}
             onChange={(value) => {
               onUserInput(true);
               setSuggestionSlotValue(value);
@@ -976,16 +1024,27 @@ export function Composer({
                   return;
               }
             }}
-              placeholder={selectedSkillCommand ? t("chat.addInstructions") : placeholder}
-              disabled={!!disabled}
+              placeholder={
+                selectedSkillCommand
+                  ? t("chat.addInstructions")
+                  : authNeeded
+                    ? t("chat.signInToChat")
+                    : placeholder
+              }
+              disabled={!!disabled || authNeeded}
               rows={1}
               style={{ textIndent: skillIndent ? `${skillIndent}px` : undefined }}
               className={cn(
                 selectedSkillCommand
                   ? "min-h-[var(--control-height-compact)]"
                   : "min-h-[var(--composer-body-min-height)]",
-                "w-full max-h-[240px] resize-none bg-transparent text-sm leading-7 text-fg outline-none",
-                "placeholder:text-fg-subtle",
+                // What you type and what the transcript shows are the same
+                // prose, so the composer sits on the transcript's reading tier
+                // and font rather than on the UI chrome font.
+                "w-full max-h-[240px] resize-none bg-transparent font-chat text-[14px] leading-7 text-fg outline-none",
+                // A placeholder is instructional copy, not decoration. Muted
+                // still reads as "nothing typed yet" while clearing AA.
+                "placeholder:text-fg-muted",
                 "[field-sizing:content]",
               )}
             />
@@ -1054,6 +1113,12 @@ export function Composer({
           className="flex shrink-0 items-center gap-0.5"
           data-composer-run-actions="true"
         >
+          <ComposerAuthControls
+            authNeeded={authNeeded}
+            refreshing={refreshAuth.isPending}
+            onSignIn={() => onRequestAuth?.()}
+            onRefresh={() => refreshAuth.mutate()}
+          />
           {/* Agent picker — Radix DropdownMenu so the popover matches
               the app's chrome (not macOS-native blue-highlight system
               menu). Trigger shows the current agent label + chevron;
@@ -1097,6 +1162,7 @@ export function Composer({
             <SessionRunChip
               disabled={!!running}
               locked={!!lockedAgentId || agentLocked}
+              authNeeded={authNeeded}
               agents={enabledAgents}
               currentAgentId={currentAgentId}
               currentAgentLabel={currentEnabledAgent?.label ?? currentAgent?.label}

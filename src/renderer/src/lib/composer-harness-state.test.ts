@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentInfo } from "@shared/api.js";
 import type { Settings } from "@shared/settings.js";
-import { deriveComposerHarnessState } from "./composer-harness-state";
+import {
+  deriveComposerHarnessState,
+  composerActionDisabled,
+  composerAuthNeeded,
+} from "./composer-harness-state";
 
 const settings: Settings = {
   default: {
@@ -118,5 +122,46 @@ describe("composer harness state", () => {
       lockedAgentId: "remote-agent",
     }).hasHarnessSetup).toBe(true);
     expect(deriveComposerHarnessState(noLocalHarness).hasHarnessSetup).toBe(false);
+  });
+});
+
+describe("composerAuthNeeded", () => {
+  it("shows setup when the selected harness or live session needs auth", () => {
+    expect(composerAuthNeeded(
+      { auth: { status: "configured", message: "ok" } },
+    )).toBe(false);
+    expect(composerAuthNeeded(
+      { auth: { status: "needs-auth", message: "Authentication required" } },
+    )).toBe(true);
+    expect(composerAuthNeeded(
+      { auth: { status: "configured", message: "ok" } },
+      { authRequired: true },
+    )).toBe(true);
+    expect(composerAuthNeeded(
+      { auth: { status: "needs-auth", message: "Authentication required" } },
+      { auth: { status: "configured", message: "ok" } },
+    )).toBe(false);
+  });
+});
+
+describe("composerActionDisabled", () => {
+  it("blocks send when the probed harness still needs sign-in", () => {
+    expect(composerActionDisabled({
+      hasHarnessSetup: true,
+      authNeeded: true,
+    })).toBe(true);
+    expect(composerActionDisabled({
+      hasHarnessSetup: true,
+      authNeeded: false,
+    })).toBe(false);
+    expect(composerActionDisabled({
+      hasHarnessSetup: false,
+      authNeeded: false,
+    })).toBe(true);
+    expect(composerActionDisabled({
+      runningActionDisabled: true,
+      hasHarnessSetup: true,
+      authNeeded: false,
+    })).toBe(true);
   });
 });

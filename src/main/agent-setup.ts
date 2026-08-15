@@ -23,7 +23,28 @@ export interface AgentSetupService {
   installAgent(id: string): Promise<AgentInfo[]>;
   upgradeAgent(id: string): Promise<AgentInfo[]>;
   uninstallAgent(id: string): Promise<AgentInfo[]>;
-  authenticateAgent(id: string, options?: { methodId?: string }): Promise<AgentInfo[]>;
+  authenticateAgent(id: string, options?: {
+    methodId?: string;
+    secret?: string;
+    values?: Record<string, string>;
+    gateway?: { baseUrl: string; headers?: Record<string, string>; providerName?: string };
+  }): Promise<AgentInfo[]>;
+  observeAuth(
+    id: string,
+    observation: {
+      status: "configured" | "needs-auth" | "unknown";
+      message?: string;
+      methodId?: string;
+    },
+  ): Promise<NonNullable<AgentInfo["auth"]>>;
+  observeSessionConfig(
+    id: string,
+    snapshot: {
+      config_options?: unknown[];
+      available_commands?: unknown[];
+      session_modes?: unknown;
+    },
+  ): Promise<void>;
   dispose(): Promise<void>;
 }
 

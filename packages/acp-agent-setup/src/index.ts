@@ -34,6 +34,7 @@ export interface AcpAgentSetupAuthMethod {
   name?: string;
   description?: string;
   type?: string;
+  form?: "fields";
   vars?: Array<{
     name: string;
     label?: string;
@@ -113,7 +114,28 @@ export interface AcpAgentSetupService {
   installAgent(id: string): Promise<AcpAgentSetupInfo[]>;
   upgradeAgent(id: string): Promise<AcpAgentSetupInfo[]>;
   uninstallAgent(id: string): Promise<AcpAgentSetupInfo[]>;
-  authenticateAgent(id: string, options?: { methodId?: string }): Promise<AcpAgentSetupInfo[]>;
+  authenticateAgent(id: string, options?: {
+    methodId?: string;
+    secret?: string;
+    values?: Record<string, string>;
+    gateway?: { baseUrl: string; headers?: Record<string, string>; providerName?: string };
+  }): Promise<AcpAgentSetupInfo[]>;
+  observeAuth(
+    id: string,
+    observation: {
+      status: "configured" | "needs-auth" | "unknown";
+      message?: string;
+      methodId?: string;
+    },
+  ): Promise<AcpAgentSetupAuth>;
+  observeSessionConfig(
+    id: string,
+    snapshot: {
+      config_options?: unknown[];
+      available_commands?: unknown[];
+      session_modes?: unknown;
+    },
+  ): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -306,14 +328,27 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           });
         }
       }
+      const cachedProbe = detectedEntry ? probeCache[entry.id] : undefined;
+      if (!auth && cachedProbe?.auth) {
+        auth = cachedProbe.auth;
+        this.authCache.set(entry.id, auth);
+      }
       const usableSessionConfig =
         sessionConfig && !setupAuthBlocksCapabilities(auth)
           ? sessionConfig
           : undefined;
       if (usableSessionConfig) {
-        await this.cacheProbe(entry.id, usableSessionConfig);
+        await this.persistProbe(entry.id, {
+          config_options: usableSessionConfig.configOptions,
+          available_commands: usableSessionConfig.availableCommands,
+          ...(usableSessionConfig.modes
+            ? { session_modes: usableSessionConfig.modes }
+            : {}),
+          ...(auth ? { auth } : {}),
+        });
+      } else if (auth && (shouldProbeAuth || shouldProbeCapabilities)) {
+        await this.persistProbe(entry.id, { auth });
       }
-      const cachedProbe = detectedEntry ? probeCache[entry.id] : undefined;
       const configOptions =
         usableSessionConfig?.configOptions ??
         cachedProbe?.config_options ??
@@ -478,7 +513,12 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     });
   }
 
-  async authenticateAgent(id: string, options: { methodId?: string } = {}): Promise<AcpAgentSetupInfo[]> {
+  async authenticateAgent(id: string, options: {
+    methodId?: string;
+    secret?: string;
+    values?: Record<string, string>;
+    gateway?: { baseUrl: string; headers?: Record<string, string>; providerName?: string };
+  } = {}): Promise<AcpAgentSetupInfo[]> {
     await this.refreshRegistry({ refresh: false });
     const entry = await this.detectCatalogEntry(id);
     if (!entry) throw new Error(`ACP agent is not available: ${id}`);
@@ -490,19 +530,56 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       agentAuthLaunchGraceMs: 2_000,
       backgroundAuthTimeoutMs: 10 * 60_000,
       methodId: options.methodId,
+      ...(options.secret ? { secret: options.secret } : {}),
+      ...(options.values ? { values: options.values } : {}),
+      ...(options.gateway ? { gateway: options.gateway } : {}),
       launchInteractiveAuth: this.deps.launchInteractiveAuth,
     });
     if (result.status === "completed") {
-      this.authCache.set(id, {
+      const existing = this.authCache.get(id);
+      const auth: AcpAgentSetupAuth = {
         status: "configured",
         message: "Authentication completed",
-        ...(options.methodId ? { methodId: options.methodId } : {}),
-      });
+        ...(options.methodId
+          ? { methodId: options.methodId }
+          : existing?.methodId
+            ? { methodId: existing.methodId }
+            : {}),
+        ...(existing?.methodName ? { methodName: existing.methodName } : {}),
+        ...(existing?.methods ? { methods: existing.methods } : {}),
+      };
+      this.authCache.set(id, auth);
+      await this.persistProbe(id, { auth });
     }
     // Authentication is an explicit lifecycle of its own. Do not follow it
     // with another disposable ACP probe; the next real session is the source
     // of truth if a browser/terminal flow is still finishing.
     return this.listAgents();
+  }
+
+  async observeAuth(
+    id: string,
+    observation: {
+      status: "configured" | "needs-auth" | "unknown";
+      message?: string;
+      methodId?: string;
+    },
+  ): Promise<AcpAgentSetupAuth> {
+    const auth = mergeObservedAuth(this.authCache.get(id), observation);
+    this.authCache.set(id, auth);
+    await this.persistProbe(id, { auth });
+    return auth;
+  }
+
+  async observeSessionConfig(
+    id: string,
+    snapshot: {
+      config_options?: unknown[];
+      available_commands?: unknown[];
+      session_modes?: unknown;
+    },
+  ): Promise<void> {
+    await this.persistProbe(id, snapshot);
   }
 
   private async refreshRegistry(options: { refresh?: boolean }): Promise<void> {
@@ -691,15 +768,26 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return this.probeCachePromise;
   }
 
-  private async cacheProbe(
+  private async persistProbe(
     id: string,
-    result: ProbeAgentSessionConfigResult,
+    patch: {
+      config_options?: unknown[];
+      available_commands?: unknown[];
+      session_modes?: unknown;
+      auth?: AcpAgentSetupAuth;
+    },
   ): Promise<void> {
     const cache = await this.loadProbeCache();
+    const prev = cache[id];
     cache[id] = {
-      config_options: result.configOptions,
-      available_commands: result.availableCommands,
-      ...(result.modes ? { session_modes: result.modes } : {}),
+      config_options: patch.config_options ?? prev?.config_options ?? [],
+      available_commands: patch.available_commands ?? prev?.available_commands ?? [],
+      ...(patch.session_modes !== undefined
+        ? { session_modes: patch.session_modes }
+        : prev?.session_modes
+          ? { session_modes: prev.session_modes }
+          : {}),
+      ...(patch.auth ? { auth: patch.auth } : prev?.auth ? { auth: prev.auth } : {}),
       updated_at: new Date().toISOString(),
     };
     const path = this.probeCachePath();
@@ -723,6 +811,7 @@ interface CachedAgentProbe {
   config_options: unknown[];
   available_commands: unknown[];
   session_modes?: unknown;
+  auth?: AcpAgentSetupAuth;
   updated_at: string;
 }
 
@@ -807,6 +896,17 @@ function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {
             config_options: value.config_options,
             available_commands: value.available_commands,
             ...(value.session_modes ? { session_modes: value.session_modes } : {}),
+            ...(value.auth ? { auth: value.auth } : {}),
+            updated_at: typeof value.updated_at === "string" ? value.updated_at : "",
+          } satisfies CachedAgentProbe]]
+        : value.auth
+          ? [[id, {
+            config_options: Array.isArray(value.config_options) ? value.config_options : [],
+            available_commands: Array.isArray(value.available_commands)
+              ? value.available_commands
+              : [],
+            ...(value.session_modes ? { session_modes: value.session_modes } : {}),
+            auth: value.auth,
             updated_at: typeof value.updated_at === "string" ? value.updated_at : "",
           } satisfies CachedAgentProbe]]
         : [],
@@ -876,6 +976,29 @@ function overrideEnv(override: AcpAgentSetupOverride): Record<string, string> | 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
+function mergeObservedAuth(
+  existing: AcpAgentSetupAuth | undefined,
+  observation: {
+    status: "configured" | "needs-auth" | "unknown";
+    message?: string;
+    methodId?: string;
+  },
+): AcpAgentSetupAuth {
+  const methodId = observation.methodId ?? existing?.methodId;
+  const prefix = observation.status === "configured"
+    ? methodId ? `ACP auth is configured (${methodId}).` : "ACP auth is configured."
+    : observation.status === "needs-auth"
+      ? methodId ? `Authentication required (${methodId}).` : "Authentication required."
+      : "Could not verify auth.";
+  return {
+    status: observation.status,
+    message: observation.message ?? prefix,
+    ...(methodId ? { methodId } : {}),
+    ...(existing?.methodName ? { methodName: existing.methodName } : {}),
+    ...(existing?.methods ? { methods: existing.methods } : {}),
+  };
+}
+
 function setupAuthFromProbeStatus(
   status: ProbeAgentAuthStatus,
 ): AcpAgentSetupAuth | undefined {
@@ -896,6 +1019,7 @@ function setupAuthFromProbeStatus(
       ...(methodInfo.name ? { name: methodInfo.name } : {}),
       ...(methodInfo.description ? { description: methodInfo.description } : {}),
       ...(methodInfo.type ? { type: methodInfo.type } : {}),
+      ...(methodInfo.form ? { form: methodInfo.form } : {}),
       ...(methodInfo.vars ? { vars: methodInfo.vars } : {}),
       ...(methodInfo.link ? { link: methodInfo.link } : {}),
     })) } : {}),

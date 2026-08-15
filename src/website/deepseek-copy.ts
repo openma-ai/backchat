@@ -20,7 +20,7 @@ const en = {
   fastSteps: [
     ["Open agent settings", "Launch Backchat, open Settings → Agents, then find DeepSeek Harness at the top of Registry."],
     ["Install the adapter", "Choose Install. Backchat installs @openma/deepseek-harness-acp into its managed ACP tools directory and enables it."],
-    ["Complete terminal setup", "Choose the key/setup action, then Open terminal setup. The adapter runs dsh-acp login and saves the credential in the harness credential store."],
+    ["Save an API key", "Choose Sign in, then pick API Key, Custom model gateway, or Browser. API key and gateway send `_meta` through ACP authenticate; Browser opens a local page. Backchat does not keep the secret."],
     ["Start a real session", "Create a new chat, choose a project and DeepSeek Harness, then use /status to verify the active model, mode, and credential state."],
   ],
   managedNote: "Your API key stays in DeepSeek Harness's own credential store. Backchat launches the adapter but does not copy the key into its settings.",
@@ -30,7 +30,7 @@ const en = {
   commandLabel: "Terminal",
   authKicker: "AUTHENTICATION",
   authTitle: "One credential store, three safe entry points.",
-  authBody: "dsh-acp reuses $DSH_HOME/.credentials.yaml—the same mode-600 file used by the dsh Web UI. Save a key from Backchat's terminal setup, with dsh-acp login, or in dsh web under Settings → Models.",
+  authBody: "dsh-acp reuses $DSH_HOME/.credentials.yaml—the same mode-600 file used by the dsh Web UI. In Backchat, choose API Key, Custom model gateway, or Browser. You can also save a key with dsh-acp login or in dsh web under Settings → Models.",
   authFallback: "For ephemeral environments, DEEPSEEK_API_KEY and optional DEEPSEEK_BASE_URL can be passed to the process. Do not commit either value or place it in a public command example.",
   profileKicker: "EXISTING DSH USERS",
   profileTitle: "Attach the ACP bridge to a dsh profile.",
@@ -46,7 +46,7 @@ const en = {
   trouble: [
     ["DeepSeek Harness is not listed", "Open Settings → Agents and choose Refresh. For manual installs, confirm dsh-acp is on PATH with dsh-acp --help."],
     ["Install reports an unsupported Node version", "Run node --version. The current adapter package requires Node.js 22.15 or newer."],
-    ["The row says Auth needed", "Reopen the setup action or run dsh-acp login. Finish the interactive prompt, then start a new session."],
+    ["The row says Auth needed", "Open Sign in, save an API key, or run dsh-acp login. Then start a new session."],
     ["A dsh profile does not load", "Run dsh --profile acp once in a terminal, then verify the custom Backchat command is dsh with arguments --profile acp and that both processes share DSH_HOME."],
   ],
   repoHelp: "Open an adapter issue",
@@ -76,7 +76,7 @@ const zh: typeof en = {
   fastSteps: [
     ["打开智能体设置", "启动 Backchat，进入“设置 → 智能体”，在 Registry 顶部找到 DeepSeek Harness。"],
     ["安装适配器", "点击“安装”。Backchat 会把 @openma/deepseek-harness-acp 安装到托管的 ACP 工具目录并自动启用。"],
-    ["完成终端配置", "点击密钥/配置操作，再选择“打开终端配置”。适配器会运行 dsh-acp login，并把凭据写入 Harness 自己的凭据存储。"],
+    ["保存 API Key", "点击“登录”，再选 API Key、自定义网关或浏览器。前两项通过 ACP authenticate 的 `_meta` 提交；浏览器打开本地页。Backchat 不保存密钥。"],
     ["开始真实会话", "新建对话，选择项目与 DeepSeek Harness，然后执行 /status，检查当前模型、权限模式和登录状态。"],
   ],
   managedNote: "API Key 保存在 DeepSeek Harness 自己的凭据存储中。Backchat 只负责启动适配器，不会把密钥复制进应用设置。",
@@ -86,7 +86,7 @@ const zh: typeof en = {
   commandLabel: "终端",
   authKicker: "身份验证",
   authTitle: "一个凭据存储，三种安全入口。",
-  authBody: "dsh-acp 复用 $DSH_HOME/.credentials.yaml，也就是 dsh Web UI 使用的 mode-600 文件。你可以通过 Backchat 的终端配置、dsh-acp login，或 dsh web 的“设置 → 模型”保存密钥。",
+  authBody: "dsh-acp 复用 $DSH_HOME/.credentials.yaml，也就是 dsh Web UI 使用的 mode-600 文件。在 Backchat 里可选 API Key、自定义网关或浏览器。也可以用 dsh-acp login，或在 dsh web 的“设置 → 模型”保存密钥。",
   authFallback: "临时环境可通过进程变量传入 DEEPSEEK_API_KEY 和可选的 DEEPSEEK_BASE_URL。不要提交这些值，也不要把它们写进公开命令示例。",
   profileKicker: "已有 DSH 的用户",
   profileTitle: "把 ACP bridge 接入 dsh profile。",
@@ -102,7 +102,7 @@ const zh: typeof en = {
   trouble: [
     ["列表中没有 DeepSeek Harness", "打开“设置 → 智能体”并点击“刷新”。手动安装时，可运行 dsh-acp --help 检查命令是否在 PATH 中。"],
     ["安装提示 Node 版本不支持", "运行 node --version。当前适配器包要求 Node.js 22.15 或更高版本。"],
-    ["列表显示需要登录", "重新打开配置操作，或运行 dsh-acp login。完成交互式提示后再新建会话。"],
+    ["列表显示需要登录", "打开“登录”并保存 API Key，或运行 dsh-acp login。然后新建会话。"],
     ["dsh profile 无法加载", "先在终端运行一次 dsh --profile acp，再确认 Backchat 自定义命令是 dsh、参数是 --profile acp，并确保两个进程共用 DSH_HOME。"],
   ],
   repoHelp: "提交适配器问题",
