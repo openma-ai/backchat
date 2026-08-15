@@ -368,7 +368,13 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   async installAgent(id: string): Promise<AcpAgentSetupInfo[]> {
     await this.refreshRegistry({ refresh: true });
     const entry = this.requireEntry(id);
-    await this.installEntry(entry);
+    const npmPackageName = !entry.version && entry.registryDistribution?.npx
+      ? npmPackageNameFromSpec(entry.registryDistribution.npx.package)
+      : undefined;
+    const npmLatestVersion = npmPackageName
+      ? await this.latestNpmPackageVersion(npmPackageName)
+      : undefined;
+    await this.installEntry(entry, npmLatestVersion);
     return this.collectAgentSnapshot({
       trigger: "install",
       refreshRegistry: false,
@@ -573,7 +579,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     const npmPackageName = entry.registryDistribution?.npx?.package
       ? npmPackageNameFromSpec(entry.registryDistribution.npx.package)
       : undefined;
-    const [metadata, installedNpmVersion] = await Promise.all([
+    const [metadata, installedNpmVersion, npmLatestVersion] = await Promise.all([
       entry.installSource === "registry" && entry.registryId
         ? readAcpRegistryInstallMetadata({
             registryId: entry.registryId,
@@ -584,9 +590,12 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       npmPackageName
         ? this.installedNpmPackageVersion(shimPath, npmPackageName)
         : Promise.resolve(undefined),
+      !registryLatestVersion && npmPackageName
+        ? this.latestNpmPackageVersion(npmPackageName)
+        : Promise.resolve(undefined),
     ]);
     const installedVersion = installedNpmVersion ?? metadata?.version;
-    const latestVersion = registryLatestVersion;
+    const latestVersion = registryLatestVersion ?? npmLatestVersion;
     const updateAvailable = entry.installSource === "registry"
       && isStrictlyNewerVersion(latestVersion, installedVersion);
     return {
@@ -618,6 +627,30 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       ), "utf8")) as { version?: unknown };
       return typeof parsed.version === "string" && parsed.version.length > 0
         ? parsed.version
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async latestNpmPackageVersion(
+    packageName: string,
+  ): Promise<string | undefined> {
+    try {
+      const response = await (this.deps.fetchImpl ?? fetch)(
+        `https://registry.npmjs.org/${encodeURIComponent(packageName)}`,
+        {
+          headers: { accept: "application/vnd.npm.install-v1+json" },
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (!response.ok) return undefined;
+      const parsed = await response.json() as {
+        "dist-tags"?: { latest?: unknown };
+      };
+      const latest = parsed["dist-tags"]?.latest;
+      return typeof latest === "string" && latest.length > 0
+        ? latest
         : undefined;
     } catch {
       return undefined;

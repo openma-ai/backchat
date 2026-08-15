@@ -194,6 +194,38 @@ describe("acp agent setup sdk", () => {
     expect(agents[0]?.config_options).toEqual(configOptions);
   });
 
+  it("installs an unversioned npx agent from npm's latest dist-tag", async () => {
+    getKnownAgentsMock.mockReturnValue([{
+      ...fakeEntry,
+      registryDistribution: {
+        npx: { package: "@test/fake-agent" },
+      },
+    }]);
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      "dist-tags": { latest: "1.0.2" },
+    }), { status: 200 })) as typeof fetch;
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: "/tmp/sdk-registry.json",
+      refreshRegistry: async () => undefined,
+      fetchImpl,
+    });
+
+    await service.installAgent("fake-agent");
+
+    expect(installAcpRegistryAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registryAgent: expect.objectContaining({
+          version: "1.0.2",
+          distribution: {
+            npx: { package: "@test/fake-agent@1.0.2" },
+          },
+        }),
+      }),
+    );
+  });
+
   it("persists installed agent session metadata for ordinary lists after restart", async () => {
     const root = join(tmpdir(), `openma-acp-probe-cache-${process.pid}-${Date.now()}`);
     const configOptions = [{
@@ -681,6 +713,59 @@ describe("acp agent setup sdk", () => {
       }),
     ]);
     expect(fetchImpl).not.toHaveBeenCalled();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("compares an unversioned npx agent with npm's latest dist-tag", async () => {
+    const root = join(tmpdir(), `openma-acp-npx-latest-${process.pid}-${Date.now()}`);
+    const binDir = join(root, "bin");
+    const installDir = join(root, "registry", "fake-agent", "v_unknown_test");
+    const packageDir = join(installDir, "node_modules", "@test", "fake-agent");
+    const packageBin = join(installDir, "node_modules", ".bin", "fake-agent");
+    await mkdir(packageDir, { recursive: true });
+    await mkdir(join(installDir, "node_modules", ".bin"), { recursive: true });
+    await mkdir(binDir, { recursive: true });
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({ name: "@test/fake-agent", version: "1.0.1" }),
+    );
+    await writeFile(packageBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    await writeFile(
+      join(binDir, "fake-agent"),
+      `#!/bin/sh\nexec '${packageBin}' "$@"\n`,
+      { mode: 0o755 },
+    );
+    getKnownAgentsMock.mockReturnValue([{
+      ...fakeEntry,
+      spec: { command: "fake-agent" },
+      registryDistribution: {
+        npx: { package: "@test/fake-agent" },
+      },
+    }]);
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      "dist-tags": { latest: "1.0.2" },
+    }), { status: 200 })) as typeof fetch;
+    const service = createAcpAgentSetupService({
+      acpBinDir: binDir,
+      acpInstallRoot: root,
+      registryCachePath: join(root, "registry.json"),
+      refreshRegistry: async () => undefined,
+      fetchImpl,
+    });
+
+    await expect(service.listAgents()).resolves.toEqual([
+      expect.objectContaining({
+        installedVersion: "1.0.1",
+        latestVersion: "1.0.2",
+        updateAvailable: true,
+      }),
+    ]);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://registry.npmjs.org/%40test%2Ffake-agent",
+      expect.objectContaining({
+        headers: { accept: "application/vnd.npm.install-v1+json" },
+      }),
+    );
     await rm(root, { recursive: true, force: true });
   });
 
