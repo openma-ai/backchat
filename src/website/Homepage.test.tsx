@@ -16,7 +16,8 @@ const chineseHomeHtml = resolve(projectRoot, "dist/website/zh/index.html");
 const chineseDeepSeekHtml = resolve(projectRoot, "dist/website/zh/deepseek/index.html");
 const robotsTxt = resolve(projectRoot, "dist/website/robots.txt");
 const sitemapXml = resolve(projectRoot, "dist/website/sitemap.xml");
-const faviconSvg = resolve(projectRoot, "dist/website/favicon.svg");
+const logoSvg = resolve(projectRoot, "dist/website/logo.svg");
+const faviconIco = resolve(projectRoot, "dist/website/favicon.ico");
 const webManifest = resolve(projectRoot, "dist/website/site.webmanifest");
 const readmePath = resolve(projectRoot, "README.md");
 const packageJsonPath = resolve(projectRoot, "package.json");
@@ -59,10 +60,11 @@ describe("Backchat website", () => {
     expect(readFileSync(robotsTxt, "utf8")).toContain("Sitemap: https://backchat.openma.dev/sitemap.xml");
     expect(readFileSync(sitemapXml, "utf8")).toContain("https://backchat.openma.dev/deepseek/");
     expect(readFileSync(sitemapXml, "utf8")).toContain("https://backchat.openma.dev/zh/deepseek/");
-    expect(html).toContain('rel="icon" href="/favicon.svg"');
+    expect(html).toContain('rel="icon" href="/logo.svg"');
     expect(html).toContain('rel="apple-touch-icon" href="/apple-touch-icon.png"');
     expect(html).toContain('rel="manifest" href="/site.webmanifest"');
-    expect(existsSync(faviconSvg)).toBe(true);
+    expect(existsSync(logoSvg)).toBe(true);
+    expect(existsSync(faviconIco)).toBe(true);
     expect(existsSync(webManifest)).toBe(true);
     const builtMarketing = [
       html,
@@ -112,7 +114,7 @@ describe("Backchat website", () => {
     expect(html).toContain("Native MCP Apps");
     expect(html).toContain("Codex plugins");
     expect(html).not.toContain("Your workspace stays yours.");
-    expect(html).toContain('src="/favicon.svg"');
+    expect(html).toContain('src="/logo.svg"');
     expect(html).toContain('aria-label="Backchat on GitHub"');
     expect(html).not.toContain("without taking your work off your machine");
     expect(html).toContain('aria-label="Primary navigation"');
