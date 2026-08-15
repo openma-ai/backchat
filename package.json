@@ -12,6 +12,10 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "website:dev": "vite --config website.vite.config.ts",
+    "website:build": "tsc -p tsconfig.website.json --noEmit && vite build --config website.vite.config.ts",
+    "website:preview": "vite preview --config website.vite.config.ts",
+    "website:deploy": "pnpm website:build && wrangler deploy",
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
@@ -101,6 +105,7 @@
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
     "vitest": "^4.1.8",
+    "wrangler": "^4.123.0",
     "zod": "^4.4.3"
   },
   "build": {
