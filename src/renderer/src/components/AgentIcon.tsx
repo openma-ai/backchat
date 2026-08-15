@@ -14,6 +14,7 @@
 import { siGooglegemini } from "simple-icons";
 import { BotIcon } from "lucide-react";
 import CodexIcon from "@lobehub/icons/es/Codex";
+import DeepSeekIcon from "@lobehub/icons/es/DeepSeek";
 import HermesAgentIcon from "@lobehub/icons/es/HermesAgent";
 import OpenClawIcon from "@lobehub/icons/es/OpenClaw";
 import OpenCodeIcon from "@lobehub/icons/es/OpenCode";
@@ -46,6 +47,18 @@ export function AgentIcon({
   iconUrl?: string;
   title?: string;
 }) {
+  if (agentId === "dsh-acp") {
+    return (
+      <span
+        role="img"
+        aria-label={title ?? "DeepSeek Harness"}
+        data-agent-icon-source="deepseek"
+        className={`inline-flex items-center justify-center ${className}`}
+      >
+        <DeepSeekIcon className="size-full" aria-hidden="true" />
+      </span>
+    );
+  }
   if (agentId === "claude-acp") {
     return (
       <span
