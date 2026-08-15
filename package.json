@@ -20,6 +20,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
+    "test:ci": "vitest run --config vitest.ci.config.ts --reporter=dot",
     "test:watch": "vitest",
     "test:e2e:composer": "electron-vite build && playwright test e2e/composer.spec.ts e2e/composer-slash.spec.ts e2e/composer-config.spec.ts",
     "test:e2e:harness-feature-matrix": "electron-vite build && playwright test e2e/harness-feature-matrix.visual.spec.ts e2e/harness-final-response.real.spec.ts && pnpm run report:harness-feature-matrix",

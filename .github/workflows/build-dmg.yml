@@ -8,6 +8,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: dmg-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -22,31 +26,17 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.34.5
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Type-check
         run: pnpm run typecheck
 
-      - name: Run release regression tests
-        run: |
-          pnpm exec vitest run \
-            src/main/browser-plugin-mcp.test.ts \
-            packages/acp/src/registry.test.ts \
-            packages/acp-agent-setup/src/index.test.ts \
-            src/renderer/src/pages/settings/agent-catalog-state.test.ts \
-            src/main/renderer-i18n-contract.test.ts
+      - name: Run curated contract and release-regression tests
+        run: pnpm run test:ci
+
+      - name: Run script tests
+        run: node --test scripts/*.test.mjs
 
       - name: Build DMG
         run: |
@@ -58,6 +48,20 @@ jobs:
           app=$(find release -type f -path "*/Backchat.app/Contents/MacOS/Backchat" -print -quit)
           test -n "$app"
           node scripts/verify-packaged-runtime.mjs "$app"
+
+      - name: Verify packaged first prompt
+        run: |
+          app=$(find release -type f -path "*/Backchat.app/Contents/MacOS/Backchat" -print -quit)
+          test -n "$app"
+          node scripts/verify-packaged-first-prompt.mjs "$app"
+
+      - name: Upload packaged first-prompt screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-first-prompt
+          path: test-results/packaged-first-prompt.png
+          if-no-files-found: ignore
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -76,4 +80,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" release/**/*.dmg --generate-notes --verify-tag
+        run: |
+          dmgs=$(find release -type f -name '*.dmg')
+          test -n "$dmgs"
+          gh release create "${GITHUB_REF_NAME}" $dmgs --generate-notes --verify-tag

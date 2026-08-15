@@ -144,10 +144,16 @@ Signed release packaging and notarization are documented in
 
 ```bash
 pnpm typecheck
+pnpm test:ci        # curated contract + release-regression lane (GitHub Actions)
 pnpm test
 pnpm test:e2e:fast
-pnpm test:verify    # typecheck + unit tests + fast E2E lane
+pnpm test:verify    # typecheck + full unit tests + fast E2E lane
 ```
+
+Pull requests run `test:ci` and `test:e2e:fast`. Pushes to `main` also build an
+unsigned macOS DMG, then check that the packaged app can import its runtime and
+complete a first prompt. GitHub's official Dependency Review, CodeQL, and
+Dependabot for Actions run alongside those gates.
 
 The desktop shell is built with Electron, TypeScript, React, Vite, Tailwind
 CSS, and shadcn/ui. The ACP runtime is vendored from
