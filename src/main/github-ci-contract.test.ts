@@ -34,6 +34,7 @@ describe("github ci", () => {
     expect(ci).toContain("./.github/actions/setup-node-pnpm");
     expect(setup).toMatch(/uses: pnpm\/action-setup@v\d+/);
     expect(setup).toMatch(/uses: actions\/setup-node@v\d+/);
+    expect(setup).toMatch(/node-version:\s*['"]?24\b/);
     expect(ci).toMatch(/uses: actions\/checkout@v\d+/);
     expect(ci).toMatch(/uses: actions\/dependency-review-action@v\d+/);
     expect(ci).toMatch(/uses: actions\/upload-artifact@v\d+/);
