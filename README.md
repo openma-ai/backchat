@@ -16,6 +16,10 @@
 </p>
 
 <p align="center">
+  <a href="https://backchat.openma.dev/"><strong>Visit the official website →</strong></a>
+</p>
+
+<p align="center">
   <strong>New: <a href="https://github.com/openma-ai/deepseek-harness-acp">DeepSeek Harness</a> support through <code>dsh-plugin</code> and <code>dsh-acp</code>.</strong><br />
   <sub>Use your existing dsh profile or the standalone ACP server from the same local-first workspace.</sub>
 </p>
@@ -131,7 +135,7 @@ ACP-compatible agent, then choose a project and start a chat.
 
 ```bash
 pnpm build          # production renderer/main bundles
-pnpm package:local  # unsigned local installer
+pnpm package        # unsigned local installer for the current OS
 pnpm package:dir    # unpacked app directory
 ```
 
