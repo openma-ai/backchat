@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/backchat-logo.png" alt="Backchat app icon" width="144" />
+  <img src="src/website/public/logo.svg" alt="OpenMA" width="144" />
 </p>
 
 <h1 align="center">Backchat</h1>
