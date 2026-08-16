@@ -20,6 +20,10 @@ import {
   readOmaBridgeCredentials,
 } from "./oma-bridge.js";
 import { desktopCliPath } from "./cli-path.js";
+import {
+  provisionBundledNodeRuntime,
+  resolveBundledNpmCliPath,
+} from "./bundled-node-runtime.js";
 import { configureAppLog, logAppEvent } from "./app-log.js";
 
 // Chromium's OSCrypt otherwise initializes the macOS system credential store
@@ -407,6 +411,15 @@ if (!gotLock) {
     configureAppLog(root);
     const acpRoot = join(root, "acp");
     const acpBinDir = join(acpRoot, "bin");
+    const bundledNodeRuntime = await provisionBundledNodeRuntime({
+      binDir: acpBinDir,
+      executablePath: process.execPath,
+      npmCliPath: resolveBundledNpmCliPath({
+        appPath: app.getAppPath(),
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+      }),
+    });
     process.env.OPENMA_ACP_BIN_DIR = acpBinDir;
     process.env.PATH = [acpBinDir, desktopCliPath()].filter(Boolean).join(delimiter);
     logAppEvent("app.startup", {
@@ -424,6 +437,7 @@ if (!gotLock) {
       probeCachePath: join(root, "agent-probe-cache.json"),
       acpBinDir,
       acpInstallRoot: acpRoot,
+      ...bundledNodeRuntime,
       scheduleDbPath: join(root, "schedules.db"),
       browserMcpServerForTask: (taskId) =>
         browserHarnessMcpBridge.descriptor(taskId),

@@ -117,6 +117,40 @@ describe("TurnBlock", () => {
     expect(html).toContain('data-session-turn-answer="true"');
   });
 
+  it("keeps unphased ACP text before a later tool", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "BEFORE_TOOL_MARKER" },
+              },
+              receivedAt: 1,
+            },
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "ordered-tool",
+                kind: "read",
+                status: "in_progress",
+                title: "Read ordered.txt",
+              },
+              receivedAt: 2,
+            },
+          ],
+        })}
+      />,
+    );
+    const before = html.indexOf("BEFORE_TOOL_MARKER");
+    const tool = html.indexOf('data-tool-call-id="ordered-tool"');
+
+    expect(before).toBeGreaterThanOrEqual(0);
+    expect(tool).toBeGreaterThan(before);
+  });
+
   it("renders Continue in new chat as a response action when fork is available", () => {
     const html = renderToStaticMarkup(
       <TurnBlock

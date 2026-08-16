@@ -45,6 +45,7 @@ jobs:
       - name: Build DMG
         run: |
           pnpm exec electron-vite build
+          pnpm run runtime:prepare
           pnpm exec electron-builder --publish never
 
       - name: Verify packaged runtime imports

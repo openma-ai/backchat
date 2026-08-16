@@ -3,9 +3,17 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
-import { installAcpRegistryAgent, listAcpRegistryCatalog } from "./installer.js";
+import {
+  ACP_NPM_INSTALL_TIMEOUT_MS,
+  installAcpRegistryAgent,
+  listAcpRegistryCatalog,
+} from "./installer.js";
 
 describe("ACP registry installer", () => {
+  it("allows large managed npm packages enough time to install", () => {
+    expect(ACP_NPM_INSTALL_TIMEOUT_MS).toBeGreaterThanOrEqual(10 * 60_000);
+  });
+
   it("lists installable registry agents with platform args and env", async () => {
     const fetchImpl = async () => new Response(JSON.stringify({
       agents: [
@@ -146,6 +154,30 @@ await writeFile(join(prefix, "node_modules", ".bin", binName), "#!/bin/sh\\nexit
     });
 
     expect(fetchCount).toBe(0);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("can run npm through a bundled Node executable and CLI entrypoint", async () => {
+    const root = join(tmpdir(), `openma-acp-bundled-npm-${process.pid}-${Date.now()}`);
+    const binDir = join(root, "bin");
+    const fakeNpm = await writeFakeNpm(root);
+
+    await installAcpRegistryAgent({
+      registryId: "example-agent",
+      shimName: "example-agent",
+      binDir,
+      installRoot: root,
+      npmCommand: process.execPath,
+      npmCommandArgs: [fakeNpm],
+      npmEnv: { TEST_BUNDLED_NPM: "1" },
+      registryAgent: {
+        id: "example-agent",
+        version: "1.0.0",
+        distribution: { npx: { package: "@example/agent@1.0.0" } },
+      },
+    });
+
+    await expect(access(join(binDir, "example-agent"))).resolves.toBeUndefined();
     await rm(root, { recursive: true, force: true });
   });
 

@@ -2099,6 +2099,39 @@ body,
   background-clip: padding-box;
 }
 
+@keyframes agent-update-progress-indeterminate {
+  from {
+    transform: translateX(-125%);
+  }
+  to {
+    transform: translateX(275%);
+  }
+}
+
+.agent-update-progress {
+  height: 2px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+}
+
+.agent-update-progress__bar {
+  display: block;
+  width: 36%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  animation: agent-update-progress-indeterminate 1200ms var(--ease-soft) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-update-progress__bar {
+    width: 45%;
+    animation: none;
+    transform: translateX(60%);
+  }
+}
+
 /* BrandLoader dot pulse — wave from left to right via staggered animation-delay
    on each child. Smoother than animate-pulse (Tailwind defaults are opacity
    0.5↔1) because the dots dim further (0.25) and back, giving a clear "moving"

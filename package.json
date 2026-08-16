@@ -1,6 +1,6 @@
 {
   "name": "backchat",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "description": "Multi-agent desktop client for ACP harnesses",
   "author": "backchat contributors",
@@ -34,9 +34,10 @@
     "smoke:codex-acp-native": "tsx scripts/smoke-codex-acp-native.ts",
     "test:e2e": "electron-vite build && playwright test",
     "test:verify": "pnpm run typecheck && pnpm run test && pnpm run test:e2e:fast",
-    "package": "electron-vite build && electron-builder",
+    "runtime:prepare": "node scripts/prepare-bundled-npm-runtime.mjs",
+    "package": "electron-vite build && pnpm run runtime:prepare && electron-builder",
     "package:browser-extension": "tsx scripts/package-browser-extension.ts",
-    "package:dir": "electron-vite build && electron-builder --dir",
+    "package:dir": "electron-vite build && pnpm run runtime:prepare && electron-builder --dir",
     "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty"
   },
   "dependencies": {
@@ -77,6 +78,7 @@
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.64.2",
     "@agentclientprotocol/codex-acp": "1.1.14",
+    "@electron/asar": "3.4.1",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.100.14",
@@ -119,6 +121,12 @@
     },
     "files": [
       "out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/bundled-npm-runtime.asar",
+        "to": "bundled-npm-runtime.asar"
+      }
     ],
     "asarUnpack": [
       "**/*.node"

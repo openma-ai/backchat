@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+export const ACP_NPM_INSTALL_TIMEOUT_MS = 10 * 60_000;
+
 const ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 
 interface AcpRegistryNpxDistribution {
@@ -53,6 +55,8 @@ export interface InstallAcpRegistryAgentOptions {
   binDir: string;
   fetchImpl?: typeof fetch;
   npmCommand?: string;
+  npmCommandArgs?: string[];
+  npmEnv?: NodeJS.ProcessEnv;
   installRoot?: string;
   shimArgs?: string[];
   shimEnv?: Record<string, string | undefined>;
@@ -470,7 +474,7 @@ async function resolvePackageBin(prefixDir: string, packageSpec: string): Promis
 async function installNpxDistribution(
   npx: AcpRegistryNpxDistribution,
   options: Required<Pick<InstallAcpRegistryAgentOptions, "binDir" | "registryId" | "shimName">> &
-    Pick<InstallAcpRegistryAgentOptions, "installRoot" | "npmCommand" | "env" | "shimArgs" | "shimEnv"> &
+    Pick<InstallAcpRegistryAgentOptions, "installRoot" | "npmCommand" | "npmCommandArgs" | "npmEnv" | "env" | "shimArgs" | "shimEnv"> &
     { version?: string },
 ): Promise<InstallResult> {
   const installRoot = options.installRoot ?? options.binDir;
@@ -492,8 +496,9 @@ async function installNpxDistribution(
         env: {
           ...process.env,
           ...(options.env ?? {}),
+          ...(options.npmEnv ?? {}),
         },
-        timeout: 120_000,
+        timeout: ACP_NPM_INSTALL_TIMEOUT_MS,
         maxBuffer: 1024 * 1024,
       };
       const installArgs = [
@@ -507,7 +512,12 @@ async function installNpxDistribution(
       try {
         await execFileAsync(
           options.npmCommand ?? "npm",
-          [...installArgs, "--prefer-offline", npx.package],
+          [
+            ...(options.npmCommandArgs ?? []),
+            ...installArgs,
+            "--prefer-offline",
+            npx.package,
+          ],
           npmOptions,
         );
       } catch (error) {
@@ -515,7 +525,12 @@ async function installNpxDistribution(
         await rm(stagedDir, { recursive: true, force: true });
         await execFileAsync(
           options.npmCommand ?? "npm",
-          [...installArgs, "--prefer-online", npx.package],
+          [
+            ...(options.npmCommandArgs ?? []),
+            ...installArgs,
+            "--prefer-online",
+            npx.package,
+          ],
           npmOptions,
         );
       }
@@ -631,6 +646,8 @@ export async function installAcpRegistryAgent(options: InstallAcpRegistryAgentOp
       binDir: options.binDir,
       installRoot: options.installRoot,
       npmCommand: options.npmCommand,
+      npmCommandArgs: options.npmCommandArgs,
+      npmEnv: options.npmEnv,
       env: options.env,
       shimArgs: options.shimArgs,
       shimEnv: options.shimEnv,

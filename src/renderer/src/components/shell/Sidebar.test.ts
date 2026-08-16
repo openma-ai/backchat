@@ -259,7 +259,9 @@ describe("groupSidebarSessions", () => {
     expect(source).toContain("<PopoverDescription");
     expect(source).toContain('<Badge variant="secondary"');
     expect(source).toContain("<AgentIcon");
-    expect(source).toContain('variant="default"');
+    expect(source).toContain('variant="outline"');
+    expect(source).toContain('data-agent-update-progress="indeterminate"');
+    expect(source).not.toContain('loading={updating}');
     expect(source).not.toContain('variant="ghost"');
     expect(source).not.toContain("w-[340px]");
     expect(source).not.toContain("bg-warning-subtle");

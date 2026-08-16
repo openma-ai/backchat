@@ -9,6 +9,7 @@ out
 .vite
 .tsbuildinfo
 release/
+/build/bundled-npm-runtime.asar
 test-results/
 playwright-report/
 *.bak
