@@ -56,12 +56,14 @@ describe("github ci", () => {
     expect(website).toContain("secrets.CLOUDFLARE_API_TOKEN");
   });
 
-  it("keeps packaged-runtime and first-prompt verification on the DMG job", () => {
+  it("verifies packaged runtime, signature, and first prompt before publishing DMGs", () => {
     expect(dmg).toContain("./.github/actions/setup-node-pnpm");
     expect(dmg).toContain("pnpm run test:ci");
     expect(dmg).toContain("verify-packaged-runtime.mjs");
+    expect(dmg).toContain("verify-packaged-macos-signature.mjs");
     expect(dmg).toContain("verify-packaged-first-prompt.mjs");
     expect(dmg).toContain("Backchat-arm64.dmg");
     expect(dmg).toContain("gh release create");
+    expect(dmg).not.toContain("continue-on-error");
   });
 });

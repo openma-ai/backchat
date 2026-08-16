@@ -99,7 +99,9 @@ try {
   await page.getByTestId("new-chat-button").waitFor({ timeout: 20_000 });
   await page.getByTestId("new-chat-button").click();
 
-  const composer = page.locator('[data-chat-surface="main"] textarea').last();
+  // The first prompt is submitted from NewChatPage before a persisted chat
+  // surface exists. Session pages gain data-chat-surface only after submit.
+  const composer = page.locator('[data-page="new-chat"] textarea').last();
   await composer.fill("packaged-first-prompt-e2e");
   await composer.press("Enter");
   await page
