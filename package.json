@@ -1,6 +1,6 @@
 {
   "name": "backchat",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "description": "Multi-agent desktop client for ACP harnesses",
   "author": "backchat contributors",

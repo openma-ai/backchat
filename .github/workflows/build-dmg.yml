@@ -29,6 +29,10 @@ jobs:
       - name: Setup Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
 
+      - name: Verify tagged release version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node scripts/verify-release-version.mjs package.json
+
       - name: Type-check
         run: pnpm run typecheck
 
