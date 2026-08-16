@@ -124,6 +124,8 @@
       "**/*.node"
     ],
     "mac": {
+      "identity": "-",
+      "hardenedRuntime": false,
       "target": [
         "dmg"
       ],

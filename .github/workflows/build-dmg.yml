@@ -49,6 +49,18 @@ jobs:
           test -n "$app"
           node scripts/verify-packaged-runtime.mjs "$app"
 
+      - name: Verify packaged macOS signature
+        run: |
+          app=$(find release -type d -name "Backchat.app" -print -quit)
+          test -n "$app"
+          node scripts/verify-packaged-macos-signature.mjs "$app"
+
+      - name: Verify packaged first prompt
+        run: |
+          app=$(find release -type f -path "*/Backchat.app/Contents/MacOS/Backchat" -print -quit)
+          test -n "$app"
+          node scripts/verify-packaged-first-prompt.mjs "$app"
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -72,13 +84,6 @@ jobs:
           stable="$(dirname "$versioned")/Backchat-arm64.dmg"
           cp "$versioned" "$stable"
           gh release create "${GITHUB_REF_NAME}" "$versioned" "$stable" --generate-notes --verify-tag
-
-      - name: Verify packaged first prompt
-        continue-on-error: true
-        run: |
-          app=$(find release -type f -path "*/Backchat.app/Contents/MacOS/Backchat" -print -quit)
-          test -n "$app"
-          node scripts/verify-packaged-first-prompt.mjs "$app"
 
       - name: Upload packaged first-prompt screenshot
         if: always()
