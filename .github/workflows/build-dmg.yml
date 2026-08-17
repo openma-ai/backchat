@@ -67,7 +67,7 @@ jobs:
           node scripts/verify-packaged-first-prompt.mjs "$app"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backchat-macos-dmg
           path: release/**/*.dmg
@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload packaged first-prompt screenshot
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: packaged-first-prompt
           path: test-results/packaged-first-prompt.png
