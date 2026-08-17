@@ -127,6 +127,10 @@ interface RegisterDeps {
   probeCachePath?: string;
   acpBinDir: string;
   acpInstallRoot: string;
+  npmCommand?: string;
+  npmCommandArgs?: string[];
+  npmEnv?: NodeJS.ProcessEnv;
+  npmRegistryUrls?: string[];
   scheduleDbPath: string;
   browserMcpServerForTask?: (taskId: string) => unknown;
   /** Codex-compatible plugin bundle roots. Defaults to ~/.oma/plugins. */
@@ -191,6 +195,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     ...(deps.probeCachePath ? { probeCachePath: deps.probeCachePath } : {}),
     acpBinDir: deps.acpBinDir,
     acpInstallRoot: deps.acpInstallRoot,
+    npmCommand: deps.npmCommand,
+    npmCommandArgs: deps.npmCommandArgs,
+    npmEnv: deps.npmEnv,
+    npmRegistryUrls: deps.npmRegistryUrls,
     launchInteractiveAuth: launchTerminalAuth,
     agentOverrides: () => settingsStore.get().agents,
     getEnabledAgentIds: () => settingsStore.get().agents

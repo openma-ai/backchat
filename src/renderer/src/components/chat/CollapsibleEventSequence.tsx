@@ -3,13 +3,13 @@ import { useRef, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
-import { preserveScrollAnchor } from "@/lib/utils";
-import { FadeScrollViewport } from "./FadeScrollViewport";
+import { cn, preserveScrollAnchor } from "@/lib/utils";
 
 export interface CollapsibleEventNode {
   key: string;
   projection: {
     leading?: ReactNode;
+    multiline?: boolean;
     summary: ReactNode;
   };
   content: ReactNode;
@@ -78,18 +78,23 @@ function CollapsibleEventSequenceGroup({
             {projected.leading}
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate text-fg-muted">
+        <span
+          className={cn(
+            "min-w-0 flex-1 text-fg-muted",
+            !projected.multiline && "truncate",
+          )}
+        >
           {projected.summary}
         </span>
         <DisclosureChevron open={open} />
       </button>
       {open && (
         <div className="ml-4 mt-1 border-l border-border/40 pl-2">
-          <FadeScrollViewport level="secondary" contentClassName="space-y-1">
+          <div className="space-y-1">
             {nodes.map((node) => (
               <div key={node.key}>{node.content}</div>
             ))}
-          </FadeScrollViewport>
+          </div>
         </div>
       )}
     </div>

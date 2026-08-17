@@ -95,6 +95,10 @@ export interface AcpAgentSetupServiceDeps {
   probeCachePath?: string;
   acpBinDir: string;
   acpInstallRoot: string;
+  npmCommand?: string;
+  npmCommandArgs?: string[];
+  npmEnv?: NodeJS.ProcessEnv;
+  npmRegistryUrls?: string[];
   probeCwd?: string;
   authInspectionTimeoutMs?: number;
   capabilityInspectionTimeoutMs?: number;
@@ -467,6 +471,10 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         binDir: this.deps.acpBinDir,
         installRoot: this.deps.acpInstallRoot,
         fetchImpl: this.deps.fetchImpl,
+        npmCommand: this.deps.npmCommand,
+        npmCommandArgs: this.deps.npmCommandArgs,
+        npmEnv: this.deps.npmEnv,
+        npmRegistryUrls: this.deps.npmRegistryUrls,
         shimArgs: entry.spec.args,
         shimEnv: entry.spec.env,
         env: this.spawnEnv(),
@@ -674,7 +682,8 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     const installedVersion = installedNpmVersion ?? metadata?.version;
     const latestVersion = registryLatestVersion ?? npmLatestVersion;
     const updateAvailable = entry.installSource === "registry"
-      && isStrictlyNewerVersion(latestVersion, installedVersion);
+      && Boolean(latestVersion)
+      && (!installedVersion || isStrictlyNewerVersion(latestVersion, installedVersion));
     return {
       installed: true,
       ...(installedVersion ? { installedVersion } : {}),

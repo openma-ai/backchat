@@ -117,6 +117,40 @@ describe("TurnBlock", () => {
     expect(html).toContain('data-session-turn-answer="true"');
   });
 
+  it("keeps unphased ACP text before a later tool", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "BEFORE_TOOL_MARKER" },
+              },
+              receivedAt: 1,
+            },
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "ordered-tool",
+                kind: "read",
+                status: "in_progress",
+                title: "Read ordered.txt",
+              },
+              receivedAt: 2,
+            },
+          ],
+        })}
+      />,
+    );
+    const before = html.indexOf("BEFORE_TOOL_MARKER");
+    const tool = html.indexOf('data-tool-call-id="ordered-tool"');
+
+    expect(before).toBeGreaterThanOrEqual(0);
+    expect(tool).toBeGreaterThan(before);
+  });
+
   it("renders Continue in new chat as a response action when fork is available", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
@@ -466,6 +500,35 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("data-current-activity");
   });
 
+  it("keeps the full live thinking body mounted while its header is collapsed", () => {
+    sessionMock.agentId = "pi-acp";
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          thoughtText: "First projected line\nSecond full line",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "agent_thought_chunk",
+                messageId: "thought-live-body",
+                content: {
+                  type: "text",
+                  text: "First projected line\nSecond full line",
+                },
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-thought-stream-body="true"');
+    expect(html).toContain("streaming-md");
+    expect(html).toMatch(/data-thought-stream-body="true"[^>]*hidden/);
+  });
+
   it("deduplicates repeated completed activity summaries", () => {
     const skillPath = "/tmp/skills/documents/SKILL.md";
     const events = ["read-1", "read-2"].map((toolCallId, index) => ({
@@ -518,6 +581,31 @@ describe("TurnBlock", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("components");
     expect(html).not.toContain("renderer");
+  });
+
+  it("lets the working timeline use the transcript scroll instead of an inner viewport", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          events: ["first", "second"].map((toolCallId, index) => ({
+            payload: {
+              sessionUpdate: "tool_call",
+              toolCallId,
+              kind: "execute",
+              status: index === 1 ? "in_progress" : "completed",
+              title: `Command ${index + 1}`,
+            },
+            receivedAt: index + 1,
+          })),
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-tool-call-id="first"');
+    expect(html).toContain('data-tool-call-id="second"');
+    expect(html).not.toContain("data-fade-scroll-viewport");
+    expect(html).not.toContain("activity-timeline-scroller");
   });
 
   it("puts grouped and single-tool controls on the same leading column", () => {

@@ -3,6 +3,31 @@ import { useEffect, useRef } from "react";
 import { sessionStore } from "@/lib/session-store";
 import { thoughtHeadline } from "@/lib/thought-headline";
 
+export function thoughtProjectionLines(text: string, fallback: string): string[] {
+  const lines = text
+    .replace(/\r\n?/g, "\n")
+    .split(/\n+/)
+    .map((line) => line.replace(/[\t ]+/g, " ").trim())
+    .filter(Boolean);
+  return lines.length > 0 ? lines : [fallback];
+}
+
+function syncProjectionLines(host: HTMLSpanElement, lines: string[]) {
+  while (host.children.length > lines.length) {
+    host.lastElementChild?.remove();
+  }
+  lines.forEach((line, index) => {
+    let row = host.children.item(index) as HTMLSpanElement | null;
+    if (!row) {
+      row = document.createElement("span");
+      row.dataset.thoughtProjectionLine = "true";
+      row.className = "block min-w-0 truncate leading-6";
+      host.append(row);
+    }
+    if (row.textContent !== line) row.textContent = line;
+  });
+}
+
 export function StreamingThoughtProjection({
   turnId,
   prefixSkip,
@@ -22,10 +47,12 @@ export function StreamingThoughtProjection({
     let text = "";
     let replaying = true;
     const render = () => {
-      const body = text.replace(/\s+/g, " ").trim();
-      host.textContent = mode === "headline"
-        ? thoughtHeadline(text) || body || fallback
-        : body || fallback;
+      const lines = thoughtProjectionLines(text, fallback);
+      if (mode === "headline") {
+        host.textContent = thoughtHeadline(text) || lines[0] || fallback;
+      } else {
+        syncProjectionLines(host, lines);
+      }
     };
     const off = sessionStore.subscribeTurnStream(turnId, (delta) => {
       if (delta.kind !== "thought") return;
@@ -41,5 +68,18 @@ export function StreamingThoughtProjection({
     return off;
   }, [fallback, mode, prefixSkip, turnId]);
 
-  return <span ref={hostRef}>{fallback}</span>;
+  if (mode === "headline") return <span ref={hostRef}>{fallback}</span>;
+  return (
+    <span ref={hostRef} className="block min-w-0" data-thought-projection="lines">
+      {thoughtProjectionLines(fallback, fallback).map((line, index) => (
+        <span
+          key={`${index}-${line}`}
+          data-thought-projection-line="true"
+          className="block min-w-0 truncate leading-6"
+        >
+          {line}
+        </span>
+      ))}
+    </span>
+  );
 }

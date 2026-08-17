@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeController } from "@/components/ThemeController";
 import { AppStartupGate } from "@/components/AppStartupGate";
 import { router } from "@/router";
@@ -35,11 +36,13 @@ if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ThemeController />
-      <AppStartupGate>
-        <RouterProvider router={router} />
-      </AppStartupGate>
-      <Toaster position="bottom-right" />
+      <TooltipProvider>
+        <ThemeController />
+        <AppStartupGate>
+          <RouterProvider router={router} />
+        </AppStartupGate>
+        <Toaster position="bottom-right" />
+      </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

@@ -1,5 +1,6 @@
 import type { TurnRender } from "@/lib/reduce-turn";
 import type { Turn } from "@/lib/session-store";
+import { processTimelineEndIndex } from "@/lib/turn-timeline-sections";
 import {
   ASSISTANT_MARKDOWN_CLASS,
   StreamdownText,
@@ -47,11 +48,12 @@ function renderAnswerTimeline(
   isStreaming: boolean,
 ) {
   let assistantPrefix = 0;
+  const processEndIndex = processTimelineEndIndex(rendered.timeline);
   const lastTimelineItem = rendered.timeline.at(-1);
   const liveTailIndex =
     isStreaming &&
     lastTimelineItem?.kind === "assistant_text" &&
-    lastTimelineItem.phase !== "commentary"
+    rendered.timeline.length - 1 > processEndIndex
       ? rendered.timeline.length - 1
       : undefined;
 
@@ -59,7 +61,7 @@ function renderAnswerTimeline(
     if (item.kind !== "assistant_text") return null;
     const prefix = assistantPrefix;
     assistantPrefix += item.text.length;
-    if (item.phase === "commentary") return null;
+    if (index <= processEndIndex) return null;
     if (index === liveTailIndex) {
       return (
         <div

@@ -16,6 +16,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { parseAcpEvent, type TurnRender } from "@/lib/reduce-turn";
 import type { SubagentActivity, Turn } from "@/lib/session-store";
+import { processTimelineEndIndex } from "@/lib/turn-timeline-sections";
 import {
   CollapsibleEventSequence,
   type CollapsibleEventNode,
@@ -24,7 +25,6 @@ import { ASSISTANT_MARKDOWN_CLASS, StreamdownText } from "./ChatMarkdown";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { projectThoughtEvent, ThoughtEventRow } from "./ThoughtEventRow";
 import { ToolRow } from "./ToolPresentation";
-import { FadeScrollViewport } from "./FadeScrollViewport";
 
 /**
  * Collapses every part of a turn except its final answer. A turn containing
@@ -57,8 +57,9 @@ export function TurnProcessBar({
     // the user can close. Once the turn settles it becomes a closed summary.
     setProcessOpen(isStreaming);
   }, [isStreaming]);
-  const commentaryItems = rendered.timeline.filter(
-    (item) => item.kind === "assistant_text" && item.phase === "commentary",
+  const processEndIndex = processTimelineEndIndex(rendered.timeline);
+  const processTextItems = rendered.timeline.filter(
+    (item, index) => item.kind === "assistant_text" && index <= processEndIndex,
   );
   const hasThought = turn.thoughtText.trim().length > 0;
   const toolsById = new Map(
@@ -85,7 +86,7 @@ export function TurnProcessBar({
   const thoughtDurations = projectThoughtDurations(turn);
   const hasProcess =
     hasThought ||
-    commentaryItems.length > 0 ||
+    processTextItems.length > 0 ||
     rendered.tools.length > 0 ||
     hasSupplementalActivity ||
     showThinkingFallback;
@@ -113,13 +114,13 @@ export function TurnProcessBar({
         )}
       />
       <ReasoningContent>
-        <FadeScrollViewport level="primary" contentClassName="space-y-1">
+        <div className="space-y-1">
           {leadingContent}
           {rendered.timeline.map((item, index) => {
             if (item.kind === "assistant_text") {
               const prefix = assistantPrefix;
               assistantPrefix += item.text.length;
-              if (item.phase !== "commentary") return null;
+              if (index > processEndIndex) return null;
               const isLiveTail =
                 isStreaming && index === rendered.timeline.length - 1;
               return (
@@ -243,7 +244,7 @@ export function TurnProcessBar({
             </div>
           )}
           {trailingContent}
-        </FadeScrollViewport>
+        </div>
       </ReasoningContent>
     </Reasoning>
   );

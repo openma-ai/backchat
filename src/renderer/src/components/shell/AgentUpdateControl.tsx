@@ -45,6 +45,97 @@ function updateDescription(agent: AgentInfo, fallback: string): string {
     : fallback;
 }
 
+interface AgentUpdateActionProps {
+  actionLabel: string;
+  error?: string;
+  retryLabel: string;
+  updateLabel: string;
+  updating: boolean;
+  updatingLabel: string;
+  onUpgrade: () => void;
+}
+
+export function AgentUpdateAction({
+  actionLabel,
+  error,
+  retryLabel,
+  updateLabel,
+  updating,
+  updatingLabel,
+  onUpgrade,
+}: AgentUpdateActionProps) {
+  if (updating) {
+    return (
+      <div
+        role="status"
+        aria-label={actionLabel}
+        data-agent-update-spinner="true"
+        className="inline-flex w-20 shrink-0 items-center justify-center gap-1 text-[10px] leading-3 text-muted-foreground"
+      >
+        <Loader2Icon className="size-3 animate-spin" aria-hidden="true" />
+        <span>{updatingLabel}</span>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="xs"
+      onClick={onUpgrade}
+      aria-label={actionLabel}
+    >
+      {error ? retryLabel : updateLabel}
+    </Button>
+  );
+}
+
+interface AgentUpdateErrorProps {
+  detailsLabel: string;
+  diskSpaceMessage: string;
+  error: string;
+  fallbackMessage: string;
+  npmMissingMessage?: string;
+  timeoutMessage?: string;
+}
+
+export function AgentUpdateError({
+  detailsLabel,
+  diskSpaceMessage,
+  error,
+  fallbackMessage,
+  npmMissingMessage = fallbackMessage,
+  timeoutMessage = fallbackMessage,
+}: AgentUpdateErrorProps) {
+  const message = /ENOSPC|no space left on device|insufficient space/i.test(error)
+    ? diskSpaceMessage
+    : /spawn npm ENOENT|npm.*not found|command not found.*npm/i.test(error)
+      ? npmMissingMessage
+      : /SIGTERM|timed? out|ETIMEDOUT/i.test(error)
+        ? timeoutMessage
+        : fallbackMessage;
+
+  return (
+    <details data-agent-update-error="true" className="group mt-1">
+      <summary
+        aria-label={detailsLabel}
+        title={detailsLabel}
+        className="inline-flex size-5 cursor-pointer list-none items-center justify-center rounded-md text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive/30 [&::-webkit-details-marker]:hidden"
+      >
+        <TriangleAlertIcon className="size-3.5" aria-hidden="true" />
+        <span className="sr-only">{detailsLabel}</span>
+      </summary>
+      <div className="mt-1.5 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-[10px] leading-4">
+        <p className="text-destructive">{message}</p>
+        <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] leading-3.5 text-muted-foreground">
+          {error}
+        </pre>
+      </div>
+    </details>
+  );
+}
+
 export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -217,27 +308,25 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
                     {updateDescription(agent, t("acpUpdates.newerRuntime"))}
                   </p>
                   {error && (
-                    <p className="mt-1 flex items-start gap-1 text-[10px] leading-4 text-destructive">
-                      <TriangleAlertIcon
-                        className="mt-0.5 size-3 shrink-0"
-                        aria-hidden="true"
-                      />
-                      <span>{error}</span>
-                    </p>
+                    <AgentUpdateError
+                      detailsLabel={t("acpUpdates.errorDetails")}
+                      diskSpaceMessage={t("acpUpdates.diskSpaceError")}
+                      npmMissingMessage={t("acpUpdates.npmMissingError")}
+                      timeoutMessage={t("acpUpdates.timeoutError")}
+                      fallbackMessage={t("acpUpdates.failed")}
+                      error={error}
+                    />
                   )}
                 </div>
-                <Button
-                  type="button"
-                  variant="default"
-                  size="xs"
-                  onClick={() => void startUpgrade(agent)}
-                  disabled={updating}
-                  loading={updating}
-                  loadingLabel={t("acpUpdates.updating")}
-                  aria-label={actionLabel}
-                >
-                  {error ? t("acpUpdates.retry") : t("acpUpdates.update")}
-                </Button>
+                <AgentUpdateAction
+                  actionLabel={actionLabel}
+                  error={error}
+                  retryLabel={t("acpUpdates.retry")}
+                  updateLabel={t("acpUpdates.update")}
+                  updating={updating}
+                  updatingLabel={t("acpUpdates.updating")}
+                  onUpgrade={() => void startUpgrade(agent)}
+                />
               </div>
             );
           })}
