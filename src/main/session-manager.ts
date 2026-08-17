@@ -257,6 +257,7 @@ export class SessionManager {
   #lifecycles = new Map<string, SessionLifecycle>();
   #starting = new Map<string, Promise<SessionStartResult>>();
   #cancelledStarts = new Set<string>();
+  #acceptingStarts = true;
 
   constructor(deps: SessionManagerDeps) {
     this.#send = deps.send;
@@ -495,6 +496,9 @@ export class SessionManager {
   }
 
   async start(p: SessionStartParams): Promise<SessionStartResult> {
+    if (!this.#acceptingStarts) {
+      return { status: "cancelled", session_id: p.session_id };
+    }
     const inFlight = this.#starting.get(p.session_id);
     if (inFlight) return inFlight;
     this.#transition(p.session_id, { type: "start.requested" });
@@ -1840,6 +1844,7 @@ export class SessionManager {
   }
 
   async disposeAll(): Promise<void> {
+    this.#acceptingStarts = false;
     for (const id of this.#starting.keys()) {
       this.#cancelledStarts.add(id);
     }

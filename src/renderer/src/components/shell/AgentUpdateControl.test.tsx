@@ -9,7 +9,7 @@ vi.mock("@/components/AgentIcon", () => ({
 import * as updateControl from "./AgentUpdateControl";
 
 describe("AgentUpdateControl", () => {
-  it("shows an unknown-length update as accessible progress instead of a disabled button", () => {
+  it("shows an unknown-length npm update as a spinner instead of fake progress", () => {
     const UpdateAction = (
       updateControl as unknown as {
         AgentUpdateAction?: ComponentType<{
@@ -36,10 +36,12 @@ describe("AgentUpdateControl", () => {
       onUpgrade: () => undefined,
     }));
 
-    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('role="status"');
     expect(html).toContain('aria-label="Updating Codex"');
-    expect(html).toContain('aria-valuetext="Updating"');
-    expect(html).toContain('data-agent-update-progress="indeterminate"');
+    expect(html).toContain('data-agent-update-spinner="true"');
+    expect(html).toContain("animate-spin");
+    expect(html).not.toContain('role="progressbar"');
+    expect(html).not.toContain("data-agent-update-progress");
     expect(html).not.toContain("<button");
     expect(html).not.toContain("aria-valuenow");
     expect(html).not.toContain("[ ... ]");

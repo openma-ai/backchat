@@ -6,13 +6,14 @@ import { useStickToBottomContext } from "use-stick-to-bottom";
 import { useI18n } from "@/lib/i18n";
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import type { Turn } from "@/lib/session-store";
-import { preserveScrollAnchor } from "@/lib/utils";
+import { cn, preserveScrollAnchor } from "@/lib/utils";
 import { StreamdownText } from "./ChatMarkdown";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { StreamingThoughtProjection } from "./StreamingThoughtProjection";
 
 export interface ThoughtEventProjection {
   leading?: ReactNode;
+  multiline?: boolean;
   summary: ReactNode;
 }
 
@@ -34,8 +35,9 @@ export function projectThoughtEvent({
   completedLabel: string;
 }): ThoughtEventProjection {
   if (live) {
-    const body = text.replace(/\s+/g, " ").trim() || liveFallback;
+    const body = text.trim() || liveFallback;
     return {
+      multiline: true,
       summary: (
         <StreamingThoughtProjection
           turnId={turnId}
@@ -111,34 +113,43 @@ export function ThoughtEventRow({
             {projection.leading}
           </span>
         )}
-        <span className="min-w-0 truncate text-left text-fg-muted">
+        <span
+          className={cn(
+            "min-w-0 flex-1 text-left text-fg-muted",
+            !projection.multiline && "truncate",
+          )}
+        >
           {projection.summary}
         </span>
         <DisclosureChevron open={open} />
       </button>
 
-      {open && (
-        <div className="ml-5 mt-1 min-w-0">
-          {live ? (
-            <StreamingMarkdown
-              turnId={turn.id}
-              kind="thought"
-              cwd={cwd}
-              prefixSkip={prefixSkip}
-              className="text-fg-muted"
-              paceReplay
-            />
-          ) : (
-            <StreamdownText
-              className="font-chat text-[13px] leading-6 text-fg-muted"
-              text={text}
-              cwd={cwd}
-              sessionId={turn.sessionId}
-              surfacePrefix={`${turn.id}-thought-${index}`}
-            />
-          )}
-        </div>
-      )}
+      <div
+        data-thought-stream-body="true"
+        hidden={!open}
+        aria-hidden={open ? undefined : true}
+        inert={open ? undefined : true}
+        className="ml-5 mt-1 min-w-0"
+      >
+        {live ? (
+          <StreamingMarkdown
+            turnId={turn.id}
+            kind="thought"
+            cwd={cwd}
+            prefixSkip={prefixSkip}
+            className="text-fg-muted"
+            paceReplay
+          />
+        ) : (
+          <StreamdownText
+            className="font-chat text-[13px] leading-6 text-fg-muted"
+            text={text}
+            cwd={cwd}
+            sessionId={turn.sessionId}
+            surfacePrefix={`${turn.id}-thought-${index}`}
+          />
+        )}
+      </div>
     </div>
   );
 }

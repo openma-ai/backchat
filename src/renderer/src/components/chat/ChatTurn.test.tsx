@@ -500,6 +500,35 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("data-current-activity");
   });
 
+  it("keeps the full live thinking body mounted while its header is collapsed", () => {
+    sessionMock.agentId = "pi-acp";
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          thoughtText: "First projected line\nSecond full line",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "agent_thought_chunk",
+                messageId: "thought-live-body",
+                content: {
+                  type: "text",
+                  text: "First projected line\nSecond full line",
+                },
+              },
+              receivedAt: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-thought-stream-body="true"');
+    expect(html).toContain("streaming-md");
+    expect(html).toMatch(/data-thought-stream-body="true"[^>]*hidden/);
+  });
+
   it("deduplicates repeated completed activity summaries", () => {
     const skillPath = "/tmp/skills/documents/SKILL.md";
     const events = ["read-1", "read-2"].map((toolCallId, index) => ({
@@ -552,6 +581,31 @@ describe("TurnBlock", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("components");
     expect(html).not.toContain("renderer");
+  });
+
+  it("lets the working timeline use the transcript scroll instead of an inner viewport", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          events: ["first", "second"].map((toolCallId, index) => ({
+            payload: {
+              sessionUpdate: "tool_call",
+              toolCallId,
+              kind: "execute",
+              status: index === 1 ? "in_progress" : "completed",
+              title: `Command ${index + 1}`,
+            },
+            receivedAt: index + 1,
+          })),
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-tool-call-id="first"');
+    expect(html).toContain('data-tool-call-id="second"');
+    expect(html).not.toContain("data-fade-scroll-viewport");
+    expect(html).not.toContain("activity-timeline-scroller");
   });
 
   it("puts grouped and single-tool controls on the same leading column", () => {

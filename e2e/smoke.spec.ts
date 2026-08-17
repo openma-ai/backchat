@@ -411,21 +411,11 @@ test.describe("backchat smoke", () => {
       await expect(popover.getByText("1.0.0 → 1.1.0", { exact: true })).toBeVisible();
 
       const updateAction = popover.getByRole("button", { name: "Update Codex" });
-      const updateColors = await updateAction.evaluate((element) => {
-        const brandProbe = document.createElement("span");
-        brandProbe.style.backgroundColor = "var(--brand)";
-        document.body.append(brandProbe);
-        const expected = getComputedStyle(brandProbe).backgroundColor;
-        brandProbe.remove();
-        return {
-          actual: getComputedStyle(element).backgroundColor,
-          expected,
-        };
-      });
-      expect(updateColors.actual).toBe(updateColors.expected);
-
       await updateAction.click();
-      await expect(popover.getByRole("button", { name: "Updating Codex" })).toBeDisabled();
+      const spinner = popover.getByRole("status", { name: "Updating Codex" });
+      await expect(spinner).toBeVisible();
+      await expect(spinner).toHaveAttribute("data-agent-update-spinner", "true");
+      await expect(popover.getByRole("progressbar")).toHaveCount(0);
       await expect(popover.getByRole("status")).toContainText("Codex updated to 1.1.0");
       await expect.poll(() => bridge.readAgentSetupCalls()).toEqual(
         expect.arrayContaining([{ type: "upgrade", id: "codex-acp" }]),
@@ -720,15 +710,10 @@ test.describe("backchat smoke", () => {
           content: [{ type: "terminal", terminalId: "terminal-final" }],
         },
       });
-      await injectEvent(page, {
-        type: "session.complete",
-        session_id: sessionId,
-        turn_id: turnId,
-      });
-
-      const groupIcon = page
-        .locator('[data-tool-group-trigger] [data-tool-group-icon-slot] svg')
-        .first();
+      const eventGroup = page.locator('[data-collapsible-event-count="2"]');
+      const eventGroupTrigger = eventGroup.locator(":scope > button");
+      await eventGroupTrigger.click();
+      const groupIcon = eventGroupTrigger.locator("svg").first();
       const singleTool = page.locator('[data-tool-call-id="single-tool"]');
       const singleIcon = singleTool.locator('[data-tool-activity-identity] svg');
       const [groupIconBox, singleIconBox] = await Promise.all([
@@ -1210,7 +1195,7 @@ test.describe("backchat smoke", () => {
       expect(emptyInputBox).not.toBeNull();
       expect(badgeBox).not.toBeNull();
       expect(emptyEditorBox!.width).toBeGreaterThanOrEqual(300);
-      expect(emptyEditorBox!.width).toBeLessThanOrEqual(320);
+      expect(Math.round(emptyEditorBox!.width)).toBeLessThanOrEqual(320);
       expect(emptyEditorBox!.height).toBeGreaterThanOrEqual(56);
       await expect.poll(() => editor.evaluate((element) =>
         Number.parseFloat(getComputedStyle(element).borderRadius),

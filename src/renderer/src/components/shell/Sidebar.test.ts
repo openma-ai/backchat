@@ -260,7 +260,8 @@ describe("groupSidebarSessions", () => {
     expect(source).toContain('<Badge variant="secondary"');
     expect(source).toContain("<AgentIcon");
     expect(source).toContain('variant="outline"');
-    expect(source).toContain('data-agent-update-progress="indeterminate"');
+    expect(source).toContain('data-agent-update-spinner="true"');
+    expect(source).not.toContain('role="progressbar"');
     expect(source).not.toContain('loading={updating}');
     expect(source).not.toContain('variant="ghost"');
     expect(source).not.toContain("w-[340px]");

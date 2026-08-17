@@ -275,6 +275,67 @@ await writeFile(join(prefix, "node_modules", ".bin", binName), "#!/bin/sh\\nexit
     expect(calls).toContain("--prefer-online");
     await rm(root, { recursive: true, force: true });
   });
+
+  it("falls back from the preferred npm registry to the official registry", async () => {
+    const root = join(tmpdir(), `openma-acp-registry-fallback-${process.pid}-${Date.now()}`);
+    const binDir = join(root, "bin");
+    const fakeNpm = join(root, "fake-npm-registry-fallback.mjs");
+    const callsPath = join(root, "npm-calls.log");
+    await mkdir(root, { recursive: true });
+    await writeFile(fakeNpm, `#!/usr/bin/env node
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+const args = process.argv.slice(2);
+const registry = args[args.indexOf("--registry") + 1];
+await appendFile(process.env.TEST_NPM_CALLS, registry + "\\n");
+if (registry === "https://registry.npmmirror.com") {
+  console.error("npm error code E502");
+  process.exit(1);
+}
+if (registry !== "https://registry.npmjs.org") {
+  console.error("unexpected npm registry: " + registry);
+  process.exit(2);
+}
+const prefix = args[args.indexOf("--prefix") + 1];
+const spec = args.at(-1);
+const packageName = spec.startsWith("@") ? spec.slice(0, spec.indexOf("@", 1)) : spec.split("@")[0];
+const parts = packageName.split("/");
+const binName = basename(packageName);
+const packageDir = join(prefix, "node_modules", ...parts);
+await mkdir(join(prefix, "node_modules", ".bin"), { recursive: true });
+await mkdir(packageDir, { recursive: true });
+await writeFile(join(packageDir, "package.json"), JSON.stringify({ bin: { [binName]: "cli.js" } }));
+await writeFile(join(prefix, "node_modules", ".bin", binName), "#!/bin/sh\\nexit 0\\n", { mode: 0o755 });
+`, "utf8");
+    await chmod(fakeNpm, 0o755);
+
+    await installAcpRegistryAgent({
+      registryId: "gemini",
+      shimName: "gemini",
+      binDir,
+      installRoot: root,
+      npmCommand: fakeNpm,
+      npmRegistryUrls: [
+        "https://registry.npmmirror.com",
+        "https://registry.npmjs.org",
+      ],
+      registryAgent: {
+        id: "gemini",
+        version: "0.51.0",
+        distribution: { npx: { package: "@google/gemini-cli@0.51.0" } },
+      },
+      env: {
+        ...process.env,
+        TEST_NPM_CALLS: callsPath,
+      },
+    });
+
+    await expect(access(join(binDir, "gemini"))).resolves.toBeUndefined();
+    await expect(readFile(callsPath, "utf8")).resolves.toBe(
+      "https://registry.npmmirror.com\nhttps://registry.npmjs.org\n",
+    );
+    await rm(root, { recursive: true, force: true });
+  });
 });
 
 async function writeFakeNpm(root: string): Promise<string> {

@@ -226,6 +226,30 @@ describe("acp agent setup sdk", () => {
     );
   });
 
+  it("passes the host npm registry fallback chain to registry installs", async () => {
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: "/tmp/sdk-registry.json",
+      refreshRegistry: async () => undefined,
+      npmRegistryUrls: [
+        "https://registry.npmmirror.com",
+        "https://registry.npmjs.org",
+      ],
+    });
+
+    await service.installAgent("fake-agent");
+
+    expect(installAcpRegistryAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        npmRegistryUrls: [
+          "https://registry.npmmirror.com",
+          "https://registry.npmjs.org",
+        ],
+      }),
+    );
+  });
+
   it("persists installed agent session metadata for ordinary lists after restart", async () => {
     const root = join(tmpdir(), `openma-acp-probe-cache-${process.pid}-${Date.now()}`);
     const configOptions = [{

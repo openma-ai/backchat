@@ -57,6 +57,7 @@ export interface InstallAcpRegistryAgentOptions {
   npmCommand?: string;
   npmCommandArgs?: string[];
   npmEnv?: NodeJS.ProcessEnv;
+  npmRegistryUrls?: string[];
   installRoot?: string;
   shimArgs?: string[];
   shimEnv?: Record<string, string | undefined>;
@@ -474,7 +475,7 @@ async function resolvePackageBin(prefixDir: string, packageSpec: string): Promis
 async function installNpxDistribution(
   npx: AcpRegistryNpxDistribution,
   options: Required<Pick<InstallAcpRegistryAgentOptions, "binDir" | "registryId" | "shimName">> &
-    Pick<InstallAcpRegistryAgentOptions, "installRoot" | "npmCommand" | "npmCommandArgs" | "npmEnv" | "env" | "shimArgs" | "shimEnv"> &
+    Pick<InstallAcpRegistryAgentOptions, "installRoot" | "npmCommand" | "npmCommandArgs" | "npmEnv" | "npmRegistryUrls" | "env" | "shimArgs" | "shimEnv"> &
     { version?: string },
 ): Promise<InstallResult> {
   const installRoot = options.installRoot ?? options.binDir;
@@ -509,31 +510,53 @@ async function installNpxDistribution(
         "--no-audit",
         "--no-fund",
       ];
-      try {
-        await execFileAsync(
-          options.npmCommand ?? "npm",
-          [
-            ...(options.npmCommandArgs ?? []),
-            ...installArgs,
-            "--prefer-offline",
-            npx.package,
-          ],
-          npmOptions,
-        );
-      } catch (error) {
-        if (!isNpmTargetMissing(error)) throw error;
-        await rm(stagedDir, { recursive: true, force: true });
-        await execFileAsync(
-          options.npmCommand ?? "npm",
-          [
-            ...(options.npmCommandArgs ?? []),
-            ...installArgs,
-            "--prefer-online",
-            npx.package,
-          ],
-          npmOptions,
-        );
+      const registryUrls = options.npmRegistryUrls?.length
+        ? options.npmRegistryUrls
+        : [undefined];
+      let installed = false;
+      let lastError: unknown;
+      for (const registryUrl of registryUrls) {
+        const registryArgs = registryUrl ? ["--registry", registryUrl] : [];
+        try {
+          await execFileAsync(
+            options.npmCommand ?? "npm",
+            [
+              ...(options.npmCommandArgs ?? []),
+              ...installArgs,
+              ...registryArgs,
+              "--prefer-offline",
+              npx.package,
+            ],
+            npmOptions,
+          );
+          installed = true;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (isNpmTargetMissing(error)) {
+            await rm(stagedDir, { recursive: true, force: true });
+            try {
+              await execFileAsync(
+                options.npmCommand ?? "npm",
+                [
+                  ...(options.npmCommandArgs ?? []),
+                  ...installArgs,
+                  ...registryArgs,
+                  "--prefer-online",
+                  npx.package,
+                ],
+                npmOptions,
+              );
+              installed = true;
+              break;
+            } catch (onlineError) {
+              lastError = onlineError;
+            }
+          }
+          await rm(stagedDir, { recursive: true, force: true });
+        }
       }
+      if (!installed) throw lastError;
       const stagedBin = await resolvePackageBin(stagedDir, npx.package);
       await access(stagedBin);
       await rm(prefixDir, { recursive: true, force: true });
@@ -648,6 +671,7 @@ export async function installAcpRegistryAgent(options: InstallAcpRegistryAgentOp
       npmCommand: options.npmCommand,
       npmCommandArgs: options.npmCommandArgs,
       npmEnv: options.npmEnv,
+      npmRegistryUrls: options.npmRegistryUrls,
       env: options.env,
       shimArgs: options.shimArgs,
       shimEnv: options.shimEnv,

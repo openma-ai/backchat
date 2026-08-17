@@ -231,6 +231,20 @@ export async function openPersistedSession(
   return session;
 }
 
+/** Reveal the active turn's process disclosure when a settled turn starts
+ * collapsed. The selector targets only the outer process control; nested tool
+ * and thought disclosures do not use Radix's collapsible-trigger slot. */
+export async function openTurnProcess(page: Page): Promise<Locator> {
+  const trigger = page
+    .locator('[data-session-turn-response] [data-slot="collapsible-trigger"]')
+    .first();
+  await trigger.waitFor({ state: "visible" });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+    await trigger.click();
+  }
+  return trigger;
+}
+
 export async function openCommandPalette(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const palette = page.getByRole("dialog");

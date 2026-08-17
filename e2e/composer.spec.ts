@@ -5,20 +5,16 @@ import { expect, test } from "./fixtures";
 import { injectSession } from "./helpers";
 
 test.describe("composer mentions and attachments", () => {
-  test("keeps the idle composer at its three-row height", async ({
+  test("keeps the idle composer at its compact resting height", async ({
       page,
       composer,
-      bridge,
       capture,
   }) => {
-      await bridge.injectSessionRow({
-        session_id: "e2e-compact-composer",
-        agent_id: "claude-acp",
+      await injectSession(page, {
+        sessionId: "e2e-compact-composer",
+        agentId: "claude-acp",
         cwd: "/tmp/backchat-test",
       });
-      await page
-        .getByRole("button", { name: "claude-acp · e2e-co" })
-        .click({ force: true });
 
       const card = composer.input.locator(
         "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' composer-card ')][1]",
@@ -29,25 +25,21 @@ test.describe("composer mentions and attachments", () => {
       const inputBox = await composer.input.boundingBox();
       expect(cardBox).not.toBeNull();
       expect(inputBox).not.toBeNull();
-      expect(cardBox?.height ?? 0).toBeGreaterThanOrEqual(120);
-      expect(cardBox?.height ?? Infinity).toBeLessThanOrEqual(132);
-      expect(inputBox?.height ?? 0).toBeGreaterThanOrEqual(60);
-      expect(inputBox?.height ?? Infinity).toBeLessThanOrEqual(64);
-      await capture("composer-three-row.png", "three-row composer");
+      expect(cardBox?.height ?? 0).toBeGreaterThanOrEqual(102);
+      expect(cardBox?.height ?? Infinity).toBeLessThanOrEqual(106);
+      expect(inputBox?.height ?? 0).toBeGreaterThanOrEqual(47);
+      expect(inputBox?.height ?? Infinity).toBeLessThanOrEqual(50);
+      await capture("composer-resting-height.png", "compact resting composer");
   });
 
   test("omits the session mention shortcut from the composer toolbar", async ({
       page,
-      bridge,
   }) => {
-      await bridge.injectSessionRow({
-        session_id: "e2e-no-mention-shortcut",
-        agent_id: "claude-acp",
+      await injectSession(page, {
+        sessionId: "e2e-no-mention-shortcut",
+        agentId: "claude-acp",
         cwd: "/tmp/backchat-test",
       });
-      await page
-        .getByRole("button", { name: "claude-acp · e2e-no" })
-        .click({ force: true });
 
       await expect(
         page.getByRole("button", { name: "Mention another session" }),
@@ -56,7 +48,6 @@ test.describe("composer mentions and attachments", () => {
 
   test("does not mount the right panel on the Pick an agent state", async ({
       page,
-      bridge,
   }) => {
       await page.evaluate(async () => {
         const current = await window.backchat.settingsGet();
@@ -67,14 +58,11 @@ test.describe("composer mentions and attachments", () => {
           })),
         });
       });
-      await bridge.injectSessionRow({
-        session_id: "e2e-pick-agent",
-        agent_id: "claude-acp",
+      await injectSession(page, {
+        sessionId: "e2e-pick-agent",
+        agentId: "claude-acp",
         cwd: "/tmp/backchat-test",
       });
-      await page
-        .getByRole("button", { name: "claude-acp · e2e-pi" })
-        .click({ force: true });
 
       await expect(page.getByText("Pick an agent", { exact: true })).toBeVisible();
       await expect(page.getByPlaceholder("Ask anything…")).toBeVisible();
@@ -122,7 +110,10 @@ test.describe("composer mentions and attachments", () => {
         text: "Summarize the referenced session.",
         session_references: [{ session_id: referencedSessionId }],
       });
-      await expect(page.getByText("Summarize the referenced session.", { exact: true }))
+      await expect(page.locator('[data-session-turn-prompt]').getByText(
+        "Summarize the referenced session.",
+        { exact: true },
+      ))
         .toBeVisible();
   });
 

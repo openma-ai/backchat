@@ -98,6 +98,7 @@ export interface AcpAgentSetupServiceDeps {
   npmCommand?: string;
   npmCommandArgs?: string[];
   npmEnv?: NodeJS.ProcessEnv;
+  npmRegistryUrls?: string[];
   probeCwd?: string;
   authInspectionTimeoutMs?: number;
   capabilityInspectionTimeoutMs?: number;
@@ -473,6 +474,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         npmCommand: this.deps.npmCommand,
         npmCommandArgs: this.deps.npmCommandArgs,
         npmEnv: this.deps.npmEnv,
+        npmRegistryUrls: this.deps.npmRegistryUrls,
         shimArgs: entry.spec.args,
         shimEnv: entry.spec.env,
         env: this.spawnEnv(),

@@ -84,6 +84,27 @@ vi.mock("./session-cwd.js", () => ({
 }));
 
 describe("SessionManager prompt queue", () => {
+  it("rejects a new session start after shutdown disposal begins", async () => {
+    mocks.runtimeStart.mockClear();
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.disposeAll();
+
+    await expect(manager.start({
+      session_id: "sess-after-shutdown",
+      agent_id: "codex-acp",
+    })).resolves.toEqual({
+      status: "cancelled",
+      session_id: "sess-after-shutdown",
+    });
+  });
+
   it("records an ACP slash-command selection as canonical input without persisting a chat prompt", async () => {
     mocks.runtimeStart.mockClear();
     const fake = createControllableAcpSession();

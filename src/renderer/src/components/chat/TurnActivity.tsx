@@ -25,7 +25,6 @@ import { ASSISTANT_MARKDOWN_CLASS, StreamdownText } from "./ChatMarkdown";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { projectThoughtEvent, ThoughtEventRow } from "./ThoughtEventRow";
 import { ToolRow } from "./ToolPresentation";
-import { FadeScrollViewport } from "./FadeScrollViewport";
 
 /**
  * Collapses every part of a turn except its final answer. A turn containing
@@ -115,7 +114,7 @@ export function TurnProcessBar({
         )}
       />
       <ReasoningContent>
-        <FadeScrollViewport level="primary" contentClassName="space-y-1">
+        <div className="space-y-1">
           {leadingContent}
           {rendered.timeline.map((item, index) => {
             if (item.kind === "assistant_text") {
@@ -245,7 +244,7 @@ export function TurnProcessBar({
             </div>
           )}
           {trailingContent}
-        </FadeScrollViewport>
+        </div>
       </ReasoningContent>
     </Reasoning>
   );

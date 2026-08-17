@@ -66,19 +66,14 @@ export function AgentUpdateAction({
 }: AgentUpdateActionProps) {
   if (updating) {
     return (
-      <div className="w-20 shrink-0" aria-live="polite">
-        <p className="mb-1 text-center text-[10px] leading-3 text-muted-foreground">
-          {updatingLabel}
-        </p>
-        <div
-          role="progressbar"
-          aria-label={actionLabel}
-          aria-valuetext={updatingLabel}
-          data-agent-update-progress="indeterminate"
-          className="agent-update-progress"
-        >
-          <span className="agent-update-progress__bar" />
-        </div>
+      <div
+        role="status"
+        aria-label={actionLabel}
+        data-agent-update-spinner="true"
+        className="inline-flex w-20 shrink-0 items-center justify-center gap-1 text-[10px] leading-3 text-muted-foreground"
+      >
+        <Loader2Icon className="size-3 animate-spin" aria-hidden="true" />
+        <span>{updatingLabel}</span>
       </div>
     );
   }

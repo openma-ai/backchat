@@ -22,6 +22,7 @@ import {
 import { desktopCliPath } from "./cli-path.js";
 import {
   provisionBundledNodeRuntime,
+  resolveBundledNodeExecutablePath,
   resolveBundledNpmCliPath,
 } from "./bundled-node-runtime.js";
 import { configureAppLog, logAppEvent } from "./app-log.js";
@@ -413,12 +414,18 @@ if (!gotLock) {
     const acpBinDir = join(acpRoot, "bin");
     const bundledNodeRuntime = await provisionBundledNodeRuntime({
       binDir: acpBinDir,
-      executablePath: process.execPath,
+      executablePath: resolveBundledNodeExecutablePath({
+        executablePath: process.execPath,
+        packaged: app.isPackaged,
+      }),
       npmCliPath: resolveBundledNpmCliPath({
         appPath: app.getAppPath(),
         packaged: app.isPackaged,
         resourcesPath: process.resourcesPath,
       }),
+      countryCode: app.getLocaleCountryCode(),
+      configuredNpmRegistryUrl:
+        process.env.NPM_CONFIG_REGISTRY ?? process.env.npm_config_registry,
     });
     process.env.OPENMA_ACP_BIN_DIR = acpBinDir;
     process.env.PATH = [acpBinDir, desktopCliPath()].filter(Boolean).join(delimiter);

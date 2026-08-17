@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -15,6 +15,7 @@ import {
   launchAppWithHome,
   openCommandPalette,
   openPersistedSession,
+  openTurnProcess,
   persistSessionFixture,
   reloadRenderer,
   waitForRunnableHarness,
@@ -22,6 +23,15 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fakeAcpAgentPath = join(here, "fixtures", "fake-acp-agent.mjs");
+
+async function openPlanActivity(page: Page, summary: string): Promise<Locator> {
+  const trigger = page.locator('[data-activity-module="plan"]');
+  await expect(trigger).toHaveAccessibleName(`Plan: ${summary}`);
+  await trigger.click();
+  const section = page.locator('[data-activity-section="plan"]');
+  await expect(section).toBeVisible();
+  return section;
+}
 
 test.describe("user-visible storage persistence", () => {
   test("uses an isolated Backchat home for persistent files", async () => {
@@ -172,7 +182,12 @@ test.describe("user-visible storage persistence", () => {
     const second = await launchAppWithHome(home);
     try {
       await openPersistedSession(second.page, title, sessionId);
+      await openTurnProcess(second.page);
       const transcript = second.page.getByRole("log");
+      await transcript
+        .locator('[data-thought-block="true"]')
+        .getByRole("button")
+        .click();
       await expect(
         transcript.getByText("37 + 58 = 95.", { exact: true }),
       ).toBeVisible();
@@ -359,18 +374,18 @@ test.describe("user-visible storage persistence", () => {
       await composer.fill(prompt);
       await composer.press("Enter");
       await expect(
+        first.page.locator('[data-session-turn-status="complete"]'),
+      ).toBeVisible();
+      await expect(
         first.page.getByRole("log").getByText(`Fake response saved for ${prompt}.`),
       ).toBeVisible();
 
-      const plan = first.page.locator('[data-plan-activity="true"]');
-      await expect(plan).toBeVisible();
-      await expect(plan.getByRole("button")).toContainText("2 / 3");
-      await plan.getByRole("button").click();
-      await expect(plan.locator("li").filter({ hasText: "Audit inputs" })).toBeVisible();
-      const runningTask = plan.locator("li").filter({ hasText: "Wire outputs" });
+      const plan = await openPlanActivity(first.page, "1 / 3");
+      await expect(plan.getByRole("listitem").filter({ hasText: "Audit inputs" })).toBeVisible();
+      const runningTask = plan.getByRole("listitem").filter({ hasText: "Wire outputs" });
       await expect(runningTask).toBeVisible();
-      await expect(plan.locator("li").filter({ hasText: "Verify replay" })).toBeVisible();
-      await expect(runningTask).toHaveAttribute("data-task-status", "in_progress");
+      await expect(plan.getByRole("listitem").filter({ hasText: "Verify replay" })).toBeVisible();
+      await expect(runningTask).toHaveAttribute("data-activity-item-status", "in_progress");
 
       const sessions = await first.page.evaluate(() => window.backchat.sessionsList());
       sessionId = sessions.find((session) => session.title === prompt)?.id ?? "";
@@ -397,12 +412,10 @@ test.describe("user-visible storage persistence", () => {
     const second = await launchAppWithHome(home);
     try {
       await openPersistedSession(second.page, prompt, "workspace");
-      const plan = second.page.locator('[data-plan-activity="true"]');
-      await expect(plan.getByRole("button")).toContainText("2 / 3");
-      await plan.getByRole("button").click();
-      await expect(plan.locator("li").filter({ hasText: "Audit inputs" })).toBeVisible();
-      await expect(plan.locator("li").filter({ hasText: "Wire outputs" })).toBeVisible();
-      await expect(plan.locator("li").filter({ hasText: "Verify replay" })).toBeVisible();
+      const plan = await openPlanActivity(second.page, "1 / 3");
+      await expect(plan.getByRole("listitem").filter({ hasText: "Audit inputs" })).toBeVisible();
+      await expect(plan.getByRole("listitem").filter({ hasText: "Wire outputs" })).toBeVisible();
+      await expect(plan.getByRole("listitem").filter({ hasText: "Verify replay" })).toBeVisible();
     } finally {
       await second.cleanup();
     }
@@ -450,8 +463,7 @@ test.describe("user-visible storage persistence", () => {
           event: item.event,
         });
 
-        const plan = first.page.locator('[data-plan-activity="true"]');
-        await expect(plan.getByRole("button")).toContainText("1 / 2");
+        await openPlanActivity(first.page, "1 / 2");
         await expect.poll(() => first.page.evaluate(async (id) => {
           const rows = await window.backchat.sessionsLoadHistory(id);
           return rows.some((row) => {
@@ -475,12 +487,10 @@ test.describe("user-visible storage persistence", () => {
     try {
       for (const item of cases) {
         await openPersistedSession(second.page, item.title, "workspace");
-        const plan = second.page.locator('[data-plan-activity="true"]');
-        await expect(plan.getByRole("button")).toContainText("1 / 2");
-        await plan.getByRole("button").click();
+        const plan = await openPlanActivity(second.page, "1 / 2");
         await expect(
-          plan.locator("li").filter({ hasText: "Persist canonical plan" }),
-        ).toHaveAttribute("data-task-status", "in_progress");
+          plan.getByRole("listitem").filter({ hasText: "Persist canonical plan" }),
+        ).toHaveAttribute("data-activity-item-status", "in_progress");
       }
     } finally {
       await second.cleanup();
@@ -665,7 +675,9 @@ test.describe("user-visible storage persistence", () => {
       );
       await agentRow.click();
       await expect(
-        second.page.getByText("Child located the canonical boundary.", { exact: true }),
+        second.page
+          .locator("aside[data-right-panel-expanded]")
+          .getByText("Child located the canonical boundary.", { exact: true }),
       ).toBeVisible();
     } finally {
       await second.cleanup();
