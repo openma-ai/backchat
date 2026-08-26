@@ -48,7 +48,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@open-managed-agents-desktop/acp": "workspace:*",
     "@open-managed-agents-desktop/acp-agent-setup": "workspace:*",
-    "@openma/common": "github:openma-ai/openma-common#v0.4.0",
+    "@openma/common": "file:../../../Proj/openma-common",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-dialog": "^1.1.15",

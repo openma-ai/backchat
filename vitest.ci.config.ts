@@ -9,6 +9,7 @@ import { configDefaults, defineConfig } from "vitest/config";
  */
 export default defineConfig({
   resolve: {
+    dedupe: ["react", "react-dom", "use-stick-to-bottom"],
     alias: {
       "@": resolve(__dirname, "src/renderer/src"),
       "@shared": resolve(__dirname, "src/shared"),

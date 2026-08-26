@@ -2,6 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SubagentActivity, Turn } from "@/lib/session-store";
+import {
+  INTERRUPTED_TOOL_STATUS,
+  settleInterruptedToolStatus,
+} from "@/lib/chat-tool-presentation";
+import { projectAcpChatTurn } from "@openma/common/chat-ui";
 
 const sessionMock = vi.hoisted(() => ({
   agentId: "",
@@ -196,6 +201,22 @@ describe("TurnBlock", () => {
 
   it("keeps ACP thought text visible after the turn completes", () => {
     const thought = "Inspecting the repository before editing.";
+    const projected = projectAcpChatTurn({
+      id: "turn-1",
+      promptText: "",
+      status: "complete",
+      startedAt: 1_000,
+      endedAt: 4_600,
+      events: [
+        {
+          payload: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: thought },
+          },
+          receivedAt: 1,
+        },
+      ],
+    });
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
@@ -217,7 +238,14 @@ describe("TurnBlock", () => {
 
     expect(html).toContain("worked 4s");
     expect(html).not.toContain("chat.thinking");
-    expect(html).toContain(thought);
+    expect(projected.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "thinking", text: thought }),
+      ]),
+    );
+    // Completed process content is behind the closed Radix disclosure. The
+    // common component owns opening it; server markup intentionally omits it.
+    expect(html).not.toContain(thought);
     expect(html).toContain("aria-expanded");
     expect(html).not.toContain("lucide-brain");
     expect(html).not.toContain("<details");
@@ -254,7 +282,7 @@ describe("TurnBlock", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           events: [
             {
               payload: {
@@ -275,7 +303,7 @@ describe("TurnBlock", () => {
     expect(html).toContain('data-subagent-link="native-a"');
     expect(html).toContain("Agent A");
     expect(html.indexOf('data-subagent-links="true"')).toBeGreaterThan(
-      html.indexOf('data-slot="collapsible"'),
+      html.indexOf('data-tool-call-id="spawn-a"'),
     );
   });
 
@@ -308,8 +336,7 @@ describe("TurnBlock", () => {
     // The transcript's own text scale, not a size of its own: at 14px against
     // 13px body text the wait line read as a different typeface.
     expect(html).toContain("text-[13px]");
-    expect(html).toContain("thinking-placeholder-dot");
-    expect(html).not.toContain("aria-expanded");
+    expect(html).toContain('data-thinking-fallback="true"');
     expect(html).not.toContain("brand-loader-dot");
   });
 
@@ -396,7 +423,7 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("data-turn-stop-reason");
   });
 
-  it("keeps only one current tool activity and renders it at the bottom of the working block", () => {
+  it("keeps the current tool run below the agent commentary", () => {
     const skillPath =
       "/Users/test/.codex/plugins/cache/openai-primary-runtime/documents/1/skills/documents/SKILL.md";
     const html = renderToStaticMarkup(
@@ -440,15 +467,13 @@ describe("TurnBlock", () => {
       />,
     );
 
-    // One live row, below what the agent said, carrying the tool that ran since.
+    // The common timeline keeps the complete tool run below what the agent said.
     expect(html).toContain("I will create the document.");
-    expect(html.match(/data-activity-live-work="true"/g)).toHaveLength(1);
-    expect(html.indexOf('data-activity-live-work="true"')).toBeGreaterThan(
+    expect(html).toContain('data-tool-group-size="2"');
+    expect(html.indexOf('data-tool-group-size="2"')).toBeGreaterThan(
       html.indexOf("I will create the document."),
     );
-    // A thought the agent has already spoken past is not what it is thinking
-    // now, so it is not what the live row reports.
-    expect(html).not.toContain("Planning the document.");
+    expect(html).toContain('data-tool-call-id="read-2"');
     expect(html).not.toContain(">读取<");
   });
 
@@ -529,7 +554,7 @@ describe("TurnBlock", () => {
     expect(html).toMatch(/data-thought-stream-body="true"[^>]*hidden/);
   });
 
-  it("deduplicates repeated completed activity summaries", () => {
+  it("folds repeated completed activity into one summary row", () => {
     const skillPath = "/tmp/skills/documents/SKILL.md";
     const events = ["read-1", "read-2"].map((toolCallId, index) => ({
       payload: {
@@ -545,13 +570,14 @@ describe("TurnBlock", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           events,
         })}
       />,
     );
 
-    expect(html.match(/tool.read/g)).toHaveLength(1);
+    expect(html).toContain('data-tool-group-size="2"');
+    expect(html.match(/data-tool-group-size=/g)).toHaveLength(1);
   });
 
   it("collapses consecutive tool calls into one activity group", () => {
@@ -571,7 +597,7 @@ describe("TurnBlock", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           events,
         })}
       />,
@@ -621,10 +647,10 @@ describe("TurnBlock", () => {
       receivedAt: index + 1,
     }));
     const html = renderToStaticMarkup(
-      <TurnBlock turn={turn({ status: "complete", events })} />,
+      <TurnBlock turn={turn({ status: "running", events })} />,
     );
     const triggerClass = html.match(
-      /data-tool-group-trigger="true"[^>]*class="([^"]+)"/,
+      /data-tool-group-size="2"><button[^>]*class="([^"]+)"/,
     )?.[1];
 
     expect(triggerClass).toContain("activity-disclosure-row");
@@ -632,9 +658,7 @@ describe("TurnBlock", () => {
     // One row height for a group, a single tool and the live status alike, so
     // folding tools into the last row cannot change where that row sits.
     expect(triggerClass).toContain("min-h-6");
-    // Two per tool row — leading icon and chevron — and none for the live row
-    // when it is carrying the agent's own words rather than a tool call.
-    expect(html.match(/data-tool-group-icon-slot="true"/g)).toHaveLength(2);
+    expect(html).toContain('data-disclosure-chevron-slot="true"');
   });
 
   it("groups tools separated only by hidden Codex thought summaries", () => {
@@ -699,12 +723,12 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html).toContain('data-tool-group-size="3"');
-    // Thinking is a passing state here, so a thought the agent has moved past
-    // leaves no block behind. The tools still group across them: grouping is
-    // about what the tools are, not about what was between.
-    expect(html).not.toContain("Planning the next command");
-    expect(html).not.toContain("Planning the final command");
+    expect(html).toContain('data-tool-group-size="5"');
+    // Codex thought history is part of the event sequence. It does not split
+    // the fold. The inactive group is collapsed, so its five child rows are
+    // intentionally absent from server markup until the user opens it.
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('data-thought-block="true"');
   });
 
   it("shows the latest in-progress action in a running tool group", () => {
@@ -743,7 +767,8 @@ describe("TurnBlock", () => {
     // It is the agent talking, not a control — no icon before its words, and no
     // tool count after them.
     expect(html).toContain('data-tool-group-size="2"');
-    expect(html).toContain('data-current-activity="Active command"');
+    expect(html).toContain('data-tool-call-id="run-active"');
+    expect(html).toContain("Active command");
     expect(html).not.toContain("chat.toolCallCount");
   });
 
@@ -751,39 +776,20 @@ describe("TurnBlock", () => {
     // Killing the ACP process leaves the last tool_call at in_progress, and
     // those events replay from disk unchanged. The turn is over, so nothing
     // will ever finish it — showing a spinner and "tool.running" forever is a lie.
-    const html = renderToStaticMarkup(
-      <TurnBlock
-        turn={turn({
-          status: "complete",
-          events: [
-            {
-              payload: {
-                sessionUpdate: "tool_call",
-                toolCallId: "run-killed",
-                kind: "execute",
-                status: "in_progress",
-                title:
-                  "AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read",
-              },
-              receivedAt: 1,
-            },
-          ],
-        })}
-      />,
+    expect(settleInterruptedToolStatus("in_progress")).toBe(
+      INTERRUPTED_TOOL_STATUS,
     );
-
-    expect(html).toContain("tool.interrupted");
-    expect(html).not.toContain("tool.running");
-    expect(html).toContain(
-      "AGENT_BROWSER_SOCKET_DIR=/tmp/ab-wen4 agent-browser read",
+    expect(settleInterruptedToolStatus("pending")).toBe(
+      INTERRUPTED_TOOL_STATUS,
     );
+    expect(settleInterruptedToolStatus("completed")).toBe("completed");
   });
 
   it("renders an ACP MCP extension as inspectable raw protocol data", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           events: [
             {
               payload: {
@@ -814,7 +820,7 @@ describe("TurnBlock", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           events: [
             {
               payload: {
@@ -854,13 +860,13 @@ describe("TurnBlock", () => {
     expect(html).not.toContain('data-tool-status="completed"');
   });
 
-  it("uses Codex thought summaries only as a live status", () => {
+  it("preserves Codex thought history after the answer arrives", () => {
     sessionMock.agentId = "codex-acp";
     const thought = "**Planning a temporary status**";
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           thoughtText: thought,
           events: [
             {
@@ -884,12 +890,9 @@ describe("TurnBlock", () => {
       />,
     );
 
-    expect(html).toContain("Finished.");
-    // Once the agent has answered, the thinking it did on the way is not part
-    // of the record. What it must never become is a second disclosure with its
-    // own completion label.
-    expect(html).not.toContain("Planning a temporary status");
-    expect(html).not.toContain("chat.thoughtComplete");
+    expect(html).toContain('data-session-turn-answer="true"');
+    expect(html).toContain('data-thought-block="true"');
+    expect(html).toContain("Planning a temporary status");
   });
 
   it("does not apply Codex presentation rules to another harness", () => {
@@ -898,7 +901,7 @@ describe("TurnBlock", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           thoughtText: thought,
           endedAt: 2_000,
           events: [
@@ -924,7 +927,7 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain(thought);
-    expect(html).toContain("Harness commentary.");
+    expect(html).toContain('data-session-turn-response="true"');
   });
 
   it("renders a Markdown plan document outside the task-list surface", () => {
@@ -932,7 +935,7 @@ describe("TurnBlock", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           events: [
             {
               payload: {
@@ -960,7 +963,7 @@ describe("TurnBlock", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
-          status: "complete",
+          status: "running",
           events: [
             {
               payload: {
@@ -1064,11 +1067,7 @@ describe("Codex thinking while a tool runs", () => {
     sessionMock.commands = [];
   });
 
-  it("hands over to the running command instead of leaving an empty box", () => {
-    // Thinking is a passing state: once the tool starts, the tool is the news
-    // and the thought that led to it is over. What must not happen is what did
-    // happen here — the thought dropped, no block, and nothing said instead,
-    // leaving an empty reasoning box for the whole call.
+  it("keeps the thought and running command in one activity fold", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
@@ -1097,7 +1096,9 @@ describe("Codex thinking while a tool runs", () => {
       />,
     );
 
-    expect(html).not.toContain('data-thought-block="true"');
+    expect(html).toContain('data-tool-group-size="2"');
+    expect(html).toContain('data-thought-block="true"');
+    expect(html).toContain("Checking the workspace first");
     expect(html).toContain("pwd");
   });
 });

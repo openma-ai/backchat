@@ -4,21 +4,16 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import { BugIcon, SendIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { AgentChatView } from "@openma/common/chat-ui";
+import type { AgentUITurnState } from "@openma/common/agent-ui";
 import { GoalEditDialog } from "./GoalEditDialog";
 import { toast } from "sonner";
-import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton,
-} from "@/components/ai-elements/conversation";
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import { Badge } from "@/components/ui/badge";
 import { StatusNotice } from "@/components/ui/status-notice";
-import { cn } from "@/lib/utils";
 import {
   selectActive,
   selectOpenMAEventsFor,
@@ -28,7 +23,7 @@ import {
   sessionStore,
   useSessionStore,
 } from "@/lib/session-store";
-import type { SessionRow } from "@/lib/session-store";
+import type { SessionRow, Turn } from "@/lib/session-store";
 import { useSettings } from "@/lib/settings-store";
 import { useI18n } from "@/lib/i18n";
 import { goalProgressPresentation } from "@/lib/goal-progress";
@@ -38,10 +33,6 @@ import { useTheme } from "@/lib/theme";
 import { resolveThemeText } from "@/lib/theme-plugin";
 import { getThemePlugin } from "@/themes";
 import { ConversationTimeline } from "./ConversationTimeline";
-import {
-  CHAT_COMPOSER_FRAME_CLASS,
-  CHAT_TURN_FRAME_CLASS,
-} from "@/lib/chat-layout";
 import { ResponseAnnotationController } from "./ResponseAnnotations";
 import { ProjectChipRow } from "./ComposerProjectControls";
 import { MarkdownCwdProvider } from "./ChatMarkdown";
@@ -86,6 +77,28 @@ export function filterQueuedTurns<T extends { status: string }>(
   turns: readonly T[],
 ): T[] {
   return turns.filter((turn) => turn.status !== "queued");
+}
+
+export function resolveAgentChatPhase(
+  active: Pick<SessionRow, "status"> | null | undefined,
+): "missing" | "draft" | "active" {
+  if (!active) return "missing";
+  return active.status === "draft" ? "draft" : "active";
+}
+
+function projectChatSurfaceTurns(
+  turns: readonly Turn[],
+): AgentUITurnState[] {
+  return turns.map((turn) => ({
+    id: turn.id,
+    status:
+      turn.status === "complete"
+        ? "completed"
+        : turn.status === "error"
+          ? "failed"
+          : turn.status,
+    items: [],
+  }));
 }
 
 /** Provider queue depth is display-only; local queued prompts remain the
@@ -167,6 +180,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   const openmaEvents = useSessionStore(openmaEventsSelector);
   const transcriptTurns = useMemo(
     () => filterQueuedTurns(turns),
+    [turns],
+  );
+  const chatSurfaceTurns = useMemo(() => projectChatSurfaceTurns(turns), [turns]);
+  const turnsById = useMemo(
+    () => new Map(turns.map((turn) => [turn.id, turn] as const)),
     [turns],
   );
   const settings = useSettings();
@@ -476,138 +494,100 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   ) : null;
 
   return (
-    <div
-      className="flex h-full min-h-0 flex-col"
-      data-chat-surface={isSide ? "side" : "main"}
-    >
-      {isEmpty ? (
-        // Keep the empty-state ideas in the flexible content region while the
-        // composer uses the exact same bottom frame as an active conversation.
-        // Starting a chat therefore changes the transcript, not the input's
-        // position or width.
-        <div
-          className="home-empty-stage flex h-full min-h-0 flex-col"
-          style={
-            homeComposer?.width !== undefined
-              ? {
-                  "--home-composer-theme-width": `${homeComposer.width}px`,
-                } as CSSProperties
-              : undefined
-          }
-        >
-          <div className="home-empty-content flex min-h-0 w-full flex-1 items-center justify-center overflow-y-auto px-4">
-            <div className="home-empty-stack flex w-full max-w-[1120px] flex-col items-center gap-6">
-              <EmptyStateIntro
-                hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
-                selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}
-                onSelectSuggestion={selectHomeSuggestion}
-                onSuggestion={
-                  isSide ||
-                  isNativeSubagent ||
-                  homeSuggestionPhase === "dismissed"
-                    ? undefined
-                    : (prompt) => {
-                        fillSuggestionPrefix(prompt);
-                      }
+    <AgentChatView
+      sessionId={active?.id}
+      surface={isSide ? "side" : "main"}
+      phase={resolveAgentChatPhase(active)}
+      turns={chatSurfaceTurns}
+      transcriptRef={transcriptRef}
+      homeStyle={
+        homeComposer?.width !== undefined
+          ? {
+              "--home-composer-theme-width": `${homeComposer.width}px`,
+            } as CSSProperties
+          : undefined
+      }
+      homeComposerStyle={
+        homeComposer?.width !== undefined
+          ? {
+              "--home-composer-frame-width": `${homeComposer.width}px`,
+            } as CSSProperties
+          : undefined
+      }
+      renderTurn={({ turn }) => {
+        const sourceTurn = turnsById.get(turn.id);
+        return sourceTurn ? (
+          <TurnBlock
+            turn={sourceTurn}
+            onFork={sourceTurn.id === latestForkableTurnId
+              ? continueInNewChat
+              : undefined}
+          />
+        ) : null;
+      }}
+      slots={{
+        empty: (
+          <EmptyStateIntro
+            hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
+            selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}
+            onSelectSuggestion={selectHomeSuggestion}
+            onSuggestion={
+              isSide ||
+              isNativeSubagent ||
+              homeSuggestionPhase === "dismissed"
+                ? undefined
+                : (prompt) => {
+                    fillSuggestionPrefix(prompt);
                   }
-              />
-            </div>
-          </div>
-          <div
-            data-chat-column="composer"
-            className={cn(
-              CHAT_COMPOSER_FRAME_CLASS,
-              "relative",
-              "space-y-2",
-              "home-composer-stack",
-            )}
-            style={
-              homeComposer?.width !== undefined
-                ? {
-                    "--home-composer-frame-width": `${homeComposer.width}px`,
-                  } as CSSProperties
-                : undefined
             }
-          >
-            {homeSuggestionPhase === "choosing" && homeSuggestionSelection && !isSide && (
-              <HomeSuggestionSelect
-                selection={homeSuggestionSelection}
-                selectedPrompt={selectedSuggestionPrompt}
-                onBack={backHomeSuggestion}
-                onSuggestion={selectHomeSuggestionTemplate}
-              />
-            )}
+          />
+        ),
+        homeBeforeComposer:
+          homeSuggestionPhase === "choosing" &&
+          homeSuggestionSelection &&
+          !isSide ? (
+            <HomeSuggestionSelect
+              selection={homeSuggestionSelection}
+              selectedPrompt={selectedSuggestionPrompt}
+              onBack={backHomeSuggestion}
+              onSuggestion={selectHomeSuggestionTemplate}
+            />
+          ) : null,
+        beforeComposer: (
+          <>
             {composerAuthSetup}
             {composerNotice}
             {composerProgress}
-            {composer}
+          </>
+        ),
+        composer,
+        afterComposer: (
+          <>
             {chipRow}
             {runtimeFooter}
-          </div>
-          {!isSide && <div className="home-corner-decoration" aria-hidden="true" />}
-        </div>
-      ) : (
-        // Conversation flow — turns scroll above a bottom-pinned composer.
-        <>
-          <Conversation key={active?.id ?? "none"} className="flex-1 min-h-0">
-            <ConversationContent
-              // ConversationContent is the inner scroller of
-              // use-stick-to-bottom. Keep it full-width so the
-              // scrollbar pill (drawn at the right edge of this
-              // element) sits flush against the right edge of the
-              // conversation, where the timeline strip and right
-              // shell live. Horizontal breathing room belongs to the
-              // turn frame below, which is inset to the composer's
-              // rounded-corner safe line rather than the outer card edge.
-              className={cn(
-                "w-full px-0 py-6",
-                "flex min-h-full flex-col",
-              )}
-            >
-              <MarkdownCwdProvider cwd={active?.cwd}>
-                <div
-                  ref={transcriptRef}
-                  className={CHAT_TURN_FRAME_CLASS}
-                  data-chat-column="turns"
-                >
-                  {transcriptTurns.map((turn) => (
-                    <TurnBlock
-                      key={turn.id}
-                      turn={turn}
-                      onFork={turn.id === latestForkableTurnId
-                        ? continueInNewChat
-                        : undefined}
-                    />
-                  ))}
-                </div>
-                <ResponseAnnotationController
-                  scopeRef={transcriptRef}
-                  destinationSessionId={active!.id}
-                  onAskInSideChat={askInSideChat}
-                />
-              </MarkdownCwdProvider>
-            </ConversationContent>
-            <ConversationScrollButton />
-            {!isSide && <ConversationTimeline turns={transcriptTurns} />}
-          </Conversation>
-          <div
-            data-chat-column="composer"
-            className={cn(
-              CHAT_COMPOSER_FRAME_CLASS,
-              "space-y-2",
-            )}
-          >
-            {composerAuthSetup}
-            {composerNotice}
-            {composerProgress}
-            {composer}
-            {chipRow}
-            {runtimeFooter}
-          </div>
-        </>
-      )}
-
-    </div>
+          </>
+        ),
+        wrapConversationContent: (children) => (
+          <MarkdownCwdProvider cwd={active?.cwd}>
+            {children}
+          </MarkdownCwdProvider>
+        ),
+        conversationContentAfter: active ? (
+          <ResponseAnnotationController
+            scopeRef={transcriptRef}
+            destinationSessionId={active.id}
+            onAskInSideChat={askInSideChat}
+          />
+        ) : null,
+        conversationOverlay:
+          !isSide && active ? (
+            <ConversationTimeline turns={transcriptTurns} />
+          ) : null,
+        emptyAfter: !isSide ? (
+          <div className="home-corner-decoration" aria-hidden="true" />
+        ) : null,
+      }}
+    />
   );
 }
 

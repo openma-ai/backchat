@@ -7,14 +7,29 @@ import {
   CalendarClockIcon,
   CheckIcon,
   CopyIcon,
+  ListChecksIcon,
+  Loader2Icon,
   TargetIcon,
 } from "lucide-react";
-import { SessionTurnFrame } from "@openma/common/session-ui";
+import {
+  AgentUITurnView,
+  projectAcpChatTurn,
+} from "@openma/common/chat-ui";
+import type {
+  AgentUIMessageItem,
+  AgentUIToolItem,
+} from "@openma/common/agent-ui";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
-import { settleInterruptedToolStatus } from "@/lib/chat-tool-presentation";
+import {
+  capitalizeToolLabel,
+  pickToolActivityTarget,
+  settleInterruptedToolStatus,
+  toolActivityVerbKey,
+  toolRunSummaryKeys,
+} from "@/lib/chat-tool-presentation";
 import { promptCommandAnnotation } from "@/lib/prompt-command-annotation";
 import { latestPlanDocumentForEvents } from "@/lib/session-plan";
 import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
@@ -27,10 +42,11 @@ import {
   type SubagentActivity,
   type Turn,
 } from "@/lib/session-store";
-import { shouldShowTransientThought } from "@/lib/turn-presentation";
-import { useMarkdownCwd } from "./ChatMarkdown";
-import { TurnAnswer } from "./TurnAnswer";
-import { TurnProcessBar } from "./TurnActivity";
+import {
+  ASSISTANT_MARKDOWN_CLASS,
+  StreamdownText,
+  useMarkdownCwd,
+} from "./ChatMarkdown";
 import { PlanDocumentActivity } from "./PlanDocumentActivity";
 import { TurnScheduleCards } from "./ScheduledTaskMessageBar";
 import { parseScheduledTaskPrompt, type ScheduledTaskPromptSurface } from "@/lib/scheduled-task-presentation";
@@ -38,6 +54,10 @@ import {
   inspectRawTurnEvents,
   RawEventInspector,
 } from "./RawEventInspector";
+import { StreamingMarkdown } from "./StreamingMarkdown";
+import { projectThoughtEvent, ThoughtEventRow } from "./ThoughtEventRow";
+import { ToolRow } from "./ToolPresentation";
+import { BACKCHAT_COLLAPSIBLE_PRIMITIVES } from "@/components/ai-elements/reasoning";
 
 export const TurnBlock = memo(function TurnBlock({
   turn,
@@ -97,18 +117,6 @@ export const TurnBlock = memo(function TurnBlock({
     () => inspectRawTurnEvents(turn.events),
     [turn.events],
   );
-  const hasVisibleContent =
-    turn.assistantText.length > 0 ||
-    activityRendered.tools.length > 0 ||
-    rawEvents.length > 0 ||
-    !!planDocument;
-  const hasAnything =
-    hasVisibleContent ||
-    shouldShowTransientThought({
-      isStreaming,
-      thoughtText: turn.thoughtText,
-      hasVisibleContent,
-    });
   const hasSessionReferences = (turn.sessionReferences?.length ?? 0) > 0;
   const availableCommandsSelector = useMemo(
     () => selectAvailableCommandsFor(turn.sessionId),
@@ -126,36 +134,150 @@ export const TurnBlock = memo(function TurnBlock({
     () => parseScheduledTaskPrompt(turn.promptText),
     [turn.promptText],
   );
+  const projectedTurn = useMemo(
+    () => projectAcpChatTurn(
+      {
+        id: turn.id,
+        promptText:
+          hasSessionReferences || scheduledPrompt
+            ? ""
+            : commandInvocation?.body ?? turn.promptText,
+        attachments: turn.attachments,
+        events: turn.events,
+        assistantText: turn.assistantText,
+        status: turn.status,
+        errorMessage: turn.errorMessage,
+        startedAt: turn.startedAt,
+        endedAt: turn.endedAt,
+      },
+      { rendered: activityRendered },
+    ),
+    [
+      activityRendered,
+      commandInvocation?.body,
+      hasSessionReferences,
+      scheduledPrompt,
+      turn.assistantText,
+      turn.attachments,
+      turn.endedAt,
+      turn.errorMessage,
+      turn.events,
+      turn.id,
+      turn.promptText,
+      turn.startedAt,
+      turn.status,
+    ],
+  );
+  const activityToolsById = useMemo(
+    () => new Map(
+      activityRendered.tools.map((tool) => [tool.toolCallId, tool] as const),
+    ),
+    [activityRendered.tools],
+  );
+
+  const supplementalProcess =
+    Boolean(planDocument) ||
+    rawEvents.length > 0 ||
+    hasTurnSubagentLinks(activityRendered, subagents);
 
   return (
-    <>
-      {hasSessionReferences && <ReferencedSessionPrompt turn={turn} />}
-      {scheduledPrompt && !hasSessionReferences && (
-        <ScheduledTaskUserPrompt turn={turn} surface={scheduledPrompt} />
-      )}
-      <SessionTurnFrame
-        turnId={turn.id}
-        sessionId={turn.sessionId}
-        promptText={
-          hasSessionReferences || scheduledPrompt
-            ? undefined
-            : commandInvocation?.body ?? turn.promptText
-        }
-
-        status={turn.status}
-        errorMessage={turn.errorMessage}
-        className="!mb-8 !space-y-4 [&_[data-session-turn-prompt]>div]:!px-3 [&_[data-session-turn-prompt]>div]:!py-2"
-        errorNotice={
-          turn.status === "error" ? (
-            <StatusNotice tone="danger">
-              {turn.errorMessage ?? "Turn failed."}
-            </StatusNotice>
-          ) : undefined
-        }
-      >
-          {commandInvocation && !hasSessionReferences && !scheduledPrompt && (
-            // Sits directly under the prompt bubble: the frame renders children
-            // after it. Right-aligned to stay with the message it describes.
+    <AgentUITurnView
+      sessionId={turn.sessionId}
+      turn={projectedTurn}
+      frameStatus={turn.status}
+      thoughts="history"
+      activityTools="all"
+      collapsiblePrimitives={BACKCHAT_COLLAPSIBLE_PRIMITIVES}
+      labels={{
+        workingFor: (seconds) => t("chat.workingFor", { seconds }),
+        workedFor: (seconds) => t("chat.workedFor", { seconds }),
+        thinking: t("chat.thinking"),
+        thoughtFor: (seconds) => t("chat.thoughtFor", { seconds }),
+        toolActivity: (tool) => describeProjectedTool(tool, t),
+        toolRunSummary: (tools) => describeProjectedToolRun(tools, t),
+      }}
+      slots={{
+        renderBeforeTurn: () => (
+          <>
+            {hasSessionReferences && <ReferencedSessionPrompt turn={turn} />}
+            {scheduledPrompt && !hasSessionReferences && (
+              <ScheduledTaskUserPrompt turn={turn} surface={scheduledPrompt} />
+            )}
+          </>
+        ),
+        renderAssistant: ({ item, section, live, prefixSkip }) =>
+          live ? (
+            <StreamingMarkdown
+              turnId={turn.id}
+              kind="assistant"
+              cwd={cwd}
+              prefixSkip={prefixSkip}
+              paceReplay
+            />
+          ) : (
+            <StreamdownText
+              className={ASSISTANT_MARKDOWN_CLASS}
+              text={item.text}
+              cwd={cwd}
+              sessionId={turn.sessionId}
+              surfacePrefix={assistantSurfacePrefix(turn.id, item, section)}
+            />
+          ),
+        projectThoughtActivity: ({ item, live, prefixSkip }) =>
+          projectThoughtEvent({
+            turnId: turn.id,
+            text: item.text,
+            live,
+            prefixSkip,
+            liveFallback: t("chat.thinking"),
+            completedLabel: t("chat.thoughtFor", {
+              seconds: itemContentNumber(item, "durationSeconds"),
+            }),
+          }),
+        renderThought: ({ item, live, prefixSkip }) => (
+          <ThoughtEventRow
+            turn={turn}
+            text={item.text}
+            index={itemContentNumber(item, "timelineIndex")}
+            cwd={cwd}
+            live={live}
+            prefixSkip={prefixSkip}
+            durationSeconds={itemContentNumber(item, "durationSeconds")}
+          />
+        ),
+        projectToolActivity: ({ tool }) => ({
+          leading: isProjectedToolRunning(tool) ? (
+            <Loader2Icon className="chat-activity-icon animate-spin" />
+          ) : (
+            <ListChecksIcon className="chat-activity-icon" />
+          ),
+          summary: describeProjectedTool(tool, t),
+        }),
+        projectToolRun: ({ tools }) => ({
+          leading: (
+            <ListChecksIcon className="chat-activity-icon text-fg-muted" />
+          ),
+          summary: describeProjectedToolRun(tools, t),
+        }),
+        renderTool: ({ tool }) => {
+          const activityTool = activityToolsById.get(tool.id);
+          return activityTool ? (
+            <ToolRow
+              tool={activityTool}
+              sessionId={turn.sessionId}
+              subagent={subagents.find(
+                (activity) => activity.native?.toolCallId === tool.id,
+              )}
+            />
+          ) : null;
+        },
+        renderError: ({ message }) => (
+          <StatusNotice tone="danger">
+            {message ?? "Turn failed."}
+          </StatusNotice>
+        ),
+        renderResponseBeforeProcess: () =>
+          commandInvocation && !hasSessionReferences && !scheduledPrompt ? (
             <p
               className="ml-auto flex w-fit items-center gap-1.5 text-xs text-fg-muted"
               data-prompt-command={commandInvocation.command}
@@ -163,76 +285,132 @@ export const TurnBlock = memo(function TurnBlock({
               <TargetIcon className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 truncate">{t("chat.sentAsGoal")}</span>
             </p>
-          )}
-
-          <TurnProcessBar
-            turn={turn}
-            rendered={activityRendered}
-            subagents={subagents}
-            isStreaming={isStreaming}
+          ) : null,
+        hasSupplementalProcess: () => supplementalProcess,
+        renderProcessBefore: () => planDocument ? (
+          <PlanDocumentActivity
+            document={planDocument}
             cwd={cwd}
-            hasSupplementalActivity={
-              Boolean(planDocument) ||
-              rawEvents.length > 0 ||
-              hasTurnSubagentLinks(activityRendered, subagents)
-            }
-            leadingContent={planDocument ? (
-              <PlanDocumentActivity
-                document={planDocument}
-                cwd={cwd}
-                sessionId={turn.sessionId}
-              />
-            ) : undefined}
-            trailingContent={(
-              <>
-                <RawEventInspector events={rawEvents} />
-                <TurnSubagentLinks
-                  turn={turn}
-                  renderedToolCallIds={activityRendered.tools.map(
-                    (tool) => tool.toolCallId,
-                  )}
-                  subagents={subagents}
-                />
-              </>
-            )}
-          />
-
-          <TurnAnswer
-            turn={turn}
-            rendered={rendered}
-            cwd={cwd}
-            isStreaming={isStreaming}
-          />
-
-          <TurnScheduleCards
             sessionId={turn.sessionId}
-            tools={activityRendered.tools}
           />
-
-          {stopNotice && (
-            <p
-              data-turn-stop-reason={turn.stopReason}
-              className={
-                stopNotice.tone === "refused"
-                  ? "text-xs leading-5 text-fg-muted"
-                  : "text-xs leading-5 text-warning"
-              }
-            >
-              {t(stopNotice.key)}
-            </p>
-          )}
-
-          {/* One row that outlives the turn's state change. The running layer is
-              intentionally empty: live state belongs to its atomic event row. */}
+        ) : null,
+        renderProcessAfter: () => (
+          <>
+            <RawEventInspector events={rawEvents} />
+            <TurnSubagentLinks
+              turn={turn}
+              renderedToolCallIds={activityRendered.tools.map(
+                (tool) => tool.toolCallId,
+              )}
+              subagents={subagents}
+            />
+          </>
+        ),
+        renderAfterAnswer: () => (
+          <>
+            <TurnScheduleCards
+              sessionId={turn.sessionId}
+              tools={activityRendered.tools}
+            />
+            {stopNotice && (
+              <p
+                data-turn-stop-reason={turn.stopReason}
+                className={
+                  stopNotice.tone === "refused"
+                    ? "text-xs leading-5 text-fg-muted"
+                    : "text-xs leading-5 text-warning"
+                }
+              >
+                {t(stopNotice.key)}
+              </p>
+            )}
+          </>
+        ),
+        renderFooter: () => (
           <TurnFooter
             turn={turn}
             isStreaming={isStreaming}
             onFork={onFork}
           />
-      </SessionTurnFrame>
-    </>
+        ),
+      }}
+    />
   );
 });
+
+type Translate = ReturnType<typeof useI18n>["t"];
+
+function projectedToolPresentation(tool: AgentUIToolItem) {
+  return {
+    kind: tool.toolKind,
+    status: tool.status,
+    title: tool.title,
+    locations: tool.locations,
+    content: tool.content as Array<{
+      type: string;
+      path?: string;
+      content?: { type?: string; text?: string };
+    }> | undefined,
+    rawInput: tool.rawInput,
+  };
+}
+
+function describeProjectedTool(
+  tool: AgentUIToolItem,
+  t: Translate,
+): string {
+  const projected = projectedToolPresentation(tool);
+  const target =
+    pickToolActivityTarget(
+      projected,
+      (name) => t("tool.skillSuffix", { name }),
+    ) || tool.title || t("activity.tool");
+  return `${t(toolActivityVerbKey(projected))} ${target}`.trim();
+}
+
+function describeProjectedToolRun(
+  tools: readonly AgentUIToolItem[],
+  t: Translate,
+): string {
+  const summaries = toolRunSummaryKeys(
+    tools.map(projectedToolPresentation),
+  ).map((key) => t(key));
+  return capitalizeToolLabel(
+    summaries.length > 0
+      ? summaries.join(t("chat.toolRunJoin"))
+      : t("toolSummary.think"),
+  );
+}
+
+function isProjectedToolRunning(tool: AgentUIToolItem): boolean {
+  return tool.status === "pending" || tool.status === "in_progress";
+}
+
+function itemContentNumber(
+  item: AgentUIMessageItem,
+  key: "timelineIndex" | "durationSeconds",
+): number {
+  if (!item.content || typeof item.content !== "object") return 0;
+  const value = (item.content as Record<string, unknown>)[key];
+  return typeof value === "number" ? value : 0;
+}
+
+function assistantSurfacePrefix(
+  turnId: string,
+  item: AgentUIMessageItem,
+  section: "process" | "answer",
+): string {
+  if (
+    item.content &&
+    typeof item.content === "object" &&
+    (item.content as Record<string, unknown>).replay === true
+  ) {
+    return `${turnId}-replay`;
+  }
+  return `${turnId}-${section === "process" ? "activity" : "answer"}-${
+    itemContentNumber(item, "timelineIndex")
+  }`;
+}
 
 function ScheduledTaskUserPrompt({
   turn,

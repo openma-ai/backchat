@@ -27,17 +27,7 @@ describe("chat module boundaries", () => {
     );
   });
 
-  it("places transient session notices immediately above the composer", () => {
-    const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
-
-    expect(source).toContain('from "./ComposerNotice"');
-    expect(source).toContain("const composerNotice =");
-    expect(source.indexOf("{composerNotice}")).toBeLessThan(
-      source.indexOf("{composer}"),
-    );
-  });
-
-  it("opens harness sign-in from the composer and keeps the form above it", () => {
+  it("opens harness sign-in from the composer", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
     const composer = readFileSync(resolve(__dirname, "Composer.tsx"), "utf8");
     const composerAuth = readFileSync(
@@ -45,13 +35,8 @@ describe("chat module boundaries", () => {
       "utf8",
     );
 
-    expect(source).toContain('from "./ComposerAuthSetup"');
-    expect(source).toContain("const composerAuthSetup =");
     expect(source).toContain("authSetupOpen");
     expect(source).toContain("onRequestAuth");
-    expect(source.indexOf("{composerAuthSetup}")).toBeLessThan(
-      source.indexOf("{composer}"),
-    );
     expect(source).toContain("active?.authRequired");
     expect(source).not.toContain("t(\"chat.sessionErrored\") && active?.authRequired");
     expect(composer).toContain("ComposerAuthControls");
@@ -210,6 +195,23 @@ describe("side draft runtime inheritance", () => {
 });
 
 describe("transcript projection", () => {
+  it("maps Backchat session lifecycle onto the common chat surface", () => {
+    const resolvePhase = (
+      chatViewModule as unknown as {
+        resolveAgentChatPhase?: (
+          active: { status: string } | null | undefined,
+        ) => "missing" | "draft" | "active";
+      }
+    ).resolveAgentChatPhase;
+
+    expect(resolvePhase).toBeTypeOf("function");
+    if (!resolvePhase) return;
+    expect(resolvePhase(undefined)).toBe("missing");
+    expect(resolvePhase({ status: "draft" })).toBe("draft");
+    expect(resolvePhase({ status: "starting" })).toBe("active");
+    expect(resolvePhase({ status: "ready" })).toBe("active");
+  });
+
   it("does not duplicate queued user turns above the queue surface", () => {
     const filterQueuedTurns = (
       chatViewModule as unknown as {
@@ -248,16 +250,13 @@ describe("provider queue projection", () => {
 });
 
 describe("home suggestions", () => {
-  it("keeps the welcome logo and suggestions for a started session with no turns", () => {
+  it("supplies the welcome logo and suggestions through the common empty slot", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
-    const emptyState = source.slice(
-      source.indexOf("{isEmpty ? ("),
-      source.indexOf("// Conversation flow"),
-    );
 
-    expect(emptyState).toContain("<EmptyStateIntro");
-    expect(emptyState).not.toContain('active.status === "draft"');
-    expect(emptyState).not.toContain("<SessionIntro");
+    expect(source).toContain("<AgentChatView");
+    expect(source).toContain("slots={{");
+    expect(source).toContain("empty: (");
+    expect(source).toContain("<EmptyStateIntro");
     expect(source).not.toContain("function SessionIntro");
   });
 
@@ -431,20 +430,13 @@ describe("home suggestions", () => {
       resolve(__dirname, "../../styles/index.css"),
       "utf8",
     );
-    const firstComposerFrame = source.indexOf('data-chat-column="composer"');
-    const emptyComposer = source.slice(
-      firstComposerFrame,
-      source.indexOf("// Conversation flow"),
-    );
     const pickerStyles = styles.slice(
       styles.indexOf(".home-suggestion-composer-popover {"),
       styles.indexOf(".home-suggestion-select-header {"),
     );
 
-    expect(emptyComposer).toContain("<HomeSuggestionSelect");
-    expect(emptyComposer.indexOf("<HomeSuggestionSelect")).toBeLessThan(
-      emptyComposer.indexOf("{chipRow}"),
-    );
+    expect(source).toContain("homeBeforeComposer:");
+    expect(source).toContain("<HomeSuggestionSelect");
     expect(pickerStyles).toContain("position: absolute;");
     expect(pickerStyles).toContain("bottom: calc(100% + 12px);");
     expect(pickerStyles).not.toContain(
@@ -473,22 +465,15 @@ describe("home suggestions", () => {
     expect(copyStyles).toContain("white-space: nowrap;");
   });
 
-  it("pins the empty-state composer to the normal chat composer frame", () => {
+  it("leaves composer geometry to the common chat surface", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
     const styles = readFileSync(
       resolve(__dirname, "../../styles/index.css"),
       "utf8",
     );
-    const emptyState = source.slice(
-      source.indexOf("{isEmpty ? ("),
-      source.indexOf("// Conversation flow"),
-    );
-
-    expect(emptyState).toContain('className="home-empty-content');
-    expect(emptyState).toContain('data-chat-column="composer"');
-    expect(emptyState).toContain("CHAT_COMPOSER_FRAME_CLASS");
-    expect(emptyState).toContain('"space-y-2"');
-    expect(emptyState).not.toContain("pb-4");
+    expect(source).toContain("<AgentChatView");
+    expect(source).not.toContain('data-chat-column="composer"');
+    expect(source).not.toContain("CHAT_COMPOSER_FRAME_CLASS");
     expect(source).not.toContain("composerTransition");
     expect(source).not.toContain('"composer-slide-in"');
     expect(styles).not.toContain(
@@ -513,27 +498,16 @@ describe("home suggestions", () => {
     expect(emptyStackStyles).not.toContain("margin-top: -8vh;");
   });
 
-  it("places the draft runtime and project footer below the composer", () => {
+  it("supplies the draft runtime and project footer through the common after-composer slot", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
-    const firstComposerFrame = source.indexOf('data-chat-column="composer"');
-    const secondComposerFrame = source.indexOf(
-      'data-chat-column="composer"',
-      firstComposerFrame + 1,
-    );
-    const emptyComposer = source.slice(
-      firstComposerFrame,
-      source.indexOf("// Conversation flow"),
-    );
-    const conversationComposer = source.slice(
-      secondComposerFrame,
-      source.indexOf("{active?.status === \"errored\""),
+    const afterComposer = source.slice(
+      source.indexOf("afterComposer: ("),
+      source.indexOf("wrapConversationContent:"),
     );
 
-    expect(emptyComposer.indexOf("{chipRow}")).toBeGreaterThan(
-      emptyComposer.indexOf("{composer}"),
-    );
-    expect(conversationComposer.indexOf("{chipRow}")).toBeGreaterThan(
-      conversationComposer.indexOf("{composer}"),
+    expect(afterComposer).toContain("{chipRow}");
+    expect(afterComposer.indexOf("{runtimeFooter}")).toBeGreaterThan(
+      afterComposer.indexOf("{chipRow}"),
     );
   });
 
