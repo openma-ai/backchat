@@ -1,36 +1,17 @@
-/**
- * StreamingMarkdown — DOM-mutating renderer for the streaming half of the
- * dual-track chat surface. Subscribes to the session store's per-turn
- * stream channel and pushes deltas straight into thetarnav/streaming-
- * markdown's parser, which appends DOM nodes to a ref'd <div> WITHOUT
- * any React reconciliation.
- *
- * Why bypass React: streaming a multi-KB markdown response into React
- * state forces a tree diff on every chunk (60+ chunks/sec, 10–30ms each).
- * The visible "stall" Claude Desktop / Alma avoid is exactly this. Here
- * React only sees a single inert <div ref> — no children prop, no state
- * — for the entire stream. When the turn completes, the parent unmounts
- * this component and replaces it with a Streamdown-rendered final view
- * (memoized + plugin-rich). The handoff is one render, not 1000.
- *
- * The same shape applies to thought streams; pass kind="thought" to
- * subscribe to that subchannel.
- */
-
 import {
-  useEffect,
+  useCallback,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import * as smd from "streaming-markdown";
+import { AgentUIStreamingMarkdown } from "@openma/common/agent-ui/react";
 import { ContextMenu } from "radix-ui";
 import { MARKDOWN_BLOCK_RHYTHM, MARKDOWN_PROSE_TYPE } from "./ChatMarkdown";
 import { sessionStore } from "@/lib/session-store";
 import { openBrowserAwareUrl } from "@/lib/browser-open";
+import { resolveMarkdownLinkTarget } from "@/lib/markdown-link-target";
 import { previewLocalFile } from "@/lib/file-preview";
 import { cn } from "@/lib/utils";
-import { createStreamTextPacer } from "./stream-text-pacer";
 import { decorateStreamingHttpLinks } from "./MarkdownLinkFavicon";
 import { MarkdownLinkMenuContent } from "./MarkdownLinkMenu";
 
@@ -65,7 +46,6 @@ export function StreamingMarkdown({
   prefixSkip = 0,
   paceReplay = false,
 }: Props) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
   const [contextLink, setContextLink] = useState<{
     url: string;
     label?: string;
@@ -77,151 +57,14 @@ export function StreamingMarkdown({
   const cwdRef = useRef<string | null>(cwd ?? null);
   cwdRef.current = cwd ?? null;
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    // Reset host content on (re)mount so a route change between turns
-    // doesn't leave stale DOM. The store's replay-on-subscribe will
-    // re-render the current accumulator.
-    host.replaceChildren();
-    const parser = smd.parser(smd.default_renderer(host));
-    // streaming-markdown holds the last character back until it knows whether it
-    // opens a token, so the newest character of every pause stayed invisible
-    // until the next chunk arrived. The parser has no flush, so the held
-    // character is painted here as a plain text node and removed again before
-    // the parser is written to — its state is never touched.
-    let heldTail: Text | null = null;
-    let lastWritten = "";
-    const clearTail = () => {
-      heldTail?.remove();
-      heldTail = null;
-    };
-    const deepestLast = (node: Element): Element => {
-      let current = node;
-      while (current.lastElementChild) {
-        const next = current.lastElementChild;
-        if (next.matches("img, br, hr")) break;
-        current = next;
-      }
-      return current;
-    };
-    const showTail = () => {
-      clearTail();
-      const character = Array.from(lastWritten).at(-1);
-      if (!character) return;
-      heldTail = document.createTextNode(character);
-      deepestLast(host).append(heldTail);
-    };
-    const pacer = createStreamTextPacer({
-      write: (text) => {
-        clearTail();
-        lastWritten = text;
-        smd.parser_write(parser, text);
-        decorateStreamingHttpLinks(host);
-      },
-      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
-      cancel: (handle) => window.clearTimeout(handle as number),
-      onDrain: showTail,
-    });
-    // First handler invocation is the synchronous replay of the current
-    // accumulator (see sessionStore.subscribeTurnStream). For
-    // segment-aware interleaving the parent renders earlier assistant
-    // segments statically above this component, so we slice the first
-    // `prefixSkip` chars off the replay payload — the rendered tail
-    // covers only "everything after the last tool break". Live deltas
-    // arriving after that first call are always appended in full.
-    let subscribing = true;
-    const off = sessionStore.subscribeTurnStream(turnId, (d) => {
-      if (d.kind !== kind) return;
-      let text = d.text;
-      if (subscribing) {
-        if (prefixSkip > 0 && text.length > prefixSkip) {
-          text = text.slice(prefixSkip);
-        } else if (prefixSkip >= text.length) {
-          // Replay already fully covered by static segments above —
-          // nothing to render until the next live delta.
-          return;
-        }
-        // Rebuild an already-visible accumulator immediately on a late
-        // mount. Reasoning is the exception: it mounts on the first thought
-        // chunk, so that first replay should still reveal character by
-        // character instead of flashing the whole adapter chunk.
-        if (paceReplay) {
-          pacer.enqueue(text);
-        } else {
-          clearTail();
-          lastWritten = text;
-          smd.parser_write(parser, text);
-          decorateStreamingHttpLinks(host);
-          showTail();
-        }
-        return;
-      }
-      // Direct DOM mutation. No setState, no React render. Chunk boundaries
-      // are intentionally hidden from the user: the pacer reveals Unicode
-      // characters individually at a stable cadence.
-      pacer.enqueue(text);
-    });
-    subscribing = false;
-    // Event delegation for <a> clicks. streaming-markdown emits raw
-    // <a href=...> nodes that, when clicked, would let Chromium
-    // navigate the whole renderer to the link's URL — fine for
-    // http(s) which we'd want in the system browser, fatal for bare
-    // relative paths which would resolve against the dev-server
-    // origin (image #93). Intercept here and route the same way the
-    // post-stream Streamdown <a> override does.
-    const onClickAnchor = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const a = target?.closest("a") as HTMLAnchorElement | null;
-      if (!a || !host.contains(a)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const url = (a.getAttribute("href") ?? "").trim();
-      if (!url) return;
-      if (/^https?:\/\//i.test(url)) {
-        openBrowserAwareUrl(url);
-        return;
-      }
-      // Compute the absolute path early so html/non-html routing can
-      // share the same resolved value. file:// strips its scheme, /abs
-      // passes through, bare relative joins with cwdRef.
-      let path: string | null = null;
-      if (/^file:\/\//i.test(url)) path = url.slice(7);
-      else if (url.startsWith("/")) path = url;
-      else if (
-        url.startsWith("#") ||
-        url.startsWith("?") ||
-        url.startsWith("mailto:")
-      )
-        return;
-      else {
-        const base = cwdRef.current;
-        if (!base) return;
-        path = base.replace(/\/$/, "") + "/" + url.replace(/^\.\//, "");
-      }
-      if (!path) return;
-      void previewLocalFile(path);
-    };
-    host.addEventListener("click", onClickAnchor);
-    return () => {
-      host.removeEventListener("click", onClickAnchor);
-      off();
-      // Ensure the parser receives every queued character before its final
-      // end marker. The completed Streamdown view replaces this host in the
-      // same commit, so this does not add visible completion latency.
-      pacer.flush();
-      pacer.dispose();
-      // Tell the parser we're done so any half-open inline element
-      // (e.g. an unfinished `**` emphasis) flushes as plain text instead
-      // of staying open in the DOM. The host node itself is removed by
-      // React on unmount, so we don't need to clear it manually.
-      try {
-        smd.parser_end(parser);
-      } catch {
-        /* parser_end can throw on certain partial states; not fatal. */
-      }
-    };
-  }, [turnId, kind, prefixSkip, paceReplay]);
+  const onLinkActivate = useCallback((url: string) => {
+    const target = resolveMarkdownLinkTarget(url, cwdRef.current);
+    if (target.kind === "http") {
+      openBrowserAwareUrl(target.url);
+    } else if (target.kind === "file") {
+      void previewLocalFile(target.path);
+    }
+  }, []);
 
   const onContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
@@ -237,19 +80,22 @@ export function StreamingMarkdown({
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
-        <div
-          ref={hostRef}
-          onContextMenu={onContextMenu}
-          className={cn(
-            // The same type tier and rhythm the settled surface uses, both from
-            // one constant, so the handoff cannot change the geometry of the
-            // document.
-            "streaming-md",
-            MARKDOWN_PROSE_TYPE,
-            MARKDOWN_BLOCK_RHYTHM,
-            className,
-          )}
-        />
+        <div onContextMenu={onContextMenu}>
+          <AgentUIStreamingMarkdown
+            store={sessionStore}
+            turnId={turnId}
+            kind={kind}
+            prefixSkip={prefixSkip}
+            paceReplay={paceReplay}
+            onLinkActivate={onLinkActivate}
+            decorate={decorateStreamingHttpLinks}
+            className={cn(
+              MARKDOWN_PROSE_TYPE,
+              MARKDOWN_BLOCK_RHYTHM,
+              className,
+            )}
+          />
+        </div>
       </ContextMenu.Trigger>
       {contextLink && (
         <MarkdownLinkMenuContent

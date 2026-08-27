@@ -482,20 +482,15 @@ describe("home suggestions", () => {
   });
 
   it("keeps the empty-state hero lower without moving the composer frame", () => {
+    const main = readFileSync(resolve(__dirname, "../../main.tsx"), "utf8");
     const styles = readFileSync(
       resolve(__dirname, "../../styles/index.css"),
       "utf8",
     );
-    const emptyStackStyles = styles.slice(
-      styles.indexOf(".home-empty-stack {"),
-      styles.indexOf(".home-hero-panel {"),
-    );
 
-    expect(emptyStackStyles).toContain("--home-empty-stack-offset-y");
-    expect(emptyStackStyles).toContain(
-      "margin-top: var(--home-empty-stack-offset-y",
-    );
-    expect(emptyStackStyles).not.toContain("margin-top: -8vh;");
+    expect(main).toContain('import "@openma/common/chat-ui/styles.css"');
+    expect(styles).not.toMatch(/(?:^|\n)\.home-empty-stack \{/);
+    expect(styles).not.toContain("margin-top: -8vh;");
   });
 
   it("supplies the draft runtime and project footer through the common after-composer slot", () => {

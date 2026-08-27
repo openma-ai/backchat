@@ -40,7 +40,11 @@ describe("markdown lists", () => {
       resolve(__dirname, "StreamingMarkdown.tsx"),
       "utf8",
     );
+    expect(streaming).toContain("AgentUIStreamingMarkdown");
     expect(streaming).toContain("MARKDOWN_BLOCK_RHYTHM");
+    expect(streaming).not.toContain("streaming-markdown");
+    expect(streaming).not.toContain("parser_write");
+    expect(streaming).not.toContain("createStreamTextPacer");
     expect(streaming).not.toContain("[&_ul]:list-disc");
     expect(streaming).not.toContain("[&>p]:my-1.5");
   });

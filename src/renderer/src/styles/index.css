@@ -51,25 +51,12 @@
   box-shadow: var(--shadow-input-rest);
 }
 
-.chat-turn-frame {
-  padding-inline: var(--chat-turn-content-inset);
-}
-
-.chat-composer-frame {
-  padding-inline: var(--composer-frame-padding-inline);
-}
-
 .composer-control-row-inset {
   padding-inline: var(--composer-card-padding-inline);
 }
 
 .composer-footer-row-inset {
   padding-inline: var(--composer-footer-padding-inline);
-}
-
-.chat-activity-icon {
-  width: var(--chat-activity-icon-size);
-  height: var(--chat-activity-icon-size);
 }
 
 /* Tailwind's space-y writes its gap onto the preceding child. Keep the card's
@@ -337,39 +324,6 @@
 
 .composer-progress-panel {
   margin-bottom: 0;
-}
-
-.activity-disclosure-row {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  -webkit-user-select: none;
-  user-select: none;
-  align-items: center;
-  gap: 6px;
-  border-radius: 4px;
-  color: var(--fg-muted);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  text-align: left;
-}
-
-.activity-disclosure-row:hover {
-  background: var(--interaction-bg-hover);
-}
-
-.activity-disclosure-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--focus-ring) 40%, transparent);
-  outline-offset: 1px;
-}
-
-.activity-disclosure-chevron {
-  display: grid;
-  width: 20px;
-  height: 20px;
-  margin-left: auto;
-  flex: 0 0 20px;
-  place-items: center;
 }
 
 .activity-timeline-viewport {
@@ -807,21 +761,6 @@ html[data-theme-asset-empty-state="true"]
   mask-repeat: no-repeat;
   -webkit-mask-size: contain;
   mask-size: contain;
-}
-
-.home-empty-stage {
-  position: relative;
-}
-
-.home-empty-stack {
-  --home-composer-width: 42rem;
-  --home-composer-width: var(--home-composer-theme-width, 42rem);
-  --home-empty-stack-offset-y: clamp(-24px, -3vh, -12px);
-  margin-top: var(--home-empty-stack-offset-y);
-}
-
-.home-composer-stack {
-  max-width: var(--home-composer-frame-width, 48rem);
 }
 
 .home-hero-panel {
@@ -2066,22 +2005,18 @@ body,
       the thumb gives a fat short pill; the transparent
       border insets it from the track edge so it visually
       floats in the middle. */
-.app-scrollbar,
-.chat-scrollbar {
+.app-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--fg) 30%, transparent) transparent;
 }
-.app-scrollbar::-webkit-scrollbar,
-.chat-scrollbar::-webkit-scrollbar {
+.app-scrollbar::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-.app-scrollbar::-webkit-scrollbar-track,
-.chat-scrollbar::-webkit-scrollbar-track {
+.app-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
-.app-scrollbar::-webkit-scrollbar-thumb,
-.chat-scrollbar::-webkit-scrollbar-thumb {
+.app-scrollbar::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--fg) 30%, transparent);
   border-radius: 9999px;
   border: 3px solid transparent;
@@ -2093,8 +2028,7 @@ body,
   min-height: 40px;
   max-height: 50%;
 }
-.app-scrollbar::-webkit-scrollbar-thumb:hover,
-.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+.app-scrollbar::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--fg) 50%, transparent);
   background-clip: padding-box;
 }
@@ -2307,51 +2241,6 @@ body,
 
 .animated-collapse[data-state="open"] > .animated-collapse-inner {
   transform: translateY(0);
-}
-
-/* Activity disclosures use keyframes instead of a transition so Radix keeps
-   the content mounted for the full exit animation, then removes it only after
-   the grid track has reached zero. This avoids the old two-stage close where
-   text faded first and the transcript jumped on the final unmount frame. */
-@keyframes reasoning-collapse-open {
-  from {
-    grid-template-rows: 0fr;
-    opacity: 0;
-  }
-  to {
-    grid-template-rows: 1fr;
-    opacity: 1;
-  }
-}
-
-@keyframes reasoning-collapse-closed {
-  from {
-    grid-template-rows: 1fr;
-    opacity: 1;
-  }
-  to {
-    grid-template-rows: 0fr;
-    opacity: 0;
-  }
-}
-
-.reasoning-collapse {
-  display: grid;
-}
-
-.reasoning-collapse[data-state="open"] {
-  animation: reasoning-collapse-open var(--motion-disclosure-duration)
-    var(--motion-disclosure-easing) both;
-}
-
-.reasoning-collapse[data-state="closed"] {
-  animation: reasoning-collapse-closed var(--motion-disclosure-duration)
-    var(--motion-disclosure-easing) both;
-}
-
-.reasoning-collapse-inner {
-  min-height: 0;
-  overflow: hidden;
 }
 
 /* The side conversation lives on a glass surface, where the default

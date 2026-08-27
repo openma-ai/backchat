@@ -10,6 +10,7 @@ import { router } from "@/router";
 import { applyStoredTheme } from "@/lib/theme";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/jetbrains-mono";
+import "@openma/common/chat-ui/styles.css";
 import "./styles/index.css";
 
 /**

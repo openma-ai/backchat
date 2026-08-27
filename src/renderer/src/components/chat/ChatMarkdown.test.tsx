@@ -11,9 +11,7 @@ import {
 describe("StreamdownText", () => {
   it("scopes hover styling to the individual link", () => {
     expect(MARKDOWN_BLOCK_RHYTHM).toContain("[&_a:hover]:text-fg-muted");
-    expect(MARKDOWN_BLOCK_RHYTHM).toContain(
-      "[&_a[data-markdown-http-link]:hover]:text-info/80",
-    );
+    expect(MARKDOWN_BLOCK_RHYTHM).not.toContain("data-markdown-http-link");
     expect(MARKDOWN_BLOCK_RHYTHM).not.toContain("hover:[&_a]");
   });
 
@@ -45,6 +43,7 @@ describe("MarkdownAnchor", () => {
     expect(html).toContain('src="https://apnews.com/favicon.ico"');
     expect(html).toContain('data-markdown-link-favicon="true"');
     expect(html).toContain("text-info");
+    expect(html).toContain("hover:text-info/80");
   });
 
   it("renders a relative file link when the surrounding session has a cwd", () => {
