@@ -243,11 +243,12 @@ describe("TurnBlock", () => {
         expect.objectContaining({ kind: "thinking", text: thought }),
       ]),
     );
-    // Completed process content is behind the closed Radix disclosure. The
-    // common component owns opening it; server markup intentionally omits it.
-    expect(html).not.toContain(thought);
+    // Completed process content stays mounted so nested disclosure choices
+    // survive a parent close/reopen, but the closed Radix surface is inert.
+    expect(html).toContain(thought);
     expect(html).toContain("aria-expanded");
-    expect(html).not.toContain("lucide-brain");
+    expect(html).toContain('aria-hidden="true" inert=""');
+    expect(html).toContain("lucide-brain");
     expect(html).not.toContain("<details");
     expect(html).not.toContain("bg-bg-surface");
     const triggerClass = html.match(
@@ -605,8 +606,9 @@ describe("TurnBlock", () => {
 
     expect(html).toContain('data-tool-group-size="3"');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain("components");
-    expect(html).not.toContain("renderer");
+    expect(html).toContain('hidden="" aria-hidden="true" inert=""');
+    expect(html).toContain("components");
+    expect(html).toContain("renderer");
   });
 
   it("lets the working timeline use the transcript scroll instead of an inner viewport", () => {
@@ -725,10 +727,11 @@ describe("TurnBlock", () => {
 
     expect(html).toContain('data-tool-group-size="5"');
     // Codex thought history is part of the event sequence. It does not split
-    // the fold. The inactive group is collapsed, so its five child rows are
-    // intentionally absent from server markup until the user opens it.
+    // the fold. The inactive group remains mounted but hidden/inert so nested
+    // disclosure state survives closing and reopening the group.
     expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain('data-thought-block="true"');
+    expect(html).toContain('hidden="" aria-hidden="true" inert=""');
+    expect(html).toContain('data-thought-block="true"');
   });
 
   it("shows the latest in-progress action in a running tool group", () => {
