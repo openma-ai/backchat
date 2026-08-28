@@ -185,7 +185,7 @@ export function ToolRow({
 
       {hasBody && open && (
         <div
-          className="ml-5 mt-1 space-y-1.5 overflow-y-auto text-[12px]"
+          className="ml-7 mt-1 space-y-1.5 overflow-y-auto text-[12px]"
           style={{ maxHeight: "min(480px, 50vh)" }}
         >
           {tool.locations && tool.locations.length > 0 && (
@@ -214,7 +214,7 @@ export function ToolRow({
       )}
 
       {hoistedBlocks.length > 0 && (
-        <div className="ml-5 mt-1.5 space-y-1.5">
+        <div className="ml-7 mt-1.5 space-y-1.5">
           {hoistedBlocks.map((block, index) => (
             <ToolContentRenderer key={`hoist-${index}`} block={block} />
           ))}

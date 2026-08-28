@@ -1437,6 +1437,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
 }
 
 @import "tailwindcss";
+@source "../../../../node_modules/@openma/common/dist";
 
 /* ---------- Dark mode: class-based ---------- */
 @custom-variant dark (&:where(.dark, .dark *));

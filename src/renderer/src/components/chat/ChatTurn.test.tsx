@@ -581,7 +581,7 @@ describe("TurnBlock", () => {
     expect(html.match(/data-tool-group-size=/g)).toHaveLength(1);
   });
 
-  it("collapses consecutive tool calls into one activity group", () => {
+  it("keeps a completed uninterrupted tool group running at its latest event", () => {
     const events = ["components", "renderer", "dialog"].map(
       (target, index) => ({
         payload: {
@@ -589,7 +589,7 @@ describe("TurnBlock", () => {
           toolCallId: `search-${index}`,
           kind: "search",
           status: "completed",
-          title: `Searched for ${target}`,
+          title: target,
           rawInput: { query: target },
         },
         receivedAt: index + 1,
@@ -605,8 +605,12 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain('data-tool-group-size="3"');
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('hidden="" aria-hidden="true" inert=""');
+    expect(html).toMatch(
+      /data-tool-group-size="3"><button[^>]*aria-expanded="true"/,
+    );
+    expect(html).toContain("tool.searching dialog");
+    expect(html).toContain("tool.searched");
+    expect(html).toContain('data-tool-status="completed"');
     expect(html).toContain("components");
     expect(html).toContain("renderer");
   });

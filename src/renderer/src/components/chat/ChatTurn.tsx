@@ -245,13 +245,13 @@ export const TurnBlock = memo(function TurnBlock({
             durationSeconds={itemContentNumber(item, "durationSeconds")}
           />
         ),
-        projectToolActivity: ({ tool }) => ({
-          leading: isProjectedToolRunning(tool) ? (
+        projectToolActivity: ({ tool, live }) => ({
+          leading: live || isProjectedToolRunning(tool) ? (
             <Loader2Icon className="chat-activity-icon animate-spin" />
           ) : (
             <ListChecksIcon className="chat-activity-icon" />
           ),
-          summary: describeProjectedTool(tool, t),
+          summary: describeProjectedTool(tool, t, live),
         }),
         projectToolRun: ({ tools }) => ({
           leading: (
@@ -358,8 +358,12 @@ function projectedToolPresentation(tool: AgentUIToolItem) {
 function describeProjectedTool(
   tool: AgentUIToolItem,
   t: Translate,
+  live = false,
 ): string {
-  const projected = projectedToolPresentation(tool);
+  const projected = {
+    ...projectedToolPresentation(tool),
+    status: live ? "in_progress" : tool.status,
+  };
   const target =
     pickToolActivityTarget(
       projected,
