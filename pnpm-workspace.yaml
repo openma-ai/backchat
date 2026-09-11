@@ -17,3 +17,8 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@agentclientprotocol/claude-agent-acp@0.64.2'
   - '@agentclientprotocol/codex-acp@1.1.0'
+
+overrides:
+  # Security fixes for electron-builder's plist dependencies; keep each minor line.
+  '@xmldom/xmldom@>=0.8.0 <0.8.15': 0.8.15
+  '@xmldom/xmldom@>=0.9.0 <0.9.12': 0.9.12
