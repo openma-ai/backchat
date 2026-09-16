@@ -816,3 +816,12 @@ passes all 76 scenarios. No Codex model was used for this acceptance.
 Updated the older runtime-menu source assertion for actual catalog-backed
 choices and supplied local-account/session context in the affected standalone
 component/file-preview tests; their 60 assertions pass.
+
+Final full-suite comparison: 1,631 passed / 27 failed on this branch versus
+1,527 passed / 28 failed on the pre-feature baseline (main plus the existing
+reproducible-dependency fix, commit 4673f71). Every remaining branch failure also
+occurs on that baseline; there are no additional failing cases. The baseline
+main manifest itself referenced a missing developer-local common checkout, so
+the reproducibility-only commit was necessary to install it for comparison.
+The 368 curated CI tests and 27 release-script tests pass. This does not claim
+the full legacy suite is green.
