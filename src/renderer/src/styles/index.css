@@ -1512,8 +1512,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      hand-tuned track. */
   --chat-turn-content-inset: 32px;
   --chat-activity-icon-size: var(--control-icon-size);
+  /* Shared activity rows reserve an 8px leading inset inside the turn frame. */
   --chat-icon-rail-center: calc(
-    var(--chat-turn-content-inset) + (var(--chat-activity-icon-size) / 2)
+    var(--chat-turn-content-inset) + 8px + (var(--chat-activity-icon-size) / 2)
   );
   --composer-card-border-width: 1px;
   --composer-card-padding-block: 10px;

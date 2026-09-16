@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveRestoreIcon, Trash2Icon } from "lucide-react";
 import { PageScaffold } from "@/components/shell/PageScaffold";
 import { useI18n } from "@/lib/i18n";
@@ -6,6 +6,9 @@ import { StatusNotice } from "@/components/ui/status-notice";
 import { cn } from "@/lib/utils";
 import { sessionStore } from "@/lib/session-store";
 import type { PersistedSessionInfo } from "@shared/api.js";
+import type { OpenmaTask } from "@shared/openma";
+import { useOpenmaAccount } from "@/lib/openma-account";
+type ArchiveEntry = PersistedSessionInfo & { openma?: OpenmaTask };
 
 /**
  * Archive — Settings sub-page that lists archived sessions and lets
@@ -24,34 +27,52 @@ import type { PersistedSessionInfo } from "@shared/api.js";
  */
 export function Archive() {
   const { t } = useI18n();
-  const [rows, setRows] = useState<PersistedSessionInfo[] | null>(null);
+  const { data: account } = useOpenmaAccount();
+  const scope = account?.user && account.status !== "signing_in" ? JSON.stringify(account.workspaces.filter((w) => !w.expired).map((w) => JSON.stringify([account.baseUrl, account.user!.id, w.id]))) : null;
+  const scopeRef = useRef(scope); scopeRef.current = scope;
+  const generation = useRef(0);
+  const [rows, setRows] = useState<ArchiveEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    const request = ++generation.current;
     try {
-      const next = await sessionStore.listArchivedPersisted();
-      setRows(next);
+      const [local, remote] = await Promise.all([sessionStore.listArchivedPersisted(), scope ? window.backchat.openmaTasksList() : Promise.resolve([])]);
+      if (request !== generation.current || scope !== scopeRef.current) return;
+      const tasks = remote.filter((task) => (JSON.parse(scope ?? "[]") as string[]).includes(JSON.stringify([task.baseUrl, task.userId, task.workspaceId])));
+      sessionStore.seedOpenmaTasks(tasks);
+      const remoteRows: ArchiveEntry[] = tasks.filter((task) => task.archivedAt != null).map((task) => ({
+        id: task.id, agent_id: task.target.agentId, title: task.title, cwd: "", acp_session_id: "",
+        title_manually_set: 1, last_used_at: task.updatedAt, created_at: task.createdAt,
+        pinned_at: task.pinnedAt ?? null, archived_at: task.archivedAt!, project_id: null, additional_directories: [], openma: task,
+      }));
+      setRows([...local, ...remoteRows].sort((a, b) => (b.archived_at ?? 0) - (a.archived_at ?? 0)));
       setError(null);
     } catch (e) {
+      if (request !== generation.current || scope !== scopeRef.current) return;
       // IPC handler missing (main process not restarted after a new
       // channel was added) or threw — show a real message instead of
       // a permanent Loading… spinner. The user can restart and reload.
       setError(e instanceof Error ? e.message : String(e));
       setRows([]);
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
+    setRows(null);
     void refresh();
+    const off = window.backchat.onOpenmaTaskUpdated(() => { void refresh(); });
+    return () => { generation.current++; off(); };
   }, [refresh]);
 
   const onRestore = useCallback(
     async (id: string) => {
       setBusy(id);
       try {
-        sessionStore.unarchive(id);
+        await sessionStore.unarchive(id);
+        if (scope !== scopeRef.current) return;
         // Re-seed the in-memory store with the full active list so
         // the unarchived row appears in the Sidebar immediately
         // (otherwise it'd only show after a reload). sessionsList
@@ -59,11 +80,13 @@ export function Archive() {
         const fresh = await window.backchat.sessionsList(200);
         sessionStore.seedPersisted(fresh);
         await refresh();
+      } catch (error) {
+        if (scope === scopeRef.current) setError(error instanceof Error ? error.message : String(error));
       } finally {
         setBusy(null);
       }
     },
-    [refresh],
+    [refresh, scope],
   );
 
   const onDelete = useCallback(
@@ -85,6 +108,7 @@ export function Archive() {
       title={t("settings.archivedChats")}
       description="Restore returns a session to the sidebar. Delete permanently removes the chat history and any files under its session directory — this can't be undone."
     >
+      {scope && <p className="text-xs text-fg-subtle">OpenMA archives are saved on this desktop. Remote tasks keep running and can be restored here.</p>}
 
       {rows === null && (
         <div className="text-xs text-fg-subtle">Loading…</div>
@@ -92,13 +116,9 @@ export function Archive() {
 
       {error && (
         <StatusNotice tone="danger">
-          <div className="font-medium">无法加载归档列表</div>
+          <div className="font-medium">Couldn't load archived chats</div>
           <div className="mt-0.5 opacity-80">
             {error}
-            <br />
-            <span className="text-[11px]">
-              新加的 IPC 通道需要重启 Electron 主进程才能生效。请退出 app 重启。
-            </span>
           </div>
         </StatusNotice>
       )}
@@ -128,7 +148,7 @@ export function Archive() {
                     {label}
                   </div>
                   <div className="mt-0.5 truncate text-[11px] text-fg-subtle" title={r.cwd ?? ""}>
-                    {r.agent_id || "—"}
+                    {r.openma ? `${r.openma.target.runtimeName} · ${r.openma.target.environmentName}` : r.agent_id || "—"}
                     {r.cwd ? ` · ${shortPath(r.cwd)}` : ""}
                     {r.archived_at ? ` · 归档于 ${formatDate(r.archived_at)}` : ""}
                   </div>
@@ -148,7 +168,7 @@ export function Archive() {
                     <ArchiveRestoreIcon className="size-3.5" />
                     <span>恢复</span>
                   </button>
-                  <button
+                  {!r.openma && <button
                     type="button"
                     onClick={() => {
                       if (isConfirming) void onDelete(r.id);
@@ -169,7 +189,7 @@ export function Archive() {
                   >
                     <Trash2Icon className="size-3.5" />
                     <span>{isConfirming ? "确认删除" : "彻底删除"}</span>
-                  </button>
+                  </button>}
                 </div>
               </li>
             );

@@ -31,10 +31,11 @@ export interface SessionStartParams {
   project_id?: string;
   /** Workspace ownership is explicit for new drafts:
    *  - managed: ignore the settings default and allocate a per-session cwd.
-   *  - project: require and use `cwd`.
+   *  - project: legacy/direct mode; require and use `cwd`.
+   *  - worktree: create detached per-repository checkouts for all project roots.
    *  - inherited: require the parent task's `cwd` for a side chat.
    *  - omitted: resume an existing session at its persisted `cwd`. */
-  workspace_mode?: "managed" | "project" | "inherited";
+  workspace_mode?: "managed" | "project" | "worktree" | "inherited";
   /** Provide an existing ACP-side session id to resume conversation history.
    *  The runtime tries `session/resume`, then `session/load`, then
    *  `session/new`, according to the agent's advertised capabilities. */
@@ -506,6 +507,11 @@ export type SessionEventOut = (
       type: "session.cancelled";
       session_id: string;
       turn_id: string;
+      /** Present only when the agent returned an actual ACP PromptResponse.
+       * A locally aborted iterator alone is insufficient for remote completion. */
+      stop_reason?: string;
+      usage?: AcpPromptUsage;
+      meta?: Record<string, unknown>;
     }
   | {
       /** Result of delivering a user input through negotiated

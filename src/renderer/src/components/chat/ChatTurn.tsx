@@ -11,10 +11,7 @@ import {
   Loader2Icon,
   TargetIcon,
 } from "lucide-react";
-import {
-  AgentUITurnView,
-  projectAcpChatTurn,
-} from "@openma/common/chat-ui";
+import { AgentUITurnView, projectAcpChatTurn } from "@openma/common/chat-ui";
 import type {
   AgentUIMessageItem,
   AgentUIToolItem,
@@ -49,11 +46,11 @@ import {
 } from "./ChatMarkdown";
 import { PlanDocumentActivity } from "./PlanDocumentActivity";
 import { TurnScheduleCards } from "./ScheduledTaskMessageBar";
-import { parseScheduledTaskPrompt, type ScheduledTaskPromptSurface } from "@/lib/scheduled-task-presentation";
 import {
-  inspectRawTurnEvents,
-  RawEventInspector,
-} from "./RawEventInspector";
+  parseScheduledTaskPrompt,
+  type ScheduledTaskPromptSurface,
+} from "@/lib/scheduled-task-presentation";
+import { inspectRawTurnEvents, RawEventInspector } from "./RawEventInspector";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { projectThoughtEvent, ThoughtEventRow } from "./ThoughtEventRow";
 import { ToolRow } from "./ToolPresentation";
@@ -87,15 +84,16 @@ export const TurnBlock = memo(function TurnBlock({
     // A turn that stopped running will never receive another tool update, so
     // settle anything still mid-flight instead of spinning forever. This also
     // covers restarts, where the same events replay from disk unchanged.
-    const settled = turn.status === "running"
-      ? rendered
-      : {
-          ...rendered,
-          tools: rendered.tools.map((tool) => ({
-            ...tool,
-            status: settleInterruptedToolStatus(tool.status),
-          })),
-        };
+    const settled =
+      turn.status === "running"
+        ? rendered
+        : {
+            ...rendered,
+            tools: rendered.tools.map((tool) => ({
+              ...tool,
+              status: settleInterruptedToolStatus(tool.status),
+            })),
+          };
     if (!planDocument?.sourceToolCallId) return settled;
     const sourceToolCallId = planDocument.sourceToolCallId;
     return {
@@ -104,8 +102,7 @@ export const TurnBlock = memo(function TurnBlock({
         (tool) => tool.toolCallId !== sourceToolCallId,
       ),
       timeline: settled.timeline.filter(
-        (item) =>
-          item.kind !== "tool" || item.toolCallId !== sourceToolCallId,
+        (item) => item.kind !== "tool" || item.toolCallId !== sourceToolCallId,
       ),
     };
   }, [planDocument?.sourceToolCallId, rendered, turn.status]);
@@ -135,23 +132,24 @@ export const TurnBlock = memo(function TurnBlock({
     [turn.promptText],
   );
   const projectedTurn = useMemo(
-    () => projectAcpChatTurn(
-      {
-        id: turn.id,
-        promptText:
-          hasSessionReferences || scheduledPrompt
-            ? ""
-            : commandInvocation?.body ?? turn.promptText,
-        attachments: turn.attachments,
-        events: turn.events,
-        assistantText: turn.assistantText,
-        status: turn.status,
-        errorMessage: turn.errorMessage,
-        startedAt: turn.startedAt,
-        endedAt: turn.endedAt,
-      },
-      { rendered: activityRendered },
-    ),
+    () =>
+      projectAcpChatTurn(
+        {
+          id: turn.id,
+          promptText:
+            hasSessionReferences || scheduledPrompt
+              ? ""
+              : (commandInvocation?.body ?? turn.promptText),
+          attachments: turn.attachments,
+          events: turn.events,
+          assistantText: turn.assistantText,
+          status: turn.status,
+          errorMessage: turn.errorMessage,
+          startedAt: turn.startedAt,
+          endedAt: turn.endedAt,
+        },
+        { rendered: activityRendered },
+      ),
     [
       activityRendered,
       commandInvocation?.body,
@@ -169,9 +167,10 @@ export const TurnBlock = memo(function TurnBlock({
     ],
   );
   const activityToolsById = useMemo(
-    () => new Map(
-      activityRendered.tools.map((tool) => [tool.toolCallId, tool] as const),
-    ),
+    () =>
+      new Map(
+        activityRendered.tools.map((tool) => [tool.toolCallId, tool] as const),
+      ),
     [activityRendered.tools],
   );
 
@@ -208,6 +207,7 @@ export const TurnBlock = memo(function TurnBlock({
         renderAssistant: ({ item, section, live, prefixSkip }) =>
           live ? (
             <StreamingMarkdown
+              key={`${turn.id}:${turn.streamRevision ?? 0}`}
               turnId={turn.id}
               kind="assistant"
               cwd={cwd}
@@ -246,11 +246,12 @@ export const TurnBlock = memo(function TurnBlock({
           />
         ),
         projectToolActivity: ({ tool, live }) => ({
-          leading: live || isProjectedToolRunning(tool) ? (
-            <Loader2Icon className="chat-activity-icon animate-spin" />
-          ) : (
-            <ListChecksIcon className="chat-activity-icon" />
-          ),
+          leading:
+            live || isProjectedToolRunning(tool) ? (
+              <Loader2Icon className="chat-activity-icon animate-spin" />
+            ) : (
+              <ListChecksIcon className="chat-activity-icon" />
+            ),
           summary: describeProjectedTool(tool, t, live),
         }),
         projectToolRun: ({ tools }) => ({
@@ -272,9 +273,7 @@ export const TurnBlock = memo(function TurnBlock({
           ) : null;
         },
         renderError: ({ message }) => (
-          <StatusNotice tone="danger">
-            {message ?? "Turn failed."}
-          </StatusNotice>
+          <StatusNotice tone="danger">{message ?? "Turn failed."}</StatusNotice>
         ),
         renderResponseBeforeProcess: () =>
           commandInvocation && !hasSessionReferences && !scheduledPrompt ? (
@@ -287,13 +286,14 @@ export const TurnBlock = memo(function TurnBlock({
             </p>
           ) : null,
         hasSupplementalProcess: () => supplementalProcess,
-        renderProcessBefore: () => planDocument ? (
-          <PlanDocumentActivity
-            document={planDocument}
-            cwd={cwd}
-            sessionId={turn.sessionId}
-          />
-        ) : null,
+        renderProcessBefore: () =>
+          planDocument ? (
+            <PlanDocumentActivity
+              document={planDocument}
+              cwd={cwd}
+              sessionId={turn.sessionId}
+            />
+          ) : null,
         renderProcessAfter: () => (
           <>
             <RawEventInspector events={rawEvents} />
@@ -327,11 +327,7 @@ export const TurnBlock = memo(function TurnBlock({
           </>
         ),
         renderFooter: () => (
-          <TurnFooter
-            turn={turn}
-            isStreaming={isStreaming}
-            onFork={onFork}
-          />
+          <TurnFooter turn={turn} isStreaming={isStreaming} onFork={onFork} />
         ),
       }}
     />
@@ -346,11 +342,13 @@ function projectedToolPresentation(tool: AgentUIToolItem) {
     status: tool.status,
     title: tool.title,
     locations: tool.locations,
-    content: tool.content as Array<{
-      type: string;
-      path?: string;
-      content?: { type?: string; text?: string };
-    }> | undefined,
+    content: tool.content as
+      | Array<{
+          type: string;
+          path?: string;
+          content?: { type?: string; text?: string };
+        }>
+      | undefined,
     rawInput: tool.rawInput,
   };
 }
@@ -365,10 +363,11 @@ function describeProjectedTool(
     status: live ? "in_progress" : tool.status,
   };
   const target =
-    pickToolActivityTarget(
-      projected,
-      (name) => t("tool.skillSuffix", { name }),
-    ) || tool.title || t("activity.tool");
+    pickToolActivityTarget(projected, (name) =>
+      t("tool.skillSuffix", { name }),
+    ) ||
+    tool.title ||
+    t("activity.tool");
   return `${t(toolActivityVerbKey(projected))} ${target}`.trim();
 }
 
@@ -411,9 +410,10 @@ function assistantSurfacePrefix(
   ) {
     return `${turnId}-replay`;
   }
-  return `${turnId}-${section === "process" ? "activity" : "answer"}-${
-    itemContentNumber(item, "timelineIndex")
-  }`;
+  return `${turnId}-${section === "process" ? "activity" : "answer"}-${itemContentNumber(
+    item,
+    "timelineIndex",
+  )}`;
 }
 
 function ScheduledTaskUserPrompt({
@@ -520,10 +520,12 @@ function TurnSubagentLinks({
 
   const openSubagent = (activity: SubagentActivity) => {
     const label = subagentLinkLabel(activity);
-    const existingTab = sessionStore.sideTabs().find(
-      (tab) =>
-        tab.type === "subagent" && tab.payload === activity.viewSessionId,
-    );
+    const existingTab = sessionStore
+      .sideTabs()
+      .find(
+        (tab) =>
+          tab.type === "subagent" && tab.payload === activity.viewSessionId,
+      );
     sessionStore.openSideTabForTask(
       turn.sessionId,
       "subagent",
@@ -560,9 +562,7 @@ function hasTurnSubagentLinks(
   rendered: TurnRender,
   subagents: SubagentActivity[],
 ): boolean {
-  const toolCallIds = new Set(
-    rendered.tools.map((tool) => tool.toolCallId),
-  );
+  const toolCallIds = new Set(rendered.tools.map((tool) => tool.toolCallId));
   return subagents.some(
     (activity) =>
       activity.native?.toolCallId &&
@@ -650,7 +650,8 @@ function TurnFooter({
 }) {
   const { t } = useI18n();
   const answer = turn.assistantText.trim();
-  const canFork = Boolean(onFork) && turn.status === "complete" && answer.length > 0;
+  const canFork =
+    Boolean(onFork) && turn.status === "complete" && answer.length > 0;
   const endedAt = turn.status === "running" ? undefined : turn.endedAt;
   const layer =
     "col-start-1 row-start-1 flex min-w-0 items-center transition-opacity duration-[var(--dur-slow)] ease-[var(--ease-soft)]";
@@ -663,10 +664,12 @@ function TurnFooter({
       className="grid h-7 grid-cols-1 grid-rows-1"
     >
       <div
-        className={cn(layer, isStreaming ? "opacity-100" : "pointer-events-none opacity-0")}
+        className={cn(
+          layer,
+          isStreaming ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
         aria-hidden={isStreaming ? undefined : true}
-      >
-      </div>
+      ></div>
       <div
         className={cn(
           layer,

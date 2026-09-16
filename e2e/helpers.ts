@@ -69,7 +69,8 @@ export async function launchAppWithHome(
   cleanup: () => Promise<void>;
 }> {
   const app = await electron.launch({
-    args: [join(repoRoot, "out/main/index.js")],
+    // Keep cookies/localStorage isolated as well as the Backchat database.
+    args: [join(repoRoot, "out/main/index.js"), `--user-data-dir=${join(home, "electron-user-data")}`],
     env: {
       ...process.env,
       ...(options.env ?? {}),

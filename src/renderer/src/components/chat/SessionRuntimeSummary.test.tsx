@@ -1,7 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionRow } from "@/lib/session-store";
 import { SessionRuntimeSummary } from "./SessionRuntimeSummary";
+
+vi.mock("@/lib/openma-account", () => ({
+  useOpenmaAccount: () => ({ data: null }),
+  useOpenmaCatalog: () => ({ data: null, isFetching: false, error: null, refetch: vi.fn() }),
+}));
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 function row(overrides: Partial<SessionRow> = {}): SessionRow {
   return {

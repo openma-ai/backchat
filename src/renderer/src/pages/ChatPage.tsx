@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useParams } from "@tanstack/react-router";
 import { ChatView } from "@/components/chat/ChatView";
 import { sessionStore, useSessionStore, type SessionRow } from "@/lib/session-store";
+import { toast } from "sonner";
 
 /**
  * Chat page — backs `/chat/$sessionId`. The cold-create `/` route is a
@@ -27,6 +28,16 @@ export function ChatPage() {
   }, [params.sessionId]);
   const routeSession = useSessionStore(routeSessionSelector);
   const lastLoadedRef = useRef<string | null>(null);
+  const remoteId = routeSession?.openma ? routeSession.id : undefined;
+  useEffect(() => {
+    if (!remoteId) return;
+    let active = true;
+    const subscriptionId = crypto.randomUUID();
+    void window.backchat.openmaTaskOpen(remoteId, subscriptionId).then((snapshot) => {
+      if (active) sessionStore.applyOpenmaSnapshot(snapshot);
+    }).catch((error) => { if (active) toast.error(error instanceof Error ? error.message : "Couldn't open OpenMA task"); });
+    return () => { active = false; void window.backchat.openmaTaskDetach(remoteId, subscriptionId).catch(() => {}); };
+  }, [remoteId]);
 
   useEffect(() => {
     if (!params.sessionId) {
@@ -43,6 +54,7 @@ export function ChatPage() {
       return;
     }
     sessionStore.setActive(params.sessionId);
+    if (row.openma) return;
     // Load history once per session per renderer lifetime. Re-navigating
     // shouldn't re-fetch; the in-memory turns are authoritative once we've
     // replayed them. (Live session.event continues to layer on top via
@@ -65,6 +77,7 @@ export function ChatPage() {
 export function prewarmSessionOnOpen(row: SessionRow | undefined): boolean {
   if (
     !row ||
+    row.openma ||
     row.status !== "ready" ||
     row.activeTurnId ||
     !row.acp_session_id ||

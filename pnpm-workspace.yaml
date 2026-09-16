@@ -7,17 +7,19 @@ packages:
 # file" at electron startup. electron-rebuild then rewires it to
 # Electron's ABI via the `rebuild` package.json script.
 allowBuilds:
+  # These ship built JavaScript; their install hooks are a no-op/version warning.
+  '@google/genai': false
+  protobufjs: false
   better-sqlite3: true
-  node-pty: true
   electron: true
-  esbuild: true
   electron-winstaller: true
+  esbuild: true
+  node-pty: true
   workerd: false
 
 minimumReleaseAgeExclude:
   - '@agentclientprotocol/claude-agent-acp@0.64.2'
   - '@agentclientprotocol/codex-acp@1.1.0'
-
 overrides:
   # Security fixes for electron-builder's plist dependencies; keep each minor line.
   '@xmldom/xmldom@>=0.8.0 <0.8.15': 0.8.15

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
@@ -26,11 +27,13 @@ export function useArchiveSessions() {
     after?: () => void;
   } | null>(null);
 
-  const commit = (sessionIds: string[], after?: () => void) => {
-    for (const sessionId of sessionIds) sessionStore.archive(sessionId);
-    void queryClient.invalidateQueries({ queryKey: SCHEDULES_QUERY_KEY });
-    after?.();
-    setPending(null);
+  const commit = async (sessionIds: string[], after?: () => void) => {
+    try {
+      for (const sessionId of sessionIds) await sessionStore.archive(sessionId);
+      void queryClient.invalidateQueries({ queryKey: SCHEDULES_QUERY_KEY });
+      after?.();
+      setPending(null);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't archive the task"); }
   };
 
   const requestArchive = async (sessionIds: string[], after?: () => void) => {
@@ -47,7 +50,7 @@ export function useArchiveSessions() {
     }
     const live = liveSchedulesForSessions(schedules, sessionIds);
     if (live.length === 0) {
-      commit(sessionIds, after);
+      await commit(sessionIds, after);
       return;
     }
     setPending({
@@ -62,7 +65,7 @@ export function useArchiveSessions() {
     requestArchive,
     confirmArchive: () => {
       if (!pending) return;
-      commit(pending.sessionIds, pending.after);
+      void commit(pending.sessionIds, pending.after);
     },
     cancelArchive: () => setPending(null),
   };

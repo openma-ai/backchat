@@ -70,7 +70,7 @@ export function resolveWorkspaceMode(
 ): SessionStartParams["workspace_mode"] {
   if (isSide) return "inherited";
   if (projectScope === "none") return "managed";
-  if (projectScope === "project") return hasProjectCwd ? "project" : "managed";
+  if (projectScope === "project") return hasProjectCwd ? "worktree" : "managed";
   return undefined;
 }
 
@@ -143,6 +143,29 @@ export function useChatSubmission({
     // Resolve from the live store so a fast submit after navigation cannot
     // reuse the previous session captured by a render closure.
     let target = isSide ? sessionStore.sideActive() : sessionStore.active();
+    if (target?.executionTarget || target?.openma) {
+      if (isSide) return;
+      if (attachments.length || annotations.length || sessionReferences.length) {
+        toast.error("This remote task accepts text. Add files through its OpenMA environment.");
+        return;
+      }
+      try {
+        if (!target.openma) {
+          const snapshot = await window.backchat.openmaTaskCreate(target.executionTarget!, deriveChatLabel(text));
+          // Logout or revocation can remove the draft while creation is pending.
+          if (!sessionStore.get(target.id)?.executionTarget) return;
+          sessionStore.applyOpenmaSnapshot(snapshot);
+          sessionStore.setActive(snapshot.task.id);
+          target = sessionStore.get(snapshot.task.id)!;
+          void navigate({ to: "/chat/$sessionId", params: { sessionId: target.id } });
+        }
+        onSuggestionSubmitted();
+        await window.backchat.openmaTaskSend(target.id, crypto.randomUUID(), text);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "OpenMA request failed");
+      }
+      return;
+    }
     const draftAgentId = resolveChatSubmitAgentId({
       target,
       selectedAgentId,

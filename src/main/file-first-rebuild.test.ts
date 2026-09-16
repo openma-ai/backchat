@@ -156,6 +156,36 @@ describe("file-first rebuild", () => {
       db.close();
     }
   });
+
+  it("restores effective secondary workspace roots from session metadata", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-file-rebuild-"));
+    tempRoots.push(root);
+    await writeSessionFiles(root, {
+      sessionId: "sess_worktree_roots",
+      title: "Worktree roots",
+      additionalDirectories: [
+        "/managed/worktrees/sess_worktree_roots/02-docs",
+      ],
+      events: [],
+    });
+
+    const db = openEmptyIndex();
+    try {
+      rebuildSessionIndexFromTranscriptFiles(db, root);
+
+      expect(db.prepare(`
+        SELECT additional_directories_json
+        FROM sessions
+        WHERE id = 'sess_worktree_roots'
+      `).get()).toEqual({
+        additional_directories_json: JSON.stringify([
+          "/managed/worktrees/sess_worktree_roots/02-docs",
+        ]),
+      });
+    } finally {
+      db.close();
+    }
+  });
 });
 
 function openEmptyIndex(): DatabaseSync {
@@ -171,7 +201,8 @@ function openEmptyIndex(): DatabaseSync {
       created_at INTEGER NOT NULL,
       archived_at INTEGER,
       pinned_at INTEGER,
-      pair_id TEXT
+      pair_id TEXT,
+      additional_directories_json TEXT
     );
     CREATE TABLE pair_sessions (
       id TEXT PRIMARY KEY,
@@ -201,6 +232,7 @@ async function writeSessionFiles(
     archivedAt?: number;
     pinnedAt?: number;
     pairId?: string;
+    additionalDirectories?: string[];
     events: Array<{ seq: number; type: string; ts: number; data: unknown }>;
   },
 ): Promise<void> {
@@ -220,6 +252,9 @@ async function writeSessionFiles(
       pinned_at: opts.pinnedAt ?? 0,
       pair_id: opts.pairId ?? "",
       workdir: `/tmp/${opts.sessionId}`,
+      ...(opts.additionalDirectories !== undefined
+        ? { additional_directories: opts.additionalDirectories }
+        : {}),
     }) + "\n",
     "utf-8",
   );

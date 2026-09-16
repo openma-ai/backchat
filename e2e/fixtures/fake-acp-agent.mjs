@@ -10,6 +10,8 @@ import {
   getDefaultEnvironment,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Readable, Writable } from "node:stream";
+import { appendFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 const fakeAgentName = process.env.BACKCHAT_FAKE_AGENT_NAME ?? "fake-acp-agent";
 const fakeAgentTitle = process.env.BACKCHAT_FAKE_AGENT_TITLE ?? "Fake ACP Agent";
@@ -19,6 +21,7 @@ class FakeAcpAgent {
   constructor(connection) {
     this.connection = connection;
     this.sessions = new Map();
+    this.directories = new Map();
     /** sessionId -> resolver for a deliberately stalled turn. */
     this.pendingStalls = new Map();
   }
@@ -43,16 +46,19 @@ class FakeAcpAgent {
   async newSession(params) {
     const sessionId = `fake-acp-${Date.now().toString(36)}`;
     this.sessions.set(sessionId, params.mcpServers ?? []);
+    this.directories.set(sessionId, params.cwd);
     return { sessionId };
   }
 
   async loadSession(params) {
     this.sessions.set(params.sessionId, params.mcpServers ?? []);
+    this.directories.set(params.sessionId, params.cwd);
     return {};
   }
 
   async resumeSession(params) {
     this.sessions.set(params.sessionId, params.mcpServers ?? []);
+    this.directories.set(params.sessionId, params.cwd);
     return {};
   }
 
@@ -66,6 +72,30 @@ class FakeAcpAgent {
       .join("\n");
     if (promptText === "fail-after-accept-e2e") {
       throw new Error("Fake accepted prompt then failed");
+    }
+    if (promptText === "write-workspace-artifact-e2e") {
+      await writeFile(join(this.directories.get(params.sessionId), "runner-output.txt"), "Created in the linked project");
+    }
+    if (promptText === "recover-offline-output-e2e") {
+      const cwd = this.directories.get(params.sessionId);
+      await appendFile(join(cwd, "offline-prompt-count.txt"), "started\n");
+      await this.connection.sessionUpdate({ sessionId: params.sessionId, update: {
+        sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Before disconnect. " },
+      } });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await writeFile(join(cwd, "offline-output.txt"), "Completed while disconnected");
+      await this.connection.sessionUpdate({ sessionId: params.sessionId, update: {
+        sessionUpdate: "agent_message_chunk", content: { type: "text", text: "After disconnect." },
+      } });
+      return { stopReason: "end_turn" };
+    }
+    if (promptText === "approve-workspace-artifact-e2e") {
+      const response = await this.connection.requestPermission({ sessionId: params.sessionId,
+        toolCall: { toolCallId: "write-artifact", title: "Write approved artifact", kind: "edit", status: "pending" },
+        options: [{ optionId: "write:once", name: "Write once", kind: "allow_once" }, { optionId: "write:reject", name: "Reject write", kind: "reject_once" }],
+      });
+      if (response.outcome.outcome !== "selected" || response.outcome.optionId !== "write:once") return { stopReason: "cancelled" };
+      await writeFile(join(this.directories.get(params.sessionId), "approved-output.txt"), "Approved in the linked project");
     }
     if (promptText === "open-inline-preference-plugin-e2e") {
       await this.runInlinePreferencePlugin(params.sessionId);

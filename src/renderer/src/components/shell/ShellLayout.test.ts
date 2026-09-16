@@ -21,15 +21,15 @@ describe("ShellLayout route chrome", () => {
     expect(layout).toContain(") : null");
   });
 
-  it("mounts side chat, terminal, and their buttons only on chat routes", () => {
+  it("mounts local side chat and terminal only on local chat routes", () => {
     const layout = readFileSync(resolve(__dirname, "ShellLayout.tsx"), "utf8");
     const shell = readFileSync(resolve(__dirname, "AppShell.tsx"), "utf8");
 
     expect(layout).toContain(
-      "rightPanel={hasTaskChrome ? <SideChatPanel /> : undefined}",
+      "rightPanel={hasTaskChrome && !activeSession?.openma ? <SideChatPanel /> : undefined}",
     );
     expect(layout).toContain(
-      "bottomPanel={hasTaskChrome ? <BottomPanel /> : undefined}",
+      "bottomPanel={hasTaskChrome && !activeSession?.openma ? <BottomPanel /> : undefined}",
     );
     expect(layout).toContain("const hasTaskChrome = isChat && hasEnabledAgent;");
     expect(shell).toContain("if (!isChatRoute) return null;");
