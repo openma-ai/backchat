@@ -1,47 +1,30 @@
+@import "@openma/common/brand/website.css";
+
 :root {
-  color-scheme: light dark;
-  font-family: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--site-font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --page: #f7f7f5;
-  --surface: #ffffff;
-  --surface-raised: #fbfbfa;
-  --surface-muted: #ececea;
-  --surface-inverse: #10100f;
-  --ink: #171716;
-  --ink-soft: #42423f;
-  --ink-inverse: #e8e8e4;
-  --muted: #696965;
-  --muted-2: #696965;
-  --muted-inverse: #91918c;
-  --line: rgba(23, 23, 22, 0.11);
-  --line-strong: rgba(23, 23, 22, 0.2);
-  --line-inverse: rgba(255, 255, 255, 0.09);
-  --brand: #f84f32;
-  --brand-text: #c7351f;
-  --brand-hover: #e7462b;
-  --brand-ink: #141414;
-  --shadow: 0 22px 70px rgba(29, 27, 23, 0.1), 0 3px 12px rgba(29, 27, 23, 0.06);
-  --mono: "JetBrains Mono Variable", "SFMono-Regular", Consolas, monospace;
-  --max: 1180px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #0e0e0d;
-    --surface: #181817;
-    --surface-raised: #1d1d1c;
-    --surface-muted: #242422;
-    --ink: #f2f2ef;
-    --ink-soft: #d0d0cb;
-    --muted: #9c9c96;
-    --muted-2: #74746f;
-    --line: rgba(245, 245, 240, 0.11);
-    --line-strong: rgba(245, 245, 240, 0.2);
-    --brand-hover: #ff6249;
-    --brand-text: #ff765f;
-    --shadow: 0 24px 80px rgba(0, 0, 0, 0.34), 0 3px 18px rgba(0, 0, 0, 0.28);
-  }
+  --page: var(--site-page);
+  --surface: var(--site-surface);
+  --surface-raised: var(--site-surface-raised);
+  --surface-muted: var(--site-surface-muted);
+  --surface-inverse: var(--site-surface-inverse);
+  --ink: var(--site-ink);
+  --ink-soft: var(--site-ink-soft);
+  --ink-inverse: var(--site-ink-inverse);
+  --muted: var(--site-muted);
+  --muted-2: var(--site-muted-2);
+  --muted-inverse: var(--site-muted-inverse);
+  --line: var(--site-line);
+  --line-strong: var(--site-line-strong);
+  --line-inverse: var(--site-line-inverse);
+  --brand: var(--site-brand);
+  --brand-text: var(--site-brand-text);
+  --brand-hover: var(--site-brand-hover);
+  --brand-ink: var(--site-brand-ink);
+  --shadow: var(--site-shadow);
+  --mono: var(--site-mono);
+  --max: var(--site-max);
 }
 
 * {
