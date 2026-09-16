@@ -13,10 +13,6 @@
     {
       "pattern": "backchat.openma.ai",
       "custom_domain": true
-    },
-    {
-      "pattern": "backchat.openma.dev",
-      "custom_domain": true
     }
   ],
   "observability": {
