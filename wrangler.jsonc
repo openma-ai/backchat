@@ -2,12 +2,18 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "backchat-website",
   "compatibility_date": "2026-08-15",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": false,
   "assets": {
     "directory": "./dist/website"
   },
   "routes": [
+    {
+      "pattern": "backchat.openma.ai",
+      "custom_domain": true
+    },
     {
       "pattern": "backchat.openma.dev",
       "custom_domain": true

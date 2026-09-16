@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://backchat.openma.dev/"><strong>Visit the official website →</strong></a>
+  <a href="https://backchat.openma.ai/"><strong>Visit the official website →</strong></a>
 </p>
 
 <p align="center">
