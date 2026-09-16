@@ -150,9 +150,10 @@ test("cloud chat survives complete desktop exit and restores without resending i
     await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
     await expect.poll(() => page.evaluate(async () => (await window.backchat.openmaTasksList())[0])).toMatchObject({ title: "Renamed cloud task", status: "running", pinnedAt: expect.any(Number), archivedAt: expect.any(Number) });
     expect(mutations).toEqual(["POST /v1/sessions", ...Array(3).fill("POST /v1/sessions/cloud-session/events"), "POST /v1/sessions/cloud-session"]);
+    const desktopProcess = app.process();
     await closeApp(app);
-    expect(app.process().exitCode).toBe(0);
-    expect(app.process().signalCode).toBeNull();
+    expect(desktopProcess.exitCode).toBe(0);
+    expect(desktopProcess.signalCode).toBeNull();
     await expect.poll(() => streams.size).toBe(0);
     expect(status).toBe("running");
     emit({ type: "agent.message", message_id: "while-closed", content: [{ type: "text", text: "Finished while Backchat was closed." }] });
