@@ -32,28 +32,11 @@ if (!websiteLogoSvg.includes('role="img" aria-label="openma" fill="#f84f32"')) {
 
 await writeFile(resolve(publicDir, "logo.svg"), websiteLogoSvg);
 
-const markWidthRatio = 392 / 512;
-const markHeightRatio = 325 / 512;
+// Keep browser and home-screen icons aligned with the shipped desktop app.
+const appIconPath = resolve(projectRoot, "build/icon.png");
 
 async function renderSquarePng(size) {
-  const mark = await sharp(Buffer.from(websiteLogoSvg))
-    .resize(Math.max(1, Math.round(size * markWidthRatio)), Math.max(1, Math.round(size * markHeightRatio)), {
-      fit: "contain",
-    })
-    .png()
-    .toBuffer();
-
-  return sharp({
-    create: {
-      width: size,
-      height: size,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite([{ input: mark, gravity: "centre" }])
-    .png()
-    .toBuffer();
+  return sharp(appIconPath).resize(size, size).png().toBuffer();
 }
 
 const pngTargets = [

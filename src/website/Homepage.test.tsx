@@ -39,8 +39,8 @@ describe("Backchat website", () => {
     expect(existsSync(outputHtml)).toBe(true);
     const html = readFileSync(outputHtml, "utf8");
     expect(html).toContain('<div id="root">');
-    expect(html).toContain('rel="canonical" href="https://backchat.openma.dev/"');
-    expect(html).toContain('property="og:url" content="https://backchat.openma.dev/"');
+    expect(html).toContain('rel="canonical" href="https://backchat.openma.ai/"');
+    expect(html).toContain('property="og:url" content="https://backchat.openma.ai/"');
     expect(html).toContain("One workspace. Every agent.");
     expect(html).toContain("application/ld+json");
     expect(html).toContain(macArm64DmgUrl);
@@ -50,7 +50,7 @@ describe("Backchat website", () => {
     expect(existsSync(deepSeekHtml)).toBe(true);
     const guide = readFileSync(deepSeekHtml, "utf8");
     expect(guide).toContain("Use DeepSeek Harness in Backchat");
-    expect(guide).toContain('https://backchat.openma.dev/deepseek/');
+    expect(guide).toContain('https://backchat.openma.ai/deepseek/');
     expect(guide).toContain('"@type":"HowTo"');
     expect(guide).toContain('hreflang="zh-CN"');
     expect(existsSync(chineseHomeHtml)).toBe(true);
@@ -60,11 +60,12 @@ describe("Backchat website", () => {
     expect(chineseHome).toContain('hreflang="en"');
     expect(existsSync(chineseDeepSeekHtml)).toBe(true);
     expect(readFileSync(chineseDeepSeekHtml, "utf8")).toContain("在 Backchat 中使用 DeepSeek Harness");
-    expect(readFileSync(robotsTxt, "utf8")).toContain("Sitemap: https://backchat.openma.dev/sitemap.xml");
-    expect(readFileSync(sitemapXml, "utf8")).toContain("https://backchat.openma.dev/deepseek/");
-    expect(readFileSync(sitemapXml, "utf8")).toContain("https://backchat.openma.dev/zh/deepseek/");
-    expect(html).toContain('rel="icon" href="/logo.svg"');
-    expect(html).toContain('rel="apple-touch-icon" href="/apple-touch-icon.png"');
+    expect(readFileSync(robotsTxt, "utf8")).toContain("Sitemap: https://backchat.openma.ai/sitemap.xml");
+    expect(readFileSync(sitemapXml, "utf8")).toContain("https://backchat.openma.ai/deepseek/");
+    expect(readFileSync(sitemapXml, "utf8")).toContain("https://backchat.openma.ai/zh/deepseek/");
+    expect(html).not.toContain('rel="icon" href="/logo.svg"');
+    expect(html).toContain('rel="icon" href="/favicon.ico?v=');
+    expect(html).toContain('rel="apple-touch-icon" href="/apple-touch-icon.png?v=');
     expect(html).toContain('rel="manifest" href="/site.webmanifest"');
     expect(existsSync(logoSvg)).toBe(true);
     expect(existsSync(faviconIco)).toBe(true);

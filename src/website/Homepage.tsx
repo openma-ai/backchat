@@ -296,7 +296,7 @@ export function Homepage({ locale = "en" }: { locale?: SiteLocale }) {
               <span>{copy.buildSource}</span><ArrowRight aria-hidden="true" size={15} />
             </a>
           </div>
-          <p className="download-meta">macOS · Apple Silicon · v{desktopVersion}</p>
+          <p className="download-meta">{`macOS · Apple Silicon · v${desktopVersion}`}</p>
 
           <div className="build-runbooks" id="build-runbooks" aria-labelledby="build-runbooks-title">
             <div className="runbook-intro">
