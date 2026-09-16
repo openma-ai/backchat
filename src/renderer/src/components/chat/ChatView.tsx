@@ -108,6 +108,10 @@ export function isSessionComposerDisabled(status: string | undefined): boolean {
   return status === "errored" || status === "disposed";
 }
 
+export function isPromptQueueEnabled(setting: boolean | undefined, supportsSteering: boolean | undefined): boolean {
+  return setting !== false || supportsSteering !== true;
+}
+
 export function canSteerQueuedPrompts(
   session: Pick<SessionRow, "supportsSteering"> | null | undefined,
 ): boolean {
@@ -259,8 +263,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   // session.event arriving lets the user fire a second prompt and
   // collapse the conversation order.
   const hasActiveTurn = !!active?.activeTurnId;
-  const showPromptQueue = settings?.default.prompt_queue_enabled !== false;
-  const queuedPrompts = showPromptQueue ? active?.queuedPrompts ?? [] : [];
+  const promptQueueEnabled = isPromptQueueEnabled(
+    settings?.default.prompt_queue_enabled, active?.supportsSteering,
+  );
+  const queuedPrompts = active?.queuedPrompts ?? [];
+  const showPromptQueue = promptQueueEnabled || queuedPrompts.length > 0;
   // The rows themselves, so the count and the list cannot disagree about what is
   // waiting. It used to be `Math.max(hostQueueDepth, providerQueueDepth)`, which
   // mixed the prompts this host holds with a depth the agent reports for a queue
@@ -288,7 +295,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       goal={active?.goal}
       pendingAsk={active?.pendingAsks?.[0]}
       currentModeId={active?.currentModeId}
-      promptQueueEnabled={showPromptQueue}
+      promptQueueEnabled={promptQueueEnabled}
       onUserInput={syncHomeSuggestionsForUserInput}
       onPickAgent={setPickedAgentId}
       configOptions={active?.configOptions}
@@ -306,7 +313,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
               : active.status === "running" || hasActiveTurn
               ? queuedTurnCount > 0
                   ? t("chat.queuedCount", { count: queuedTurnCount })
-                  : !showPromptQueue && active?.supportsSteering
+                  : !promptQueueEnabled && active?.supportsSteering
                     ? t("chat.steer")
                     : t("chat.addToQueue")
                 : isEmpty

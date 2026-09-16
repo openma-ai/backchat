@@ -354,3 +354,13 @@ under investigation are marked; do not treat them as settled findings.
    was made destructive by treating "there is already an unfinished goal" from
    an assistant message as a rule; the adapter overwrites without complaint.
 5. Verify every new test by reverting the fix and confirming the test fails.
+
+### Queue preference and optional steering (2026-09-16)
+
+The global `prompt_queue_enabled=false` preference applies only when the
+session advertises steering. Without that capability the effective queue
+remains enabled, and its rows/count stay visible (I4). Turning the preference
+off must not hide already queued inputs. This changes client scheduling and
+presentation only: prompt completion still owns the turn boundary (I1/I5).
+Common allows ordinary sessions without steering and rejects unsupported
+active-turn steer requests at invocation, rather than at session startup.

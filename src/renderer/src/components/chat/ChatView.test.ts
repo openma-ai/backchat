@@ -10,6 +10,7 @@ import {
   buildSlashCommandSections,
   canSubmitComposer,
   canSteerQueuedPrompts,
+  isPromptQueueEnabled,
   removeSuggestionTemplateSlot,
   serializeSuggestionTemplate,
 } from "./ChatView";
@@ -756,5 +757,15 @@ describe("session config options stay live mid-turn", () => {
     expect(props).toContain("disabled={false}");
     expect(props).not.toContain("disabled={!!running}");
     expect(props).not.toContain("disabled={running");
+  });
+});
+
+ describe("effective prompt queue setting", () => {
+  it.each([
+    [true, true, true], [true, false, true],
+    [false, true, false], [false, false, true],
+    [false, undefined, true], [undefined, true, true],
+  ])("setting=%s, steering=%s => queue=%s", (setting, steering, expected) => {
+    expect(isPromptQueueEnabled(setting, steering)).toBe(expected);
   });
 });

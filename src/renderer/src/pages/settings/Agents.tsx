@@ -494,7 +494,7 @@ export function SettingsAgents() {
             <div className="min-w-0">
               <h3 className="text-sm font-medium text-fg">Prompt queue</h3>
               <p className="mt-0.5 text-[11px] text-fg-muted">
-                Follow-up prompts wait for the current agent loop before they start.
+                When enabled, follow-up prompts wait for the current turn to finish. Turning this off sends them immediately only for ACP agents that support Steering; other agents still use a visible queue.
               </p>
             </div>
             <Checkbox

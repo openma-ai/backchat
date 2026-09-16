@@ -793,3 +793,8 @@ base URL/session/token variables. No production account settings are changed.
 The configured DeepSeek ACP 0.4.6 run currently fails before desktop launch
 because common requires the unadvertised steering extension. That remains a
 real failure; the runner neither skips it nor substitutes Codex.
+
+The optional-steering startup rejection described above has been removed in
+common. Backchat now keeps queue mode effective and visible for agents without
+steering even when the global preference is off. The DeepSeek extension request
+is tracked in https://github.com/openma-ai/deepseek-harness-acp/issues/23.
