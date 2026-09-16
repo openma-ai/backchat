@@ -1,7 +1,8 @@
 # Shared daemon connection snapshot
 
 `src/daemon-connection.ts` is an unmodified snapshot of OpenMA's
-`packages/managed-agents-runtime/src/daemon-connection.ts`. The CLI consumes
+`packages/managed-agents-runtime/src/daemon-connection.ts` at commit
+`af45e233` (`codex/daemon-transport-20260916`). The CLI consumes
 that canonical source; Backchat bundles this snapshot to build without a
 sibling checkout. It has no Electron, Node, or process-manager dependencies.
 

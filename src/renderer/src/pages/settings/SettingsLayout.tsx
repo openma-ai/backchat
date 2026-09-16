@@ -29,6 +29,7 @@ type SettingsTab = {
 };
 
 const TABS: SettingsTab[] = [
+  { to: "/settings/openma", labelKey: "settings.openma", icon: ServerIcon, section: "personal" },
   { to: "/settings/activity", labelKey: "settings.activity", icon: ChartColumnIcon, section: "personal" },
   { to: "/settings/agents", labelKey: "settings.agents", icon: CpuIcon, section: "personal" },
   { to: "/settings/appearance", labelKey: "settings.appearance", icon: PaletteIcon, section: "personal" },

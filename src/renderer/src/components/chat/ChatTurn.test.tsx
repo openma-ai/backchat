@@ -1169,7 +1169,9 @@ describe("scheduled task message bars", () => {
     expect(html).toContain('data-scheduled-task-prompt="true"');
     expect(html).toContain("is-user");
     expect(html).toContain("临时提醒");
-    expect(html).toContain("提醒用户：你刚才说要办的事，现在 21:54 到了，别忘了！");
+    expect(html).toContain(
+      "提醒用户：你刚才说要办的事，现在 21:54 到了，别忘了！",
+    );
     expect(html).not.toContain("&lt;scheduled_task");
     expect(html).not.toContain("<scheduled_task");
   });

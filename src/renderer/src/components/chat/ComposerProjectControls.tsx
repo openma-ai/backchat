@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { selectRecentProjectPaths } from "@/lib/composer-project-paths";
 import { useI18n } from "@/lib/i18n";
 import { folderName } from "@/lib/project-path";
+import { useSessionStore, selectActive } from "@/lib/session-store";
 import { RuntimeLocationControl } from "./RuntimeLocationControl";
 
 export function ProjectChipRow({
@@ -38,6 +39,7 @@ export function ProjectChipRow({
   onClearCwd: () => void;
 }) {
   const { t } = useI18n();
+  const remoteTarget = useSessionStore(selectActive)?.executionTarget;
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projectPickerValue, setProjectPickerValue] = useState("");
   const { data: persisted = [] } = useQuery({
@@ -53,7 +55,7 @@ export function ProjectChipRow({
       activeCwd
         ? window.backchat.uiFsGitBranch({ path: activeCwd })
         : Promise.resolve(null),
-    enabled: !!activeCwd,
+    enabled: !!activeCwd && !remoteTarget,
     staleTime: 10_000,
   });
 
@@ -68,7 +70,7 @@ export function ProjectChipRow({
     >
       <RuntimeLocationControl />
 
-      <Popover
+      {remoteTarget ? <span className="truncate text-xs text-fg-muted">{remoteTarget.agentName}</span> : <Popover
         open={isDraft && projectPickerOpen}
         onOpenChange={(open) => {
           const nextOpen = isDraft && open;
@@ -156,9 +158,9 @@ export function ProjectChipRow({
             </Command>
           </PopoverContent>
         )}
-      </Popover>
+      </Popover>}
 
-      {branch && (
+      {!remoteTarget && branch && (
         <span
           className="app-compact-control inline-flex"
           title={`Branch · ${branch}`}

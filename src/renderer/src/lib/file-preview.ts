@@ -1,9 +1,12 @@
 import { toast } from "sonner";
 import { markdownFileLabel, markdownFileUrl } from "./markdown-link-target";
 import { sessionStore } from "./session-store";
+import { previewOpenmaFile } from "./openma-file-preview";
 
 /** Preview locally when possible, while retaining the source file for Open in. */
 export async function previewLocalFile(path: string): Promise<void> {
+  const task = sessionStore.active();
+  if (task?.openma) return previewOpenmaFile(task.id, path);
   try {
     const preview = await window.backchat.uiFsResolvePreview({ path });
     if (preview) {

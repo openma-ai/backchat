@@ -7,6 +7,7 @@ import {
 } from "@/components/shell/context-usage";
 import { cn } from "@/lib/utils";
 import { RuntimeLocationControl } from "./RuntimeLocationControl";
+import { OpenmaTaskFiles } from "./OpenmaTaskFiles";
 
 type RuntimeMethodCapability = {
   label: string;
@@ -86,7 +87,9 @@ export function SessionRuntimeSummary({
       data-session-id={session.id}
       className="composer-footer-row-inset mb-[var(--composer-footer-gap)] flex h-[var(--row-h)] shrink-0 items-center justify-between text-xs text-fg-muted"
     >
-      <RuntimeLocationControl title={runtimeTitle} />
+      <RuntimeLocationControl title={runtimeTitle} session={session} />
+      {session.openma && <OpenmaTaskFiles taskId={session.id} />}
+      {session.openma && <span role="status" className="text-xs text-fg-muted">{t(session.remoteConnection === "offline" ? "openma.connectionInterrupted" : session.remoteConnection === "connecting" ? "openma.reconnecting" : "openma.connected")}</span>}
       {usage ? (
         <span
           aria-label={usage.title}

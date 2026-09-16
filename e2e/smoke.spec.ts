@@ -715,14 +715,17 @@ test.describe("backchat smoke", () => {
       await eventGroupTrigger.click();
       const groupIcon = eventGroupTrigger.locator("svg").first();
       const singleTool = page.locator('[data-tool-call-id="single-tool"]');
-      const singleIcon = singleTool.locator('[data-tool-activity-identity] svg');
+      // A completed tool in a running turn keeps an outer activity disclosure.
+      // Compare primary activity summaries; expanded tool details are indented.
+      const singleIcon = page.locator('[data-collapsible-event-count="1"] > button svg').first();
       const [groupIconBox, singleIconBox] = await Promise.all([
         groupIcon.boundingBox(),
         singleIcon.boundingBox(),
       ]);
       expect(groupIconBox).not.toBeNull();
       expect(singleIconBox).not.toBeNull();
-      expect(Math.abs(groupIconBox!.x - singleIconBox!.x)).toBeLessThanOrEqual(0.5);
+      // A rotating progress icon changes its bounding-box edges, not its center.
+      expect(Math.abs((groupIconBox!.x + groupIconBox!.width / 2) - (singleIconBox!.x + singleIconBox!.width / 2))).toBeLessThanOrEqual(0.5);
 
       const summary = singleTool.getByRole("button");
       const input = singleTool.locator('[data-tool-input="single-tool"]');
@@ -1024,7 +1027,7 @@ test.describe("backchat smoke", () => {
       const runtimeIcon = page
         .locator('[data-session-runtime-location="true"] [data-control-icon] svg');
       const activityIcon = page
-        .locator('[data-tool-call-id="shared-icon-rail-tool"] [data-tool-activity-identity] svg');
+        .locator('[data-collapsible-event-count="1"] > button svg').first();
       const [cardBox, attachButtonBox, attachBox, runtimeBox, activityBox] = await Promise.all([
         card.boundingBox(),
         attachButton.boundingBox(),

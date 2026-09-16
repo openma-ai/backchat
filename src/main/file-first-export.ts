@@ -36,6 +36,11 @@ export async function exportSessionFiles(
   const now = options.now ?? Date.now;
   const db = new DatabaseSync(options.dbPath, { readOnly: true });
   try {
+    const hasWorkspaceRoots = columnExists(
+      db,
+      "sessions",
+      "additional_directories_json",
+    );
     const sessions = db.prepare(`
       SELECT
         id,
@@ -47,7 +52,10 @@ export async function exportSessionFiles(
         created_at,
         archived_at,
         pinned_at,
-        pair_id
+        pair_id,
+        ${hasWorkspaceRoots
+          ? "additional_directories_json"
+          : "NULL AS additional_directories_json"}
       FROM sessions
       ORDER BY created_at ASC, id ASC
     `).all() as unknown as PersistedSessionRow[];
@@ -108,6 +116,9 @@ export async function exportSessionFiles(
         );
       }
       if (options.overwrite || !metadataExists) {
+        const additionalDirectories = parseStringArray(
+          session.additional_directories_json,
+        );
         await writeAtomic(
           metadataPath,
           toToml({
@@ -120,6 +131,9 @@ export async function exportSessionFiles(
             last_used_at: session.last_used_at,
             pair_id: session.pair_id ?? "",
             workdir: session.cwd,
+            ...(additionalDirectories !== null
+              ? { additional_directories: additionalDirectories }
+              : {}),
             exported_at: now(),
           }) + "\n",
         );
@@ -186,6 +200,7 @@ interface PersistedSessionRow {
   archived_at: number | null;
   pinned_at: number | null;
   pair_id: string | null;
+  additional_directories_json: string | null;
 }
 
 interface PersistedEventRow {
@@ -243,6 +258,29 @@ function tableExists(db: DatabaseSync, tableName: string): boolean {
     `SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`,
   ).get(tableName) as { ok: number } | undefined;
   return row?.ok === 1;
+}
+
+function columnExists(
+  db: DatabaseSync,
+  tableName: string,
+  columnName: string,
+): boolean {
+  return (db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+    name: string;
+  }>).some((column) => column.name === columnName);
+}
+
+function parseStringArray(value: string | null): string[] | null {
+  if (value === null) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      && parsed.every((item) => typeof item === "string")
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function writeAtomic(path: string, content: string): Promise<void> {

@@ -22,6 +22,52 @@ import type { Settings } from "../shared/settings.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 
 const api: BackchatApi = {
+  openmaAccountState: () => ipcRenderer.invoke(InvokeChannel.OpenmaAccountState),
+  openmaTasksList: (scope) => ipcRenderer.invoke(InvokeChannel.OpenmaTasksList, scope),
+  openmaTasksRefresh: (scope) => ipcRenderer.invoke(InvokeChannel.OpenmaTasksRefresh, scope),
+  openmaTaskUpdate: (id, patch) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskUpdate, id, patch),
+  openmaTasksSearch: (query, limit) => ipcRenderer.invoke(InvokeChannel.OpenmaTasksSearch, query, limit),
+  onOpenmaTaskUpdated: (handler) => {
+    const listener = (_event: IpcRendererEvent, task: import("../shared/openma.js").OpenmaTask) => handler(task);
+    ipcRenderer.on(PushChannel.OpenmaTaskUpdated, listener);
+    return () => ipcRenderer.removeListener(PushChannel.OpenmaTaskUpdated, listener);
+  },
+  openmaTaskCreate: (target, title) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskCreate, target, title),
+  openmaTaskOpen: (id, subscriptionId) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskOpen, id, subscriptionId),
+  openmaTaskDetach: (id, subscriptionId) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskDetach, id, subscriptionId),
+  openmaTaskSend: (id, operationId, text) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskSend, id, operationId, text),
+  openmaTaskInterrupt: (id) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskInterrupt, id),
+  openmaTaskRespond: (id, requestId, response) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskRespond, id, requestId, response),
+  openmaTaskFiles: (id) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskFiles, id),
+  openmaTaskFilePreview: (id, fileId) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskFilePreview, id, fileId),
+  openmaTaskFileDownload: (id, fileId) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskFileDownload, id, fileId),
+  onOpenmaTask: (handler) => {
+    const listener = (_event: IpcRendererEvent, snapshot: import("../shared/openma.js").OpenmaTaskSnapshot) => handler(snapshot);
+    ipcRenderer.on(PushChannel.OpenmaTask, listener);
+    return () => ipcRenderer.removeListener(PushChannel.OpenmaTask, listener);
+  },
+  openmaRunnerState: () => ipcRenderer.invoke(InvokeChannel.OpenmaRunnerState),
+  openmaRunnerEnable: () => ipcRenderer.invoke(InvokeChannel.OpenmaRunnerEnable),
+  openmaRunnerDisable: () => ipcRenderer.invoke(InvokeChannel.OpenmaRunnerDisable),
+  openmaCatalog: (scope) => ipcRenderer.invoke(InvokeChannel.OpenmaCatalog, scope),
+  openmaProjectBindings: () => ipcRenderer.invoke(InvokeChannel.OpenmaProjectBindings),
+  openmaLinkProject: (binding) => ipcRenderer.invoke(InvokeChannel.OpenmaLinkProject, binding),
+  openmaUnlinkProject: (binding) => ipcRenderer.invoke(InvokeChannel.OpenmaUnlinkProject, binding),
+  openmaOpenManagement: () => ipcRenderer.invoke(InvokeChannel.OpenmaOpenManagement),
+  onOpenmaRunner: (handler) => {
+    const listener = (_event: IpcRendererEvent, state: import("../shared/openma.js").OpenmaRunnerState) => handler(state);
+    ipcRenderer.on(PushChannel.OpenmaRunner, listener);
+    return () => ipcRenderer.removeListener(PushChannel.OpenmaRunner, listener);
+  },
+  openmaLogin: (url) => ipcRenderer.invoke(InvokeChannel.OpenmaLogin, url),
+  openmaCancelLogin: () => ipcRenderer.invoke(InvokeChannel.OpenmaCancelLogin),
+  openmaLogout: () => ipcRenderer.invoke(InvokeChannel.OpenmaLogout),
+  openmaSelectWorkspace: (id) => ipcRenderer.invoke(InvokeChannel.OpenmaSelectWorkspace, id),
+  onOpenmaAccount: (handler) => {
+    const listener = (_event: IpcRendererEvent, state: import("../shared/openma.js").OpenmaAccountState) => handler(state);
+    ipcRenderer.on(PushChannel.OpenmaAccount, listener);
+    return () => ipcRenderer.removeListener(PushChannel.OpenmaAccount, listener);
+  },
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
 
   agentsList: (options) =>

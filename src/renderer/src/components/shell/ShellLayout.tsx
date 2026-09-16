@@ -22,6 +22,8 @@ import { useSessionStore } from "@/lib/session-store";
 import { useSettings } from "@/lib/settings-store";
 import { createSideWorkspacePersistence } from "@/lib/side-workspace-persistence";
 import { SettingsSidebar } from "@/pages/settings/SettingsLayout";
+import { useOpenmaTasks } from "@/lib/openma-tasks";
+import { OpenmaFilePreviewDialog } from "@/components/chat/OpenmaTaskFiles";
 
 const COLLAPSE_KEY = "openma:sidebar-collapsed";
 const BOTTOM_KEY = "openma:bottom-panel-collapsed";
@@ -202,6 +204,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
     settings?.agents.some((agent) => agent.enabled) ?? false;
   const hasTaskChrome = isChat && hasEnabledAgent;
   const activeSession = useSessionStore(selectActive);
+  useOpenmaTasks();
   const sidebarCollapse = usePersistedCollapse(COLLAPSE_KEY);
   // Side chat starts collapsed — users opt in via the rail toggle so
   // a first-launch window doesn't show two empty chat surfaces.
@@ -274,6 +277,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
 
   const cancelActive = useCallback(() => {
     const active = sessionStore.active();
+    if (active?.openma) { void window.backchat.openmaTaskInterrupt(active.id); return; }
     if (active?.activeTurnId) {
       void window.backchat.sessionCancel({
         session_id: active.id,
@@ -306,11 +310,12 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
                   <PairTopbar />
                 ) : null
               }
-              rightPanel={hasTaskChrome ? <SideChatPanel /> : undefined}
-              bottomPanel={hasTaskChrome ? <BottomPanel /> : undefined}
+              rightPanel={hasTaskChrome && !activeSession?.openma ? <SideChatPanel /> : undefined}
+              bottomPanel={hasTaskChrome && !activeSession?.openma ? <BottomPanel /> : undefined}
             >
               {children}
               <BrokerAskBridge />
+              <OpenmaFilePreviewDialog />
               <CommandPalette />
             </AppShell>
           </BottomBarCollapseContext.Provider>
