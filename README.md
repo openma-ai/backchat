@@ -117,14 +117,18 @@ or updating a harness does not require changing the conversation model.
 
 ### Run from source
 
-Requirements: Node.js 20 or newer and [pnpm](https://pnpm.io/).
+Requirements: Node.js 24 and [pnpm](https://pnpm.io/) 11.24.0 (matching CI).
 
 ```bash
 git clone https://github.com/openma-ai/backchat.git
 cd backchat
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
+
+The shared `@openma/common` dependency is pinned to an immutable Git commit;
+no sibling checkout or local link is required. The OpenMA SDK and daemon
+connection snapshots live under `packages/` with their upstream provenance.
 
 On first launch, open **Settings → Agents** to install or point Backchat at an
 ACP-compatible agent, then choose a project and start a chat.

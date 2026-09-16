@@ -1,25 +1,11 @@
 import { configDefaults, defineConfig } from "vitest/config";
 import { resolve } from "node:path";
 
-const openmaCommonRoot = resolve(__dirname, "../../../Proj/openma-common");
-
 export default defineConfig({
   resolve: {
     preserveSymlinks: true,
     dedupe: ["react", "react-dom", "use-stick-to-bottom"],
     alias: [
-      {
-        find: /^@openma\/common\/chat-ui$/,
-        replacement: resolve(openmaCommonRoot, "src/chat-ui/index.ts"),
-      },
-      {
-        find: /^@openma\/common\/agent-ui\/react$/,
-        replacement: resolve(openmaCommonRoot, "src/agent-ui/react.tsx"),
-      },
-      {
-        find: /^@openma\/common\/agent-ui$/,
-        replacement: resolve(openmaCommonRoot, "src/agent-ui/index.ts"),
-      },
       {
         find: /^react$/,
         replacement: resolve(__dirname, "node_modules/react/index.js"),
