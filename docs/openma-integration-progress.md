@@ -778,3 +778,18 @@ host restart scenarios. Regression cases cover canonical multi-page history,
 and OpenMA's 146 application/storage tests pass, including architecture boundaries.
 These regressions use controlled service fixtures; the live model/Docker run was
 not repeated for this correction.
+
+### Configured live acceptance
+
+The OMA checkout now owns `scripts/live-profiles/backchat-deepseek.example.json`
+and `pnpm test:live:backchat <profile.json> [--check]`. It selects the API,
+tenant/user, model, ACP command/arguments, credential environment variables and
+Backchat checkout explicitly, then runs `e2e/openma-common-live.spec.ts` after
+requiring the real first model response. The desktop test accepts
+`OPENMA_LIVE_TENANT_ID`, `OPENMA_LIVE_TENANT_NAME`, `OPENMA_LIVE_USER_ID`,
+`OPENMA_LIVE_USER_EMAIL` and `OPENMA_LIVE_TIMEOUT_MS`, in addition to its existing
+base URL/session/token variables. No production account settings are changed.
+
+The configured DeepSeek ACP 0.4.6 run currently fails before desktop launch
+because common requires the unadvertised steering extension. That remains a
+real failure; the runner neither skips it nor substitutes Codex.

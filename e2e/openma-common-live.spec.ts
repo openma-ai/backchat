@@ -9,15 +9,20 @@ import { launchAppWithHome } from './helpers';
 const baseUrl = process.env.OPENMA_LIVE_BASE_URL;
 const sessionId = process.env.OPENMA_LIVE_SESSION_ID;
 const token = process.env.OPENMA_LIVE_TEST_TOKEN;
+const tenantId = process.env.OPENMA_LIVE_TENANT_ID ?? 'tenant-live';
+const tenantName = process.env.OPENMA_LIVE_TENANT_NAME ?? 'Local Integration';
+const userId = process.env.OPENMA_LIVE_USER_ID ?? 'user-live';
+const userEmail = process.env.OPENMA_LIVE_USER_EMAIL ?? 'integration@localhost.test';
+const timeoutMs = Number(process.env.OPENMA_LIVE_TIMEOUT_MS ?? 120_000);
 test('continues a real shared-kernel Work session in Backchat and preserves canonical history', async ({}, testInfo) => {
   test.skip(!baseUrl || !sessionId || !token, 'Requires the local Work acceptance service');
-  test.setTimeout(120_000);
+  test.setTimeout(timeoutMs);
   const home = await mkdtemp(join(tmpdir(), 'backchat-common-live-'));
   const dir = join(home, 'backchat', 'openma');
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'account.json'), JSON.stringify({ version: 2, base_url: baseUrl,
-    user: { id: 'user-live', email: 'integration@localhost.test', name: 'Local Integration' }, active_tenant_id: 'tenant-live',
-    tenants: { 'tenant-live': { name: 'Local Integration', role: 'owner', token, key_id: 'key-live', created_at: new Date().toISOString() } },
+    user: { id: userId, email: userEmail, name: tenantName }, active_tenant_id: tenantId,
+    tenants: { [tenantId]: { name: tenantName, role: 'owner', token, key_id: 'key-live', created_at: new Date().toISOString() } },
   }), { mode: 0o600 });
   let launched = await launchAppWithHome(home);
   const apiEvents = async () => {
@@ -34,14 +39,14 @@ test('continues a real shared-kernel Work session in Backchat and preserves cano
     // Give this session a unique label; previous acceptance runs may coexist.
     await launched.page.evaluate(({ id, title }) => window.backchat.openmaTaskUpdate(id, { title }), { id: task!.id, title: marker });
     await launched.page.reload();
-    const group = launched.page.getByRole('button', { name: 'Local Integration', exact: true });
+    const group = launched.page.getByRole('button', { name: tenantName, exact: true });
     await expect(group).toHaveAttribute('aria-expanded', 'false');
     await group.click();
     await launched.page.getByText(marker, { exact: true }).first().click();
     await expect(launched.page.getByText(/COMMON_KERNEL_FIRST_OK/).last()).toBeVisible();
     await launched.page.locator('textarea').fill(text);
     await launched.page.locator('textarea').press('Enter');
-    await expect.poll(async () => (await apiEvents()).filter(event => event.type === 'agent.message').some(event => event.content?.some(part => part.text?.includes(marker))), { timeout: 75_000 }).toBe(true);
+    await expect.poll(async () => (await apiEvents()).filter(event => event.type === 'agent.message').some(event => event.content?.some(part => part.text?.includes(marker))), { timeout: Math.min(75_000, timeoutMs) }).toBe(true);
     await expect(launched.page.getByText(marker, { exact: true }).last()).toBeVisible();
     await expect.poll(async () => {
       const snapshot = await launched.page.evaluate(id => window.backchat.openmaTaskOpen(id, 'live-assertion'), task!.id);
@@ -52,7 +57,7 @@ test('continues a real shared-kernel Work session in Backchat and preserves cano
     await launched.page.screenshot({ path: testInfo.outputPath('common-desktop.png') });
     await launched.app.close();
     launched = await launchAppWithHome(home);
-    await launched.page.getByRole('button', { name: 'Local Integration', exact: true }).click();
+    await launched.page.getByRole('button', { name: tenantName, exact: true }).click();
     await launched.page.getByText(marker, { exact: true }).first().click();
     await expect(launched.page.getByText(marker, { exact: true }).last()).toBeVisible();
     expect((await apiEvents()).filter(event => event.type === 'user.message' && event.content?.some(part => part.text === text))).toHaveLength(1);
