@@ -32,8 +32,8 @@ Implemented in this batch:
   Independently managed local runners remain selectable through OpenMA; their
   directories cannot be overwritten by Backchat project linking.
 - CLI and desktop now consume the same pure `DaemonConnection` implementation.
-  The desktop bundles an unmodified source snapshot in `packages/openma-runtime`
-  so it builds without a sibling checkout. Heartbeats, stale callback fencing,
+  Both consumers import the versioned `@openma/common/local-runtime` package;
+  the desktop source snapshot has been removed. Heartbeats, stale callback fencing,
   reconnect and terminal attachment rejection are shared. Existing host adapters
   retain session execution and persistence. This is not yet a separately packaged
   daemon executable or a general local service-management framework.
@@ -608,8 +608,8 @@ Useful logs from the current run are under `/tmp/backchat-openma-*.log`.
   machine/runtime identity. Online discovery uses heartbeat freshness. A host
   that loses the initial execution-lease race before becoming online switches
   to external observation; an active host does not transfer ownership this way.
-- Desktop now consumes the shared daemon connection snapshot in
-  `packages/openma-runtime`. The CLI consumes the canonical OpenMA module.
+- Desktop and CLI now import the shared daemon connection from
+  `@openma/common/local-runtime`.
   Shared connection code does not constitute a standalone daemon artifact.
 - The previous session completed typechecks, the curated desktop CI suite
   (361 tests), and three Electron scenarios covering account/runner recovery,
@@ -725,3 +725,38 @@ local shared-library links. See `openma-push-verification.md` for dependency pin
 the service-side counterpart, clean-worktree validation and the bounded fixes
 found by expanded regression tests. Unrelated original working-tree changes are
 preserved; publication uses dedicated branches rather than changing main.
+
+
+## Shared common runtime and live continuation (2026-09-16)
+
+Both applications now pin `@openma/common` to `80fdc31e7a3d8dc8be325896ecc310a053c57af6`.
+The copied `packages/openma-runtime` snapshot is removed. The common package owns
+ACP session execution, daemon transport/shutdown, Work lease management, the
+Managed Session control channel and canonical event projection. CLI process
+signals/credentials and desktop ownership/project/UI adapters remain outside it.
+
+Desktop sends canonical Session inputs with `Idempotency-Key` in the request
+header. Expected canonical event identity is stored locally and reconciled from
+history; no unsupported event metadata is sent. Ambiguous writes are not retried
+automatically. OpenMA forwards the key into its existing durable acceptance path.
+Live testing also exposed and fixed scoped Work ACK authorization and D1's LIKE
+pattern limit in input identity lookup.
+
+Verification:
+- Common: 352 tests, typecheck and build.
+- Desktop: 365 CI tests, typecheck/build, 2 Electron regression scenarios
+  (cloud restart and external daemon ownership).
+- Real local Workers/D1 API + real local Codex ACP + actual Electron: first turn
+  via Work, second turn from the desktop composer, server history verification,
+  desktop quit/relaunch, restored output, no duplicate input. This passed with
+  an explicitly configured local Work test host. `e2e/openma-common-live.spec.ts`
+  is opt-in through OPENMA_LIVE_BASE_URL, OPENMA_LIVE_SESSION_ID and
+  OPENMA_LIVE_TEST_TOKEN; its isolated workspace uses tenant-live/user-live.
+
+Limits: the legacy reverse-WebSocket daemon has not been switched to automatic
+Work polling. The live test supplies a local preparation adapter and does not
+qualify the separate sandbox-native-state adapter, Docker deployment, automatic
+worker provisioning or process restart recovery. The sandbox adapter's isolated
+Codex state directory failed initialization during a separate probe; that is
+not covered by the successful local-host run. Existing daemon discovery and
+ownership behavior remain covered by the Electron regression.

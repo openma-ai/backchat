@@ -60,9 +60,9 @@ export class OpenManagedCloudRuntimeClient {
     return body ? (JSON.parse(body).data ?? []) as OpenmaRemoteEvent[] : [];
   }
 
-  async sendEvent(sessionId: string, event: OpenmaRemoteEvent): Promise<void> {
+  async sendEvent(sessionId: string, event: OpenmaRemoteEvent, idempotencyKey?: string): Promise<void> {
     type InputEvent = Parameters<typeof this.sdk.beta.sessions.events.send>[1]["events"][number];
-    const response = await this.request(() => this.sdk.beta.sessions.events.send(sessionId, { events: [event as InputEvent] }).asResponse());
+    const response = await this.request(() => this.sdk.beta.sessions.events.send(sessionId, { events: [event as InputEvent] }, idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : undefined).asResponse());
     // No response event is required for an accepted mutation. Some v1 servers
     // add application/json to an empty 202; parsing that body invents a failure.
     await response.body?.cancel().catch(() => {});

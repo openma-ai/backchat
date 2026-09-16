@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { homedir, hostname, platform } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
-import { DaemonConnection, type DaemonChannel } from "../../packages/openma-runtime/src/daemon-connection.js";
+import { DaemonConnection, type DaemonChannel } from "@openma/common/local-runtime";
 import type { DeliveredRunnerOutput, OpenmaRunnerOutbox, RunnerOutput } from "./openma-runner-outbox.js";
 import {
   decodeSessionCommand,

@@ -1,3 +1,4 @@
+import { sessionInputIdentityPrefix } from "@openma/common/managed-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +13,7 @@ const target: OpenmaExecutionTarget = { baseUrl: "https://app.openma.dev", userI
 
 async function setup() {
   const directory = await mkdtemp(join(tmpdir(), "backchat-tasks-"));
-  const state = { sends: 0, creates: 0, streams: 0, mutations: [] as string[], events: [] as OpenmaTaskEvent[], pushes: [] as OpenmaTaskSnapshot[], lostAck: false, title: "Task", failRename: false, listRequests: 0, listRemote: false, listGate: null as Promise<void> | null, controller: null as ReadableStreamDefaultController<Uint8Array> | null };
+  const state = { strictInput: false, sends: 0, creates: 0, streams: 0, mutations: [] as string[], events: [] as OpenmaTaskEvent[], pushes: [] as OpenmaTaskSnapshot[], lostAck: false, title: "Task", failRename: false, listRequests: 0, listRemote: false, listGate: null as Promise<void> | null, controller: null as ReadableStreamDefaultController<Uint8Array> | null };
   const fetchImpl: typeof fetch = async (url, init) => {
     const request = new Request(url, init); const path = new URL(request.url).pathname;
     if (path === "/v1/oma/me") return Response.json({ user: { id: "user", email: "user@example.com", name: "User" }, tenant: { id: "team" }, tenants: [{ id: "team", name: "Team", role: "owner" }] });
@@ -35,7 +36,10 @@ async function setup() {
     }
     if (path === "/v1/sessions/remote/events" && request.method === "POST") {
       state.sends++; const body = await request.json() as { events: OpenmaTaskEvent[] };
-      state.events.push({ ...body.events[0]!, id: `e${state.events.length + 1}`, seq: state.events.length + 1 });
+      if (state.strictInput && Object.keys(body.events[0]!).some(key => !["type", "content"].includes(key))) return Response.json({ error: { message: 'Unrecognized key: metadata' } }, { status: 400 });
+      const key = request.headers.get("Idempotency-Key");
+      const id = key ? `${await sessionInputIdentityPrefix("team", "remote", key)}0` : `e${state.events.length + 1}`;
+      state.events.push({ ...body.events[0]!, id, seq: state.events.length + 1 });
       if (state.lostAck) throw new Error("socket closed after acceptance");
       return new Response(null, { status: 202 });
     }
@@ -57,6 +61,15 @@ async function setup() {
 }
 
 describe("OpenMA desktop task observer", () => {
+  it("sends canonical input without unsupported event metadata", async () => {
+    const { tasks, state } = await setup();
+    state.strictInput = true;
+    const { task } = await tasks.create(target, "Task");
+    await expect(tasks.send(task.id, "desktop-turn-17", "once")).resolves.toBeUndefined();
+    expect(state.events[0]).toMatchObject({ type: "user.message", content: [{ type: "text", text: "once" }] });
+    expect(state.events[0]).not.toHaveProperty("metadata");
+  });
+
   it("preserves a successful rename when a refresh started before it returns stale metadata", async () => {
     const { tasks, state } = await setup();
     const { task } = await tasks.create(target, "Task");

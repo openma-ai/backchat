@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.3.0",
-    "@openma/common": "git+https://github.com/openma-ai/openma-common.git#82ce654e3f46eb9fdbebedb2b96bd8f7e0d76817",
+    "@openma/common": "git+https://github.com/openma-ai/openma-common.git#80fdc31e7a3d8dc8be325896ecc310a053c57af6",
     "tar": "^7.5.16",
     "zod": "^4.4.3"
   },

@@ -1,3 +1,4 @@
+import { sessionInputIdentityPrefix } from "@openma/common/managed-runtime";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { OpenmaAccount, OpenmaConnection } from "./openma-account.js";
@@ -266,11 +267,13 @@ export class OpenmaTasks {
 
   async #send(id: string, operationId: string, event: OpenmaTaskEvent): Promise<void> {
     const task = this.#task(id);
-    const outgoing = { ...event, metadata: { ...(event.metadata as Record<string, unknown> ?? {}), "backchat.operation_id": operationId } };
+    const expectedId = `${await sessionInputIdentityPrefix(task.workspaceId, task.sessionId, operationId)}0`;
+    this.#task(id);
+    const outgoing = { ...event, id: expectedId };
     if (!this.#store.beginOperation(id, operationId, outgoing)) return;
     this.#publish(id);
     try {
-      await this.#client(this.options.account.connection(task)).sendEvent(task.sessionId, outgoing);
+      await this.#client(this.options.account.connection(task)).sendEvent(task.sessionId, event, operationId);
       if (!this.#closed) this.#store.settleOperation(id, operationId, "accepted");
     } catch (error) {
       if (!this.#closed) this.#store.settleOperation(id, operationId, "uncertain");

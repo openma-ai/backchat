@@ -102,6 +102,7 @@ export class OpenmaTaskStore {
         ? this.#db.prepare("UPDATE events SET key = ?, seq = ?, data = ? WHERE task_id = ? AND key = ?").run(key, seq, JSON.stringify(event), id, prior.key)
         : this.#db.prepare("INSERT OR IGNORE INTO events VALUES (?, ?, ?, ?)").run(id, key, seq, JSON.stringify(event));
       if (seq !== null) this.#db.prepare("UPDATE tasks SET cursor = MAX(cursor, ?) WHERE id = ?").run(seq, id);
+      if (event.id) this.#db.prepare("UPDATE operations SET state = 'reconciled' WHERE task_id = ? AND json_extract(event, '$.id') = ?").run(id, event.id);
       const metadata = event.metadata as Record<string, unknown> | undefined;
       const operationId = metadata?.["backchat.operation_id"];
       if (typeof operationId === "string") this.#db.prepare("UPDATE operations SET state = 'reconciled' WHERE task_id = ? AND id = ?").run(id, operationId);
