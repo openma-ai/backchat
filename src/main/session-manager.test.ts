@@ -1589,8 +1589,9 @@ describe("SessionManager prompt queue", () => {
       expect.objectContaining({
         agent: expect.objectContaining({
           env: expect.objectContaining({
-            XDG_CACHE_HOME: expect.stringMatching(
-              /^\/private\/tmp\/openma-acp-cache-\d+$/,
+            XDG_CACHE_HOME: join(
+              process.platform === "darwin" ? "/private/tmp" : tmpdir(),
+              `openma-acp-cache-${typeof process.getuid === "function" ? process.getuid() : 0}`,
             ),
           }),
         }),
@@ -1598,7 +1599,8 @@ describe("SessionManager prompt queue", () => {
     );
   });
 
-  it("adds standard macOS CLI directories to ACP children launched from Finder", async () => {
+  it.each(["darwin", "linux"] as const)("prepares ACP CLI paths for %s desktop launches", async (platform) => {
+    const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue(platform);
     const originalPath = process.env.PATH;
     process.env.PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
     try {
@@ -1615,22 +1617,25 @@ describe("SessionManager prompt queue", () => {
 
       await manager.start({
         session_id: "sess-finder-path",
-        agent_id: "codex-acp",
+        agent_id: "claude-acp",
         cwd: "/repo",
       });
 
       const options = mocks.runtimeStart.mock.calls.at(-1)?.[0] as SessionOptions;
       expect(options.agent.env?.PATH?.split(":"))
         .toEqual([
-          "/opt/homebrew/bin",
-          "/usr/local/bin",
-          "/opt/local/bin",
+          ...(platform === "darwin" ? [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/opt/local/bin",
+          ] : []),
           "/usr/bin",
           "/bin",
           "/usr/sbin",
           "/sbin",
         ]);
     } finally {
+      platformSpy.mockRestore();
       if (originalPath === undefined) delete process.env.PATH;
       else process.env.PATH = originalPath;
     }
