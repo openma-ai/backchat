@@ -1,10 +1,10 @@
-import { sessionInputIdentityPrefix } from "@openma/common/managed-runtime";
+import { sessionInputIdentityPrefix } from "@openma/common/protocol/managed";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { OpenmaAccount, OpenmaConnection } from "./openma-account.js";
 import type { OpenmaCatalog, OpenmaExecutionTarget, OpenmaScope, OpenmaTask, OpenmaTaskEvent, OpenmaTaskSnapshot } from "../shared/openma.js";
 import { OpenmaTaskStore } from "./openma-task-store.js";
-import { OpenManagedCloudRuntimeClient } from "./openmanaged-cloud-runtime.js";
+import { OpenManagedCloudRuntimeClient, OpenmaRequestError } from "./openmanaged-cloud-runtime.js";
 import { openmaPendingActions } from "../shared/openma-actions.js";
 import type { OpenmaTaskResponse, OpenmaTaskUpdate } from "../shared/openma.js";
 import { OpenmaTaskFiles } from "./openma-task-files.js";
@@ -230,22 +230,34 @@ export class OpenmaTasks {
     const signal = observer.controller.signal;
     let retryMs = this.options.reconnectMs ?? 1000;
     while (!signal.aborted) {
+      const attempt = new AbortController();
+      const attemptSignal = AbortSignal.any([signal, attempt.signal]);
+      let live: AsyncIterator<OpenmaTaskEvent> | undefined;
       try {
         const task = this.#task(id);
         const client = this.#client(this.options.account.connection(task));
         observer.connection = "connecting"; observer.transient = []; observer.error = undefined; this.#publish(id);
-        for await (const event of client.history(task.sessionId, { afterSeq: task.afterSeq, signal })) {
+        let connected!: () => void;
+        let failed!: (error: unknown) => void;
+        const ready = new Promise<void>((resolve, reject) => { connected = resolve; failed = reject; });
+        live = client.stream(task.sessionId, { signal: attemptSignal, onConnected: connected })[Symbol.asyncIterator]();
+        const first = live.next();
+        // Establish the live subscription before reading history. Events that
+        // arrive during catch-up remain buffered and deduplicate by event ID.
+        void first.catch(failed);
+        await ready;
+        for await (const event of client.history(task.sessionId, { signal: attemptSignal })) {
           if (signal.aborted) return;
           this.#ingest(id, observer, event);
         }
         const revision = this.#store.get(id)?.revision;
-        const session = await client.request(() => client.sdk.beta.sessions.retrieve(task.sessionId, {}, { signal }));
+        const session = await client.request(() => client.sdk.beta.sessions.retrieve(task.sessionId, {}, { signal: attemptSignal }));
         if (signal.aborted) return;
         if (this.#store.get(id)?.revision === revision) this.#store.save({ ...this.#store.get(id)!, status: session.status, title: session.title ?? task.title, updatedAt: timestamp(session.updated_at, task.updatedAt) });
         observer.connection = "online"; this.#publish(id);
-        for await (const event of client.stream(task.sessionId, { afterSeq: this.#store.get(id)!.afterSeq, signal })) {
+        for (let next = await first; !next.done; next = await live.next()) {
           if (signal.aborted) return;
-          this.#ingest(id, observer, event);
+          this.#ingest(id, observer, next.value);
           retryMs = this.options.reconnectMs ?? 1000;
         }
         if (!signal.aborted) throw new Error("OpenMA connection interrupted. Reconnecting…");
@@ -254,6 +266,10 @@ export class OpenmaTasks {
         observer.connection = "offline";
         observer.error = error instanceof Error ? error.message : "OpenMA connection interrupted";
         this.#publish(id);
+      }
+      finally {
+        attempt.abort();
+        await live?.return?.().catch(() => {});
       }
       await new Promise<void>((resolve) => {
         const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
@@ -276,7 +292,10 @@ export class OpenmaTasks {
       await this.#client(this.options.account.connection(task)).sendEvent(task.sessionId, event, operationId);
       if (!this.#closed) this.#store.settleOperation(id, operationId, "accepted");
     } catch (error) {
-      if (!this.#closed) this.#store.settleOperation(id, operationId, "uncertain");
+      if (!this.#closed) {
+        if (error instanceof OpenmaRequestError && error.definitelyRejected) this.#store.rejectOperation(id, operationId);
+        else this.#store.settleOperation(id, operationId, "uncertain");
+      }
       throw error;
     } finally { this.#publish(id); }
   }

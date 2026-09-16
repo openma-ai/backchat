@@ -116,6 +116,9 @@ export class OpenmaTaskStore {
   beginOperation(id: string, operationId: string, event: OpenmaTaskEvent): boolean {
     return this.#db.prepare("INSERT OR IGNORE INTO operations VALUES (?, ?, ?, 'pending', ?)").run(id, operationId, JSON.stringify(event), Date.now()).changes > 0;
   }
+  rejectOperation(id: string, operationId: string): void {
+    this.#db.prepare("DELETE FROM operations WHERE task_id = ? AND id = ? AND state = 'pending'").run(id, operationId);
+  }
   settleOperation(id: string, operationId: string, state: "accepted" | "uncertain"): void {
     this.#db.prepare("UPDATE operations SET state = ? WHERE task_id = ? AND id = ? AND state != 'reconciled'").run(state, id, operationId);
   }

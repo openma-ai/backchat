@@ -12,8 +12,13 @@ export interface CloudSessionCreateInput { agentId: string; environmentId: strin
 export interface CloudSessionCreateResult { sessionId: string }
 export type OpenmaRemoteEvent = Record<string, unknown> & { type: string; id?: string; seq?: number };
 
-/** SDK transport only. Submission and observation are independent so resuming
- * a subscription cannot replay a user instruction. Runtime ownership lives above it. */
+/** Preserve rejection status without exposing the server response body. */
+export class OpenmaRequestError extends Error {
+  constructor(message: string, readonly status: number | undefined) { super(message); }
+  get definitelyRejected(): boolean { return this.status !== undefined && [400, 401, 403, 404, 405, 413, 415, 422, 429].includes(this.status); }
+}
+
+/** SDK transport only; subscribing never resubmits user input. */
 export class OpenManagedCloudRuntimeClient {
   readonly sdk: OpenMA;
   #onUnauthorized?: () => void;
@@ -35,8 +40,8 @@ export class OpenManagedCloudRuntimeClient {
   publicError(error: unknown): Error {
     if (error instanceof Anthropic.APIError) {
       if (error.status === 401) this.#onUnauthorized?.();
-      return new Error(error.status === 401 ? "OpenMA authorization expired. Sign in again."
-        : `OpenMA request failed (${error.status ?? "connection"}). Refresh the task to check its current state.`);
+      return new OpenmaRequestError(error.status === 401 ? "OpenMA authorization expired. Sign in again."
+        : `OpenMA request failed (${error.status ?? "connection"}). Refresh the task to check its current state.`, error.status);
     }
     if (error instanceof Error && error.name === "AbortError") return error;
     return new Error("OpenMA connection interrupted. Refresh the task before retrying an action.");
@@ -69,30 +74,20 @@ export class OpenManagedCloudRuntimeClient {
   }
 
   async *history(sessionId: string, options: { afterSeq?: number; signal?: AbortSignal } = {}): AsyncIterable<OpenmaRemoteEvent> {
-    let cursor = options.afterSeq ?? 0;
+    let page = await this.request(() => this.sdk.beta.sessions.events.list(sessionId, { order: "asc", limit: 100 }, { signal: options.signal }));
     while (!options.signal?.aborted) {
-      // The v1 history route returns stored rows and uses after_seq, whereas
-      // SDK auto-pagination sends an opaque page token. Keep the SDK transport
-      // and explicitly adapt the existing server's pagination contract.
-      const page = await this.request(() => this.sdk.beta.sessions.events.list(sessionId, { order: "asc" }, {
-        query: { after_seq: cursor, limit: 500 }, signal: options.signal,
-      }));
-      let next = cursor;
       for (const value of page.data ?? []) {
         const raw = value as unknown as OpenmaRemoteEvent & { data?: OpenmaRemoteEvent; ts?: number };
-        const event: OpenmaRemoteEvent = raw.data && typeof raw.ts === "number"
+        yield raw.data && typeof raw.ts === "number"
           ? { ...raw.data, type: raw.type, seq: raw.seq, processed_at: raw.data.processed_at ?? new Date(raw.ts).toISOString() }
           : raw;
-        if (typeof event.seq === "number") next = Math.max(next, event.seq);
-        yield event;
       }
       if (!page.hasNextPage()) return;
-      if (next <= cursor) throw new Error("OpenMA history cursor did not advance");
-      cursor = next;
+      page = await this.request(() => page.getNextPage());
     }
   }
 
-  async *stream(sessionId: string, options: { afterSeq?: number; signal?: AbortSignal } = {}): AsyncIterable<OpenmaRemoteEvent> {
+  async *stream(sessionId: string, options: { afterSeq?: number; signal?: AbortSignal; onConnected?: () => void } = {}): AsyncIterable<OpenmaRemoteEvent> {
     const controller = new AbortController();
     const abort = () => controller.abort();
     options.signal?.addEventListener("abort", abort, { once: true });
@@ -105,9 +100,9 @@ export class OpenManagedCloudRuntimeClient {
       // OpenMA admits transient message/tool chunks through this extension;
       // the SDK's event_deltas parameter alone selects only spec events.
       query: { include: "chunks" },
-      headers: { "Last-Event-ID": String(options.afterSeq ?? 0) },
       timeout: 0,
     }).asResponse());
+      options.onConnected?.();
       // The standard parsed stream filters event names against Anthropic's
       // schema. OpenMA adds chunks and pending-input frames. Decode framing,
       // fragmented UTF-8 and multiline data with the SDK's public raw reader.

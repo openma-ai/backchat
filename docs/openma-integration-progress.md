@@ -760,3 +760,21 @@ worker provisioning or process restart recovery. The sandbox adapter's isolated
 Codex state directory failed initialization during a separate probe; that is
 not covered by the successful local-host run. Existing daemon discovery and
 ownership behavior remain covered by the Electron regression.
+
+## Review corrections (2026-09-16)
+
+- Follow canonical SDK `next_page`; remove numeric history cursor assumptions.
+- Establish the live subscription before history catch-up; buffered overlap is
+  deduplicated by existing event ID. Do not imply unsupported Last-Event-ID replay.
+- Preserve sanitized HTTP status so definitive input rejections release their
+  pending local operation for an explicit retry. Ambiguous writes remain blocked
+  from automatic resend. Approval retries use the same existing identity.
+- Consume input identity from the neutral common protocol entry at
+  `85e0b3b6d46f3b8cd219aa2b5a79a1339b5041a0`; runtime entry compatibility is retained.
+
+Validation: 367 desktop CI tests; typecheck/build; two Electron cloud/external
+host restart scenarios. Regression cases cover canonical multi-page history,
+403 approval retry, and an answer arriving during history catch-up. Common's 353
+and OpenMA's 146 application/storage tests pass, including architecture boundaries.
+These regressions use controlled service fixtures; the live model/Docker run was
+not repeated for this correction.

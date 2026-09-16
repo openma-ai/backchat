@@ -1,4 +1,4 @@
-import { sessionInputIdentityPrefix } from "@openma/common/managed-runtime";
+import { sessionInputIdentityPrefix } from "@openma/common/protocol/managed";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +13,7 @@ const target: OpenmaExecutionTarget = { baseUrl: "https://app.openma.dev", userI
 
 async function setup() {
   const directory = await mkdtemp(join(tmpdir(), "backchat-tasks-"));
-  const state = { strictInput: false, sends: 0, creates: 0, streams: 0, mutations: [] as string[], events: [] as OpenmaTaskEvent[], pushes: [] as OpenmaTaskSnapshot[], lostAck: false, title: "Task", failRename: false, listRequests: 0, listRemote: false, listGate: null as Promise<void> | null, controller: null as ReadableStreamDefaultController<Uint8Array> | null };
+  const state = { rejectInput: false, historyHook: null as null | (() => void), strictInput: false, sends: 0, creates: 0, streams: 0, mutations: [] as string[], events: [] as OpenmaTaskEvent[], pushes: [] as OpenmaTaskSnapshot[], lostAck: false, title: "Task", failRename: false, listRequests: 0, listRemote: false, listGate: null as Promise<void> | null, controller: null as ReadableStreamDefaultController<Uint8Array> | null };
   const fetchImpl: typeof fetch = async (url, init) => {
     const request = new Request(url, init); const path = new URL(request.url).pathname;
     if (path === "/v1/oma/me") return Response.json({ user: { id: "user", email: "user@example.com", name: "User" }, tenant: { id: "team" }, tenants: [{ id: "team", name: "Team", role: "owner" }] });
@@ -35,7 +35,7 @@ async function setup() {
       return Response.json({ id: "remote", status: state.events.some((e) => e.type === "session.status_running") ? "running" : "idle", title: state.title });
     }
     if (path === "/v1/sessions/remote/events" && request.method === "POST") {
-      state.sends++; const body = await request.json() as { events: OpenmaTaskEvent[] };
+      state.sends++; if (state.rejectInput) return Response.json({ error: { type: "permission_error", message: "denied" } }, { status: 403 }); const body = await request.json() as { events: OpenmaTaskEvent[] };
       if (state.strictInput && Object.keys(body.events[0]!).some(key => !["type", "content"].includes(key))) return Response.json({ error: { message: 'Unrecognized key: metadata' } }, { status: 400 });
       const key = request.headers.get("Idempotency-Key");
       const id = key ? `${await sessionInputIdentityPrefix("team", "remote", key)}0` : `e${state.events.length + 1}`;
@@ -50,7 +50,7 @@ async function setup() {
         request.signal.addEventListener("abort", () => { try { controller.close(); } catch {} });
       } }), { headers: { "content-type": "text/event-stream" } });
     }
-    if (path === "/v1/sessions/remote/events") return Response.json({ data: state.events, has_more: false });
+    if (path === "/v1/sessions/remote/events") { const response = Response.json({ data: state.events, next_page: null }); state.historyHook?.(); return response; }
     throw new Error(`unexpected request ${path}`);
   };
   const account = new OpenmaAccount({ directory, fetch: fetchImpl, authorize: async () => ({ user: "user", tokens: [{ tenant_id: "team", tenant_name: "Team", role: "owner", token: "key", key_id: "kid" }] }) });
@@ -243,3 +243,31 @@ it("routes simultaneous tenants by task ownership without changing the selected 
   await account.logout(); release!(); await rejected;
   expect(streams.size).toBe(0);
 });
+
+it("allows explicit approval retry after a definitive 403 rejection", async () => {
+    const { tasks, state } = await setup();
+    const { task } = await tasks.create(target, "Task");
+    state.events.push({ id: "tool", seq: 1, type: "agent.tool_use", name: "bash", input: {} },
+      { id: "ask", seq: 2, type: "session.status_idle", stop_reason: { type: "requires_action", event_ids: ["tool"] } });
+    tasks.open(task.id);
+    await vi.waitFor(() => expect(state.streams).toBe(1));
+    state.rejectInput = true;
+    await expect(tasks.respond(task.id, "tool", { type: "confirmation", result: "allow" })).rejects.toThrow();
+    state.rejectInput = false;
+    await tasks.respond(task.id, "tool", { type: "confirmation", result: "allow" });
+    expect(state.sends).toBe(2);
+    expect(state.events.some(event => event.type === "user.tool_confirmation")).toBe(true);
+  });
+  it("captures an answer committed during history catch-up without refreshing", async () => {
+    const { tasks, state } = await setup();
+    const { task } = await tasks.create(target, "Task");
+    const answer = { id: "gap-answer", type: "agent.message", content: [{ type: "text", text: "arrived during catch-up" }] };
+    state.historyHook = () => {
+      state.historyHook = null;
+      state.events.push(answer);
+      state.controller?.enqueue(new TextEncoder().encode(`event: agent.message\ndata: ${JSON.stringify(answer)}\n\n`));
+    };
+    tasks.open(task.id);
+    await vi.waitFor(() => expect(tasks.snapshot(task.id).events).toContainEqual(answer));
+    expect(state.streams).toBe(1);
+  });

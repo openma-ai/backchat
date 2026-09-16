@@ -14,21 +14,17 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
     const received = []; for await (const event of client.stream("session")) received.push(event);
     expect(received).toEqual(events);
   });
-  it("reads all v1 history pages using numeric cursors and unwraps stored event rows", async () => {
-    const cursors: string[] = [];
-    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.dev", apiKey: "key", fetchImpl: async (url, init) => {
-      const cursor = new URL(new Request(url, init).url).searchParams.get("after_seq")!; cursors.push(cursor);
-      if (cursor === "0") return Response.json({ data: [{ seq: 1, type: "user.message", ts: 1000, data: { id: "u", type: "user.message", content: [{ type: "text", text: "hi" }] } }], has_more: true, next_page: "seq_1" });
-      if (cursor === "1") return Response.json({ data: [{ seq: 2, type: "agent.message", ts: 2000, data: { id: "a", type: "agent.message", content: [{ type: "text", text: "hello" }] } }], has_more: false });
-      throw new Error("history did not advance");
+  it("follows canonical next_page without requiring nonexistent seq", async () => {
+    let requests = 0;
+    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.dev", apiKey: "test", fetchImpl: async (url, init) => {
+      requests++;
+      const page = new URL(new Request(url, init).url).searchParams.get("page");
+      return Response.json(page === "page-two" ? { data: [{ id: "last", type: "agent.message", content: [] }], next_page: null }
+        : { data: Array.from({ length: 100 }, (_, i) => ({ id: `e${i}`, type: "agent.message", content: [] })), next_page: "page-two" });
     } });
-    const events = [];
-    for await (const event of client.history("s")) events.push(event);
-    expect(cursors).toEqual(["0", "1"]);
-    expect(events).toEqual([
-      { id: "u", type: "user.message", content: [{ type: "text", text: "hi" }], seq: 1, processed_at: "1970-01-01T00:00:01.000Z" },
-      { id: "a", type: "agent.message", content: [{ type: "text", text: "hello" }], seq: 2, processed_at: "1970-01-01T00:00:02.000Z" },
-    ]);
+    const events = []; for await (const event of client.history("session")) events.push(event);
+    expect(events).toHaveLength(101);
+    expect(requests).toBe(2);
   });
   it("accepts the v1 server's empty 202 response without treating accepted input as failed", async () => {
     let sends = 0;
@@ -54,7 +50,7 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
     expect(await request.json()).toEqual({ agent: "agent-1", environment_id: "env-1", title: "From Backchat" });
   });
 
-  it("uses events for input and independent SDK streaming with a resume cursor", async () => {
+  it("uses canonical input and independent SDK streaming", async () => {
     const requests: Request[] = [];
     const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.dev", apiKey: "secret",
       fetchImpl: async (url, init) => {
@@ -71,7 +67,7 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
     expect(events).toEqual([{ type: "agent.message", id: "m1", seq: 9, content: [{ type: "text", text: "hello" }] }]);
     expect(await requests[0]!.json()).toEqual({ events: [{ type: "user.message", content: [{ type: "text", text: "hello" }] }] });
     expect(new URL(requests[0]!.url).pathname).toBe("/v1/sessions/sess-cloud/events");
-    expect(requests[1]!.headers.get("last-event-id")).toBe("8");
+    expect(requests[1]!.headers.has("last-event-id")).toBe(false);
     expect(new URL(requests[1]!.url).searchParams.get("include")).toBe("chunks");
     expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
   });
