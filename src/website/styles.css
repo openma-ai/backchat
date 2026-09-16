@@ -19,7 +19,6 @@
   --line-strong: var(--site-line-strong);
   --line-inverse: var(--site-line-inverse);
   --brand: var(--site-brand);
-  --brand-text: var(--site-brand-text);
   --brand-hover: var(--site-brand-hover);
   --brand-ink: var(--site-brand-ink);
   --shadow: var(--site-shadow);
@@ -521,7 +520,7 @@ a {
 }
 
 .truth-terminal-title span:last-child {
-  color: var(--brand-text);
+  color: var(--ink);
 }
 
 .truth-terminal dl {
