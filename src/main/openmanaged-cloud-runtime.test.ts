@@ -1,7 +1,26 @@
 import { describe, expect, it } from "vitest";
+import { setTimeout as delay } from "node:timers/promises";
 import { OpenManagedCloudRuntimeClient } from "./openmanaged-cloud-runtime.js";
 
 describe("OpenManagedCloudRuntimeClient v1", () => {
+  it("allows a delayed SSE connection instead of immediately timing out", async () => {
+    const event = { type: "agent.message", id: "delayed", content: [] };
+    let connected = false;
+    const client = new OpenManagedCloudRuntimeClient({
+      baseUrl: "https://example.com", apiKey: "key",
+      fetchImpl: async (_url, init) => {
+        await delay(20, undefined, { signal: init?.signal ?? undefined });
+        return new Response(`event: agent.message\ndata: ${JSON.stringify(event)}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    });
+    const events = [];
+    for await (const value of client.stream("session", { onConnected: () => { connected = true; } })) events.push(value);
+    expect(connected).toBe(true);
+    expect(events).toEqual([event]);
+  });
+
   it("retains OpenMA chunk and pending-input extensions through the SDK SSE decoder", async () => {
     const events = [
       { type: "agent.message_chunk", message_id: "m", delta: "实时文本" },

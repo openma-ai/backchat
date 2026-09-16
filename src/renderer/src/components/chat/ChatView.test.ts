@@ -600,7 +600,7 @@ describe("home suggestions", () => {
     expect(new Set([local.Icon, cloud.Icon, remote.Icon])).toHaveLength(3);
   });
 
-  it("keeps every runtime choice in the dedicated footer menu", () => {
+  it("uses catalog-backed runtime choices and locks existing session placement", () => {
     const runtimeControl = readFileSync(
       resolve(__dirname, "RuntimeLocationControl.tsx"),
       "utf8",
@@ -609,10 +609,12 @@ describe("home suggestions", () => {
     expect(runtimeControl).toContain("MonitorIcon");
     expect(runtimeControl).toContain('t("chat.local")');
     expect(runtimeControl).toContain("CloudIcon");
-    expect(runtimeControl).toContain('t("chat.cloud")');
+    expect(runtimeControl).toContain("openmaTargets(scope, catalog)");
     expect(runtimeControl).toContain("ServerIcon");
-    expect(runtimeControl).toContain('t("chat.otherMachine")');
-    expect(runtimeControl.match(/disabled/g)).toHaveLength(2);
+    expect(runtimeControl).toContain("choice.runtimeName");
+    expect(runtimeControl).toContain("choice.environmentName");
+    expect(runtimeControl).toContain("disabled={offline}");
+    expect(runtimeControl).toContain("!locked && choices.map");
   });
 });
 

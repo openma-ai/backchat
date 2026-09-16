@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = vi.hoisted(() => ({
+  active: vi.fn(() => null),
   openSideTab: vi.fn(() => "preview-tab"),
   patchSideTab: vi.fn(),
 }));

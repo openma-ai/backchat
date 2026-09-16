@@ -798,3 +798,21 @@ The optional-steering startup rejection described above has been removed in
 common. Backchat now keeps queue mode effective and visible for agents without
 steering even when the global preference is off. The DeepSeek extension request
 is tracked in https://github.com/openma-ai/deepseek-harness-acp/issues/23.
+
+### Live acceptance closure (2026-09-16)
+
+The first-history failure was caused by `timeout: 0` on the SDK SSE request:
+that value schedules an immediate connection abort, rather than disabling the
+timeout. Keep the normal connection timeout; the SDK clears it when fetch
+returns headers, so SSE body consumption remains long-lived. A delayed-fetch
+regression fails with the old setting and passes after removal.
+
+The configured DeepSeek `deepseek-flash` / dsh-acp acceptance now passes OMA's
+first turn, desktop continuation, canonical result writeback, exactly-once user
+input and Electron restart/history restoration. The run also verifies the
+tenant group defaults to collapsed. The fixture-based release Electron suite
+passes all 76 scenarios. No Codex model was used for this acceptance.
+
+Updated the older runtime-menu source assertion for actual catalog-backed
+choices and supplied local-account/session context in the affected standalone
+component/file-preview tests; their 60 assertions pass.
