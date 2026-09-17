@@ -77,7 +77,7 @@ export function Topbar(_props: { onCancel: () => void }) {
       <span className="max-w-[min(42vw,32rem)] truncate font-medium text-fg">
         {active.label || t("sidebar.newChat")}
       </span>
-      {active.status !== "draft" && (
+      {active.status !== "draft" && !active.openma && (
         <SessionRuntimeUpdateControl sessionId={active.id} />
       )}
       <DropdownMenu>
@@ -112,6 +112,18 @@ export function Topbar(_props: { onCancel: () => void }) {
             <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          {active.openma && (active.openma.status === "running" || !!active.activeTurnId || !!active.pendingAsks?.length) && (
+            <DropdownMenuItem
+              onSelect={() => {
+                void window.backchat.openmaTaskInterrupt(active.id).catch((error) => {
+                  toast.error(error instanceof Error ? error.message : "Couldn't interrupt the task");
+                });
+              }}
+            >
+              <CircleStopIcon className="size-3.5" />
+              <span>{t("chat.stop")}</span>
+            </DropdownMenuItem>
+          )}
           {active.supportsSessionClose && active.status !== "disposed" && (
             <DropdownMenuItem
               onSelect={() => void closeSession()}

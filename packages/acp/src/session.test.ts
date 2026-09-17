@@ -143,14 +143,14 @@ describe("AcpSessionImpl", () => {
     });
   });
 
-  it("does not send additionalDirectories when the agent has not advertised support", async () => {
-    let newSessionRequest: unknown;
+  it("rejects a multi-root session before session/new when the agent has not advertised support", async () => {
+    let newSessionCalled = false;
     const harness = createInMemoryAcpHarness(() => ({
       async initialize() {
         return { protocolVersion: PROTOCOL_VERSION };
       },
-      async newSession(params) {
-        newSessionRequest = params;
+      async newSession() {
+        newSessionCalled = true;
         return { sessionId: "single-root-session" };
       },
       async prompt() {
@@ -174,14 +174,12 @@ describe("AcpSessionImpl", () => {
       },
     });
 
-    await session.init();
+    await expect(session.init()).rejects.toThrow(
+      "ACP agent does not support additional workspace directories",
+    );
     expect(session.supportsAdditionalDirectories).toBe(false);
     await session.dispose();
-
-    expect(newSessionRequest).toEqual({
-      cwd: "/work/app",
-      mcpServers: [],
-    });
+    expect(newSessionCalled).toBe(false);
   });
 
   it("forks an existing ACP session when the unstable fork capability is advertised", async () => {
@@ -194,7 +192,10 @@ describe("AcpSessionImpl", () => {
         return {
           protocolVersion: PROTOCOL_VERSION,
           agentCapabilities: {
-            sessionCapabilities: { fork: {} },
+            sessionCapabilities: {
+              fork: {},
+              additionalDirectories: {},
+            },
           },
         };
       },
@@ -235,6 +236,7 @@ describe("AcpSessionImpl", () => {
       options: {
         agent: { command: "fake-agent", cwd: "/tmp/backchat-test" },
         mcpServers: [],
+        additionalDirectories: ["/work/docs", "/work/backend"],
         forkFromAcpSessionId: "parent-acp-session",
       } as never,
     });
@@ -249,8 +251,121 @@ describe("AcpSessionImpl", () => {
       sessionId: "parent-acp-session",
       cwd: "/tmp/backchat-test",
       mcpServers: [],
+      additionalDirectories: ["/work/docs", "/work/backend"],
     });
     expect(session.configOptions[0]?.currentValue).toBe("gpt-5");
+  });
+
+  it("passes the complete additional root list through ACP session/resume", async () => {
+    let resumeRequest: unknown;
+    let newSessionCalled = false;
+    const harness = createInMemoryAcpHarness(() => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: {
+            sessionCapabilities: {
+              resume: {},
+              additionalDirectories: {},
+            },
+          },
+        };
+      },
+      async resumeSession(params) {
+        resumeRequest = params;
+        return {};
+      },
+      async newSession() {
+        newSessionCalled = true;
+        return { sessionId: "fresh-session" };
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async authenticate() {
+        return {};
+      },
+      async cancel() {
+        return;
+      },
+    }));
+
+    const session = new AcpSessionImpl({
+      child: harness.child,
+      id: "test-resume-multi-root-session",
+      options: {
+        agent: { command: "fake-agent", cwd: "/work/app" },
+        mcpServers: [],
+        additionalDirectories: ["/work/docs", "/work/backend"],
+        resumeAcpSessionId: "existing-session",
+      },
+    });
+
+    await session.init();
+    await session.dispose();
+
+    expect(resumeRequest).toEqual({
+      sessionId: "existing-session",
+      cwd: "/work/app",
+      mcpServers: [],
+      additionalDirectories: ["/work/docs", "/work/backend"],
+    });
+    expect(newSessionCalled).toBe(false);
+  });
+
+  it("passes the complete additional root list through ACP session/load", async () => {
+    let loadRequest: unknown;
+    let newSessionCalled = false;
+    const harness = createInMemoryAcpHarness(() => ({
+      async initialize() {
+        return {
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: {
+            loadSession: true,
+            sessionCapabilities: { additionalDirectories: {} },
+          },
+        };
+      },
+      async loadSession(params) {
+        loadRequest = params;
+        return {};
+      },
+      async newSession() {
+        newSessionCalled = true;
+        return { sessionId: "fresh-session" };
+      },
+      async prompt() {
+        return { stopReason: "end_turn" };
+      },
+      async authenticate() {
+        return {};
+      },
+      async cancel() {
+        return;
+      },
+    }));
+
+    const session = new AcpSessionImpl({
+      child: harness.child,
+      id: "test-load-multi-root-session",
+      options: {
+        agent: { command: "fake-agent", cwd: "/work/app" },
+        mcpServers: [],
+        additionalDirectories: ["/work/docs", "/work/backend"],
+        resumeAcpSessionId: "existing-session",
+      },
+    });
+
+    await session.init();
+    await session.dispose();
+
+    expect(loadRequest).toEqual({
+      sessionId: "existing-session",
+      cwd: "/work/app",
+      mcpServers: [],
+      additionalDirectories: ["/work/docs", "/work/backend"],
+    });
+    expect(newSessionCalled).toBe(false);
   });
 
   it("captures and updates ACP session config options", async () => {

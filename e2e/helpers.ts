@@ -131,7 +131,9 @@ export async function closeApp(app: ElectronApplication): Promise<void> {
     proc.once("exit", () => resolve());
   });
   await Promise.race([
-    app.evaluate(({ app: electronApp }) => {
+    app.evaluate(({ app: electronApp, dialog }) => {
+      // Test teardown explicitly approves termination of its own fixture tasks.
+      dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
       electronApp.quit();
     }),
     new Promise<void>((resolve) => {

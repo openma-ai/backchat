@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ setQueryData: () => undefined }),
   useQuery: ({ queryKey }: { queryKey: string[] }) => ({
     data:
       queryKey[0] === "sessions-for-recent-cwds"
@@ -13,6 +14,7 @@ vi.mock("@tanstack/react-query", () => ({
         : null,
   }),
 }));
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => undefined }));
 
 vi.mock("@/lib/i18n", () => ({
   useI18n: () => ({
@@ -37,6 +39,8 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuSeparator: () => <hr />,
+  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock("@/components/ui/popover", () => ({

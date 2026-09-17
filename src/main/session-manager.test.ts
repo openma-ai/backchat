@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", () => ({
+  execFile: vi.fn(),
   spawn: vi.fn(() => ({
     once(event: string, cb: (code?: number) => void) {
       if (event === "exit") queueMicrotask(() => cb(0));
@@ -84,6 +85,24 @@ vi.mock("./session-cwd.js", () => ({
 }));
 
 describe("SessionManager prompt queue", () => {
+  it("settles queued prompts and ignores late agent events when the session is disposed", async () => {
+    const fake = createControllableAcpSession({ eventsAfterAbort: [{ type: "sessionUpdate", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "late output" } } }] });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const send = vi.fn();
+    const manager = new SessionManager({ send, resolveMcpServers: () => [], buildCallbacks: () => ({}), resolveDefaults: () => ({}), resolveAgentOverride: () => undefined });
+    await manager.start({ session_id: "dispose-queue", agent_id: "codex-acp", cwd: "/repo" });
+    const first = manager.prompt({ session_id: "dispose-queue", turn_id: "first", text: "first" });
+    await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+    const queued = manager.prompt({ session_id: "dispose-queue", turn_id: "queued", text: "queued", requested_delivery: "turn_end", effective_delivery: "turn_end" });
+    await manager.dispose("dispose-queue");
+    send.mockClear();
+    fake.releaseNext();
+    await Promise.all([first, queued]);
+    expect(fake.prompts).toHaveLength(1);
+    expect(manager.sessionCount()).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("rejects a new session start after shutdown disposal begins", async () => {
     mocks.runtimeStart.mockClear();
     const manager = new SessionManager({
@@ -1109,6 +1128,8 @@ describe("SessionManager prompt queue", () => {
 
   it("passes project secondary roots to the generic ACP runtime and persists the project link", async () => {
     const fake = createControllableAcpSession();
+    const docsRoot = join(PROJECT_ROOT, "src");
+    const backendRoot = join(PROJECT_ROOT, "packages");
     mocks.runtimeStart.mockClear();
     mocks.runtimeStart.mockResolvedValueOnce(fake.session);
     const manager = new SessionManager({
@@ -1124,14 +1145,14 @@ describe("SessionManager prompt queue", () => {
       agent_id: "codex-acp",
       workspace_mode: "project",
       // A declared project workspace must exist, so the primary root is real.
-      // The secondary roots are only forwarded, and one of them repeats the
-      // primary so the dedup against the spawn cwd stays under test.
+      // All roots exist before ACP startup, and one repeats the primary so the
+      // dedup against the spawn cwd stays under test.
       cwd: PROJECT_ROOT,
       additional_directories: [
-        "/work/docs",
-        "/work/backend",
+        docsRoot,
+        backendRoot,
         PROJECT_ROOT,
-        "/work/docs",
+        docsRoot,
       ],
       project_id: "proj-workspace",
     });
@@ -1139,7 +1160,7 @@ describe("SessionManager prompt queue", () => {
     expect(mocks.runtimeStart).toHaveBeenCalledWith(
       expect.objectContaining({
         agent: expect.objectContaining({ cwd: PROJECT_ROOT }),
-        additionalDirectories: ["/work/docs", "/work/backend"],
+        additionalDirectories: [docsRoot, backendRoot],
       }),
     );
     expect(vi.mocked(upsertSession)).toHaveBeenCalledWith(
@@ -1149,6 +1170,134 @@ describe("SessionManager prompt queue", () => {
         project_id: "proj-workspace",
       }),
     );
+  });
+
+  it("prepares all project roots as session worktrees before ACP startup", async () => {
+    const fake = createControllableAcpSession();
+    const prepareWorktreeWorkspace = vi.fn(async () => ({
+      cwd: "/managed/worktrees/sess-worktree/01-app",
+      additionalDirectories: ["/managed/worktrees/sess-worktree/02-docs"],
+      worktrees: [
+        { repoRoot: "/source/app", path: "/managed/worktrees/sess-worktree/01-app", head: "abc" },
+        { repoRoot: "/source/docs", path: "/managed/worktrees/sess-worktree/02-docs", head: "def" },
+      ],
+      created: true,
+    }));
+    const removeWorktreeWorkspace = vi.fn(async () => undefined);
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      prepareWorktreeWorkspace,
+      removeWorktreeWorkspace,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-worktree",
+      agent_id: "codex-acp",
+      workspace_mode: "worktree",
+      cwd: "/source/app",
+      additional_directories: ["/source/docs"],
+      project_id: "proj-workspace",
+    });
+
+    expect(prepareWorktreeWorkspace).toHaveBeenCalledWith({
+      sessionId: "sess-worktree",
+      sourceDirectories: ["/source/app", "/source/docs"],
+    });
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({
+          cwd: "/managed/worktrees/sess-worktree/01-app",
+        }),
+        additionalDirectories: ["/managed/worktrees/sess-worktree/02-docs"],
+      }),
+    );
+    expect(result).toMatchObject({
+      status: "ready",
+      cwd: "/managed/worktrees/sess-worktree/01-app",
+      additional_directories: ["/managed/worktrees/sess-worktree/02-docs"],
+    });
+    expect(vi.mocked(upsertSession)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: "/managed/worktrees/sess-worktree/01-app",
+        additional_directories: ["/managed/worktrees/sess-worktree/02-docs"],
+      }),
+    );
+    expect(removeWorktreeWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("rolls back newly-created session worktrees when ACP startup fails", async () => {
+    const prepareWorktreeWorkspace = vi.fn(async () => ({
+      cwd: "/managed/worktrees/sess-worktree-fail/01-app",
+      additionalDirectories: ["/managed/worktrees/sess-worktree-fail/02-docs"],
+      worktrees: [],
+      created: true,
+    }));
+    const removeWorktreeWorkspace = vi.fn(async () => undefined);
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockRejectedValueOnce(
+      new Error("ACP agent does not support additional workspace directories"),
+    );
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      prepareWorktreeWorkspace,
+      removeWorktreeWorkspace,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-worktree-fail",
+      agent_id: "codex-acp",
+      workspace_mode: "worktree",
+      cwd: "/source/app",
+      additional_directories: ["/source/docs"],
+    });
+
+    expect(result).toMatchObject({
+      status: "error",
+      message: "ACP agent does not support additional workspace directories",
+    });
+    expect(removeWorktreeWorkspace).toHaveBeenCalledWith("sess-worktree-fail");
+    expect(upsertSession).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: "sess-worktree-fail" }),
+    );
+  });
+
+  it("rejects a multi-root project before ACP startup when a secondary root is missing", async () => {
+    const missingRoot = join(PROJECT_ROOT, "__missing_additional_root__");
+    mocks.runtimeStart.mockClear();
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-missing-secondary-root",
+      agent_id: "codex-acp",
+      workspace_mode: "project",
+      cwd: PROJECT_ROOT,
+      additional_directories: [missingRoot],
+      project_id: "proj-workspace",
+    });
+
+    expect(result).toEqual({
+      status: "error",
+      session_id: "sess-missing-secondary-root",
+      message: `Additional workspace directory no longer exists: ${missingRoot}`,
+    });
+    expect(mocks.runtimeStart).not.toHaveBeenCalled();
+    expect(manager.sessionCount()).toBe(0);
   });
 
   it("opts Claude sessions into the raw SDK task and monitor lifecycle stream", async () => {
@@ -1775,6 +1924,29 @@ describe("SessionManager prompt queue", () => {
         supports_session_fork: true,
       }),
     );
+  });
+
+  it("rejects a session start that tries to resume and fork at once", async () => {
+    mocks.runtimeStart.mockClear();
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "codex-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await expect(manager.start({
+      session_id: "sess-ambiguous-inheritance",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      resume: { acp_session_id: "resume-acp-session" },
+      fork: { acp_session_id: "parent-acp-session" },
+    })).resolves.toMatchObject({
+      status: "error",
+      message: "cannot resume and fork the same session",
+    });
+    expect(mocks.runtimeStart).not.toHaveBeenCalled();
   });
 
   it("announces negotiated steering capability with session.ready", async () => {
@@ -3285,6 +3457,7 @@ describe("SessionManager prompt queue", () => {
       type: "session.cancelled",
       session_id: "sess-agent-cancelled",
       turn_id: "turn-agent-cancelled",
+      stop_reason: "cancelled",
     });
     expect(events).not.toContainEqual(expect.objectContaining({
       type: "session.complete",

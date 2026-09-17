@@ -6,6 +6,34 @@
  */
 
 export const InvokeChannel = {
+  OpenmaAccountState: "openma:account-state",
+  OpenmaTasksList: "openma:tasks-list",
+  OpenmaTasksRefresh: "openma:tasks-refresh",
+  OpenmaTaskUpdate: "openma:task-update",
+  OpenmaTasksSearch: "openma:tasks-search",
+  OpenmaTaskCreate: "openma:task-create",
+  OpenmaTaskOpen: "openma:task-open",
+  OpenmaTaskDetach: "openma:task-detach",
+  OpenmaTaskSend: "openma:task-send",
+  OpenmaTaskInterrupt: "openma:task-interrupt",
+  OpenmaTaskRespond: "openma:task-respond",
+  OpenmaTaskFiles: "openma:task-files",
+  OpenmaTaskFilePreview: "openma:task-file-preview",
+  OpenmaTaskFileDownload: "openma:task-file-download",
+  OpenmaRemoveDirect: "openma:remove-direct",
+  OpenmaConnectDirect: "openma:connect-direct",
+  OpenmaLogin: "openma:login",
+  OpenmaCancelLogin: "openma:cancel-login",
+  OpenmaLogout: "openma:logout",
+  OpenmaSelectWorkspace: "openma:select-workspace",
+  OpenmaRunnerState: "openma:runner-state",
+  OpenmaRunnerEnable: "openma:runner-enable",
+  OpenmaRunnerDisable: "openma:runner-disable",
+  OpenmaCatalog: "openma:catalog",
+  OpenmaProjectBindings: "openma:project-bindings",
+  OpenmaLinkProject: "openma:link-project",
+  OpenmaUnlinkProject: "openma:unlink-project",
+  OpenmaOpenManagement: "openma:open-management",
   Ping: "app:ping",
   AgentsList: "agents:list",
   AgentInstall: "agent:install",
@@ -208,6 +236,10 @@ export const InvokeChannel = {
 } as const;
 
 export const PushChannel = {
+  OpenmaAccount: "openma:account",
+  OpenmaTask: "openma:task",
+  OpenmaTaskUpdated: "openma:task-updated",
+  OpenmaRunner: "openma:runner",
   /** Out-of-band push for session lifecycle + streamed events. */
   SessionEvent: "session:event",
   /** Pair-chat lifecycle + per-member streamed events. Distinct

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ["@openma/sdk"] })],
     build: {
       outDir: "out/main",
       rollupOptions: {

@@ -35,6 +35,7 @@ import { SettingsAbout } from "@/pages/settings/About";
 import { SettingsMcpServers } from "@/pages/settings/McpServers";
 import { Archive as SettingsArchive } from "@/pages/settings/Archive";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
+import { SettingsOpenMA } from "@/pages/settings/OpenMA";
 import { SettingsActivity } from "@/pages/settings/Activity";
 import { ScheduledPage } from "@/pages/Scheduled";
 
@@ -92,6 +93,7 @@ const settingsAgents = createRoute({
   path: "/agents",
   component: SettingsAgents,
 });
+const settingsOpenma = createRoute({ getParentRoute: () => settingsRoot, path: "/openma", component: SettingsOpenMA });
 const settingsActivity = createRoute({
   getParentRoute: () => settingsRoot,
   path: "/activity",
@@ -129,6 +131,7 @@ const routeTree = rootRoute.addChildren([
   pairRoute,
   scheduledRoute,
   settingsRoot.addChildren([
+    settingsOpenma,
     settingsActivity,
     settingsAgents,
     settingsMcp,

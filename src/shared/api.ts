@@ -5,6 +5,7 @@
  * Keep narrow: every method is a permission boundary.
  */
 
+import type { OpenmaAccountApi } from "./openma.js";
 import type {
   BrowserAssetBundleResult,
   BrowserAttachViewParams,
@@ -167,7 +168,7 @@ export interface PersistedSessionInfo {
    *  Older db files (pre-pin) have the column present but null. */
   pinned_at: number | null;
   project_id: string | null;
-  /** Current project roots excluding this session's cwd. */
+  /** Effective session roots excluding cwd, captured when the session starts. */
   additional_directories: string[];
 }
 
@@ -433,7 +434,7 @@ export interface ActivityStatsInfo {
   harnesses: HarnessActivityInfo[];
 }
 
-export interface BackchatApi {
+export interface BackchatApi extends OpenmaAccountApi {
   /** Smoke test for the IPC channel. */
   ping(msg: string): Promise<string>;
 

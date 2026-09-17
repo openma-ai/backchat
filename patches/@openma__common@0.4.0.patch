@@ -129,7 +129,7 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
      constructor(deps) {
          this.id = deps.id;
          this.options = deps.options;
-@@ -25,41 +56,157 @@ export class AcpSessionImpl {
+@@ -25,41 +56,161 @@ export class AcpSessionImpl {
      get authMethods() {
          return this.#authMethods;
      }
@@ -283,17 +283,22 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
          const cwd = this.options.agent.cwd ?? process.cwd();
 -        const mcpServers = this.options.mcpServers ?? [];
 +        const mcpServers = filterMcpServersForCapabilities(this.options.mcpServers ?? [], initialized.agentCapabilities?.mcpCapabilities);
++        const requestedAdditionalDirectories = this.options.additionalDirectories ?? [];
++        if (requestedAdditionalDirectories.length > 0 && !this.#supportsAdditionalDirectories) {
++            throw new Error("ACP agent does not support additional workspace directories");
++        }
 +        const additionalDirectories = this.#supportsAdditionalDirectories
-+            ? this.options.additionalDirectories ?? []
++            ? requestedAdditionalDirectories
 +            : [];
 +        const requestMeta = this.options.sessionRequestMeta;
          if (this.options.forkFromAcpSessionId) {
              if (!this.#supportsSessionFork || !this.#agent.unstable_forkSession) {
                  throw new Error("ACP agent does not support unstable session/fork");
-@@ -68,12 +215,39 @@ export class AcpSessionImpl {
+@@ -68,12 +219,40 @@ export class AcpSessionImpl {
                  sessionId: this.options.forkFromAcpSessionId,
                  cwd,
                  mcpServers,
++                ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
 +                ...(requestMeta ? { _meta: requestMeta } : {}),
              });
              this.#sessionId = forked.sessionId;
@@ -330,7 +335,7 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
          if (this.options.resumeAcpSessionId &&
              initialized.agentCapabilities?.loadSession === true &&
              this.#agent.loadSession) {
-@@ -82,9 +256,14 @@ export class AcpSessionImpl {
+@@ -82,9 +261,14 @@ export class AcpSessionImpl {
                      sessionId: this.options.resumeAcpSessionId,
                      cwd,
                      mcpServers,
@@ -346,7 +351,7 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
                  this.#logInit("load", initStartedAt, initializedAt);
                  return;
              }
-@@ -92,55 +271,180 @@ export class AcpSessionImpl {
+@@ -92,55 +276,180 @@ export class AcpSessionImpl {
                  console.error(`[acp] session/load(${this.options.resumeAcpSessionId}) failed, falling back to new:`, error);
              }
          }
@@ -551,7 +556,7 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
      #logInit(mode, startedAt, initializedAt) {
          if (process.env.NODE_ENV === "test")
              return;
-@@ -160,6 +464,8 @@ export class AcpSessionImpl {
+@@ -160,6 +469,8 @@ export class AcpSessionImpl {
              return;
          try {
              await setSessionMode.call(this.#agent, { sessionId: this.#sessionId, modeId });
@@ -560,7 +565,7 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
          }
          catch (error) {
              console.warn(`[acp] setSessionMode("${modeId}") failed:`, error);
-@@ -180,11 +486,140 @@ export class AcpSessionImpl {
+@@ -180,11 +491,140 @@ export class AcpSessionImpl {
          this.#configOptions = response.configOptions ?? [];
          return this.#configOptions;
      }
@@ -701,7 +706,7 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
      async provideToolResult(toolCallId, result) {
          void toolCallId;
          void result;
-@@ -194,25 +629,27 @@ export class AcpSessionImpl {
+@@ -194,25 +634,27 @@ export class AcpSessionImpl {
          return this.#pendingEvents.splice(0);
      }
      async *#prompt(input, options) {
@@ -736,7 +741,7 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
          });
          let ended = false;
          void done.then((response) => {
-@@ -245,7 +682,16 @@ export class AcpSessionImpl {
+@@ -245,7 +687,16 @@ export class AcpSessionImpl {
      async dispose() {
          if (this.#disposed)
              return;
@@ -753,7 +758,7 @@ index 6641aabfeced3552142951a87d832e4459594488..7fb62164c11297f9744cbdada23f3ce2
          this.#endStream();
          await this.#child.kill("SIGTERM").catch(() => { });
      }
-@@ -259,6 +705,22 @@ export class AcpSessionImpl {
+@@ -259,6 +710,22 @@ export class AcpSessionImpl {
          }
      }
  }

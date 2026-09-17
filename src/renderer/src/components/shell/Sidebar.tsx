@@ -1,3 +1,8 @@
+import { openmaWorkspaceScope } from "@shared/openma";
+import { useOpenmaAccount, useOpenmaCatalog } from "@/lib/openma-account";
+import { sameOpenmaScope, useOpenmaTenantTasks } from "@/lib/openma-tasks";
+import { openmaTargets } from "@/lib/openma-targets";
+import type { OpenmaScope } from "@shared/openma";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -6,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ContextMenu } from "radix-ui";
+import { toast } from "sonner";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -206,9 +212,12 @@ export function Sidebar() {
       refetchInterval: 4_000,
     }).data ?? [],
   );
+  const { data: openmaAccount } = useOpenmaAccount();
+  const [localOpen, setLocalOpen] = useState(true);
+  const localSessions = useMemo(() => sessions.filter((row) => !row.openma && !row.executionTarget), [sessions]);
   const grouped = useMemo(
-    () => groupSidebarSessions(sessions, savedProjects),
-    [savedProjects, sessions],
+    () => groupSidebarSessions(localSessions, savedProjects),
+    [savedProjects, localSessions],
   );
 
   const goHome = () => {
@@ -414,7 +423,20 @@ export function Sidebar() {
         className="sidebar-scroll-area min-h-0 flex-1"
       >
         <nav className="app-no-drag px-2 pt-[var(--row-gap-y)]">
-        {sessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
+        {openmaAccount?.user && openmaAccount.workspaces.map((workspace) => {
+          const scope = openmaWorkspaceScope(openmaAccount, workspace.id);
+          const rows = sessions.filter((row) => row.openma && sameOpenmaScope(row.openma, scope));
+          return <TenantSidebarSection key={JSON.stringify(scope)} scope={scope} name={workspace.name || workspace.id}
+            enabled={!workspace.expired && openmaAccount.status !== "signing_in"} labelCls={labelCls} rows={rows}
+            renderRow={(s) => <SessionRow row={s} agentIconUrl={agentIconUrls.get(s.agent_id)}
+              active={s.id === activeId && location.pathname.startsWith("/chat/")} hasSchedule={false} labelCls={labelCls}
+              onSelect={() => onSelectSession(s.id)} onRename={() => requestRename({ kind: "session", id: s.id, title: s.label })}
+              onArchive={() => void requestArchive([s.id])} menuOpen={openMenuId === s.id} onMenuOpenChange={(open) => setOpenMenuId(open ? s.id : null)} />}
+          />;
+        })}
+        <SidebarSection title={t("chat.local")} open={localOpen} onToggle={() => setLocalOpen(!localOpen)} labelCls={labelCls}>
+        <div className="pl-2">
+        {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
           <div>
             <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-xs font-medium text-fg-subtle", labelCls)}>
               {t("sidebar.chats")}
@@ -611,6 +633,8 @@ export function Sidebar() {
             );
           })()
         )}
+        </div>
+        </SidebarSection>
         </nav>
       </ScrollArea>
 
@@ -673,6 +697,46 @@ export function Sidebar() {
       />
     </div>
   );
+}
+
+function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow }: {
+  scope: OpenmaScope; name: string; enabled: boolean; labelCls: string; rows: SessionRow[];
+  renderRow: (row: SessionRow) => ReactNode;
+}) {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const tasks = useOpenmaTenantTasks(scope, enabled);
+  const catalog = useOpenmaCatalog(scope, enabled && menuOpen);
+  const choices = catalog.data ? openmaTargets(scope, catalog.data) : [];
+  const pinned = rows.filter((row) => row.pinnedAt != null);
+  const chats = rows.filter((row) => row.pinnedAt == null);
+  const list = (items: SessionRow[]) => <ul className="m-0 list-none space-y-0.5 p-0">{items.map((row) => <li key={row.id}>{renderRow(row)}</li>)}</ul>;
+  return <SidebarSection title={name} open={open} onToggle={() => setOpen(!open)} labelCls={labelCls}>
+    <div className="pl-2">
+      {enabled ? <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label={t("sidebar.newTenantChat", { name })} className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg-muted hover:bg-surface-hover hover:text-fg">
+            <PlusIcon className="size-3.5" /><span className={labelCls}>{t("sidebar.newChat")}</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">
+          {choices.map(({ target, offline }) => <DropdownMenuItem key={`${target.environmentId}:${target.agentId}`} disabled={offline} onSelect={() => {
+            const id = sessionStore.newDraft(); sessionStore.setExecutionTarget(id, target); void navigate({ to: "/" });
+          }}>
+            <div className="min-w-0 text-xs"><div className="truncate">{target.runtimeName} · {target.environmentName}</div><div className="text-fg-subtle">{target.agentName}{offline ? ` · ${t("openma.offline")}` : ""}</div></div>
+          </DropdownMenuItem>)}
+          {!choices.length && <div role="status" className="px-2 py-2 text-xs text-fg-muted">{t(catalog.isFetching ? "openma.loadingLocations" : catalog.error ? "openma.locationsUnavailable" : "openma.noLocations")}</div>}
+          {catalog.error && <DropdownMenuItem onSelect={(event) => { event.preventDefault(); void catalog.refetch(); }}>{t("sidebar.retryTenant")}</DropdownMenuItem>}
+        </DropdownMenuContent>
+      </DropdownMenu> : <button type="button" className="px-2 py-2 text-xs text-fg-muted" onClick={() => void navigate({ to: "/settings/openma" })}>{t("openma.signIn")}</button>}
+      {pinned.length > 0 && <><div className="px-2 py-1 text-xs text-fg-subtle">{t("sidebar.pinned")}</div>{list(pinned)}</>}
+      {list(chats)}
+      {enabled && tasks.error && <button type="button" onClick={() => void tasks.refetch()} className="px-2 py-2 text-left text-xs text-fg-muted">{t("sidebar.tenantLoadFailed")}</button>}
+      {enabled && !tasks.error && !rows.length && <p role="status" className="m-0 px-2 py-2 text-xs text-fg-subtle">{t(tasks.isPending ? "sidebar.loadingTenant" : "sidebar.emptyTenant")}</p>}
+    </div>
+  </SidebarSection>;
 }
 
 function SidebarSection({
@@ -1064,7 +1128,7 @@ function SessionRow({
                       </DropdownMenuItem>
                       <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
                       <DropdownMenuItem
-                        onSelect={() => (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id))}
+                        onSelect={() => { void (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id)).catch((error) => toast.error(String(error))); }}
                         className="flex items-center gap-2 py-1 text-xs"
                       >
                         {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
@@ -1099,7 +1163,7 @@ function SessionRow({
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-border/60" />
           <ContextMenu.Item
-            onSelect={() => (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id))}
+            onSelect={() => { void (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id)).catch((error) => toast.error(String(error))); }}
             className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}

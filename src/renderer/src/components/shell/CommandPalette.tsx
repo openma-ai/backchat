@@ -1,3 +1,4 @@
+import { openmaWorkspaceScope } from "@shared/openma";
 /**
  * Global Cmd+K palette — Recent / Actions / Navigate / Search (taste-saas
  * four-section recipe). Mounted once in ShellLayout. Dual key binding:
@@ -33,6 +34,8 @@ import {
 } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
 import type { SearchHitInfo } from "@shared/api.js";
+import type { OpenmaTask } from "@shared/openma";
+import { useOpenmaAccount } from "@/lib/openma-account";
 
 /** Lives in localStorage; ring of last opened session ids, MRU. */
 const RECENT_KEY = "openma:recent-sessions";
@@ -59,7 +62,9 @@ export function CommandPalette() {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SearchHitInfo[]>([]);
+  const [hits, setHits] = useState<Array<SearchHitInfo & { openma?: OpenmaTask }>>([]);
+  const { data: account } = useOpenmaAccount();
+  const scope = account?.user && account.status !== "signing_in" ? JSON.stringify(account.workspaces.filter((w) => !w.expired).map((w) => JSON.stringify(Object.values(openmaWorkspaceScope(account, w.id))))) : null;
   const sessions = useSessionStore(selectSessions);
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
@@ -99,18 +104,26 @@ export function CommandPalette() {
   // Debounced server-side search. Only fires for ≥2 chars to keep the
   // FTS lookups cheap and the results meaningful.
   useEffect(() => {
+    let active = true;
+    setHits([]);
     if (query.trim().length < 2) {
       setHits([]);
       return;
     }
     const handle = setTimeout(() => {
-      void window.backchat
-        .sessionsSearch(query, 12)
-        .then((r) => setHits(r))
-        .catch(() => setHits([]));
+      void Promise.all([
+        window.backchat.sessionsSearch(query, 12).catch(() => []),
+        scope ? window.backchat.openmaTasksSearch(query, 12).catch(() => []) : Promise.resolve([]),
+      ]).then(([local, remote]) => {
+        if (!active) return;
+        const scoped = remote.filter((hit) => (JSON.parse(scope ?? "[]") as string[]).includes(JSON.stringify([hit.task.baseUrl, hit.task.userId, hit.task.workspaceId])));
+        setHits([...local, ...scoped.map((hit) => ({ session_id: hit.task.id, session_title: hit.task.title,
+          agent_id: hit.task.target.agentId, seq: hit.seq, type: hit.type, ts: hit.ts, snippet: hit.snippet, openma: hit.task,
+        }))].sort((a, b) => b.ts - a.ts).slice(0, 12));
+      });
     }, 120);
-    return () => clearTimeout(handle);
-  }, [query]);
+    return () => { active = false; clearTimeout(handle); };
+  }, [query, scope]);
 
   // Reset query on close. Reopens always start blank — there's no
   // "last query" use case worth preserving and a stale one would be
@@ -133,6 +146,11 @@ export function CommandPalette() {
     .slice(0, 5);
 
   const goSession = (id: string) => {
+    const remote = hits.find((hit) => hit.session_id === id)?.openma;
+    if (remote) {
+      if (!(JSON.parse(scope ?? "[]") as string[]).includes(JSON.stringify([remote.baseUrl, remote.userId, remote.workspaceId]))) return;
+      sessionStore.seedOpenmaTasks([remote]);
+    }
     sessionStore.setActive(id);
     pushRecent(id);
     void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
@@ -227,12 +245,13 @@ export function CommandPalette() {
                       <div className="truncate text-fg">
                         {h.session_title || h.session_id.slice(0, 12)}
                       </div>
+                      {h.openma && <div className="truncate text-[11px] text-fg-subtle">{h.openma.target.runtimeName} · {h.openma.target.environmentName}</div>}
                       <div className="truncate text-[11px] text-fg-muted">
                         <Snippet text={h.snippet} />
                       </div>
                     </div>
                     <span className="shrink-0 font-mono text-[11px] uppercase text-fg-subtle">
-                      {h.type === "user_prompt" ? "you" : "agent"}
+                      {h.type === "title" ? "title" : h.type === "user_prompt" || h.type === "user.message" ? "you" : "agent"}
                     </span>
                   </Command.Item>
                 ))}

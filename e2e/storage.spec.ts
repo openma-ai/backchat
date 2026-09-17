@@ -48,6 +48,60 @@ test.describe("user-visible storage persistence", () => {
     }
   });
 
+  test("restores each session composer draft after switching and reloading", async () => {
+    const first = await launchAppWithHome(await test.info().outputPath("home"));
+    try {
+      const sessionA = "drafta-session";
+      const sessionB = "draftb-session";
+      const sessionATitle = "Draft session A";
+      const sessionBTitle = "Draft session B";
+      await persistSessionFixture(first.page, {
+        sessionId: sessionA,
+        agentId: "codex-acp",
+        cwd: "/tmp/backchat-test",
+        acpSessionId: "",
+        title: sessionATitle,
+        events: [],
+      });
+      await persistSessionFixture(first.page, {
+        sessionId: sessionB,
+        agentId: "codex-acp",
+        cwd: "/tmp/backchat-test",
+        acpSessionId: "",
+        title: sessionBTitle,
+        events: [],
+      });
+      await reloadRenderer(first.page);
+      await openPersistedSession(first.page, sessionATitle, "backchat-test");
+      const composer = first.page
+        .locator('[data-chat-surface="main"] textarea')
+        .last();
+      await composer.fill("draft for session A");
+
+      await first.page
+        .getByRole("button", { name: sessionBTitle, exact: true })
+        .click();
+      await expect(composer).toHaveValue("");
+      await composer.fill("draft for session B");
+
+      await first.page
+        .getByRole("button", { name: sessionATitle, exact: true })
+        .click();
+      await expect(composer).toHaveValue("draft for session A");
+
+      await reloadRenderer(first.page);
+      await openPersistedSession(first.page, sessionATitle, "backchat-test");
+      await expect(composer).toHaveValue("draft for session A");
+
+      await first.page
+        .getByRole("button", { name: sessionBTitle, exact: true })
+        .click();
+      await expect(composer).toHaveValue("draft for session B");
+    } finally {
+      await first.cleanup();
+    }
+  });
+
   test("replays a completed conversation after relaunch", async () => {
     const home = await test.info().outputPath("home");
     const sessionId = "e2e-persist";

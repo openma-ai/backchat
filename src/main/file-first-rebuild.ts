@@ -21,6 +21,7 @@ interface SessionMetaFile {
   archivedAt: number | null;
   pinnedAt: number | null;
   pairId: string | null;
+  additionalDirectories: string[] | null;
   metadataPath: string;
   transcriptPath: string;
 }
@@ -69,18 +70,20 @@ export function rebuildSessionIndexFromTranscriptFiles(
   `);
   const sessionExists = db.prepare(`SELECT 1 AS ok FROM sessions WHERE id = ? LIMIT 1`);
   const eventCount = db.prepare(`SELECT COUNT(*) AS count FROM events WHERE session_id = ?`);
-  const insertSession = db.prepare(`
+  const sessionColumns = new Set(
+    (db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>)
+      .map((column) => column.name),
+  );
+  const supportsWorkspaceRoots = sessionColumns.has("additional_directories_json");
+  const insertSession = db.prepare(supportsWorkspaceRoots ? `
     INSERT OR IGNORE INTO sessions (
-      id,
-      agent_id,
-      cwd,
-      acp_session_id,
-      title,
-      last_used_at,
-      created_at,
-      archived_at,
-      pinned_at,
-      pair_id
+      id, agent_id, cwd, acp_session_id, title, last_used_at, created_at,
+      archived_at, pinned_at, pair_id, additional_directories_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ` : `
+    INSERT OR IGNORE INTO sessions (
+      id, agent_id, cwd, acp_session_id, title, last_used_at, created_at,
+      archived_at, pinned_at, pair_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertEvent = db.prepare(`
@@ -112,7 +115,7 @@ export function rebuildSessionIndexFromTranscriptFiles(
     for (const meta of metas) {
       const alreadyHadSession =
         (sessionExists.get(meta.sessionId) as { ok: number } | undefined)?.ok === 1;
-      insertSession.run(
+      const sessionValues = [
         meta.sessionId,
         meta.agentId,
         meta.cwd,
@@ -123,7 +126,17 @@ export function rebuildSessionIndexFromTranscriptFiles(
         meta.archivedAt,
         meta.pinnedAt,
         meta.pairId,
-      );
+      ];
+      insertSession.run(...(
+        supportsWorkspaceRoots
+          ? [
+              ...sessionValues,
+              meta.additionalDirectories === null
+                ? null
+                : JSON.stringify(meta.additionalDirectories),
+            ]
+          : sessionValues
+      ));
       if (!alreadyHadSession) sessionsImported += 1;
 
       const existingEvents = eventCount.get(meta.sessionId) as { count: number };
@@ -217,9 +230,22 @@ function readSessionMeta(
     archivedAt: null,
     pinnedAt: null,
     pairId: stringField(raw, "pair_id") || null,
+    additionalDirectories: stringArrayField(raw, "additional_directories"),
     metadataPath,
     transcriptPath,
   };
+}
+
+function stringArrayField(
+  raw: Record<string, unknown>,
+  key: string,
+): string[] | null {
+  const value = raw[key];
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    return null;
+  }
+  return value;
 }
 
 function readPairMeta(

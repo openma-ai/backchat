@@ -56,10 +56,34 @@ export interface PersistedSession {
   pinned_at: number | null;
   /** Durable project container. Null for standalone and legacy cwd-only chats. */
   project_id: string | null;
+  /** Effective ACP secondary roots captured for this session. Null means a
+   * pre-migration row whose roots may still be reconstructed from its project. */
+  additional_directories: string[] | null;
   /** When this session is a sub-member of a pair-chat, the wrapper pair
    *  row's id. Sidebar lists hide rows with `pair_id != null` and shows
    *  the pair row instead. */
   pair_id: string | null;
+}
+
+type PersistedSessionRow = Omit<PersistedSession, "additional_directories"> & {
+  additional_directories_json: string | null;
+};
+
+function decodeSessionRow(row: PersistedSessionRow): PersistedSession {
+  let additionalDirectories: string[] | null = null;
+  if (row.additional_directories_json !== null) {
+    try {
+      const parsed = JSON.parse(row.additional_directories_json) as unknown;
+      if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) {
+        additionalDirectories = parsed;
+      }
+    } catch {
+      // A malformed value is treated like a pre-migration row so callers can
+      // use their legacy project fallback instead of crashing the sidebar.
+    }
+  }
+  const { additional_directories_json: _json, ...session } = row;
+  return { ...session, additional_directories: additionalDirectories };
 }
 
 export interface PersistedPairSession {
@@ -162,7 +186,8 @@ export function openSessionDb(path: string): void {
       archived_at   INTEGER,
       pinned_at     INTEGER,
       pair_id       TEXT,
-      project_id    TEXT
+      project_id    TEXT,
+      additional_directories_json TEXT
     );
     CREATE INDEX IF NOT EXISTS sessions_last_used_idx
       ON sessions(archived_at, last_used_at DESC);
@@ -305,6 +330,9 @@ export function openSessionDb(path: string): void {
   if (!sessionCols.has("title_manually_set")) {
     db.exec(`ALTER TABLE sessions ADD COLUMN title_manually_set INTEGER NOT NULL DEFAULT 0`);
   }
+  if (!sessionCols.has("additional_directories_json")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN additional_directories_json TEXT`);
+  }
   db.exec(`
     CREATE INDEX IF NOT EXISTS sessions_pinned_idx
       ON sessions(archived_at, pinned_at DESC);
@@ -321,9 +349,9 @@ export function openSessionDb(path: string): void {
     upsert: db.prepare(`
       INSERT INTO sessions (
         id, agent_id, cwd, acp_session_id, title, last_used_at, created_at,
-        pair_id, project_id
+        pair_id, project_id, additional_directories_json
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         agent_id       = excluded.agent_id,
         cwd            = excluded.cwd,
@@ -336,7 +364,11 @@ export function openSessionDb(path: string): void {
                               ELSE sessions.title END,
         last_used_at   = excluded.last_used_at,
         pair_id        = COALESCE(excluded.pair_id, sessions.pair_id),
-        project_id     = COALESCE(excluded.project_id, sessions.project_id)
+        project_id     = COALESCE(excluded.project_id, sessions.project_id),
+        additional_directories_json = COALESCE(
+          excluded.additional_directories_json,
+          sessions.additional_directories_json
+        )
     `),
     touch: db.prepare(`UPDATE sessions SET last_used_at = ? WHERE id = ?`),
     setTitle: db.prepare(
@@ -596,8 +628,14 @@ export function upsertSession(row: {
    *  sidebar; reached only via the parent pair's grid view. */
   pair_id?: string | null;
   project_id?: string | null;
+  /** Effective roots, excluding cwd. Omitted preserves a previous value;
+   * an explicit empty array records a deliberately single-root workspace. */
+  additional_directories?: string[];
 }): void {
   const now = Date.now();
+  const additionalDirectoriesJson = row.additional_directories === undefined
+    ? null
+    : JSON.stringify([...new Set(row.additional_directories)]);
   stmts().upsert.run(
     row.id,
     row.agent_id,
@@ -608,6 +646,7 @@ export function upsertSession(row: {
     now,
     row.pair_id ?? null,
     row.project_id ?? null,
+    additionalDirectoriesJson,
   );
   writeSessionMetadata(row.id);
 }
@@ -618,7 +657,8 @@ export function touchSession(id: string): void {
 }
 
 export function getSession(id: string): PersistedSession | null {
-  return (stmts().getSession.get(id) as unknown as PersistedSession | undefined) ?? null;
+  const row = stmts().getSession.get(id) as unknown as PersistedSessionRow | undefined;
+  return row ? decodeSessionRow(row) : null;
 }
 
 export function setSessionTitle(id: string, title: string): void {
@@ -639,7 +679,7 @@ export function renameSession(id: string, title: string): void {
  *  title is empty. Lets the first user prompt seed a sensible label
  *  without overwriting whatever the user may have later renamed it to. */
 export function setSessionTitleIfEmpty(id: string, title: string): void {
-  const row = stmts().getSession.get(id) as PersistedSession | undefined;
+  const row = stmts().getSession.get(id) as unknown as PersistedSessionRow | undefined;
   if (!row || row.title) return;
   stmts().setTitle.run(title, id);
   writeSessionMetadata(id);
@@ -659,7 +699,8 @@ export function unarchiveSession(id: string): void {
  *  Settings → Archive page so the user can browse and either restore
  *  or hard-delete. */
 export function listArchivedSessions(): PersistedSession[] {
-  return stmts().listArchived.all() as unknown as PersistedSession[];
+  return (stmts().listArchived.all() as unknown as PersistedSessionRow[])
+    .map(decodeSessionRow);
 }
 
 /** Hard-delete a session row. The events FK cascade handles per-
@@ -683,13 +724,15 @@ export function unpinSession(id: string): void {
 }
 
 export function listSessions(limit = 200): PersistedSession[] {
-  return stmts().list.all(limit) as unknown as PersistedSession[];
+  return (stmts().list.all(limit) as unknown as PersistedSessionRow[])
+    .map(decodeSessionRow);
 }
 
 /** All non-archived sessions ordered for the Sidebar (Pinned first,
  *  then Chats by recency). */
 export function listSessionsForSidebar(): PersistedSession[] {
-  return stmts().listForSidebar.all() as unknown as PersistedSession[];
+  return (stmts().listForSidebar.all() as unknown as PersistedSessionRow[])
+    .map(decodeSessionRow);
 }
 
 // -------------------- task side workspaces --------------------
@@ -838,7 +881,8 @@ export function getPairSession(id: string): PersistedPairSession | null {
  *  the grid uses (codex column then claude column, deterministic across
  *  reload). */
 export function listPairMembers(pair_id: string): PersistedSession[] {
-  return stmts().listPairMembers.all(pair_id) as unknown as PersistedSession[];
+  return (stmts().listPairMembers.all(pair_id) as unknown as PersistedSessionRow[])
+    .map(decodeSessionRow);
 }
 
 export interface PersistedPairGroup extends PersistedPairSession {
@@ -1012,7 +1056,9 @@ function writeTranscriptEvent(
 ): void {
   const root = _storageRoot;
   if (!root) throw new Error("session-store: storage root unavailable");
-  const session = stmts().getSession.get(sessionId) as PersistedSession | undefined;
+  const session = stmts().getSession.get(sessionId) as unknown as
+    | PersistedSessionRow
+    | undefined;
   if (!session) throw new Error(`session-store: missing session ${sessionId}`);
 
   const dir = join(root, "transcripts", ...dateParts(session.created_at));
@@ -1142,8 +1188,11 @@ function encodeJsonString(value: string): Buffer {
 function writeSessionMetadata(sessionId: string): void {
   const root = _storageRoot;
   if (!root) throw new Error("session-store: storage root unavailable");
-  const session = stmts().getSession.get(sessionId) as PersistedSession | undefined;
-  if (!session) return;
+  const row = stmts().getSession.get(sessionId) as unknown as
+    | PersistedSessionRow
+    | undefined;
+  if (!row) return;
+  const session = decodeSessionRow(row);
 
   const dir = join(root, "transcripts", ...dateParts(session.created_at));
   mkdirSync(dir, { recursive: true });
@@ -1161,6 +1210,9 @@ function writeSessionMetadata(sessionId: string): void {
       pair_id: session.pair_id ?? "",
       project_id: session.project_id ?? "",
       workdir: session.cwd,
+      ...(session.additional_directories !== null
+        ? { additional_directories: session.additional_directories }
+        : {}),
     }) + "\n",
     "utf-8",
   );
@@ -1169,7 +1221,9 @@ function writeSessionMetadata(sessionId: string): void {
 function deleteSessionSourceFiles(sessionId: string): void {
   const root = _storageRoot;
   if (!root) throw new Error("session-store: storage root unavailable");
-  const session = stmts().getSession.get(sessionId) as PersistedSession | undefined;
+  const session = stmts().getSession.get(sessionId) as unknown as
+    | PersistedSessionRow
+    | undefined;
   if (!session) return;
 
   const dir = join(root, "transcripts", ...dateParts(session.created_at));

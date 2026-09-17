@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { createComposerDraftStore } from "@openma/common/chat-ui";
 import { toast } from "sonner";
 import type {
   PromptAnnotation,
@@ -73,7 +74,19 @@ import {
 import { ComposerSessionMentionMenu } from "./ComposerSessionMentionMenu";
 import { ComposerBrokerAsk } from "./ComposerAskPanel";
 
-const composerTextBySession = new Map<string, string>();
+function composerDraftStorage(): Storage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+const composerTextBySession = createComposerDraftStore({
+  namespace: "backchat.composer",
+  storage: composerDraftStorage(),
+});
+
 /** Armed commands outlive their Composer instance. Submitting from a draft
  *  navigates to the new session, which remounts this component — component
  *  state would drop the chip exactly when the round trip needs it held. The
@@ -84,7 +97,7 @@ const DRAFT_ARMED_HANDOFF = "draft:armed-handoff";
 export function Composer({
   sessionId,
   sessionAgentId,
-  agentPickerLabel,
+  agentPickerLabel: providedAgentPickerLabel,
   agentPickerAgentIds,
   disabled,
   running,
@@ -155,17 +168,17 @@ export function Composer({
   const { t } = useI18n();
   const composerTextKey = sessionId ?? "draft:pending";
   const [text, setTextState] = useState(
-    () => composerTextBySession.get(composerTextKey) ?? "",
+    () => composerTextBySession.read(composerTextKey),
   );
   const setText: typeof setTextState = (next) => {
     setTextState((current) => {
       const resolved = typeof next === "function" ? next(current) : next;
-      composerTextBySession.set(composerTextKey, resolved);
+      composerTextBySession.write(composerTextKey, resolved);
       return resolved;
     });
   };
   useEffect(() => {
-    setTextState(composerTextBySession.get(composerTextKey) ?? "");
+    setTextState(composerTextBySession.read(composerTextKey));
   }, [composerTextKey]);
   const [caret, setCaret] = useState(0);
   const [dismissedMentionText, setDismissedMentionText] = useState<string | null>(null);
@@ -181,6 +194,11 @@ export function Composer({
   const skillChipRef = useRef<HTMLSpanElement>(null);
   const [skillIndent, setSkillIndent] = useState(0);
   const persistedSessions = useSessionStore(selectSessions);
+  const composerSessionSelector = useMemo(() => (store: typeof sessionStore) => sessionId ? store.get(sessionId) : store.active(), [sessionId]);
+  const composerSession = useSessionStore(composerSessionSelector);
+  const remoteTarget = composerSession?.executionTarget;
+  const isRemote = !!remoteTarget;
+  const agentPickerLabel = remoteTarget?.agentName ?? providedAgentPickerLabel;
   const supportsSteering = sessionId
     ? persistedSessions.find((session) => session.id === sessionId)?.supportsSteering
     : false;
@@ -197,7 +215,7 @@ export function Composer({
     [caret, text],
   );
   useEffect(() => {
-    if (!mentionMatch || dismissedMentionText === text || !attachmentDefaultPath) {
+    if (isRemote || !mentionMatch || dismissedMentionText === text || !attachmentDefaultPath) {
       setFileMentionCandidates([]);
       return;
     }
@@ -221,9 +239,9 @@ export function Composer({
     return () => {
       cancelled = true;
     };
-  }, [attachmentDefaultPath, dismissedMentionText, mentionMatch?.end, mentionMatch?.query, mentionMatch?.start, text]);
+  }, [isRemote, attachmentDefaultPath, dismissedMentionText, mentionMatch?.end, mentionMatch?.query, mentionMatch?.start, text]);
   const visibleMentionCandidates = useMemo(
-    (): ComposerMentionCandidate[] => mentionMatch && dismissedMentionText !== text
+    (): ComposerMentionCandidate[] => !isRemote && mentionMatch && dismissedMentionText !== text
       ? [
           ...[
             ...filterSessionMentionCandidates(
@@ -236,7 +254,7 @@ export function Composer({
           createBrowseFileMentionCandidate(),
         ]
       : [],
-    [dismissedMentionText, fileMentionCandidates, mentionCandidates, mentionMatch, sessionId, text],
+    [isRemote, dismissedMentionText, fileMentionCandidates, mentionCandidates, mentionMatch, sessionId, text],
   );
   const showMentionPicker = visibleMentionCandidates.length > 0;
   const {
@@ -252,7 +270,7 @@ export function Composer({
     removeLastAttachment,
   } = useComposerContextState({
     sessionId,
-    disabled,
+    disabled: disabled || isRemote,
     attachmentDefaultPath,
     textareaRef: taRef,
   });
@@ -260,15 +278,15 @@ export function Composer({
   const {
     enabledAgents,
     agentLocked,
-    currentAgentId,
+    currentAgentId: localAgentId,
     currentAgent,
     currentEnabledAgent,
-    hasHarnessSetup,
+    hasHarnessSetup: localHarnessSetup,
     draftConfigValues,
-    effectiveAvailableCommands,
-    effectiveConfigOptions,
-    primaryIntent,
-    primaryRunningAction,
+    effectiveAvailableCommands: localCommands,
+    effectiveConfigOptions: localConfigOptions,
+    primaryIntent: localIntent,
+    primaryRunningAction: localRunningAction,
     rememberCurrentRun,
     resetCurrentRunToDefaults,
     resetDraftConfigValues,
@@ -284,8 +302,14 @@ export function Composer({
     supportsSteering,
     promptQueueEnabled,
   });
+  const currentAgentId = remoteTarget?.agentId ?? localAgentId;
+  const hasHarnessSetup = isRemote || localHarnessSetup;
+  const effectiveAvailableCommands = isRemote ? [] : localCommands;
+  const effectiveConfigOptions = isRemote ? [] : localConfigOptions;
+  const primaryIntent = isRemote ? "submit" : localIntent;
+  const primaryRunningAction = isRemote ? (running ? describeRunningMessageAction({ agentId: "openma-remote", intent: "submit" }) : null) : localRunningAction;
   const queryClient = useQueryClient();
-  const authNeeded = composerAuthNeeded(currentAgent, {
+  const authNeeded = !isRemote && composerAuthNeeded(currentAgent, {
     authRequired: sessionAuthRequired,
     auth: sessionAuth,
   });
@@ -610,7 +634,7 @@ export function Composer({
       currentEnabledAgent?.id,
       annotations,
     );
-    rememberCurrentRun();
+    if (!isRemote) rememberCurrentRun();
     if (sessionId) promptAnnotationStore.clear(sessionId);
     setText("");
     clearDismissal();
@@ -734,7 +758,7 @@ export function Composer({
     // A bare session-state command (`/plan`) is a config switch even when
     // the picker was dismissed or never opened — it must not leave the app
     // as a prompt.
-    if (bare) {
+    if (bare && !isRemote) {
       const stateCommand =
         composerAvailableCommands.find(
           (command) =>
@@ -791,7 +815,7 @@ export function Composer({
       annotations,
       sessionReferences,
     );
-    rememberCurrentRun();
+    if (!isRemote) rememberCurrentRun();
     if (armedCommand) {
       armedSentRef.current = true;
       // A draft submit lands on a new session id, so leave the chip where the
@@ -1061,7 +1085,7 @@ export function Composer({
             The negative margin keeps the row where it was while the padding
             gives the clip box room for the ring. */}
         <div className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden p-1">
-          <button
+          {!isRemote && <button
             type="button"
             aria-label={t("chat.attachFiles")}
             title={t("chat.attachFiles")}
@@ -1075,7 +1099,7 @@ export function Composer({
             )}
           >
             <PlusIcon className="size-[var(--composer-attachment-icon-size)]" />
-          </button>
+          </button>}
           <PermissionModeChip
             disabled={!!running}
             agentId={currentAgentId}

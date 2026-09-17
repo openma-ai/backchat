@@ -1,11 +1,18 @@
-import { app, BrowserWindow, dialog, nativeImage, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, nativeImage, net, protocol, shell, powerSaveBlocker, powerMonitor } from "electron";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { registerIpc } from "./ipc.js";
+import { registerOpenmaIpc, registerOpenmaRunnerIpc, registerOpenmaProjectIpc, registerOpenmaTaskIpc } from "./openma-ipc.js";
+import { QuitCoordinator } from "./quit-coordinator.js";
+import { DesktopPowerManagement } from "./power-management.js";
+import { OpenmaTasks } from "./openma-tasks.js";
+import { OpenmaRunner } from "./openma-runner.js";
+import { OpenmaProjectEnvironments } from "./openma-project-environments.js";
+import { OpenmaProjectService } from "./openma-project-service.js";
 import { setSessionRoot } from "./session-cwd.js";
 import { settingsStore } from "./settings-store.js";
-import { openSessionDb } from "./sql-store.js";
+import { getProject, openSessionDb } from "./sql-store.js";
 import { installAppMenu, sendToFocused } from "./menu.js";
 import { disposeAllUiTerminals } from "./ui-terminal-broker.js";
 import { openmaRoot } from "./storage-root.js";
@@ -15,10 +22,6 @@ import { browserHarnessMcpBridge } from "./browser-view-broker.js";
 import { resolveSandboxResource } from "./mcp-app-document-store.js";
 import { resolveAllowedLocalFilePath } from "./local-file-protocol.js";
 import { detectAll } from "@open-managed-agents-desktop/acp/registry";
-import {
-  OmaBridgeClient,
-  readOmaBridgeCredentials,
-} from "./oma-bridge.js";
 import { desktopCliPath } from "./cli-path.js";
 import {
   provisionBundledNodeRuntime,
@@ -56,8 +59,8 @@ const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
 const showE2eWindow = process.env["BACKCHAT_E2E_VISIBLE"] === "1";
 const pendingDeepLinks: BackchatDeepLink[] = [];
 let disposeSessionsForShutdown: (() => Promise<void>) | null = null;
-let shutdownBarrierStarted = false;
-let omaBridge: OmaBridgeClient | null = null;
+let hasLocalProcesses = () => false;
+let openmaRunner: OpenmaRunner | null = null;
 
 function registerBackchatProtocolClient(): void {
   if (testHooksEnabled) return;
@@ -438,7 +441,17 @@ if (!gotLock) {
     });
     setSessionRoot(join(root, "sessions"));
     openSessionDb(join(root, "sessions.db"));
+    const openmaAccount = await registerOpenmaIpc(join(root, "backchat", "openma"));
+    const projectEnvironments = new OpenmaProjectEnvironments(join(root, "backchat", "openma", "projects.db"), getProject);
     await browserHarnessMcpBridge.start();
+    let resumeTaskObservers = () => {};
+    let localSessionExists = (_id: string) => true;
+    const powerManagement = new DesktopPowerManagement({
+      blocker: powerSaveBlocker, monitor: powerMonitor,
+      sessionExists: (id) => localSessionExists(id),
+      onError: (error) => logAppEvent("power.assertion_failed", { message: String(error) }),
+      onResume: () => { openmaRunner?.resume(); resumeTaskObservers(); },
+    });
     const ipcRuntime = await registerIpc({
       registryCachePath: join(root, "registry-cache.json"),
       probeCachePath: join(root, "agent-probe-cache.json"),
@@ -448,27 +461,57 @@ if (!gotLock) {
       scheduleDbPath: join(root, "schedules.db"),
       browserMcpServerForTask: (taskId) =>
         browserHarnessMcpBridge.descriptor(taskId),
-      sessionEventSink: (event) => omaBridge?.handleSessionEvent(event),
+      sessionActivitySink: (event) => powerManagement.handleSessionEvent(event),
+      sessionEventSink: (event) => openmaRunner?.handleSessionEvent(event),
+      isRunnerSession: (id) => projectEnvironments.runnerSession(id) !== null,
+      requestRunnerPermission: (id, params) => openmaRunner?.requestPermission(id, params) ?? Promise.resolve({ outcome: { outcome: "cancelled" } }),
+      cancelRunnerPending: (id) => openmaRunner?.cancelPendingFor(id),
     });
-    const bridgeCredentials = await readOmaBridgeCredentials();
-    if (bridgeCredentials) {
-      omaBridge = new OmaBridgeClient({
-        credentials: bridgeCredentials,
-        host: ipcRuntime.sessionManager,
-        version: `backchat/${app.getVersion()}`,
-        detectAgents: async () => (await detectAll({
-          managedBinDirs: [acpBinDir],
-        })).map((agent) => ({
-          id: agent.id,
-          binary: agent.spec.command,
-        })),
-      });
-      await omaBridge.connect();
-    }
+    localSessionExists = (id) => ipcRuntime.sessionManager.has(id);
+    hasLocalProcesses = () => ipcRuntime.sessionManager.hasLocalProcesses();
+    const runnerProfile = (process.env.OMA_PROFILE ?? "").trim();
+    if (runnerProfile && !/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(runnerProfile)) throw new Error("Invalid OMA_PROFILE");
+    openmaRunner = new OpenmaRunner({
+      directory: join(root, "backchat", "openma"),
+      bridgeDirectory: join(root, `bridge${runnerProfile ? `-${runnerProfile}` : ""}`),
+      connection: () => openmaAccount.connection(),
+      host: ipcRuntime.sessionManager,
+      resolveProject: (scope, runtimeId, environmentId, sessionId, agentId) => projectEnvironments.resolveRunnerSession(scope, runtimeId, environmentId, sessionId, agentId),
+      version: `backchat/${app.getVersion()}`,
+      openExternal: (url) => shell.openExternal(url),
+      detectAgents: async () => (await detectAll({ managedBinDirs: [acpBinDir] })).map((agent) => ({ id: agent.id, binary: agent.spec.command })),
+      onChange: (state) => {
+        powerManagement.setRunner(state);
+        for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(PushChannel.OpenmaRunner, state);
+      },
+    });
+    const stopOpenmaAccountListener = registerOpenmaRunnerIpc(openmaAccount, openmaRunner);
+    const openmaProjects = new OpenmaProjectService({
+      account: openmaAccount, bindings: projectEnvironments, project: getProject,
+      runner: () => openmaRunner!.state(),
+    });
+    registerOpenmaProjectIpc(openmaAccount, openmaProjects);
+    const openmaTasks = new OpenmaTasks({
+      directory: join(root, "backchat", "openma"), account: openmaAccount,
+      catalog: (scope) => openmaProjects.catalog(scope),
+      onSnapshot: (snapshot) => {
+        for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(PushChannel.OpenmaTask, snapshot);
+      },
+      onTaskUpdated: (task) => {
+        for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(PushChannel.OpenmaTaskUpdated, task);
+      },
+    });
+    resumeTaskObservers = () => openmaTasks.resume();
+    registerOpenmaTaskIpc(openmaTasks);
+    await openmaRunner.restore();
     disposeSessionsForShutdown = async () => {
-      omaBridge?.stop();
-      omaBridge = null;
-      await ipcRuntime.dispose();
+      openmaAccount.cancelLogin();
+      openmaTasks.close();
+      stopOpenmaAccountListener();
+      openmaRunner?.stop();
+      openmaRunner = null;
+      try { await ipcRuntime.dispose(); } finally { powerManagement.dispose(); }
+      projectEnvironments.close();
     };
 
     installAppMenu({
@@ -488,23 +531,38 @@ if (!gotLock) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.env["BACKCHAT_TEST_HOOKS"] === "1" || process.platform !== "darwin") app.quit();
+  // A window owns client subscriptions, not the opt-in execution host. Keep
+  // that host alive on every platform; explicit Quit still runs the shutdown
+  // barrier below. Without a runner, retain the platform's local-app behavior.
+  if (process.platform !== "darwin" && openmaRunner?.state().hosting !== "backchat") app.quit();
 });
 
-// Kill any live pty children before electron tears down. Without this,
-// orphaned shells linger as zombie processes (visible in `ps aux` until
-// reboot on macOS / until next user logout on Linux).
+const quitCoordinator = new QuitCoordinator({
+  needsConfirmation: () => hasLocalProcesses() || openmaRunner?.state().hosting === "backchat",
+  confirm: async () => {
+    const language = settingsStore.get().appearance.language;
+    const zh = language === "zh-CN" || (language === "system" && app.getLocale().startsWith("zh"));
+    const result = await dialog.showMessageBox({
+      type: "warning",
+      title: zh ? "退出 Backchat？" : "Quit Backchat?",
+      message: zh ? "退出会终止 Backchat 正在本机执行的任务。" : "Quitting will terminate tasks running locally in Backchat.",
+      detail: zh
+        ? "Backchat 托管的本机 Runner 和 Agent 进程将停止，正在执行的任务不会交接。独立 daemon 和云端任务不受影响。"
+        : "Backchat's local runner and agent processes will stop. Running tasks will not be handed off. Independent daemons and cloud tasks are unaffected.",
+      buttons: zh ? ["继续运行", "终止任务并退出"] : ["Keep running", "Stop tasks and quit"],
+      defaultId: 0, cancelId: 0, noLink: true,
+    });
+    return result.response === 1;
+  },
+  dispose: async () => {
+    disposeAllUiTerminals();
+    await Promise.allSettled([
+      disposeSessionsForShutdown?.(), browserHarnessMcpBridge.stop(),
+    ]);
+  },
+  quit: () => app.quit(),
+});
+
 app.on("before-quit", (event) => {
-  disposeAllUiTerminals();
-  if (!disposeSessionsForShutdown) {
-    void browserHarnessMcpBridge.stop();
-    return;
-  }
-  if (shutdownBarrierStarted) return;
-  event.preventDefault();
-  shutdownBarrierStarted = true;
-  void Promise.allSettled([
-    disposeSessionsForShutdown(),
-    browserHarnessMcpBridge.stop(),
-  ]).finally(() => app.quit());
+  if (!quitCoordinator.request()) event.preventDefault();
 });

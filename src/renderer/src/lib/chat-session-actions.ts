@@ -104,6 +104,7 @@ export function useChatSessionActions({
     configId: string,
     value: string | boolean,
   ) => {
+    if (active?.openma) return;
     const sessionId = resolveChatConfigSessionId(active ?? null);
     if (!sessionId) return;
     try {
@@ -127,6 +128,25 @@ export function useChatSessionActions({
   ) => {
     const ask = active?.pendingAsks?.[0];
     if (!active || !ask) return;
+    if (active.openma) {
+      try {
+        if (ask.kind === "permission") {
+          if (ask.openmaResponse === "runtime_permission") {
+            if (optionId !== null && !ask.ask.options.some((option) => option.optionId === optionId)) return;
+            const outcome = optionId === null ? { outcome: "cancelled" } : { outcome: "selected", optionId };
+            await window.backchat.openmaTaskRespond(active.id, ask.ask.requestId, { type: "custom_result", text: JSON.stringify({ outcome }) });
+          } else {
+            if (optionId !== "allow" && optionId !== "deny") return;
+            await window.backchat.openmaTaskRespond(active.id, ask.ask.requestId, { type: "confirmation", result: optionId });
+          }
+        } else if (ask.kind === "elicitation") {
+          const accepted = elicitation?.action === "accept" && "content" in elicitation;
+          await window.backchat.openmaTaskRespond(active.id, ask.ask.requestId, { type: "custom_result", text: accepted ? String(elicitation.content.result ?? "") : "User declined to provide a result", isError: !accepted });
+        }
+        sessionStore.dequeueAsk(active.id, ask.ask.requestId);
+      } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't send the response"); }
+      return;
+    }
     if (ask.kind === "elicitation") {
       await window.backchat.elicitationRespond(
         ask.ask.requestId,
@@ -151,6 +171,7 @@ export function useChatSessionActions({
   };
 
   const cancelActiveTurn = () => {
+    if (active?.openma) { void window.backchat.openmaTaskInterrupt(active.id).catch((error) => toast.error(String(error))); return; }
     const target = resolveChatCancelTarget(
       active ?? null,
       isNativeSubagent,
@@ -158,7 +179,7 @@ export function useChatSessionActions({
     if (target) void window.backchat.sessionCancel(target);
   };
 
-  const askInSideChat = isSide
+  const askInSideChat = isSide || active?.openma
     ? undefined
     : async (annotation: PromptAnnotation) => {
         if (!active) return;

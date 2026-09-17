@@ -14,6 +14,11 @@ import type {
 import type { SubagentAvatarId } from "./subagent-avatar";
 
 export interface SessionRow {
+  /** A draft may choose a target; created OpenMA tasks pin it permanently. */
+  executionTarget?: import("@shared/openma").OpenmaExecutionTarget;
+  openma?: import("@shared/openma").OpenmaTask;
+  remoteConnection?: import("@shared/openma").OpenmaTaskSnapshot["connection"];
+  remoteError?: string;
   id: string;
   agent_id: string;
   cwd: string;
@@ -232,7 +237,7 @@ export interface SessionGoal {
 }
 
 export type BrokerAsk =
-  | { kind: "permission"; ask: import("@shared/api.js").PermissionAskInfo }
+  | { kind: "permission"; ask: import("@shared/api.js").PermissionAskInfo; openmaResponse?: "runtime_permission" }
   | { kind: "elicitation"; ask: import("@shared/api.js").ElicitationAskInfo }
   | { kind: "fsWrite"; ask: import("@shared/api.js").FsWriteAskInfo };
 
@@ -373,6 +378,8 @@ export type StreamDelta =
 export type StreamSubscriber = (d: StreamDelta) => void;
 
 export interface Turn {
+  /** Remount the stream projection when authoritative text corrects a delta. */
+  streamRevision?: number;
   id: string;
   sessionId: string;
   promptText: string;

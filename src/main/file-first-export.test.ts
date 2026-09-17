@@ -70,6 +70,7 @@ describe("exportSessionFiles", () => {
       last_used_at: 1_781_424_100_000,
       pair_id: "",
       workdir: "/tmp/work",
+      additional_directories: ["/tmp/docs", "/tmp/backend"],
       exported_at: 1_781_500_000_000,
     });
     expect(metadata).not.toHaveProperty("archived_at");
@@ -249,7 +250,8 @@ function seedSessionDb(
         created_at INTEGER NOT NULL,
         archived_at INTEGER,
         pinned_at INTEGER,
-        pair_id TEXT
+        pair_id TEXT,
+        additional_directories_json TEXT
       );
       CREATE TABLE events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,9 +277,9 @@ function seedSessionDb(
     db.prepare(`
       INSERT INTO sessions (
         id, agent_id, cwd, acp_session_id, title, last_used_at, created_at,
-        archived_at, pinned_at, pair_id
+        archived_at, pinned_at, pair_id, additional_directories_json
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       "sess_export",
       "codex-acp",
@@ -289,6 +291,7 @@ function seedSessionDb(
       null,
       1_781_424_200_000,
       null,
+      JSON.stringify(["/tmp/docs", "/tmp/backend"]),
     );
     db.prepare(
       `INSERT INTO events (session_id, type, data, ts) VALUES (?, ?, ?, ?)`,

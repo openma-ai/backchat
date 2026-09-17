@@ -6,7 +6,7 @@
  * `webContents.send` from the SessionManager's `Sender` callback.
  */
 
-import { BrowserWindow, ipcMain, Notification } from "electron";
+import { BrowserWindow, ipcMain, Notification, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 import { getKnownAgents } from "@open-managed-agents-desktop/acp/registry";
@@ -45,6 +45,7 @@ import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
 import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, pinPairSession, pinSession, renameSession, savePairGroup, saveProject, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
+import { removeSessionWorktrees } from "./worktree-manager.js";
 import type { PersistedSession } from "./sql-store.js";
 import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
@@ -135,10 +136,12 @@ interface RegisterDeps {
   browserMcpServerForTask?: (taskId: string) => unknown;
   /** Codex-compatible plugin bundle roots. Defaults to ~/.oma/plugins. */
   pluginRoots?: readonly string[];
-  /** Optional second consumer of the singleton SessionManager event stream.
-   *  OMA bridge uses this to relay cloud-owned sessions while the renderer
-   *  keeps receiving the exact same events. */
+  /** Relay host output before filtering execution copies out of local UI. */
+  sessionActivitySink?: (event: SessionEventOut) => void;
   sessionEventSink?: (event: SessionEventOut) => void;
+  isRunnerSession?: (sessionId: string) => boolean;
+  requestRunnerPermission?: (sessionId: string, params: unknown) => Promise<unknown>;
+  cancelRunnerPending?: (sessionId: string) => void;
 }
 
 interface TestAgentSetupCall {
@@ -171,16 +174,28 @@ export interface RegisteredIpcRuntime {
 
 function withProjectDirectories(session: PersistedSession): PersistedSessionInfo {
   const project = session.project_id ? getProject(session.project_id) : null;
+  const additionalDirectories = session.additional_directories
+    ?? (project
+      ? project.source_folders.filter((folder) => folder !== session.cwd)
+      : []);
   return {
     ...session,
     project_id: session.project_id ?? null,
-    additional_directories: project
-      ? project.source_folders.filter((folder) => folder !== session.cwd)
-      : [],
+    additional_directories: additionalDirectories,
   };
 }
 
 export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRuntime> {
+  const isLocalSession = (id: string) => !deps.isRunnerSession?.(id);
+  const assertLocalSession = (id: string): void => {
+    if (!isLocalSession(id)) throw new Error("Use the associated OpenMA task to operate this runner session");
+  };
+  const handleLocalSession = <P extends { session_id: string }>(channel: string, listener: (event: IpcMainInvokeEvent, params: P) => unknown): void => {
+    ipcMain.handle(channel, (event, params: P) => {
+      assertLocalSession(params.session_id);
+      return listener(event, params);
+    });
+  };
   const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
   const testPromptCalls: SessionPromptParams[] = [];
   const testCommandCalls: SessionRunCommandParams[] = [];
@@ -373,8 +388,11 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     (sessionId) => latestPersistedOpenMAEventSequence(loadHistory(sessionId)),
   );
   const publishSingle = (enriched: SessionEventOut) => {
-    forwardSessionEventToPet(enriched);
     deps.sessionEventSink?.(enriched);
+    // The observer task is the UI identity. This persisted association applies
+    // even when the account is logged out or this runner connection is stopped.
+    if (!isLocalSession(enriched.session_id)) return;
+    forwardSessionEventToPet(enriched);
     if (enriched.type !== "session.event") {
       process.stdout.write(`[session] ${enriched.type} sid=${enriched.session_id.slice(0, 8)}\n`);
     }
@@ -421,6 +439,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // before any pair is registered.
   let pairManager: PairManager | null = null;
   const send = (msg: SessionEventOut) => {
+    deps.sessionActivitySink?.(msg);
     const enriched = enrichSessionEvent(msg);
     deliverSessionEvent(enriched, {
       publish: (message) => {
@@ -490,7 +509,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     // brokers to follow the schema (smoke-tested against claude-acp).
     buildCallbacks: (sessionId, sessionCwd, additionalDirectories, agentId) => ({
       requestPermission: (params) =>
-        requestPermission(sessionId, params, agentId) as never,
+        (isLocalSession(sessionId)
+          ? requestPermission(sessionId, params, agentId)
+          : deps.requestRunnerPermission?.(sessionId, params) ?? Promise.resolve({ outcome: { outcome: "cancelled" } })) as never,
       readTextFile: (params) => readTextFile(params) as never,
       writeTextFile: (params) =>
         writeTextFile(
@@ -511,7 +532,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     requestElicitationUrl: (request) =>
       requestElicitationUrl(request.sessionId, request),
   });
-  sessionManager.setOnSessionPendingWorkCancelled(cancelPendingFor);
+  sessionManager.setOnSessionPendingWorkCancelled((id) => { deps.cancelRunnerPending?.(id); cancelPendingFor(id); });
 
   // Pair manager — sibling of sessionManager. Holds a reference and
   // calls its 1:1 API; the tee installed above routes pair-owned
@@ -628,7 +649,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       });
     },
   );
-  ipcMain.handle(InvokeChannel.SessionStart, (_e, p: SessionStartParams) => {
+  handleLocalSession(InvokeChannel.SessionStart, (_e, p: SessionStartParams) => {
     if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
       const result = {
         status: "ready" as const,
@@ -652,7 +673,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     }
     return sessionManager.start(p);
   });
-  ipcMain.handle(InvokeChannel.SessionPrompt, (_e, p: SessionPromptParams) => {
+  handleLocalSession(InvokeChannel.SessionPrompt, (_e, p: SessionPromptParams) => {
     if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
       testPromptCalls.push(p);
       send({
@@ -664,11 +685,11 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     }
     return sessionManager.prompt(p);
   });
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionUpdatePromptQueue,
     (_e, p: SessionPromptQueueCommandParams) => sessionManager.updatePromptQueue(p),
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionRunCommand,
     (_e, p: SessionRunCommandParams) => {
       if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
@@ -678,7 +699,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       return sessionManager.runCommand(p);
     },
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionSetConfigOption,
     (_e, p: SessionSetConfigOptionParams) => {
       if (testHooksEnabled && isSyntheticTestSession(p.session_id)) {
@@ -709,27 +730,27 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       return sessionManager.setConfigOption(p);
     },
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionRequestExtension,
     (_e, p: SessionRequestExtensionParams) =>
       sessionManager.requestExtension(p),
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionCancel,
     (_e, p: { session_id: string; turn_id: string }) =>
       sessionManager.cancel(p.session_id, p.turn_id),
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionClose,
     (_e, p: { session_id: string }) =>
       sessionManager.close(p.session_id),
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionDispose,
     (_e, p: { session_id: string; remove_cwd?: boolean }) =>
       sessionManager.dispose(p.session_id, { removeCwd: p.remove_cwd }),
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionRuntimeStatus,
     (_e, p: { session_id: string }) => {
       const fixtureStatus = testAgentSetupFixture?.runtimeStatuses?.[p.session_id];
@@ -737,7 +758,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       return sessionManager.getRuntimeStatus(p.session_id);
     },
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionRestart,
     (
       _e,
@@ -857,28 +878,28 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
 
   ipcMain.handle(InvokeChannel.SessionsList, (_e, limit?: number):
-    PersistedSessionInfo[] => listSessions(limit).map(withProjectDirectories));
-  ipcMain.handle(
+    PersistedSessionInfo[] => listSessions(limit).filter((s) => isLocalSession(s.id)).map(withProjectDirectories));
+  handleLocalSession(
     InvokeChannel.SessionsRename,
     (_e, p: { session_id: string; title: string }): void => {
       if (!p.session_id.trim()) throw new Error("Session id is required");
       renameSession(p.session_id, p.title);
     },
   );
-  ipcMain.handle(InvokeChannel.SessionsPin, (_e, p: { session_id: string }) =>
+  handleLocalSession(InvokeChannel.SessionsPin, (_e, p: { session_id: string }) =>
     pinSession(p.session_id));
-  ipcMain.handle(InvokeChannel.SessionsUnpin, (_e, p: { session_id: string }) =>
+  handleLocalSession(InvokeChannel.SessionsUnpin, (_e, p: { session_id: string }) =>
     unpinSession(p.session_id));
-  ipcMain.handle(InvokeChannel.SessionsArchive, (_e, p: { session_id: string }) => {
+  handleLocalSession(InvokeChannel.SessionsArchive, (_e, p: { session_id: string }) => {
     scheduleStore.deleteBySourceSession(p.session_id);
     scheduleEngine.reschedule();
     archiveSession(p.session_id);
   });
-  ipcMain.handle(InvokeChannel.SessionsUnarchive, (_e, p: { session_id: string }) =>
+  handleLocalSession(InvokeChannel.SessionsUnarchive, (_e, p: { session_id: string }) =>
     unarchiveSession(p.session_id));
   ipcMain.handle(
     InvokeChannel.SessionsListArchived,
-    () => listArchivedSessions().map(withProjectDirectories),
+    () => listArchivedSessions().filter((s) => isLocalSession(s.id)).map(withProjectDirectories),
   );
   // Hard delete: drop the SQL row (events cascade) AND the on-disk
   // session dir. Order matters — wipe the dir first so a partial
@@ -887,7 +908,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // to find later. Dispose the ACP child too if it's still running
   // (e.g. user is deleting an archived session that was somehow
   // resumed in the background).
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionsDelete,
     async (_e, p: { session_id: string }) => {
       try {
@@ -903,6 +924,11 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       } catch {
         /* dir might be gone already — fine */
       }
+      try {
+        await removeSessionWorktrees(p.session_id);
+      } catch {
+        /* no managed worktrees (or source repo disappeared) — fine */
+      }
       scheduleStore.deleteBySourceSession(p.session_id);
       scheduleEngine.reschedule();
       deleteSession(p.session_id);
@@ -910,9 +936,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   ipcMain.handle(
     InvokeChannel.SessionsLoadHistory,
-    (_e, sessionId: string): PersistedEventInfo[] => loadHistory(sessionId),
+    (_e, sessionId: string): PersistedEventInfo[] => { assertLocalSession(sessionId); return loadHistory(sessionId); },
   );
-  ipcMain.handle(
+  handleLocalSession(
     InvokeChannel.SessionPersistCanonicalEvent,
     (_e, event: OpenMAEvent): void => {
       if (
@@ -941,7 +967,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   ipcMain.handle(
     InvokeChannel.SessionsSearch,
-    (_e, query: string, limit?: number) => searchMessages(query, limit),
+    (_e, query: string, limit?: number) => searchMessages(query, limit).filter((hit) => isLocalSession(hit.session_id)),
   );
   ipcMain.handle(InvokeChannel.ActivityStats, async () => {
     await agentWarmup;

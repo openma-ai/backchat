@@ -19,6 +19,8 @@
  */
 
 import { useSyncExternalStore } from "react";
+import type { OpenmaScope, OpenmaExecutionTarget, OpenmaTask, OpenmaTaskSnapshot, OpenmaTaskUpdate } from "@shared/openma";
+import { projectOpenmaTask } from "./openma-task-projection";
 import type {
   PromptAttachment,
   PromptSessionReference,
@@ -362,6 +364,64 @@ export class SessionStore {
   }
 
   // ------- Reads -------
+
+  setExecutionTarget(id: string, target: OpenmaExecutionTarget | undefined): void {
+    const row = this.#sessions.get(id);
+    if (!row || row.status !== "draft") throw new Error("This task's execution location is fixed");
+    this.#sessions.set(id, { ...row, executionTarget: target });
+    this.#emit();
+  }
+
+  seedOpenmaTasks(tasks: OpenmaTask[]): void {
+    for (const task of tasks) {
+      const previous = this.#sessions.get(task.id);
+      if (previous?.openma && (task.revision ?? 0) < (previous.openma.revision ?? 0)) continue;
+      const row = projectOpenmaTask({ task, events: [], operations: [], connection: "offline" }).row;
+      if (previous && !previous.openma) continue;
+      this.#sessions.set(task.id, previous ? { ...previous,
+        label: row.label, status: row.status, openma: task, executionTarget: task.target,
+        pinnedAt: row.pinnedAt, archivedAt: row.archivedAt,
+      } : row);
+    }
+    this.#emit();
+  }
+
+  applyOpenmaSnapshot(snapshot: OpenmaTaskSnapshot): void {
+    const current = this.#sessions.get(snapshot.task.id)?.openma;
+    if (current && snapshot.task.afterSeq < current.afterSeq) return;
+    if (current && (snapshot.task.revision ?? 0) < (current.revision ?? 0)) snapshot = { ...snapshot, task: current };
+    const { row, turns } = projectOpenmaTask(snapshot);
+    const previous = this.#sessions.get(row.id);
+    this.#sessions.set(row.id, { ...previous, ...row });
+    const ids = new Set(turns.map((turn) => turn.id));
+    for (const [id, turn] of this.#turns) if (turn.sessionId === row.id && !ids.has(id)) this.#turns.delete(id);
+    for (const turn of turns) {
+      const old = this.#turns.get(turn.id);
+      const corrected = !!old && (!turn.assistantText.startsWith(old.assistantText) || !turn.thoughtText.startsWith(old.thoughtText));
+      turn.streamRevision = (old?.streamRevision ?? 0) + (corrected ? 1 : 0);
+      this.#turns.set(turn.id, turn);
+      if (old && !corrected) {
+        const assistant = turn.assistantText.slice(old.assistantText.length);
+        const thought = turn.thoughtText.slice(old.thoughtText.length);
+        if (assistant) this.#emitStream(turn.id, { kind: "assistant", text: assistant });
+        if (thought) this.#emitStream(turn.id, { kind: "thought", text: thought });
+      }
+    }
+    this.#emit();
+  }
+
+  clearOpenmaTasks(): void { this.retainOpenmaScopes([]); }
+
+  retainOpenmaScopes(scopes: readonly OpenmaScope[]): void {
+    for (const [id, row] of this.#sessions) {
+      const owner = row.openma ?? row.executionTarget;
+      if (owner && !scopes.some((scope) => scope.baseUrl === owner.baseUrl && scope.userId === owner.userId && scope.workspaceId === owner.workspaceId)) {
+        this.#sessions.delete(id);
+        for (const [turnId, turn] of this.#turns) if (turn.sessionId === id) this.#turns.delete(turnId);
+      }
+    }
+    this.#emit();
+  }
 
   list(): SessionRow[] {
     // Drafts are excluded from the sidebar — a draft is "the user is
@@ -1037,6 +1097,10 @@ export class SessionStore {
   async rename(sessionId: string, title: string): Promise<void> {
     const trimmed = title.trim();
     if (!trimmed) return;
+    if (this.#sessions.get(sessionId)?.openma) {
+      await this.#updateOpenmaTask(sessionId, { title: trimmed });
+      return;
+    }
     await window.backchat.sessionsRename({
       session_id: sessionId,
       title: trimmed,
@@ -1053,18 +1117,20 @@ export class SessionStore {
    *  sidebar splits Pinned + Chats sections; this row moves to
    *  Pinned immediately. Pinned_at is also written through to the
    *  SQLite row (fire-and-forget) so the position survives a reload. */
-  pin(sessionId: string): void {
+  async pin(sessionId: string): Promise<void> {
     const row = this.#sessions.get(sessionId);
     if (!row) return;
+    if (row.openma) { await this.#updateOpenmaTask(sessionId, { pinned: true }); return; }
     const at = Date.now();
     this.#mutateSession(sessionId, (s) => ({ ...s, pinnedAt: at }));
     void window.backchat.sessionsPin({ session_id: sessionId });
     this.#emit();
   }
 
-  unpin(sessionId: string): void {
+  async unpin(sessionId: string): Promise<void> {
     const row = this.#sessions.get(sessionId);
     if (!row) return;
+    if (row.openma) { await this.#updateOpenmaTask(sessionId, { pinned: false }); return; }
     this.#mutateSession(sessionId, (s) => ({ ...s, pinnedAt: undefined }));
     void window.backchat.sessionsUnpin({ session_id: sessionId });
     this.#emit();
@@ -1073,17 +1139,19 @@ export class SessionStore {
   /** Hide a session from the sidebar. Row + events stay in the
    *  in-memory map and on disk so Search can find it and the user
    *  can unarchive later. */
-  archive(sessionId: string): void {
+  async archive(sessionId: string): Promise<void> {
     const row = this.#sessions.get(sessionId);
     if (!row) return;
+    if (row.openma) { await this.#updateOpenmaTask(sessionId, { archived: true }); return; }
     const at = Date.now();
     this.#mutateSession(sessionId, (s) => ({ ...s, archivedAt: at }));
     void window.backchat.sessionsArchive({ session_id: sessionId });
     this.#emit();
   }
 
-  unarchive(sessionId: string): void {
+  async unarchive(sessionId: string): Promise<void> {
     const row = this.#sessions.get(sessionId);
+    if (row?.openma) { await this.#updateOpenmaTask(sessionId, { archived: false }); return; }
     if (row) {
       // Row is still in the in-memory map (e.g. just archived this
       // session) — clear the archivedAt flag in place. Sidebar's
@@ -1099,12 +1167,20 @@ export class SessionStore {
     this.#emit();
   }
 
+  async #updateOpenmaTask(id: string, patch: OpenmaTaskUpdate): Promise<void> {
+    const task = await window.backchat.openmaTaskUpdate(id, patch);
+    // Workspace switch/logout removes the old row. A delayed reply must not
+    // reintroduce it into the newly selected workspace.
+    if (this.#sessions.get(id)?.openma) this.seedOpenmaTasks([task]);
+  }
+
   /** Permanently delete a session — drops the SQL row + the on-disk
    *  session dir via IPC, and wipes any local in-memory state so the
    *  UI doesn't keep a ghost row around. Caller is responsible for
    *  the confirm prompt; this method assumes the user has already
    *  said yes. Async because the main-side rm waits on disk I/O. */
   async deletePermanently(sessionId: string): Promise<void> {
+    if (this.#sessions.get(sessionId)?.openma) throw new Error("Manage permanent deletion in OpenMA");
     await window.backchat.sessionsDelete({ session_id: sessionId });
     // Pop in-memory bookkeeping. Same shape as session.disposed
     // teardown so any subscriber sees a clean removal.
