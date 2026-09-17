@@ -47,6 +47,15 @@ export class OpenManagedCloudRuntimeClient {
     return new Error("OpenMA connection interrupted. Refresh the task before retrying an action.");
   }
 
+  async listSessions() {
+    return this.request(async () => { const result = []; for await (const session of this.sdk.beta.sessions.list()) result.push(session); return result; });
+  }
+  async retrieveSession(id: string, signal?: AbortSignal) { return this.request(() => this.sdk.beta.sessions.retrieve(id, {}, { signal })); }
+  async updateSession(id: string, title: string) { return this.request(() => this.sdk.beta.sessions.update(id, { title })); }
+  async createRemoteSession(input: CloudSessionCreateInput) {
+    return this.request(() => this.sdk.beta.sessions.create({ agent: input.agentId, environment_id: input.environmentId, title: input.title ?? "", metadata: input.metadata }));
+  }
+
   async createSession(input: CloudSessionCreateInput): Promise<CloudSessionCreateResult> {
     const session = await this.request(() => this.sdk.beta.sessions.create({
       agent: input.agentId, environment_id: input.environmentId, title: input.title ?? "",

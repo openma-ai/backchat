@@ -228,3 +228,27 @@ describe("desktop runner opt-in", () => {
     } finally { runner.stop(); }
   });
 });
+
+it("registers the runner using a user API key without a browser handoff", async () => {
+  const options = await setup();
+  const requests: Array<{ path: string; body: Record<string, unknown>; headers: Headers }> = [];
+  const runner = new OpenmaRunner({ ...options, connection: () => ({ ...connection, authMethod: "api_key" }),
+    authorize: async () => { throw new Error("Browser must not open"); },
+    fetchImpl: async (input, init) => {
+      const request = new Request(input, init); const path = new URL(request.url).pathname;
+      const body = request.method === "POST" ? await request.json() as Record<string, unknown> : {};
+      requests.push({ path, body, headers: request.headers });
+      if (path === "/v1/oma/runtimes/connect-runtime") return Response.json({ code: "api-code" });
+      if (path === "/agents/runtime/exchange") return Response.json({ runtime_id: "runtime", token: "machine-key", tenants: [{ id: "a", name: "A", agent_api_key: "tenant-key" }] });
+      if (path === "/v1/oma/me") return Response.json({ user: { id: "user" }, tenant: { id: "a" } });
+      throw new Error(`Unexpected ${path}`);
+    },
+    createBridge: deps => ({ connect: async () => deps.onConnectionState?.("online"), stop: () => {}, handleSessionEvent: () => {} }),
+  });
+  try {
+    await runner.enable();
+    expect(runner.state()).toMatchObject({ hosting: "backchat", status: "online" });
+    expect(requests[0]!.headers.get("x-api-key")).toBe("user-key");
+    expect(requests[1]!.body).toMatchObject({ code: "api-code", state: requests[0]!.body.state, multi_tenant: true });
+  } finally { await runner.disable(); }
+});

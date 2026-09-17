@@ -1,3 +1,4 @@
+import { openmaWorkspaceScope } from "@shared/openma";
 import { openmaTargets } from "@/lib/openma-targets";
 import { CheckIcon, ChevronDownIcon, CloudIcon, MonitorIcon, ServerIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -18,7 +19,7 @@ export function RuntimeLocationControl({ title, className, session }: { title?: 
   const target = row?.executionTarget;
   const locked = !!row && row.status !== "draft";
   const { data: account } = useOpenmaAccount();
-  const scope = target ?? (account?.user && account.activeWorkspaceId ? { baseUrl: account.baseUrl, userId: account.user.id, workspaceId: account.activeWorkspaceId } : undefined);
+  const scope = target ?? (account?.user && account.activeWorkspaceId ? openmaWorkspaceScope(account, account.activeWorkspaceId) : undefined);
   const { data: catalog, isFetching, error, refetch } = useOpenmaCatalog(scope);
   const choices = scope && catalog ? openmaTargets(scope, catalog) : [];
   const Icon = target?.kind === "cloud" ? CloudIcon : target ? ServerIcon : MonitorIcon;

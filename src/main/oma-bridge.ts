@@ -95,6 +95,7 @@ export class OmaBridgeClient {
   #version: string;
   #connection: DaemonConnection;
   #stopped = false;
+  #resuming = false;
   #onConnectionState?: OmaBridgeDeps["onConnectionState"];
   #resolveWorkspace: OmaBridgeDeps["resolveWorkspace"];
   #sessions = new Map<string, BridgeSession>();
@@ -124,6 +125,7 @@ export class OmaBridgeClient {
       onOpen: (channel) => this.#onOpen(channel),
       onMessage: (message) => this.#onMessage(message as SessionWireMessage & { capabilities?: unknown }),
       onState: (state) => {
+        if (this.#resuming && state === "stopped") return;
         if (state === "occupied" || state === "expired" || state === "stopped") {
           this.#stopped = true;
           for (const session of this.#localSessions.values()) this.cancelPendingFor(session.localSessionId!);
@@ -131,6 +133,15 @@ export class OmaBridgeClient {
         this.#onConnectionState?.(state);
       },
     });
+  }
+
+  resume(): void {
+    if (this.#stopped) return;
+    // Restart only the shared transport. Keep native sessions and pending
+    // approvals owned by this host while replacing an OS-suspended socket.
+    this.#resuming = true;
+    try { this.#connection.stop(); } finally { this.#resuming = false; }
+    this.#connection.start();
   }
 
   async connect(): Promise<void> {

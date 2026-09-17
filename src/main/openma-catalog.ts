@@ -1,3 +1,4 @@
+import { DirectAgentRuntime } from "./direct-agent-runtime.js";
 import type { OpenmaCatalog } from "../shared/openma.js";
 import type { OpenmaConnection } from "./openma-account.js";
 import { OpenManagedCloudRuntimeClient } from "./openmanaged-cloud-runtime.js";
@@ -13,10 +14,11 @@ export async function loadOpenmaCatalog(options: {
   fetchImpl?: typeof fetch;
   onUnauthorized?: () => void;
 }): Promise<OpenmaCatalog> {
+  if (options.connection.provider) return new DirectAgentRuntime({ ...options.connection, provider: options.connection.provider, fetchImpl: options.fetchImpl, onUnauthorized: options.onUnauthorized }).catalog();
   const client = new OpenManagedCloudRuntimeClient({ ...options.connection, fetchImpl: options.fetchImpl, onUnauthorized: options.onUnauthorized });
   const sdk = client.sdk;
   const [runtimeList, agents, environments] = await Promise.all([
-    client.request(() => sdk.oma.request<{ runtimes: Runtime[] }>({ method: "get", path: "/v1/oma/runtimes" })),
+    options.connection.canManageRuntimes === false ? Promise.resolve({ runtimes: [] as Runtime[] }) : client.request(() => sdk.oma.request<{ runtimes: Runtime[] }>({ method: "get", path: "/v1/oma/runtimes" })),
     client.request(async () => { const result = []; for await (const agent of sdk.beta.agents.list()) result.push(agent); return result; }),
     client.request(async () => { const result = []; for await (const env of sdk.beta.environments.list()) result.push(env); return result; }),
   ]);

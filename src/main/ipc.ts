@@ -137,6 +137,7 @@ interface RegisterDeps {
   /** Codex-compatible plugin bundle roots. Defaults to ~/.oma/plugins. */
   pluginRoots?: readonly string[];
   /** Relay host output before filtering execution copies out of local UI. */
+  sessionActivitySink?: (event: SessionEventOut) => void;
   sessionEventSink?: (event: SessionEventOut) => void;
   isRunnerSession?: (sessionId: string) => boolean;
   requestRunnerPermission?: (sessionId: string, params: unknown) => Promise<unknown>;
@@ -438,6 +439,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // before any pair is registered.
   let pairManager: PairManager | null = null;
   const send = (msg: SessionEventOut) => {
+    deps.sessionActivitySink?.(msg);
     const enriched = enrichSessionEvent(msg);
     deliverSessionEvent(enriched, {
       publish: (message) => {

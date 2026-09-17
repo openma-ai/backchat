@@ -39,7 +39,7 @@
     "package:browser-extension": "tsx scripts/package-browser-extension.ts",
     "package:dir": "electron-vite build && pnpm run runtime:prepare && electron-builder --dir",
     "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty",
-    "test:e2e:openma": "electron-vite build && playwright test e2e/openma-account.spec.ts e2e/openma-cloud.spec.ts e2e/openma-daemon-ownership.spec.ts e2e/openma-tenants.spec.ts"
+    "test:e2e:openma": "electron-vite build && playwright test e2e/openma-account.spec.ts e2e/openma-cloud.spec.ts e2e/openma-daemon-ownership.spec.ts e2e/openma-tenants.spec.ts e2e/direct-agents.spec.ts e2e/power-management.spec.ts e2e/quit-confirmation.spec.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.120.0",
@@ -69,6 +69,7 @@
     "motion": "^12.40.0",
     "nanoid": "^5.1.11",
     "node-pty": "1.2.0-beta.13",
+    "openai": "7.15.0",
     "radix-ui": "^1.4.3",
     "rrule": "^2.8.1",
     "simple-icons": "^16.22.0",

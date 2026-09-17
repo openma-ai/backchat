@@ -1,11 +1,19 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, scrypt } from "node:crypto";
 import { createServer } from "node:http";
 import { hostname } from "node:os";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { OpenmaAccountState, OpenmaScope } from "../shared/openma.js";
+import type { DirectAgentConnectionInput, DirectAgentProvider, OpenmaAccountState, OpenmaScope } from "../shared/openma.js";
 
 const DEFAULT_ORIGIN = "https://app.openma.dev";
+// Derive a stable cache identity without exposing a fast verifier for the key.
+// This is not authentication: the original key stays in the private account file.
+function credentialIdentity(baseUrl: string, apiKey: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    scrypt(apiKey, baseUrl, 12, (error, result) => error ? reject(error) : resolve(result.toString("hex")));
+  });
+}
+
 interface CallbackToken { tenant_id: string; tenant_name: string; role: string; token: string; key_id: string }
 interface AuthorizationResult { tokens: CallbackToken[]; user: string }
 interface AuthorizationOptions {
@@ -19,9 +27,9 @@ interface Credentials {
   base_url: string;
   user: NonNullable<OpenmaAccountState["user"]>;
   active_tenant_id: string | null;
-  tenants: Record<string, { name: string; role: string; token: string; key_id: string; created_at: string }>;
+  tenants: Record<string, { name: string; role: string; token: string; key_id: string; created_at: string; provider?: DirectAgentProvider; base_url?: string; user_id?: string; auth_method?: "api_key"; can_manage_runtimes?: boolean }>;
 }
-export interface OpenmaConnection { baseUrl: string; workspaceId: string; apiKey: string; userId: string }
+export interface OpenmaConnection { provider?: DirectAgentProvider; authMethod?: "api_key"; canManageRuntimes?: boolean; baseUrl: string; workspaceId: string; apiKey: string; userId: string }
 interface AccountOptions {
   directory: string;
   fetch?: typeof fetch;
@@ -127,9 +135,11 @@ export class OpenmaAccount {
     const creds = this.#credentials;
     return {
       status: this.#pending ? "signing_in" : !creds ? "signed_out" : this.#expired.has(creds.active_tenant_id ?? "") ? "expired" : "signed_in",
+      ...(creds?.active_tenant_id && creds.tenants[creds.active_tenant_id]?.provider ? { provider: creds.tenants[creds.active_tenant_id]!.provider } : {}),
+      ...(creds?.active_tenant_id && creds.tenants[creds.active_tenant_id]?.can_manage_runtimes === false ? { canManageRuntimes: false } : {}),
       baseUrl: creds?.base_url ?? DEFAULT_ORIGIN,
       user: creds ? { id: creds.user.id, email: creds.user.email, name: creds.user.name } : null,
-      workspaces: Object.entries(creds?.tenants ?? {}).map(([id, t]) => ({ id, name: t.name, role: t.role, expired: this.#expired.has(id) })),
+      workspaces: Object.entries(creds?.tenants ?? {}).map(([id, t]) => ({ id, name: t.name, role: t.role, expired: this.#expired.has(id), ...(t.provider ? { provider: t.provider, baseUrl: t.base_url, userId: t.user_id } : {}) })),
       activeWorkspaceId: creds?.active_tenant_id ?? null,
     };
   }
@@ -162,6 +172,7 @@ export class OpenmaAccount {
       const c = JSON.parse(await readFile(join(this.#options.directory, "account.json"), "utf8")) as Credentials;
       if (c.version !== 2 || !c.user?.id || !c.tenants || Array.isArray(c.tenants)) return;
       for (const t of Object.values(c.tenants)) if (!t || typeof t.token !== "string" || !t.token || typeof t.key_id !== "string") return;
+      for (const t of Object.values(c.tenants)) if (t.provider && (!["claude-managed", "openai-agents"].includes(t.provider) || !t.base_url || !t.user_id)) return;
       c.base_url = openmaBaseUrl(c.base_url);
       if (!c.active_tenant_id || !Object.hasOwn(c.tenants, c.active_tenant_id)) c.active_tenant_id = null;
       this.#credentials = c;
@@ -169,6 +180,70 @@ export class OpenmaAccount {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT" && !(e instanceof SyntaxError)) throw new Error("Could not read the saved OpenMA account");
     }
+  }
+
+  async connectDirect(input: DirectAgentConnectionInput): Promise<void> {
+    if (!input || !["openma", "claude-managed", "openai-agents"].includes(input.provider)
+      || typeof input.apiKey !== "string" || !input.apiKey.trim() || input.apiKey.length > 16384
+      || input.name !== undefined && (typeof input.name !== "string" || input.name.length > 200)
+      || typeof input.baseUrl !== "string" || !input.baseUrl.trim()) throw new Error("Enter a provider, server address and API key");
+    if (input.provider === "openma") return this.#connectOpenmaKey(input);
+    const baseUrl = openmaBaseUrl(input.baseUrl.trim());
+    const name = input.name?.trim() || new URL(baseUrl).hostname;
+    this.cancelLogin();
+    const generation = this.#generation;
+    // Protocol and key identify a direct account: rotating to another account must
+    // not expose its predecessor's local task cache on the same endpoint.
+    const digest = await credentialIdentity(baseUrl, input.apiKey.trim());
+    if (generation !== this.#generation) throw new Error("Connection cancelled");
+    const id = `direct:${input.provider}:${digest}`;
+    const credentials: Credentials = { version: 2, base_url: this.#credentials?.base_url ?? DEFAULT_ORIGIN,
+      user: this.#credentials?.user ?? { id, email: "", name }, active_tenant_id: id,
+      tenants: { ...this.#credentials?.tenants, [id]: { name, role: "api", token: input.apiKey.trim(), key_id: id, created_at: new Date().toISOString(), provider: input.provider, base_url: baseUrl, user_id: id } },
+    };
+    await this.#persist(credentials);
+    if (generation !== this.#generation) throw new Error("Connection cancelled");
+    this.#credentials = credentials;
+    this.#expired.delete(id); this.#notify();
+  }
+
+  async #connectOpenmaKey(input: DirectAgentConnectionInput): Promise<void> {
+    const baseUrl = openmaBaseUrl(input.baseUrl.trim()).replace(/\/v1$/, "");
+    const apiKey = input.apiKey.trim();
+    this.cancelLogin();
+    const generation = ++this.#generation;
+    const controller = new AbortController(); this.#pending = controller; this.#notify();
+    const check = () => { if (generation !== this.#generation || controller.signal.aborted) throw new Error("Connection cancelled"); };
+    try {
+      const response = await (this.#options.fetch ?? fetch)(`${baseUrl}/v1/oma/me`, { headers: { "x-api-key": apiKey }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]) });
+      if (!response.ok) throw new Error(`OpenMA connection failed (${response.status})`);
+      const me = await response.json() as { user: { id: string; email?: string; name?: string } | null; tenant: { id: string; name?: string }; tenants?: Array<{ id: string; name: string; role: string }> };
+      check();
+      if (typeof me.tenant?.id !== "string" || !me.tenant.id || me.user && (typeof me.user.id !== "string" || !me.user.id)) throw new Error("OpenMA returned an invalid identity");
+      const digest = await credentialIdentity(baseUrl, apiKey);
+      check();
+      const user = me.user ? { id: me.user.id, email: me.user.email ?? "", name: me.user.name ?? null } : { id: `openma-key:${digest}`, email: "", name: input.name?.trim() || me.tenant.name || new URL(baseUrl).hostname };
+      const membership = me.tenants?.find(t => t.id === me.tenant.id);
+      const prior = this.#credentials;
+      const tenants = prior?.base_url === baseUrl && prior.user.id === user.id ? { ...prior.tenants } : Object.fromEntries(Object.entries(prior?.tenants ?? {}).filter(([, t]) => t.provider));
+      // Membership listing is informational. The supplied key grants only the
+      // tenant returned by /me, never the user's other workspaces.
+      tenants[me.tenant.id] = { token: apiKey, key_id: `api:${digest}`, name: input.name?.trim() || membership?.name || me.tenant.name || me.tenant.id,
+        role: membership?.role ?? "member", created_at: new Date().toISOString(), auth_method: "api_key", can_manage_runtimes: !!me.user };
+      const credentials: Credentials = { version: 2, base_url: baseUrl, user, tenants, active_tenant_id: me.tenant.id };
+      await this.#persist(credentials); check();
+      this.#credentials = credentials; this.#expired.delete(me.tenant.id);
+    } finally { if (generation === this.#generation) { this.#pending = null; this.#notify(); } }
+  }
+
+  async removeDirect(id: string): Promise<void> {
+    const c = this.#credentials;
+    if (!c || !Object.hasOwn(c.tenants, id) || !c.tenants[id]?.provider) throw new Error("Unknown direct connection");
+    this.cancelLogin();
+    const tenants = { ...c.tenants }; delete tenants[id];
+    this.#credentials = Object.keys(tenants).length ? { ...c, tenants, active_tenant_id: c.active_tenant_id === id ? Object.keys(tenants)[0]! : c.active_tenant_id } : null;
+    this.#expired.delete(id); this.#notify();
+    await this.#persist(this.#credentials);
   }
 
   async login(server: string): Promise<void> {
@@ -205,7 +280,8 @@ export class OpenmaAccount {
       if (!user || !Object.keys(tenants).length) throw new Error("No authorized workspace");
       const prior = this.#credentials;
       const previousId = prior?.base_url === baseUrl && prior.user.id === user.id ? prior.active_tenant_id : null;
-      const next: Credentials = { version: 2, base_url: baseUrl, user, tenants, active_tenant_id:
+      const directTenants = Object.fromEntries(Object.entries(prior?.tenants ?? {}).filter(([, tenant]) => tenant.provider));
+      const next: Credentials = { version: 2, base_url: baseUrl, user, tenants: { ...directTenants, ...tenants }, active_tenant_id:
         previousId && Object.hasOwn(tenants, previousId) ? previousId : Object.keys(tenants).length === 1 ? Object.keys(tenants)[0]! : null };
       check();
       await this.#persist(next);
@@ -223,10 +299,13 @@ export class OpenmaAccount {
   cancelLogin(): void { this.#generation++; this.#pending?.abort(); this.#pending = null; this.#notify(); }
   async logout(): Promise<void> {
     this.cancelLogin();
-    this.#credentials = null;
-    this.#expired.clear();
+    const direct = Object.fromEntries(Object.entries(this.#credentials?.tenants ?? {}).filter(([, tenant]) => tenant.provider));
+    const first = Object.keys(direct)[0];
+    this.#credentials = first ? { version: 2, base_url: DEFAULT_ORIGIN, tenants: direct, active_tenant_id: first,
+      user: { id: direct[first]!.user_id!, name: direct[first]!.name, email: "" } } : null;
+    this.#expired = new Set([...this.#expired].filter(id => Object.hasOwn(direct, id)));
     this.#notify();
-    await this.#persist(null);
+    await this.#persist(this.#credentials);
   }
   async selectWorkspace(id: string): Promise<void> {
     if (!this.#credentials || !Object.hasOwn(this.#credentials.tenants, id)) throw new Error("Unknown workspace");
@@ -239,23 +318,27 @@ export class OpenmaAccount {
     if (!c || this.#pending) throw new Error("OpenMA login required");
     const workspaceId = scope ? scope.workspaceId : c.active_tenant_id;
     if (!workspaceId) throw new Error("Choose an OpenMA workspace");
-    if (scope && (scope.baseUrl !== c.base_url || scope.userId !== c.user.id)) throw new Error("OpenMA account changed");
     if (!Object.hasOwn(c.tenants, workspaceId)) throw new Error("Unknown OpenMA workspace");
+    const tenant = c.tenants[workspaceId]!;
+    const baseUrl = tenant.base_url ?? c.base_url;
+    const userId = tenant.user_id ?? c.user.id;
+    if (scope && (scope.baseUrl !== baseUrl || scope.userId !== userId)) throw new Error("OpenMA account changed");
     if (this.#expired.has(workspaceId)) throw new Error("OpenMA login required for this workspace");
-    return { baseUrl: c.base_url, workspaceId, apiKey: c.tenants[workspaceId]!.token, userId: c.user.id };
+    return { ...(tenant.provider ? { provider: tenant.provider } : {}), ...(tenant.auth_method ? { authMethod: tenant.auth_method } : {}), ...(tenant.can_manage_runtimes === false ? { canManageRuntimes: false } : {}), baseUrl, workspaceId, apiKey: tenant.token, userId };
   }
   connections(): OpenmaConnection[] {
     const c = this.#credentials;
     if (!c || this.#pending) return [];
-    return Object.keys(c.tenants).filter((id) => !this.#expired.has(id)).map((workspaceId) =>
-      this.connection({ baseUrl: c.base_url, userId: c.user.id, workspaceId }));
+    return Object.entries(c.tenants).filter(([id]) => !this.#expired.has(id)).map(([workspaceId, t]) =>
+      this.connection({ baseUrl: t.base_url ?? c.base_url, userId: t.user_id ?? c.user.id, workspaceId }));
   }
+
   assertConnection(connection: OpenmaConnection): void {
     if (this.connection(connection).apiKey !== connection.apiKey) throw new Error("OpenMA credentials changed");
   }
   invalidate(connection: OpenmaConnection): void {
     const c = this.#credentials;
-    if (c?.base_url === connection.baseUrl && c.tenants[connection.workspaceId]?.token === connection.apiKey) {
+    if (c && (c.tenants[connection.workspaceId]?.base_url ?? c.base_url) === connection.baseUrl && c.tenants[connection.workspaceId]?.token === connection.apiKey) {
       this.#expired.add(connection.workspaceId); this.#notify();
     }
   }

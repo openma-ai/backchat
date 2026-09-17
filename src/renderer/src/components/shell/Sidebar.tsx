@@ -1,3 +1,4 @@
+import { openmaWorkspaceScope } from "@shared/openma";
 import { useOpenmaAccount, useOpenmaCatalog } from "@/lib/openma-account";
 import { sameOpenmaScope, useOpenmaTenantTasks } from "@/lib/openma-tasks";
 import { openmaTargets } from "@/lib/openma-targets";
@@ -423,7 +424,7 @@ export function Sidebar() {
       >
         <nav className="app-no-drag px-2 pt-[var(--row-gap-y)]">
         {openmaAccount?.user && openmaAccount.workspaces.map((workspace) => {
-          const scope = { baseUrl: openmaAccount.baseUrl, userId: openmaAccount.user!.id, workspaceId: workspace.id };
+          const scope = openmaWorkspaceScope(openmaAccount, workspace.id);
           const rows = sessions.filter((row) => row.openma && sameOpenmaScope(row.openma, scope));
           return <TenantSidebarSection key={JSON.stringify(scope)} scope={scope} name={workspace.name || workspace.id}
             enabled={!workspace.expired && openmaAccount.status !== "signing_in"} labelCls={labelCls} rows={rows}

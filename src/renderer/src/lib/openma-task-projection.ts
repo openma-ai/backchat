@@ -1,3 +1,5 @@
+import { replayAgentUIEvents } from "@openma/common/agent-ui";
+import type { OpenMAEvent } from "@openma/common/session-events/openma";
 import type { OpenmaTaskEvent, OpenmaTaskSnapshot } from "@shared/openma";
 import type { SessionRow, Turn } from "./session-types";
 import { openmaPendingActions, openmaRuntimePermission } from "@shared/openma-actions";
@@ -19,6 +21,7 @@ function eventTime(event: OpenmaTaskEvent, fallback: number): number {
 /** OpenMA v1 owns remote status. This view never starts local ACP sessions
  * or infers completion from a disconnected stream. */
 export function projectOpenmaTask(snapshot: OpenmaTaskSnapshot): { row: SessionRow; turns: Turn[] } {
+  if (snapshot.task.provider) return projectDirectTask(snapshot);
   const { task } = snapshot;
   const turns: Turn[] = [];
   const messageKeys = new Map<Turn, { text?: unknown; thought?: unknown }>();
@@ -114,4 +117,47 @@ export function projectOpenmaTask(snapshot: OpenmaTaskSnapshot): { row: SessionR
     activeTurnId: active?.id,
     pendingAsks,
   }, turns };
+}
+
+
+function projectDirectTask(snapshot: OpenmaTaskSnapshot): { row: SessionRow; turns: Turn[] } {
+  const canonical = snapshot.events.flatMap(event => event.canonical ? [event.canonical as OpenMAEvent] : []);
+  // Informational provider frames remain in the stored log, but must not split
+  // a streamed message before its authoritative full-text replacement arrives.
+  const transcript = canonical.filter(event => event.type !== "vendor.event" && event.type !== "raw.event");
+  const state = replayAgentUIEvents(snapshot.task.sessionId, transcript);
+  const turns: Turn[] = state.turnOrder.map(id => {
+    const source = state.turns[id]!;
+    const startedAt = Date.parse(source.startedAt ?? "") || snapshot.task.createdAt;
+    const turn: Turn = { id: `${snapshot.task.id}:${id}`, sessionId: snapshot.task.id, promptText: "", assistantText: "", thoughtText: "", events: [],
+      status: source.status === "completed" ? "complete" : source.status === "failed" ? "error" : source.status,
+      startedAt, errorMessage: source.error, stopReason: source.reason, endedAt: source.endedAt ? Date.parse(source.endedAt) : undefined };
+    for (const item of source.items) {
+      if (item.kind === "tool") {
+        turn.events.push({ receivedAt: startedAt, payload: { sessionUpdate: "tool_call", toolCallId: item.id, title: item.title ?? item.name ?? "Tool", rawInput: item.rawInput, rawOutput: item.rawOutput, status: item.status } });
+      } else if (!("text" in item)) {
+        // Raw/vendor records stay in the canonical log; they are not assistant prose.
+        continue;
+      } else if (item.role === "user") {
+        turn.promptText += `${turn.promptText ? "\n" : ""}${item.text}`;
+      } else {
+        const kind = item.kind === "thinking" ? "thought" : "text";
+        if (kind === "text") turn.assistantText += item.text; else turn.thoughtText += item.text;
+        turn.events.push({ receivedAt: startedAt, payload: { type: kind, text: item.text, messageId: item.id } });
+      }
+    }
+    return turn;
+  });
+  // Reuse the task shell and pending-input presentation; wire records are retained
+  // for provider-specific tool replies, while all transcript content comes from common.
+  const shell = projectOpenmaTask({ ...snapshot, task: { ...snapshot.task, provider: undefined }, operations: snapshot.operations.filter(op => op.event.type !== "user.message"),
+    events: snapshot.events.flatMap(e => e.pendingActions ? [e] : e.wire ? [e.wire as OpenmaTaskEvent] : e.canonical ? [] : [e]) });
+  for (const op of snapshot.operations) {
+    if (op.event.type !== "user.message" || op.state === "accepted") continue;
+    turns.push({ id: `${snapshot.task.id}:${op.id}`, sessionId: snapshot.task.id, promptText: openmaText(op.event.content), assistantText: "", thoughtText: "", events: [], startedAt: op.createdAt,
+      status: op.state === "pending" ? "queued" : "unknown", errorMessage: op.state === "uncertain" ? "Delivery is unconfirmed. Check remote history before resending." : undefined });
+  }
+  shell.row.openma = snapshot.task;
+  shell.row.activeTurnId = turns.findLast(t => t.status === "running")?.id;
+  return { row: shell.row, turns };
 }

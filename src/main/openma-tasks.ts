@@ -1,4 +1,6 @@
 import { sessionInputIdentityPrefix } from "@openma/common/protocol/managed";
+import { DirectAgentRuntime } from "./direct-agent-runtime.js";
+import type { OpenMAEvent } from "@openma/common/session-events/openma";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { OpenmaAccount, OpenmaConnection } from "./openma-account.js";
@@ -38,7 +40,8 @@ export class OpenmaTasks {
     this.options.account.assertConnection(connection);
   }
   #client(connection: OpenmaConnection) {
-    return new OpenManagedCloudRuntimeClient({ ...connection, fetchImpl: this.options.fetchImpl, onUnauthorized: () => this.options.account.invalidate(connection) });
+    const options = { ...connection, fetchImpl: this.options.fetchImpl, onUnauthorized: () => this.options.account.invalidate(connection) };
+    return connection.provider ? new DirectAgentRuntime({ ...options, provider: connection.provider }) : new OpenManagedCloudRuntimeClient(options);
   }
   #task(id: string): OpenmaTask {
     if (this.#closed) throw new Error("OpenMA client is closed");
@@ -68,7 +71,7 @@ export class OpenmaTasks {
       const connection = this.options.account.connection(task);
       const client = this.#client(connection);
       if (patch.title !== undefined) {
-        const session = await client.request(() => client.sdk.beta.sessions.update(task.sessionId, { title: patch.title!.trim() }));
+        const session = await client.updateSession(task.sessionId, patch.title!.trim());
         this.#check(connection);
         const current = this.#store.get(id)!;
         this.#store.save({ ...current, title: session.title ?? patch.title.trim(), status: current.revision === task.revision ? session.status : current.status,
@@ -119,7 +122,7 @@ export class OpenmaTasks {
     const catalog = await this.options.catalog(connection);
     const scope = { baseUrl: connection.baseUrl, userId: connection.userId, workspaceId: connection.workspaceId };
     await client.request(async () => {
-      for await (const session of client.sdk.beta.sessions.list()) {
+      for (const session of await client.listSessions()) {
         this.#check(connection);
         if (!session.id || !session.agent?.id || !session.environment_id) continue;
         const id = openmaDesktopTaskId(scope, session.id);
@@ -129,10 +132,10 @@ export class OpenmaTasks {
         const runtimeId = session.metadata?.["backchat.runtime_id"] || environment?.runtimeId || null;
         const runner = catalog.runners.find((runtime) => runtime.id === runtimeId);
         const kind = runtimeId || environment?.type === "self_hosted" || session.metadata?.["backchat.runtime_kind"] === "runner" ? "runner" : "cloud";
-        this.#store.save({ ...scope, id, sessionId: session.id, title: session.title ?? session.id, status: session.status,
+        this.#store.save({ ...scope, ...(connection.provider ? { provider: connection.provider } : {}), id, sessionId: session.id, title: session.title ?? session.id, status: session.status,
           createdAt: timestamp(session.created_at, previous?.createdAt ?? Date.now()), updatedAt: timestamp(session.updated_at, previous?.updatedAt ?? Date.now()), afterSeq: previous?.afterSeq ?? 0,
           // A mutable environment or agent catalogue cannot move an existing task.
-          target: previous?.target ?? { ...scope, kind, agentId: session.agent.id, agentName: session.agent.name, environmentId: session.environment_id, environmentName: environment?.name ?? session.environment_id, runtimeId, runtimeName: runner?.name ?? (kind === "runner" ? "Runner" : "Cloud") },
+          target: previous?.target ?? { ...scope, kind, agentId: session.agent.id, agentName: session.agent.name ?? session.agent.id, environmentId: session.environment_id, environmentName: environment?.name ?? session.environment_id, runtimeId, runtimeName: runner?.name ?? (kind === "runner" ? "Runner" : "Cloud") },
         });
       }
     });
@@ -159,13 +162,13 @@ export class OpenmaTasks {
     }
     this.#check(connection);
     const client = this.#client(connection);
-    const session = await client.request(() => client.sdk.beta.sessions.create({
-      agent: target.agentId, environment_id: env.id, title,
+    const session = await client.createRemoteSession({
+      agentId: target.agentId, environmentId: env.id, title,
       metadata: { "backchat.runtime_kind": target.kind, "backchat.runtime_id": target.runtimeId ?? "", "backchat.creation_id": randomUUID() },
-    }));
+    });
     if (!session.id) throw new Error("OpenMA did not return a session ID");
     const scope = { baseUrl: connection.baseUrl, userId: connection.userId, workspaceId: connection.workspaceId };
-    const task: OpenmaTask = { ...scope, id: openmaDesktopTaskId(scope, session.id), sessionId: session.id,
+    const task: OpenmaTask = { ...scope, ...(connection.provider ? { provider: connection.provider } : {}), id: openmaDesktopTaskId(scope, session.id), sessionId: session.id,
       target: { ...scope, kind: target.kind, agentId: target.agentId, agentName, environmentId: env.id, environmentName: env.name, runtimeId: target.runtimeId, runtimeName },
       title, status: session.status, afterSeq: 0, createdAt: timestamp(session.created_at, Date.now()), updatedAt: timestamp(session.updated_at, Date.now()),
     };
@@ -201,6 +204,20 @@ export class OpenmaTasks {
     }, 30);
   }
   #ingest(id: string, observer: Observer, event: OpenmaTaskEvent) {
+    if (event.canonical) {
+      const canonical = event.canonical as OpenMAEvent;
+      const data = canonical.data as { message_id?: string };
+      if (canonical.type === "agent.message_chunk") {
+        if (!observer.transient.some(e => e.id === event.id)) observer.transient.push(event);
+      } else {
+        this.#store.append(id, event);
+        if (canonical.type === "agent.message") observer.transient = observer.transient.filter(e => (e.canonical as OpenMAEvent | undefined)?.data && ((e.canonical as OpenMAEvent).data as { message_id?: string }).message_id !== data.message_id);
+        const status = canonical.type === "session.running" ? "running" : canonical.type === "session.idle" ? "idle" : canonical.type === "session.terminated" || canonical.type === "session.error" ? "terminated" : undefined;
+        if (status) this.#store.save({ ...this.#store.get(id)!, status, updatedAt: Date.now() });
+      }
+      this.#publish(id); return;
+    }
+
     if (event.type.startsWith("system.user_message_")) {
       // Promotion frames carry the future durable seq but are not the event
       // itself. Checkpointing one could skip the user message on reconnect.
@@ -251,7 +268,7 @@ export class OpenmaTasks {
           this.#ingest(id, observer, event);
         }
         const revision = this.#store.get(id)?.revision;
-        const session = await client.request(() => client.sdk.beta.sessions.retrieve(task.sessionId, {}, { signal: attemptSignal }));
+        const session = await client.retrieveSession(task.sessionId, attemptSignal);
         if (signal.aborted) return;
         if (this.#store.get(id)?.revision === revision) this.#store.save({ ...this.#store.get(id)!, status: session.status, title: session.title ?? task.title, updatedAt: timestamp(session.updated_at, task.updatedAt) });
         observer.connection = "online"; this.#publish(id);
@@ -307,7 +324,7 @@ export class OpenmaTasks {
   async interrupt(id: string): Promise<void> { await this.#send(id, randomUUID(), { type: "user.interrupt" }); }
   async respond(id: string, requestId: string, response: OpenmaTaskResponse): Promise<void> {
     const task = this.#task(id);
-    const pending = openmaPendingActions(this.#store.events(id)).find((action) => action.id === requestId);
+    const pending = openmaPendingActions(this.#store.events(id).map(e => e.wire as OpenmaTaskEvent ?? e)).find((action) => action.id === requestId);
     if (!pending) throw new Error("This OpenMA request is no longer pending");
     if (response.type !== pending.type) throw new Error("Response does not match the pending request");
     const thread = pending.event.session_thread_id;
@@ -333,8 +350,17 @@ export class OpenmaTasks {
     if (observer.publishTimer) clearTimeout(observer.publishTimer);
     this.#observers.delete(id);
   }
+  resume(): void {
+    if (this.#closed) return;
+    for (const [id, observer] of [...this.#observers]) {
+      const owners = [...observer.owners];
+      this.#stopObserver(id);
+      for (const owner of owners) this.open(id, owner);
+    }
+  }
   stop(): void { for (const id of this.#observers.keys()) this.#stopObserver(id); }
   close(): void {
+    if (this.#closed) return;
     this.#closed = true; this.#unsubscribe(); this.stop(); this.#store.close();
   }
 }

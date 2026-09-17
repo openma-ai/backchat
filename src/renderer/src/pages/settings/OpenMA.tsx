@@ -1,3 +1,4 @@
+import { DirectAgentConnections } from "./DirectAgentConnections";
 import { useEffect, useState } from "react";
 import { PageScaffold } from "@/components/shell/PageScaffold";
 import { Button } from "@/components/ui/button";
@@ -20,16 +21,18 @@ export function SettingsOpenMA() {
     try { await operation(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+  const hasOpenmaAccount = account?.workspaces.some(workspace => !workspace.provider);
   const signingIn = account?.status === "signing_in";
   return (
     <PageScaffold title={t("settings.openma")}>
       <div className="max-w-xl space-y-5 text-sm">
+        <DirectAgentConnections />
         <p className="text-fg-muted">{t("openma.description")}</p>
         <label className="block space-y-2">
           <span>{t("openma.server")}</span>
           <Input value={server} disabled={busy || signingIn} onChange={(e) => setServer(e.target.value)} />
         </label>
-        {account?.user && <div><div>{account.user.name}</div><div className="text-fg-muted">{account.user.email}</div></div>}
+        {hasOpenmaAccount && account?.user && <div><div>{account.user.name}</div><div className="text-fg-muted">{account.user.email}</div></div>}
         {account?.status === "expired" && <p role="status">{t("openma.expired")}</p>}
         {!!account?.workspaces.length && (
           <label className="block space-y-2">
@@ -43,11 +46,11 @@ export function SettingsOpenMA() {
         )}
         <div className="flex gap-2">
           {signingIn ? <Button variant="outline" onClick={() => void window.backchat.openmaCancelLogin()}>{t("common.cancel")}</Button>
-            : <Button disabled={busy} onClick={() => void run(() => window.backchat.openmaLogin(server))}>{t(account?.status === "signed_in" ? "openma.signInAgain" : "openma.signIn")}</Button>}
-          {account?.user && <Button variant="outline" disabled={busy} onClick={() => void run(() => window.backchat.openmaLogout())}>{t("openma.signOut")}</Button>}
+            : <Button disabled={busy} onClick={() => void run(() => window.backchat.openmaLogin(server))}>{t(hasOpenmaAccount && account?.status === "signed_in" ? "openma.signInAgain" : "openma.signIn")}</Button>}
+          {hasOpenmaAccount && <Button variant="outline" disabled={busy} onClick={() => void run(() => window.backchat.openmaLogout())}>{t("openma.signOut")}</Button>}
         </div>
         {signingIn && <p role="status" className="text-fg-muted">{t("openma.waiting")}</p>}
-        {account?.status === "signed_in" && (
+        {account?.status === "signed_in" && !account.provider && account.canManageRuntimes !== false && (
           <div className="space-y-2 border-t border-border pt-4">
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={runnerIntent ?? runner?.enabled ?? false} disabled={busy || !account.activeWorkspaceId}
@@ -66,7 +69,7 @@ export function SettingsOpenMA() {
           </div>
         )}
         {(error || loadError) && <p role="alert" className="text-red-500">{error || loadError?.message}</p>}
-        {account?.status === "signed_in" && account.activeWorkspaceId && <OpenMAProjects key={`${account.baseUrl}/${account.user?.id}/${account.activeWorkspaceId}`} />}
+        {account?.status === "signed_in" && !account.provider && account.activeWorkspaceId && <OpenMAProjects key={`${account.baseUrl}/${account.user?.id}/${account.activeWorkspaceId}`} />}
       </div>
     </PageScaffold>
   );

@@ -1,3 +1,4 @@
+import { openmaWorkspaceScope } from "@shared/openma";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveRestoreIcon, Trash2Icon } from "lucide-react";
 import { PageScaffold } from "@/components/shell/PageScaffold";
@@ -28,7 +29,7 @@ type ArchiveEntry = PersistedSessionInfo & { openma?: OpenmaTask };
 export function Archive() {
   const { t } = useI18n();
   const { data: account } = useOpenmaAccount();
-  const scope = account?.user && account.status !== "signing_in" ? JSON.stringify(account.workspaces.filter((w) => !w.expired).map((w) => JSON.stringify([account.baseUrl, account.user!.id, w.id]))) : null;
+  const scope = account?.user && account.status !== "signing_in" ? JSON.stringify(account.workspaces.filter((w) => !w.expired).map((w) => JSON.stringify(Object.values(openmaWorkspaceScope(account, w.id))))) : null;
   const scopeRef = useRef(scope); scopeRef.current = scope;
   const generation = useRef(0);
   const [rows, setRows] = useState<ArchiveEntry[] | null>(null);

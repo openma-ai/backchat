@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { mkdir, readFile } from "node:fs/promises";
@@ -7,6 +8,9 @@ import { openmaDesktopTaskId, openmaRunnerSessionId } from "../src/main/openma-i
 import { expect, test } from "./fixtures";
 
 test("desktop login selects a workspace without registering the machine", async ({ app, page, home }) => {
+  const hasIdleSleepAssertion = () => execFileSync('/usr/bin/pmset', ['-g', 'assertions'], { encoding: 'utf8' })
+    .split('\n').some(line => line.includes(`pid ${app.process().pid}(`) && /PreventUserIdleSystemSleep|NoIdleSleepAssertion/.test(line));
+  if (process.platform === 'darwin') await expect.poll(hasIdleSleepAssertion).toBe(false);
   const requests: string[] = [];
   let runnerAttached = false;
   let runnerSocket: WebSocket | undefined;
@@ -144,6 +148,7 @@ test("desktop login selects a workspace without registering the machine", async 
     await page.getByRole("checkbox", { name: "Connect this machine as a runner" }).check();
     await expect.poll(() => page.evaluate(() => window.backchat.openmaRunnerState()), { timeout: 20_000 }).toMatchObject({ enabled: true, status: "online" });
     expect(runnerAttached).toBe(true);
+    if (process.platform === "darwin") await expect.poll(hasIdleSleepAssertion).toBe(true);
     const folder = join(home, "sample-project"); await mkdir(folder);
     await page.evaluate(async (cwd) => { await window.backchat.projectSave({ project_id: "project", name: "Sample project", primary_folder: cwd, source_folders: [cwd] }); }, folder);
     await page.reload();
@@ -243,6 +248,11 @@ test("desktop login selects a workspace without registering the machine", async 
     await expect.poll(() => frames.filter((frame) => frame.type === "session.complete" && frame.turn_id === "background-turn").length).toBe(1);
     expect(app.process().exitCode).toBeNull();
     expect(runnerAttached).toBe(true);
+    if (process.platform === "darwin") await expect.poll(hasIdleSleepAssertion).toBe(true);
+    expect(await readFile(join(folder, "offline-prompt-count.txt"), "utf8")).toBe("started\nstarted\n");
+    const greetingsBeforeWake = frames.filter(frame => frame.type === "hello").length;
+    await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("resume"); });
+    await expect.poll(() => frames.filter(frame => frame.type === "hello").length).toBe(greetingsBeforeWake + 1);
     expect(await readFile(join(folder, "offline-prompt-count.txt"), "utf8")).toBe("started\nstarted\n");
     const reopened = app.waitForEvent("window");
     await app.evaluate(({ Menu }) => {
@@ -260,6 +270,7 @@ test("desktop login selects a workspace without registering the machine", async 
     await page.evaluate(() => window.backchat.openmaLogout());
     await expect.poll(() => page.evaluate(() => window.backchat.openmaAccountState())).toMatchObject({ status: "signed_out" });
     await expect.poll(() => runnerAttached).toBe(false);
+    if (process.platform === "darwin") await expect.poll(hasIdleSleepAssertion).toBe(false);
     await expect(page.getByText("Runner linked task", { exact: true })).toHaveCount(0);
     expect(await page.evaluate(async (id) => (await window.backchat.sessionsList()).some((session) => session.id === id), localId)).toBe(false);
   } finally { ws.close(); for (const socket of ws.clients) socket.terminate(); server.closeAllConnections(); await new Promise<void>((r) => server.close(() => r())); }

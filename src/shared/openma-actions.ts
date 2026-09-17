@@ -24,6 +24,8 @@ export function openmaRuntimePermission(event: OpenmaTaskEvent, sessionId: strin
 }
 export interface OpenmaPendingAction { id: string; type: "confirmation" | "custom_result"; event: OpenmaTaskEvent }
 export function openmaPendingActions(events: OpenmaTaskEvent[]): OpenmaPendingAction[] {
+  const direct = events.findLast(event => Array.isArray(event.pendingActions));
+  if (direct) return direct.pendingActions as OpenmaPendingAction[];
   const tools = new Map<string, OpenmaTaskEvent>();
   const requested = new Map<string, string[]>();
   const resolved = new Set<string>();

@@ -70,6 +70,22 @@ describe("OpenMA desktop task observer", () => {
     expect(state.events[0]).not.toHaveProperty("metadata");
   });
 
+  it("reopens every subscribed task on wake without resending input or losing owners", async () => {
+    const { tasks, state } = await setup();
+    const snapshot = await tasks.create(target, "Task");
+    tasks.open(snapshot.task.id, "a"); tasks.open(snapshot.task.id, "b");
+    await vi.waitFor(() => expect(state.streams).toBe(1));
+    tasks.resume();
+    await vi.waitFor(() => expect(state.streams).toBe(2));
+    expect(state.sends).toBe(0);
+    tasks.detach(snapshot.task.id, "a");
+    expect(tasks.snapshot(snapshot.task.id).connection).toBe("online");
+    tasks.detach(snapshot.task.id, "b");
+    expect(tasks.snapshot(snapshot.task.id).connection).toBe("offline");
+    tasks.close(); tasks.resume();
+    expect(state.streams).toBe(2);
+  });
+
   it("preserves a successful rename when a refresh started before it returns stale metadata", async () => {
     const { tasks, state } = await setup();
     const { task } = await tasks.create(target, "Task");
