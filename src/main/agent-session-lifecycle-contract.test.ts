@@ -87,7 +87,7 @@ describe("agent and session lifecycle contract", () => {
 
     expect(index).toContain("ipcRuntime.dispose()");
     expect(index).toContain("event.preventDefault()");
-    expect(index).toContain("shutdownBarrierStarted");
+    // Quit deduplication and confirmation are exercised by quit-coordinator.test.ts.
     expect(ipc).toContain("sessionManager.disposeAll()");
     expect(ipc).toContain("agentSetup.dispose()");
   });

@@ -440,6 +440,10 @@ export class SessionManager {
     return this.#sessions.has(id);
   }
 
+  hasLocalProcesses(): boolean {
+    return this.#sessions.size > 0 || this.#starting.size > 0;
+  }
+
   sessionCount(): number {
     return this.#sessions.size;
   }

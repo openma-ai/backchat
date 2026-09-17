@@ -1,3 +1,4 @@
+import { openmaWorkspaceScope } from "@shared/openma";
 /**
  * Global Cmd+K palette — Recent / Actions / Navigate / Search (taste-saas
  * four-section recipe). Mounted once in ShellLayout. Dual key binding:
@@ -63,7 +64,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Array<SearchHitInfo & { openma?: OpenmaTask }>>([]);
   const { data: account } = useOpenmaAccount();
-  const scope = account?.user && account.status !== "signing_in" ? JSON.stringify(account.workspaces.filter((w) => !w.expired).map((w) => JSON.stringify([account.baseUrl, account.user!.id, w.id]))) : null;
+  const scope = account?.user && account.status !== "signing_in" ? JSON.stringify(account.workspaces.filter((w) => !w.expired).map((w) => JSON.stringify(Object.values(openmaWorkspaceScope(account, w.id))))) : null;
   const sessions = useSessionStore(selectSessions);
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],

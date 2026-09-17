@@ -22,6 +22,8 @@ import type { Settings } from "../shared/settings.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 
 const api: BackchatApi = {
+  openmaRemoveDirect: (id) => ipcRenderer.invoke(InvokeChannel.OpenmaRemoveDirect, id),
+  openmaConnectDirect: (input) => ipcRenderer.invoke(InvokeChannel.OpenmaConnectDirect, input),
   openmaAccountState: () => ipcRenderer.invoke(InvokeChannel.OpenmaAccountState),
   openmaTasksList: (scope) => ipcRenderer.invoke(InvokeChannel.OpenmaTasksList, scope),
   openmaTasksRefresh: (scope) => ipcRenderer.invoke(InvokeChannel.OpenmaTasksRefresh, scope),

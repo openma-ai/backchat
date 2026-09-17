@@ -33,9 +33,10 @@ export class OpenmaProjectService {
     check(); return result;
   }
 
-  list() { return this.options.bindings.list(this.options.account.connection()); }
+  list() { const c = this.options.account.connection(); return c.provider ? [] : this.options.bindings.list(c); }
 
   async link(binding: OpenmaProjectBinding): Promise<void> {
+    if (this.options.account.connection().provider) throw new Error("Local project bindings require an OpenMA connection");
     this.options.bindings.validate(binding);
     const { connection, client, check } = this.#context();
     const env = await client.request(() => client.sdk.beta.environments.retrieve(binding.environmentId));
@@ -61,6 +62,7 @@ export class OpenmaProjectService {
   }
 
   async unlink(binding: OpenmaProjectBinding): Promise<void> {
+    if (this.options.account.connection().provider) throw new Error("Local project bindings require an OpenMA connection");
     const { connection, client, check } = this.#context();
     if (binding.runtimeId !== null && binding.runtimeId !== this.options.runner().runtimeId) throw new Error("Unlink local directories on their runner");
     const current = this.list().find((saved) => saved.environmentId === binding.environmentId && saved.runtimeId === binding.runtimeId);

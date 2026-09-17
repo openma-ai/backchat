@@ -1,3 +1,4 @@
+import { openmaWorkspaceScope } from "@shared/openma";
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { OpenmaAccountState, OpenmaRunnerState, OpenmaCatalog, OpenmaProjectBinding, OpenmaScope } from "@shared/openma";
@@ -25,11 +26,11 @@ export function useOpenmaRunner() {
 
 export function useOpenmaCatalog(requestedScope?: OpenmaScope, enabled = true) {
   const { data: account } = useOpenmaAccount();
-  const scope = requestedScope ?? (account?.user && account.activeWorkspaceId ? { baseUrl: account.baseUrl, userId: account.user.id, workspaceId: account.activeWorkspaceId } : undefined);
+  const scope = requestedScope ?? (account?.user && account.activeWorkspaceId ? openmaWorkspaceScope(account, account.activeWorkspaceId) : undefined);
   return useQuery<OpenmaCatalog>({
     queryKey: ["openma-catalog", scope?.baseUrl, scope?.userId, scope?.workspaceId],
     queryFn: () => window.backchat.openmaCatalog(scope),
-    enabled: enabled && !!scope && account?.status !== "signing_in" && account?.baseUrl === scope.baseUrl && account.user?.id === scope.userId && !!account.workspaces.some((w) => w.id === scope.workspaceId && !w.expired),
+    enabled: enabled && !!scope && account?.status !== "signing_in" && !!account?.workspaces.some((w) => { const candidate = openmaWorkspaceScope(account, w.id); return w.id === scope.workspaceId && !w.expired && candidate.baseUrl === scope.baseUrl && candidate.userId === scope.userId; }),
     staleTime: 10_000, refetchInterval: 30_000, retry: false,
   });
 }

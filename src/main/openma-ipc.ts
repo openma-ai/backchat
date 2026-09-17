@@ -83,6 +83,8 @@ export async function registerOpenmaIpc(directory: string): Promise<OpenmaAccoun
   });
   await account.restore();
   ipcMain.handle(InvokeChannel.OpenmaAccountState, () => account.state());
+  ipcMain.handle(InvokeChannel.OpenmaRemoveDirect, (_event, id: unknown) => { if (typeof id !== "string") throw new Error("Choose a connection"); return account.removeDirect(id); });
+  ipcMain.handle(InvokeChannel.OpenmaConnectDirect, (_event, input: import("../shared/openma.js").DirectAgentConnectionInput) => account.connectDirect(input));
   ipcMain.handle(InvokeChannel.OpenmaLogin, async (_event, url: unknown) => {
     if (typeof url !== "string") throw new Error("OpenMA server address is required");
     await account.login(url);
@@ -105,7 +107,7 @@ export function registerOpenmaRunnerIpc(account: OpenmaAccount, runner: OpenmaRu
   let owner = `${account.state().baseUrl}/${account.state().user?.id ?? ""}`;
   return account.subscribe((state) => {
     const nextOwner = `${state.baseUrl}/${state.user?.id ?? ""}`;
-    if (state.status === "signed_out" || state.status === "expired" || owner !== nextOwner) runner.stop();
+    if (state.provider || state.status === "signed_out" || state.status === "expired" || owner !== nextOwner) runner.stop();
     owner = nextOwner;
   });
 }

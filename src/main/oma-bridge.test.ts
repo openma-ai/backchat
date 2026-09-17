@@ -44,6 +44,26 @@ class FakeSocket implements OmaBridgeSocket {
 }
 
 describe("OmaBridgeClient", () => {
+  it("reconnects immediately on wake without reviving a stopped runner", async () => {
+    const sockets: FakeSocket[] = [];
+    const client = new OmaBridgeClient({
+      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "machine" },
+      host: { async start() { throw new Error("not used"); }, async prompt() {}, cancel() {}, async dispose() {}, announceAll() {} },
+      detectAgents: async () => [],
+      socketFactory: () => { const socket = new FakeSocket(); sockets.push(socket); return socket; },
+    });
+    try {
+      await client.connect(); sockets[0]!.open();
+      client.resume();
+      expect(sockets).toHaveLength(2);
+      expect(sockets[0]!.readyState).toBe(3);
+      // Late close on the old socket must not close the replacement.
+      sockets[0]!.emit("close"); sockets[1]!.open();
+      client.stop(); client.resume();
+      expect(sockets).toHaveLength(2);
+    } finally { client.stop(); }
+  });
+
   it("reconnects a silent daemon link without declaring its running task complete", async () => {
     vi.useFakeTimers();
     const sockets: FakeSocket[] = [];

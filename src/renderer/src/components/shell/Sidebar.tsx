@@ -1,3 +1,4 @@
+import { openmaWorkspaceScope } from "@shared/openma";
 import { useOpenmaAccount, useOpenmaCatalog } from "@/lib/openma-account";
 import { sameOpenmaScope, useOpenmaTenantTasks } from "@/lib/openma-tasks";
 import { openmaTargets } from "@/lib/openma-targets";
@@ -423,7 +424,7 @@ export function Sidebar() {
       >
         <nav className="app-no-drag px-2 pt-[var(--row-gap-y)]">
         {openmaAccount?.user && openmaAccount.workspaces.map((workspace) => {
-          const scope = { baseUrl: openmaAccount.baseUrl, userId: openmaAccount.user!.id, workspaceId: workspace.id };
+          const scope = openmaWorkspaceScope(openmaAccount, workspace.id);
           const rows = sessions.filter((row) => row.openma && sameOpenmaScope(row.openma, scope));
           return <TenantSidebarSection key={JSON.stringify(scope)} scope={scope} name={workspace.name || workspace.id}
             enabled={!workspace.expired && openmaAccount.status !== "signing_in"} labelCls={labelCls} rows={rows}
@@ -434,7 +435,7 @@ export function Sidebar() {
           />;
         })}
         <SidebarSection title={t("chat.local")} open={localOpen} onToggle={() => setLocalOpen(!localOpen)} labelCls={labelCls}>
-        <div>
+        <div className="pl-2">
         {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
           <div>
             <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-xs font-medium text-fg-subtle", labelCls)}>

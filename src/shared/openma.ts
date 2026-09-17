@@ -1,3 +1,6 @@
+export type DirectAgentProvider = "claude-managed" | "openai-agents";
+export type AgentConnectionProvider = DirectAgentProvider | "openma";
+export interface DirectAgentConnectionInput { provider: AgentConnectionProvider; baseUrl: string; apiKey: string; name?: string }
 /** Public desktop state. Credentials never cross the preload boundary. */
 export interface OpenmaScope { baseUrl: string; userId: string; workspaceId: string }
 export interface OpenmaProjectBinding { projectId: string; environmentId: string; runtimeId: string | null }
@@ -9,6 +12,7 @@ export interface OpenmaExecutionTarget extends OpenmaScope {
   runtimeId: string | null; runtimeName: string;
 }
 export interface OpenmaTask extends OpenmaScope {
+  provider?: DirectAgentProvider;
   id: string; sessionId: string; target: OpenmaExecutionTarget;
   title: string; status: "running" | "idle" | "rescheduling" | "terminated";
   createdAt: number; updatedAt: number; afterSeq: number;
@@ -32,10 +36,12 @@ export interface OpenmaTaskSnapshot {
 }
 
 export interface OpenmaAccountState {
+  canManageRuntimes?: boolean;
+  provider?: DirectAgentProvider;
   status: "signed_out" | "signing_in" | "signed_in" | "expired";
   baseUrl: string;
   user: { id: string; email: string; name: string | null } | null;
-  workspaces: Array<{ id: string; name: string; role: string; expired?: boolean }>;
+  workspaces: Array<{ id: string; name: string; role: string; expired?: boolean; baseUrl?: string; userId?: string; provider?: DirectAgentProvider }>;
   activeWorkspaceId: string | null;
 }
 
@@ -56,6 +62,8 @@ export interface OpenmaAccountApi {
   openmaTaskFileDownload(id: string, fileId: string): Promise<void>;
   onOpenmaTask(handler: (snapshot: OpenmaTaskSnapshot) => void): () => void;
   openmaAccountState(): Promise<OpenmaAccountState>;
+  openmaRemoveDirect(workspaceId: string): Promise<void>;
+  openmaConnectDirect(input: DirectAgentConnectionInput): Promise<void>;
   openmaLogin(baseUrl: string): Promise<void>;
   openmaCancelLogin(): Promise<void>;
   openmaLogout(): Promise<void>;
@@ -89,4 +97,10 @@ export interface OpenmaRunnerState {
   runtimeId: string | null;
   machineId: string | null;
   message?: string;
+}
+
+/** Direct connections carry their own endpoint and identity alongside OpenMA tenants. */
+export function openmaWorkspaceScope(account: OpenmaAccountState, id: string): OpenmaScope {
+  const workspace = account.workspaces.find(w => w.id === id);
+  return { baseUrl: workspace?.baseUrl ?? account.baseUrl, userId: workspace?.userId ?? account.user?.id ?? "", workspaceId: id };
 }

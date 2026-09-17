@@ -125,3 +125,75 @@ describe("browser login handoff", () => {
     await expect(fetch(callback)).rejects.toThrow();
   });
 });
+
+
+describe("direct managed agent credentials", () => {
+  it("connects without OpenMA identity endpoints, restores credentials, and isolates API protocols", async () => {
+    const directory = await root();
+    const account = new OpenmaAccount({ directory, fetch: async () => { throw new Error("OpenMA identity must not be queried"); } });
+    await account.connectDirect({ provider: "claude-managed", baseUrl: "https://agents.example.test/", apiKey: "third-party-secret", name: "My Claude" });
+    expect(account.connection()).toMatchObject({ provider: "claude-managed", baseUrl: "https://agents.example.test", apiKey: "third-party-secret" });
+    expect(account.state()).toMatchObject({ status: "signed_in", provider: "claude-managed" });
+    expect(JSON.stringify(account.state())).not.toContain("third-party-secret");
+    const scope = account.connection();
+    const restored = new OpenmaAccount({ directory });
+    await restored.restore();
+    expect(restored.connection()).toEqual(scope);
+    await account.connectDirect({ provider: "openai-agents", baseUrl: "https://agents.example.test", apiKey: "another-secret", name: "My OpenAI" });
+    expect(account.connection(scope)).toEqual(scope);
+    expect(account.state().workspaces).toHaveLength(2);
+    expect((await stat(join(directory, "account.json"))).mode & 0o777).toBe(0o600);
+  });
+  it("rejects invalid providers and keys without replacing an existing connection", async () => {
+    const account = new OpenmaAccount({ directory: await root() });
+    await expect(account.connectDirect({ provider: "responses" as never, baseUrl: "https://example.test", apiKey: "key", name: "Test" })).rejects.toThrow();
+    await expect(account.connectDirect({ provider: "claude-managed", baseUrl: "https://example.test", apiKey: "  ", name: "Test" })).rejects.toThrow();
+    expect(account.state().status).toBe("signed_out");
+  });
+});
+
+it("keeps direct tenants alongside browser-authenticated workspaces and removes only the selected direct connection", async () => {
+  const account = new OpenmaAccount({ directory: await root(), fetch: identityFetch, authorize: async () => ({ tokens, user: "user" }) });
+  await account.connectDirect({ provider: "openai-agents", baseUrl: "https://third.test/v1", apiKey: "direct-key", name: "External" });
+  const direct = account.connection();
+  await account.login("https://app.openma.dev");
+  expect(account.state().workspaces.map(w => w.name)).toContain("External");
+  expect(account.connection(direct)).toEqual(direct);
+  await account.selectWorkspace("a");
+  expect(account.connection().apiKey).toBe("secret-a");
+  await account.removeDirect(direct.workspaceId);
+  expect(account.state().workspaces.map(w => w.id)).toEqual(["a", "b"]);
+  expect(() => account.connection(direct)).toThrow();
+});
+it("accepts just protocol, key and base URL, using the hostname as tenant name", async () => {
+  const account = new OpenmaAccount({ directory: await root() });
+  await account.connectDirect({ provider: "claude-managed", baseUrl: "https://agents.example.test", apiKey: "key" });
+  expect(account.state().workspaces[0]!.name).toBe("agents.example.test");
+});
+it("signing out of OpenMA keeps explicitly configured third-party tenants", async () => {
+  const account = new OpenmaAccount({ directory: await root(), fetch: identityFetch, authorize: async () => ({ tokens, user: "user" }) });
+  await account.login("https://app.openma.dev");
+  await account.connectDirect({ provider: "claude-managed", baseUrl: "https://third.test", apiKey: "external" });
+  const connection = account.connection();
+  await account.logout();
+  expect(account.state().workspaces).toHaveLength(1);
+  expect(account.connection(connection)).toEqual(connection);
+});
+it("uses an OpenMA API key to discover its real tenant without browser login or granting other memberships", async () => {
+  const requests: string[] = [];
+  const account = new OpenmaAccount({ directory: await root(), fetch: async (url, init) => {
+    requests.push(String(url)); expect(new Headers(init?.headers).get("x-api-key")).toBe("oma-user-key");
+    return Response.json({ user: { id: "user", name: "User", email: "u@test" }, tenant: { id: "a", name: "Team A" }, tenants: [{ id: "a", name: "Team A", role: "owner" }, { id: "b", name: "Team B", role: "owner" }] });
+  }, authorize: async () => { throw new Error("Must not open browser"); } });
+  await account.connectDirect({ provider: "openma", baseUrl: "https://openma.example.test/v1", apiKey: "oma-user-key" });
+  expect(requests).toEqual(["https://openma.example.test/v1/oma/me"]);
+  expect(account.connection()).toMatchObject({ baseUrl: "https://openma.example.test", workspaceId: "a", userId: "user", authMethod: "api_key", apiKey: "oma-user-key" });
+  expect(account.state().workspaces).toHaveLength(1);
+  expect(account.state().workspaces[0]).toMatchObject({ id: "a", name: "Team A" });
+});
+it("accepts a tenant-only OpenMA key for cloud use without claiming runner ownership", async () => {
+  const account = new OpenmaAccount({ directory: await root(), fetch: async () => Response.json({ user: null, tenant: { id: "team", name: "Team" }, tenants: [] }) });
+  await account.connectDirect({ provider: "openma", baseUrl: "https://openma.example.test", apiKey: "service-key" });
+  expect(account.connection()).toMatchObject({ workspaceId: "team", authMethod: "api_key", canManageRuntimes: false });
+  expect(account.state().canManageRuntimes).toBe(false);
+});

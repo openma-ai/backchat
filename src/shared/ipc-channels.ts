@@ -20,6 +20,8 @@ export const InvokeChannel = {
   OpenmaTaskFiles: "openma:task-files",
   OpenmaTaskFilePreview: "openma:task-file-preview",
   OpenmaTaskFileDownload: "openma:task-file-download",
+  OpenmaRemoveDirect: "openma:remove-direct",
+  OpenmaConnectDirect: "openma:connect-direct",
   OpenmaLogin: "openma:login",
   OpenmaCancelLogin: "openma:cancel-login",
   OpenmaLogout: "openma:logout",

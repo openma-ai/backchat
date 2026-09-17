@@ -11,7 +11,7 @@ import { OpenManagedCloudRuntimeClient } from "./openmanaged-cloud-runtime.js";
 import { OpenmaRunnerOutbox } from "./openma-runner-outbox.js";
 
 type BridgeDeps = ConstructorParameters<typeof OmaBridgeClient>[0];
-type Bridge = Pick<OmaBridgeClient, "connect" | "stop" | "handleSessionEvent"> & Partial<Pick<OmaBridgeClient, "requestPermission" | "cancelPendingFor">>;
+type Bridge = Pick<OmaBridgeClient, "connect" | "stop" | "handleSessionEvent"> & Partial<Pick<OmaBridgeClient, "requestPermission" | "cancelPendingFor" | "resume">>;
 interface RunnerCredentials extends OmaBridgeCredentials {
   v: 2;
   runtimeId: string;
@@ -152,6 +152,8 @@ export class OpenmaRunner {
   }
 
   async enable(): Promise<void> {
+    if (this.#options.connection().canManageRuntimes === false) throw new Error("Connecting a local runner requires an OpenMA user API key");
+    if (this.#options.connection().provider) throw new Error("Local runners require an OpenMA connection");
     if (this.#operation) throw new Error("Runner connection is already in progress");
     if (this.#state.enabled) return;
     const connection = this.#options.connection();
@@ -194,7 +196,15 @@ export class OpenmaRunner {
           throw new Error(this.#state.message);
         }
         this.#update({ status: "registering", message: undefined });
-        const { code, state } = await (this.#options.authorize ?? browserRuntimeAuthorization)({ baseUrl: connection.baseUrl, signal: operation.signal, openExternal: this.#options.openExternal ?? (async () => { throw new Error("Browser unavailable"); }) });
+        const authorization = connection.authMethod === "api_key" ? await (async () => {
+          const state = randomUUID();
+          const result = await this.#request<{ code: string }>(`${connection.baseUrl}/v1/oma/runtimes/connect-runtime`, {
+            method: "POST", headers: { "x-api-key": connection.apiKey, "x-active-tenant": connection.workspaceId }, body: JSON.stringify({ state }), signal: operation.signal,
+          });
+          if (!result.code) throw new Error("OpenMA did not return a runner authorization code");
+          return { code: result.code, state };
+        })() : await (this.#options.authorize ?? browserRuntimeAuthorization)({ baseUrl: connection.baseUrl, signal: operation.signal, openExternal: this.#options.openExternal ?? (async () => { throw new Error("Browser unavailable"); }) });
+        const { code, state } = authorization;
         check();
         await mkdir(this.#options.bridgeDirectory, { recursive: true, mode: 0o700 });
         let machineId: string;
@@ -263,6 +273,8 @@ export class OpenmaRunner {
       throw error;
     } finally { if (this.#operation === operation) this.#operation = null; }
   }
+
+  resume(): void { this.#bridge?.resume?.(); }
 
   async disable(): Promise<void> { this.stop(); await this.#persist(); }
   stop(): void {

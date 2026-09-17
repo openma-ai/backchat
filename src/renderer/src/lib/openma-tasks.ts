@@ -1,3 +1,4 @@
+import { openmaWorkspaceScope } from "@shared/openma";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { OpenmaScope } from "@shared/openma";
@@ -24,7 +25,7 @@ export function useOpenmaTenantTasks(scope: OpenmaScope, enabled: boolean) {
 /** Scope every delayed result as well as each push. Credentials remain in main. */
 export function useOpenmaTasks(): void {
   const { data: account } = useOpenmaAccount();
-  const scopesKey = JSON.stringify(account?.user && account.status !== "signing_in" ? account.workspaces.filter((w) => !w.expired).map((w) => ({ baseUrl: account.baseUrl, userId: account.user!.id, workspaceId: w.id })) : []);
+  const scopesKey = JSON.stringify(account?.user && account.status !== "signing_in" ? account.workspaces.filter((w) => !w.expired).map((w) => openmaWorkspaceScope(account, w.id)) : []);
   useEffect(() => {
     const scopes = JSON.parse(scopesKey) as OpenmaScope[];
     sessionStore.retainOpenmaScopes(scopes);
