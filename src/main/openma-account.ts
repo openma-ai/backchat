@@ -1,4 +1,4 @@
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes, scrypt } from "node:crypto";
 import { createServer } from "node:http";
 import { hostname } from "node:os";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -6,6 +6,14 @@ import { join } from "node:path";
 import type { DirectAgentConnectionInput, DirectAgentProvider, OpenmaAccountState, OpenmaScope } from "../shared/openma.js";
 
 const DEFAULT_ORIGIN = "https://app.openma.dev";
+// Derive a stable cache identity without exposing a fast verifier for the key.
+// This is not authentication: the original key stays in the private account file.
+function credentialIdentity(baseUrl: string, apiKey: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    scrypt(apiKey, baseUrl, 12, (error, result) => error ? reject(error) : resolve(result.toString("hex")));
+  });
+}
+
 interface CallbackToken { tenant_id: string; tenant_name: string; role: string; token: string; key_id: string }
 interface AuthorizationResult { tokens: CallbackToken[]; user: string }
 interface AuthorizationOptions {
@@ -186,7 +194,9 @@ export class OpenmaAccount {
     const generation = this.#generation;
     // Protocol and key identify a direct account: rotating to another account must
     // not expose its predecessor's local task cache on the same endpoint.
-    const id = `direct:${input.provider}:${createHash("sha256").update(baseUrl + "\0" + input.apiKey.trim()).digest("hex").slice(0, 24)}`;
+    const digest = await credentialIdentity(baseUrl, input.apiKey.trim());
+    if (generation !== this.#generation) throw new Error("Connection cancelled");
+    const id = `direct:${input.provider}:${digest}`;
     const credentials: Credentials = { version: 2, base_url: this.#credentials?.base_url ?? DEFAULT_ORIGIN,
       user: this.#credentials?.user ?? { id, email: "", name }, active_tenant_id: id,
       tenants: { ...this.#credentials?.tenants, [id]: { name, role: "api", token: input.apiKey.trim(), key_id: id, created_at: new Date().toISOString(), provider: input.provider, base_url: baseUrl, user_id: id } },
@@ -210,7 +220,8 @@ export class OpenmaAccount {
       const me = await response.json() as { user: { id: string; email?: string; name?: string } | null; tenant: { id: string; name?: string }; tenants?: Array<{ id: string; name: string; role: string }> };
       check();
       if (typeof me.tenant?.id !== "string" || !me.tenant.id || me.user && (typeof me.user.id !== "string" || !me.user.id)) throw new Error("OpenMA returned an invalid identity");
-      const digest = createHash("sha256").update(baseUrl + "\0" + apiKey).digest("hex").slice(0, 24);
+      const digest = await credentialIdentity(baseUrl, apiKey);
+      check();
       const user = me.user ? { id: me.user.id, email: me.user.email ?? "", name: me.user.name ?? null } : { id: `openma-key:${digest}`, email: "", name: input.name?.trim() || me.tenant.name || new URL(baseUrl).hostname };
       const membership = me.tenants?.find(t => t.id === me.tenant.id);
       const prior = this.#credentials;

@@ -197,3 +197,29 @@ it("accepts a tenant-only OpenMA key for cloud use without claiming runner owner
   expect(account.connection()).toMatchObject({ workspaceId: "team", authMethod: "api_key", canManageRuntimes: false });
   expect(account.state().canManageRuntimes).toBe(false);
 });
+
+
+it("does not persist a direct connection cancelled during credential derivation", async () => {
+  const directory = await root();
+  const account = new OpenmaAccount({ directory });
+  const connecting = account.connectDirect({ provider: "openai-agents", baseUrl: "https://third.test/v1", apiKey: "cancelled-key" });
+  const rejected = expect(connecting).rejects.toThrow(/cancel/i);
+  await account.logout();
+  await rejected;
+  const restored = new OpenmaAccount({ directory });
+  await restored.restore();
+  expect(restored.state().status).toBe("signed_out");
+});
+
+it("reuses the same direct identity but isolates a rotated key on the same endpoint", async () => {
+  const account = new OpenmaAccount({ directory: await root() });
+  const input = { provider: "openai-agents" as const, baseUrl: "https://third.test/v1", apiKey: "first-key" };
+  await account.connectDirect(input);
+  const first = account.connection();
+  await account.connectDirect(input);
+  expect(account.connection()).toEqual(first);
+  expect(account.state().workspaces).toHaveLength(1);
+  await account.connectDirect({ ...input, apiKey: "rotated-key" });
+  expect(account.connection().workspaceId).not.toBe(first.workspaceId);
+  expect(account.connection(first)).toEqual(first);
+});
