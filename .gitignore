@@ -13,3 +13,6 @@ release/
 test-results/
 playwright-report/
 *.bak
+
+# Generated tenant sidebar screenshots from Electron tests.
+/artifacts/tenant-sidebar/
