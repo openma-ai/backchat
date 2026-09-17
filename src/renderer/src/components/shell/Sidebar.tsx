@@ -435,7 +435,7 @@ export function Sidebar() {
           />;
         })}
         <SidebarSection title={t("chat.local")} open={localOpen} onToggle={() => setLocalOpen(!localOpen)} labelCls={labelCls}>
-        <div className="pl-2">
+        <div>
         {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
           <div>
             <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-xs font-medium text-fg-subtle", labelCls)}>
