@@ -33,6 +33,7 @@
     "smoke:claude-acp-fork": "tsx scripts/smoke-claude-agent-acp-fork.ts",
     "smoke:claude-acp-meta": "tsx scripts/smoke-claude-agent-acp-meta.ts",
     "smoke:codex-acp-native": "tsx scripts/smoke-codex-acp-native.ts",
+    "smoke:pi-acp-steering": "tsx scripts/smoke-pi-acp-steering.ts",
     "test:e2e": "electron-vite build && playwright test",
     "test:verify": "pnpm run typecheck && pnpm run test && pnpm run test:e2e:fast",
     "runtime:prepare": "node scripts/prepare-bundled-npm-runtime.mjs",

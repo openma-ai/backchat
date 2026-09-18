@@ -388,3 +388,25 @@ off must not hide already queued inputs. This changes client scheduling and
 presentation only: prompt completion still owns the turn boundary (I1/I5).
 Common allows ordinary sessions without steering and rejects unsupported
 active-turn steer requests at invocation, rather than at session startup.
+
+### pi steering model (2026-09-18)
+
+pi's own editor sends Enter as a *steer* — delivered after the running
+assistant turn finishes its tool calls, before the next model call — and
+Alt+Enter as a *follow-up*, delivered once the agent would otherwise stop
+(pi-agent-core README, "Steering and Follow-up"). The `pi-acp` profile in
+`src/shared/agent-interaction.ts` is pinned to that shape: submit and steer are
+`llm_boundary`, queue is `turn_end`.
+
+Published pi-acp 0.0.33 never sends pi's `steer` RPC and does not negotiate
+`_session/steering`. A concurrent `session/prompt` lands in the adapter's own
+FIFO (pi follow-up, one-at-a-time) and is reported as
+`_meta.piAcp.queueDepth`, which the host keeps read-only (I4). The transport
+therefore degrades Enter to the turn-end queue with `delivery_degraded` set;
+nothing is emulated with a concurrent prompt. Upstream svkozak/pi-acp#115 adds
+the `_session/steering` contract common already speaks (`injected` /
+`promptRequired` / `startedNewTurn`); with that adapter `supportsSteering`
+becomes true on `session.ready` and no host change is needed. The `/steering`
+and `/follow-up` commands in pi-acp's catalogue only switch pi's drain modes
+and are not steer inputs (I10). Alt+Enter in the composer sends the `queue`
+intent for every harness.

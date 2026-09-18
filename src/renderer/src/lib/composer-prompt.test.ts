@@ -151,6 +151,35 @@ describe("composer prompt presentation", () => {
     })).toBe("submit");
   });
 
+  it("queues on Alt+Enter, pi's follow-up gesture, without trapping Shift or IME", () => {
+    const base = {
+      key: "Enter",
+      text: "hello",
+      hasSelectedSkill: false,
+      attachmentCount: 0,
+      annotationCount: 0,
+      slashPickerOpen: false,
+      hasSlashSelection: false,
+      shiftKey: false,
+      isComposing: false,
+    };
+
+    expect(resolveComposerKeyAction({ ...base, altKey: true })).toBe("queue");
+    expect(resolveComposerKeyAction({ ...base })).toBe("submit");
+    expect(resolveComposerKeyAction({ ...base, altKey: true, shiftKey: true }))
+      .toBeNull();
+    expect(resolveComposerKeyAction({ ...base, altKey: true, isComposing: true }))
+      .toBeNull();
+    // A highlighted slash command still owns the key.
+    expect(resolveComposerKeyAction({
+      ...base,
+      text: "/comp",
+      altKey: true,
+      slashPickerOpen: true,
+      hasSlashSelection: true,
+    })).toBe("slash-pick");
+  });
+
   it("falls through a stale slash selection without trapping Enter or Tab", () => {
     const base = {
       text: "/missing",

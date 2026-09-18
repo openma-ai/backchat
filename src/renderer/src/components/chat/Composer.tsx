@@ -1075,6 +1075,7 @@ export function Composer({
                 slashPickerOpen: showPicker,
                 hasSlashSelection: !!highlightedSlashCommand,
                 shiftKey: e.shiftKey,
+                altKey: e.altKey,
                 isComposing: e.nativeEvent.isComposing,
               });
 
@@ -1110,6 +1111,12 @@ export function Composer({
                 case "slash-dismiss":
                   e.preventDefault();
                   dismissPicker();
+                  return;
+                case "queue":
+                  // Alt+Enter: pi's follow-up gesture — wait for the turn to
+                  // finish rather than steering into it.
+                  e.preventDefault();
+                  submitComposer("queue");
                   return;
                 case "submit":
                   e.preventDefault();

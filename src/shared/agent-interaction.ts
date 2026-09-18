@@ -18,6 +18,7 @@ export type AgentInteractionSource =
   | "gemini_cli_product"
   | "hermes_product"
   | "openclaw_product"
+  | "pi_product"
   | "generic_acp_v1";
 
 export interface AgentDeliveryCapabilities {
@@ -115,6 +116,28 @@ const profiles: Record<string, AgentInteractionProfile> = {
       steer: "llm_boundary",
       interrupt: "interrupt",
       collect: "collect",
+    },
+  },
+  // pi's own editor: Enter is a *steer* (delivered after the running
+  // assistant turn finishes its tool calls, before the next model call) and
+  // Alt+Enter is a *follow-up* (delivered once the agent would otherwise stop)
+  // — pi-agent-core README "Steering and Follow-up". Pinned per harness (I10)
+  // so the generic profile cannot silently re-map pi. Published pi-acp 0.0.33
+  // never sends pi's `steer` RPC and does not negotiate `_session/steering`;
+  // a concurrent session/prompt lands in the adapter's own FIFO (pi follow-up,
+  // one-at-a-time, reported as `_meta.piAcp.queueDepth`), so until an adapter
+  // with svkozak/pi-acp#115 negotiates the extension, submit degrades to the
+  // turn-end queue. The catalogue's `/steering` and `/follow-up` commands only
+  // switch pi's drain modes; they are not steer inputs.
+  "pi-acp": {
+    agentId: "pi-acp",
+    source: "pi_product",
+    actions: {
+      submit: "llm_boundary",
+      queue: "turn_end",
+      steer: "llm_boundary",
+      interrupt: unsupported,
+      collect: unsupported,
     },
   },
   opencode: {
