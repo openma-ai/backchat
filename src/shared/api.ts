@@ -6,6 +6,7 @@
  */
 
 import type { OpenmaAccountApi } from "./openma.js";
+import type { PastedImageMimeType } from "./image-bytes.js";
 import type {
   BrowserAssetBundleResult,
   BrowserAttachViewParams,
@@ -699,12 +700,22 @@ export interface BackchatApi extends OpenmaAccountApi {
   /** Search files below a workspace root for composer @-mentions. */
   uiFsSearchFiles(p: { path: string; query?: string; limit?: number }): Promise<PromptAttachment[]>;
 
-  /** Persist an in-app PNG capture under the local Backchat data root and
-   *  return a fully populated image attachment, including inline base64. */
+  /** Attach files the renderer already knows by absolute path (a Finder
+   *  drop, a copied file). Unreadable or non-file paths are skipped. */
+  uiFsAttachPaths(p: { paths: string[] }): Promise<PromptAttachment[]>;
+
+  /** The OS path behind a File handed to the page by a drop or a paste, or
+   *  "" for a pathless File such as a clipboard bitmap. Synchronous: it is
+   *  Electron's `webUtils.getPathForFile`. */
+  uiFsPathForFile(file: File): string;
+
+  /** Persist a bitmap held by the renderer under the local Backchat data
+   *  root and return a fully populated image attachment, including inline
+   *  base64. The declared type must match the bytes' signature. */
   uiFsSaveCapture(p: {
     data: string;
     name?: string;
-    mimeType?: "image/png";
+    mimeType?: PastedImageMimeType;
   }): Promise<PromptAttachment>;
 
   /** Recent entries in a directory — sorted by mtime (newest first),

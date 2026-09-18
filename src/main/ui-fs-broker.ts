@@ -14,9 +14,15 @@ import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { userInfo } from "node:os";
-import { basename, extname, join } from "node:path";
+import { basename, extname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { InvokeChannel } from "../shared/ipc-channels.js";
+import {
+  imageFileExtension,
+  isPastedImageMimeType,
+  sniffImageMimeType,
+  type PastedImageMimeType,
+} from "../shared/image-bytes.js";
 import type { PromptAttachment } from "../shared/session-events.js";
 import { resolveLocalFilePreview } from "./file-preview.js";
 import { openmaRoot } from "./storage-root.js";
@@ -44,6 +50,13 @@ function trueHome(): string {
 
 const MAX_INLINE_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;
+const MAX_ATTACHMENTS_PER_PICK = 10;
+const CAPTURE_TYPE_LABEL: Record<PastedImageMimeType, string> = {
+  "image/png": "PNG",
+  "image/jpeg": "JPEG",
+  "image/gif": "GIF",
+  "image/webp": "WebP",
+};
 const MAX_FILE_MENTION_RESULTS = 20;
 const MAX_FILE_MENTION_VISITS = 2_000;
 const MAX_FILE_MENTION_DEPTH = 8;
@@ -191,7 +204,22 @@ ipcMain.handle(
       ],
     });
     if (result.canceled || result.filePaths.length === 0) return [];
-    const rows = await Promise.all(result.filePaths.slice(0, 10).map(toPromptAttachment));
+    const rows = await Promise.all(
+      result.filePaths.slice(0, MAX_ATTACHMENTS_PER_PICK).map(toPromptAttachment),
+    );
+    return rows.filter((row): row is PromptAttachment => row !== null);
+  },
+);
+
+ipcMain.handle(
+  InvokeChannel.UiFsAttachPaths,
+  async (_e, p: { paths: string[] }): Promise<PromptAttachment[]> => {
+    const paths = Array.isArray(p?.paths)
+      ? p.paths.filter((path): path is string => typeof path === "string" && isAbsolute(path))
+      : [];
+    const rows = await Promise.all(
+      paths.slice(0, MAX_ATTACHMENTS_PER_PICK).map(toPromptAttachment),
+    );
     return rows.filter((row): row is PromptAttachment => row !== null);
   },
 );
@@ -267,30 +295,33 @@ ipcMain.handle(
   InvokeChannel.UiFsSaveCapture,
   async (
     _e,
-    p: { data: string; name?: string; mimeType?: "image/png" },
+    p: { data: string; name?: string; mimeType?: PastedImageMimeType },
   ): Promise<PromptAttachment> => {
     if (!p || typeof p.data !== "string" || p.data.length === 0) {
       throw new Error("Capture data is empty");
     }
-    if (p.mimeType && p.mimeType !== "image/png") {
-      throw new Error("Only PNG captures are supported");
+    const mimeType = p.mimeType ?? "image/png";
+    if (!isPastedImageMimeType(mimeType)) {
+      throw new Error(`Unsupported capture type: ${String(p.mimeType)}`);
     }
     const bytes = Buffer.from(p.data, "base64");
     if (bytes.length === 0 || bytes.length > MAX_CAPTURE_BYTES) {
       throw new Error("Capture exceeds the 16 MB limit");
     }
-    const pngSignature = bytes.subarray(0, 8).toString("hex");
-    if (pngSignature !== "89504e470d0a1a0a") {
-      throw new Error("Capture is not a valid PNG image");
+    // The declared type is what the agent will be told; the bytes decide
+    // whether that is true.
+    if (sniffImageMimeType(bytes) !== mimeType) {
+      throw new Error(`Capture is not a valid ${CAPTURE_TYPE_LABEL[mimeType]} image`);
     }
 
-    const requestedName = basename(p.name || `page-element-${Date.now()}.png`);
+    const extension = imageFileExtension(mimeType);
+    const requestedName = basename(p.name || `page-element-${Date.now()}${extension}`);
     const safeName = requestedName
       .replace(/[^a-zA-Z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "page-element.png";
-    const finalName = safeName.toLowerCase().endsWith(".png")
+      .replace(/^-+|-+$/g, "") || `page-element${extension}`;
+    const finalName = hasImageExtension(safeName, mimeType)
       ? safeName
-      : `${safeName}.png`;
+      : `${safeName}${extension}`;
     const captureDir = join(openmaRoot(), "captures");
     const capturePath = join(
       captureDir,
@@ -303,6 +334,13 @@ ipcMain.handle(
     return attachment;
   },
 );
+
+/** JPEG files are commonly `.jpg` or `.jpeg`; either keeps its name. */
+function hasImageExtension(name: string, mimeType: PastedImageMimeType): boolean {
+  const lower = name.toLowerCase();
+  if (mimeType === "image/jpeg") return lower.endsWith(".jpg") || lower.endsWith(".jpeg");
+  return lower.endsWith(imageFileExtension(mimeType));
+}
 
 if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
   ipcMain.handle(

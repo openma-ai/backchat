@@ -3,7 +3,7 @@
  * only the narrow `BackchatApi` surface (see src/shared/api.ts). NEVER reaches
  * out to `ipcRenderer` directly from the renderer.
  */
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
 import type { AgentInfo, BackchatApi } from "../shared/api.js";
 import type {
@@ -405,6 +405,18 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.UiFsSearchFiles, p) as Promise<
       import("../shared/session-events.js").PromptAttachment[]
     >,
+  uiFsAttachPaths: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsAttachPaths, p) as Promise<
+      import("../shared/session-events.js").PromptAttachment[]
+    >,
+  // Only preload can read a File's OS path; the renderer sees a blob.
+  uiFsPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return "";
+    }
+  },
   uiFsSaveCapture: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsSaveCapture, p) as Promise<
       import("../shared/session-events.js").PromptAttachment

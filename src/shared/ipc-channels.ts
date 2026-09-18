@@ -143,8 +143,11 @@ export const InvokeChannel = {
   UiFsPickFiles: "uiFs:pickFiles",
   /** Search files below a workspace root for composer @-mentions. */
   UiFsSearchFiles: "uiFs:searchFiles",
-  /** Persist a renderer-generated PNG (for example a browser element
-   *  annotation) and return it as an ordinary prompt attachment. */
+  /** Turn absolute paths the renderer already holds (a drop from Finder,
+   *  a copied file) into prompt attachments without a picker. */
+  UiFsAttachPaths: "uiFs:attachPaths",
+  /** Persist a renderer-held bitmap (a browser element annotation, a
+   *  pasted screenshot) and return it as an ordinary prompt attachment. */
   UiFsSaveCapture: "uiFs:saveCapture",
   /** Recent entries in a directory — list children, sort by mtime
    *  (newest first), return the top N. Used by the side-panel empty

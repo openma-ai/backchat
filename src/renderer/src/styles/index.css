@@ -51,6 +51,15 @@
   box-shadow: var(--shadow-input-rest);
 }
 
+/* A file held over the card is about to become an attachment; say so with
+   the same ring focus uses, on top of the resting shadow, and nothing else
+   moves. Cleared on drop or when the drag leaves the card. */
+.composer-stack-card[data-composer-drop-active="true"] .composer-card {
+  box-shadow:
+    0 0 0 1.5px var(--focus-ring),
+    var(--shadow-input-rest);
+}
+
 .composer-control-row-inset {
   padding-inline: var(--composer-card-padding-inline);
 }

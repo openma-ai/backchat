@@ -38,6 +38,8 @@ import {
 } from "@/lib/composer-slash-commands";
 import { promptAnnotationStore } from "@/lib/prompt-annotations";
 import { useComposerContextState } from "@/lib/composer-context-state";
+import { composerPasteRouter } from "@/lib/composer-paste-router";
+import { collectTransferFiles, shouldConsumePaste } from "@/lib/composer-transfer";
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
 import { ComposerAuthControls, ComposerSessionStateSlot, InlineComposerOptionControls, PermissionModeChip, SessionRunChip } from "./ComposerSessionControls";
 import {
@@ -261,6 +263,7 @@ export function Composer({
     annotations,
     attachments,
     addAttachments,
+    attachTransferFiles,
     browserScreenshotNames,
     clearAttachments,
     pickAttachments,
@@ -541,6 +544,44 @@ export function Composer({
   useEffect(() => {
     if (!disabled) taRef.current?.focus();
   }, [disabled]);
+
+  // Paste and drop. A file paste that lands in the textarea, or anywhere on
+  // the page that is not itself editable, attaches; a drop anywhere on the
+  // composer card attaches. The transcript, sidebar and tool cards are where
+  // focus usually is when someone reaches for Cmd+V with a screenshot.
+  const transferDisabled = !!disabled || isRemote;
+  const [dropActive, setDropActive] = useState(false);
+  const attachTransfer = (transfer: DataTransfer | null) => {
+    const files = collectTransferFiles(transfer).files;
+    if (files.length === 0) return;
+    void attachTransferFiles(files).then((attached) => {
+      if (attached.length > 0) onUserInput(true);
+    });
+  };
+  // The document-level registration lives as long as the composer is
+  // enabled; the handler it calls is always the current render's.
+  const attachTransferRef = useRef(attachTransfer);
+  attachTransferRef.current = attachTransfer;
+  const pasteRegistrationRef = useRef<ReturnType<typeof composerPasteRouter.register> | null>(null);
+  useEffect(() => {
+    if (transferDisabled) return;
+    const registration = composerPasteRouter.register((clipboardData, event) => {
+      const collected = collectTransferFiles(clipboardData as DataTransfer);
+      if (!shouldConsumePaste(collected)) return;
+      event.preventDefault();
+      attachTransferRef.current(clipboardData as DataTransfer);
+    });
+    pasteRegistrationRef.current = registration;
+    // The textarea autofocuses before this effect runs, so its focus event
+    // has already passed; record it now.
+    if (document.activeElement === taRef.current) registration.noteFocus();
+    return () => {
+      registration.unregister();
+      pasteRegistrationRef.current = null;
+    };
+  }, [transferDisabled, sessionId]);
+  const carriesFiles = (transfer: DataTransfer | null) =>
+    !!transfer && Array.from(transfer.types ?? []).includes("Files");
 
   useEffect(() => {
     setCaret(0);
@@ -850,6 +891,25 @@ export function Composer({
   return (
     <div
       className="composer-stack-card relative w-full"
+      data-composer-drop-active={dropActive ? "true" : undefined}
+      onDragOver={(event) => {
+        if (transferDisabled || !carriesFiles(event.dataTransfer)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        if (!dropActive) setDropActive(true);
+      }}
+      onDragLeave={(event) => {
+        // Moving between the card's own children fires leave/enter pairs.
+        const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) return;
+        setDropActive(false);
+      }}
+      onDrop={(event) => {
+        setDropActive(false);
+        if (transferDisabled || !carriesFiles(event.dataTransfer)) return;
+        event.preventDefault();
+        attachTransfer(event.dataTransfer);
+      }}
     >
       <div
         data-suggestion-fill-active={suggestionFillActive ? "true" : undefined}
@@ -961,6 +1021,16 @@ export function Composer({
               }}
               onClick={(e) => setCaret(e.currentTarget.selectionStart ?? text.length)}
               onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? text.length)}
+              onFocus={() => pasteRegistrationRef.current?.noteFocus()}
+              onPaste={(e) => {
+                if (transferDisabled) return;
+                const collected = collectTransferFiles(e.clipboardData);
+                if (collected.files.length === 0) return;
+                // A mixed paste keeps its text: only a files-only paste is
+                // swallowed so nothing stray lands in the editor.
+                if (shouldConsumePaste(collected)) e.preventDefault();
+                attachTransfer(e.clipboardData);
+              }}
               onKeyDown={(e) => {
               const currentCaret = e.currentTarget.selectionStart ?? text.length;
               const currentMention = resolveSessionMention(text, currentCaret);

@@ -14,6 +14,10 @@ import type {
 import { browserAnnotationScreenshotName } from "./browser-element-annotation";
 import { mergeComposerAttachments } from "./composer-attachments";
 import {
+  ingestTransferFiles,
+  type TransferFileLike,
+} from "./composer-transfer";
+import {
   composerInsertionStore,
   useComposerInsertions,
 } from "./composer-insertions";
@@ -100,6 +104,37 @@ export function useComposerContextState({
     focusTextarea();
   };
 
+  /** Files that arrived by paste or drop. Path-backed files are attached
+   * as themselves; a clipboard bitmap is persisted first so the agent gets
+   * a real file. Returns what was attached so the caller can report. */
+  const attachTransferFiles = async (
+    files: TransferFileLike[],
+  ): Promise<PromptAttachment[]> => {
+    if (disabled || files.length === 0) return [];
+    try {
+      const result = await ingestTransferFiles(files, {
+        pathForFile: (file) => window.backchat.uiFsPathForFile(file as File),
+        attachPaths: (paths) => window.backchat.uiFsAttachPaths({ paths }),
+        saveImage: (input) => window.backchat.uiFsSaveCapture(input),
+      });
+      if (result.attachments.length > 0) {
+        setAttachments((current) =>
+          mergeComposerAttachments(current, result.attachments));
+        focusTextarea();
+      } else if (result.unsupported.length > 0) {
+        toast.error("Couldn't attach files", {
+          description: `${result.unsupported.join(", ")}: only images can be attached without a file path.`,
+        });
+      }
+      return result.attachments;
+    } catch (error) {
+      toast.error("Couldn't attach files", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  };
+
   useEffect(() => {
     if (!sessionId || composerInsertions.length === 0) return;
     const incomingAttachments = composerInsertions.flatMap(
@@ -180,6 +215,7 @@ export function useComposerContextState({
     browserScreenshotNames,
     clearAttachments: () => setAttachments([]),
     addAttachments,
+    attachTransferFiles,
     pickAttachments,
     removeAnnotation,
     removeAttachment,
