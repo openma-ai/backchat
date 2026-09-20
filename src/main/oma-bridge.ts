@@ -21,9 +21,12 @@ import type {
 } from "../shared/session-events.js";
 
 export function omaBridgeWebSocketUrl(serverUrl: string): string {
+  // WebSocket upgrades do not follow the router's 301 from the legacy .dev
+  // hosts, so credentials saved against them must be rewritten to the
+  // canonical app.openma.ai origin here.
   const canonical = serverUrl.replace(
-    /^https:\/\/openma\.dev(?=\/|$)/,
-    "https://app.openma.dev",
+    /^https:\/\/(?:app\.)?openma\.(?:dev|ai)(?=\/|$)/,
+    "https://app.openma.ai",
   );
   const base = canonical
     .replace(/^http(s?):\/\//, "ws$1://")

@@ -8,7 +8,7 @@ import type { ProjectInfo } from "../shared/projects.js";
 const root = mkdtempSync(join(tmpdir(), "backchat-project-environments-"));
 let store: OpenmaProjectEnvironments | undefined;
 afterEach(() => { store?.close(); store = undefined; rmSync(root, { recursive: true, force: true }); });
-const scope = { baseUrl: "https://app.openma.dev", userId: "user", workspaceId: "team" };
+const scope = { baseUrl: "https://app.openma.ai", userId: "user", workspaceId: "team" };
 const project: ProjectInfo = { id: "p", name: "App", source_folders: ["/work/app", "/work/shared"], primary_folder: "/work/app", created_at: 1, updated_at: 1 };
 const project2: ProjectInfo = { ...project, id: "p2", name: "Docs", source_folders: ["/work/docs"], primary_folder: "/work/docs" };
 

@@ -9,7 +9,7 @@ import type { OpenmaExecutionTarget, OpenmaTaskEvent, OpenmaTaskSnapshot } from 
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const close of cleanups.splice(0)) await close(); });
-const target: OpenmaExecutionTarget = { baseUrl: "https://app.openma.dev", userId: "user", workspaceId: "team", kind: "cloud", agentId: "agent", agentName: "Helper", environmentId: "env", environmentName: "Cloud project", runtimeId: null, runtimeName: "Cloud" };
+const target: OpenmaExecutionTarget = { baseUrl: "https://app.openma.ai", userId: "user", workspaceId: "team", kind: "cloud", agentId: "agent", agentName: "Helper", environmentId: "env", environmentName: "Cloud project", runtimeId: null, runtimeName: "Cloud" };
 
 async function setup() {
   const directory = await mkdtemp(join(tmpdir(), "backchat-tasks-"));

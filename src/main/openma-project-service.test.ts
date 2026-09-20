@@ -26,7 +26,7 @@ async function setup(hosting: "backchat" | "external" = "backchat") {
     return Response.json(state.env);
   };
   const account = new OpenmaAccount({ directory, fetch: fetchImpl, authorize: async () => ({ user: "user", tokens: [{ tenant_id: "team", tenant_name: "Team", role: "owner", token: "secret", key_id: "key" }] }) });
-  await account.login("https://app.openma.dev");
+  await account.login("https://app.openma.ai");
   const service = new OpenmaProjectService({ account, bindings, project: () => project, fetchImpl, runner: () => ({ enabled: true, hosting, status: "online", machineId: "machine", runtimeId: "runtime" }) });
   return { service, state, binding: { projectId: "p", environmentId: "env", runtimeId: "runtime" } };
 }

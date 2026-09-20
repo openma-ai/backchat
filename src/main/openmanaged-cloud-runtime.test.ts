@@ -35,7 +35,7 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
   });
   it("follows canonical next_page without requiring nonexistent seq", async () => {
     let requests = 0;
-    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.dev", apiKey: "test", fetchImpl: async (url, init) => {
+    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.ai", apiKey: "test", fetchImpl: async (url, init) => {
       requests++;
       const page = new URL(new Request(url, init).url).searchParams.get("page");
       return Response.json(page === "page-two" ? { data: [{ id: "last", type: "agent.message", content: [] }], next_page: null }
@@ -47,7 +47,7 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
   });
   it("accepts the v1 server's empty 202 response without treating accepted input as failed", async () => {
     let sends = 0;
-    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.dev", apiKey: "key", fetchImpl: async () => { sends++; return new Response(null, { status: 202 }); } });
+    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.ai", apiKey: "key", fetchImpl: async () => { sends++; return new Response(null, { status: 202 }); } });
     await expect(client.sendMessage("session", "Run this once")).resolves.toEqual([]);
     expect(sends).toBe(1);
   });
@@ -58,7 +58,7 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
   it("creates a session with SDK headers and the selected workspace", async () => {
     const requests: Request[] = [];
     const client = new OpenManagedCloudRuntimeClient({
-      baseUrl: "https://app.openma.dev", apiKey: "secret", workspaceId: "workspace-b",
+      baseUrl: "https://app.openma.ai", apiKey: "secret", workspaceId: "workspace-b",
       fetchImpl: async (url, init) => { requests.push(new Request(url, init)); return Response.json({ id: "sess-cloud" }); },
     });
     await expect(client.createSession({ agentId: "agent-1", environmentId: "env-1", title: "From Backchat" })).resolves.toEqual({ sessionId: "sess-cloud" });
@@ -71,7 +71,7 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
 
   it("uses canonical input and independent SDK streaming", async () => {
     const requests: Request[] = [];
-    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.dev", apiKey: "secret",
+    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.ai", apiKey: "secret",
       fetchImpl: async (url, init) => {
         const request = new Request(url, init); requests.push(request);
         if (request.method === "POST") return Response.json({ data: [{ id: "u1", type: "user.message", seq: 8 }] });
@@ -93,7 +93,7 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
 
   it("never retries ambiguous writes or exposes server response secrets in errors", async () => {
     let writes = 0;
-    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.dev", apiKey: "secret",
+    const client = new OpenManagedCloudRuntimeClient({ baseUrl: "https://app.openma.ai", apiKey: "secret",
       fetchImpl: async () => { writes++; return Response.json({ error: { message: "secret provider details" } }, { status: 503 }); },
     });
     await expect(client.createSession({ agentId: "a", environmentId: "e" })).rejects.not.toThrow("secret provider details");

@@ -22,13 +22,13 @@ describe("desktop account isolation", () => {
     const account = new OpenmaAccount({ directory: await root(), authorize: async () => ({ tokens: tokens.slice(0, 1), user: "user" }),
       fetch: async () => Response.json({ user: { id: "user", email: "user@example.com", name: "User", internal_token: "private" }, tenant: { id: "a" }, tenants: [{ id: "a", name: "A", role: "owner" }] }),
     });
-    await account.login("https://app.openma.dev");
+    await account.login("https://app.openma.ai");
     expect(account.state().user).toEqual({ id: "user", email: "user@example.com", name: "User" });
   });
   it("requires a workspace choice, keeps secrets out of public state, and restores selection", async () => {
     const directory = await root();
     const account = new OpenmaAccount({ directory, fetch: identityFetch, authorize: async () => ({ tokens, user: "user" }) });
-    await account.login("https://app.openma.dev");
+    await account.login("https://app.openma.ai");
     expect(account.state().activeWorkspaceId).toBeNull();
     expect(account.state().workspaces.map((w: { id: string }) => w.id)).toEqual(["a", "b"]);
     expect(JSON.stringify(account.state())).not.toContain("secret-");
@@ -49,7 +49,7 @@ describe("desktop account isolation", () => {
 
   it("automatically selects a sole authorized workspace and marks revoked credentials expired", async () => {
     const account = new OpenmaAccount({ directory: await root(), fetch: identityFetch, authorize: async () => ({ tokens: tokens.slice(0, 1), user: "user" }) });
-    await account.login("https://app.openma.dev");
+    await account.login("https://app.openma.ai");
     expect(account.state().activeWorkspaceId).toBe("a");
     account.invalidate(account.connection());
     expect(account.state().status).toBe("expired");
@@ -60,7 +60,7 @@ describe("desktop account isolation", () => {
     let resolve!: (value: { tokens: typeof tokens; user: string }) => void;
     const pending = new Promise<{ tokens: typeof tokens; user: string }>((r) => { resolve = r; });
     const account = new OpenmaAccount({ directory: await root(), fetch: identityFetch, authorize: async () => pending });
-    const login = account.login("https://app.openma.dev");
+    const login = account.login("https://app.openma.ai");
     await account.logout();
     resolve({ tokens, user: "user" });
     await expect(login).rejects.toThrow(/cancel/i);
@@ -74,14 +74,14 @@ describe("desktop account isolation", () => {
     await account.login("https://two.example");
     expect(account.connection().baseUrl).toBe("https://two.example");
     const invalid = new OpenmaAccount({ directory: await root(), fetch: async () => Response.json({ user: { id: "user" }, tenant: { id: "wrong" }, tenants: [] }), authorize: async () => ({ tokens: tokens.slice(0, 1), user: "user" }) });
-    await expect(invalid.login("https://app.openma.dev")).rejects.toThrow(/workspace/i);
+    await expect(invalid.login("https://app.openma.ai")).rejects.toThrow(/workspace/i);
     expect(invalid.state().status).toBe("signed_out");
   });
 });
 
 describe("browser login handoff", () => {
   it("authorizes runner registration through its separate browser flow", async () => {
-    const result = await browserRuntimeAuthorization({ baseUrl: "https://app.openma.dev", signal: new AbortController().signal, openExternal: async (url: string) => {
+    const result = await browserRuntimeAuthorization({ baseUrl: "https://app.openma.ai", signal: new AbortController().signal, openExternal: async (url: string) => {
       const login = new URL(url);
       expect(login.pathname).toBe("/connect-runtime");
       const callback = new URL(login.searchParams.get("cb")!);
@@ -93,7 +93,7 @@ describe("browser login handoff", () => {
     expect(result.state.length).toBeGreaterThan(20);
   });
   it("opens the existing login route and accepts a matching loopback callback", async () => {
-    const result = await browserAuthorization({ baseUrl: "https://app.openma.dev", signal: new AbortController().signal, openExternal: async (url: string) => {
+    const result = await browserAuthorization({ baseUrl: "https://app.openma.ai", signal: new AbortController().signal, openExternal: async (url: string) => {
       const login = new URL(url);
       expect(login.pathname).toBe("/cli/login");
       const callback = new URL(login.searchParams.get("callback")!);
@@ -107,7 +107,7 @@ describe("browser login handoff", () => {
   });
 
   it("rejects a forged state before accepting credentials", async () => {
-    await expect(browserAuthorization({ baseUrl: "https://app.openma.dev", signal: new AbortController().signal, openExternal: async (url: string) => {
+    await expect(browserAuthorization({ baseUrl: "https://app.openma.ai", signal: new AbortController().signal, openExternal: async (url: string) => {
       const callback = new URL(new URL(url).searchParams.get("callback")!);
       callback.searchParams.set("state", "forged");
       callback.searchParams.set("tokens", Buffer.from(JSON.stringify(tokens)).toString("base64"));
@@ -118,7 +118,7 @@ describe("browser login handoff", () => {
   it("closes the loopback listener when cancelled", async () => {
     const controller = new AbortController();
     let callback = "";
-    await expect(browserAuthorization({ baseUrl: "https://app.openma.dev", signal: controller.signal, openExternal: async (url: string) => {
+    await expect(browserAuthorization({ baseUrl: "https://app.openma.ai", signal: controller.signal, openExternal: async (url: string) => {
       callback = new URL(url).searchParams.get("callback")!;
       controller.abort();
     } })).rejects.toThrow(/cancel/i);
@@ -156,7 +156,7 @@ it("keeps direct tenants alongside browser-authenticated workspaces and removes 
   const account = new OpenmaAccount({ directory: await root(), fetch: identityFetch, authorize: async () => ({ tokens, user: "user" }) });
   await account.connectDirect({ provider: "openai-agents", baseUrl: "https://third.test/v1", apiKey: "direct-key", name: "External" });
   const direct = account.connection();
-  await account.login("https://app.openma.dev");
+  await account.login("https://app.openma.ai");
   expect(account.state().workspaces.map(w => w.name)).toContain("External");
   expect(account.connection(direct)).toEqual(direct);
   await account.selectWorkspace("a");
@@ -172,7 +172,7 @@ it("accepts just protocol, key and base URL, using the hostname as tenant name",
 });
 it("signing out of OpenMA keeps explicitly configured third-party tenants", async () => {
   const account = new OpenmaAccount({ directory: await root(), fetch: identityFetch, authorize: async () => ({ tokens, user: "user" }) });
-  await account.login("https://app.openma.dev");
+  await account.login("https://app.openma.ai");
   await account.connectDirect({ provider: "claude-managed", baseUrl: "https://third.test", apiKey: "external" });
   const connection = account.connection();
   await account.logout();

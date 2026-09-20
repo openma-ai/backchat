@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadOpenmaCatalog } from "./openma-catalog.js";
 import type { OpenmaConnection } from "./openma-account.js";
 
-const connection: OpenmaConnection = { baseUrl: "https://app.openma.dev", workspaceId: "workspace", apiKey: "secret", userId: "user" };
+const connection: OpenmaConnection = { baseUrl: "https://app.openma.ai", workspaceId: "workspace", apiKey: "secret", userId: "user" };
 describe("OpenMA execution catalog", () => {
   it("joins runner agents to v1 bindings and marks this machine without duplicating it", async () => {
     const requests: Request[] = [];

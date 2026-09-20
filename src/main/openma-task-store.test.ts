@@ -8,7 +8,7 @@ import type { OpenmaTask } from "../shared/openma.js";
 let store: OpenmaTaskStore;
 const roots: string[] = [];
 afterEach(() => { store?.close(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-const scope = { baseUrl: "https://app.openma.dev", userId: "user", workspaceId: "team" };
+const scope = { baseUrl: "https://app.openma.ai", userId: "user", workspaceId: "team" };
 const task: OpenmaTask = { ...scope, id: "desktop-task", sessionId: "s", title: "Task", status: "running", createdAt: 1, updatedAt: 1, afterSeq: 0,
   target: { ...scope, kind: "cloud", agentId: "agent", agentName: "Agent", environmentId: "env", environmentName: "Env", runtimeId: null, runtimeName: "Cloud" } };
 function setup() { const root = mkdtempSync(join(tmpdir(), "backchat-remote-tasks-")); roots.push(root); const path = join(root, "tasks.db"); store = new OpenmaTaskStore(path); return path; }

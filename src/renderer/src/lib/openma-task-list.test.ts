@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { SessionStore } from "./session-store";
 import type { OpenmaTask } from "@shared/openma";
 
-const scope = { baseUrl: "https://app.openma.dev", userId: "user", workspaceId: "team" };
+const scope = { baseUrl: "https://app.openma.ai", userId: "user", workspaceId: "team" };
 const task: OpenmaTask = { ...scope, id: "openma-task", sessionId: "remote", title: "Original", status: "running", createdAt: 1, updatedAt: 2, afterSeq: 0,
   target: { ...scope, kind: "cloud", agentId: "agent", agentName: "Agent", environmentId: "env", environmentName: "Env", runtimeId: null, runtimeName: "Cloud" } };
 afterEach(() => vi.unstubAllGlobals());

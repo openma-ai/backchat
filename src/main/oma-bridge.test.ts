@@ -47,7 +47,7 @@ describe("OmaBridgeClient", () => {
   it("reconnects immediately on wake without reviving a stopped runner", async () => {
     const sockets: FakeSocket[] = [];
     const client = new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "machine" },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "machine" },
       host: { async start() { throw new Error("not used"); }, async prompt() {}, cancel() {}, async dispose() {}, announceAll() {} },
       detectAgents: async () => [],
       socketFactory: () => { const socket = new FakeSocket(); sockets.push(socket); return socket; },
@@ -69,7 +69,7 @@ describe("OmaBridgeClient", () => {
     const sockets: FakeSocket[] = [];
     const states: string[] = [];
     const client = new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "machine" },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "machine" },
       host: { async start() { throw new Error("not used"); }, async prompt() {}, cancel() {}, async dispose() {}, announceAll() {} },
       detectAgents: async () => [],
       socketFactory: () => { const socket = new FakeSocket(); sockets.push(socket); return socket; },
@@ -95,7 +95,7 @@ describe("OmaBridgeClient", () => {
     let socket = new FakeSocket();
     const host = { start: vi.fn(async (p) => ({ status: "ready" as const, session_id: p.session_id, acp_session_id: "acp", agent_id: p.agent_id, cwd: p.cwd })), prompt: vi.fn(async () => {}), cancel: vi.fn(), dispose: vi.fn(async () => {}), announceAll: vi.fn() };
     const create = () => new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "m", tenants: [{ id: "a", name: "a", agentApiKey: "key" }] },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "m", tenants: [{ id: "a", name: "a", agentApiKey: "key" }] },
       host, outbox, detectAgents: async () => [], socketFactory: () => socket,
       resolveWorkspace: async () => ({ localSessionId: "local", projectId: "p", cwd: "/work/p", additionalDirectories: [] }),
     });
@@ -144,7 +144,7 @@ describe("OmaBridgeClient", () => {
     const socket = new FakeSocket();
     const host = { start: vi.fn(async (p) => ({ status: "ready" as const, session_id: p.session_id, acp_session_id: "acp", agent_id: p.agent_id, cwd: p.cwd })), prompt: vi.fn(async () => {}), cancel: vi.fn(), dispose: vi.fn(async () => {}), announceAll: vi.fn() };
     const client = new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "m", tenants: ["a", "b"].map((id) => ({ id, name: id, agentApiKey: "key" })) },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "m", tenants: ["a", "b"].map((id) => ({ id, name: id, agentApiKey: "key" })) },
       host, detectAgents: async () => [], socketFactory: () => socket,
       resolveWorkspace: async () => ({ localSessionId: "local", projectId: "p", cwd: "/work/p", additionalDirectories: [] }),
     });
@@ -188,7 +188,7 @@ describe("OmaBridgeClient", () => {
       prompt: vi.fn(async () => {}), cancel: vi.fn(), dispose: vi.fn(async () => {}), announceAll: vi.fn(),
     };
     const client = new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "m", tenants: ["a", "b"].map((id) => ({ id, name: id, agentApiKey: "key" })) },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "m", tenants: ["a", "b"].map((id) => ({ id, name: id, agentApiKey: "key" })) },
       host, detectAgents: async () => [], socketFactory: () => socket,
       resolveWorkspace: async (_id, tenant) => ({ localSessionId: `runner-${tenant}`, projectId: tenant, cwd: `/work/${tenant}`, additionalDirectories: [] }),
     });
@@ -223,7 +223,7 @@ describe("OmaBridgeClient", () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const client = new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "machine" },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "machine" },
       host: { start: async (p) => { started.push(p); return { status: "ready", session_id: p.session_id, acp_session_id: "acp", agent_id: p.agent_id, cwd: p.cwd! }; }, prompt: async (p) => { prompts.push(p.text); }, cancel: () => {}, dispose: async () => {}, announceAll: () => {} },
       resolveWorkspace: async () => { await gate; return { localSessionId: "local-s", projectId: "project", cwd: "/work/project", additionalDirectories: ["/work/library"] }; },
       detectAgents: async () => [], socketFactory: () => socket,
@@ -244,7 +244,7 @@ describe("OmaBridgeClient", () => {
     const socket = new FakeSocket();
     let starts = 0;
     const client = new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "machine" },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "machine" },
       host: { start: async (p) => { starts++; return { status: "cancelled", session_id: p.session_id }; }, prompt: async () => {}, cancel: () => {}, dispose: async () => {}, announceAll: () => {} },
       resolveWorkspace: async () => { throw new Error("This environment has no linked project on this runner"); },
       detectAgents: async () => [], socketFactory: () => socket,
@@ -263,7 +263,7 @@ describe("OmaBridgeClient", () => {
     let connections = 0;
     const socket = new FakeSocket();
     const client = new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "machine" },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "machine" },
       host: { start: async () => ({ status: "cancelled", session_id: "s" }), prompt: async () => {}, cancel: () => {}, dispose: async () => {}, announceAll: () => {} },
       detectAgents: async () => [],
       socketFactory: () => { connections++; return socket; },
@@ -284,7 +284,7 @@ describe("OmaBridgeClient", () => {
     const started: string[] = [];
     const prompts: string[] = [];
     const client = new OmaBridgeClient({
-      credentials: { serverUrl: "https://app.openma.dev", token: "secret", machineId: "machine", tenants: [{ id: "a", name: "A", agentApiKey: "a-key" }, { id: "b", name: "B", agentApiKey: "b-key" }] },
+      credentials: { serverUrl: "https://app.openma.ai", token: "secret", machineId: "machine", tenants: [{ id: "a", name: "A", agentApiKey: "a-key" }, { id: "b", name: "B", agentApiKey: "b-key" }] },
       host: {
         start: async (p) => { started.push(p.session_id); return { status: "ready", session_id: p.session_id, acp_session_id: "acp", agent_id: p.agent_id, cwd: p.cwd! }; },
         prompt: async (p) => { prompts.push(p.text); }, cancel: () => {}, dispose: async () => {}, announceAll: () => {},
@@ -302,9 +302,20 @@ describe("OmaBridgeClient", () => {
     expect(started).toEqual(["local-s"]);
     client.stop();
   });
-  it("canonicalizes the legacy production origin before WebSocket upgrade", () => {
-    expect(omaBridgeWebSocketUrl("https://openma.dev")).toBe(
-      "wss://app.openma.dev/agents/runtime/_attach",
+  it("canonicalizes legacy production origins before WebSocket upgrade", () => {
+    for (const origin of [
+      "https://openma.dev",
+      "https://app.openma.ai",
+      "https://openma.ai",
+      "https://app.openma.ai",
+    ]) {
+      expect(omaBridgeWebSocketUrl(origin)).toBe(
+        "wss://app.openma.ai/agents/runtime/_attach",
+      );
+    }
+    // Self-hosted and staging origins are left alone.
+    expect(omaBridgeWebSocketUrl("https://app.staging.openma.dev")).toBe(
+      "wss://app.staging.openma.dev/agents/runtime/_attach",
     );
   });
 
@@ -319,7 +330,7 @@ describe("OmaBridgeClient", () => {
     };
     const client = new OmaBridgeClient({
       credentials: {
-        serverUrl: "https://app.openma.dev",
+        serverUrl: "https://app.openma.ai",
         token: "sk_machine_test",
         machineId: "machine-test",
       },

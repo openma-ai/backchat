@@ -5,7 +5,7 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path";
 import type { DirectAgentConnectionInput, DirectAgentProvider, OpenmaAccountState, OpenmaScope } from "../shared/openma.js";
 
-const DEFAULT_ORIGIN = "https://app.openma.dev";
+const DEFAULT_ORIGIN = "https://app.openma.ai";
 // Derive a stable cache identity without exposing a fast verifier for the key.
 // This is not authentication: the original key stays in the private account file.
 function credentialIdentity(baseUrl: string, apiKey: string): Promise<string> {
@@ -43,7 +43,16 @@ export function openmaBaseUrl(value: string): string {
   if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error("Enter an OpenMA HTTP(S) server address without credentials or query parameters");
   }
-  if (url.origin === "https://openma.dev") url.hostname = "app.openma.dev";
+  // Canonical hosted origin is app.openma.ai. The apex and the legacy .dev
+  // hosts still resolve (the domain router 301s them), but a redirect is not
+  // followed by WebSocket upgrades or the login callback, so rewrite up front.
+  if (
+    url.origin === "https://openma.ai"
+    || url.origin === "https://openma.dev"
+    || url.origin === "https://app.openma.dev"
+  ) {
+    url.hostname = "app.openma.ai";
+  }
   return url.href.replace(/\/$/, "");
 }
 

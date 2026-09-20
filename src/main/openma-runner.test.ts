@@ -11,7 +11,7 @@ import type { OmaBridgeClient } from "./oma-bridge.js";
 
 const roots: string[] = [];
 afterEach(async () => { vi.useRealTimers(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
-const connection: OpenmaConnection = { baseUrl: "https://app.openma.dev", workspaceId: "a", userId: "user", apiKey: "user-key" };
+const connection: OpenmaConnection = { baseUrl: "https://app.openma.ai", workspaceId: "a", userId: "user", apiKey: "user-key" };
 const host = { start: async () => ({ status: "cancelled" as const, session_id: "s" }), prompt: async () => {}, cancel: () => {}, dispose: async () => {}, announceAll: () => {} };
 
 async function setup() {
