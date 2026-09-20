@@ -1521,9 +1521,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      hand-tuned track. */
   --chat-turn-content-inset: 32px;
   --chat-activity-icon-size: var(--control-icon-size);
-  /* Shared activity rows reserve an 8px leading inset inside the turn frame. */
+  /* Activity rows under the process header sit flush with its text (the
+     shared 8px leading inset is zeroed below), so the rail center is simply
+     the content inset plus half an icon. */
   --chat-icon-rail-center: calc(
-    var(--chat-turn-content-inset) + 8px + (var(--chat-activity-icon-size) / 2)
+    var(--chat-turn-content-inset) + (var(--chat-activity-icon-size) / 2)
   );
   --composer-card-border-width: 1px;
   --composer-card-padding-block: 10px;
@@ -2260,4 +2262,111 @@ body,
    changing the message geometry used by main and side conversations. */
 [data-chat-surface="side"] .is-user > [data-slot="message-content"] {
   background: var(--bg-bubble);
+}
+
+/* Turn process rail. The "Worked for" header is the parent level; thought
+   and tool rows beneath it are children. Hierarchy comes from type size
+   (14px header, 12px rows), not from chrome: rows start flush with the header
+   text and signal hover through color instead of a rounded pill. */
+[data-session-turn-response] .activity-disclosure-row {
+  --chat-activity-row-leading-space: 0px;
+  border-radius: 0;
+  font-size: 12px;
+  line-height: 20px;
+  transition: color 120ms ease-out;
+}
+
+[data-session-turn-response] .activity-disclosure-row:hover {
+  background: transparent;
+  color: var(--fg);
+}
+
+/* Expanded thought text lines up with the row label, not the icon. */
+[data-session-turn-response] [data-thought-stream-body] {
+  margin-left: calc(var(--chat-activity-icon-size) + 6px);
+}
+
+
+/* Replayed history mounts dozens of turns at once; a staggered fade-up on
+   every one of them reads as the whole transcript drifting. Only the live
+   (running) turn keeps the reveal. */
+[data-chat-column="turns"] [data-turn-id]:not([data-session-turn-status="running"]) {
+  animation: none;
+}
+
+/* Older-history fetch: a hairline sweeping along the top edge of the
+   transcript. Reads as activity without claiming space or attention. */
+@keyframes history-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+.history-progress {
+  animation: history-progress 1.1s var(--ease-soft, ease-in-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-progress { animation: none; width: 100%; }
+}
+
+/* ---------- Transcript density ----------
+   Common ships 14px/28px prose and a 32px + 24px gap under the last turn.
+   Backchat is a working tool: 14px/22px reads denser without crowding, and
+   the transcript ends where the composer begins. */
+[data-chat-surface] :is(.chat-markdown, .streaming-md) {
+  line-height: 22px;
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(h1, h2, h3, h4) {
+  line-height: 24px;
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(p, ul, ol) {
+  margin-block: 4px;
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) li {
+  margin-block: 1px;
+}
+[data-chat-surface] .chat-markdown--thought {
+  line-height: 20px;
+}
+/* Prompt bubble follows the same rhythm. */
+[data-session-turn-prompt] p {
+  line-height: 22px;
+}
+/* Last turn: no trailing margin; content padding shrinks to a hairline gap.
+   The frame sets `!mb-8` from Tailwind's utilities layer, and important
+   declarations resolve layer-first, so the override must live in that same
+   layer and win on source order. */
+@layer utilities {
+  /* Spacing scale derived from the 22px body line:
+       paragraph gap      4px   (~0.2 line)  — inside one answer
+       bubble → response 12px   (~0.5 line)  — inside one turn
+       turn → turn       24px   (~1.1 line)  — between exchanges
+     Each level is roughly double the one below, so the eye reads three
+     distinct groupings without any rules or backgrounds. The time row adds
+     ~8px of glyph slack, so the perceived turn gap is ~32px against a
+     perceived paragraph gap of ~12px. */
+  [data-chat-column="turns"] [data-turn-id] {
+    margin-bottom: 24px !important;
+  }
+  [data-chat-column="turns"] [data-turn-id] > :not(:last-child) {
+    margin-bottom: 12px !important;
+  }
+  [data-chat-column="turns"] > :last-child [data-turn-id],
+  [data-chat-column="turns"] > [data-turn-id]:last-child {
+    margin-bottom: 0 !important;
+  }
+}
+/* Transcript → composer: 40px (Codex/ChatGPT use the same). The composer is
+   a distinct object, so it gets more air than any gap inside the transcript
+   (24px between turns); anything less reads as the last answer being
+   attached to the input. */
+[data-chat-surface] .chat-scrollbar > div {
+  padding-bottom: 40px;
+}
+
+/* A field that is disabled mid-flow (e.g. the server URL while a browser
+   sign-in is pending) must not keep painting its stale text selection. */
+input:disabled::selection,
+textarea:disabled::selection {
+  background: transparent;
 }

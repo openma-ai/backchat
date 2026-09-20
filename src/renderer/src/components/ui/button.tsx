@@ -10,7 +10,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // Neutral, high-contrast primary: near-black on the light theme,
+        // off-white on dark. Brand coral stays for accents, not for every
+        // "Save" button on a form.
+        default: "bg-fg text-bg hover:bg-fg/88 active:bg-fg",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

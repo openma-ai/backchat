@@ -661,7 +661,7 @@ function TurnFooter({
       // A fixed height, not a minimum: the actions layer is laid out even while
       // it is transparent, so the row grew by the height of a button the moment
       // there was an answer to copy — and everything below it moved.
-      className="grid h-7 grid-cols-1 grid-rows-1"
+      className="-mt-1 grid h-7 grid-cols-1 grid-rows-1"
     >
       <div
         className={cn(
