@@ -265,6 +265,15 @@
   background: var(--control-bg-open);
 }
 
+/* One wash at a time: while the cursor rests on another row, the current
+   value keeps only its check mark, so the list never shows two highlights. */
+:is([cmdk-list], [role="listbox"]):has(
+    .app-select-item:is([data-selected="true"], [data-highlighted]):not([data-checked="true"], [data-state="checked"])
+  )
+  .app-select-item:is([data-checked="true"], [data-state="checked"]):not([data-selected="true"], [data-highlighted]) {
+  background: transparent;
+}
+
 .app-select-selected {
   color: var(--fg-muted);
 }
