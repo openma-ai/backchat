@@ -11,6 +11,7 @@ describe("selectRecentProjectPaths", () => {
         { cwd: String.raw`C:\Users\mini\.oma\sessions\sess-managed` },
         { cwd: "" },
         { cwd: null },
+        { cwd: "/Users/mini/.oma/worktrees/ws-x-1a2b/01-openma", workspace_id: "ws-x-1a2b" },
         { cwd: "/Users/mini/work/second" },
       ]),
     ).toEqual([

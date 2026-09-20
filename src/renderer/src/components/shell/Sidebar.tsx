@@ -448,10 +448,10 @@ export function Sidebar() {
           aria-current={newChatActive ? "page" : undefined}
           className={cn(
             "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
-            newChatActive
-              ? "app-selected-surface text-fg"
-              : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-            "transition-colors",
+            // Never painted as selected: this is a command, not a place.
+            // aria-current still marks the home route for assistive tech.
+            newChatActive ? "text-fg" : "text-fg-muted hover:text-fg",
+            "hover:bg-[var(--control-bg-hover)] transition-colors",
           )}
           style={{ height: "var(--sidebar-row-h)" }}
         >

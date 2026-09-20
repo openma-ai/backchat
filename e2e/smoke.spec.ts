@@ -628,18 +628,34 @@ test.describe("backchat smoke", () => {
           return { r, g, b, a };
         });
 
-      const selectedBackground = await composited(newChat);
-      expect(selectedBackground.a).toBe(255);
+      // The New chat row is a command, not a selected place: it carries
+      // aria-current for the home route but paints no selected wash, so its
+      // own background stays fully transparent over the sidebar.
+      const newChatOwnAlpha = await newChat.evaluate((element) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = getComputedStyle(element).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return context.getImageData(0, 0, 1, 1).data[3]!;
+      });
+      expect(newChatOwnAlpha).toBe(0);
+      const sidebarBackground = await composited(newChat);
+      expect(sidebarBackground.a).toBe(255);
 
       await model.click();
       await expect(page.getByRole("menu")).toBeVisible();
       await page.waitForTimeout(180);
       const openBackground = await composited(model);
-      // 8-bit canvas compositing and CSS color-mix round independently.
+      // An open control paints its translucent wash over an opaque panel, so
+      // the rendered result is opaque and distinct from the bare sidebar.
       expect(openBackground.a).toBe(255);
-      expect(Math.abs(openBackground.r - selectedBackground.r)).toBeLessThanOrEqual(1);
-      expect(Math.abs(openBackground.g - selectedBackground.g)).toBeLessThanOrEqual(1);
-      expect(Math.abs(openBackground.b - selectedBackground.b)).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(openBackground.r - sidebarBackground.r)
+        + Math.abs(openBackground.g - sidebarBackground.g)
+        + Math.abs(openBackground.b - sidebarBackground.b),
+      ).toBeGreaterThan(0);
   });
 
   test("uses the shared compact width for the project selector", async ({ page }) => {

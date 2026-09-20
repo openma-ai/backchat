@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ChevronDownIcon,
   FolderOpenIcon,
@@ -216,6 +216,7 @@ function WorkspaceChip({
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const { data: workspaces = [] } = useQuery({
     queryKey: WORKSPACES_QUERY_KEY,
     queryFn: () => window.backchat.workspacesList(),
@@ -284,6 +285,7 @@ function WorkspaceChip({
         >
           <Command>
             <CommandInput
+              ref={inputRef}
               autoFocus
               placeholder={t("workspace.newName")}
               value={newName}
@@ -328,22 +330,30 @@ function WorkspaceChip({
                   </span>
                 </CommandItem>
               ))}
-              {newName.trim() && (
-                <>
-                  <CommandSeparator />
-                  <CommandItem
-                    value={`${newName} create-workspace`}
-                    onSelect={() => void create()}
-                    disabled={creating}
-                    className="text-xs"
-                  >
-                    <PlusIcon className="size-3.5 text-fg-subtle" />
-                    <span className="min-w-0 flex-1 truncate">
-                      {creating ? t("workspace.creating") : `${t("workspace.create")}: ${newName.trim()}`}
-                    </span>
-                  </CommandItem>
-                </>
-              )}
+              <CommandSeparator />
+              <CommandItem
+                // Always present so creating is discoverable; the name is
+                // whatever sits in the search box. Matches any query.
+                value={`${newName} ${t("workspace.new")} create-workspace`}
+                onSelect={() => {
+                  if (newName.trim()) void create();
+                  else inputRef.current?.focus();
+                }}
+                disabled={creating}
+                className="text-xs"
+              >
+                <PlusIcon className="size-3.5 text-fg-subtle" />
+                <span className="min-w-0 flex-1 truncate">
+                  {creating
+                    ? t("workspace.creating")
+                    : newName.trim()
+                      ? `${t("workspace.create")}: ${newName.trim()}`
+                      : t("workspace.new")}
+                </span>
+                {!newName.trim() && (
+                  <span className="truncate text-fg-subtle">{t("workspace.newHint")}</span>
+                )}
+              </CommandItem>
             </CommandList>
           </Command>
         </PopoverContent>
