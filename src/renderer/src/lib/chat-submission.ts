@@ -63,14 +63,21 @@ export function resolveProjectScopedPickedCwd(
     : undefined;
 }
 
+/** Project chats run in the project's own source folders (the live
+ *  workspace) unless the draft picked a managed/external workspace, in which
+ *  case the checkout set is resolved by id. */
 export function resolveWorkspaceMode(
   projectScope: SessionRow["projectScope"],
   isSide = false,
   hasProjectCwd = true,
+  workspaceId?: string | null,
 ): SessionStartParams["workspace_mode"] {
   if (isSide) return "inherited";
   if (projectScope === "none") return "managed";
-  if (projectScope === "project") return hasProjectCwd ? "worktree" : "managed";
+  if (projectScope === "project") {
+    if (!hasProjectCwd) return "managed";
+    return workspaceId ? "worktree" : "project";
+  }
   return undefined;
 }
 
@@ -250,10 +257,12 @@ export function useChatSubmission({
           target.projectScope,
           isSide,
           !!startCwd,
+          target.workspaceId,
         ),
         cwd: startCwd,
         additional_directories: target.additionalDirectories,
         project_id: target.projectId,
+        workspace_id: target.workspaceId ?? undefined,
         fork: resolveChatFork(parentLink),
       });
       if (startResult.status !== "ready") return;
@@ -279,6 +288,7 @@ export function useChatSubmission({
         cwd: target.cwd || undefined,
         additional_directories: target.additionalDirectories,
         project_id: target.projectId,
+        workspace_id: target.workspaceId ?? undefined,
         resume: target.acp_session_id
           ? { acp_session_id: target.acp_session_id }
           : undefined,

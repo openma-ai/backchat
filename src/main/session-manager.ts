@@ -104,10 +104,9 @@ import { logAppEvent } from "./app-log.js";
 import { extensionRequestHandlerForHarness } from "./acp-extension-adapters.js";
 import { elicitationCallbackForSession } from "./acp-client-callback-adapters.js";
 import {
-  prepareSessionWorktrees,
-  removeSessionWorktrees,
-  type PreparedWorktreeWorkspace,
-} from "./worktree-manager.js";
+  discardSessionWorkspace,
+  prepareSessionWorkspace,
+} from "./workspace-service.js";
 
 export type Sender = (msg: SessionEventOut) => void;
 
@@ -124,6 +123,8 @@ interface ActiveSession {
   cwd: string;
   additionalDirectories: string[];
   projectId?: string;
+  /** Managed/external workspace the session runs in; null for live. */
+  workspaceId: string | null;
   startParams: SessionStartParams;
   /** Live turns keyed by turn_id. abort() cancels the ACP request and unwinds
    *  the prompt() async iterator. */
@@ -240,12 +241,19 @@ export interface SessionManagerDeps {
       session_modes?: unknown;
     },
   ) => Promise<void> | void;
-  /** Override points keep worktree lifecycle deterministic in tests. */
+  /** Override points keep workspace lifecycle deterministic in tests. */
   prepareWorktreeWorkspace?: (input: {
     sessionId: string;
+    projectId: string | null;
     sourceDirectories: string[];
-  }) => Promise<PreparedWorktreeWorkspace>;
-  removeWorktreeWorkspace?: (sessionId: string) => Promise<void>;
+    workspaceId?: string;
+  }) => Promise<{
+    workspaceId: string | null;
+    cwd: string;
+    additionalDirectories: string[];
+    created: boolean;
+  }>;
+  removeWorktreeWorkspace?: (workspaceId: string) => Promise<void>;
 }
 
 export class SessionManager {
@@ -285,9 +293,9 @@ export class SessionManager {
     this.#observeAuth = deps.observeAuth;
     this.#observeSessionConfig = deps.observeSessionConfig;
     this.#prepareWorktreeWorkspace =
-      deps.prepareWorktreeWorkspace ?? prepareSessionWorktrees;
+      deps.prepareWorktreeWorkspace ?? prepareSessionWorkspace;
     this.#removeWorktreeWorkspace =
-      deps.removeWorktreeWorkspace ?? removeSessionWorktrees;
+      deps.removeWorktreeWorkspace ?? discardSessionWorkspace;
   }
 
   setSender(send: Sender): void {
@@ -298,7 +306,7 @@ export class SessionManager {
     session_id: string,
     sess: Pick<
       ActiveSession,
-      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "acp"
+      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "workspaceId" | "acp"
     >,
   ): SessionStartResult {
     this.#transition(session_id, {
@@ -313,6 +321,7 @@ export class SessionManager {
       cwd: sess.cwd,
       additional_directories: sess.additionalDirectories,
       project_id: sess.projectId,
+      workspace_id: sess.workspaceId,
       config_options: [...sess.acp.configOptions],
       modes: sess.acp.modes ?? undefined,
       protocol_version: sess.acp.protocolVersion ?? undefined,
@@ -599,12 +608,16 @@ export class SessionManager {
     // chats cannot silently inherit settings.default.workspace_path.
     // Calls without a policy retain the legacy resolution used by resumes.
     let sessionCwd: string;
-    let preparedWorktrees: PreparedWorktreeWorkspace | undefined;
+    let preparedWorktrees:
+      | Awaited<ReturnType<NonNullable<SessionManagerDeps["prepareWorktreeWorkspace"]>>>
+      | undefined;
     let requestedAdditionalDirectories = p.additional_directories ?? [];
+    const requestedWorkspaceId = p.workspace_id?.trim() || undefined;
+    const usesWorkspace = !!requestedWorkspaceId || p.workspace_mode === "worktree";
     if (p.workspace_mode === "managed") {
       sessionCwd = await ensureSessionCwd(p.session_id);
-    } else if (p.workspace_mode === "worktree") {
-      if (!p.cwd?.trim()) {
+    } else if (usesWorkspace) {
+      if (!p.cwd?.trim() && !requestedWorkspaceId) {
         return this.#errorResult(
           p.session_id,
           "worktree workspace mode requires a cwd.",
@@ -613,7 +626,9 @@ export class SessionManager {
       try {
         preparedWorktrees = await this.#prepareWorktreeWorkspace({
           sessionId: p.session_id,
-          sourceDirectories: [p.cwd, ...requestedAdditionalDirectories],
+          projectId: p.project_id?.trim() || null,
+          sourceDirectories: [p.cwd ?? "", ...requestedAdditionalDirectories].filter(Boolean),
+          workspaceId: requestedWorkspaceId,
         });
       } catch (error) {
         return this.#errorResult(
@@ -672,7 +687,7 @@ export class SessionManager {
       // ManagedWorktreeStore already validated every effective path after the
       // checkout. Avoid probing twice here (and keep the preparation boundary
       // injectable in tests); direct and resumed roots still need this guard.
-      if (p.workspace_mode !== "worktree" && !(await directoryExists(directory))) {
+      if (!usesWorkspace && !(await directoryExists(directory))) {
         return this.#errorResult(
           p.session_id,
           `Additional workspace directory no longer exists: ${directory}`,
@@ -689,8 +704,8 @@ export class SessionManager {
 
     try {
       if (this.#cancelledStarts.has(p.session_id)) {
-        if (preparedWorktrees?.created) {
-          await this.#removeWorktreeWorkspace(p.session_id).catch(() => undefined);
+        if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
+          await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
         }
         return { status: "cancelled", session_id: p.session_id };
       }
@@ -783,11 +798,12 @@ export class SessionManager {
       });
       if (this.#cancelledStarts.has(p.session_id)) {
         await Promise.resolve(acpSession.dispose()).catch(() => undefined);
-        if (preparedWorktrees?.created) {
-          await this.#removeWorktreeWorkspace(p.session_id).catch(() => undefined);
+        if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
+          await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
         }
         return { status: "cancelled", session_id: p.session_id };
       }
+      const workspaceId = preparedWorktrees?.workspaceId ?? null;
       const activeSession: ActiveSession = {
         id: p.session_id,
         acp: acpSession,
@@ -796,11 +812,16 @@ export class SessionManager {
         cwd: sessionCwd,
         additionalDirectories,
         projectId: p.project_id?.trim() || undefined,
+        workspaceId,
         startParams: {
           ...p,
           cwd: sessionCwd,
           additional_directories: additionalDirectories,
-          ...(p.workspace_mode === "worktree" ? { workspace_mode: undefined } : {}),
+          // A restart resumes into the same workspace by id, never by
+          // creating another checkout set.
+          ...(usesWorkspace
+            ? { workspace_mode: undefined, workspace_id: workspaceId ?? undefined }
+            : {}),
         },
         turns: new Map(),
         openToolCallsByTurn: new Map(),
@@ -830,6 +851,7 @@ export class SessionManager {
         last_used_at: Date.now(),
         project_id: p.project_id?.trim() || null,
         additional_directories: additionalDirectories,
+        workspace_id: workspaceId,
       });
       const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
@@ -862,8 +884,8 @@ export class SessionManager {
       }
       return result;
     } catch (e) {
-      if (preparedWorktrees?.created) {
-        await this.#removeWorktreeWorkspace(p.session_id).catch(() => undefined);
+      if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
+        await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
       }
       if (this.#cancelledStarts.has(p.session_id)) {
         return { status: "cancelled", session_id: p.session_id };

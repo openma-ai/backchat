@@ -68,7 +68,10 @@ describe("chat submission decisions", () => {
 
   it("maps draft ownership to an explicit main-process workspace policy", () => {
     expect(resolveWorkspaceMode("none")).toBe("managed");
-    expect(resolveWorkspaceMode("project")).toBe("worktree");
+    // Live workspace by default; a chosen workspace switches to checkouts.
+    expect(resolveWorkspaceMode("project")).toBe("project");
+    expect(resolveWorkspaceMode("project", false, true, "ws-feature-1a2b")).toBe("worktree");
+    expect(resolveWorkspaceMode("project", false, true, null)).toBe("project");
     expect(resolveWorkspaceMode("project", false, false)).toBe("managed");
     expect(resolveWorkspaceMode(undefined, true)).toBe("inherited");
     expect(resolveWorkspaceMode(undefined)).toBeUndefined();

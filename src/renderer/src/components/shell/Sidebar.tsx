@@ -27,7 +27,9 @@ import {
   CalendarClockIcon,
   FolderIcon,
   FolderOpenIcon,
+  GitBranchIcon,
   PlusIcon,
+  Trash2Icon,
   UsersRoundIcon,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -61,14 +63,72 @@ import {
 } from "./ArchiveScheduledChatDialog";
 import { AgentUpdateControl } from "./AgentUpdateControl";
 import type { ProjectInfo } from "@shared/projects.js";
+import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
+import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+
+/** Second-level sidebar node: one managed/external workspace of a project
+ *  and the chats running inside it. Live-workspace chats stay directly
+ *  under the project and never form a node. */
+export interface SidebarWorkspaceGroup {
+  id: string;
+  label: string;
+  kind: WorkspaceInfo["kind"];
+  branch: string | null;
+  /** Checkout directories, primary first. */
+  paths: string[];
+  sessions: SessionRow[];
+  /** Full record when the workspace is still known to the main process. */
+  info?: WorkspaceInfo;
+}
 
 export interface SidebarProjectGroup {
   key: string;
   label: string;
+  /** Chats in the live workspace (the project's own source folders). */
   sessions: SessionRow[];
+  workspaces: SidebarWorkspaceGroup[];
   projectId?: string;
   primaryRoot: string;
   sourceFolders: string[];
+}
+
+function workspaceGroupFromInfo(info: WorkspaceInfo): SidebarWorkspaceGroup {
+  return {
+    id: info.id,
+    label: info.name,
+    kind: info.kind,
+    branch: info.branch,
+    paths: info.roots.map((root) => root.effectivePath),
+    sessions: [],
+    info,
+  };
+}
+
+function attachWorkspaceSession(
+  group: SidebarProjectGroup,
+  session: SessionRow,
+  workspaceId: string,
+): void {
+  let ws = group.workspaces.find((w) => w.id === workspaceId);
+  if (!ws) {
+    // Workspace record is gone (or not loaded yet): still show the chats
+    // under a node named after their checkout so nothing disappears.
+    ws = {
+      id: workspaceId,
+      label: folderName(session.cwd) || workspaceId,
+      kind: "managed",
+      branch: null,
+      paths: [session.cwd, ...(session.additionalDirectories ?? [])].filter(Boolean),
+      sessions: [],
+    };
+    group.workspaces.push(ws);
+  }
+  ws.sessions.push(session);
 }
 
 type SidebarSectionKey = "pinned" | "pairs" | "projects" | "chats";
@@ -81,6 +141,7 @@ type RenameTarget = {
 export function groupSidebarSessions(
   sessions: SessionRow[],
   savedProjects: readonly ProjectInfo[] = [],
+  workspaces: readonly WorkspaceInfo[] = [],
 ): {
   pinned: SessionRow[];
   projects: SidebarProjectGroup[];
@@ -94,10 +155,15 @@ export function groupSidebarSessions(
       key: `project:${project.id}`,
       label: project.name,
       sessions: [],
+      workspaces: [],
       projectId: project.id,
       primaryRoot: project.primary_folder,
       sourceFolders: project.source_folders,
     });
+  }
+  for (const ws of workspaces) {
+    if (ws.kind === "live" || !ws.project_id) continue;
+    projectMap.get(`project:${ws.project_id}`)?.workspaces.push(workspaceGroupFromInfo(ws));
   }
 
   for (const session of sessions) {
@@ -123,23 +189,40 @@ export function groupSidebarSessions(
       continue;
     }
 
+    const workspaceId =
+      session.workspaceId && !isLiveWorkspaceId(session.workspaceId)
+        ? session.workspaceId
+        : null;
     const group = projectMap.get(projectKey);
     if (group) {
-      group.sessions.push(session);
+      if (workspaceId) attachWorkspaceSession(group, session, workspaceId);
+      else group.sessions.push(session);
     } else {
-      projectMap.set(projectKey, {
+      const fresh: SidebarProjectGroup = {
         key: projectKey,
         label: folderName(projectKey),
-        sessions: [session],
+        sessions: [],
+        workspaces: [],
         primaryRoot: session.cwd,
         sourceFolders: [
           session.cwd,
           ...(session.additionalDirectories ?? []),
         ].filter(Boolean),
-      });
+      };
+      if (workspaceId) attachWorkspaceSession(fresh, session, workspaceId);
+      else fresh.sessions.push(session);
+      projectMap.set(projectKey, fresh);
     }
   }
 
+  // External worktrees are only worth a sidebar node once a chat runs in
+  // them; otherwise they stay reachable through the composer's workspace
+  // picker and do not turn every `git worktree list` entry into UI.
+  for (const group of projectMap.values()) {
+    group.workspaces = group.workspaces.filter(
+      (ws) => ws.kind !== "external" || ws.sessions.length > 0,
+    );
+  }
   return {
     pinned,
     projects: [...projectMap.values()],
@@ -204,6 +287,11 @@ export function Sidebar() {
     queryFn: () => window.backchat.projectsList(),
     staleTime: 30_000,
   });
+  const { data: workspaces = [] } = useQuery({
+    queryKey: WORKSPACES_QUERY_KEY,
+    queryFn: () => window.backchat.workspacesList(),
+    staleTime: 30_000,
+  });
   const scheduledSessionIds = scheduledSourceSessionIds(
     useQuery({
       queryKey: SCHEDULES_QUERY_KEY,
@@ -216,8 +304,8 @@ export function Sidebar() {
   const [localOpen, setLocalOpen] = useState(true);
   const localSessions = useMemo(() => sessions.filter((row) => !row.openma && !row.executionTarget), [sessions]);
   const grouped = useMemo(
-    () => groupSidebarSessions(localSessions, savedProjects),
-    [savedProjects, localSessions],
+    () => groupSidebarSessions(localSessions, savedProjects, workspaces),
+    [savedProjects, localSessions, workspaces],
   );
 
   const goHome = () => {
@@ -254,12 +342,24 @@ export function Sidebar() {
     void navigate({ to: "/" });
   };
 
-  const onNewNamedProjectChat = (project: SidebarProjectGroup) => {
+  const onNewNamedProjectChat = (
+    project: SidebarProjectGroup,
+    workspaceId?: string,
+  ) => {
     sessionStore.newDraft({
       projectId: project.projectId!,
       sourceFolders: project.sourceFolders,
+      workspaceId,
     });
     void navigate({ to: "/" });
+  };
+  const onDeleteWorkspace = async (ws: SidebarWorkspaceGroup) => {
+    try {
+      await window.backchat.workspaceDelete({ workspace_id: ws.id });
+      void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const settingsActive = location.pathname.startsWith("/settings");
@@ -590,6 +690,65 @@ export function Sidebar() {
                                     />
                                   </li>
                                 ))}
+                                {project.workspaces.map((ws) => {
+                                  const wsKey = `${project.key}/${ws.id}`;
+                                  const wsOpen = !openProjectKeys.has(`closed:${wsKey}`);
+                                  return (
+                                    <li key={ws.id}>
+                                      <WorkspaceSidebarRow
+                                        workspace={ws}
+                                        open={wsOpen}
+                                        labelCls={labelCls}
+                                        onToggle={() =>
+                                          setOpenProjectKeys((prev) => {
+                                            const next = new Set(prev);
+                                            const k = `closed:${wsKey}`;
+                                            if (next.has(k)) next.delete(k);
+                                            else next.add(k);
+                                            return next;
+                                          })
+                                        }
+                                        onNewChat={() =>
+                                          project.projectId
+                                            ? onNewNamedProjectChat(project, ws.id)
+                                            : onNewProjectChat(ws.paths[0] ?? project.primaryRoot)
+                                        }
+                                        onArchiveChats={() =>
+                                          void requestArchive(ws.sessions.map((s) => s.id))
+                                        }
+                                        onDelete={() => void onDeleteWorkspace(ws)}
+                                        menuOpen={openMenuId === `workspace:${ws.id}`}
+                                        onMenuOpenChange={(openMenu) =>
+                                          setOpenMenuId(openMenu ? `workspace:${ws.id}` : null)
+                                        }
+                                      />
+                                      <AnimatedCollapse open={wsOpen}>
+                                        <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0 pl-4">
+                                          {ws.sessions.map((s) => (
+                                            <li key={s.id}>
+                                              <SessionRow
+                                                row={s}
+                                                agentIconUrl={agentIconUrls.get(s.agent_id)}
+                                                active={s.id === activeId && location.pathname.startsWith("/chat/")}
+                                                hasSchedule={scheduledSessionIds.has(s.id)}
+                                                labelCls={labelCls}
+                                                onSelect={() => onSelectSession(s.id)}
+                                                onRename={() =>
+                                                  requestRename({ kind: "session", id: s.id, title: s.label })
+                                                }
+                                                onArchive={() => void requestArchive([s.id])}
+                                                menuOpen={openMenuId === s.id}
+                                                onMenuOpenChange={(openMenu) =>
+                                                  setOpenMenuId(openMenu ? s.id : null)
+                                                }
+                                              />
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </AnimatedCollapse>
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             </AnimatedCollapse>
                           </li>
@@ -889,6 +1048,153 @@ function ProjectSidebarRow({
           type="button"
           aria-label={t("sidebar.startProjectChat")}
           title={t("sidebar.startProjectChat")}
+          onClick={onNewChat}
+          className="sidebar-row-action"
+        >
+          <SquarePenIcon aria-hidden="true" />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** Workspace node. Hovering the label reveals the worktrees behind it —
+ *  one per repository the project spans — so the user knows which
+ *  checkouts a chat under this node actually edits. */
+function WorkspaceSidebarRow({
+  workspace,
+  open,
+  labelCls,
+  onToggle,
+  onNewChat,
+  onArchiveChats,
+  onDelete,
+  menuOpen,
+  onMenuOpenChange,
+}: {
+  workspace: SidebarWorkspaceGroup;
+  open: boolean;
+  labelCls: string;
+  onToggle: () => void;
+  onNewChat: () => void;
+  onArchiveChats: () => void;
+  onDelete: () => void;
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const worktrees = workspace.info?.worktrees ?? [];
+  const primaryPath = workspace.paths[0];
+  return (
+    <div
+      className={cn(
+        "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+        "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg active:bg-[var(--control-bg-open)]",
+        "transition-colors",
+      )}
+      style={{ height: "var(--sidebar-row-h)" }}
+      data-sidebar-workspace={workspace.id}
+      data-workspace-kind={workspace.kind}
+    >
+      <HoverCard openDelay={350} closeDelay={80}>
+        <HoverCardTrigger asChild>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={workspace.label}
+            aria-expanded={open}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          >
+            <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
+              <GitBranchIcon />
+            </span>
+            <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
+              {workspace.label}
+            </span>
+          </button>
+        </HoverCardTrigger>
+        <HoverCardContent
+          side="right"
+          align="start"
+          sideOffset={8}
+          className="w-auto max-w-[360px] p-2 text-xs"
+        >
+          <div className="mb-1 flex items-center gap-2 text-fg">
+            <GitBranchIcon className="shrink-0 size-3.5 text-fg-subtle" />
+            <span className="truncate font-medium">{workspace.branch ?? t("workspace.detached")}</span>
+            <span className="ml-auto shrink-0 text-fg-subtle">
+              {workspace.kind === "external" ? t("workspace.external") : t("workspace.managed")}
+            </span>
+          </div>
+          <ul className="m-0 list-none space-y-0.5 p-0">
+            {(worktrees.length > 0
+              ? worktrees.map((w) => ({ path: w.path, head: w.head }))
+              : workspace.paths.map((path) => ({ path, head: "" }))
+            ).map((w) => (
+              <li key={w.path} className="flex items-center gap-2 text-fg-muted">
+                <FolderIcon className="size-3 shrink-0 text-fg-subtle" />
+                <span className="min-w-0 flex-1 truncate" title={w.path}>{w.path}</span>
+                {w.head && (
+                  <span className="shrink-0 font-mono text-[10px] text-fg-subtle">{w.head.slice(0, 7)}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </HoverCardContent>
+      </HoverCard>
+      <span
+        className={cn(
+          labelCls,
+          "ml-auto inline-flex shrink-0 items-center gap-0.5 transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
+          menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+        )}
+      >
+        <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={t("workspace.actions")}
+              data-sidebar-row-action="true"
+              className="sidebar-row-action"
+            >
+              <MoreHorizontalIcon aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[180px]">
+            <DropdownMenuItem
+              onSelect={() =>
+                primaryPath ? void window.backchat.uiFsOpenPath({ path: primaryPath }) : undefined
+              }
+              disabled={!primaryPath}
+              className="flex items-center gap-2 py-1 text-xs"
+            >
+              <FolderOpenIcon className="size-3.5" />
+              <span>{t("workspace.reveal")}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
+            <DropdownMenuItem
+              onSelect={onArchiveChats}
+              disabled={workspace.sessions.length === 0}
+              className="flex items-center gap-2 py-1 text-xs"
+            >
+              <ArchiveIcon className="size-3.5" />
+              <span>{t("sidebar.archiveProjectChats")}</span>
+            </DropdownMenuItem>
+            {workspace.kind !== "external" && (
+              <DropdownMenuItem
+                onSelect={onDelete}
+                className="flex items-center gap-2 py-1 text-xs text-danger"
+              >
+                <Trash2Icon className="size-3.5" />
+                <span>{t("workspace.delete")}</span>
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <button
+          type="button"
+          aria-label={t("workspace.startChat")}
+          title={t("workspace.startChat")}
           onClick={onNewChat}
           className="sidebar-row-action"
         >

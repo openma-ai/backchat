@@ -138,6 +138,16 @@ const api: BackchatApi = {
     >,
   projectDelete: (p) =>
     ipcRenderer.invoke(InvokeChannel.ProjectDelete, p) as Promise<void>,
+  workspacesList: (p) =>
+    ipcRenderer.invoke(InvokeChannel.WorkspacesList, p) as Promise<
+      import("../shared/workspaces.js").WorkspaceInfo[]
+    >,
+  workspaceCreate: (p) =>
+    ipcRenderer.invoke(InvokeChannel.WorkspaceCreate, p) as Promise<
+      import("../shared/workspaces.js").WorkspaceInfo
+    >,
+  workspaceDelete: (p) =>
+    ipcRenderer.invoke(InvokeChannel.WorkspaceDelete, p) as Promise<void>,
   onPairEvent: (handler) => {
     const l = (_e: IpcRendererEvent, ev: import("../shared/pair-events.js").PairEventOut) =>
       handler(ev);
@@ -151,8 +161,8 @@ const api: BackchatApi = {
     >,
   sessionsRename: (p) =>
     ipcRenderer.invoke(InvokeChannel.SessionsRename, p) as Promise<void>,
-  sessionsLoadHistory: (sessionId) =>
-    ipcRenderer.invoke(InvokeChannel.SessionsLoadHistory, sessionId) as Promise<
+  sessionsLoadHistory: (sessionId, page) =>
+    ipcRenderer.invoke(InvokeChannel.SessionsLoadHistory, sessionId, page) as Promise<
       import("../shared/api.js").PersistedEventInfo[]
     >,
   sessionPersistCanonicalEvent: (event: OpenMAEvent) =>

@@ -139,6 +139,10 @@ export interface SessionRow {
   projectId?: string;
   /** ACP secondary roots; cwd/chosenCwd remains the primary folder. */
   additionalDirectories?: string[];
+  /** Managed/external workspace the session runs (or, while drafting, will
+   *  run) in. Undefined/null = live: the project's own source folders.
+   *  See shared/workspaces.ts. */
+  workspaceId?: string | null;
   /** Explicit ownership chosen at draft creation. This prevents a global
    *  New chat from inheriting the current/default project through ambient
    *  composer state. Project scope is only entered by a project `+` action
@@ -516,4 +520,27 @@ export interface SideWorkspaceStateV1 {
 export interface TaskSideWorkspaceSnapshot {
   taskId: string;
   state: SideWorkspaceStateV1;
+}
+
+/** One persisted event row as returned by sessions.loadHistory. */
+export interface HistoryRow {
+  seq: number;
+  type: string;
+  data: string;
+  ts: number;
+}
+
+/** Store-internal bookkeeping for a session opened as a tail window. */
+export interface HistoryWindowState {
+  rows: HistoryRow[];
+  hasMore: boolean;
+  loading: boolean;
+}
+
+/** What the chat view needs to page older history in. */
+export interface HistoryWindowInfo {
+  /** seq of the oldest loaded row; undefined when the window is empty. */
+  oldestSeq: number | undefined;
+  hasMore: boolean;
+  loading: boolean;
 }

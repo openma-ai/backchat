@@ -178,6 +178,11 @@ export function NewChatPage() {
           }}
           onSetCwd={setDraftProjectCwd}
           onClearCwd={() => setDraftProjectCwd(null)}
+          projectId={draft?.projectId}
+          workspaceId={draft?.workspaceId}
+          onSetWorkspace={(workspaceId) => {
+            if (draft) sessionStore.setDraftWorkspace(draft.id, workspaceId);
+          }}
         />
       </div>
       <div className="home-corner-decoration" aria-hidden="true" />

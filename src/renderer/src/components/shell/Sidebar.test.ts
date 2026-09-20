@@ -38,6 +38,76 @@ describe("groupSidebarSessions", () => {
     });
   });
 
+  it("nests workspace chats under a second-level node while live chats stay under the project", () => {
+    const project = {
+      id: "proj-1",
+      name: "Backchat",
+      primary_folder: "/work/backchat",
+      source_folders: ["/work/backchat"],
+    } as never;
+    const workspace = {
+      id: "ws-paging-1a2b",
+      project_id: "proj-1",
+      name: "paging",
+      kind: "managed",
+      branch: "backchat/paging-1a2b",
+      roots: [{ sourcePath: "/work/backchat", effectivePath: "/wt/ws-paging-1a2b/01-backchat", worktreeIndex: 0 }],
+      worktrees: [],
+      created_by_session_id: null,
+      created_at: 1,
+      updated_at: 1,
+    } as never;
+    const live = row({ id: "live-chat", cwd: "/work/backchat", projectId: "proj-1", projectScope: "project" });
+    const inWorkspace = row({
+      id: "ws-chat",
+      cwd: "/wt/ws-paging-1a2b/01-backchat",
+      projectId: "proj-1",
+      projectScope: "project",
+      workspaceId: "ws-paging-1a2b",
+    });
+    const liveTagged = row({
+      id: "live-tagged",
+      cwd: "/work/backchat",
+      projectId: "proj-1",
+      projectScope: "project",
+      workspaceId: "live:proj-1",
+    });
+
+    const idleExternal = {
+      ...(workspace as Record<string, unknown>),
+      id: "ext:abc",
+      name: "codex/other-branch",
+      kind: "external",
+    } as never;
+    const grouped = groupSidebarSessions(
+      [live, inWorkspace, liveTagged],
+      [project],
+      [workspace, idleExternal],
+    );
+
+    expect(grouped.projects).toHaveLength(1);
+    expect(grouped.projects[0].sessions.map((s) => s.id)).toEqual(["live-chat", "live-tagged"]);
+    // Managed nodes always show; an external worktree without chats does not.
+    expect(grouped.projects[0].workspaces).toMatchObject([
+      { id: "ws-paging-1a2b", label: "paging", branch: "backchat/paging-1a2b", sessions: [{ id: "ws-chat" }] },
+    ]);
+    expect(grouped.projects[0].workspaces.map((w) => w.id)).not.toContain("ext:abc");
+  });
+
+  it("keeps chats visible under a placeholder node when their workspace record is gone", () => {
+    const orphan = row({
+      id: "orphan",
+      cwd: "/wt/ws-gone/01-app",
+      projectScope: "project",
+      workspaceId: "ws-gone",
+    });
+    const grouped = groupSidebarSessions([orphan]);
+    expect(grouped.projects[0].sessions).toEqual([]);
+    expect(grouped.projects[0].workspaces).toMatchObject([
+      { id: "ws-gone", label: "01-app", sessions: [{ id: "orphan" }] },
+    ]);
+  });
+
   it("creates global and project drafts with explicit, separate scopes", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
 

@@ -36,6 +36,10 @@ export interface SessionStartParams {
    *  - inherited: require the parent task's `cwd` for a side chat.
    *  - omitted: resume an existing session at its persisted `cwd`. */
   workspace_mode?: "managed" | "project" | "worktree" | "inherited";
+  /** Run inside an existing managed or external workspace (see
+   *  shared/workspaces.ts). Implies worktree mode; `cwd` and
+   *  `additional_directories` are then resolved from the workspace roots. */
+  workspace_id?: string;
   /** Provide an existing ACP-side session id to resume conversation history.
    *  The runtime tries `session/resume`, then `session/load`, then
    *  `session/new`, according to the agent's advertised capabilities. */
@@ -55,6 +59,7 @@ export type SessionStartResult =
       cwd: string;
       additional_directories?: string[];
       project_id?: string;
+      workspace_id?: string | null;
       config_options?: SessionConfigOption[];
       modes?: SessionModeState;
       protocol_version?: number;
@@ -349,6 +354,8 @@ export type SessionEventOut = (
       cwd: string;
       additional_directories?: string[];
       project_id?: string;
+      /** Managed/external workspace the session runs in; absent for live. */
+      workspace_id?: string | null;
       /** ACP `NewSessionResponse.configOptions` /
        *  `LoadSessionResponse.configOptions`, if the agent supports
        *  runtime session configuration. Kept as unknown at the shared

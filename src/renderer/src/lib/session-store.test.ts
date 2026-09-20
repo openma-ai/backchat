@@ -984,6 +984,95 @@ describe("SessionStore replay", () => {
   });
 });
 
+describe("SessionStore history windows", () => {
+  const sessionId = "sess-history-window";
+  const rows = [
+    { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "a" }), ts: 1000 },
+    { seq: 2, type: "agent_message", data: JSON.stringify({ text: "A1" }), ts: 1001 },
+    { seq: 3, type: "agent_message", data: JSON.stringify({ text: "A2" }), ts: 1002 },
+    { seq: 4, type: "user_prompt", data: JSON.stringify({ text: "b" }), ts: 1003 },
+    { seq: 5, type: "agent_message", data: JSON.stringify({ text: "B1" }), ts: 1004 },
+    { seq: 6, type: "agent_message", data: JSON.stringify({ text: "B2" }), ts: 1005 },
+  ];
+
+  test("opens mid-turn with a prompt-less head turn and pages older rows in", () => {
+    const store = new SessionStore();
+    store.replayHistoryWindow(sessionId, rows.slice(2), { hasMore: true });
+
+    expect(store.historyWindowFor(sessionId)).toEqual({
+      oldestSeq: 3,
+      hasMore: true,
+      loading: false,
+    });
+    expect(store.turnsFor(sessionId).map((t) => [t.id, t.promptText, t.assistantText])).toEqual([
+      [`replay-${sessionId}-head`, "", "A2"],
+      [`replay-${sessionId}-4`, "b", "B1B2"],
+    ]);
+
+    store.setHistoryLoading(sessionId, true);
+    expect(store.historyWindowFor(sessionId)?.loading).toBe(true);
+
+    store.prependHistory(sessionId, rows.slice(0, 2), { hasMore: false });
+    expect(store.historyWindowFor(sessionId)).toEqual({
+      oldestSeq: 1,
+      hasMore: false,
+      loading: false,
+    });
+    // Rebuilt from the full window: the head fragment folded into turn "a",
+    // and turn "b" kept its seq-based id so the view does not remount it.
+    expect(store.turnsFor(sessionId).map((t) => [t.id, t.promptText, t.assistantText])).toEqual([
+      [`replay-${sessionId}-1`, "a", "A1A2"],
+      [`replay-${sessionId}-4`, "b", "B1B2"],
+    ]);
+  });
+
+  test("paging older rows never rolls session-level state back", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-history-window",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    const usage = (seq: number, used: number, ts: number) => ({
+      seq,
+      type: "usage_update",
+      data: JSON.stringify({ sessionUpdate: "usage_update", used, size: 100 }),
+      ts,
+    });
+    store.replayHistoryWindow(sessionId, [rows[3]!, usage(5, 80, 1004)], { hasMore: true });
+    expect(store.get(sessionId)?.usage).toMatchObject({ used: 80 });
+    const rowBefore = store.get(sessionId);
+
+    store.prependHistory(sessionId, [rows[0]!, usage(2, 10, 1001)], { hasMore: false });
+    expect(store.get(sessionId)).toBe(rowBefore);
+    expect(store.get(sessionId)?.usage).toMatchObject({ used: 80 });
+    expect(store.turnsFor(sessionId).map((t) => t.id)).toEqual([
+      `replay-${sessionId}-1`,
+      `replay-${sessionId}-4`,
+    ]);
+  });
+
+  test("full replay leaves no window bookkeeping and drops leading fragments", () => {
+    const store = new SessionStore();
+    store.replayHistory(sessionId, rows.slice(2));
+    expect(store.historyWindowFor(sessionId)).toBeUndefined();
+    expect(store.turnsFor(sessionId).map((t) => t.id)).toEqual([`replay-${sessionId}-4`]);
+  });
+
+  test("an empty older page closes the window without touching turns", () => {
+    const store = new SessionStore();
+    store.replayHistoryWindow(sessionId, rows, { hasMore: true });
+    store.prependHistory(sessionId, [], { hasMore: false });
+    expect(store.historyWindowFor(sessionId)?.hasMore).toBe(false);
+    expect(store.turnsFor(sessionId).map((t) => t.id)).toEqual([
+      `replay-${sessionId}-1`,
+      `replay-${sessionId}-4`,
+    ]);
+  });
+});
+
 describe("SessionStore performance invariants", () => {
   test("keeps prompt attachments on a live optimistic turn", () => {
     const store = new SessionStore();

@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import { Badge } from "@/components/ui/badge";
 import { StatusNotice } from "@/components/ui/status-notice";
+import { Spinner } from "@/components/ui/spinner";
 import {
   selectActive,
   selectOpenMAEventsFor,
@@ -33,6 +34,7 @@ import { useTheme } from "@/lib/theme";
 import { resolveThemeText } from "@/lib/theme-plugin";
 import { getThemePlugin } from "@/themes";
 import { ConversationTimeline } from "./ConversationTimeline";
+import { HistoryPager } from "./HistoryPager";
 import { ResponseAnnotationController } from "./ResponseAnnotations";
 import { ProjectChipRow } from "./ComposerProjectControls";
 import { MarkdownCwdProvider } from "./ChatMarkdown";
@@ -186,6 +188,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     () => filterQueuedTurns(turns),
     [turns],
   );
+  const historyPendingSelector = useMemo(
+    () => (s: typeof sessionStore) => (active?.id ? s.isHistoryPending(active.id) : false),
+    [active?.id],
+  );
+  const historyPending = useSessionStore(historyPendingSelector);
   const chatSurfaceTurns = useMemo(() => projectChatSurfaceTurns(turns), [turns]);
   const turnsById = useMemo(
     () => new Map(turns.map((turn) => [turn.id, turn] as const)),
@@ -494,11 +501,40 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       }}
       onSetCwd={(p) => setDraftProjectCwd(p)}
       onClearCwd={() => setDraftProjectCwd(null)}
+      projectId={active?.status === "draft" ? active.projectId : undefined}
+      workspaceId={active?.status === "draft" ? active.workspaceId : undefined}
+      onSetWorkspace={(workspaceId) => {
+        if (active?.status === "draft") sessionStore.setDraftWorkspace(active.id, workspaceId);
+      }}
     />
   ) : null;
   const runtimeFooter = active && active.status !== "draft" ? (
     <SessionRuntimeSummary session={active} queueDepth={queuedTurnCount} />
   ) : null;
+
+  // A persisted session whose first history page is still in flight has no
+  // turns yet. Hold a quiet loading surface here instead of letting the
+  // shared shell flash the home empty state and then jump to the transcript.
+  if (
+    active
+    && active.status !== "draft"
+    && turns.length === 0
+    && historyPending
+  ) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-chat-surface={isSide ? "side" : "main"}
+        data-chat-history-loading="true"
+      >
+        <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
+          <Spinner className="mr-2" />
+          {t("chat.loadingHistory")}
+        </div>
+        <div className="shrink-0">{composer}</div>
+      </div>
+    );
+  }
 
   return (
     <AgentChatView
@@ -588,7 +624,10 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         ) : null,
         conversationOverlay:
           !isSide && active ? (
-            <ConversationTimeline turns={transcriptTurns} />
+            <>
+              <HistoryPager sessionId={active.id} />
+              <ConversationTimeline turns={transcriptTurns} />
+            </>
           ) : null,
         emptyAfter: !isSide ? (
           <div className="home-corner-decoration" aria-hidden="true" />

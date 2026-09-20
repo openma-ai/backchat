@@ -84,6 +84,7 @@ import type {
   BrowserWebContentsInput,
 } from "./browser-data.js";
 import type { ProjectInfo, ProjectSaveParams } from "./projects.js";
+import type { WorkspaceCreateParams, WorkspaceInfo } from "./workspaces.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 
 /** Codex-shaped Agent Auth payload sent as `authenticate._meta.gateway`. */
@@ -171,10 +172,21 @@ export interface PersistedSessionInfo {
   project_id: string | null;
   /** Effective session roots excluding cwd, captured when the session starts. */
   additional_directories: string[];
+  /** Managed/external workspace id, or null when the session works in the
+   *  project's own source folders. */
+  workspace_id: string | null;
 }
 
 /** Public shape of one persisted event. `data` is JSON-encoded text — the
  *  renderer parses on use. */
+/** Window selector for sessionsLoadHistory. Omit (or omit `limit`) for the
+ *  full log. With `limit`, main returns the newest `limit` rows — those with
+ *  seq strictly below `before_seq` when given — still in ascending seq order. */
+export interface SessionHistoryPage {
+  before_seq?: number;
+  limit?: number;
+}
+
 export interface PersistedEventInfo {
   seq: number;
   session_id: string;
@@ -500,6 +512,12 @@ export interface BackchatApi extends OpenmaAccountApi {
   projectsList(): Promise<ProjectInfo[]>;
   projectSave(p: ProjectSaveParams): Promise<ProjectInfo>;
   projectDelete(p: { project_id: string }): Promise<void>;
+  /** Project → Workspace → Worktree. Lists live + managed + external
+   *  workspaces; omit project_id for every project. */
+  workspacesList(p?: { project_id?: string }): Promise<WorkspaceInfo[]>;
+  workspaceCreate(p: WorkspaceCreateParams): Promise<WorkspaceInfo>;
+  /** Managed only: removes the checkouts and detaches its sessions. */
+  workspaceDelete(p: { workspace_id: string }): Promise<void>;
 
   /** List persisted sessions (most-recent first, archived hidden). Used by
    *  the renderer on boot to rebuild the sidebar from disk before any
@@ -509,7 +527,10 @@ export interface BackchatApi extends OpenmaAccountApi {
 
   /** Replay the event log for a persisted session, in seq order. Renderer
    *  feeds these back into its in-memory store to reconstruct turns. */
-  sessionsLoadHistory(sessionId: string): Promise<PersistedEventInfo[]>;
+  sessionsLoadHistory(
+    sessionId: string,
+    page?: SessionHistoryPage,
+  ): Promise<PersistedEventInfo[]>;
 
   /** Persist a canonical event synthesized by a renderer-side adapter. Main
    * remains the SQL owner; this is used for native Agent/Task observations

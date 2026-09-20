@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useParams } from "@tanstack/react-router";
 import { ChatView } from "@/components/chat/ChatView";
 import { sessionStore, useSessionStore, type SessionRow } from "@/lib/session-store";
+import { openHistoryWindow } from "@/lib/history-paging";
 import { toast } from "sonner";
 
 /**
@@ -58,13 +59,14 @@ export function ChatPage() {
     // Load history once per session per renderer lifetime. Re-navigating
     // shouldn't re-fetch; the in-memory turns are authoritative once we've
     // replayed them. (Live session.event continues to layer on top via
-    // sessionStore.apply.)
+    // sessionStore.apply.) Only the newest page is fetched here; the chat
+    // view pages older rows in as the user scrolls up.
     if (!HISTORY_LOADED.has(params.sessionId)) {
       HISTORY_LOADED.add(params.sessionId);
       lastLoadedRef.current = params.sessionId;
-      void window.backchat
-        .sessionsLoadHistory(params.sessionId)
-        .then((rows) => sessionStore.replayHistory(params.sessionId!, rows));
+      void openHistoryWindow(params.sessionId).catch((error) => {
+        toast.error(error instanceof Error ? error.message : "Couldn't load history");
+      });
     }
     if (!PREWARMED.has(params.sessionId) && prewarmSessionOnOpen(row)) {
       PREWARMED.add(params.sessionId);
@@ -92,6 +94,7 @@ export function prewarmSessionOnOpen(row: SessionRow | undefined): boolean {
     cwd: row.cwd || undefined,
     additional_directories: row.additionalDirectories,
     project_id: row.projectId,
+    workspace_id: row.workspaceId ?? undefined,
     resume: { acp_session_id: row.acp_session_id },
   });
   return true;

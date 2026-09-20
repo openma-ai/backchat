@@ -1175,12 +1175,9 @@ describe("SessionManager prompt queue", () => {
   it("prepares all project roots as session worktrees before ACP startup", async () => {
     const fake = createControllableAcpSession();
     const prepareWorktreeWorkspace = vi.fn(async () => ({
+      workspaceId: "ws-sess-worktree-ab12",
       cwd: "/managed/worktrees/sess-worktree/01-app",
       additionalDirectories: ["/managed/worktrees/sess-worktree/02-docs"],
-      worktrees: [
-        { repoRoot: "/source/app", path: "/managed/worktrees/sess-worktree/01-app", head: "abc" },
-        { repoRoot: "/source/docs", path: "/managed/worktrees/sess-worktree/02-docs", head: "def" },
-      ],
       created: true,
     }));
     const removeWorktreeWorkspace = vi.fn(async () => undefined);
@@ -1207,7 +1204,9 @@ describe("SessionManager prompt queue", () => {
 
     expect(prepareWorktreeWorkspace).toHaveBeenCalledWith({
       sessionId: "sess-worktree",
+      projectId: "proj-workspace",
       sourceDirectories: ["/source/app", "/source/docs"],
+      workspaceId: undefined,
     });
     expect(mocks.runtimeStart).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1221,21 +1220,65 @@ describe("SessionManager prompt queue", () => {
       status: "ready",
       cwd: "/managed/worktrees/sess-worktree/01-app",
       additional_directories: ["/managed/worktrees/sess-worktree/02-docs"],
+      workspace_id: "ws-sess-worktree-ab12",
     });
     expect(vi.mocked(upsertSession)).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: "/managed/worktrees/sess-worktree/01-app",
         additional_directories: ["/managed/worktrees/sess-worktree/02-docs"],
+        workspace_id: "ws-sess-worktree-ab12",
       }),
     );
     expect(removeWorktreeWorkspace).not.toHaveBeenCalled();
   });
 
+  it("runs inside an existing workspace by id without creating or removing checkouts", async () => {
+    const fake = createControllableAcpSession();
+    const prepareWorktreeWorkspace = vi.fn(async () => ({
+      workspaceId: "ws-history-paging-9f3c",
+      cwd: "/managed/worktrees/ws-history-paging-9f3c/01-app",
+      additionalDirectories: [],
+      created: false,
+    }));
+    const removeWorktreeWorkspace = vi.fn(async () => undefined);
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      prepareWorktreeWorkspace,
+      removeWorktreeWorkspace,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-in-workspace",
+      agent_id: "codex-acp",
+      workspace_id: "ws-history-paging-9f3c",
+      cwd: "/source/app",
+      project_id: "proj-workspace",
+    });
+
+    expect(prepareWorktreeWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: "ws-history-paging-9f3c" }),
+    );
+    expect(result).toMatchObject({
+      status: "ready",
+      cwd: "/managed/worktrees/ws-history-paging-9f3c/01-app",
+      workspace_id: "ws-history-paging-9f3c",
+    });
+    // A shared workspace is never torn down by one of its sessions.
+    await manager.dispose("sess-in-workspace");
+    expect(removeWorktreeWorkspace).not.toHaveBeenCalled();
+  });
+
   it("rolls back newly-created session worktrees when ACP startup fails", async () => {
     const prepareWorktreeWorkspace = vi.fn(async () => ({
+      workspaceId: "ws-sess-worktree-fail-ab12",
       cwd: "/managed/worktrees/sess-worktree-fail/01-app",
       additionalDirectories: ["/managed/worktrees/sess-worktree-fail/02-docs"],
-      worktrees: [],
       created: true,
     }));
     const removeWorktreeWorkspace = vi.fn(async () => undefined);
@@ -1265,7 +1308,8 @@ describe("SessionManager prompt queue", () => {
       status: "error",
       message: "ACP agent does not support additional workspace directories",
     });
-    expect(removeWorktreeWorkspace).toHaveBeenCalledWith("sess-worktree-fail");
+    // Only a checkout set created for this start is rolled back, by its id.
+    expect(removeWorktreeWorkspace).toHaveBeenCalledWith("ws-sess-worktree-fail-ab12");
     expect(upsertSession).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: "sess-worktree-fail" }),
     );

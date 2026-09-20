@@ -19,6 +19,7 @@ import type {
   PersistedPairInfo,
   PersistedSessionInfo,
   PersistedSideWorkspaceInfo,
+  SessionHistoryPage,
   SideWorkspaceSaveParams,
 } from "../shared/api.js";
 import type { ProjectInfo, ProjectSaveParams } from "../shared/projects.js";
@@ -44,11 +45,12 @@ import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, pinPairSession, pinSession, renameSession, savePairGroup, saveProject, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
-import { removeSessionWorktrees } from "./worktree-manager.js";
+import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveProject, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
 import type { PersistedSession } from "./sql-store.js";
 import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
+import { workspaceService } from "./workspace-service.js";
+import type { WorkspaceCreateParams, WorkspaceInfo } from "../shared/workspaces.js";
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
 import { openmaRoot } from "./storage-root.js";
 import { forwardSessionEventToPet } from "./pet-hook-bridge.js";
@@ -668,6 +670,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         cwd: result.cwd,
         additional_directories: result.additional_directories,
         project_id: result.project_id,
+        workspace_id: null,
       });
       return result;
     }
@@ -827,6 +830,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         pinned_at: member.pinned_at,
         project_id: member.project_id ?? null,
         additional_directories: [],
+        workspace_id: null,
       })),
     })),
   );
@@ -876,6 +880,31 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     InvokeChannel.ProjectDelete,
     (_e, p: { project_id: string }): void => deleteProject(p.project_id),
   );
+  ipcMain.handle(
+    InvokeChannel.WorkspacesList,
+    (_e, p?: { project_id?: string }): Promise<WorkspaceInfo[]> =>
+      workspaceService.list(p?.project_id?.trim() || undefined),
+  );
+  ipcMain.handle(
+    InvokeChannel.WorkspaceCreate,
+    (_e, p: WorkspaceCreateParams): Promise<WorkspaceInfo> => {
+      if (!p.project_id?.trim()) throw new Error("Project id is required");
+      return workspaceService.create({ project_id: p.project_id.trim(), name: p.name });
+    },
+  );
+  ipcMain.handle(
+    InvokeChannel.WorkspaceDelete,
+    (_e, p: { workspace_id: string }): Promise<void> => workspaceService.delete(p.workspace_id),
+  );
+  // Checkout sets created per session before workspaces existed become
+  // workspaces of their own; nothing on disk moves.
+  void workspaceService.migrateLegacy().then(({ adopted, removed }) => {
+    if (adopted || removed) {
+      process.stdout.write(`[workspaces] migrated legacy worktrees adopted=${adopted} removed=${removed}\n`);
+    }
+  }).catch((error: unknown) => {
+    console.warn("[workspaces] legacy worktree migration failed", error);
+  });
 
   ipcMain.handle(InvokeChannel.SessionsList, (_e, limit?: number):
     PersistedSessionInfo[] => listSessions(limit).filter((s) => isLocalSession(s.id)).map(withProjectDirectories));
@@ -924,11 +953,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       } catch {
         /* dir might be gone already — fine */
       }
-      try {
-        await removeSessionWorktrees(p.session_id);
-      } catch {
-        /* no managed worktrees (or source repo disappeared) — fine */
-      }
+      // Workspaces outlive sessions: a shared checkout set is deleted only
+      // through workspaceDelete, never as a side effect of removing a chat.
       scheduleStore.deleteBySourceSession(p.session_id);
       scheduleEngine.reschedule();
       deleteSession(p.session_id);
@@ -936,7 +962,13 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   ipcMain.handle(
     InvokeChannel.SessionsLoadHistory,
-    (_e, sessionId: string): PersistedEventInfo[] => { assertLocalSession(sessionId); return loadHistory(sessionId); },
+    (_e, sessionId: string, page?: SessionHistoryPage): PersistedEventInfo[] => {
+      assertLocalSession(sessionId);
+      return loadHistoryPage(sessionId, {
+        before_seq: typeof page?.before_seq === "number" ? page.before_seq : undefined,
+        limit: typeof page?.limit === "number" ? page.limit : undefined,
+      });
+    },
   );
   handleLocalSession(
     InvokeChannel.SessionPersistCanonicalEvent,

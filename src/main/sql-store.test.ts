@@ -8,6 +8,7 @@ import {
   archiveSession,
   getSession,
   loadHistory,
+  loadHistoryPage,
   openSessionDb,
   pinSession,
   searchMessages,
@@ -140,4 +141,38 @@ describe("sql-store file-first write-through", () => {
     ]);
   });
 
+
+  it("pages history from the tail in seq order", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-sql-store-page-"));
+    tempRoots.push(root);
+    openSessionDb(join(root, "sessions.db"));
+    upsertSession({
+      id: "sess_page",
+      agent_id: "codex-acp",
+      cwd: join(root, "sessions", "sess_page"),
+      acp_session_id: "acp_page",
+      title: "",
+    });
+    for (let i = 0; i < 7; i++) {
+      appendEvent("sess_page", "user_prompt", { text: `p${i}` });
+    }
+    const all = loadHistory("sess_page");
+    // seq is a store-wide autoincrement, so assert relative to what was stored.
+    const seq = all.map((r) => r.seq);
+    expect(seq).toHaveLength(7);
+    expect(seq).toEqual([...seq].sort((a, b) => a - b));
+    // No limit keeps the full-log contract used by e2e and the MCP bridge.
+    expect(loadHistoryPage("sess_page")).toEqual(all);
+    // Tail window, ascending.
+    expect(loadHistoryPage("sess_page", { limit: 3 }).map((r) => r.seq)).toEqual(seq.slice(4));
+    // Older page, strictly before the given seq.
+    expect(
+      loadHistoryPage("sess_page", { before_seq: seq[4], limit: 3 }).map((r) => r.seq),
+    ).toEqual(seq.slice(1, 4));
+    // Final short page, then empty.
+    expect(
+      loadHistoryPage("sess_page", { before_seq: seq[1], limit: 3 }).map((r) => r.seq),
+    ).toEqual(seq.slice(0, 1));
+    expect(loadHistoryPage("sess_page", { before_seq: seq[0], limit: 3 })).toEqual([]);
+  });
 });

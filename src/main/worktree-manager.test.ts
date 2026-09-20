@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ManagedWorktreeStore } from "./worktree-manager";
+import { ManagedWorktreeStore, parseWorktreeList } from "./worktree-manager";
 
 const execFile = promisify(execFileCallback);
 const tempRoots: string[] = [];
@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 describe("ManagedWorktreeStore", () => {
-  it("creates a detached session checkout under the controlled root", async () => {
+  it("creates a detached workspace checkout under the controlled root", async () => {
     const fixture = await createFixture();
     const repo = await createRepo(fixture, "app", {
       "README.md": "app\n",
@@ -25,7 +25,7 @@ describe("ManagedWorktreeStore", () => {
     const store = new ManagedWorktreeStore(fixture.worktreeRoot);
 
     const prepared = await store.prepare({
-      sessionId: "sess-one",
+      workspaceId: "sess-one",
       sourceDirectories: [repo],
     });
 
@@ -48,7 +48,7 @@ describe("ManagedWorktreeStore", () => {
     const store = new ManagedWorktreeStore(fixture.worktreeRoot);
 
     const prepared = await store.prepare({
-      sessionId: "sess-monorepo",
+      workspaceId: "sess-monorepo",
       sourceDirectories: [
         join(repo, "apps", "web"),
         join(repo, "packages", "shared"),
@@ -62,18 +62,18 @@ describe("ManagedWorktreeStore", () => {
     expect(prepared.worktrees).toHaveLength(1);
   });
 
-  it("creates and reuses one checkout per repository for a multi-repo session", async () => {
+  it("creates and reuses one checkout per repository for a multi-repo workspace", async () => {
     const fixture = await createFixture();
     const app = await createRepo(fixture, "app", { "app.txt": "app\n" });
     const docs = await createRepo(fixture, "docs", { "docs.txt": "docs\n" });
     const store = new ManagedWorktreeStore(fixture.worktreeRoot);
 
     const first = await store.prepare({
-      sessionId: "sess-multi",
+      workspaceId: "sess-multi",
       sourceDirectories: [app, docs],
     });
     const second = await store.prepare({
-      sessionId: "sess-multi",
+      workspaceId: "sess-multi",
       sourceDirectories: [app, docs],
     });
 
@@ -91,7 +91,7 @@ describe("ManagedWorktreeStore", () => {
     const store = new ManagedWorktreeStore(fixture.worktreeRoot);
 
     await expect(store.prepare({
-      sessionId: "sess-rollback",
+      workspaceId: "sess-rollback",
       sourceDirectories: [repo, notGit],
     })).rejects.toThrow(
       `Workspace root is not inside a Git repository: ${await realpath(notGit)}`,
@@ -103,12 +103,12 @@ describe("ManagedWorktreeStore", () => {
     expect(worktreeList).not.toContain(join(fixture.worktreeRoot, "sess-rollback"));
   });
 
-  it("removes only the session-owned worktrees on hard cleanup", async () => {
+  it("removes only the workspace-owned worktrees on hard cleanup", async () => {
     const fixture = await createFixture();
     const repo = await createRepo(fixture, "app", { "app.txt": "app\n" });
     const store = new ManagedWorktreeStore(fixture.worktreeRoot);
     const prepared = await store.prepare({
-      sessionId: "sess-delete",
+      workspaceId: "sess-delete",
       sourceDirectories: [repo],
     });
 
@@ -121,7 +121,35 @@ describe("ManagedWorktreeStore", () => {
       .not.toContain(prepared.worktrees[0]!.path);
   });
 
-  it("refuses to take over a session directory that has no ownership manifest", async () => {
+  it("drops the workspace branch with its checkout only when it carries no unmerged work", async () => {
+    const fixture = await createFixture();
+    const repo = await createRepo(fixture, "app", { "app.txt": "app\n" });
+    const store = new ManagedWorktreeStore(fixture.worktreeRoot);
+
+    // Untouched branch: removed together with the worktree.
+    await store.prepare({
+      workspaceId: "ws-clean",
+      sourceDirectories: [repo],
+      branch: "backchat/clean-0001",
+    });
+    await store.remove("ws-clean");
+    expect(await git(repo, "branch", "--list", "backchat/clean-0001")).toBe("");
+
+    // Branch with a commit main does not have: the checkout goes, the branch stays.
+    const dirty = await store.prepare({
+      workspaceId: "ws-dirty",
+      sourceDirectories: [repo],
+      branch: "backchat/dirty-0002",
+    });
+    await writeFile(join(dirty.cwd, "new.txt"), "work\n", "utf8");
+    await git(dirty.cwd, "add", "new.txt");
+    await git(dirty.cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "wip");
+    await store.remove("ws-dirty");
+    await expect(readFile(join(dirty.cwd, "new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await git(repo, "branch", "--list", "backchat/dirty-0002")).toContain("backchat/dirty-0002");
+  });
+
+  it("refuses to take over a workspace directory that has no ownership manifest", async () => {
     const fixture = await createFixture();
     const repo = await createRepo(fixture, "app", { "app.txt": "app\n" });
     const orphan = join(fixture.worktreeRoot, "sess-orphan");
@@ -130,7 +158,7 @@ describe("ManagedWorktreeStore", () => {
     const store = new ManagedWorktreeStore(fixture.worktreeRoot);
 
     await expect(store.prepare({
-      sessionId: "sess-orphan",
+      workspaceId: "sess-orphan",
       sourceDirectories: [repo],
     })).rejects.toThrow(
       `Managed worktree directory exists without an ownership manifest: ${orphan}`,
@@ -147,24 +175,99 @@ describe("ManagedWorktreeStore", () => {
     const checkout = join(sessionDir, "01-app");
     await mkdir(checkout, { recursive: true });
     await writeFile(join(sessionDir, "workspace.json"), JSON.stringify({
-      version: 1,
-      sessionId: "sess-tampered",
+      version: 2,
+      workspaceId: "sess-tampered",
+      branch: null,
       sourceDirectories: [canonicalRepo],
       roots: [{
         sourcePath: canonicalRepo,
         effectivePath: fixture.root,
         worktreeIndex: 0,
       }],
-      worktrees: [{ repoRoot: canonicalRepo, path: checkout, head: "abc" }],
+      worktrees: [{ repoRoot: canonicalRepo, path: checkout, head: "abc", branch: null }],
     }), "utf8");
     const store = new ManagedWorktreeStore(fixture.worktreeRoot);
 
     await expect(store.prepare({
-      sessionId: "sess-tampered",
+      workspaceId: "sess-tampered",
       sourceDirectories: [repo],
     })).rejects.toThrow(
       `Managed workspace root escaped its worktree: ${fixture.root}`,
     );
+  });
+  it("creates a real branch in every repository when asked", async () => {
+    const fixture = await createFixture();
+    const app = await createRepo(fixture, "app", { "app.txt": "app\n" });
+    const docs = await createRepo(fixture, "docs", { "docs.txt": "docs\n" });
+    const store = new ManagedWorktreeStore(fixture.worktreeRoot);
+
+    const prepared = await store.prepare({
+      workspaceId: "ws-feature-ab12",
+      sourceDirectories: [app, docs],
+      branch: "backchat/feature-ab12",
+    });
+
+    expect(prepared.branch).toBe("backchat/feature-ab12");
+    for (const worktree of prepared.worktrees) {
+      expect(worktree.branch).toBe("backchat/feature-ab12");
+      expect((await git(worktree.path, "rev-parse", "--abbrev-ref", "HEAD")).trim())
+        .toBe("backchat/feature-ab12");
+    }
+    // The source checkout keeps its own branch.
+    expect((await git(app, "rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("main");
+  });
+
+  it("adopts a legacy session-keyed manifest under a workspace id without moving files", async () => {
+    const fixture = await createFixture();
+    const repo = await createRepo(fixture, "app", { "app.txt": "app\n" });
+    const canonicalRepo = await realpath(repo);
+    const legacyDir = join(fixture.worktreeRoot, "sess-old");
+    const checkout = join(legacyDir, "01-app");
+    await mkdir(legacyDir, { recursive: true });
+    await git(repo, "worktree", "add", "--detach", checkout, "HEAD");
+    const head = (await git(repo, "rev-parse", "HEAD")).trim();
+    await writeFile(join(legacyDir, "workspace.json"), JSON.stringify({
+      version: 1,
+      sessionId: "sess-old",
+      sourceDirectories: [canonicalRepo],
+      roots: [{ sourcePath: canonicalRepo, effectivePath: checkout, worktreeIndex: 0 }],
+      worktrees: [{ repoRoot: canonicalRepo, path: checkout, head }],
+    }), "utf8");
+    const store = new ManagedWorktreeStore(fixture.worktreeRoot);
+
+    const legacy = await store.listLegacy();
+    expect(legacy).toEqual([expect.objectContaining({ sessionId: "sess-old", rootDir: legacyDir })]);
+
+    await store.adoptLegacy(legacy[0]!, "ws-legacy-sess-old");
+    expect(await store.listLegacy()).toEqual([]);
+    expect(JSON.parse(await readFile(join(legacyDir, "workspace.json"), "utf8")))
+      .toMatchObject({ version: 2, workspaceId: "ws-legacy-sess-old", branch: null });
+    // removeDir works on the adopted path even though it is not named after the workspace.
+    await store.removeDir(legacyDir);
+    expect(await git(repo, "worktree", "list", "--porcelain")).not.toContain(checkout);
+  });
+
+  it("parses git worktree list --porcelain including detached and prunable entries", () => {
+    const parsed = parseWorktreeList([
+      "worktree /src/app",
+      "HEAD aaaa",
+      "branch refs/heads/main",
+      "",
+      "worktree /tmp/gone",
+      "HEAD bbbb",
+      "branch refs/heads/codex/x",
+      "prunable gitdir file points to non-existent location",
+      "",
+      "worktree /wt/one",
+      "HEAD cccc",
+      "detached",
+      "",
+    ].join("\n"));
+    expect(parsed).toEqual([
+      { path: "/src/app", head: "aaaa", branch: "main", isMain: true, prunable: false },
+      { path: "/tmp/gone", head: "bbbb", branch: "codex/x", isMain: false, prunable: true },
+      { path: "/wt/one", head: "cccc", branch: null, isMain: false, prunable: false },
+    ]);
   });
 });
 

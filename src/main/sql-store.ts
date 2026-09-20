@@ -40,6 +40,7 @@ import {
   normalizeProjectFolders,
   type ProjectInfo,
 } from "../shared/projects.js";
+import type { WorkspaceRoot, WorkspaceWorktree } from "../shared/workspaces.js";
 
 export interface PersistedSession {
   id: string;
@@ -59,6 +60,9 @@ export interface PersistedSession {
   /** Effective ACP secondary roots captured for this session. Null means a
    * pre-migration row whose roots may still be reconstructed from its project. */
   additional_directories: string[] | null;
+  /** Managed or external workspace the session runs in. Null = live (the
+   *  project's own source folders). */
+  workspace_id: string | null;
   /** When this session is a sub-member of a pair-chat, the wrapper pair
    *  row's id. Sidebar lists hide rows with `pair_id != null` and shows
    *  the pair row instead. */
@@ -137,6 +141,8 @@ let _stmts: {
   canonicalEventExists: StatementSync;
   sessionEventCount: StatementSync;
   loadHistory: StatementSync;
+  loadHistoryTail: StatementSync;
+  loadHistoryBefore: StatementSync;
   saveSideWorkspace: StatementSync;
   listSideWorkspaces: StatementSync;
   deleteSideWorkspace: StatementSync;
@@ -156,6 +162,14 @@ let _stmts: {
   getPair: StatementSync;
   listPairs: StatementSync;
   listPairMembers: StatementSync;
+  saveWorkspace: StatementSync;
+  getWorkspace: StatementSync;
+  listWorkspaces: StatementSync;
+  listWorkspacesForProject: StatementSync;
+  deleteWorkspace: StatementSync;
+  setSessionWorkspace: StatementSync;
+  clearSessionsWorkspace: StatementSync;
+  countSessionsForWorkspace: StatementSync;
 } | null = null;
 
 export function openSessionDb(path: string): void {
@@ -253,6 +267,24 @@ export function openSessionDb(path: string): void {
     CREATE INDEX IF NOT EXISTS projects_updated_idx
       ON projects(updated_at DESC);
 
+    -- Project → Workspace → Worktree. Only managed workspaces are rows here;
+    -- live workspaces derive from projects and external ones from git.
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id                      TEXT PRIMARY KEY,
+      project_id              TEXT,
+      name                    TEXT NOT NULL,
+      branch                  TEXT,
+      root_dir                TEXT NOT NULL,
+      source_directories_json TEXT NOT NULL DEFAULT '[]',
+      roots_json              TEXT NOT NULL DEFAULT '[]',
+      worktrees_json          TEXT NOT NULL DEFAULT '[]',
+      created_by_session_id   TEXT,
+      created_at              INTEGER NOT NULL,
+      updated_at              INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS workspaces_project_idx
+      ON workspaces(project_id, updated_at DESC);
+
     -- FTS5 virtual table for Cmd+K message search. Indexes user prompts
     -- + final assistant messages (the only event types with prose worth
     -- searching). Triggers below keep it in sync on every event insert /
@@ -333,6 +365,9 @@ export function openSessionDb(path: string): void {
   if (!sessionCols.has("additional_directories_json")) {
     db.exec(`ALTER TABLE sessions ADD COLUMN additional_directories_json TEXT`);
   }
+  if (!sessionCols.has("workspace_id")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN workspace_id TEXT`);
+  }
   db.exec(`
     CREATE INDEX IF NOT EXISTS sessions_pinned_idx
       ON sessions(archived_at, pinned_at DESC);
@@ -340,6 +375,8 @@ export function openSessionDb(path: string): void {
       ON sessions(pair_id);
     CREATE INDEX IF NOT EXISTS sessions_project_idx
       ON sessions(project_id);
+    CREATE INDEX IF NOT EXISTS sessions_workspace_idx
+      ON sessions(workspace_id);
   `);
 
   _db = db;
@@ -349,9 +386,9 @@ export function openSessionDb(path: string): void {
     upsert: db.prepare(`
       INSERT INTO sessions (
         id, agent_id, cwd, acp_session_id, title, last_used_at, created_at,
-        pair_id, project_id, additional_directories_json
+        pair_id, project_id, additional_directories_json, workspace_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         agent_id       = excluded.agent_id,
         cwd            = excluded.cwd,
@@ -368,7 +405,8 @@ export function openSessionDb(path: string): void {
         additional_directories_json = COALESCE(
           excluded.additional_directories_json,
           sessions.additional_directories_json
-        )
+        ),
+        workspace_id   = COALESCE(excluded.workspace_id, sessions.workspace_id)
     `),
     touch: db.prepare(`UPDATE sessions SET last_used_at = ? WHERE id = ?`),
     setTitle: db.prepare(
@@ -430,6 +468,12 @@ export function openSessionDb(path: string): void {
     loadHistory: db.prepare(
       `SELECT * FROM events WHERE session_id = ? ORDER BY seq ASC`,
     ),
+    loadHistoryTail: db.prepare(
+      `SELECT * FROM events WHERE session_id = ? ORDER BY seq DESC LIMIT ?`,
+    ),
+    loadHistoryBefore: db.prepare(
+      `SELECT * FROM events WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
+    ),
     saveSideWorkspace: db.prepare(`
       INSERT INTO side_workspaces (task_id, state_json, updated_at)
       VALUES (?, ?, ?)
@@ -460,6 +504,35 @@ export function openSessionDb(path: string): void {
       `UPDATE sessions SET project_id = NULL WHERE project_id = ?`,
     ),
     deleteProject: db.prepare(`DELETE FROM projects WHERE id = ?`),
+    saveWorkspace: db.prepare(`
+      INSERT INTO workspaces (
+        id, project_id, name, branch, root_dir, source_directories_json,
+        roots_json, worktrees_json, created_by_session_id, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
+        name = excluded.name,
+        branch = excluded.branch,
+        root_dir = excluded.root_dir,
+        source_directories_json = excluded.source_directories_json,
+        roots_json = excluded.roots_json,
+        worktrees_json = excluded.worktrees_json,
+        updated_at = excluded.updated_at
+    `),
+    getWorkspace: db.prepare(`SELECT * FROM workspaces WHERE id = ?`),
+    listWorkspaces: db.prepare(`SELECT * FROM workspaces ORDER BY updated_at DESC`),
+    listWorkspacesForProject: db.prepare(
+      `SELECT * FROM workspaces WHERE project_id = ? ORDER BY updated_at DESC`,
+    ),
+    deleteWorkspace: db.prepare(`DELETE FROM workspaces WHERE id = ?`),
+    setSessionWorkspace: db.prepare(`UPDATE sessions SET workspace_id = ? WHERE id = ?`),
+    clearSessionsWorkspace: db.prepare(
+      `UPDATE sessions SET workspace_id = NULL WHERE workspace_id = ?`,
+    ),
+    countSessionsForWorkspace: db.prepare(
+      `SELECT COUNT(*) AS n FROM sessions WHERE workspace_id = ?`,
+    ),
     upsertPair: db.prepare(`
       INSERT INTO pair_sessions (id, title, workspace_cwd, created_at, last_used_at)
       VALUES (?, ?, ?, ?, ?)
@@ -631,6 +704,9 @@ export function upsertSession(row: {
   /** Effective roots, excluding cwd. Omitted preserves a previous value;
    * an explicit empty array records a deliberately single-root workspace. */
   additional_directories?: string[];
+  /** Omitted or null preserves the previous value; use setSessionWorkspace
+   *  to detach a session from its workspace. */
+  workspace_id?: string | null;
 }): void {
   const now = Date.now();
   const additionalDirectoriesJson = row.additional_directories === undefined
@@ -647,8 +723,14 @@ export function upsertSession(row: {
     row.pair_id ?? null,
     row.project_id ?? null,
     additionalDirectoriesJson,
+    row.workspace_id ?? null,
   );
   writeSessionMetadata(row.id);
+}
+
+export function setSessionWorkspace(sessionId: string, workspaceId: string | null): void {
+  stmts().setSessionWorkspace.run(workspaceId, sessionId);
+  writeSessionMetadata(sessionId);
 }
 
 export function touchSession(id: string): void {
@@ -824,6 +906,98 @@ export function deleteProject(id: string): void {
   stmts().deleteProject.run(id);
 }
 
+// -------------------- workspaces --------------------
+
+export interface PersistedWorkspace {
+  id: string;
+  project_id: string | null;
+  name: string;
+  branch: string | null;
+  root_dir: string;
+  source_directories: string[];
+  roots: WorkspaceRoot[];
+  worktrees: WorkspaceWorktree[];
+  created_by_session_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface PersistedWorkspaceSqlRow {
+  id: string;
+  project_id: string | null;
+  name: string;
+  branch: string | null;
+  root_dir: string;
+  source_directories_json: string;
+  roots_json: string;
+  worktrees_json: string;
+  created_by_session_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+function workspaceFromSql(row: PersistedWorkspaceSqlRow): PersistedWorkspace {
+  const parse = <T>(json: string, fallback: T): T => {
+    try { return JSON.parse(json) as T; } catch { return fallback; }
+  };
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    name: row.name,
+    branch: row.branch,
+    root_dir: row.root_dir,
+    source_directories: parse<string[]>(row.source_directories_json, []),
+    roots: parse<WorkspaceRoot[]>(row.roots_json, []),
+    worktrees: parse<WorkspaceWorktree[]>(row.worktrees_json, []),
+    created_by_session_id: row.created_by_session_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function saveWorkspace(row: Omit<PersistedWorkspace, "created_at" | "updated_at"> & {
+  created_at?: number;
+}): PersistedWorkspace {
+  const now = Date.now();
+  stmts().saveWorkspace.run(
+    row.id,
+    row.project_id,
+    row.name.trim(),
+    row.branch,
+    row.root_dir,
+    JSON.stringify(row.source_directories),
+    JSON.stringify(row.roots),
+    JSON.stringify(row.worktrees),
+    row.created_by_session_id,
+    row.created_at ?? now,
+    now,
+  );
+  return getWorkspace(row.id)!;
+}
+
+export function getWorkspace(id: string): PersistedWorkspace | null {
+  const row = stmts().getWorkspace.get(id) as PersistedWorkspaceSqlRow | undefined;
+  return row ? workspaceFromSql(row) : null;
+}
+
+export function listWorkspaces(projectId?: string): PersistedWorkspace[] {
+  const rows = (projectId === undefined
+    ? stmts().listWorkspaces.all()
+    : stmts().listWorkspacesForProject.all(projectId)) as unknown as PersistedWorkspaceSqlRow[];
+  return rows.map(workspaceFromSql);
+}
+
+/** Drop the row and detach every session that pointed at it. */
+export function deleteWorkspace(id: string): void {
+  stmts().clearSessionsWorkspace.run(id);
+  stmts().deleteWorkspace.run(id);
+}
+
+export function countSessionsForWorkspace(id: string): number {
+  const row = stmts().countSessionsForWorkspace.get(id) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
 // -------------------- pair sessions --------------------
 
 /** Create or rename a pair-chat wrapper row. The pair carries the
@@ -991,6 +1165,33 @@ export function appendEventsTx(
 
 export function loadHistory(session_id: string): PersistedEvent[] {
   return stmts().loadHistory.all(session_id) as unknown as PersistedEvent[];
+}
+
+export interface HistoryPageOptions {
+  /** Only rows with seq strictly below this value. Omit for the tail. */
+  before_seq?: number;
+  /** Maximum rows in the page. Omit for the full log. */
+  limit?: number;
+}
+
+/** One window of a session's event log, in seq order. Without a limit this
+ *  is the full log; with one it is the `limit` newest rows (optionally
+ *  older than `before_seq`) so the renderer can open at the bottom and page
+ *  upwards. */
+export function loadHistoryPage(
+  session_id: string,
+  opts: HistoryPageOptions = {},
+): PersistedEvent[] {
+  const limit = opts.limit;
+  if (limit === undefined || !Number.isFinite(limit) || limit <= 0) {
+    return loadHistory(session_id);
+  }
+  const rows = (
+    opts.before_seq === undefined
+      ? stmts().loadHistoryTail.all(session_id, limit)
+      : stmts().loadHistoryBefore.all(session_id, opts.before_seq, limit)
+  ) as unknown as PersistedEvent[];
+  return rows.reverse();
 }
 
 // -------------------- search --------------------

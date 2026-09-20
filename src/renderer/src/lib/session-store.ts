@@ -107,6 +107,9 @@ import type {
   AcpAvailableCommand,
   AcpSessionUsage,
   BrokerAsk,
+  HistoryRow,
+  HistoryWindowInfo,
+  HistoryWindowState,
   NativeSubagentMetadata,
   PairRow,
   PairTurnTarget,
@@ -145,6 +148,12 @@ export class SessionStore {
    *  Retain them by session id until the matching row is restored. */
   #pendingAsksBeforeSession = new Map<string, BrokerAsk[]>();
   #turns = new Map<string, Turn>();
+  /** Persisted rows currently materialized per session when history was
+   *  opened as a tail window (see replayHistoryWindow / prependHistory). */
+  #history = new Map<string, HistoryWindowState>();
+  /** Sessions whose first history fetch is in flight. The chat view shows a
+   *  loading surface instead of flashing the home empty state. */
+  #historyPending = new Set<string>();
   /** Steer input is visible immediately, but ACP keeps streaming the current
    * model/tool cycle under the original prompt request. Hold the accepted
    * steer until that model call completes, then project the next call's
@@ -997,7 +1006,17 @@ export class SessionStore {
       projectScope: normalizedCwd ? "project" : "none",
       projectId: undefined,
       additionalDirectories: undefined,
+      workspaceId: undefined,
     }));
+    this.#emit();
+  }
+
+  /** Pick the workspace a draft will start in. Null selects the project's
+   *  live source folders. No-op once the session has left draft. */
+  setDraftWorkspace(id: string, workspaceId: string | null): void {
+    const row = this.#sessions.get(id);
+    if (!row || row.status !== "draft") return;
+    this.#mutateSession(id, (s) => ({ ...s, workspaceId: workspaceId ?? undefined }));
     this.#emit();
   }
 
@@ -1792,6 +1811,8 @@ export class SessionStore {
     chosenCwd?: string | {
       projectId: string;
       sourceFolders: string[];
+      /** Start inside this workspace instead of the live source folders. */
+      workspaceId?: string | null;
     },
   ): string {
     for (const [existingId, session] of this.#sessions) {
@@ -1824,6 +1845,7 @@ export class SessionStore {
       chosenCwd: normalizedCwd,
       projectId: project?.projectId.trim() || undefined,
       additionalDirectories: roots.length > 1 ? roots.slice(1) : undefined,
+      workspaceId: project?.workspaceId ?? undefined,
       projectScope: project || normalizedCwd ? "project" : "none",
     });
     this.#activeId = id;
@@ -1908,6 +1930,8 @@ export class SessionStore {
       additionalDirectories: parent.additionalDirectories
         ? [...parent.additionalDirectories]
         : undefined,
+      // "Continue in new chat" keeps working on the same checkout set.
+      workspaceId: parent.workspaceId,
       projectScope: parent.projectScope,
       configOptions: parent.configOptions?.map((option) => ({ ...option })),
       currentModeId: parent.currentModeId,
@@ -2847,6 +2871,7 @@ export class SessionStore {
       archived_at?: number | null;
       project_id?: string | null;
       additional_directories?: string[];
+      workspace_id?: string | null;
     }>,
   ): void {
     for (const r of rows) {
@@ -2870,6 +2895,7 @@ export class SessionStore {
           projectId: r.project_id ?? s.projectId,
           additionalDirectories:
             r.additional_directories ?? s.additionalDirectories,
+          workspaceId: r.workspace_id ?? s.workspaceId,
           acp_session_id: r.acp_session_id || s.acp_session_id,
           label: r.title || s.label,
           titleManuallySet: r.title_manually_set === 1 || s.titleManuallySet,
@@ -2887,6 +2913,7 @@ export class SessionStore {
         cwd: r.cwd,
         projectId: r.project_id ?? undefined,
         additionalDirectories: r.additional_directories,
+        workspaceId: r.workspace_id ?? undefined,
         acp_session_id: r.acp_session_id,
         label: r.title || "New chat",
         titleManuallySet: r.title_manually_set === 1,
@@ -2900,24 +2927,154 @@ export class SessionStore {
     this.#emit();
   }
 
+  /** Window bookkeeping for a session opened through replayHistoryWindow.
+   *  Undefined when the session was replayed in full (or not at all). */
+  historyWindowFor(sessionId: string): HistoryWindowInfo | undefined {
+    const state = this.#history.get(sessionId);
+    if (!state) return undefined;
+    return {
+      oldestSeq: state.rows[0]?.seq,
+      hasMore: state.hasMore,
+      loading: state.loading,
+    };
+  }
+
+  isHistoryPending(sessionId: string): boolean {
+    return this.#historyPending.has(sessionId);
+  }
+
+  setHistoryPending(sessionId: string, pending: boolean): void {
+    if (this.#historyPending.has(sessionId) === pending) return;
+    if (pending) this.#historyPending.add(sessionId);
+    else this.#historyPending.delete(sessionId);
+    this.#emit();
+  }
+
+  setHistoryLoading(sessionId: string, loading: boolean): void {
+    const state = this.#history.get(sessionId);
+    if (!state || state.loading === loading) return;
+    state.loading = loading;
+    this.#emit();
+  }
+
+  /** Open a session from the newest rows only. The window may start in the
+   *  middle of a turn; the leading fragment renders as a prompt-less head
+   *  turn until prependHistory brings its user prompt into view. */
+  replayHistoryWindow(
+    sessionId: string,
+    rows: HistoryRow[],
+    opts: { hasMore: boolean },
+  ): void {
+    this.#historyPending.delete(sessionId);
+    if (this.#hasSessionTurns(sessionId)) { this.#emit(); return; }
+    this.#history.set(sessionId, { rows: [...rows], hasMore: opts.hasMore, loading: false });
+    this.#replayRows(sessionId, rows, { partialHead: opts.hasMore, notices: true });
+  }
+
+  /** Page older rows in front of the current window. Turns are rebuilt from
+   *  the combined rows — a few thousand rows replay in milliseconds and it
+   *  keeps one code path for turn boundaries, steering and dedupe. Live turns
+   *  (non-replay ids) are preserved in place. */
+  prependHistory(
+    sessionId: string,
+    olderRows: HistoryRow[],
+    opts: { hasMore: boolean },
+  ): void {
+    const state = this.#history.get(sessionId);
+    if (!state) return;
+    state.loading = false;
+    state.hasMore = opts.hasMore;
+    if (olderRows.length === 0) {
+      // Nothing older exists; the head fragment is now the real start.
+      if (!state.hasMore) this.#rebuildFromWindow(sessionId, state);
+      else this.#emit();
+      return;
+    }
+    const oldest = state.rows[0]?.seq;
+    state.rows = [
+      ...olderRows.filter((row) => oldest === undefined || row.seq < oldest),
+      ...state.rows,
+    ];
+    this.#rebuildFromWindow(sessionId, state);
+  }
+
+  #rebuildFromWindow(sessionId: string, state: HistoryWindowState): void {
+    // Drop replayed turns (and the child transcript turns they projected)
+    // but keep live turns, re-inserted after the rebuilt history so the
+    // Map's registration order still reads oldest → newest.
+    const live: Array<[string, Turn]> = [];
+    for (const [id, turn] of this.#turns) {
+      if (turn.sessionId !== sessionId) continue;
+      if (id.startsWith(`replay-${sessionId}-`)) this.#turns.delete(id);
+      else {
+        live.push([id, turn]);
+        this.#turns.delete(id);
+      }
+    }
+    for (const activity of this.#subagentsByParent.get(sessionId) ?? []) {
+      this.#turns.delete(`${activity.viewSessionId}:turn`);
+    }
+    // Session-level projections (status, usage, title, subagent status) are
+    // "latest wins". The current row already reflects the newest rows plus
+    // any live events; older pages must not roll it back.
+    const sessionBefore = this.#sessions.get(sessionId);
+    const activitiesBefore = this.#subagentsByParent.get(sessionId);
+    this.#replayRows(sessionId, state.rows, {
+      partialHead: state.hasMore,
+      notices: false,
+    });
+    if (sessionBefore) this.#sessions.set(sessionId, sessionBefore);
+    if (activitiesBefore) this.#subagentsByParent.set(sessionId, activitiesBefore);
+    for (const [id, turn] of live) this.#turns.set(id, turn);
+    this.#emit();
+  }
+
+  #hasSessionTurns(sessionId: string): boolean {
+    for (const turn of this.#turns.values()) {
+      if (turn.sessionId === sessionId) return true;
+    }
+    return false;
+  }
+
   /** Replay persisted events into a turn structure so the chat view can
    *  render history. `events` rows come from sessions.loadHistory; we
    *  collapse them into one Turn per user_prompt boundary so the visual
    *  matches a live conversation. */
-  replayHistory(
-    sessionId: string,
-    rows: Array<{ seq: number; type: string; data: string; ts: number }>,
-  ): void {
+  replayHistory(sessionId: string, rows: HistoryRow[]): void {
     // Skip replay entirely if this session already has turns in the
     // store. The in-memory turns from the live session are authoritative
     // — only first-time mounts (after a renderer reload) actually need
     // to materialize SQL history into turn structures. Without this
     // guard, wiping and re-creating turns from SQL kills the user's
     // currently-streaming bubble.
-    const hasTurns = [...this.#turns.values()].some(
-      (t) => t.sessionId === sessionId,
-    );
-    if (hasTurns) return;
+    this.#historyPending.delete(sessionId);
+    if (this.#hasSessionTurns(sessionId)) { this.#emit(); return; }
+    this.#history.delete(sessionId);
+    this.#replayRows(sessionId, rows, { partialHead: false, notices: true });
+  }
+
+  #replayRows(
+    sessionId: string,
+    rows: HistoryRow[],
+    opts: { partialHead: boolean; notices: boolean },
+  ): void {
+    const notify = (message: string) => {
+      if (opts.notices) this.#showNotice(sessionId, message, "warning");
+    };
+    // A window that opens mid-turn has no prompt row for its first events.
+    // Give them a prompt-less head turn instead of dropping them; the id is
+    // stable across rebuilds until the real prompt arrives and absorbs it.
+    const makeHead = (ts: number): Turn => ({
+      id: `replay-${sessionId}-head`,
+      sessionId,
+      promptText: "",
+      events: [],
+      assistantText: "",
+      thoughtText: "",
+      status: "complete",
+      startedAt: ts,
+      endedAt: ts,
+    });
 
     // New rows contain the canonical envelope as the fact source. The
     // envelope's `raw` field is compatibility evidence, not a second event
@@ -2976,7 +3133,6 @@ export class SessionStore {
     let pendingSteering: Turn[] = [];
     let steeringBoundaryArmed = false;
     let modelCallReadyForOutput = false;
-    let order = 0;
     for (const { row: r, data, canonical } of prepared) {
       if (canonical) {
         const canonicalRaw = canonical.raw?.payload;
@@ -3011,7 +3167,8 @@ export class SessionStore {
           const inputKind = input.input_kind;
           if (inputKind === "prompt" || inputKind === "steering") {
             if (current) this.#turns.set(current.id, current);
-            const tid = `replay-${sessionId}-${order++}`;
+            // Row seq keys the turn so ids survive a rebuild after paging.
+            const tid = `replay-${sessionId}-${r.seq}`;
             const next: Turn = {
               id: tid,
               sessionId,
@@ -3078,6 +3235,7 @@ export class SessionStore {
           pendingSteering = [];
           steeringBoundaryArmed = false;
         }
+        if (!current && opts.partialHead) current = makeHead(r.ts);
         if (!current) continue;
         current.endedAt = Math.max(current.endedAt ?? current.startedAt, r.ts);
         if (canonical.type === "turn.completed") {
@@ -3137,7 +3295,7 @@ export class SessionStore {
         if (parsedCanonical.kind === "text") {
           const split = splitAcpSystemNoticeText(parsedCanonical.text);
           if (split.notice) {
-            this.#showNotice(sessionId, split.notice, "warning");
+            notify(split.notice);
           }
           current.assistantText = mergeStreamingText(
             current.assistantText,
@@ -3189,7 +3347,7 @@ export class SessionStore {
       if (r.type === "user_prompt") {
         // Flush the previous turn, start a new one.
         if (current) this.#turns.set(current.id, current);
-        const tid = `replay-${sessionId}-${order++}`;
+        const tid = `replay-${sessionId}-${r.seq}`;
         current = {
           id: tid,
           sessionId,
@@ -3207,7 +3365,9 @@ export class SessionStore {
           startedAt: r.ts,
           endedAt: r.ts,
         };
-      } else if (current) {
+      } else {
+        if (!current && opts.partialHead) current = makeHead(r.ts);
+        if (!current) continue;
         // The prompt row marks the start boundary. Advance the persisted
         // completion boundary with every transcript/activity event that
         // belongs to this turn. Session-only metadata was handled above and
@@ -3224,7 +3384,7 @@ export class SessionStore {
           const text = (data as { text?: string })?.text ?? "";
           const split = splitAcpSystemNoticeText(text);
           if (split.notice) {
-            this.#showNotice(sessionId, split.notice, "warning");
+            notify(split.notice);
           }
           current.assistantText += split.transcript;
           if (split.transcript) {
@@ -3241,7 +3401,7 @@ export class SessionStore {
           if (parsed.kind === "text") {
             const split = splitAcpSystemNoticeText(parsed.text);
             if (split.notice) {
-              this.#showNotice(sessionId, split.notice, "warning");
+              notify(split.notice);
             }
             current.assistantText = mergeStreamingText(
               current.assistantText,
@@ -3265,7 +3425,9 @@ export class SessionStore {
       }
     }
     if (current) this.#turns.set(current.id, current);
-    if (canonicalNativeAgentIds.size > 0) {
+    // A partial window cannot prove which subagent tabs are stale — their
+    // lifecycle rows may live in pages that are not loaded yet.
+    if (!opts.partialHead && canonicalNativeAgentIds.size > 0) {
       // Side-workspace snapshots are restored before SQL history. Native
       // subagent tabs are projections of canonical lifecycle events, so a
       // hot reload must discard snapshot-only children that are absent from
@@ -3362,6 +3524,7 @@ export class SessionStore {
             projectId: ev.project_id ?? s.projectId,
             additionalDirectories:
               ev.additional_directories ?? s.additionalDirectories,
+            workspaceId: ev.workspace_id === undefined ? s.workspaceId : ev.workspace_id,
             configOptions: configOptions ?? s.configOptions,
             currentModeId:
               selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,

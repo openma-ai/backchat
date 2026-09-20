@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import {
   access,
   mkdir,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -11,38 +12,47 @@ import {
 } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { openmaRoot } from "./storage-root.js";
+import type { WorkspaceRoot, WorkspaceWorktree } from "../shared/workspaces.js";
 
 const execFile = promisify(execFileCallback);
 const MANIFEST_NAME = "workspace.json";
-const MANIFEST_VERSION = 1;
 
-export interface ManagedWorktree {
-  repoRoot: string;
-  path: string;
-  head: string;
-}
+export type ManagedWorktree = WorkspaceWorktree;
 
 export interface PreparedWorktreeWorkspace {
+  workspaceId: string;
+  /** Directory that owns the manifest and every checkout below it. */
+  rootDir: string;
+  branch: string | null;
+  sourceDirectories: string[];
+  roots: WorkspaceRoot[];
+  worktrees: WorkspaceWorktree[];
   cwd: string;
   additionalDirectories: string[];
-  worktrees: ManagedWorktree[];
-  /** True only when this call created the session's worktrees. */
+  /** True only when this call created the checkouts. */
   created: boolean;
 }
 
-interface WorkspaceRootMapping {
-  sourcePath: string;
-  effectivePath: string;
-  worktreeIndex: number;
-}
-
-interface WorktreeManifest {
+/** Manifest v1 keyed a checkout set by the session that created it. v2 keys it
+ *  by workspace so several sessions can share one set. */
+interface WorktreeManifestV1 {
   version: 1;
   sessionId: string;
   sourceDirectories: string[];
-  roots: WorkspaceRootMapping[];
-  worktrees: ManagedWorktree[];
+  roots: WorkspaceRoot[];
+  worktrees: Array<Omit<WorkspaceWorktree, "branch">>;
 }
+
+interface WorktreeManifestV2 {
+  version: 2;
+  workspaceId: string;
+  branch: string | null;
+  sourceDirectories: string[];
+  roots: WorkspaceRoot[];
+  worktrees: WorkspaceWorktree[];
+}
+
+type WorktreeManifest = WorktreeManifestV1 | WorktreeManifestV2;
 
 interface RepoPlan {
   repoRoot: string;
@@ -50,9 +60,28 @@ interface RepoPlan {
   path: string;
 }
 
+export interface LegacySessionWorktrees {
+  sessionId: string;
+  rootDir: string;
+  sourceDirectories: string[];
+  roots: WorkspaceRoot[];
+  worktrees: WorkspaceWorktree[];
+}
+
+/** One line of `git worktree list --porcelain`, already grouped. */
+export interface RepoWorktreeEntry {
+  path: string;
+  head: string;
+  branch: string | null;
+  /** The repository's primary checkout (the source folder itself). */
+  isMain: boolean;
+  /** Git still lists it but its directory is gone. */
+  prunable: boolean;
+}
+
 /**
  * Creates Git worktrees owned by Backchat under one controlled directory.
- * Source paths are never modified. One session gets one checkout per source
+ * Source paths are never modified. One workspace gets one checkout per source
  * repository, while multiple roots inside the same repository are mapped into
  * that checkout.
  */
@@ -66,11 +95,17 @@ export class ManagedWorktreeStore {
     this.#root = resolve(root);
   }
 
+  get root(): string {
+    return this.#root;
+  }
+
   async prepare(input: {
-    sessionId: string;
+    workspaceId: string;
     sourceDirectories: string[];
+    /** Branch to create in every repository. Detached when omitted. */
+    branch?: string | null;
   }): Promise<PreparedWorktreeWorkspace> {
-    const sessionDir = this.#sessionDir(input.sessionId);
+    const rootDir = this.#workspaceDir(input.workspaceId);
     const sourceDirectories = await canonicalSourceDirectories(
       input.sourceDirectories,
     );
@@ -78,23 +113,26 @@ export class ManagedWorktreeStore {
       throw new Error("Worktree workspace requires at least one source directory");
     }
 
-    const sessionDirectoryAlreadyExists = await pathExists(sessionDir);
-    const existing = await this.#readManifest(sessionDir);
+    const directoryAlreadyExists = await pathExists(rootDir);
+    const existing = await this.#readManifest(rootDir);
     if (existing) {
-      if (existing.sessionId !== input.sessionId) {
-        throw new Error(`Managed worktree manifest belongs to another session: ${sessionDir}`);
+      if (existing.version !== 2) {
+        throw new Error(`Managed worktree manifest predates workspaces: ${rootDir}`);
+      }
+      if (existing.workspaceId !== input.workspaceId) {
+        throw new Error(`Managed worktree manifest belongs to another workspace: ${rootDir}`);
       }
       if (!sameStrings(existing.sourceDirectories, sourceDirectories)) {
         throw new Error(
-          `Session ${input.sessionId} already owns worktrees for different source directories`,
+          `Workspace ${input.workspaceId} already owns worktrees for different source directories`,
         );
       }
-      await validateExistingManifest(existing, sessionDir);
-      return resultFromManifest(existing, false);
+      await validateExistingManifest(existing, rootDir);
+      return resultFromManifest(existing, rootDir, false);
     }
-    if (sessionDirectoryAlreadyExists) {
+    if (directoryAlreadyExists) {
       throw new Error(
-        `Managed worktree directory exists without an ownership manifest: ${sessionDir}`,
+        `Managed worktree directory exists without an ownership manifest: ${rootDir}`,
       );
     }
 
@@ -126,7 +164,7 @@ export class ManagedWorktreeStore {
           repoRoot,
           head,
           path: join(
-            sessionDir,
+            rootDir,
             `${String(worktreeIndex + 1).padStart(2, "0")}-${safeName(basename(repoRoot))}`,
           ),
         });
@@ -139,7 +177,8 @@ export class ManagedWorktreeStore {
       });
     }
 
-    await mkdir(sessionDir, { recursive: true });
+    const branch = input.branch?.trim() || null;
+    await mkdir(rootDir, { recursive: true });
     const created: RepoPlan[] = [];
     try {
       for (const plan of repoPlans) {
@@ -147,16 +186,17 @@ export class ManagedWorktreeStore {
           plan.repoRoot,
           "worktree",
           "add",
-          "--detach",
+          ...(branch ? ["-b", branch] : ["--detach"]),
           plan.path,
           plan.head,
         );
         created.push(plan);
       }
 
-      const manifest: WorktreeManifest = {
-        version: MANIFEST_VERSION,
-        sessionId: input.sessionId,
+      const manifest: WorktreeManifestV2 = {
+        version: 2,
+        workspaceId: input.workspaceId,
+        branch,
         sourceDirectories,
         roots: rootPlans.map((rootPlan) => ({
           sourcePath: rootPlan.sourcePath,
@@ -170,87 +210,191 @@ export class ManagedWorktreeStore {
           repoRoot,
           path,
           head,
+          branch,
         })),
       };
-      await this.#writeManifest(sessionDir, manifest);
-      return resultFromManifest(manifest, true);
+      await this.#writeManifest(rootDir, manifest);
+      return resultFromManifest(manifest, rootDir, true);
     } catch (error) {
-      await rollbackCreatedWorktrees(created, sessionDir);
+      await rollbackCreatedWorktrees(created, rootDir);
       throw error;
     }
   }
 
-  async remove(sessionId: string): Promise<void> {
-    const sessionDir = this.#sessionDir(sessionId);
-    const manifest = await this.#readManifest(sessionDir);
-    if (!manifest) return;
-    for (const worktree of [...manifest.worktrees].reverse()) {
-      if (!isWithin(sessionDir, worktree.path)) continue;
-      try {
-        await git(
-          worktree.repoRoot,
-          "worktree",
-          "remove",
-          "--force",
-          worktree.path,
-        );
-      } catch {
-        await rm(worktree.path, { recursive: true, force: true });
-        await git(worktree.repoRoot, "worktree", "prune").catch(() => "");
+  /** Remove every checkout below a workspace directory, then the directory. */
+  async removeDir(rootDir: string): Promise<void> {
+    if (!isWithin(this.#root, rootDir)) {
+      throw new Error(`Refusing to remove a directory outside the managed root: ${rootDir}`);
+    }
+    const manifest = await this.#readManifest(rootDir);
+    if (manifest) {
+      for (const worktree of [...manifest.worktrees].reverse()) {
+        if (!isWithin(rootDir, worktree.path)) continue;
+        try {
+          await git(
+            worktree.repoRoot,
+            "worktree",
+            "remove",
+            "--force",
+            worktree.path,
+          );
+        } catch {
+          await rm(worktree.path, { recursive: true, force: true });
+          await git(worktree.repoRoot, "worktree", "prune").catch(() => "");
+        }
+        // The workspace branch goes with its checkout, but only via the safe
+        // delete: git refuses when the branch carries unmerged commits, so
+        // work the user has not integrated is never dropped silently.
+        if (manifest.version === 2 && manifest.branch) {
+          await git(worktree.repoRoot, "branch", "-d", manifest.branch).catch(() => "");
+        }
       }
     }
-    await rm(sessionDir, { recursive: true, force: true });
+    await rm(rootDir, { recursive: true, force: true });
   }
 
-  #sessionDir(sessionId: string): string {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(sessionId)) {
-      throw new Error(`Invalid session id for managed worktree: ${sessionId}`);
+  async remove(workspaceId: string): Promise<void> {
+    await this.removeDir(this.#workspaceDir(workspaceId));
+  }
+
+  /** Session-keyed checkout sets written before workspaces existed. */
+  async listLegacy(): Promise<LegacySessionWorktrees[]> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.#root);
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) return [];
+      throw error;
     }
-    const candidate = resolve(this.#root, sessionId);
+    const result: LegacySessionWorktrees[] = [];
+    for (const entry of entries) {
+      const rootDir = join(this.#root, entry);
+      const manifest = await this.#readManifest(rootDir).catch(() => null);
+      if (!manifest || manifest.version !== 1) continue;
+      result.push({
+        sessionId: manifest.sessionId,
+        rootDir,
+        sourceDirectories: manifest.sourceDirectories,
+        roots: manifest.roots,
+        worktrees: manifest.worktrees.map((worktree) => ({ ...worktree, branch: null })),
+      });
+    }
+    return result;
+  }
+
+  /** Rewrite a legacy manifest under a workspace id. Paths stay put. */
+  async adoptLegacy(legacy: LegacySessionWorktrees, workspaceId: string): Promise<void> {
+    const manifest: WorktreeManifestV2 = {
+      version: 2,
+      workspaceId,
+      branch: null,
+      sourceDirectories: legacy.sourceDirectories,
+      roots: legacy.roots,
+      worktrees: legacy.worktrees,
+    };
+    await this.#writeManifest(legacy.rootDir, manifest);
+  }
+
+  #workspaceDir(workspaceId: string): string {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(workspaceId)) {
+      throw new Error(`Invalid workspace id for managed worktree: ${workspaceId}`);
+    }
+    const candidate = resolve(this.#root, workspaceId);
     if (!isWithin(this.#root, candidate)) {
-      throw new Error(`Managed worktree path escaped its root: ${sessionId}`);
+      throw new Error(`Managed worktree path escaped its root: ${workspaceId}`);
     }
     return candidate;
   }
 
-  async #readManifest(sessionDir: string): Promise<WorktreeManifest | null> {
+  async #readManifest(rootDir: string): Promise<WorktreeManifest | null> {
     try {
       const value = JSON.parse(
-        await readFile(join(sessionDir, MANIFEST_NAME), "utf8"),
+        await readFile(join(rootDir, MANIFEST_NAME), "utf8"),
       ) as unknown;
       if (!isManifest(value)) {
-        throw new Error(`Invalid managed worktree manifest: ${sessionDir}`);
+        throw new Error(`Invalid managed worktree manifest: ${rootDir}`);
       }
       return value;
     } catch (error) {
-      if (hasCode(error, "ENOENT")) return null;
+      if (hasCode(error, "ENOENT") || hasCode(error, "ENOTDIR")) return null;
       throw error;
     }
   }
 
   async #writeManifest(
-    sessionDir: string,
-    manifest: WorktreeManifest,
+    rootDir: string,
+    manifest: WorktreeManifestV2,
   ): Promise<void> {
-    const temporary = join(sessionDir, `${MANIFEST_NAME}.tmp`);
+    const temporary = join(rootDir, `${MANIFEST_NAME}.tmp`);
     await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    await rename(temporary, join(sessionDir, MANIFEST_NAME));
+    await rename(temporary, join(rootDir, MANIFEST_NAME));
   }
 }
 
-const defaultStore = new ManagedWorktreeStore(
+export const defaultWorktreeStore = new ManagedWorktreeStore(
   join(openmaRoot(), "worktrees"),
 );
 
-export function prepareSessionWorktrees(input: {
-  sessionId: string;
-  sourceDirectories: string[];
-}): Promise<PreparedWorktreeWorkspace> {
-  return defaultStore.prepare(input);
+/** Repository top level for a folder, canonicalized. Null outside Git. */
+export async function repoRootOf(path: string): Promise<string | null> {
+  try {
+    const top = (await git(path, "rev-parse", "--show-toplevel")).trim();
+    return await realpath(top);
+  } catch {
+    return null;
+  }
 }
 
-export function removeSessionWorktrees(sessionId: string): Promise<void> {
-  return defaultStore.remove(sessionId);
+export async function gitHeadInfo(path: string): Promise<{ head: string; branch: string | null }> {
+  const head = (await git(path, "rev-parse", "HEAD")).trim();
+  const ref = (await git(path, "rev-parse", "--abbrev-ref", "HEAD")).trim();
+  return { head, branch: ref === "HEAD" ? null : ref };
+}
+
+/** Every checkout Git knows about for a repository, including ones Backchat
+ *  did not create. Stale entries are pruned first so a deleted directory does
+ *  not surface as a workspace. */
+export async function listRepoWorktrees(repoRoot: string): Promise<RepoWorktreeEntry[]> {
+  await git(repoRoot, "worktree", "prune").catch(() => "");
+  const output = await git(repoRoot, "worktree", "list", "--porcelain");
+  return parseWorktreeList(output);
+}
+
+export function parseWorktreeList(output: string): RepoWorktreeEntry[] {
+  const entries: RepoWorktreeEntry[] = [];
+  let current: Partial<RepoWorktreeEntry> | null = null;
+  const flush = () => {
+    if (current?.path) {
+      entries.push({
+        path: current.path,
+        head: current.head ?? "",
+        branch: current.branch ?? null,
+        isMain: entries.length === 0,
+        prunable: current.prunable ?? false,
+      });
+    }
+    current = null;
+  };
+  for (const rawLine of output.split("\n")) {
+    const line = rawLine.trimEnd();
+    if (!line) { flush(); continue; }
+    if (line.startsWith("worktree ")) {
+      flush();
+      current = { path: line.slice("worktree ".length) };
+    } else if (!current) {
+      continue;
+    } else if (line.startsWith("HEAD ")) {
+      current.head = line.slice(5);
+    } else if (line.startsWith("branch ")) {
+      current.branch = line.slice(7).replace(/^refs\/heads\//, "");
+    } else if (line === "detached") {
+      current.branch = null;
+    } else if (line.startsWith("prunable")) {
+      current.prunable = true;
+    }
+  }
+  flush();
+  return entries;
 }
 
 async function canonicalSourceDirectories(paths: string[]): Promise<string[]> {
@@ -277,11 +421,11 @@ async function canonicalSourceDirectories(paths: string[]): Promise<string[]> {
 }
 
 async function validateExistingManifest(
-  manifest: WorktreeManifest,
-  sessionDir: string,
+  manifest: WorktreeManifestV2,
+  rootDir: string,
 ): Promise<void> {
   for (const worktree of manifest.worktrees) {
-    if (!isWithin(sessionDir, worktree.path)) {
+    if (!isWithin(rootDir, worktree.path)) {
       throw new Error(`Managed worktree manifest escaped its root: ${worktree.path}`);
     }
     await access(worktree.path).catch(() => {
@@ -302,20 +446,26 @@ async function validateExistingManifest(
 }
 
 function resultFromManifest(
-  manifest: WorktreeManifest,
+  manifest: WorktreeManifestV2,
+  rootDir: string,
   created: boolean,
 ): PreparedWorktreeWorkspace {
   return {
+    workspaceId: manifest.workspaceId,
+    rootDir,
+    branch: manifest.branch,
+    sourceDirectories: [...manifest.sourceDirectories],
+    roots: manifest.roots.map((root) => ({ ...root })),
+    worktrees: manifest.worktrees.map((worktree) => ({ ...worktree })),
     cwd: manifest.roots[0]!.effectivePath,
     additionalDirectories: manifest.roots.slice(1).map((root) => root.effectivePath),
-    worktrees: manifest.worktrees.map((worktree) => ({ ...worktree })),
     created,
   };
 }
 
 async function rollbackCreatedWorktrees(
   created: RepoPlan[],
-  sessionDir: string,
+  rootDir: string,
 ): Promise<void> {
   for (const plan of [...created].reverse()) {
     try {
@@ -325,7 +475,7 @@ async function rollbackCreatedWorktrees(
       await git(plan.repoRoot, "worktree", "prune").catch(() => "");
     }
   }
-  await rm(sessionDir, { recursive: true, force: true });
+  await rm(rootDir, { recursive: true, force: true });
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
@@ -336,12 +486,12 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   return result.stdout;
 }
 
-function safeName(value: string): string {
+export function safeName(value: string): string {
   const safe = value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
   return safe || "repo";
 }
 
-function isWithin(parent: string, child: string): boolean {
+export function isWithin(parent: string, child: string): boolean {
   const rel = relative(parent, resolve(child));
   return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
@@ -368,24 +518,45 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-function isManifest(value: unknown): value is WorktreeManifest {
-  if (!value || typeof value !== "object") return false;
-  const manifest = value as Partial<WorktreeManifest>;
-  return manifest.version === MANIFEST_VERSION
-    && typeof manifest.sessionId === "string"
-    && Array.isArray(manifest.sourceDirectories)
-    && manifest.sourceDirectories.every((path) => typeof path === "string")
-    && Array.isArray(manifest.roots)
-    && manifest.roots.length > 0
-    && manifest.roots.length === manifest.sourceDirectories.length
-    && manifest.roots.every((root) => !!root
+function isRootList(value: unknown): value is WorkspaceRoot[] {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.every((root) => !!root
       && typeof root.sourcePath === "string"
       && typeof root.effectivePath === "string"
-      && Number.isInteger(root.worktreeIndex))
-    && Array.isArray(manifest.worktrees)
-    && manifest.worktrees.length > 0
-    && manifest.worktrees.every((worktree) => !!worktree
+      && Number.isInteger(root.worktreeIndex));
+}
+
+function isWorktreeList(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.every((worktree) => !!worktree
       && typeof worktree.repoRoot === "string"
       && typeof worktree.path === "string"
       && typeof worktree.head === "string");
+}
+
+function isManifest(value: unknown): value is WorktreeManifest {
+  if (!value || typeof value !== "object") return false;
+  const manifest = value as {
+    version?: unknown;
+    sessionId?: unknown;
+    workspaceId?: unknown;
+    branch?: unknown;
+    sourceDirectories?: unknown;
+    roots?: unknown;
+    worktrees?: unknown;
+  };
+  const common = Array.isArray(manifest.sourceDirectories)
+    && manifest.sourceDirectories.every((path: unknown) => typeof path === "string")
+    && isRootList(manifest.roots)
+    && manifest.roots.length === manifest.sourceDirectories.length
+    && isWorktreeList(manifest.worktrees);
+  if (!common) return false;
+  if (manifest.version === 1) return typeof manifest.sessionId === "string";
+  if (manifest.version === 2) {
+    return typeof manifest.workspaceId === "string"
+      && (manifest.branch === null || typeof manifest.branch === "string");
+  }
+  return false;
 }
