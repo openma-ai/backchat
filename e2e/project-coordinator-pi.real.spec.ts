@@ -156,7 +156,9 @@ function assertMemoryEvidence(
 }
 
 function isWithin(directory: string, path: string) {
-  const child = relative(directory, path);
+  // macOS reports the same temporary directory through both /var and
+  // /private/var. Compare resolved paths so this checks the actual boundary.
+  const child = relative(resolveRealPath(directory), resolveRealPath(path));
   return (
     child === "" ||
     (!isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`))
