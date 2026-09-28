@@ -14,6 +14,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ContextMenu } from "radix-ui";
@@ -69,6 +72,18 @@ function readDisclosureKeys<T extends string>(key: string, fallback: T[]): Set<T
 function saveDisclosureKeys(key: string, keys: Set<string>) {
   try { localStorage.setItem(key, JSON.stringify([...keys])); } catch { /* In-memory state still works. */ }
 }
+const CUSTOM_SECTIONS_KEY = "backchat:custom-sidebar-sections:v1";
+function readCustomSections(): SidebarCustomSection[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(CUSTOM_SECTIONS_KEY) ?? "null");
+    if (!Array.isArray(value)) return [];
+    return value.filter((section): section is SidebarCustomSection =>
+      section !== null && typeof section === "object"
+      && typeof section.id === "string" && typeof section.name === "string"
+      && Array.isArray(section.sessionIds)
+      && section.sessionIds.every((id: unknown) => typeof id === "string"));
+  } catch { return []; }
+}
 let lastRevealedSession: string | null = null;
 
 /** Second-level sidebar node: one managed/external workspace of a project
@@ -95,6 +110,12 @@ export interface SidebarProjectGroup {
   projectId?: string;
   primaryRoot: string;
   sourceFolders: string[];
+}
+
+export interface SidebarCustomSection {
+  id: string;
+  name: string;
+  sessionIds: string[];
 }
 
 function workspaceGroupFromInfo(info: WorkspaceInfo): SidebarWorkspaceGroup {
@@ -144,13 +165,21 @@ export function groupSidebarSessions(
   workspaces: readonly WorkspaceInfo[] = [],
   removedPaths: readonly string[] = [],
   coordinatorSessionIds: ReadonlySet<string> = new Set(),
+  sections: readonly SidebarCustomSection[] = [],
 ): {
   pinned: SessionRow[];
   projects: SidebarProjectGroup[];
   chats: SessionRow[];
+  customSections: Array<{ id: string; name: string; sessions: SessionRow[] }>;
 } {
   const pinned: SessionRow[] = [];
   const chats: SessionRow[] = [];
+  const customSections = sections.map(({ id, name }) => ({ id, name, sessions: [] as SessionRow[] }));
+  const customById = new Map(customSections.map((section) => [section.id, section]));
+  const assignedSection = new Map<string, string>();
+  for (const section of sections) for (const id of section.sessionIds) {
+    if (!assignedSection.has(id)) assignedSection.set(id, section.id);
+  }
   const projectMap = new Map<string, SidebarProjectGroup>();
   for (const project of savedProjects) {
     projectMap.set(`project:${project.id}`, {
@@ -211,6 +240,11 @@ export function groupSidebarSessions(
     if (coordinatorSessionIds.has(session.id)) continue;
     if (session.pinnedAt != null) {
       pinned.push(session);
+      continue;
+    }
+    const custom = customById.get(assignedSection.get(session.id) ?? "");
+    if (custom) {
+      custom.sessions.push(session);
       continue;
     }
 
@@ -280,6 +314,7 @@ export function groupSidebarSessions(
     pinned,
     projects: [...projectMap.values()],
     chats,
+    customSections,
   };
 }
 
@@ -367,8 +402,17 @@ export function Sidebar() {
   const [openSectionKeys, setOpenSectionKeys] = useState<Set<SidebarSectionKey>>(
     () => readDisclosureKeys("backchat:sidebar-sections:v1", ["pinned", "pairs", "projects", "chats"]),
   );
+  const [customSections, setCustomSections] = useState(readCustomSections);
+  const [closedCustomSectionIds, setClosedCustomSectionIds] = useState<Set<string>>(
+    () => readDisclosureKeys("backchat:closed-custom-sidebar-sections:v1", []),
+  );
+  const [sectionDialog, setSectionDialog] = useState<{ kind: "create" } | { kind: "rename"; id: string } | null>(null);
+  const [sectionName, setSectionName] = useState("");
+  const [deleteSectionId, setDeleteSectionId] = useState<string | null>(null);
   useEffect(() => saveDisclosureKeys("backchat:sidebar-projects:v1", openProjectKeys), [openProjectKeys]);
   useEffect(() => saveDisclosureKeys("backchat:sidebar-sections:v1", openSectionKeys), [openSectionKeys]);
+  useEffect(() => { try { localStorage.setItem(CUSTOM_SECTIONS_KEY, JSON.stringify(customSections)); } catch { /* In-memory state still works. */ } }, [customSections]);
+  useEffect(() => saveDisclosureKeys("backchat:closed-custom-sidebar-sections:v1", closedCustomSectionIds), [closedCustomSectionIds]);
   useEffect(() => {
     if (!location.pathname.startsWith("/projects/")) return;
     const key = `project:${location.pathname.slice("/projects/".length)}`;
@@ -410,8 +454,8 @@ export function Sidebar() {
   useEffect(() => saveDisclosureKeys("backchat:sidebar-local:v1", new Set(localOpen ? ["local"] : [])), [localOpen]);
   const localSessions = useMemo(() => sessions.filter((row) => !row.openma && !row.executionTarget), [sessions]);
   const grouped = useMemo(
-    () => groupSidebarSessions(localSessions, savedProjects, workspaces, removedPaths, coordinatorSessionIds),
-    [savedProjects, localSessions, workspaces, removedPaths, [...coordinatorSessionIds].sort().join(",")],
+    () => groupSidebarSessions(localSessions, savedProjects, workspaces, removedPaths, coordinatorSessionIds, customSections),
+    [savedProjects, localSessions, workspaces, removedPaths, customSections, [...coordinatorSessionIds].sort().join(",")],
   );
 
   const goHome = () => {
@@ -543,6 +587,42 @@ export function Sidebar() {
       return next;
     });
   };
+  const openSectionDialog = (kind: "create" | "rename", section?: SidebarCustomSection) => {
+    setSectionName(section?.name ?? "");
+    setSectionDialog(kind === "create" ? { kind } : { kind, id: section!.id });
+  };
+  const saveSection = () => {
+    const name = sectionName.trim();
+    if (!name || !sectionDialog || customSections.some(section =>
+      section.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+      && (sectionDialog.kind === "create" || section.id !== sectionDialog.id))) return;
+    if (sectionDialog.kind === "create") {
+      setCustomSections(current => [...current, { id: crypto.randomUUID(), name, sessionIds: [] }]);
+    } else {
+      const id = sectionDialog.id;
+      setCustomSections(current => current.map(section => section.id === id ? { ...section, name } : section));
+    }
+    setSectionDialog(null);
+  };
+  const moveSessionToSection = async (sessionId: string, sectionId: string | null) => {
+    if (sectionId && sessionStore.get(sessionId)?.pinnedAt != null) {
+      try { await sessionStore.unpin(sessionId); }
+      catch (error) { toast.error(String(error)); return; }
+    }
+    setCustomSections(current => current.map(section => ({
+      ...section,
+      sessionIds: [
+        ...section.sessionIds.filter(id => id !== sessionId),
+        ...(section.id === sectionId ? [sessionId] : []),
+      ],
+    })));
+    if (sectionId) setClosedCustomSectionIds(current => {
+      const next = new Set(current);
+      next.delete(sectionId);
+      return next;
+    });
+  };
+  const sectionRowProps = { sections: customSections, onMoveToSection: moveSessionToSection };
 
   // Single class for every collapsible text label in the sidebar — fades
   // out before the column width starts shrinking and fades in after the
@@ -607,6 +687,19 @@ export function Sidebar() {
         >
           <SearchIcon className="size-4" />
         </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" aria-label={t("sidebar.sidebarOptions")}
+              className="app-no-drag inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg hover:bg-[var(--control-bg-hover)]">
+              <MoreHorizontalIcon className="size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-40">
+            <DropdownMenuItem onSelect={() => openSectionDialog("create")}>
+              <PlusIcon className="size-3.5" />{t("sidebar.newSection")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <ScrollArea
         type="always"
@@ -648,7 +741,7 @@ export function Sidebar() {
         })}
         <SidebarSection title={t("chat.local")} open={localOpen} onToggle={() => setLocalOpen(!localOpen)} labelCls={labelCls}>
         <div>
-        {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
+        {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 && customSections.length === 0 ? (
           <div>
             <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-ui font-normal text-fg-subtle", labelCls)}>
               {t("sidebar.chats")}
@@ -689,6 +782,7 @@ export function Sidebar() {
                         <li key={s.id}>
                           <SessionRow
                             row={s}
+                            {...sectionRowProps}
                             agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             hasSchedule={scheduledSessionIds.has(s.id)}
@@ -708,6 +802,45 @@ export function Sidebar() {
                     </ul>
                   </SidebarSection>
                 )}
+                {grouped.customSections.map((section) => {
+                  const definition = customSections.find(item => item.id === section.id)!;
+                  return <SidebarSection key={section.id} title={section.name}
+                    customSectionId={section.id}
+                    open={!closedCustomSectionIds.has(section.id)}
+                    onToggle={() => setClosedCustomSectionIds(current => {
+                      const next = new Set(current);
+                      if (next.has(section.id)) next.delete(section.id);
+                      else next.add(section.id);
+                      return next;
+                    })}
+                    labelCls={labelCls}
+                    action={<DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button type="button" aria-label={t("sidebar.sectionActions")} className="sidebar-row-action">
+                          <MoreHorizontalIcon aria-hidden="true" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-40">
+                        <DropdownMenuItem onSelect={() => openSectionDialog("rename", definition)}>{t("sidebar.renameSection")}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setDeleteSectionId(section.id)}>{t("sidebar.deleteSection")}</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>}
+                  >
+                    <ul className="m-0 list-none space-y-0.5 p-0">
+                      {section.sessions.map((s) => <li key={s.id}>
+                        <SessionRow row={s} {...sectionRowProps} currentSectionId={section.id}
+                          agentIconUrl={agentIconUrls.get(s.agent_id)}
+                          active={s.id === activeId && location.pathname.startsWith("/chat/")}
+                          hasSchedule={scheduledSessionIds.has(s.id)} labelCls={labelCls}
+                          onSelect={() => onSelectSession(s.id)}
+                          onRename={() => requestRename({ kind: "session", id: s.id, title: s.label })}
+                          onArchive={() => void requestArchive([s.id])}
+                          menuOpen={openMenuId === s.id}
+                          onMenuOpenChange={open => setOpenMenuId(open ? s.id : null)} />
+                      </li>)}
+                    </ul>
+                  </SidebarSection>;
+                })}
                 {pairs.length > 0 && (
                   <SidebarSection
                     title={t("sidebar.pairs")}
@@ -797,6 +930,7 @@ export function Sidebar() {
                                   <li key={s.id}>
                                     <SessionRow
                                       row={s}
+                                      {...sectionRowProps}
                                       agentIconUrl={agentIconUrls.get(s.agent_id)}
                                       active={s.id === activeId && location.pathname.startsWith("/chat/")}
                                       hasSchedule={scheduledSessionIds.has(s.id)}
@@ -849,6 +983,7 @@ export function Sidebar() {
                                             <li key={s.id}>
                                               <SessionRow
                                                 row={s}
+                                                {...sectionRowProps}
                                                 agentIconUrl={agentIconUrls.get(s.agent_id)}
                                                 active={s.id === activeId && location.pathname.startsWith("/chat/")}
                                                 hasSchedule={scheduledSessionIds.has(s.id)}
@@ -891,6 +1026,7 @@ export function Sidebar() {
                         <li key={s.id}>
                           <SessionRow
                             row={s}
+                            {...sectionRowProps}
                             agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             hasSchedule={scheduledSessionIds.has(s.id)}
@@ -963,6 +1099,35 @@ export function Sidebar() {
               {projectActionBusy && <Loader2Icon className="size-4 animate-spin" />}
               {t(projectAction?.kind === "remove" ? "sidebar.removeProject" : "sidebar.archiveAll")}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={sectionDialog !== null} onOpenChange={open => { if (!open) setSectionDialog(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>{t(sectionDialog?.kind === "rename" ? "sidebar.renameSection" : "sidebar.newSection")}</DialogTitle></DialogHeader>
+          <input autoFocus aria-label={t("sidebar.sectionName")} value={sectionName}
+            maxLength={80} onChange={event => setSectionName(event.target.value)}
+            onKeyDown={event => { if (event.key === "Enter") saveSection(); }}
+            className="h-9 w-full rounded-lg bg-bg-surface/60 px-3 text-sm text-fg outline-none ring-ring focus-visible:ring-2" />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setSectionDialog(null)}>{t("common.cancel")}</Button>
+            <Button disabled={!sectionName.trim() || customSections.some(section =>
+              section.name.toLocaleLowerCase() === sectionName.trim().toLocaleLowerCase()
+              && (sectionDialog?.kind === "create" || section.id !== sectionDialog?.id))}
+              onClick={saveSection}>{t(sectionDialog?.kind === "rename" ? "common.save" : "sidebar.createSection")}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={deleteSectionId !== null} onOpenChange={open => { if (!open) setDeleteSectionId(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>{t("sidebar.deleteSection")}</DialogTitle></DialogHeader>
+          <p className="text-sm text-fg-muted">{t("sidebar.deleteSectionBody")}</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDeleteSectionId(null)}>{t("common.cancel")}</Button>
+            <Button variant="destructive" onClick={() => {
+              setCustomSections(current => current.filter(section => section.id !== deleteSectionId));
+              setDeleteSectionId(null);
+            }}>{t("sidebar.deleteSection")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1046,6 +1211,7 @@ function SidebarSection({
   children,
   action,
   icon,
+  customSectionId,
 }: {
   title: string;
   open: boolean;
@@ -1054,9 +1220,10 @@ function SidebarSection({
   children: ReactNode;
   action?: ReactNode;
   icon?: ReactNode;
+  customSectionId?: string;
 }) {
   return (
-    <section className="sidebar-section" data-state={open ? "open" : "closed"}>
+    <section className="sidebar-section" data-state={open ? "open" : "closed"} data-sidebar-custom-section={customSectionId}>
       <div className="sidebar-section-header group/section flex h-[var(--sidebar-row-h)] items-center">
         <button
           type="button"
@@ -1526,6 +1693,9 @@ function SessionRow({
   onArchive,
   menuOpen,
   onMenuOpenChange,
+  sections = [],
+  currentSectionId,
+  onMoveToSection,
 }: {
   row: SessionRow;
   agentIconUrl?: string;
@@ -1537,6 +1707,9 @@ function SessionRow({
   onArchive: () => void;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
+  sections?: readonly SidebarCustomSection[];
+  currentSectionId?: string;
+  onMoveToSection?: (sessionId: string, sectionId: string | null) => void;
 }) {
   const { t } = useI18n();
   const running = row.status === "running" || row.status === "starting";
@@ -1635,6 +1808,15 @@ function SessionRow({
                         {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
                         <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
                       </DropdownMenuItem>
+                      {sections.length > 0 && onMoveToSection && <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>{t("sidebar.moveToSection")}</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="min-w-36">
+                          {sections.map(section => <DropdownMenuItem key={section.id} disabled={section.id === currentSectionId}
+                            onSelect={() => onMoveToSection(row.id, section.id)}>{section.name}</DropdownMenuItem>)}
+                          {currentSectionId && <><DropdownMenuSeparator /><DropdownMenuItem
+                            onSelect={() => onMoveToSection(row.id, null)}>{t("sidebar.removeFromSection")}</DropdownMenuItem></>}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>}
                       <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
                       <DropdownMenuItem
                         onSelect={onArchive}
@@ -1670,6 +1852,18 @@ function SessionRow({
             {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
             <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
           </ContextMenu.Item>
+          {sections.length > 0 && onMoveToSection && <ContextMenu.Sub>
+            <ContextMenu.SubTrigger className="flex cursor-default select-none items-center rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent">
+              {t("sidebar.moveToSection")}
+            </ContextMenu.SubTrigger>
+            <ContextMenu.Portal><ContextMenu.SubContent className="z-50 min-w-36 overflow-hidden rounded-md border border-border/60 bg-popover p-1 text-popover-foreground shadow-md">
+              {sections.map(section => <ContextMenu.Item key={section.id} disabled={section.id === currentSectionId}
+                onSelect={() => onMoveToSection(row.id, section.id)}
+                className="cursor-default rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent">{section.name}</ContextMenu.Item>)}
+              {currentSectionId && <ContextMenu.Item onSelect={() => onMoveToSection(row.id, null)}
+                className="cursor-default rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent">{t("sidebar.removeFromSection")}</ContextMenu.Item>}
+            </ContextMenu.SubContent></ContextMenu.Portal>
+          </ContextMenu.Sub>}
           <ContextMenu.Separator className="my-1 h-px bg-border/60" />
           <ContextMenu.Item
             onSelect={onArchive}

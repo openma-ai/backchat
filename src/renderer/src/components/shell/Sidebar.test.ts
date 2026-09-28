@@ -601,6 +601,25 @@ describe("groupSidebarSessions", () => {
       "plain",
     ]);
   });
+
+  it("shows assigned chats only in their custom section", () => {
+    const projectChat = row({ id: "project-chat", cwd: "/work/atlas", projectId: "atlas" });
+    const standalone = row({ id: "standalone", cwd: "", projectScope: "none" });
+    const grouped = groupSidebarSessions(
+      [projectChat, standalone],
+      [savedProject("atlas", "/work/atlas")],
+      [],
+      [],
+      new Set(),
+      [{ id: "focus", name: "Focus", sessionIds: ["project-chat", "standalone"] }],
+    );
+
+    expect(grouped.customSections).toEqual([
+      { id: "focus", name: "Focus", sessions: [projectChat, standalone] },
+    ]);
+    expect(grouped.projects[0].sessions).toEqual([]);
+    expect(grouped.chats).toEqual([]);
+  });
 });
 
 

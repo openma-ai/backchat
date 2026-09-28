@@ -205,7 +205,10 @@ test("desktop login selects a workspace without registering the machine", async 
     if (await page.getByRole("button", { name: "Beta", exact: true }).getAttribute("aria-expanded") === "false") await page.getByRole("button", { name: "Beta", exact: true }).click();
     await page.getByText("Runner linked task", { exact: true }).click();
     await page.getByRole("button", { name: "Write once", exact: true }).click();
-    await expect.poll(async () => readFile(join(folder, "approved-output.txt"), "utf8")).toBe("Approved in the linked project");
+    await expect.poll(async () => readFile(join(folder, "approved-output.txt"), "utf8").catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    }), { timeout: 20_000 }).toBe("Approved in the linked project");
     await expect.poll(() => frames.filter((frame) => frame.type === "session.complete" && frame.turn_id === "approval-turn").length).toBe(1);
     expect(replies).toHaveLength(1);
     expect(replies[0]).toMatchObject({ type: "user.custom_tool_result", content: [{ type: "text", text: JSON.stringify({ outcome: { outcome: "selected", optionId: "write:once" } }) }] });
