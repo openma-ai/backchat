@@ -129,6 +129,14 @@ try {
     throw error;
   }
 } finally {
-  await app.close().catch(() => undefined);
+  // A chat may have a quit confirmation. Bound cleanup so verification does
+  // not wait indefinitely after the first prompt has already passed.
+  const child = app.process();
+  const forceExit = setTimeout(() => child.kill("SIGKILL"), 3_000);
+  try {
+    await app.close().catch(() => undefined);
+  } finally {
+    clearTimeout(forceExit);
+  }
   await rm(home, { recursive: true, force: true });
 }
