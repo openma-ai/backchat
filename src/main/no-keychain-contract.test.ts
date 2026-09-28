@@ -8,7 +8,8 @@ const FORBIDDEN_KEYCHAIN_APIS =
 function productionSources(root: string): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const path = join(root, entry.name);
-    if (entry.isDirectory()) return productionSources(path);
+    if (entry.isDirectory())
+      return entry.name === "node_modules" ? [] : productionSources(path);
     if (
       ![".ts", ".tsx", ".js", ".mjs", ".cjs"].includes(extname(entry.name))
       || /\.test\.[cm]?[jt]sx?$/.test(entry.name)
