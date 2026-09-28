@@ -1,5 +1,7 @@
 import type { ThreadGoal } from "@openmatter/project-host";
 import type { ProjectWorkView } from "@shared/project-work";
+import { projectResponseText } from "@shared/project-transcript";
+import type { Turn as ChatTurn } from "./session-types";
 
 type Session = ProjectWorkView["facts"]["sessions"][number];
 type Turn = ProjectWorkView["facts"]["turns"][number];
@@ -12,6 +14,49 @@ export interface ProjectThread {
   session: Session;
   turns: Turn[];
   goal?: ThreadGoal;
+}
+
+/** Adapt durable project facts to the same TurnBlock used by ordinary chats. */
+export function projectCoordinatorTurns(view: ProjectWorkView, runId?: string): ChatTurn[] {
+  const sessions = new Set(
+    view.facts.sessions
+      .filter((session) => session.agentId === "coordinator" && session.scopeId === view.project.id)
+      .filter((session) => !runId || association(view, session.workThreadId).runId === runId)
+      .map((session) => session.id),
+  );
+  return view.facts.turns
+    .filter((turn) => sessions.has(turn.sessionId))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .map((turn) => {
+      const events = view.facts.agentEvents.filter((event) => event.turn_id === turn.id);
+      const trigger = view.facts.events.find((event) => event.id === turn.triggerEventId);
+      const prompt = (trigger?.payload as { text?: string } | undefined)?.text;
+      const status = ({
+        queued: "queued", running: "running", completed: "complete",
+        failed: "error", cancelled: "cancelled",
+      } as const)[turn.state];
+      const failure = events.findLast((event) =>
+        event.type === "turn.failed" || event.type === "session.error"
+      );
+      return {
+        id: turn.id,
+        sessionId: turn.sessionId,
+        status,
+        promptText: prompt ?? "",
+        assistantText: projectResponseText(events),
+        thoughtText: events.filter((event) => event.type === "agent.thinking")
+          .map((event) => (event.data as { text?: string }).text ?? "").join(""),
+        events: events.map((event) => ({
+          payload: event,
+          receivedAt: Date.parse(event.ingested_at ?? event.occurred_at),
+        })),
+        startedAt: Date.parse(turn.createdAt),
+        ...(turn.completedAt ? { endedAt: Date.parse(turn.completedAt) } : {}),
+        ...(turn.state === "failed" ? { errorMessage:
+          (failure?.data as { error?: string } | undefined)?.error ?? "Turn failed.",
+        } : {}),
+      } satisfies ChatTurn;
+    });
 }
 
 const association = (view: ProjectWorkView, workThreadId: string) => {

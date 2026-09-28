@@ -5,7 +5,7 @@ import { PageTopbar } from "@/components/shell/PageTopbar";
 import type { PromptAttachment } from "@shared/session-events";
 import { ProjectMessageAttachments } from "@/components/chat/ProjectMessageAttachments";
 import { projectResponseText } from "@shared/project-transcript";
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,8 +46,10 @@ import {
   projectGoalPresentation,
   projectOutcomeLabel,
   projectThreads,
+  projectCoordinatorTurns,
 } from "@/lib/project-goals";
 import { ProjectComposer } from "@/components/chat/ProjectComposer";
+import { ProjectConversation } from "@/components/chat/ProjectConversation";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Select,
@@ -832,7 +834,6 @@ function ProjectWorkspace({
     const last = facts.events.at(-1)?.payload as { runId?: string } | undefined;
     return last?.runId ?? crypto.randomUUID();
   });
-  const end = useRef<HTMLDivElement>(null);
   const uncertainSubmission = useRef<{
     fingerprint: string;
     id: string;
@@ -908,9 +909,13 @@ function ProjectWorkspace({
       setBusy(false);
     }
   };
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [selectedTurns.length, tab]);
+  const coordinatorChatTurns = projectCoordinatorTurns(
+    view, config?.continuity === "per-run" ? runId : undefined,
+  );
+  const promptPayloads = new Map(selectedTurns.map((turn) => [
+    turn.id,
+    facts.events.find((event) => event.id === turn.triggerEventId)?.payload,
+  ] as const));
   const runs = [
     ...new Set(
       facts.events
@@ -997,69 +1002,12 @@ function ProjectWorkspace({
             </div>
           ) : (
             <>
-              {
-                <>
-                  <div className="project-transcript">
-                    {selectedTurns.map((turn) => {
-                      const context = facts.contexts.find(
-                        (c) => c.id === turn.contextProjectionId,
-                      );
-                      const trigger = facts.events.find(
-                        (e) => e.id === turn.triggerEventId,
-                      );
-                      const prompt = (
-                        trigger?.payload as { text?: string } | undefined
-                      )?.text;
-                      const events = facts.agentEvents.filter(
-                        (e) => e.turn_id === turn.id,
-                      );
-                      const response = projectResponseText(events);
-                      return (
-                        <article key={turn.id} className="project-turn">
-                          {prompt ? (
-                            <div className="project-user-message">{prompt}</div>
-                          ) : (
-                            <div className="project-feedback">
-                              {context?.items.some(
-                                (i) => i.kind === "coordinator-worker-result",
-                              )
-                                ? "Reviewing worker result"
-                                : "Project update"}
-                            </div>
-                          )}
-                          <ProjectMessageAttachments
-                            payload={trigger?.payload}
-                          />
-                          <div className="project-answer">
-                            {response ? (
-                              <StreamdownText
-                                text={response}
-                                cwd={project.primary_folder || null}
-                                sessionId={turn.sessionId}
-                                surfacePrefix={`project-${turn.id}`}
-                              />
-                            ) : null}
-                            <div className="project-turn-state">
-                              {turn.state === "running"
-                                ? "Working…"
-                                : turn.state === "cancelled"
-                                  ? "Interrupted"
-                                  : turn.state === "failed"
-                                    ? "Failed"
-                                    : turn.state === "queued"
-                                      ? "Queued"
-                                      : !response
-                                        ? "Turn completed"
-                                        : ""}
-                            </div>
-                          </div>
-                        </article>
-                      );
-                    })}
-                    <div ref={end} />
-                  </div>
-                  <div className="project-composer">
-                    <ProjectComposer
+              <ProjectConversation
+                turns={coordinatorChatTurns}
+                cwd={project.primary_folder || null}
+                promptPayloads={promptPayloads}
+                composer={
+                  <ProjectComposer
                       key={`${project.id}:${runId}`}
                       agentId={config.coordinatorAgent}
                       sessionId={selectedTurns.at(-1)?.sessionId ?? coordinator.at(-1)?.id}
@@ -1071,10 +1019,9 @@ function ProjectWorkspace({
                         submit("message", message, undefined, attachments)
                       }
                       onEditAgents={edit}
-                    />
-                  </div>
-                </>
-              }
+                  />
+                }
+              />
             </>
           )}
           {error || view.error ? (
