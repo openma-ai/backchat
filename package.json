@@ -25,7 +25,7 @@
     "test:e2e:composer": "electron-vite build && playwright test e2e/composer.spec.ts e2e/composer-slash.spec.ts e2e/composer-config.spec.ts",
     "test:e2e:harness-feature-matrix": "electron-vite build && playwright test e2e/harness-feature-matrix.visual.spec.ts e2e/harness-final-response.real.spec.ts && pnpm run report:harness-feature-matrix",
     "report:harness-feature-matrix": "node scripts/publish-harness-feature-matrix-report.mjs artifacts/harness-feature-matrix-staging artifacts/harness-feature-matrix",
-    "test:e2e:fast": "electron-vite build && playwright test e2e/smoke.spec.ts e2e/composer.spec.ts e2e/composer-slash.spec.ts e2e/composer-config.spec.ts e2e/storage.spec.ts e2e/file-first-export.spec.ts e2e/sidebar-custom-sections.spec.ts e2e/project-conversation.spec.ts",
+    "test:e2e:fast": "electron-vite build && playwright test e2e/smoke.spec.ts e2e/composer.spec.ts e2e/composer-slash.spec.ts e2e/composer-config.spec.ts e2e/storage.spec.ts e2e/file-first-export.spec.ts e2e/sidebar-custom-sections.spec.ts e2e/project-conversation.spec.ts e2e/scheduled.spec.ts",
     "test:e2e:real:codex-plugin": "electron-vite build && OPENMA_REAL_CODEX_PLUGIN_E2E=1 playwright test e2e/codex-plugin.real.spec.ts",
     "test:e2e:real:harness-tools": "electron-vite build && OPENMA_REAL_CODEX_PLUGIN_E2E=1 OPENMA_REAL_PI_COMPUTER_USE_E2E=1 playwright test e2e/codex-plugin.real.spec.ts e2e/pi-computer-use.real.spec.ts",
     "test:e2e:real:pi-computer-use": "electron-vite build && OPENMA_REAL_PI_COMPUTER_USE_E2E=1 playwright test e2e/pi-computer-use.real.spec.ts",

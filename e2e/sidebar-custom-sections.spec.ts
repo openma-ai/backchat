@@ -1,7 +1,7 @@
 import { expect, test } from "./fixtures";
 import { persistSessionFixture, reloadRenderer } from "./helpers";
 
-test("organizes a chat in a custom section across reload and restores it when removed", async ({ page }) => {
+test("organizes a chat in a custom section across reload and restores it when removed", async ({ page, capture }) => {
   await persistSessionFixture(page, {
     sessionId: "section-chat",
     title: "Section chat",
@@ -24,6 +24,7 @@ test("organizes a chat in a custom section across reload and restores it when re
 
   const section = page.locator("[data-sidebar-custom-section]");
   await expect(section.getByRole("button", { name: "Section chat", exact: true })).toBeVisible();
+  await capture("sidebar-custom-section.png", "custom sidebar section");
   await reloadRenderer(page);
   await expect(section.getByRole("button", { name: "Section chat", exact: true })).toBeVisible();
 

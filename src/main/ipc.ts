@@ -1047,13 +1047,22 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   ipcMain.handle(InvokeChannel.SchedulesList, () => scheduleStore.list());
   ipcMain.handle(
     InvokeChannel.SchedulesCreate,
-    (_e, input: CreateScheduleInput) => {
-      const source = getSession(input.sourceSessionId);
-      if (!source) throw new Error(`Cannot schedule unknown task: ${input.sourceSessionId}`);
+    async (_e, input: CreateScheduleInput) => {
+      const source = input.sourceSessionId ? getSession(input.sourceSessionId) : null;
+      if (input.sourceSessionId && !source) throw new Error(`Cannot schedule unknown task: ${input.sourceSessionId}`);
+      if (!source) {
+        if (input.target !== "new_task") throw new Error("A schedule without a source task must start a new task");
+        await agentWarmup;
+        const agents = testAgentSetupFixture?.agents ?? await agentSetup.listAgents();
+        if (!agents.some((agent) => agent.id === input.agentId && ((agent.available ?? agent.detected) || agent.installed))) {
+          throw new Error(`Harness is unavailable: ${input.agentId}`);
+        }
+        if (input.cwd && !isAbsolute(input.cwd)) throw new Error("Schedule project folder must be absolute");
+      }
       const created = scheduleStore.create({
         ...input,
-        agentId: source.agent_id,
-        cwd: source.cwd,
+        agentId: source?.agent_id ?? input.agentId,
+        cwd: source?.cwd ?? input.cwd,
       });
       scheduleEngine.reschedule();
       return created;

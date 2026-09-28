@@ -1,6 +1,6 @@
 import { expect, test } from "./fixtures";
 
-test("project coordinator uses the ordinary chat surface", async ({ page }) => {
+test("project coordinator uses the ordinary chat surface", async ({ page, capture }) => {
   await page.evaluate(async () => {
     await window.backchat.projectSave({
       project_id: "shared-chat-surface",
@@ -26,4 +26,5 @@ test("project coordinator uses the ordinary chat surface", async ({ page }) => {
   await project.locator("..").getByRole("link").click();
   await expect(page.locator('[data-chat-surface="project"]')).toBeVisible();
   await expect(page.getByLabel("Message coordinator", { exact: true })).toBeVisible();
+  await capture("project-coordinator-chat.png", "project coordinator chat");
 });

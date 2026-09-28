@@ -22,15 +22,17 @@ export function PageScaffold({
   meta,
   actions,
   children,
+  className,
 }: {
   title: ReactNode;
   description?: ReactNode;
   meta?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className={PAGE_SCAFFOLD_CLASS}>
+    <div className={cn(PAGE_SCAFFOLD_CLASS, className)}>
       <header className={cn(actions && "flex items-start justify-between gap-4")}>
         <div className="min-w-0">
           <h1 className="text-2xl font-medium tracking-[-0.02em] text-fg">{title}</h1>

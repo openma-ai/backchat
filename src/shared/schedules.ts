@@ -33,6 +33,7 @@ export interface ScheduleInfo {
   target: ScheduleTarget;
   status: ScheduleStatus;
   notificationPolicy: ScheduleNotificationPolicy;
+  /** Empty for schedules created without an existing task; those always start a new task. */
   sourceSessionId: string;
   agentId: string;
   cwd: string;

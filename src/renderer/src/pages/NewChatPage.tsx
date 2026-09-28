@@ -69,6 +69,13 @@ export function NewChatPage() {
     selectTemplate,
     syncForUserInput,
   } = useHomeSuggestionState(draft?.id);
+  useEffect(() => {
+    if (!draft?.id) return;
+    const prompt = window.sessionStorage.getItem("backchat.schedule-setup-prompt");
+    if (!prompt) return;
+    window.sessionStorage.removeItem("backchat.schedule-setup-prompt");
+    fillPrefix(prompt);
+  }, [draft?.id]);
   const onSubmit = useChatSubmission({
     isSide: false,
     pickedAgentId,

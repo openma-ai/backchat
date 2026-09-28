@@ -155,11 +155,13 @@ pnpm test:e2e:fast
 pnpm test:verify    # typecheck + full unit tests + fast E2E lane
 ```
 
-Pull requests run `test:ci` and `test:e2e:fast`. Pushes to `main` also build an
-unsigned macOS DMG, then check that the packaged app can import its runtime and
-complete a first prompt. The website download button always points at
-https://github.com/openma-ai/backchat/releases/latest/download/Backchat-arm64.dmg
-; tagged releases upload that stable filename next to the versioned DMG.
+Pull requests run `test:ci` and `test:e2e:fast`. Pushes to `main` also build a
+macOS DMG, check that the packaged app can import its runtime and complete a
+first prompt, and upload the DMG as a CI artifact. Public preview and stable
+downloads are published only by manual workflow dispatch after package review;
+tag pushes do not publish automatically. The website download button points at
+the [latest stable DMG](https://github.com/openma-ai/backchat/releases/latest/download/Backchat-arm64.dmg);
+approved tagged releases upload that filename next to the versioned DMG.
 GitHub's official Dependency Review, CodeQL, and Dependabot for Actions run
 alongside those gates.
 

@@ -13,6 +13,28 @@ afterEach(async () => {
 });
 
 describe("ScheduleStore", () => {
+  it("allows a standalone schedule only when each run starts a new task", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openma-schedules-"));
+    roots.push(root);
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-19T01:00:00.000Z");
+    const store = new ScheduleStore(join(root, "schedules.db"));
+    const input = {
+      name: "Daily summary",
+      prompt: "Summarize the project",
+      trigger: { type: "at" as const, at: "2026-07-20T10:00:00+08:00" },
+      sourceSessionId: "",
+      agentId: "codex-acp",
+      cwd: "/tmp/project",
+    };
+
+    expect(() => store.create({ ...input, target: "current_task" })).toThrow("source task");
+    const created = store.create({ ...input, target: "new_task" });
+    expect(store.list()).toEqual([created]);
+    expect(created).toMatchObject({ sourceSessionId: "", agentId: "codex-acp", cwd: "/tmp/project" });
+    store.close();
+  });
+
   it("persists a one-time task with its next run", async () => {
     const root = await mkdtemp(join(tmpdir(), "openma-schedules-"));
     roots.push(root);
