@@ -75,7 +75,7 @@ for (const provider of ["openma", "claude-managed", "openai-agents"] as const) {
       await page.evaluate(() => window.backchat.settingsPatch({ agents: [] }));
       await page.locator('[data-session-runtime-location="true"]').first().click();
       await page.getByRole("menuitem", { name: "Sign in to OpenMA", exact: true }).click();
-      const form = page.getByRole("region", { name: "Agent connections" });
+      const form = page.getByRole("form", { name: "Agent connections" });
       await form.getByLabel("Protocol", { exact: true }).selectOption(provider);
       await form.getByLabel("Tenant name (optional)").fill(title);
       await form.getByLabel("Base URL", { exact: true }).fill(`${origin}${openai ? "/v1" : ""}`);
