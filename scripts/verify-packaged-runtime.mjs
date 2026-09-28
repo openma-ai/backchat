@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { cp, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { verifyPackagedDependencies } from "./verify-packaged-dependencies.mjs";
 
 const executable = process.argv[2];
 
@@ -11,6 +14,7 @@ if (!executable) {
 
 const resolvedExecutable = resolve(executable);
 const resources = resolve(dirname(resolvedExecutable), "../Resources");
+await verifyPackagedDependencies(join(resources, "app.asar"));
 const executableName = basename(resolvedExecutable);
 const runtimeExecutable = process.platform === "darwin"
   ? join(
@@ -22,10 +26,12 @@ const runtimeExecutable = process.platform === "darwin"
       `${executableName} Helper`,
     )
   : resolvedExecutable;
-const sdkRoot = join(
-  resources,
-  "app.asar/node_modules/@modelcontextprotocol/sdk/dist/esm",
-);
+// The packaged app normally lives below the checkout during CI. Importing it
+// there can silently resolve a missing dependency from the checkout's own
+// node_modules, so test a copy outside the checkout's ancestor directories.
+const isolatedResources = await mkdtemp(join(tmpdir(), "backchat-packaged-runtime-"));
+await cp(join(resources, "app.asar"), join(isolatedResources, "app.asar"));
+const sdkRoot = join(isolatedResources, "app.asar/node_modules/@modelcontextprotocol/sdk/dist/esm");
 const entrypoints = [
   "server/mcp.js",
   "server/streamableHttp.js",
@@ -35,22 +41,17 @@ const entrypoints = [
   "client/sse.js",
   "types.js",
   "shared/protocol.js",
+  "validation/ajv-provider.js",
 ];
 const specifiers = entrypoints.map((entrypoint) =>
   pathToFileURL(join(sdkRoot, entrypoint)).href,
 );
 const source = `await Promise.all(${JSON.stringify(specifiers)}.map((specifier) => import(specifier)))`;
-const result = spawnSync(
-  runtimeExecutable,
-  ["--input-type=module", "-e", source],
-  {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: "1",
-    },
-  },
-);
+const result = spawnSync(runtimeExecutable, ["--input-type=module", "-e", source], {
+  encoding: "utf8",
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+});
+await rm(isolatedResources, { recursive: true, force: true });
 
 if (result.stdout) process.stdout.write(result.stdout);
 if (result.stderr) process.stderr.write(result.stderr);
