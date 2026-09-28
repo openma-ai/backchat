@@ -9,6 +9,11 @@ export async function previewLocalFile(path: string): Promise<void> {
   if (task?.openma) return previewOpenmaFile(task.id, path);
   try {
     const preview = await window.backchat.uiFsResolvePreview({ path });
+    if (preview?.kind === "directory") {
+      const error = await window.backchat.uiFsOpenPath({ path: preview.sourcePath });
+      if (error) throw new Error(error);
+      return;
+    }
     if (preview) {
       const tabId = sessionStore.openSideTab(
         "browser",

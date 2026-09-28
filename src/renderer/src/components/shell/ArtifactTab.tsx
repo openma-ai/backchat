@@ -1,4 +1,4 @@
-import { FileIcon } from "lucide-react";
+import { FileIcon } from "@/components/Icons";
 import { toast } from "sonner";
 import { FileOpenMenu } from "@/components/shell/FileOpenMenu";
 
@@ -38,7 +38,7 @@ export function ArtifactTab({ path }: { path: string }) {
 
       <div className="flex flex-1 items-center justify-center px-8 text-center">
         <div className="max-w-[280px]">
-          <FileIcon className="mx-auto size-9 text-fg-subtle" strokeWidth={1.5} />
+          <FileIcon className="mx-auto size-9 text-fg-subtle" />
           <p className="mt-3 text-sm font-medium text-fg">{name}</p>
           <p className="mt-1 text-xs leading-5 text-fg-muted">
             This format opens in its desktop app.

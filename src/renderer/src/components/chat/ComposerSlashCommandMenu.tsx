@@ -17,7 +17,7 @@ import {
   TargetIcon,
   ZapIcon,
   type LucideIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 
 import { useI18n } from "@/lib/i18n";
 import {

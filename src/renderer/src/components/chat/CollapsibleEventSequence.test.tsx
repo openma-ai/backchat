@@ -35,7 +35,7 @@ describe("CollapsibleEventSequence", () => {
     },
   ];
 
-  it("opens a running event sequence so its timeline is immediately visible", () => {
+  it("keeps a running event sequence collapsed until explicitly expanded", () => {
     const html = renderToStaticMarkup(
       <CollapsibleEventSequence
         nodes={nodes}
@@ -44,7 +44,7 @@ describe("CollapsibleEventSequence", () => {
       />,
     );
 
-    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Read files body");
     expect(html).toContain("Run tests body");
   });

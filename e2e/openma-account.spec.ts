@@ -136,7 +136,7 @@ test("desktop login selects a workspace without registering the machine", async 
     await app.evaluate(({ shell }) => { shell.openExternal = async (url: string) => { await fetch(url); }; });
     await page.locator('[data-session-runtime-location="true"]').first().click();
     await page.getByRole("menuitem", { name: "Sign in to OpenMA" }).click();
-    await expect(page.getByRole("heading", { name: "OpenMA" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "OpenMA", exact: true, level: 1 })).toBeVisible();
     await page.getByLabel("OpenMA server").fill(`http://127.0.0.1:${address.port}`);
     await page.getByRole("button", { name: "Sign in to OpenMA", exact: true }).click();
     await expect(page.getByText("person@example.com", { exact: true })).toBeVisible();

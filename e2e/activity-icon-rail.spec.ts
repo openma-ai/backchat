@@ -48,6 +48,8 @@ test("active tool tail preserves state and nested indentation", async ({
 
   const group = page.locator('[data-tool-group-size="2"]');
   const trigger = group.locator(":scope > button");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.click();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
 
   const innerRow = group
@@ -84,14 +86,13 @@ test("active tool tail preserves state and nested indentation", async ({
   expect(outerIconBox).not.toBeNull();
   expect(innerIconBox).not.toBeNull();
 
-  // Each hover surface stays inside its own hierarchy box. Padding moves its
-  // contents inward; it must not pull the background into the parent gutter.
+  // Activity rows align flush with their hierarchy box; nesting supplies the inset.
   expect(outerRowBox!.x).toBeCloseTo(groupBox!.x, 1);
   expect(outerRowBox!.width).toBeCloseTo(groupBox!.width, 1);
   expect(innerRowBox!.x).toBeCloseTo(innerToolBox!.x, 1);
   expect(innerRowBox!.width).toBeCloseTo(innerToolBox!.width, 1);
-  expect(outerIconBox!.x - outerRowBox!.x).toBeCloseTo(8, 1);
-  expect(innerIconBox!.x - innerRowBox!.x).toBeCloseTo(8, 1);
+  expect(outerIconBox!.x - outerRowBox!.x).toBeCloseTo(0, 1);
+  expect(innerIconBox!.x - innerRowBox!.x).toBeCloseTo(0, 1);
   expect(innerIconBox!.x - outerIconBox!.x).toBeGreaterThanOrEqual(24);
 
   await innerRow.click();

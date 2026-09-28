@@ -98,7 +98,9 @@ function mergeOverlay(
         label: ov.label || o.label,
         icon: o.icon ?? ov.icon,
         spec: ov.spec,
-        version: ov.version ?? o.version,
+        // A replacement distribution owns its version too. Inheriting the
+        // original package's version could pin an unrelated package or binary.
+        version: ov.version ?? (ov.registryDistribution ? undefined : o.version),
         installHint: ov.installHint || o.installHint,
         homepage: ov.homepage || o.homepage,
         featured: ov.featured,

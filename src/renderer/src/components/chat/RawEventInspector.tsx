@@ -1,5 +1,5 @@
 import { useI18n } from "@/lib/i18n";
-import { BracesIcon } from "lucide-react";
+import { BracesIcon } from "@/components/Icons";
 import { safeJson } from "@/lib/format";
 import type { TurnEvent } from "@/lib/session-store";
 

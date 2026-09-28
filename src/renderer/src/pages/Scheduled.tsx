@@ -13,7 +13,7 @@ import {
   RefreshCwIcon,
   Trash2Icon,
   XCircleIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";

@@ -3,7 +3,7 @@ import {
   CornerDownLeftIcon,
   FileTextIcon,
   FolderOpenIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 
 import { useI18n } from "@/lib/i18n";
 import type { ComposerMentionCandidate } from "@/lib/composer-mentions";

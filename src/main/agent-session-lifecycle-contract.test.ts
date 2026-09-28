@@ -122,7 +122,7 @@ describe("agent and session lifecycle contract", () => {
     expect(updateControl).toContain('position: "top-right"');
     expect(updateControl).toContain("window.backchat.sessionRestart");
     expect(sidebar).toContain("<AgentUpdateControl agents={agents} />");
-    expect(sidebar).toContain('navigate({ to: "/settings/agents" })');
+    expect(sidebar).toContain('to="/settings/activity"');
     expect(agentUpdate).toContain("updateAvailable");
     expect(settingsAgents).toContain(
       'invalidateQueries({ queryKey: ["session-runtime"] })',

@@ -1,6 +1,6 @@
 import { DirectAgentConnections } from "./DirectAgentConnections";
 import { useEffect, useState } from "react";
-import { CloudIcon, ServerIcon } from "lucide-react";
+import { CloudIcon, ServerIcon } from "@/components/Icons";
 import { PageScaffold } from "@/components/shell/PageScaffold";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

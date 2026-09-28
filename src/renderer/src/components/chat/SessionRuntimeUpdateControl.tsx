@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCwIcon } from "lucide-react";
+import { RefreshCwIcon } from "@/components/Icons";
 import { toast } from "sonner";
 import type { SessionRuntimeStatus } from "@shared/session-events.js";
 

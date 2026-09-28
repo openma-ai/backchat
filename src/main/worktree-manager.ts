@@ -104,6 +104,8 @@ export class ManagedWorktreeStore {
     sourceDirectories: string[];
     /** Branch to create in every repository. Detached when omitted. */
     branch?: string | null;
+    /** Optional pinned commit/ref per repository; defaults to the current HEAD. */
+    baseRefs?: Readonly<Record<string,string>>;
   }): Promise<PreparedWorktreeWorkspace> {
     const rootDir = this.#workspaceDir(input.workspaceId);
     const sourceDirectories = await canonicalSourceDirectories(
@@ -159,7 +161,7 @@ export class ManagedWorktreeStore {
       if (worktreeIndex === undefined) {
         worktreeIndex = repoPlans.length;
         repoByRoot.set(repoRoot, worktreeIndex);
-        const head = (await git(repoRoot, "rev-parse", "HEAD")).trim();
+        const head = (await git(repoRoot, "rev-parse", "--verify", "--end-of-options", `${input.baseRefs?.[repoRoot] ?? "HEAD"}^{commit}`)).trim();
         repoPlans.push({
           repoRoot,
           head,
@@ -336,6 +338,45 @@ export const defaultWorktreeStore = new ManagedWorktreeStore(
 );
 
 /** Repository top level for a folder, canonicalized. Null outside Git. */
+/** Find repository roots beneath a folder without walking dependency trees or symlinks.
+ * A folder already inside a repository retains its relative cwd. */
+export async function discoverWorkspaceSources(directory: string): Promise<string[]> {
+  const root = await realpath(directory);
+  if (await repoRootOf(root)) return [root];
+  const pending = [root];
+  const sources: string[] = [];
+  const skipped = new Set(["node_modules", "vendor", "dist", "build", "target", "venv"]);
+  let visited = 0;
+  while (pending.length) {
+    const folder = pending.shift()!;
+    if (++visited > 10000) throw new Error("Too many folders to scan; choose a more specific project folder");
+    const entries = await readdir(folder, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "EACCES" || error.code === "ENOENT") return [];
+      throw error;
+    });
+    if (entries.some((entry) => entry.name === ".git") && await repoRootOf(folder)) {
+      sources.push(folder);
+      continue;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.isDirectory() && !entry.name.startsWith(".") && !skipped.has(entry.name)) {
+        pending.push(join(folder, entry.name));
+      }
+    }
+  }
+  // Sibling worktrees share a Git common directory and belong to one repo.
+  // Prefer the main checkout when it is part of the selected folder.
+  const byRepository = new Map<string, string>();
+  for (const source of sources) {
+    const commonDir = await realpath(resolve(source, (await git(source, "rev-parse", "--git-common-dir")).trim()));
+    const mainCheckout = (await listRepoWorktrees(source)).find(tree => tree.isMain)?.path;
+    if (!byRepository.has(commonDir) || source === mainCheckout) {
+      byRepository.set(commonDir, source);
+    }
+  }
+  return [...byRepository.values()];
+}
+
 export async function repoRootOf(path: string): Promise<string | null> {
   try {
     const top = (await git(path, "rev-parse", "--show-toplevel")).trim();

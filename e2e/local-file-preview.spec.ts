@@ -40,3 +40,28 @@ test("generated documents preview in app and keep native Open in actions", async
     await expect(page.getByText("Default app", { exact: true })).toBeVisible();
     await expect(page.getByText("Show in Finder", { exact: true })).toBeVisible();
 });
+
+test("folder references open the native file manager without an artifact tab", async ({ page, app, home }) => {
+  const folder = join(home, "backend");
+  await mkdir(folder);
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler("uiFs:openPath");
+    ipcMain.handle("uiFs:openPath", (_event, input) => {
+      (globalThis as unknown as { openedFolder: string }).openedFolder = input.path;
+      return "";
+    });
+  });
+  const sid = await injectSession(page, { agentId: "codex-acp", cwd: home });
+  await injectEvent(page, {
+    type: "session.event", session_id: sid, turn_id: "folder-turn",
+    event: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "[backend](./backend)" } },
+  });
+  await injectEvent(page, { type: "session.complete", session_id: sid, turn_id: "folder-turn" });
+  const link = page.getByRole("link", { name: "backend", exact: true });
+  await expect(link).toHaveAttribute("data-markdown-file-link", "true");
+  await expect(link).toHaveAttribute("title", folder);
+  expect(await page.evaluate(path => window.backchat.uiFsResolvePreview({ path }), folder)).toMatchObject({ kind: "directory" });
+  await link.click();
+  await expect.poll(() => app.evaluate(() => (globalThis as unknown as { openedFolder: string }).openedFolder)).toBe(folder);
+  await expect(page.locator('[data-browser-visible="true"]')).toHaveCount(0);
+});

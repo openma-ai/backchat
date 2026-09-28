@@ -1,3 +1,9 @@
+import { useProjects } from "@/lib/projects-query";
+import { ProjectIcon } from "@/components/ProjectIcon";
+import { ChevronRightIcon as ChevronRightIcon, MoreIcon as MoreHorizontalIcon, ChatIcon as MessageSquareIcon, ChatsIcon as MessagesSquareIcon, PinIcon as PinIcon, PinOffIcon as PinOffIcon, SearchIcon as SearchIcon, SettingsIcon as Settings2Icon, ComposeIcon as SquarePenIcon, ArchiveIcon as ArchiveIcon, ScheduleIcon as CalendarClockIcon, FolderClosedIcon as FolderIcon, FolderOpenIcon as FolderOpenIcon, BranchIcon as GitBranchIcon, PlusIcon as PlusIcon, TrashIcon as Trash2Icon, ParticipantsIcon as UsersRoundIcon, CoordinationIcon as WorkflowIcon } from "@/components/BackchatIcons";
+import { rememberRemovedProject, useRemovedProjectPaths } from "@/lib/removed-projects";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { openmaWorkspaceScope } from "@shared/openma";
 import { useOpenmaAccount, useOpenmaCatalog } from "@/lib/openma-account";
 import { sameOpenmaScope, useOpenmaTenantTasks } from "@/lib/openma-tasks";
@@ -13,30 +19,12 @@ import {
 import { ContextMenu } from "radix-ui";
 import { toast } from "sonner";
 import {
-  CheckIcon,
-  ChevronRightIcon,
-  CpuIcon,
   Loader2Icon,
-  MoreHorizontalIcon,
-  PinIcon,
-  PinOffIcon,
-  SearchIcon,
-  Settings2Icon,
-  SquarePenIcon,
-  ArchiveIcon,
-  CalendarClockIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  GitBranchIcon,
-  PlusIcon,
-  Trash2Icon,
-  UsersRoundIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
 import { useSettings } from "@/lib/settings-store";
 import {
   selectActiveId,
@@ -70,6 +58,18 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+
+function readDisclosureKeys<T extends string>(key: string, fallback: T[]): Set<T> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(key) ?? "null");
+    if (Array.isArray(value) && value.every(item => typeof item === "string")) return new Set(value as T[]);
+  } catch { /* Keep defaults if storage is unavailable. */ }
+  return new Set(fallback);
+}
+function saveDisclosureKeys(key: string, keys: Set<string>) {
+  try { localStorage.setItem(key, JSON.stringify([...keys])); } catch { /* In-memory state still works. */ }
+}
+let lastRevealedSession: string | null = null;
 
 /** Second-level sidebar node: one managed/external workspace of a project
  *  and the chats running inside it. Live-workspace chats stay directly
@@ -142,6 +142,8 @@ export function groupSidebarSessions(
   sessions: SessionRow[],
   savedProjects: readonly ProjectInfo[] = [],
   workspaces: readonly WorkspaceInfo[] = [],
+  removedPaths: readonly string[] = [],
+  coordinatorSessionIds: ReadonlySet<string> = new Set(),
 ): {
   pinned: SessionRow[];
   projects: SidebarProjectGroup[];
@@ -161,12 +163,52 @@ export function groupSidebarSessions(
       sourceFolders: project.source_folders,
     });
   }
+  const workspaceProjectKeys = new Map<string, string>();
   for (const ws of workspaces) {
-    if (ws.kind === "live" || !ws.project_id) continue;
-    projectMap.get(`project:${ws.project_id}`)?.workspaces.push(workspaceGroupFromInfo(ws));
+    if (ws.kind === "live") continue;
+    if (ws.roots.some(root => removedPaths.includes(root.sourcePath))
+      && !savedProjects.some(project => project.id === ws.project_id || project.source_folders.some(path => ws.roots.some(root => root.sourcePath === path)))) continue;
+    let key = ws.project_id && projectMap.has(`project:${ws.project_id}`)
+      ? `project:${ws.project_id}` : undefined;
+    if (!key && ws.roots.length) {
+      // A directory group may have become a saved project since this workspace
+      // was created. Resolve its source roots before creating a legacy group;
+      // checkout paths and display names are not project identities.
+      const candidates = savedProjects.map(project => {
+        const coverage = ws.roots.map(root => Math.max(-1, ...project.source_folders
+          .map(folder => folder.replace(/\/$/, ""))
+          .filter(folder => root.sourcePath === folder || root.sourcePath.startsWith(`${folder}/`))
+          .map(folder => folder.length)));
+        return { project, specificity: Math.min(...coverage) };
+      }).filter(candidate => candidate.specificity >= 0)
+        .sort((a, b) => b.specificity - a.specificity);
+      if (candidates[0]) key = `project:${candidates[0].project.id}`;
+    }
+    if (!key && ws.roots.length) {
+      // Older directory-based projects may exist only as source-session groups.
+      // Use the closest existing group covering every source root, never the
+      // generated checkout directory as a new project.
+      const source = sessions.filter(session => !session.workspaceId
+        && session.projectScope !== "none" && session.cwd
+        && ws.roots.every(root => root.sourcePath === session.cwd
+          || root.sourcePath.startsWith(`${session.cwd.replace(/\/$/, "")}/`)))
+        .sort((a, b) => b.cwd.length - a.cwd.length)[0];
+      if (source) {
+        key = projectKeyForCwd(source.cwd) ?? undefined;
+        if (key && !projectMap.has(key)) projectMap.set(key, {
+          key, label: folderName(source.cwd), sessions: [], workspaces: [],
+          primaryRoot: source.cwd, sourceFolders: [source.cwd, ...(source.additionalDirectories ?? [])],
+        });
+      }
+    }
+    if (key && projectMap.has(key)) {
+      workspaceProjectKeys.set(ws.id, key);
+      projectMap.get(key)!.workspaces.push(workspaceGroupFromInfo(ws));
+    }
   }
 
   for (const session of sessions) {
+    if (coordinatorSessionIds.has(session.id)) continue;
     if (session.pinnedAt != null) {
       pinned.push(session);
       continue;
@@ -177,13 +219,24 @@ export function groupSidebarSessions(
       continue;
     }
 
-    const namedProjectKey = session.projectId
-      ? `project:${session.projectId}`
-      : null;
+    const workspace = workspaces.find(workspace => workspace.id === session.workspaceId);
+    const workspaceOwner = workspace?.project_id;
+    const sourcePath = session.chosenCwd || session.cwd;
+    const sourceOwner = savedProjects.find(project => project.source_folders.includes(sourcePath))?.id;
+    if (!sourceOwner && !savedProjects.some(p => p.id === workspaceOwner)
+      && (removedPaths.includes(sourcePath) || workspace?.roots.some(r => removedPaths.includes(r.sourcePath)))) {
+      chats.push(session);
+      continue;
+    }
+    const namedProjectKey = [
+      session.projectId ? `project:${session.projectId}` : null,
+      workspaceProjectKeys.get(session.workspaceId ?? ""),
+      sourceOwner ? `project:${sourceOwner}` : null,
+    ].find(key => key && projectMap.has(key));
     const projectKey =
       namedProjectKey && projectMap.has(namedProjectKey)
         ? namedProjectKey
-        : projectKeyForCwd(session.cwd);
+        : projectKeyForCwd(sourcePath);
     if (!projectKey) {
       chats.push(session);
       continue;
@@ -269,6 +322,38 @@ export function Sidebar() {
   // "right-click row A then row B leaves both menus open" bug.
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const removedPaths = useRemovedProjectPaths();
+  const [projectAction, setProjectAction] = useState<{ kind: "archive" | "remove"; project: SidebarProjectGroup } | null>(null);
+  const [projectActionBusy, setProjectActionBusy] = useState(false);
+  const projectChatIds = projectAction ? [...new Set([
+    ...projectAction.project.sessions,
+    ...projectAction.project.workspaces.flatMap(w => w.sessions),
+    ...sessions.filter(s => !s.openma && !s.executionTarget && s.projectScope !== "none"
+      && ((projectAction.project.projectId && s.projectId === projectAction.project.projectId)
+        || projectAction.project.sourceFolders.includes(s.chosenCwd || s.cwd)
+        || projectAction.project.workspaces.some(w => w.id === s.workspaceId))),
+  ].map(s => s.id))] : [];
+  const confirmProjectAction = async () => {
+    if (!projectAction || projectActionBusy) return;
+    setProjectActionBusy(true);
+    try {
+      if (projectAction.kind === "archive") {
+        await requestArchive(projectChatIds);
+      } else {
+        const project = projectAction.project;
+        if (project.projectId) await window.backchat.projectDelete({ project_id: project.projectId });
+        rememberRemovedProject(project.sourceFolders);
+        queryClient.setQueryData<ProjectInfo[]>(["projects"], old => old?.filter(p => p.id !== project.projectId) ?? []);
+        await queryClient.invalidateQueries({ queryKey: ["projects"] });
+        await queryClient.invalidateQueries({ queryKey: ["sessions-for-recent-cwds"] });
+        const active = sessionStore.get(activeId ?? "");
+        if (active?.status === "draft" && ((project.projectId && active.projectId === project.projectId)
+          || project.sourceFolders.includes(active.chosenCwd || active.cwd))) sessionStore.newDraft();
+      }
+      setProjectAction(null);
+    } catch (error) { toast.error(error instanceof Error ? error.message : String(error)); }
+    finally { setProjectActionBusy(false); }
+  };
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const {
     pending: pendingArchive,
@@ -277,16 +362,36 @@ export function Sidebar() {
     cancelArchive,
   } = useArchiveSessions();
   const [openProjectKeys, setOpenProjectKeys] = useState<Set<string>>(
-    () => new Set(),
+    () => readDisclosureKeys("backchat:sidebar-projects:v1", []),
   );
   const [openSectionKeys, setOpenSectionKeys] = useState<Set<SidebarSectionKey>>(
-    () => new Set(["pinned", "pairs", "projects", "chats"]),
+    () => readDisclosureKeys("backchat:sidebar-sections:v1", ["pinned", "pairs", "projects", "chats"]),
   );
-  const { data: savedProjects = [] } = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => window.backchat.projectsList(),
-    staleTime: 30_000,
+  useEffect(() => saveDisclosureKeys("backchat:sidebar-projects:v1", openProjectKeys), [openProjectKeys]);
+  useEffect(() => saveDisclosureKeys("backchat:sidebar-sections:v1", openSectionKeys), [openSectionKeys]);
+  useEffect(() => {
+    if (!location.pathname.startsWith("/projects/")) return;
+    const key = `project:${location.pathname.slice("/projects/".length)}`;
+    setOpenProjectKeys(current => current.has(key) ? current : new Set(current).add(key));
+    setOpenSectionKeys(current => current.has("projects") ? current : new Set(current).add("projects"));
+  }, [location.pathname]);
+  const { data: savedProjects = [] } = useProjects();
+  // Resolve ownership from durable project bindings, never from agent-generated titles.
+  const coordinatorViews = useQueries({
+    queries: savedProjects.map(project => ({
+      queryKey: ["project-work", project.id],
+      queryFn: () => window.backchat.projectWorkView(project.id),
+      staleTime: 30_000,
+      select: (view: import("@shared/project-work").ProjectWorkView) => ({
+        projectId: project.id,
+        hasCoordinator: !!view.config?.coordinatorAgent,
+        coordinatorAgent: view.config?.coordinatorAgent,
+        sessionIds: view.facts.sessions.filter(session => session.agentId === "coordinator").map(session => session.id),
+      }),
+    })),
   });
+  const coordinatorSessionIds = new Set(coordinatorViews.flatMap(view => view.data?.sessionIds ?? []));
+  const coordinatorsByProject = new Map(coordinatorViews.flatMap(view => view.data ? [[view.data.projectId, view.data] as const] : []));
   const { data: workspaces = [] } = useQuery({
     queryKey: WORKSPACES_QUERY_KEY,
     queryFn: () => window.backchat.workspacesList(),
@@ -301,11 +406,12 @@ export function Sidebar() {
     }).data ?? [],
   );
   const { data: openmaAccount } = useOpenmaAccount();
-  const [localOpen, setLocalOpen] = useState(true);
+  const [localOpen, setLocalOpen] = useState(() => readDisclosureKeys("backchat:sidebar-local:v1", ["local"]).has("local"));
+  useEffect(() => saveDisclosureKeys("backchat:sidebar-local:v1", new Set(localOpen ? ["local"] : [])), [localOpen]);
   const localSessions = useMemo(() => sessions.filter((row) => !row.openma && !row.executionTarget), [sessions]);
   const grouped = useMemo(
-    () => groupSidebarSessions(localSessions, savedProjects, workspaces),
-    [savedProjects, localSessions, workspaces],
+    () => groupSidebarSessions(localSessions, savedProjects, workspaces, removedPaths, coordinatorSessionIds),
+    [savedProjects, localSessions, workspaces, removedPaths, [...coordinatorSessionIds].sort().join(",")],
   );
 
   const goHome = () => {
@@ -337,17 +443,48 @@ export function Sidebar() {
     }
   };
 
-  const onNewProjectChat = (cwd: string) => {
-    sessionStore.newDraft(cwd);
-    void navigate({ to: "/" });
+  const projectOpening = useRef(new Map<string, Promise<void>>());
+  const onOpenProject = (group: SidebarProjectGroup): Promise<void> => {
+    const pending = projectOpening.current.get(group.key);
+    if (pending) return pending;
+    // Legacy directory groups become the same durable Project when first opened.
+    // Their existing sessions keep their IDs and remain grouped by their source paths.
+    const opening = (async () => {
+      try {
+        const projects = await window.backchat.projectsList();
+        const existing = projects.find(project => project.id === group.projectId)
+          ?? projects.find(project => project.primary_folder === group.primaryRoot
+            && group.sourceFolders.every(folder => project.source_folders.includes(folder)));
+        const project = existing ?? await window.backchat.projectSave({
+          project_id: `proj-${crypto.randomUUID()}`,
+          name: group.label,
+          source_folders: group.sourceFolders,
+          primary_folder: group.primaryRoot,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["projects"] });
+        setOpenProjectKeys(current => {
+          const next = new Set(current);
+          next.delete(group.key);
+          next.add(`project:${project.id}`);
+          return next;
+        });
+        await navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        projectOpening.current.delete(group.key);
+      }
+    })();
+    projectOpening.current.set(group.key, opening);
+    return opening;
   };
 
-  const onNewNamedProjectChat = (
+  const onNewProjectChat = (
     project: SidebarProjectGroup,
     workspaceId?: string,
   ) => {
     sessionStore.newDraft({
-      projectId: project.projectId!,
+      projectId: project.projectId,
       sourceFolders: project.sourceFolders,
       workspaceId,
     });
@@ -373,18 +510,21 @@ export function Sidebar() {
     onHome ||
     (activeRow?.status === "draft" && activeRow.projectScope === "none");
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId || lastRevealedSession === activeId) return;
     const activeProject = grouped.projects.find((group) =>
-      group.sessions.some((session) => session.id === activeId),
+      group.sessions.some((session) => session.id === activeId)
+      || group.workspaces.some(workspace => workspace.id === activeRow?.workspaceId
+        || workspace.sessions.some(session => session.id === activeId)),
     );
     if (!activeProject) return;
+    lastRevealedSession = activeId;
     setOpenProjectKeys((prev) => {
       if (prev.has(activeProject.key)) return prev;
       const next = new Set(prev);
       next.add(activeProject.key);
       return next;
     });
-  }, [activeId, grouped.projects]);
+  }, [activeId, activeRow?.workspaceId, grouped.projects]);
 
   const toggleProject = (key: string) => {
     setOpenProjectKeys((prev) => {
@@ -419,22 +559,19 @@ export function Sidebar() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="sidebar-navigation flex h-full min-h-0 flex-col">
       {/* TrafficLight drag region — just empty space inside the sidebar
           card so the macOS-drawn trafficLight (at window x=16, y=18)
           has visible padding inside the card's rounded top-left. The
           global toggle button (rendered in AppShell) is absolute-
           positioned just to the right of the trafficLight; we don't
           host it here so it stays in place when the sidebar collapses. */}
-      <div
-        className="app-drag-region shrink-0"
-        style={{ height: "36px" }}
-      />
+      <div className="app-drag-region h-9 shrink-0" />
 
       {/* Header actions and conversation rows share one fixed 8px inset. The
           product-owned scrollbar overlays the viewport and reserves no gutter. */}
       <div
-        className="pt-[var(--row-gap-y)]"
+        className="flex shrink-0 items-center gap-1 pt-[var(--row-gap-y)]"
         style={{
           paddingLeft: "8px",
           paddingRight: "8px",
@@ -447,10 +584,10 @@ export function Sidebar() {
           aria-label={t("sidebar.newChat")}
           aria-current={newChatActive ? "page" : undefined}
           className={cn(
-            "app-no-drag flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+            "app-no-drag flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-ui",
             // Never painted as selected: this is a command, not a place.
             // aria-current still marks the home route for assistive tech.
-            newChatActive ? "text-fg" : "text-fg-muted hover:text-fg",
+            "text-fg",
             "hover:bg-[var(--control-bg-hover)] transition-colors",
           )}
           style={{ height: "var(--sidebar-row-h)" }}
@@ -461,48 +598,32 @@ export function Sidebar() {
           <span className={labelCls}>{t("sidebar.newChat")}</span>
         </button>
 
-        <PairChatLauncher labelCls={labelCls} />
-
-        {/* Cmd+K trigger — fires a synthetic ⌘K so CommandPalette opens.
-            Visible in collapsed mode too (just the icon); pressing it
-            still opens the palette, which is the actual search surface. */}
         <button
           type="button"
-          onClick={() =>
-            window.dispatchEvent(
-              new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
-            )
-          }
+          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))}
           aria-label={t("sidebar.search")}
-          className={cn(
-            "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
-            "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-            "transition-colors",
-          )}
-          style={{ height: "var(--sidebar-row-h)" }}
+          title={`${t("sidebar.search")} (⌘K)`}
+          className="app-no-drag inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg hover:bg-[var(--control-bg-hover)]"
         >
-          <span className="sidebar-row-icon">
-            <SearchIcon className="size-3.5" />
-          </span>
-          <span className={labelCls}>{t("sidebar.search")}</span>
-          <span
-            className={cn(
-              "ml-auto inline-flex w-6 shrink-0 items-center justify-end font-mono text-[11px] text-fg-subtle",
-              labelCls,
-            )}
-          >
-            ⌘K
-          </span>
+          <SearchIcon className="size-4" />
         </button>
+      </div>
+      <ScrollArea
+        type="always"
+        showBoundaries
+        data-sidebar-scroll-area="true"
+        className="sidebar-scroll-area min-h-0 flex-1"
+      >
+      <div className="px-2 pt-px">
 
         <Link
           to="/scheduled"
           aria-label={t("sidebar.scheduled")}
           className={cn(
-            "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-xs",
+            "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-ui",
             scheduledActive
               ? "app-selected-surface text-fg"
-              : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
+              : "text-fg hover:bg-[var(--control-bg-hover)]",
           )}
           style={{ height: "var(--sidebar-row-h)" }}
         >
@@ -513,16 +634,7 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* Chats — the only scrolling sidebar region. Radix keeps native
-          scrolling semantics while drawing a platform-independent overlay
-          thumb that never changes the row width. */}
-      <ScrollArea
-        type="always"
-        showBoundaries
-        data-sidebar-scroll-area="true"
-        className="sidebar-scroll-area min-h-0 flex-1"
-      >
-        <nav className="app-no-drag px-2 pt-[var(--row-gap-y)]">
+        <nav className="app-no-drag px-2 pt-5 pb-2">
         {openmaAccount?.user && openmaAccount.workspaces.map((workspace) => {
           const scope = openmaWorkspaceScope(openmaAccount, workspace.id);
           const rows = sessions.filter((row) => row.openma && sameOpenmaScope(row.openma, scope));
@@ -538,20 +650,20 @@ export function Sidebar() {
         <div>
         {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 ? (
           <div>
-            <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-xs font-medium text-fg-subtle", labelCls)}>
+            <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-ui font-normal text-fg-subtle", labelCls)}>
               {t("sidebar.chats")}
             </div>
             <button
               type="button"
               onClick={goHome}
-              className="flex h-[var(--sidebar-row-h)] w-full items-center px-2 text-left text-xs text-fg-muted hover:text-fg"
+              className="flex h-[var(--sidebar-row-h)] w-full items-center px-2 text-left text-ui text-fg-muted hover:text-fg"
             >
               {t("sidebar.startNewChat")}
             </button>
             <button
               type="button"
               onClick={() => setCreateProjectOpen(true)}
-              className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 px-2 text-left text-xs text-fg-muted hover:text-fg"
+              className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 px-2 text-left text-ui text-fg-muted hover:text-fg"
             >
               <span className="sidebar-row-icon">
                 <PlusIcon />
@@ -567,6 +679,7 @@ export function Sidebar() {
                 {pinned.length > 0 && (
                   <SidebarSection
                     title={t("sidebar.pinned")}
+                    icon={<PinIcon className="size-3.5" />}
                     open={openSectionKeys.has("pinned")}
                     onToggle={() => toggleSection("pinned")}
                     labelCls={labelCls}
@@ -598,6 +711,7 @@ export function Sidebar() {
                 {pairs.length > 0 && (
                   <SidebarSection
                     title={t("sidebar.pairs")}
+                    icon={<MessagesSquareIcon className="size-3.5" />}
                     open={openSectionKeys.has("pairs")}
                     onToggle={() => toggleSection("pairs")}
                     labelCls={labelCls}
@@ -625,6 +739,7 @@ export function Sidebar() {
                 )}
                 <SidebarSection
                   title={t("sidebar.projects")}
+                    icon={openSectionKeys.has("projects") ? <FolderOpenIcon className="size-3.5" /> : <FolderIcon className="size-3.5" />}
                   open={openSectionKeys.has("projects")}
                   onToggle={() => toggleSection("projects")}
                   labelCls={labelCls}
@@ -644,6 +759,7 @@ export function Sidebar() {
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {projects.map((project) => {
                         const open = openProjectKeys.has(project.key);
+                        const coordinator = project.projectId ? coordinatorsByProject.get(project.projectId) : undefined;
                         return (
                           <li key={project.key}>
                             <ProjectSidebarRow
@@ -652,15 +768,10 @@ export function Sidebar() {
                               labelCls={labelCls}
                               onToggle={() => toggleProject(project.key)}
                               onNewChat={() =>
-                                project.projectId
-                                  ? onNewNamedProjectChat(project)
-                                  : onNewProjectChat(project.primaryRoot)
+                                onNewProjectChat(project)
                               }
-                              onArchiveChats={() => {
-                                void requestArchive(
-                                  project.sessions.map((session) => session.id),
-                                );
-                              }}
+                              onArchiveChats={() => setProjectAction({ kind: "archive", project })}
+                              onRemove={() => setProjectAction({ kind: "remove", project })}
                               menuOpen={openMenuId === `project:${project.key}`}
                               onMenuOpenChange={(openMenu) =>
                                 setOpenMenuId(
@@ -670,6 +781,18 @@ export function Sidebar() {
                             />
                             <AnimatedCollapse open={open}>
                               <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0 pl-4">
+                                <li>
+                                  <ProjectCoordinatorRow
+                                    group={project}
+                                    active={location.pathname === `/projects/${project.projectId}`}
+                                    hasCoordinator={!!coordinator?.hasCoordinator}
+                                    agentId={coordinator?.coordinatorAgent}
+                                    agentIconUrl={coordinator?.coordinatorAgent ? agentIconUrls.get(coordinator.coordinatorAgent) : undefined}
+                                    agentLabel={agents.find(agent => agent.id === coordinator?.coordinatorAgent)?.label ?? coordinator?.coordinatorAgent}
+                                    onOpen={() => void onOpenProject(project)}
+                                    labelCls={labelCls}
+                                  />
+                                </li>
                                 {project.sessions.map((s) => (
                                   <li key={s.id}>
                                     <SessionRow
@@ -709,9 +832,7 @@ export function Sidebar() {
                                           })
                                         }
                                         onNewChat={() =>
-                                          project.projectId
-                                            ? onNewNamedProjectChat(project, ws.id)
-                                            : onNewProjectChat(ws.paths[0] ?? project.primaryRoot)
+                                          onNewProjectChat(project, ws.id)
                                         }
                                         onArchiveChats={() =>
                                           void requestArchive(ws.sessions.map((s) => s.id))
@@ -760,6 +881,7 @@ export function Sidebar() {
                 {chats.length > 0 && (
                   <SidebarSection
                     title={t("sidebar.chats")}
+                    icon={<MessageSquareIcon className="size-3.5" />}
                     open={openSectionKeys.has("chats")}
                     onToggle={() => toggleSection("chats")}
                     labelCls={labelCls}
@@ -809,10 +931,10 @@ export function Sidebar() {
       >
         <div className="flex w-full items-stretch overflow-hidden rounded-md" data-sidebar-footer-actions="true">
           <Link
-            to="/settings"
+            to="/settings/activity"
             aria-label={t("sidebar.settings")}
             className={cn(
-              "app-no-drag flex min-w-0 flex-1 items-center gap-2 px-2 text-xs",
+              "app-no-drag flex min-w-0 flex-1 items-center gap-2 px-2 text-ui",
               settingsActive
                 ? "app-selected-surface text-fg"
                 : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
@@ -827,6 +949,23 @@ export function Sidebar() {
           <AgentUpdateControl agents={agents} />
         </div>
       </div>
+      <Dialog open={projectAction !== null} onOpenChange={open => { if (!open && !projectActionBusy) setProjectAction(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{projectAction?.kind === "remove"
+            ? t("sidebar.removeProjectTitle", { name: projectAction.project.label })
+            : t("sidebar.archiveProjectTitle", { count: String(projectChatIds.length) })}</DialogTitle></DialogHeader>
+          <p className="text-sm text-fg-muted">{projectAction?.kind === "remove"
+            ? t("sidebar.removeProjectBody")
+            : t("sidebar.archiveProjectBody", { name: projectAction?.project.label ?? "" })}</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={projectActionBusy} onClick={() => setProjectAction(null)}>{t("common.cancel")}</Button>
+            <Button variant="destructive" disabled={projectActionBusy || (projectAction?.kind === "archive" && projectChatIds.length === 0)} onClick={() => void confirmProjectAction()}>
+              {projectActionBusy && <Loader2Icon className="size-4 animate-spin" />}
+              {t(projectAction?.kind === "remove" ? "sidebar.removeProject" : "sidebar.archiveAll")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <CreateProjectDialog
         open={createProjectOpen}
         onOpenChange={setCreateProjectOpen}
@@ -835,6 +974,7 @@ export function Sidebar() {
           setOpenProjectKeys((current) =>
             new Set(current).add(`project:${project.id}`)
           );
+          void navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
         }}
       />
       <RenameDialog
@@ -876,7 +1016,7 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
     <div className="pl-2">
       {enabled ? <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <button type="button" aria-label={t("sidebar.newTenantChat", { name })} className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg-muted hover:bg-surface-hover hover:text-fg">
+          <button type="button" aria-label={t("sidebar.newTenantChat", { name })} className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 rounded-md px-2 text-left text-ui text-fg-muted hover:bg-surface-hover hover:text-fg">
             <PlusIcon className="size-3.5" /><span className={labelCls}>{t("sidebar.newChat")}</span>
           </button>
         </DropdownMenuTrigger>
@@ -884,16 +1024,16 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
           {choices.map(({ target, offline }) => <DropdownMenuItem key={`${target.environmentId}:${target.agentId}`} disabled={offline} onSelect={() => {
             const id = sessionStore.newDraft(); sessionStore.setExecutionTarget(id, target); void navigate({ to: "/" });
           }}>
-            <div className="min-w-0 text-xs"><div className="truncate">{target.runtimeName} · {target.environmentName}</div><div className="text-fg-subtle">{target.agentName}{offline ? ` · ${t("openma.offline")}` : ""}</div></div>
+            <div className="min-w-0 text-ui"><div className="truncate">{target.runtimeName} · {target.environmentName}</div><div className="text-fg-subtle">{target.agentName}{offline ? ` · ${t("openma.offline")}` : ""}</div></div>
           </DropdownMenuItem>)}
-          {!choices.length && <div role="status" className="px-2 py-2 text-xs text-fg-muted">{t(catalog.isFetching ? "openma.loadingLocations" : catalog.error ? "openma.locationsUnavailable" : "openma.noLocations")}</div>}
+          {!choices.length && <div role="status" className="px-2 py-2 text-ui text-fg-muted">{t(catalog.isFetching ? "openma.loadingLocations" : catalog.error ? "openma.locationsUnavailable" : "openma.noLocations")}</div>}
           {catalog.error && <DropdownMenuItem onSelect={(event) => { event.preventDefault(); void catalog.refetch(); }}>{t("sidebar.retryTenant")}</DropdownMenuItem>}
         </DropdownMenuContent>
-      </DropdownMenu> : <button type="button" className="px-2 py-2 text-xs text-fg-muted" onClick={() => void navigate({ to: "/settings/openma" })}>{t("openma.signIn")}</button>}
-      {pinned.length > 0 && <><div className="px-2 py-1 text-xs text-fg-subtle">{t("sidebar.pinned")}</div>{list(pinned)}</>}
+      </DropdownMenu> : <button type="button" className="px-2 py-2 text-ui text-fg-muted" onClick={() => void navigate({ to: "/settings/openma" })}>{t("openma.signIn")}</button>}
+      {pinned.length > 0 && <><div className="px-2 py-1 text-ui text-fg-subtle">{t("sidebar.pinned")}</div>{list(pinned)}</>}
       {list(chats)}
-      {enabled && tasks.error && <button type="button" onClick={() => void tasks.refetch()} className="px-2 py-2 text-left text-xs text-fg-muted">{t("sidebar.tenantLoadFailed")}</button>}
-      {enabled && !tasks.error && !rows.length && <p role="status" className="m-0 px-2 py-2 text-xs text-fg-subtle">{t(tasks.isPending ? "sidebar.loadingTenant" : "sidebar.emptyTenant")}</p>}
+      {enabled && tasks.error && <button type="button" onClick={() => void tasks.refetch()} className="px-2 py-2 text-left text-ui text-fg-muted">{t("sidebar.tenantLoadFailed")}</button>}
+      {enabled && !tasks.error && !rows.length && <p role="status" className="m-0 px-2 py-2 text-caption text-fg-subtle">{t(tasks.isPending ? "sidebar.loadingTenant" : "sidebar.emptyTenant")}</p>}
     </div>
   </SidebarSection>;
 }
@@ -905,6 +1045,7 @@ function SidebarSection({
   labelCls,
   children,
   action,
+  icon,
 }: {
   title: string;
   open: boolean;
@@ -912,22 +1053,24 @@ function SidebarSection({
   labelCls: string;
   children: ReactNode;
   action?: ReactNode;
+  icon?: ReactNode;
 }) {
   return (
-    <section className="sidebar-section">
-      <div className="group/section mb-0.5 flex h-[var(--sidebar-row-h)] items-center">
+    <section className="sidebar-section" data-state={open ? "open" : "closed"}>
+      <div className="sidebar-section-header group/section flex h-[var(--sidebar-row-h)] items-center">
         <button
           type="button"
           onClick={onToggle}
           aria-label={title}
           aria-expanded={open}
           className={cn(
-            "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 px-2 text-left",
-            "text-xs font-medium text-fg-subtle",
+            "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 px-2 text-left rounded-md hover:bg-[var(--control-bg-hover)]",
+            "text-ui font-normal text-fg-subtle",
             "hover:text-fg-muted",
             "transition-colors duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
           )}
         >
+          {icon && <span className="sidebar-row-icon mr-1">{icon}</span>}
           <span className={cn("min-w-0 truncate", labelCls)}>{title}</span>
           <span className={cn("inline-flex shrink-0", labelCls)}>
             <ChevronRightIcon
@@ -961,6 +1104,7 @@ function ProjectSidebarRow({
   onToggle,
   onNewChat,
   onArchiveChats,
+  onRemove,
   menuOpen,
   onMenuOpenChange,
 }: {
@@ -970,34 +1114,30 @@ function ProjectSidebarRow({
   onToggle: () => void;
   onNewChat: () => void;
   onArchiveChats: () => void;
+  onRemove: () => void;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
-  const ProjectIcon = open ? FolderOpenIcon : FolderIcon;
+  const navigate = useNavigate();
   return (
     <div
-      className={cn(
-        "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
-        "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg active:bg-[var(--control-bg-open)]",
-        "transition-colors",
-      )}
+      className="app-no-drag sidebar-project-row flex w-full items-center rounded-md text-left text-ui"
+      data-sidebar-project={group.key}
+      data-menu-open={menuOpen || undefined}
       style={{ height: "var(--sidebar-row-h)" }}
     >
+      <div className="sidebar-project-surface group flex h-full min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-fg-muted transition-colors">
       <button
         type="button"
         onClick={onToggle}
-        aria-label={group.label}
+        aria-label={`${open ? t("project.collapse") : t("project.expand")}: ${group.label}`}
         aria-expanded={open}
         title={group.primaryRoot || group.label}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
-          <ProjectIcon />
-        </span>
-        <span className={cn("min-w-0 flex-1 truncate", labelCls)}>
-          {group.label}
-        </span>
+        <ProjectIcon identity={group.key} sourceFolders={group.sourceFolders} primaryRoot={group.primaryRoot} className="sidebar-row-icon" />
+        <span className={cn("min-w-0 flex-1 truncate", labelCls)}>{group.label}</span>
       </button>
       <span
         className={cn(
@@ -1006,6 +1146,15 @@ function ProjectSidebarRow({
           menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
         )}
       >
+        <button
+          type="button"
+          aria-label={t("sidebar.startProjectChat")}
+          title={t("sidebar.startProjectChat")}
+          onClick={onNewChat}
+          className="sidebar-row-action"
+        >
+          <SquarePenIcon aria-hidden="true" />
+        </button>
         <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
           <DropdownMenuTrigger asChild>
             <button
@@ -1022,6 +1171,9 @@ function ProjectSidebarRow({
             sideOffset={4}
             className="w-fit min-w-[160px]"
           >
+            {group.projectId && <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/projects/$projectId", params: { projectId: group.projectId! } })} className="flex items-center gap-2 py-1 text-ui">
+              <Settings2Icon className="size-3.5" /><span>{t("project.settings")}</span>
+            </DropdownMenuItem>}
             <DropdownMenuItem
               onSelect={() =>
                 group.primaryRoot
@@ -1029,7 +1181,7 @@ function ProjectSidebarRow({
                   : undefined
               }
               disabled={!group.primaryRoot}
-              className="flex items-center gap-2 py-1 text-xs"
+              className="flex items-center gap-2 py-1 text-ui"
             >
               <FolderOpenIcon className="size-3.5" />
               <span>{t("sidebar.revealProject")}</span>
@@ -1037,24 +1189,66 @@ function ProjectSidebarRow({
             <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
             <DropdownMenuItem
               onSelect={onArchiveChats}
-              className="flex items-center gap-2 py-1 text-xs"
+              className="flex items-center gap-2 py-1 text-ui"
             >
               <ArchiveIcon className="size-3.5" />
               <span>{t("sidebar.archiveProjectChats")}</span>
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onRemove} className="flex items-center gap-2 py-1 text-ui text-danger">
+              <Trash2Icon className="size-3.5" /><span>{t("sidebar.removeProject")}</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <button
-          type="button"
-          aria-label={t("sidebar.startProjectChat")}
-          title={t("sidebar.startProjectChat")}
-          onClick={onNewChat}
-          className="sidebar-row-action"
-        >
-          <SquarePenIcon aria-hidden="true" />
-        </button>
       </span>
+      </div>
     </div>
+  );
+}
+
+function ProjectCoordinatorRow({
+  group,
+  active,
+  hasCoordinator,
+  agentId,
+  agentIconUrl,
+  agentLabel,
+  onOpen,
+  labelCls,
+}: {
+  group: SidebarProjectGroup;
+  active: boolean;
+  hasCoordinator: boolean;
+  agentId?: string;
+  agentIconUrl?: string;
+  agentLabel?: string;
+  onOpen: () => void;
+  labelCls: string;
+}) {
+  const { t } = useI18n();
+  const label = t(hasCoordinator ? "project.coordinator" : "project.setupCoordinator");
+  const props = {
+    "aria-label": `${t(hasCoordinator ? "project.openCoordinator" : "project.setupCoordinator")}: ${group.label}`,
+    "aria-current": active ? "page" as const : undefined,
+    "data-project-coordinator": group.key,
+    "data-configured": hasCoordinator,
+    className: cn("sidebar-coordinator-row", active && "app-selected-surface"),
+  };
+  const content = <>
+    <span className="sidebar-coordinator-icon" title={hasCoordinator ? agentLabel : undefined}>
+      {hasCoordinator && agentId ? (
+        <AgentIcon agentId={agentId} iconUrl={agentIconUrl} title={agentLabel} className="size-3.5" />
+      ) : <PlusIcon aria-hidden="true" />}
+    </span>
+    <span className={cn("min-w-0 flex-1 truncate font-medium", labelCls)}>{label}</span>
+    {hasCoordinator ? (
+      <WorkflowIcon className={cn("size-3.5 shrink-0 text-fg-muted", labelCls)} aria-hidden="true" />
+    ) : null}
+  </>;
+  return group.projectId ? (
+    <Link to="/projects/$projectId" params={{ projectId: group.projectId }} {...props}>{content}</Link>
+  ) : (
+    <button type="button" onClick={onOpen} {...props}>{content}</button>
   );
 }
 
@@ -1088,7 +1282,7 @@ function WorkspaceSidebarRow({
   return (
     <div
       className={cn(
-        "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+        "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-ui",
         "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg active:bg-[var(--control-bg-open)]",
         "transition-colors",
       )}
@@ -1103,7 +1297,7 @@ function WorkspaceSidebarRow({
             onClick={onToggle}
             aria-label={workspace.label}
             aria-expanded={open}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
               <GitBranchIcon />
@@ -1117,26 +1311,27 @@ function WorkspaceSidebarRow({
           side="right"
           align="start"
           sideOffset={8}
-          className="w-auto max-w-[360px] p-2 text-xs"
+          className="w-auto max-w-[360px] p-2 text-ui"
         >
           <div className="mb-1 flex items-center gap-2 text-fg">
             <GitBranchIcon className="shrink-0 size-3.5 text-fg-subtle" />
-            <span className="truncate font-medium">{workspace.branch ?? t("workspace.detached")}</span>
+            <span className="truncate font-medium">{workspace.label}</span>
             <span className="ml-auto shrink-0 text-fg-subtle">
               {workspace.kind === "external" ? t("workspace.external") : t("workspace.managed")}
             </span>
           </div>
           <ul className="m-0 list-none space-y-0.5 p-0">
             {(worktrees.length > 0
-              ? worktrees.map((w) => ({ path: w.path, head: w.head }))
-              : workspace.paths.map((path) => ({ path, head: "" }))
+              ? worktrees.map((w) => ({ path: w.path, name: folderName(w.repoRoot), branch: w.branch, head: w.head }))
+              : workspace.paths.map((path) => ({ path, name: folderName(path), branch: null, head: "" }))
             ).map((w) => (
               <li key={w.path} className="flex items-center gap-2 text-fg-muted">
                 <FolderIcon className="size-3 shrink-0 text-fg-subtle" />
-                <span className="min-w-0 flex-1 truncate" title={w.path}>{w.path}</span>
-                {w.head && (
-                  <span className="shrink-0 font-mono text-[10px] text-fg-subtle">{w.head.slice(0, 7)}</span>
-                )}
+                <span className="min-w-0 truncate text-fg" title={w.path}>{w.name}</span>
+                <span className="shrink-0 text-fg-subtle">·</span>
+                <span className="min-w-0 flex-1 truncate text-fg-muted" title={w.branch ?? w.head}>
+                  {w.branch ?? (w.head ? `${t("workspace.detached")} · ${w.head.slice(0, 7)}` : t("workspace.detached"))}
+                </span>
               </li>
             ))}
           </ul>
@@ -1166,7 +1361,7 @@ function WorkspaceSidebarRow({
                 primaryPath ? void window.backchat.uiFsOpenPath({ path: primaryPath }) : undefined
               }
               disabled={!primaryPath}
-              className="flex items-center gap-2 py-1 text-xs"
+              className="flex items-center gap-2 py-1 text-ui"
             >
               <FolderOpenIcon className="size-3.5" />
               <span>{t("workspace.reveal")}</span>
@@ -1175,7 +1370,7 @@ function WorkspaceSidebarRow({
             <DropdownMenuItem
               onSelect={onArchiveChats}
               disabled={workspace.sessions.length === 0}
-              className="flex items-center gap-2 py-1 text-xs"
+              className="flex items-center gap-2 py-1 text-ui"
             >
               <ArchiveIcon className="size-3.5" />
               <span>{t("sidebar.archiveProjectChats")}</span>
@@ -1183,7 +1378,7 @@ function WorkspaceSidebarRow({
             {workspace.kind !== "external" && (
               <DropdownMenuItem
                 onSelect={onDelete}
-                className="flex items-center gap-2 py-1 text-xs text-danger"
+                className="flex items-center gap-2 py-1 text-ui text-danger"
               >
                 <Trash2Icon className="size-3.5" />
                 <span>{t("workspace.delete")}</span>
@@ -1226,7 +1421,7 @@ function PairSidebarRow({
   return (
     <div
       className={cn(
-        "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+        "app-no-drag group flex w-full items-center gap-2 rounded-md px-2 text-left text-ui",
         active
           ? "app-selected-surface text-fg"
           : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
@@ -1238,7 +1433,7 @@ function PairSidebarRow({
         type="button"
         onClick={onSelect}
         aria-label={row.label || t("sidebar.pairChat")}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
           <UsersRoundIcon />
@@ -1274,7 +1469,7 @@ function PairSidebarRow({
           <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
             <DropdownMenuItem
               onSelect={onRename}
-              className="flex items-center gap-2 py-1 text-xs"
+              className="flex items-center gap-2 py-1 text-ui"
             >
               <SquarePenIcon className="size-3.5" />
               <span>{t("sidebar.rename")}</span>
@@ -1286,7 +1481,7 @@ function PairSidebarRow({
                   ? sessionStore.unpinPair(row.id)
                   : sessionStore.pinPair(row.id)
               }
-              className="flex items-center gap-2 py-1 text-xs"
+              className="flex items-center gap-2 py-1 text-ui"
             >
               {row.pinnedAt != null ? (
                 <PinOffIcon className="size-3.5" />
@@ -1300,7 +1495,7 @@ function PairSidebarRow({
             <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
             <DropdownMenuItem
               onSelect={() => sessionStore.archivePair(row.id)}
-              className="flex items-center gap-2 py-1 text-xs"
+              className="flex items-center gap-2 py-1 text-ui"
             >
               <ArchiveIcon className="size-3.5" />
               <span>{t("sidebar.archive")}</span>
@@ -1360,7 +1555,7 @@ function SessionRow({
       <ContextMenu.Trigger asChild>
         <div
           className={cn(
-            "group relative flex w-full items-center gap-2 rounded-md px-2 text-xs",
+            "group relative flex w-full items-center gap-2 rounded-md px-2 text-ui",
             errored && "text-danger",
             active
               ? "app-selected-surface text-fg"
@@ -1374,7 +1569,7 @@ function SessionRow({
             onClick={onSelect}
             title={row.lastError ?? row.agent_id}
             aria-label={row.label}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
               {row.agent_id ? (
@@ -1427,7 +1622,7 @@ function SessionRow({
                     <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
                       <DropdownMenuItem
                         onSelect={onRename}
-                        className="flex items-center gap-2 py-1 text-xs"
+                        className="flex items-center gap-2 py-1 text-ui"
                       >
                         <SquarePenIcon className="size-3.5" />
                         <span>{t("sidebar.rename")}</span>
@@ -1435,7 +1630,7 @@ function SessionRow({
                       <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
                       <DropdownMenuItem
                         onSelect={() => { void (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id)).catch((error) => toast.error(String(error))); }}
-                        className="flex items-center gap-2 py-1 text-xs"
+                        className="flex items-center gap-2 py-1 text-ui"
                       >
                         {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
                         <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
@@ -1443,7 +1638,7 @@ function SessionRow({
                       <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
                       <DropdownMenuItem
                         onSelect={onArchive}
-                        className="flex items-center gap-2 py-1 text-xs"
+                        className="flex items-center gap-2 py-1 text-ui"
                       >
                         <ArchiveIcon className="size-3.5" />
                         <span>{t("sidebar.archive")}</span>
@@ -1462,7 +1657,7 @@ function SessionRow({
         >
           <ContextMenu.Item
             onSelect={onRename}
-            className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <SquarePenIcon className="size-3.5" />
             <span>{t("sidebar.rename")}</span>
@@ -1470,7 +1665,7 @@ function SessionRow({
           <ContextMenu.Separator className="my-1 h-px bg-border/60" />
           <ContextMenu.Item
             onSelect={() => { void (pinned ? sessionStore.unpin(row.id) : sessionStore.pin(row.id)).catch((error) => toast.error(String(error))); }}
-            className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             {pinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
             <span>{pinned ? t("sidebar.unpin") : t("sidebar.pin")}</span>
@@ -1478,7 +1673,7 @@ function SessionRow({
           <ContextMenu.Separator className="my-1 h-px bg-border/60" />
           <ContextMenu.Item
             onSelect={onArchive}
-            className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-xs outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <ArchiveIcon className="size-3.5" />
             <span>{t("sidebar.archive")}</span>
@@ -1486,130 +1681,5 @@ function SessionRow({
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
-  );
-}
-
-/** Inline multi-Agent chat launcher — sits under the New chat button in
- *  the sidebar. Click reveals a small popover listing every detected
- *  agent with a checkbox; user picks 2-4 then "Start" mints a pair
- *  and routes to /pair/<id>.
- *
- *  Deliberately compact: no modal, no fancy filtering. If the user
- *  has 3 detected agents and wants a pair, two clicks total.
- */
-function PairChatLauncher({ labelCls }: { labelCls: string }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const navigate = useNavigate();
-  const settings = useSettings();
-  const { data: agents = [] } = useQuery({
-    queryKey: AGENTS_QUERY_KEY,
-    queryFn: () => window.backchat.agentsList(),
-    enabled: open,
-  });
-  const enabled = agents.filter((a) => enabledAgentIds(settings).has(a.id) && isAgentRunnable(a));
-
-  const toggle = (id: string) => {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else if (next.size < 4) next.add(id);
-      return next;
-    });
-  };
-
-  const start = () => {
-    if (picked.size < 2) return;
-    const agentIds = enabled
-      .map((a) => a.id)
-      .filter((id) => picked.has(id));
-    const pair_id = sessionStore.newDraftPair(agentIds);
-    setOpen(false);
-    setPicked(new Set());
-    void navigate({ to: "/pair/$pairId", params: { pairId: pair_id } });
-  };
-
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={t("sidebar.pairChat")}
-          className={cn(
-            "app-no-drag mt-0.5 flex w-full items-center gap-2 rounded-md px-2 text-left text-xs",
-            "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg transition-colors",
-          )}
-          style={{ height: "var(--sidebar-row-h)" }}
-        >
-          <span className="sidebar-row-icon">
-            <UsersRoundIcon className="size-3.5" />
-          </span>
-          <span className={labelCls}>{t("sidebar.pairChat")}</span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
-        <div className="px-2 py-1.5 text-[11px] text-fg-subtle">
-          {t("sidebar.pickAgents")}
-        </div>
-        {enabled.length === 0 ? (
-          <div className="px-2 py-2 text-xs text-fg-muted">
-            {t("sidebar.noEnabledAgents")}
-          </div>
-        ) : (
-          enabled.map((a) => {
-            const isPicked = picked.has(a.id);
-            const atCap = !isPicked && picked.size >= 4;
-            return (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => toggle(a.id)}
-                disabled={atCap}
-                className={cn(
-                  "flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs",
-                  "hover:bg-[var(--control-bg-hover)]",
-                  atCap && "opacity-50",
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex size-3.5 shrink-0 items-center justify-center rounded border",
-                    isPicked
-                      ? "border-fg bg-fg text-bg"
-                      : "border-border bg-transparent",
-                  )}
-                >
-                  <CheckIcon className={cn("size-3", isPicked ? "opacity-100" : "opacity-0")} />
-                </span>
-                <span className="flex-1 truncate">{a.label}</span>
-                <span className="font-mono text-[10px] text-fg-subtle">
-                  {a.id}
-                </span>
-              </button>
-            );
-          })
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={() => void navigate({ to: "/settings/agents" })}
-          className="flex items-center gap-2 text-xs"
-        >
-          <CpuIcon className="size-3.5" />
-          <span>{t("sidebar.manageAgents")}</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={(e) => {
-            e.preventDefault();
-            start();
-          }}
-          disabled={picked.size < 2}
-          className="justify-center text-xs"
-        >
-          {t("sidebar.startMultiAgent", { count: picked.size })}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

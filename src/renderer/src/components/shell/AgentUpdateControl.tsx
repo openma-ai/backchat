@@ -6,7 +6,7 @@ import {
   InfoIcon,
   Loader2Icon,
   TriangleAlertIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 
 import type { AgentInfo } from "@shared/api";
 import { AgentIcon } from "@/components/AgentIcon";

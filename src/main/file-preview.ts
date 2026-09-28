@@ -1,7 +1,7 @@
-import { access, readdir } from "node:fs/promises";
+import { access, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
-export type LocalFilePreviewKind = "document" | "image" | "web" | "text";
+export type LocalFilePreviewKind = "document" | "image" | "web" | "text" | "directory";
 
 export interface LocalFilePreview {
   sourcePath: string;
@@ -68,6 +68,10 @@ async function resolveDocumentSidecar(sourcePath: string): Promise<string | null
 export async function resolveLocalFilePreview(
   sourcePath: string,
 ): Promise<LocalFilePreview | null> {
+  const metadata = await stat(sourcePath).catch(() => null);
+  if (metadata?.isDirectory()) {
+    return { sourcePath, previewPath: sourcePath, kind: "directory" };
+  }
   const extension = extname(sourcePath).toLowerCase();
   const directKind = DIRECT_PREVIEW_TYPES.get(extension);
   if (directKind && await existingFile(sourcePath)) {

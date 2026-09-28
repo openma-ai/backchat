@@ -46,6 +46,7 @@ export interface OpenmaAccountState {
 }
 
 export interface OpenmaAccountApi {
+  taskEnvironment(request: import("./task-environment.js").TaskEnvironmentRequest): Promise<import("./task-environment.js").TaskEnvironment>;
   openmaTasksList(scope?: OpenmaScope): Promise<OpenmaTask[]>;
   openmaTasksRefresh(scope?: OpenmaScope): Promise<OpenmaTask[]>;
   openmaTaskUpdate(id: string, patch: OpenmaTaskUpdate): Promise<OpenmaTask>;

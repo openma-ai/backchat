@@ -1,4 +1,4 @@
-import { GlobeIcon } from "lucide-react";
+import { GlobeIcon } from "@/components/Icons";
 import { useState } from "react";
 
 export function markdownLinkFaviconUrl(rawUrl: string): string | null {
@@ -43,10 +43,13 @@ export function MarkdownLinkFavicon({ url }: { url: string }) {
 }
 
 /** Adds the same favicon treatment to the DOM-only streaming renderer. */
-export function decorateStreamingHttpLinks(root: HTMLElement): void {
-  for (const anchor of root.querySelectorAll<HTMLAnchorElement>(
-    "a:not([data-markdown-http-link])",
-  )) {
+export function decorateStreamingHttpLinks(root: Element): void {
+  const selector = "a:not([data-markdown-http-link])";
+  const anchors = [
+    ...(root.matches(selector) ? [root as HTMLAnchorElement] : []),
+    ...root.querySelectorAll<HTMLAnchorElement>(selector),
+  ];
+  for (const anchor of anchors) {
     const url = (anchor.getAttribute("href") ?? "").trim();
     if (!/^https?:\/\//i.test(url)) continue;
     anchor.dataset.markdownHttpLink = "true";

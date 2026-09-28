@@ -61,6 +61,30 @@ further than the letter of it, settling on any turn that stopped running rather
 than only on a cancel we sent, because a killed agent process produces the same
 orphaned rows and the same events replay from disk afterwards.
 
+### 2.2 Authentication recovery
+
+[ACP AuthenticationRequired (`-32000`)](https://agentclientprotocol.com/protocol/v1/schema#errorcode)
+also applies when credentials expire during an existing session. A generic
+InternalError (`-32603`) is not itself evidence that authentication is needed.
+The active codex-acp 1.12.0 adapter can return InternalError for configured
+credentials with `data.codexErrorInfo: "unauthorized"` or a typed HTTP 401.
+Backchat recognizes that evidence only for `codex-acp`, while preserving the
+redacted RPC code, message and data on `session.error.error_details`. The shared
+runtime retains these fields on `promptError.errorDetails` as well as its
+legacy string and original rejection.
+
+Project adapters remember `session.error` but wait for the prompt boundary:
+an explicit terminal event wins; otherwise a settled failed prompt becomes
+`turn.failed`, not a synthetic interruption. A successful login reconnects the
+same local session and resumes its saved ACP session, including after an app
+restart. It clears the auth prompt only after reconnect succeeds and never
+automatically replays the failed input. Re-announcing a still-running child
+preserves its auth failure; a renderer reload is not a successful login.
+This follows the ACP
+[authentication lifecycle](https://agentclientprotocol.com/protocol/v1/authentication).
+The upstream standard-code fix is tracked in
+[codex-acp #505](https://github.com/agentclientprotocol/codex-acp/pull/505).
+
 ## 3. What codex-acp adds on top
 
 These are adapter extensions. ACP v1 has no field for any of them, so nothing

@@ -460,19 +460,20 @@ export function waitForTerminalExit(params: unknown): Promise<unknown> {
   });
 }
 
-export function killTerminal(params: unknown): void {
+export function killTerminal(params: unknown): Record<string, never> {
   const p = params as { terminalId: string };
   const rec = ptys.get(p.terminalId);
-  if (!rec || rec.exited) return;
+  if (!rec || rec.exited) return {};
   rec.terminationReason = "user_kill";
   try {
     rec.proc.kill("SIGTERM");
   } catch {
     /* already gone */
   }
+  return {};
 }
 
-export function releaseTerminal(params: unknown): void {
+export function releaseTerminal(params: unknown): Record<string, never> {
   const p = params as { terminalId: string };
   const rec = ptys.get(p.terminalId);
   if (rec) {
@@ -482,6 +483,7 @@ export function releaseTerminal(params: unknown): void {
     } catch { /* gone */ }
     ptys.delete(p.terminalId);
   }
+  return {};
 }
 
 // -------------------- Per-session cancellation -------------------------

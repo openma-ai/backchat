@@ -280,7 +280,9 @@ function detectCodexSubagentActivity(
     childId,
     task: agentPath,
     nickname,
-    status: activity === "interrupted" ? "cancelled" : "running",
+    // The interrupt request is not its completion. Keep the child running
+    // until the tool confirms completion; retain the native reported lifecycle.
+    status: activity === "interrupted" && tool.status === "completed" ? "cancelled" : "running",
   };
 }
 

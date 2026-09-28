@@ -88,7 +88,7 @@
   background: transparent;
   box-shadow: none;
   user-select: none;
-  font-size: 0.75rem;
+  font-size: var(--type-caption-size);
   font-weight: 400;
   transition:
     color var(--dur-quick) var(--ease-snap),
@@ -120,7 +120,8 @@
 }
 
 .app-compact-control:focus-visible {
-  outline: none;
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
   box-shadow: none;
 }
 
@@ -174,6 +175,58 @@
   height: var(--sidebar-row-action-icon-size);
 }
 
+/* Keep the project row highlighted while its menu is open. Actions use the
+   same compact circular hover/open treatment as session and pair rows. */
+.sidebar-project-surface:hover,
+.sidebar-project-row[data-menu-open="true"] > .sidebar-project-surface {
+  color: var(--control-fg-active);
+  background: var(--control-bg-hover);
+}
+.sidebar-row-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.sidebar-coordinator-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: var(--sidebar-row-h);
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--control-fg-rest);
+  text-align: left;
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-leading);
+  transition: color var(--dur-quick) var(--ease-snap),
+    background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar-coordinator-row:hover {
+  color: var(--control-fg-active);
+  background: var(--control-bg-hover);
+}
+.sidebar-coordinator-row[aria-current="page"] {
+  color: var(--control-fg-active);
+  background: var(--surface-selected);
+}
+.sidebar-coordinator-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.sidebar-coordinator-icon {
+  display: inline-flex;
+  flex: 0 0 var(--control-icon-size);
+  width: var(--control-icon-size);
+  height: var(--control-icon-size);
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-coordinator-icon > svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* One reserved trailing slot: running spinner and schedule clock occupy
    this same box so their centers stay on one column across rows. */
 .sidebar-row-trailing {
@@ -187,14 +240,53 @@
   margin-left: auto;
 }
 
-/* Sidebar rhythm — 2px between rows inside a section, one clear 16px step
-   between sections. Sections carry no trailing margins of their own, so the
-   ladder cannot drift when sections render conditionally. */
+/* Match the reference navigation rhythm: 28px rows with a 1px step. */
+.sidebar-navigation {
+  --sidebar-row-h: 28px;
+}
+/* Scroll viewports and collapsed groups clip outward focus rings. Keep
+   keyboard focus entirely inside the row, including after menu dismissal. */
+.sidebar-navigation :is(button, a):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.sidebar-navigation .text-ui {
+  font-weight: 500;
+}
+.sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 1px;
+}
+.sidebar-navigation .mt-0\.5 {
+  margin-top: 1px;
+}
 .sidebar-section + .sidebar-section {
-  margin-top: 16px;
+  margin-top: 1px;
+}
+.sidebar-section[data-state="open"] + .sidebar-section {
+  margin-top: 12px;
+}
+/* Environment headings use the smaller label role; groups align with nav icons. */
+.sidebar-scroll-area nav > .sidebar-section + .sidebar-section {
+  margin-top: 20px;
+}
+.sidebar-scroll-area nav > .sidebar-section > .sidebar-section-header > button {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+.sidebar-section-header > button {
+  color: var(--fg-muted);
+}
+.sidebar-scroll-area nav .sidebar-section .sidebar-section > .animated-collapse {
+  padding-left: 20px;
+}
+.sidebar-section-header > button > span:last-child {
+  display: inline-flex;
+  width: 12px;
+  justify-content: center;
 }
 
-/* Every sidebar row centers its 14px glyph inside one 16px box, so icon
+/* Every sidebar row centers its 16px glyph inside one 16px box, so icon
    edges and label starts stay on the same two rails from the nav rows at
    the top through sessions, pairs, projects, and the footer. */
 .sidebar-row-icon {
@@ -207,8 +299,8 @@
 }
 
 .sidebar-row-icon > svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 [data-composer-run-trigger] {
@@ -1478,6 +1570,15 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --motion-disclosure-duration: var(--dur-slow);
   --motion-disclosure-easing: var(--ease-soft);
   --composer-radius: 1rem;
+  /* Desktop typography roles, authored at 100% window zoom. */
+  --type-caption-size: 12px;
+  --type-caption-leading: 18px;
+  --type-ui-size: 13px;
+  --type-ui-leading: 20px;
+  --type-body-size: 14px;
+  --type-body-leading: 22px;
+  --type-heading-size: 15px;
+  --type-heading-leading: 24px;
 
   /* ---------- Theme-derived product semantics ----------
      Theme plugins provide the primitive palette. Product components consume
@@ -1741,6 +1842,14 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
 }
 
 @theme {
+  --text-caption: var(--type-caption-size);
+  --text-caption--line-height: var(--type-caption-leading);
+  --text-ui: var(--type-ui-size);
+  --text-ui--line-height: var(--type-ui-leading);
+  --text-body: var(--type-body-size);
+  --text-body--line-height: var(--type-body-leading);
+  --text-section: var(--type-heading-size);
+  --text-section--line-height: var(--type-heading-leading);
   --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
   --font-sans: "Geist Variable", -apple-system, "Segoe UI", sans-serif;
   --font-chat:
@@ -1826,8 +1935,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
 /* ---------- Base typography ---------- */
 body {
   font-family: var(--font-sans);
-  /* The BrowserWindow owns whole-UI scaling. Keep the base type tier stable
-     so the default 1.15 zoom does not double-enlarge body copy. */
+  /* Design tokens own interface sizing at 100% window zoom. */
   font-size: 0.875rem;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -2214,6 +2322,7 @@ body,
   }
   .animate-spin {
     animation-duration: 5s !important;
+    animation-iteration-count: infinite !important;
   }
 }
 
@@ -2321,12 +2430,35 @@ body,
    Backchat is a working tool: 14px/22px reads denser without crowding, and
    the transcript ends where the composer begins. */
 [data-chat-surface] :is(.chat-markdown, .streaming-md) {
-  line-height: 22px;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-leading);
 }
-[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(h1, h2, h3, h4) {
-  line-height: 24px;
-  margin-top: 10px;
-  margin-bottom: 4px;
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(h1, h2, h3, h4, h5, h6) {
+  font-size: var(--type-heading-size);
+  font-weight: 600;
+  line-height: var(--type-heading-leading);
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(h3, h4, h5, h6) {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-leading);
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(p, li, blockquote) {
+  font-size: inherit;
+  line-height: inherit;
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(pre, pre code, th, td) {
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-leading);
+}
+/* Inline code uses the compact reading tier without compounding em scales. */
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :not(pre) > code {
+  font-size: var(--type-ui-size);
+  font-weight: 400;
+  padding: 0.08em 0.25em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
 }
 [data-chat-surface] :is(.chat-markdown, .streaming-md) :is(p, ul, ol) {
   margin-block: 4px;
@@ -2335,7 +2467,8 @@ body,
   margin-block: 1px;
 }
 [data-chat-surface] .chat-markdown--thought {
-  line-height: 20px;
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-leading);
 }
 /* Prompt bubble follows the same rhythm. */
 [data-session-turn-prompt] p {
@@ -2365,12 +2498,9 @@ body,
     margin-bottom: 0 !important;
   }
 }
-/* Transcript → composer: 40px (Codex/ChatGPT use the same). The composer is
-   a distinct object, so it gets more air than any gap inside the transcript
-   (24px between turns); anything less reads as the last answer being
-   attached to the input. */
+/* Keep the final response controls 27px above the composer. */
 [data-chat-surface] .chat-scrollbar > div {
-  padding-bottom: 40px;
+  padding-bottom: 27px;
 }
 
 /* A field that is disabled mid-flow (e.g. the server URL while a browser
@@ -2378,4 +2508,24 @@ body,
 input:disabled::selection,
 textarea:disabled::selection {
   background: transparent;
+}
+
+/* Local paths read as compact file references, distinct from web links. */
+.markdown-local-file-link {
+  border-radius: 5px;
+  background: var(--surface-panel);
+  box-decoration-break: clone;
+  padding: 1px 5px;
+  color: var(--fg);
+  text-decoration: none !important;
+  font-size: 0.94em;
+}
+.markdown-local-file-link:hover {
+  background: var(--surface-selected);
+}
+
+/* Composer copy shares the response's reading tier. */
+[data-chat-surface] .composer-card textarea {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-leading);
 }

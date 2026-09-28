@@ -1,10 +1,12 @@
+import { defaultCoordinatorConfig } from "@/lib/project-coordinator";
+import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState } from "react";
 import {
   FolderIcon,
   FolderPlusIcon,
   StarIcon,
   XIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -36,30 +38,30 @@ export function ProjectFolderList({
       <button
         type="button"
         onClick={onAdd}
-        className="flex min-h-40 w-full flex-col items-center justify-center gap-3 rounded-xl bg-bg-surface/55 px-6 text-center text-sm text-fg-muted transition-colors hover:bg-bg-surface/75 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-lg bg-bg-surface/55 px-5 text-center text-sm text-fg-muted transition-colors hover:bg-bg-surface/75 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
-        <FolderPlusIcon className="size-7 text-fg-subtle" strokeWidth={1.6} />
+        <FolderPlusIcon className="size-6 text-fg-subtle" />
         <span>{t("project.addFolders")}</span>
       </button>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-xl bg-bg-surface/45">
+    <div className="overflow-hidden rounded-lg bg-bg-surface/45">
       <ul className="m-0 list-none divide-y divide-border/55 p-0">
         {folders.map((folder, index) => (
           <li
             key={folder}
-            className="group flex min-h-14 items-center gap-3 px-3 py-2"
+            className="group flex min-h-11 items-center gap-2.5 px-2.5 py-1.5"
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-bg/70 text-fg-muted">
-              <FolderIcon className="size-4" />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-bg/70 text-fg-muted">
+              <FolderIcon className="size-3.5" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-fg">
+              <span className="block truncate text-[13px] font-medium text-fg">
                 {folderName(folder)}
               </span>
-              <span className="block truncate text-xs text-fg-subtle" title={folder}>
+              <span className="block truncate text-[11px] text-fg-subtle" title={folder}>
                 {folder}
               </span>
             </span>
@@ -92,7 +94,7 @@ export function ProjectFolderList({
       <button
         type="button"
         onClick={onAdd}
-        className="flex min-h-10 w-full items-center justify-center gap-2 border-t border-border/55 px-3 text-xs text-fg-muted hover:bg-bg-surface/65 hover:text-fg"
+        className="flex min-h-9 w-full items-center justify-center gap-2 border-t border-border/55 px-3 text-xs text-fg-muted hover:bg-bg-surface/65 hover:text-fg"
       >
         <FolderPlusIcon className="size-3.5" />
         {t("project.addMoreFolders")}
@@ -112,12 +114,16 @@ export function CreateProjectDialog({
 }) {
   const { t } = useI18n();
   const [name, setName] = useState("");
+  const [goal, setGoal] = useState("");
+  const [projectId, setProjectId] = useState(() => `proj-${crypto.randomUUID()}`);
   const [folders, setFolders] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setName("");
+      setGoal("");
+      setProjectId(`proj-${crypto.randomUUID()}`);
       setFolders([]);
       setSaving(false);
     }
@@ -137,11 +143,14 @@ export function CreateProjectDialog({
     setSaving(true);
     try {
       const project = await window.backchat.projectSave({
-        project_id: `proj-${crypto.randomUUID()}`,
+        project_id: projectId,
         name: trimmedName,
         source_folders: folders,
         primary_folder: folders[0],
       });
+      if (goal.trim()) {
+        await window.backchat.projectWorkSave({ ...defaultCoordinatorConfig(project.id), description: goal.trim() });
+      }
       onCreated(project);
       onOpenChange(false);
     } catch (error) {
@@ -155,11 +164,11 @@ export function CreateProjectDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[min(680px,calc(100vw-32px))] max-w-none gap-0 rounded-2xl bg-popover p-0 sm:max-w-[680px]"
+        className="w-[min(520px,calc(100vw-32px))] max-w-none gap-0 rounded-xl bg-popover p-0 sm:max-w-[520px]"
         showCloseButton
       >
-        <DialogHeader className="gap-2 px-7 pb-5 pt-7">
-          <DialogTitle className="text-2xl font-semibold tracking-[-0.02em]">
+        <DialogHeader className="gap-1 px-5 pb-4 pt-5">
+          <DialogTitle className="text-base font-semibold tracking-[-0.01em]">
             {t("project.create")}
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -167,10 +176,10 @@ export function CreateProjectDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="px-7">
-          <label className="flex h-12 items-center overflow-hidden rounded-xl bg-bg-surface/55 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
-            <span className="flex h-full w-12 shrink-0 items-center justify-center border-r border-border/60 text-fg-muted">
-              <FolderIcon className="size-4.5" />
+        <div className="px-5">
+          <label className="flex h-9 items-center overflow-hidden rounded-lg bg-bg-surface/55 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
+            <span className="flex h-full w-9 shrink-0 items-center justify-center border-r border-border/60 text-fg-muted">
+              <FolderIcon className="size-4" />
             </span>
             <input
               autoFocus
@@ -178,11 +187,16 @@ export function CreateProjectDialog({
               onChange={(event) => setName(event.target.value)}
               placeholder={t("project.name")}
               aria-label={t("project.name")}
-              className="h-full min-w-0 flex-1 bg-transparent px-4 text-sm text-fg outline-none placeholder:text-fg-subtle"
+              className="h-full min-w-0 flex-1 bg-transparent px-3 text-sm text-fg outline-none placeholder:text-fg-subtle"
             />
           </label>
 
-          <div className="mb-3 mt-6 text-sm font-medium text-fg">
+          <label className="mt-4 grid gap-2 text-xs font-medium text-fg-muted">
+            {t("project.goal")}
+            <Textarea aria-label={t("project.goal")} value={goal} onChange={event => setGoal(event.target.value)} rows={2} className="resize-none" />
+          </label>
+
+          <div className="mb-2 mt-4 text-xs font-medium text-fg-muted">
             {t("project.sourceFolders")}
           </div>
           <ProjectFolderList
@@ -202,19 +216,21 @@ export function CreateProjectDialog({
           />
         </div>
 
-        <div className="mt-7 flex items-center justify-end gap-2 px-7 pb-7">
+        <div className="mt-5 flex items-center justify-end gap-2 px-5 pb-5">
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             onClick={() => onOpenChange(false)}
           >
             {t("common.cancel")}
           </Button>
           <Button
             type="button"
+            size="sm"
             disabled={!name.trim() || saving}
             onClick={() => void create()}
-            className="min-w-32"
+            className="min-w-24"
           >
             {saving ? t("project.creating") : t("project.create")}
           </Button>

@@ -1,6 +1,6 @@
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { Loader2Icon } from "lucide-react"
+import { Loader2Icon } from "@/components/Icons"
 
 function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
   const { t } = useI18n();

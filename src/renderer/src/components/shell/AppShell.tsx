@@ -1,6 +1,9 @@
+import { PanelLeftIcon, PanelRightIcon, SquareTerminalIcon } from "@/components/Icons";
+import { resourcePanelFitsGutter } from "@/lib/resource-panel-layout";
+import { TaskResourceMenu } from "./TaskResourceRail";
 import * as React from "react";
 import { useLocation, useRouter } from "@tanstack/react-router";
-import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon } from "@/components/Icons";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
@@ -100,6 +103,7 @@ export function AppShell({
   topbar,
   rightPanel,
   bottomPanel,
+  taskResources = Boolean(rightPanel),
   children,
   className,
 }: {
@@ -107,6 +111,7 @@ export function AppShell({
   topbar: React.ReactNode;
   rightPanel?: React.ReactNode;
   bottomPanel?: React.ReactNode;
+  taskResources?: boolean;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -125,6 +130,43 @@ export function AppShell({
   const [resizing, setResizing] = React.useState(false);
   const [sidebarWidth, setSidebarWidth] = React.useState(themeSidebarWidth);
   const [rightRailWidth, setRightRailWidth] = React.useState(380);
+  const [resourceOpen, setResourceOpen] = React.useState(false);
+  const [resourceFits, setResourceFits] = React.useState(false);
+  const shellRef = React.useRef<HTMLDivElement>(null);
+  const route = useLocation();
+  React.useLayoutEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const observed = new Set<Element>();
+    let frame = 0;
+    const measure = () => {
+      const columns = [...shell.querySelectorAll<HTMLElement>("[data-chat-column='turns'], .chat-composer-frame")];
+      const visible = columns.filter(el => el.getBoundingClientRect().width > 0);
+      for (const el of [shell, ...shell.querySelectorAll("main"), ...columns]) {
+        if (!observed.has(el)) { observed.add(el); resize.observe(el); }
+      }
+      const rect = shell.getBoundingClientRect();
+      const scale = shell.offsetWidth ? rect.width / shell.offsetWidth : 1;
+      setResourceFits(visible.length > 0 && resourcePanelFitsGutter(
+        rect.right, Math.max(...visible.map(el => el.getBoundingClientRect().right)), scale,
+      ));
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    const resize = new ResizeObserver(schedule);
+    // Discover the transcript after async history loading, then observe sizes only.
+    const mount = new MutationObserver(() => {
+      measure();
+      if (shell.querySelector(".chat-composer-frame")) mount.disconnect();
+    });
+    mount.observe(shell, { childList: true, subtree: true });
+    measure();
+    return () => { cancelAnimationFrame(frame); resize.disconnect(); mount.disconnect(); };
+  }, [route.pathname, leftCollapsed, sidebarWidth, rightCollapsed]);
+  const resourceDocked = resourceFits && rightCollapsed && bottomCollapsed && !rightExpanded;
+
   const hasTopbar = topbar != null;
 
   React.useEffect(() => {
@@ -153,6 +195,7 @@ export function AppShell({
 
   return (
     <div
+      ref={shellRef}
       className={cn(
         "app-canvas-surface relative h-full text-fg",
         className,
@@ -179,8 +222,8 @@ export function AppShell({
           to the main column's x-range). */}
       <aside
         className={cn(
-          "absolute flex flex-col overflow-hidden transform-gpu",
-          "app-rail-surface theme-sidebar-background rounded-2xl",
+          "absolute flex flex-col transform-gpu",
+          "app-rail-surface theme-sidebar-background rounded-2xl [&::before]:rounded-[inherit]",
         )}
         style={{
           left: "var(--stage-inset)",
@@ -198,7 +241,12 @@ export function AppShell({
         }}
         aria-hidden={leftCollapsed}
       >
-        {sidebar}
+        {/* Clip the contents, not the divider. The scroll area's overlay track
+            has its own stacking order; keep it inside this content layer so
+            it cannot cover the sidebar's full-height resize edge. */}
+        <div className="relative z-0 min-h-0 flex-1 overflow-hidden rounded-[inherit]">
+          {sidebar}
+        </div>
         <RailResizer side="right" width={sidebarWidth} onResize={setSidebarWidth} onResizingChange={setResizing} />
       </aside>
 
@@ -245,6 +293,7 @@ export function AppShell({
         </aside>
       )}
 
+
       {/* Main region — paddingLeft/Right expand/contract to match each
           floating card's footprint. Same easing curve as the cards'
           slide so all motions feel coupled. */}
@@ -268,7 +317,6 @@ export function AppShell({
           transition: resizing ? "none" : MAIN_TR,
         }}
       >
-        {hasTopbar && (
           <header
             className={cn(
               "flex shrink-0 items-center gap-2",
@@ -279,7 +327,7 @@ export function AppShell({
               // at center y = 25, matching the trafficLight center (y=18+7)
               // and the global toggle center (y=13+12). All three "top
               // chrome" row elements share one baseline.
-              height: "50px",
+              height: hasTopbar ? "50px" : "36px",
               paddingLeft: leftCollapsed
                 ? // Keep collapsed topbar content clear of the persistent
                   // sidebar, back, and forward chrome controls.
@@ -291,7 +339,6 @@ export function AppShell({
           >
             {topbar}
           </header>
-        )}
         <main
           // Pages own their own scrolling (e.g. <Conversation> uses
           // use-stick-to-bottom, SettingsLayout wraps in its own
@@ -353,6 +400,15 @@ export function AppShell({
           doesn't make the icon jump. */}
       <GlobalSidebarToggle />
       <GlobalHistoryControls />
+      {taskResources && (!rightPanel || !rightExpanded) && <div className="app-no-drag fixed z-50" style={{
+        top: "var(--chrome-top)",
+        // The side-panel toggle moves into its own header when open.
+        // Reserve slots only for controls still present above the chat.
+        right: `calc(${rightCollapsed || !rightPanel ? "0px" : "var(--right-rail-w) + var(--stage-inset)"} + var(--chrome-gap) + ${Number(Boolean(rightPanel) && rightCollapsed) + Number(Boolean(bottomPanel) && bottomCollapsed)} * (var(--chrome-size) + var(--chrome-gap)))`,
+        transition: "right 280ms cubic-bezier(0.32, 0.72, 0, 1)",
+      }}>
+        <TaskResourceMenu open={resourceOpen} onOpenChange={setResourceOpen} docked={resourceDocked} />
+      </div>}
       {/* Right-rail / bottom-panel toggles only show inside a chat
           context. On `/` (no active chat) + on /settings the user
           hasn't picked anything to talk about yet, and the side / bottom
@@ -451,22 +507,7 @@ function GlobalSideChatToggle() {
         transition: "right 280ms cubic-bezier(0.32, 0.72, 0, 1)",
       }}
     >
-      <svg
-        viewBox="0 0 16 16"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {/* Card-with-right-strip glyph — visually the mirror of the
-            left toggle so users read the pair as "open the panel on
-            THIS side". */}
-        <rect x="2" y="3" width="12" height="10" rx="1.5" />
-        <line x1="10" y1="3" x2="10" y2="13" />
-      </svg>
+      <PanelRightIcon className="size-3.5" />
     </button>
   );
 }
@@ -491,19 +532,7 @@ function GlobalSidebarToggle() {
         top: "var(--chrome-top)",
       }}
     >
-      <svg
-        viewBox="0 0 16 16"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="2" y="3" width="12" height="10" rx="1.5" />
-        <line x1="6" y1="3" x2="6" y2="13" />
-      </svg>
+      <PanelLeftIcon className="size-3.5" />
     </button>
   );
 }
@@ -553,7 +582,7 @@ function GlobalHistoryControls() {
         title={t("chrome.back")}
         className={buttonClass}
       >
-        <ArrowLeftIcon className="size-4" strokeWidth={1.5} />
+        <ArrowLeftIcon className="size-4" />
       </button>
       <button
         type="button"
@@ -563,7 +592,7 @@ function GlobalHistoryControls() {
         title={t("chrome.forward")}
         className={buttonClass}
       >
-        <ArrowRightIcon className="size-4" strokeWidth={1.5} />
+        <ArrowRightIcon className="size-4" />
       </button>
     </div>
   );
@@ -624,23 +653,7 @@ function GlobalTerminalToggle({ hasRightPanel }: { hasRightPanel: boolean }) {
         transition: "right 280ms cubic-bezier(0.32, 0.72, 0, 1)",
       }}
     >
-      <svg
-        viewBox="0 0 16 16"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {/* Square terminal — matches lucide SquareTerminalIcon used on
-            the bottom-panel tab chips, so the toggle and the chip
-            read as the same family. */}
-        <rect x="2" y="3" width="12" height="10" rx="1.5" />
-        <polyline points="5,7 7.5,9 5,11" />
-        <line x1="9.5" y1="11" x2="11.5" y2="11" />
-      </svg>
+      <SquareTerminalIcon className="size-3.5" />
     </button>
   );
 }
@@ -820,8 +833,10 @@ function RailResizer({
         // Keep the forgiving drag target and resize cursor, but do not draw a
         // full-height hover rule. On a translucent rail that one-pixel rule
         // recomposited as a bright vertical strip beside the glass edge.
-        "absolute inset-y-2 z-30 w-2 cursor-ew-resize",
-        side === "right" ? "-right-1" : "-left-1",
+        "app-no-drag absolute inset-y-0 z-30 w-2 cursor-ew-resize touch-none",
+        // Most of the sidebar hit lane lives outside its clipped contents,
+        // leaving the scroll thumb's center independently draggable.
+        side === "right" ? "-right-1.5" : "-left-1",
       )}
     />
   );

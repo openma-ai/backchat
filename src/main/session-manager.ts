@@ -86,13 +86,16 @@ import type {
 import { extractAcpSystemNotice } from "../shared/acp-system-notices.js";
 import {
   isAuthenticationFailureMessage,
+  isAuthenticationRequiredError,
   sanitizeAuthenticationMessage,
+  sessionErrorDetails,
 } from "../shared/auth-errors.js";
 import type { AgentMessageDelivery } from "../shared/agent-interaction.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
 import {
   appendEvent,
   archiveSession,
+  getSession,
   setSessionTitle,
   setSessionTitleIfEmpty,
   touchSession,
@@ -142,6 +145,7 @@ interface ActiveSession {
   promptQueueEnabled: boolean;
   /** Main-process timestamp used only for start→prompt latency diagnostics. */
   readyAt: number;
+  auth?: SessionAuthObservation;
   /** Latest complete ACP slash-command catalog for renderer re-announcement.
    * Session-scoped only: never restored from SQLite across process restarts. */
   latestAvailableCommandsUpdate: unknown | null;
@@ -249,6 +253,7 @@ export interface SessionManagerDeps {
     workspaceId?: string;
   }) => Promise<{
     workspaceId: string | null;
+    projectId?: string | null;
     cwd: string;
     additionalDirectories: string[];
     created: boolean;
@@ -306,7 +311,7 @@ export class SessionManager {
     session_id: string,
     sess: Pick<
       ActiveSession,
-      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "workspaceId" | "acp"
+      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "workspaceId" | "acp" | "auth"
     >,
   ): SessionStartResult {
     this.#transition(session_id, {
@@ -315,6 +320,7 @@ export class SessionManager {
     });
     const result: Extract<SessionStartResult, { status: "ready" }> = {
       status: "ready",
+      ...(sess.auth ? { auth: sess.auth } : {}),
       session_id,
       acp_session_id: sess.acpSessionId,
       agent_id: sess.agentId,
@@ -342,6 +348,7 @@ export class SessionManager {
     };
     this.#send({
       type: "session.ready",
+      ...(result.auth ? { auth: result.auth } : {}),
       session_id,
       acp_session_id: result.acp_session_id,
       agent_id: result.agent_id,
@@ -416,10 +423,18 @@ export class SessionManager {
     error?: unknown;
     agentId?: string;
   }): Promise<void> {
-    const authRequired = isAuthRequiredError(p.error)
+    const authRequired = isAuthenticationRequiredError(p.error, p.agentId)
       || isAuthenticationFailureMessage(p.message);
-    const message = sanitizeAuthenticationMessage(p.message);
+    const errorDetails = sessionErrorDetails(p.error);
+    const detailMessage = eventRecord(errorDetails?.data)?.message;
+    const message = sanitizeAuthenticationMessage(
+      authRequired && typeof detailMessage === "string" && detailMessage.trim()
+        ? detailMessage
+        : errorDetails?.message ?? p.message,
+    );
     let auth: SessionAuthObservation | undefined;
+    const active = this.#sessions.get(p.session_id);
+    if (authRequired && active) active.auth = { status: "needs-auth", message };
     if (authRequired && p.agentId && this.#observeAuth) {
       try {
         auth = await this.#observeAuth(p.agentId, {
@@ -430,11 +445,15 @@ export class SessionManager {
         auth = undefined;
       }
     }
+    if (authRequired && auth) auth = { ...auth, status: "needs-auth" };
+    if (authRequired && active && this.#sessions.get(p.session_id) === active)
+      active.auth = { ...auth, status: "needs-auth", message: auth?.message ?? message };
     this.#send({
       type: "session.error",
       session_id: p.session_id,
       ...(p.turn_id ? { turn_id: p.turn_id } : {}),
       message,
+      ...(errorDetails ? { error_details: errorDetails } : {}),
       ...(authRequired
         ? {
             code: "auth_required" as const,
@@ -491,7 +510,26 @@ export class SessionManager {
     options: { mode: SessionRestartMode },
   ): Promise<SessionRestartResult> {
     const sess = this.#sessions.get(session_id);
-    if (!sess) throw new Error("no such session");
+    if (!sess) {
+      // A login recovery can happen after the app (or the failed child) has
+      // exited. Restore the saved identity/workspace, without replaying a turn.
+      const saved = getSession(session_id);
+      if (!saved) throw new Error("no such session");
+      const result = await this.start({
+        session_id,
+        agent_id: saved.agent_id,
+        cwd: saved.cwd,
+        additional_directories: saved.additional_directories ?? undefined,
+        project_id: saved.project_id ?? undefined,
+        workspace_id: saved.workspace_id ?? undefined,
+        resume: saved.acp_session_id ? { acp_session_id: saved.acp_session_id } : undefined,
+      });
+      if (result.status !== "ready") {
+        throw new Error(result.status === "error" ? result.message : `ACP session restart ${result.status}`);
+      }
+      this.#send({ type: "session.restarted", session_id });
+      return { session_id, status: "restarted" };
+    }
     if (sess.orchestration.requestRestart(options.mode) === "pending") {
       this.#send({ type: "session.restart_pending", session_id });
       return { session_id, status: "pending" };
@@ -804,6 +842,7 @@ export class SessionManager {
         return { status: "cancelled", session_id: p.session_id };
       }
       const workspaceId = preparedWorktrees?.workspaceId ?? null;
+      const projectId = preparedWorktrees?.projectId ?? (p.project_id?.trim() || undefined);
       const activeSession: ActiveSession = {
         id: p.session_id,
         acp: acpSession,
@@ -811,10 +850,11 @@ export class SessionManager {
         agentId: agent.id,
         cwd: sessionCwd,
         additionalDirectories,
-        projectId: p.project_id?.trim() || undefined,
+        projectId: projectId || undefined,
         workspaceId,
         startParams: {
           ...p,
+          project_id: projectId || undefined,
           cwd: sessionCwd,
           additional_directories: additionalDirectories,
           // A restart resumes into the same workspace by id, never by
@@ -849,7 +889,7 @@ export class SessionManager {
         cwd: sessionCwd,
         acp_session_id: acpSession.acpSessionId,
         last_used_at: Date.now(),
-        project_id: p.project_id?.trim() || null,
+        project_id: projectId || null,
         additional_directories: additionalDirectories,
         workspace_id: workspaceId,
       });
@@ -1529,6 +1569,7 @@ export class SessionManager {
     this.#transition(p.session_id, { type: "prompt.requested", turnId: p.turn_id });
     sess.turns.set(p.turn_id, ctrl);
     let promptErr: string | null = null;
+    let promptErrorDetails: unknown;
 
     // Per-turn accumulators for persistence. Originally we coalesced
     // every agent_message_chunk into a single agent_message row at
@@ -1610,6 +1651,7 @@ export class SessionManager {
         }
         if (t === "promptError") {
           promptErr = (ev as { error?: string }).error ?? "ACP prompt error (no message)";
+          promptErrorDetails = (ev as { errorDetails?: unknown }).errorDetails;
           continue;
         }
         if (!loggedFirstEvent) {
@@ -1705,6 +1747,7 @@ export class SessionManager {
           turn_id: p.turn_id,
           message: promptErr,
           agentId: sess.agentId,
+          error: promptErrorDetails,
         });
       } else if (
         sess.agentId === "pi-acp" &&
@@ -2087,14 +2130,6 @@ function formatErrorChain(error: unknown): string {
     current = current instanceof Error ? current.cause : undefined;
   }
   return messages.join(" <- ").slice(0, 4_000);
-}
-
-function isAuthRequiredError(error: unknown): boolean {
-  if (typeof error === "string") return isAuthenticationFailureMessage(error);
-  if (!error || typeof error !== "object") return false;
-  if ((error as { code?: unknown }).code === -32000) return true;
-  const message = (error as { message?: unknown }).message;
-  return typeof message === "string" && isAuthenticationFailureMessage(message);
 }
 
 function sanitizeDiagnosticLine(line: string): string {

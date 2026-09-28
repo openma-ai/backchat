@@ -119,9 +119,23 @@ export function ResponseAnnotationController({
       });
     };
 
+    const dismissOutside = (event: Event) => {
+      const target = event.target as Node | null;
+      if (target && !scope.contains(target) && !toolbarRef.current?.contains(target)) setSelection(null);
+    };
+    const dismiss = () => setSelection(null);
+    setSelection(null);
+    window.addEventListener("blur", dismiss);
+    document.addEventListener("pointerdown", dismissOutside, true);
+    document.addEventListener("focusin", dismissOutside);
+    document.addEventListener("selectionchange", readSelection);
     scope.addEventListener("mouseup", readSelection);
     scope.addEventListener("keyup", readSelection);
     return () => {
+      window.removeEventListener("blur", dismiss);
+      document.removeEventListener("pointerdown", dismissOutside, true);
+      document.removeEventListener("focusin", dismissOutside);
+      document.removeEventListener("selectionchange", readSelection);
       scope.removeEventListener("mouseup", readSelection);
       scope.removeEventListener("keyup", readSelection);
     };
@@ -354,9 +368,9 @@ const SelectionToolbar = function SelectionToolbar({
       style={{ left: position.left, top: position.top, transform: "translateX(-50%)" }}
       onPointerDown={preserveSelection}
     >
-      <SelectionAction onClick={onAdd}>Add to prompt</SelectionAction>
+      <SelectionAction onClick={onAdd}>{t("annotation.addToPrompt")}</SelectionAction>
       {showSideChatAction && (
-        <SelectionAction onClick={onAskInSideChat}>Ask in side chat</SelectionAction>
+        <SelectionAction onClick={onAskInSideChat}>{t("annotation.askInSideChat")}</SelectionAction>
       )}
     </div>
   );

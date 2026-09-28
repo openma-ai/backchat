@@ -1,3 +1,4 @@
+import { SearchField } from "@/components/ui/search-field";
 import { useI18n } from "@/lib/i18n";
 import {
   useCallback,
@@ -17,10 +18,9 @@ import {
   FileTextIcon,
   MessageCirclePlusIcon,
   RotateCwIcon,
-  SearchIcon,
   Settings2Icon,
   XIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { toast } from "sonner";
 import type {
   BrowserElementHoverInfo,
@@ -923,14 +923,14 @@ export function BrowserTab({
             findNextInBrowser(webviewRef.current, findQuery);
           }}
         >
-          <SearchIcon className="size-3.5 shrink-0 text-fg-subtle" />
-          <input
-            ref={findInputRef}
-            value={findQuery}
-            onChange={(event) => setFindQuery(event.target.value)}
-            placeholder={t("shell.findInPage")}
-            className="h-7 min-w-0 flex-1 bg-transparent text-xs text-fg outline-none placeholder:text-fg-subtle"
-          />
+          <SearchField className="flex-1 px-0">
+            <input
+              ref={findInputRef}
+              value={findQuery}
+              onChange={(event) => setFindQuery(event.target.value)}
+              placeholder={t("shell.findInPage")}
+            />
+          </SearchField>
           <button
             type="button"
             onClick={closeFind}

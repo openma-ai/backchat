@@ -25,6 +25,13 @@ beforeEach(() => {
 });
 
 describe("previewLocalFile", () => {
+  it("opens directories in the native file manager without a preview tab", async () => {
+    backchat.uiFsResolvePreview.mockResolvedValue({ sourcePath: "/tmp/backend", previewPath: "/tmp/backend", kind: "directory" });
+    backchat.uiFsOpenPath.mockResolvedValue("");
+    await previewLocalFile("/tmp/backend");
+    expect(backchat.uiFsOpenPath).toHaveBeenCalledWith({ path: "/tmp/backend" });
+    expect(store.openSideTab).not.toHaveBeenCalled();
+  });
   it.each(["doc", "docx", "ppt", "pptx", "xls", "xlsx"])(
     "opens .%s files as right-sidebar artifact tabs when no preview exists",
     async (extension) => {

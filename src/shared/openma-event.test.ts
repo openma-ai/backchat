@@ -1848,4 +1848,24 @@ describe("SessionEventOut → OpenMA event boundary", () => {
       turn_id: "turn-1",
     });
   });
+
+  it("preserves structured authentication evidence in canonical session errors", () => {
+    const details = {
+      code: -32603,
+      message: "Internal error",
+      data: { codexErrorInfo: "unauthorized", message: "Sign in again" },
+    };
+    expect(toOpenMAEvent({
+      type: "session.error",
+      session_id: "sess-auth",
+      turn_id: "turn-auth",
+      message: "Sign in again",
+      code: "auth_required",
+      agent_id: "codex-acp",
+      error_details: details,
+    }, options)).toMatchObject({
+      type: "session.error",
+      data: { code: "auth_required", error_details: details },
+    });
+  });
 });

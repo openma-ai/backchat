@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PlugIcon } from "lucide-react";
+import { PlugIcon } from "@/components/Icons";
 import { useI18n } from "@/lib/i18n";
 import { useOpenmaAccount } from "@/lib/openma-account";
 import type { AgentConnectionProvider } from "@shared/openma";

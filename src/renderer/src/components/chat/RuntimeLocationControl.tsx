@@ -1,6 +1,6 @@
 import { openmaWorkspaceScope } from "@shared/openma";
 import { openmaTargets } from "@/lib/openma-targets";
-import { CheckIcon, ChevronDownIcon, CloudIcon, MonitorIcon, ServerIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, CloudIcon, MonitorIcon, ServerIcon } from "@/components/Icons";
 import { useNavigate } from "@tanstack/react-router";
 import { useOpenmaAccount, useOpenmaCatalog } from "@/lib/openma-account";
 import { sessionStore, useSessionStore, selectActive, type SessionRow } from "@/lib/session-store";
@@ -33,7 +33,7 @@ export function RuntimeLocationControl({ title, className, session }: { title?: 
           <ChevronDownIcon data-control-chevron />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} className="w-[var(--composer-menu-width)] max-h-[60vh] overflow-y-auto">
+      <DropdownMenuContent side="top" align="start" sideOffset={0} className="w-[var(--composer-menu-width)] max-h-[60vh] overflow-y-auto">
         <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/openma" })}>{t(account?.status === "signed_in" ? "openma.account" : "openma.signIn")}</DropdownMenuItem>
         <DropdownMenuSeparator />
         {locked ? <DropdownMenuLabel className="text-xs font-normal">{t("openma.fixedLocation")}</DropdownMenuLabel> : !target ? (

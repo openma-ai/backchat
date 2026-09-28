@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
+import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n";
 import { loadOlderHistory } from "@/lib/history-paging";
@@ -75,12 +76,18 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
   const hasMore = window?.hasMore ?? false;
   const loading = window?.loading ?? false;
   const oldestSeq = window?.oldestSeq;
+  const [settling, setSettling] = useState(false);
+  const busy = useRef(false);
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
 
   // Scroll anchor captured right before a page is requested.
   const anchor = useRef<{ height: number; top: number } | null>(null);
 
   const requestOlder = useCallback(() => {
-    if (!hasMore || loading) return;
+    if (!hasMore || loading || busy.current) return;
+    busy.current = true;
+    setSettling(true);
     const scrollEl = stick.scrollRef.current;
     if (scrollEl) {
       anchor.current = { height: scrollEl.scrollHeight, top: scrollEl.scrollTop };
@@ -90,6 +97,8 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
     }
     void loadOlderHistory(sessionId).catch((error: unknown) => {
       anchor.current = null;
+      busy.current = false;
+      setSettling(false);
       toast.error(error instanceof Error ? error.message : "Couldn't load earlier messages");
     });
   }, [hasMore, loading, sessionId, stick]);
@@ -115,7 +124,13 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
       Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight - fromBottom),
     );
     let userScrolled = false;
-    const onUserScroll = () => { userScrolled = true; };
+    const onUserScroll = () => {
+      userScrolled = true;
+      // Initial layout settling must never fight an explicit scroll. This is
+      // especially visible when offscreen turns acquire their measured height.
+      stop();
+      stick.stopScroll();
+    };
     scrollEl.addEventListener("wheel", onUserScroll, { passive: true });
     scrollEl.addEventListener("touchmove", onUserScroll, { passive: true });
     scrollEl.addEventListener("keydown", onUserScroll);
@@ -135,16 +150,56 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId]);
 
-  // 2a. Preserve the viewport after older rows are prepended. oldestSeq
-  // changes exactly when the store rebuilt turns from a larger window.
+  // Keep the current viewport until the prepended content has laid out.
+  // The anchor is refreshed by user scrolls during the request, not frozen at
+  // the prefetch threshold hundreds of pixels away from the eventual boundary.
   useLayoutEffect(() => {
+    if (loading || !busy.current) return;
     const a = anchor.current;
     const scrollEl = stickRef.current.scrollRef.current;
-    if (!a || !scrollEl) return;
-    anchor.current = null;
-    const delta = scrollEl.scrollHeight - a.height;
-    if (delta > 0) scrollEl.scrollTop = a.top + delta;
-  }, [oldestSeq]);
+    if (!a || !scrollEl) {
+      busy.current = false;
+      setSettling(false);
+      return;
+    }
+    const restore = () => {
+      scrollEl.scrollTop = Math.max(0, a.top + scrollEl.scrollHeight - a.height);
+    };
+    restore();
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      restore();
+      second = requestAnimationFrame(() => {
+        restore();
+        anchor.current = null;
+        busy.current = false;
+        setSettling(false);
+      });
+    });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [oldestSeq, loading]);
+
+  useEffect(() => {
+    const scrollEl = stickRef.current.scrollRef.current;
+    if (!scrollEl) return;
+    const previous = scrollEl.style.overscrollBehaviorY;
+    scrollEl.style.overscrollBehaviorY = "none";
+    const track = () => {
+      if (loadingRef.current && anchor.current) {
+        anchor.current = { height: scrollEl.scrollHeight, top: Math.max(0, scrollEl.scrollTop) };
+      }
+    };
+    const holdWhileMounting = (event: WheelEvent) => {
+      if (busy.current && !loadingRef.current && event.deltaY < 0) event.preventDefault();
+    };
+    scrollEl.addEventListener("scroll", track, { passive: true });
+    scrollEl.addEventListener("wheel", holdWhileMounting, { passive: false });
+    return () => {
+      scrollEl.style.overscrollBehaviorY = previous;
+      scrollEl.removeEventListener("scroll", track);
+      scrollEl.removeEventListener("wheel", holdWhileMounting);
+    };
+  }, [sessionId]);
 
   // 2b. Auto-fetch near the top. Passive scroll listener + rAF, no
   // observers (see ConversationTimeline for why).
@@ -172,17 +227,14 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
     };
   }, [hasMore, requestOlder, stick.scrollRef]);
 
-  // Paging is invisible: scrolling up simply keeps going. The only visible
-  // trace is a thin progress line while a page is in flight, so a pause at
-  // the top edge reads as "fetching" rather than "end of history".
-  if (!hasMore || !loading) return null;
+  if (!loading && !settling) return null;
   return (
     <div
       role="status"
       aria-label={t("chat.loadingEarlier")}
-      className="pointer-events-none absolute inset-x-0 top-0 z-20 h-px overflow-hidden"
+      className="pointer-events-none absolute left-1/2 top-3 z-20 flex size-8 -translate-x-1/2 items-center justify-center rounded-full bg-bg/95 text-fg-muted shadow-sm"
     >
-      <div className="history-progress h-full w-1/3 bg-fg/40" />
+      <Spinner className="size-4" />
     </div>
   );
 }

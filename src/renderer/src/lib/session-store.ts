@@ -23,6 +23,7 @@ import type { OpenmaScope, OpenmaExecutionTarget, OpenmaTask, OpenmaTaskSnapshot
 import { projectOpenmaTask } from "./openma-task-projection";
 import type {
   PromptAttachment,
+  PromptAnnotation,
   PromptSessionReference,
   SessionEventOut,
 } from "@shared/session-events.js";
@@ -30,7 +31,9 @@ import type { BrowserPluginStateEvent } from "@shared/browser-plugin.js";
 import { splitAcpSystemNoticeText } from "@shared/acp-system-notices.js";
 import {
   isAuthenticationFailureMessage,
+  isAuthenticationRequiredError,
   sanitizeAuthenticationMessage,
+  sessionErrorDetails,
 } from "@shared/auth-errors.js";
 import {
   createOpenMAEvent,
@@ -554,8 +557,10 @@ export class SessionStore {
       const capabilities = isPlainRecord(data.capabilities)
         ? data.capabilities
         : {};
+      const auth = canonicalSessionAuth(data.auth);
       this.#mutateSession(event.session_id, (session) => ({
         ...session,
+        ...(auth ? { auth, authRequired: auth.status === "needs-auth" } : {}),
         acp_session_id:
           typeof data.acp_session_id === "string"
             ? data.acp_session_id
@@ -676,12 +681,26 @@ export class SessionStore {
             && typeof data.provider_error.message === "string"
               ? data.provider_error.message
               : "Agent session failed";
-      if (isAuthenticationFailureMessage(message)) {
+      const agentId = typeof data.agent_id === "string"
+        ? data.agent_id
+        : this.#sessions.get(event.session_id)?.agent_id ?? event.source.harness;
+      const errorDetails = sessionErrorDetails(data.error_details);
+      const auth = canonicalSessionAuth(data.auth);
+      if (
+        data.code === "auth_required"
+        || auth?.status === "needs-auth"
+        || isAuthenticationRequiredError(errorDetails, agentId)
+        || isAuthenticationFailureMessage(message)
+      ) {
         this.apply({
           type: "session.error",
           session_id: event.session_id,
           message,
           code: "auth_required",
+          agent_id: agentId,
+          auth,
+          error_details: errorDetails,
+          openma_event: event,
           ...(event.turn_id ? { turn_id: event.turn_id } : {}),
         });
         return true;
@@ -1003,6 +1022,7 @@ export class SessionStore {
     this.#mutateSession(id, (s) => ({
       ...s,
       chosenCwd: normalizedCwd,
+      projectSelectionExplicit: true,
       projectScope: normalizedCwd ? "project" : "none",
       projectId: undefined,
       additionalDirectories: undefined,
@@ -1809,7 +1829,7 @@ export class SessionStore {
    *  session id so the caller can navigate to /chat/$id. */
   newDraft(
     chosenCwd?: string | {
-      projectId: string;
+      projectId?: string;
       sourceFolders: string[];
       /** Start inside this workspace instead of the live source folders. */
       workspaceId?: string | null;
@@ -1843,7 +1863,7 @@ export class SessionStore {
       status: "draft",
       createdAt: Date.now(),
       chosenCwd: normalizedCwd,
-      projectId: project?.projectId.trim() || undefined,
+      projectId: project?.projectId?.trim() || undefined,
       additionalDirectories: roots.length > 1 ? roots.slice(1) : undefined,
       workspaceId: project?.workspaceId ?? undefined,
       projectScope: project || normalizedCwd ? "project" : "none",
@@ -1993,6 +2013,7 @@ export class SessionStore {
     delivery?: TurnDeliveryMeta,
     sessionReferences: PromptSessionReference[] = [],
     attachments: PromptAttachment[] = [],
+    annotations: PromptAnnotation[] = [],
   ): void {
     const row = this.#sessions.get(sessionId);
     const waitsForSteeringBoundary =
@@ -2003,6 +2024,7 @@ export class SessionStore {
       id: turnId,
       sessionId,
       promptText,
+      annotations: annotations.length ? annotations : undefined,
       attachments: attachments.length > 0
         ? attachments.map(({ data: _data, ...attachment }) => attachment)
         : undefined,
@@ -3173,6 +3195,7 @@ export class SessionStore {
               id: tid,
               sessionId,
               promptText: typeof input.text === "string" ? input.text : "",
+              annotations: Array.isArray(input.annotations) ? input.annotations as PromptAnnotation[] : undefined,
               attachments: Array.isArray(input.attachments)
                 ? input.attachments as PromptAttachment[]
                 : undefined,
@@ -3352,6 +3375,7 @@ export class SessionStore {
           id: tid,
           sessionId,
           promptText: (data as { text?: string })?.text ?? "",
+          annotations: (data as { annotations?: PromptAnnotation[] })?.annotations,
           attachments: (
             data as { attachments?: PromptAttachment[] }
           )?.attachments,
@@ -3505,6 +3529,7 @@ export class SessionStore {
           && typeof ev.openma_event.data === "object"
             ? ev.openma_event.data as Record<string, unknown>
             : undefined;
+        const auth = ev.auth ?? canonicalSessionAuth(canonicalStart?.auth);
         const configOptions =
           normalizeAgentConfigOptions(canonicalStart?.config_options)
           ?? normalizeAgentConfigOptions(ev.config_options)
@@ -3546,8 +3571,8 @@ export class SessionStore {
             supportsNes: ev.supports_nes ?? s.supportsNes,
             status: s.activeTurnId ? "running" : "ready",
             lastError: undefined,
-            authRequired: false,
-            auth: {
+            authRequired: auth?.status === "needs-auth",
+            auth: auth ?? {
               status: "configured",
               message: "ACP auth is configured.",
               ...(s.auth?.methodId ? { methodId: s.auth.methodId } : {}),
@@ -3588,8 +3613,8 @@ export class SessionStore {
             supportsProviders: ev.supports_providers,
             supportsNes: ev.supports_nes,
             pendingAsks: pendingBeforeReady,
-            authRequired: false,
-            auth: { status: "configured", message: "ACP auth is configured." },
+            authRequired: auth?.status === "needs-auth",
+            auth: auth ?? { status: "configured", message: "ACP auth is configured." },
           });
         }
         if (!this.#activeId) this.#activeId = ev.session_id;
@@ -4670,6 +4695,12 @@ function normalizeSessionUsage(
   }
 
   return { used, size, ...(cost ? { cost } : {}) };
+}
+
+function canonicalSessionAuth(value: unknown): SessionRow["auth"] {
+  if (!isPlainRecord(value) || typeof value.message !== "string") return undefined;
+  if (value.status !== "configured" && value.status !== "needs-auth" && value.status !== "unknown") return undefined;
+  return value as NonNullable<SessionRow["auth"]>;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

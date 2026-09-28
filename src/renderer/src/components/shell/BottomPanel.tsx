@@ -1,7 +1,7 @@
 import { useI18n } from "@/lib/i18n";
 
 import { useCallback, useEffect, useState } from "react";
-import { PlusIcon, SquareTerminalIcon, XIcon } from "lucide-react";
+import { PlusIcon, SquareTerminalIcon, XIcon } from "@/components/Icons";
 import { useBottomBarCollapse } from "@/components/shell/AppShell";
 import { TerminalTab } from "@/components/shell/TerminalTab";
 import { cn } from "@/lib/utils";

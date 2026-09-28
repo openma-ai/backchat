@@ -3,7 +3,7 @@ import {
   KeyRoundIcon,
   Trash2Icon,
   UploadIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import type {
   BrowserClearDataKind,
   BrowserCredentialSummary,

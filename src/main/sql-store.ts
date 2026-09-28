@@ -267,12 +267,13 @@ export function openSessionDb(path: string): void {
     CREATE INDEX IF NOT EXISTS projects_updated_idx
       ON projects(updated_at DESC);
 
-    -- Project → Workspace → Worktree. Only managed workspaces are rows here;
-    -- live workspaces derive from projects and external ones from git.
+    -- Project → Workspace → Worktree. Managed and linked combinations are
+    -- stored; live workspaces derive from projects and external ones from git.
     CREATE TABLE IF NOT EXISTS workspaces (
       id                      TEXT PRIMARY KEY,
       project_id              TEXT,
       name                    TEXT NOT NULL,
+      kind                    TEXT NOT NULL DEFAULT 'managed',
       branch                  TEXT,
       root_dir                TEXT NOT NULL,
       source_directories_json TEXT NOT NULL DEFAULT '[]',
@@ -346,6 +347,10 @@ export function openSessionDb(path: string): void {
   // db file. SQLite has no `ADD COLUMN IF NOT EXISTS`; probe via
   // PRAGMA table_info and ALTER only when missing. Match the column
   // definition in the CREATE TABLE above.
+  const workspaceCols = db.prepare("PRAGMA table_info(workspaces)").all() as Array<{ name: string }>;
+  if (!workspaceCols.some(column => column.name === "kind")) {
+    db.exec("ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'managed'");
+  }
   const sessionCols = new Set(
     (db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>)
       .map((r) => r.name),
@@ -506,13 +511,14 @@ export function openSessionDb(path: string): void {
     deleteProject: db.prepare(`DELETE FROM projects WHERE id = ?`),
     saveWorkspace: db.prepare(`
       INSERT INTO workspaces (
-        id, project_id, name, branch, root_dir, source_directories_json,
+        id, project_id, name, kind, branch, root_dir, source_directories_json,
         roots_json, worktrees_json, created_by_session_id, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         project_id = excluded.project_id,
         name = excluded.name,
+        kind = excluded.kind,
         branch = excluded.branch,
         root_dir = excluded.root_dir,
         source_directories_json = excluded.source_directories_json,
@@ -912,6 +918,7 @@ export interface PersistedWorkspace {
   id: string;
   project_id: string | null;
   name: string;
+  kind: "managed" | "linked";
   branch: string | null;
   root_dir: string;
   source_directories: string[];
@@ -926,6 +933,7 @@ interface PersistedWorkspaceSqlRow {
   id: string;
   project_id: string | null;
   name: string;
+  kind: "managed" | "linked";
   branch: string | null;
   root_dir: string;
   source_directories_json: string;
@@ -944,6 +952,7 @@ function workspaceFromSql(row: PersistedWorkspaceSqlRow): PersistedWorkspace {
     id: row.id,
     project_id: row.project_id,
     name: row.name,
+    kind: row.kind,
     branch: row.branch,
     root_dir: row.root_dir,
     source_directories: parse<string[]>(row.source_directories_json, []),
@@ -955,14 +964,16 @@ function workspaceFromSql(row: PersistedWorkspaceSqlRow): PersistedWorkspace {
   };
 }
 
-export function saveWorkspace(row: Omit<PersistedWorkspace, "created_at" | "updated_at"> & {
+export function saveWorkspace(row: Omit<PersistedWorkspace, "created_at" | "updated_at" | "kind"> & {
   created_at?: number;
+  kind?: "managed" | "linked";
 }): PersistedWorkspace {
   const now = Date.now();
   stmts().saveWorkspace.run(
     row.id,
     row.project_id,
     row.name.trim(),
+    row.kind ?? "managed",
     row.branch,
     row.root_dir,
     JSON.stringify(row.source_directories),

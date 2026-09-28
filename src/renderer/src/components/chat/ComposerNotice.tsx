@@ -1,3 +1,5 @@
+import { useI18n } from "@/lib/i18n";
+import { hideNoticePermanently, useNoticeHidden } from "@/lib/notice-preferences";
 import { StatusNotice } from "@/components/ui/status-notice";
 import type { SessionNotice } from "@/lib/session-store";
 
@@ -10,6 +12,9 @@ export function ComposerNotice({
   dismissLabel: string;
   onDismiss: () => void;
 }) {
+  const { t } = useI18n();
+  const hidden = useNoticeHidden(notice.message);
+  if (hidden) return null;
   return (
     <StatusNotice
       tone={notice.tone}
@@ -17,7 +22,13 @@ export function ComposerNotice({
       data-testid="composer-notice"
       dismissLabel={dismissLabel}
       onDismiss={onDismiss}
-      className="animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+      actions={<button type="button" onClick={() => {
+        hideNoticePermanently(notice.message);
+        onDismiss();
+      }} className="shrink-0 rounded px-1 text-xs text-fg-muted underline-offset-4 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-ring">
+        {t("chat.dontShowNoticeAgain")}
+      </button>}
+      className="app-composer-surface composer-radius px-4 py-3"
     >
       {notice.message}
     </StatusNotice>

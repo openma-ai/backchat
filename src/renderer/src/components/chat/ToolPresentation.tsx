@@ -6,7 +6,7 @@ import {
   FolderTreeIcon,
   GlobeIcon,
   TerminalIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import {
   Suspense,
   lazy,

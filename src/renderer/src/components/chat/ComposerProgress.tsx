@@ -15,7 +15,7 @@ import {
   SquareTerminalIcon,
   TargetIcon,
   Trash2Icon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { useEffect, useState, type FormEvent } from "react";
 
 import {

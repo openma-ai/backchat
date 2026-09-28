@@ -2,7 +2,7 @@ import { createServer, type ServerResponse } from "node:http";
 import { expect, test } from "./fixtures";
 import { closeApp, launchAppWithHome } from "./helpers";
 
-test("cloud chat survives complete desktop exit and restores without resending input", async ({ app, page, home }) => {
+test("cloud chat survives complete desktop exit and restores without resending input", async ({ app, page, home }, testInfo) => {
   const events: Array<Record<string, unknown>> = [];
   const streams = new Set<ServerResponse>();
   const mutations: string[] = [];
@@ -15,7 +15,11 @@ test("cloud chat survives complete desktop exit and restores without resending i
     events.push(row);
     for (const stream of streams) stream.write(`event: ${row.type}\nid: ${row.seq}\ndata: ${JSON.stringify(row)}\n\n`);
   };
-  const session = () => ({ id: "cloud-session", title, status, agent: { id: "cloud-agent", name: "Cloud helper" }, environment_id: "cloud-env", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), metadata: {} });
+  const resources = [
+    { type: "github_repository", mount_path: "/remote/project", url: "https://github.com/example/project", checkout: { type: "branch", name: "configured-main" } },
+    { type: "github_repository", mount_path: "/remote/library", url: "https://github.com/example/library", checkout: { type: "commit", sha: "abc123" } },
+  ];
+  const session = () => ({ resources, id: "cloud-session", title, status, agent: { id: "cloud-agent", name: "Cloud helper" }, environment_id: "cloud-env", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), metadata: {} });
   const server = createServer((req, res) => {
     const url = new URL(req.url!, "http://localhost");
     if (req.method !== "GET") mutations.push(`${req.method} ${url.pathname}`);
@@ -96,6 +100,23 @@ test("cloud chat survives complete desktop exit and restores without resending i
     await page.getByLabel("Reply *", { exact: true }).fill("main");
     await page.getByRole("button", { name: "Submit", exact: true }).click();
     await expect(page.getByText("Executed in the cloud project.", { exact: true })).toBeVisible();
+    const resourceToggle = page.getByRole("button", { name: "Task resources", exact: true });
+    await resourceToggle.click();
+    const rail = page.getByRole("navigation", { name: "Task resources" });
+    await expect(rail.locator("[data-repository-environment]")).toHaveCount(2);
+    await expect(rail.getByText("Configured checkout: configured-main", { exact: true })).toBeVisible();
+    await expect(rail.getByText("Current branch unknown", { exact: true })).toHaveCount(2);
+    await expect(rail.getByText("Live Git and review status unavailable", { exact: true })).toHaveCount(2);
+    await expect(rail.getByRole("button", { name: "Compare branch" })).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: "Terminal", exact: true })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("remote-environment.png") });
+    resources[0]!.checkout = { type: "branch", name: "configured-feature" };
+    await resourceToggle.click();
+    await expect(rail).toBeHidden();
+    await resourceToggle.click();
+    await expect(rail.getByText("Configured checkout: configured-feature", { exact: true })).toBeVisible();
+    await resourceToggle.click();
+
     await page.getByRole("button", { name: "Files", exact: true }).click();
     await page.getByRole("menuitem", { name: "result.txt", exact: true }).click();
     await expect(page.getByText("Remote project output", { exact: true })).toBeVisible();

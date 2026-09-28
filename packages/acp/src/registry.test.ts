@@ -104,6 +104,42 @@ describe("ACP agent setup registry", () => {
     });
   });
 
+  it.each(["npx", "binary"] as const)(
+    "keeps Pi on OpenMA's npm release when the registry advertises the older %s adapter",
+    async (kind) => {
+      const platform = `${process.platform === "win32" ? "windows" : process.platform}-${
+        process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch
+      }`;
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+        version: 1,
+        agents: [{
+          id: "pi-acp",
+          name: "pi ACP",
+          version: "0.0.33",
+          repository: "https://github.com/svkozak/pi-acp",
+          distribution: kind === "npx"
+            ? { npx: { package: "pi-acp@0.0.33", args: ["--legacy"] } }
+            : { binary: { [platform]: {
+                archive: "https://example.invalid/pi-acp-0.0.33.tar.gz",
+                cmd: "./pi-acp",
+                args: ["--legacy"],
+              } } },
+        }],
+      }), { status: 200 })));
+
+      const agents = await loadRegistry({ forceRefresh: true });
+      const pi = agents.find((agent) => agent.id === "pi-acp");
+
+      expect(pi?.registryDistribution).toEqual({ npx: { package: "@openma/pi-acp" } });
+      // Version belongs to the selected package. Leaving it unpinned makes setup
+      // resolve @openma/pi-acp's npm dist-tag rather than the old adapter's version.
+      expect(pi?.version).toBeUndefined();
+      expect(pi?.spec).toEqual({ command: "openma-acp-pi-acp" });
+      expect(pi?.install).toEqual({ kind: "npm", package: "@openma/pi-acp" });
+      expect(pi?.homepage).toBe("https://github.com/openma-ai/pi-acp");
+    },
+  );
+
   it("keeps common registry agents available offline", async () => {
     await loadRegistry({
       cachePath: join(tmpdir(), `backchat-missing-registry-${process.pid}-${Date.now()}.json`),
@@ -116,6 +152,7 @@ describe("ACP agent setup registry", () => {
     expect(ids).toEqual(expect.arrayContaining([
       "codex-acp",
       "claude-acp",
+      "pi-acp",
       "gemini",
       "opencode",
       "cursor",
@@ -132,6 +169,13 @@ describe("ACP agent setup registry", () => {
       "openclaw",
       "dsh-acp",
     ]));
+    expect(getKnownAgents().find((agent) => agent.id === "pi-acp")).toMatchObject({
+      registryId: "pi-acp",
+      installSource: "registry",
+      spec: { command: "openma-acp-pi-acp" },
+      install: { kind: "npm", package: "@openma/pi-acp" },
+      registryDistribution: { npx: { package: "@openma/pi-acp" } },
+    });
   });
 
   it("ships an installable DeepSeek Harness distribution before the official registry entry lands", async () => {

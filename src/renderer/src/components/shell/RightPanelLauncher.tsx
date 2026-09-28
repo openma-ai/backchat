@@ -2,11 +2,11 @@ import {
   CalendarClockIcon,
   FileIcon,
   FolderIcon,
-  GlobeIcon,
+  BrowserIcon,
   ImageIcon,
   MessageSquareIcon,
   SquareTerminalIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { SubagentAvatar } from "@/components/SubagentAvatar";
 import { previewLocalFile } from "@/lib/file-preview";
 import { useI18n } from "@/lib/i18n";
@@ -118,7 +118,7 @@ export function RightPanelLauncher({
             type="browser"
             label={t("sideChat.browser")}
             hint={t("sideChat.browserHint")}
-            icon={<GlobeIcon className="size-4" />}
+            icon={<BrowserIcon className="size-4" />}
             onClick={() => onPick("browser")}
           />
         )}
@@ -255,7 +255,7 @@ export function RightPanelLauncher({
                 hint={source.uri}
                 icon={source.kind === "file"
                   ? <FileIcon className="size-4" />
-                  : <GlobeIcon className="size-4" />}
+                  : <BrowserIcon className="size-4" />}
                 onClick={() => source.kind === "file"
                   ? void previewLocalFile(source.uri)
                   : sessionStore.openSideTab("browser", source.uri, source.label)}
@@ -376,7 +376,7 @@ function ResourceRow({
 }
 
 function workItemIcon(item: WorkItemSnapshot): React.ReactNode {
-  if (item.kind === "monitor") return <GlobeIcon className="size-4" />;
+  if (item.kind === "monitor") return <BrowserIcon className="size-4" />;
   if (item.kind === "bash") return <SquareTerminalIcon className="size-4" />;
   return <MessageSquareIcon className="size-4" />;
 }

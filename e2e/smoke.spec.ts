@@ -13,12 +13,11 @@ test.describe("backchat smoke", () => {
   });
 
   test("empty state renders composer + sidebar chrome", async ({ page }) => {
-      // Sidebar chrome — New chat + Search rows.
+      // Sidebar chrome — New chat and the compact Search action.
       await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
-      await expect(page.locator("button", { hasText: "Search" }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Search", exact: true })).toBeVisible();
 
-      // Empty-state title remains visible even when an agent is configured.
-      await expect(page.getByRole("heading", { name: "Pick an agent" })).toBeVisible();
+      await expect(page.locator(".home-hero-title")).toBeVisible();
   });
 
   test("renders the sidebar as an opaque surface without backdrop compositing", async ({
@@ -294,8 +293,8 @@ test.describe("backchat smoke", () => {
         { width: 16, height: 16, radius: 8 },
       ]);
 
-      // Nav rows and project rows share one icon rail; project children
-      // indent exactly one icon-box step deeper.
+      // Nav and project rows share an icon rail; nested session rows have
+      // their own inset inside the expanded project.
       const iconBoxes = await Promise.all([
         page.getByTestId("new-chat-button").locator(".sidebar-row-icon").boundingBox(),
         navigation.locator(".sidebar-row-icon").first().boundingBox(),
@@ -304,7 +303,7 @@ test.describe("backchat smoke", () => {
       for (const box of iconBoxes) expect(box).not.toBeNull();
       const [navIcon, projectIcon, childIcon] = iconBoxes;
       expect(Math.abs(projectIcon!.x - navIcon!.x)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(childIcon!.x - navIcon!.x - 16)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(childIcon!.x - navIcon!.x - 36)).toBeLessThanOrEqual(0.5);
       expect(projectIcon!.width).toBeCloseTo(navIcon!.width, 3);
       expect(childIcon!.width).toBeCloseTo(navIcon!.width, 3);
   });
@@ -374,7 +373,7 @@ test.describe("backchat smoke", () => {
       const settings = page.getByRole("link", { name: "Settings", exact: true });
       const update = page.getByRole("button", { name: "1 ACP update available" });
       await Promise.all([settings, update].map((item) => expect(item).toBeVisible()));
-      await expect(settings).toHaveAttribute("href", "/settings");
+      await expect(settings).toHaveAttribute("href", "/settings/activity");
       await expect(settings.locator("button")).toHaveCount(0);
 
       const [settingsBox, updateBox] = await Promise.all([
@@ -743,6 +742,7 @@ test.describe("backchat smoke", () => {
       // A rotating progress icon changes its bounding-box edges, not its center.
       expect(Math.abs((groupIconBox!.x + groupIconBox!.width / 2) - (singleIconBox!.x + singleIconBox!.width / 2))).toBeLessThanOrEqual(0.5);
 
+      await page.locator('[data-collapsible-event-count="1"] > button').click();
       const summary = singleTool.getByRole("button");
       const input = singleTool.locator('[data-tool-input="single-tool"]');
       const terminal = singleTool.locator('[data-tool-terminal-id="terminal-final"]');

@@ -227,6 +227,7 @@ export function useChatSubmission({
       delivery,
       sessionReferences,
       attachments,
+      annotations,
     );
 
     if (target.status === "draft") {

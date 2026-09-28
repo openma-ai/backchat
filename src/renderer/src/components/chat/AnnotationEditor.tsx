@@ -13,7 +13,7 @@ import {
   SlidersHorizontalIcon,
   SquareIcon,
   Trash2Icon,
-} from "lucide-react";
+} from "@/components/Icons";
 
 import type { PromptAnnotation } from "@shared/session-events.js";
 import { cn } from "@/lib/utils";
@@ -36,7 +36,6 @@ export function AnnotationBadge({ index }: { index: number }) {
       <MessageCircleIcon
         className="absolute inset-0 size-6 fill-info"
         style={{ color: "color-mix(in srgb, var(--info) 84%, white)" }}
-        strokeWidth={1.25}
       />
       <span className="relative z-10 -translate-y-px">{index}</span>
     </span>
@@ -50,7 +49,7 @@ export const AnnotationEditor = function AnnotationEditor({
   rect,
   showBadge = true,
   details,
-  dialogLabel = "Response annotation",
+  dialogLabel,
   onSave,
   onCancel,
   onRemove,
@@ -150,7 +149,7 @@ export const AnnotationEditor = function AnnotationEditor({
       <div
         ref={ref}
         role="dialog"
-        aria-label={dialogLabel}
+        aria-label={dialogLabel ?? t("annotation.dialog")}
         className={cn(
           "fixed z-[91] max-w-[calc(100vw-24px)] rounded-2xl bg-bg text-sm text-fg",
           "shadow-md ring-1 ring-border/65",
@@ -203,8 +202,8 @@ export const AnnotationEditor = function AnnotationEditor({
             <button
               type="button"
               onClick={isListening ? stopVoiceComment : startVoiceComment}
-              aria-label={isListening ? "Stop voice comment" : "Record voice comment"}
-              title={isListening ? "Stop voice input" : "Voice input"}
+              aria-label={isListening ? t("annotation.stopVoiceComment") : t("annotation.recordVoiceComment")}
+              title={isListening ? t("annotation.stopVoiceInput") : t("annotation.voiceInput")}
               className={cn(
                 "inline-flex size-9 shrink-0 items-center justify-center rounded-full text-fg-muted",
                 "hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/35",
@@ -220,8 +219,8 @@ export const AnnotationEditor = function AnnotationEditor({
             <button
               type="button"
               onClick={() => setDetailsOpen((current) => !current)}
-              aria-label={detailsOpen ? "Hide style controls" : "Show style controls"}
-              title={detailsOpen ? "Hide style controls" : "Style controls"}
+              aria-label={detailsOpen ? t("annotation.hideStyleControls") : t("annotation.showStyleControls")}
+              title={detailsOpen ? t("annotation.hideStyleControls") : t("annotation.styleControls")}
               aria-pressed={detailsOpen}
               className={cn(
                 "inline-flex size-9 shrink-0 items-center justify-center rounded-full text-fg-muted",

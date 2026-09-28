@@ -12,6 +12,7 @@ import {
   appendEvent,
   appendEventsTx,
   archiveSession,
+  getSession,
   setSessionTitle,
   upsertSession,
 } from "./sql-store.js";
@@ -73,6 +74,7 @@ vi.mock("./sql-store.js", () => ({
   appendEvent: vi.fn(),
   appendEventsTx: vi.fn(),
   archiveSession: vi.fn(),
+  getSession: vi.fn(),
   setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
   touchSession: vi.fn(),
@@ -311,6 +313,54 @@ describe("SessionManager prompt queue", () => {
         resumeAcpSessionId: "acp-before-upgrade",
       }),
     );
+  });
+
+  it("reconnects a persisted session after app restart without creating another conversation", async () => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    vi.mocked(getSession).mockReturnValueOnce({
+      id: "persisted-auth", agent_id: "codex-acp", cwd: PROJECT_ROOT,
+      acp_session_id: "original-acp", title: "Retained conversation",
+      title_manually_set: 1, created_at: 1, last_used_at: 2,
+      archived_at: null, pinned_at: null, project_id: "project-original",
+      additional_directories: [PROJECT_ROOT], workspace_id: null, pair_id: null,
+    });
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send, resolveMcpServers: () => [], buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}), resolveAgentOverride: () => undefined,
+    });
+    await expect(manager.restartSession("persisted-auth", { mode: "now" }))
+      .resolves.toEqual({ session_id: "persisted-auth", status: "restarted" });
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(expect.objectContaining({
+      resumeAcpSessionId: "original-acp",
+      agent: expect.objectContaining({ cwd: PROJECT_ROOT }),
+    }));
+    expect(fake.prompts).toHaveLength(0);
+    expect(send).toHaveBeenCalledWith({ type: "session.restarted", session_id: "persisted-auth" });
+    expect(manager.sessionCount()).toBe(1);
+  });
+
+  it("does not report a persisted auth reconnect as successful when resume fails", async () => {
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockRejectedValueOnce(Object.assign(new Error("Authentication required"), { code: -32000 }));
+    vi.mocked(getSession).mockReturnValueOnce({
+      id: "persisted-auth-failed", agent_id: "codex-acp", cwd: PROJECT_ROOT,
+      acp_session_id: "original-acp", title: "Retained conversation",
+      title_manually_set: 1, created_at: 1, last_used_at: 2,
+      archived_at: null, pinned_at: null, project_id: null,
+      additional_directories: [], workspace_id: null, pair_id: null,
+    });
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send, resolveMcpServers: () => [], buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}), resolveAgentOverride: () => undefined,
+    });
+    await expect(manager.restartSession("persisted-auth-failed", { mode: "now" }))
+      .rejects.toThrow("Authentication required");
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: "session.restarted" }));
+    expect(manager.sessionCount()).toBe(0);
   });
 
   it("restarts after the active turn and replays queued prompts on the new ACP child", async () => {
@@ -807,6 +857,53 @@ describe("SessionManager prompt queue", () => {
     }));
   });
 
+  it.each([
+    { agentId: "other-agent", details: { code: -32000, message: "Sign in to continue" }, expectedAuth: true, expectedMessage: "Sign in to continue" },
+    { agentId: "codex-acp", details: { code: -32603, message: "Internal error", data: { codexErrorInfo: "unauthorized", message: "Account credentials changed" } }, expectedAuth: true, expectedMessage: "Account credentials changed" },
+    { agentId: "codex-acp", details: { code: -32603, message: "Internal error", data: { codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 401 } }, message: "Credentials expired" } }, expectedAuth: true, expectedMessage: "Credentials expired" },
+    { agentId: "codex-acp", details: { code: -32603, message: "Internal error", data: { codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 500 } } } }, expectedAuth: false, expectedMessage: "Internal error" },
+    { agentId: "other-agent", details: { code: -32603, message: "Internal error", data: { codexErrorInfo: "unauthorized" } }, expectedAuth: false, expectedMessage: "Internal error" },
+  ].flatMap((scenario) => [
+    { ...scenario, transport: "event" },
+    { ...scenario, transport: "rejection" },
+  ]))("preserves structured prompt failure and scopes auth detection: $agentId $transport $details", async ({ agentId, details, expectedAuth, expectedMessage, transport }) => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession();
+    fake.session.prompt = async function* () {
+      yield { type: "promptError", error: "Internal error", errorDetails: details };
+      // The common runtime reports the event, then rethrows the original RPC
+      // error. Adapters that terminate with the event alone also remain valid.
+      if (transport === "rejection") throw Object.assign(new Error(details.message), details);
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({ session_id: "sess-structured-error", agent_id: agentId, cwd: "/repo" });
+    send.mockClear();
+    await manager.prompt({ session_id: "sess-structured-error", turn_id: "turn-structured-error", text: "hello" });
+    const errorEvent = send.mock.calls.map(([event]) => event).find(event => event.type === "session.error");
+    expect(errorEvent).toMatchObject({
+      session_id: "sess-structured-error",
+      turn_id: "turn-structured-error",
+      message: expectedMessage,
+      error_details: details,
+    });
+    expect(errorEvent.code).toBe(expectedAuth ? "auth_required" : undefined);
+    send.mockClear();
+    manager.announceAll();
+    const announcement = send.mock.calls.map(([event]) => event).find(event => event.type === "session.ready");
+    // Re-announcing an existing child is not proof that expired credentials
+    // have recovered. A renderer reload must retain its sign-in affordance.
+    if (expectedAuth) expect(announcement.auth).toMatchObject({ status: "needs-auth", message: expectedMessage });
+    else expect(announcement.auth).toBeUndefined();
+  });
+
   it("classifies Authentication required start failures even when the RPC code is stripped", async () => {
     mocks.runtimeStart.mockReset();
     mocks.runtimeStart.mockRejectedValueOnce(new Error("Authentication required"));
@@ -1236,6 +1333,7 @@ describe("SessionManager prompt queue", () => {
     const fake = createControllableAcpSession();
     const prepareWorktreeWorkspace = vi.fn(async () => ({
       workspaceId: "ws-history-paging-9f3c",
+      projectId: "proj-workspace",
       cwd: "/managed/worktrees/ws-history-paging-9f3c/01-app",
       additionalDirectories: [],
       created: false,
@@ -1258,7 +1356,6 @@ describe("SessionManager prompt queue", () => {
       agent_id: "codex-acp",
       workspace_id: "ws-history-paging-9f3c",
       cwd: "/source/app",
-      project_id: "proj-workspace",
     });
 
     expect(prepareWorktreeWorkspace).toHaveBeenCalledWith(
@@ -1266,6 +1363,7 @@ describe("SessionManager prompt queue", () => {
     );
     expect(result).toMatchObject({
       status: "ready",
+      project_id: "proj-workspace",
       cwd: "/managed/worktrees/ws-history-paging-9f3c/01-app",
       workspace_id: "ws-history-paging-9f3c",
     });

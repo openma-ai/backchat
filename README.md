@@ -89,6 +89,7 @@ Backchat currently ships registry entries for:
 | --- | --- | --- |
 | Claude Code | `claude-acp` | Claude Code through the official ACP adapter |
 | Codex CLI | `codex-acp` | Codex through `codex-acp` |
+| Pi | `openma-acp-pi-acp` | Pi through [`@openma/pi-acp`](https://www.npmjs.com/package/@openma/pi-acp) |
 | [DeepSeek Harness](https://github.com/openma-ai/deepseek-harness-acp) | `dsh-acp` or `dsh --profile acp` | Standalone ACP server or dsh profile plugin |
 | Gemini CLI | `gemini` | Gemini CLI's ACP mode |
 | OpenCode | `opencode` | OpenCode's ACP mode |

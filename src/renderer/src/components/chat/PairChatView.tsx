@@ -188,6 +188,8 @@ function PairComposer({ pair }: { pair: PairRow }) {
     (m) => m.status === "starting" || m.status === "errored",
   );
 
+
+
   const submit = async (
     text: string,
     attachments: PromptAttachment[] = [],

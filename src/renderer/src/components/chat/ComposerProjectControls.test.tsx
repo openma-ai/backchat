@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ setQueryData: () => undefined }),
+  useQueries: () => [{ data: null }],
   useQuery: ({ queryKey }: { queryKey: string[] }) => ({
     data:
       queryKey[0] === "sessions-for-recent-cwds"
@@ -11,7 +12,7 @@ vi.mock("@tanstack/react-query", () => ({
             { cwd: "/Users/mini/work/alpha" },
             { cwd: "/Users/mini/work/beta" },
           ]
-        : null,
+        : queryKey[0] === "projects" ? [{ id: "alpha-project", name: "Alpha display name", primary_folder: "/Users/mini/work/alpha", source_folders: ["/Users/mini/work/alpha"], created_at: 0, updated_at: 0 }] : null,
   }),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => undefined }));
@@ -57,7 +58,7 @@ describe("ProjectChipRow", () => {
       <ProjectChipRow
         isDraft
         activeCwd="/Users/mini/work/alpha"
-        onPickCwd={() => undefined}
+        onPickCwd={async () => null}
         onSetCwd={() => undefined}
         onClearCwd={() => undefined}
       />,
@@ -67,6 +68,10 @@ describe("ProjectChipRow", () => {
     expect(html).toContain("cmdk-input");
     expect(html).toContain("alpha");
     expect(html).toContain("beta");
+    expect(html).toContain("Alpha display name");
+    expect(html).toContain('data-project-glyph=');
+    expect(html.match(/title="\/Users\/mini\/work\/alpha"/g)).toHaveLength(2);
+    expect(html).toContain("chat.recentDirectories");
     expect(html).toContain("Browse…");
     expect(html).toContain("No project");
     expect(html.match(/data-slot="dropdown-menu"/g)).toHaveLength(1);
@@ -80,7 +85,7 @@ describe("ProjectChipRow", () => {
       <ProjectChipRow
         isDraft
         activeCwd=""
-        onPickCwd={() => undefined}
+        onPickCwd={async () => null}
         onSetCwd={() => undefined}
         onClearCwd={() => undefined}
       />,

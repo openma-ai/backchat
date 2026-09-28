@@ -621,7 +621,29 @@ async function spawnAcpProbeAgent(
       onDiagnosticLine?.(line);
     },
   });
-  const stream = ndJsonStream(child.stdin, child.stdout);
+  // The SDK logs and drops malformed lines, leaving the RPC pending until timeout.
+  // A disposable setup probe must fail and release its child on corrupt transport.
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let pending = "";
+  const validate = (line: string) => {
+    if (!line.trim()) return;
+    try { JSON.parse(line); }
+    catch { throw new Error("Malformed ACP JSON received during setup probe"); }
+  };
+  const input = child.stdout.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      pending += decoder.decode(chunk, { stream: true });
+      let newline = pending.indexOf("\n");
+      while (newline !== -1) {
+        validate(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+        newline = pending.indexOf("\n");
+      }
+      controller.enqueue(chunk);
+    },
+    flush() { validate(pending + decoder.decode()); },
+  }));
+  const stream = ndJsonStream(child.stdin, input);
   const agent: Agent = new ClientSideConnection(
     (): Client => options.client ?? {
       sessionUpdate: async () => undefined,

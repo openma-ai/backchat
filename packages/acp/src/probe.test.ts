@@ -760,3 +760,19 @@ describe("ACP session probe", () => {
     });
   });
 });
+
+it("fails a malformed ACP probe immediately instead of waiting for its timeout", async () => {
+  let output!: ReadableStreamDefaultController<Uint8Array>;
+  const kill = vi.fn(async () => { try { output.close(); } catch {} });
+  const child: ChildHandle = {
+    stdout: new ReadableStream<Uint8Array>({ start(controller) { output = controller; } }),
+    stdin: new WritableStream<Uint8Array>({ write() {
+      output.enqueue(new TextEncoder().encode('{"jsonrpc":"2.0","id":0,"result":{"additionalDirectories":[{"jsonrpc":"2.0"}\n'));
+    } }),
+    stderr: new ReadableStream({ start(controller) { controller.close(); } }),
+    kill,
+    exited: new Promise(() => {}),
+  };
+  await expect(probeAgentSessionConfig({ agent: { command: "malformed-fixture" }, spawner: { spawn: async () => child }, timeoutMs: 150 })).rejects.toThrow(/closed|invalid|malformed/i);
+  expect(kill).toHaveBeenCalled();
+});

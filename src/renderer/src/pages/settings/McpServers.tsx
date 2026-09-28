@@ -1,7 +1,7 @@
 import { PageScaffold } from "@/components/shell/PageScaffold";
 import { useI18n } from "@/lib/i18n";
 import { useState } from "react";
-import { EyeIcon, EyeOffIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "@/components/Icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";

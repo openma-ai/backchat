@@ -1,4 +1,4 @@
-import { CalendarClockIcon } from "lucide-react";
+import { CalendarClockIcon } from "@/components/Icons";
 import { useRightRailExpansion } from "@/components/shell/AppShell";
 import { useI18n } from "@/lib/i18n";
 import {

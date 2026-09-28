@@ -4,7 +4,7 @@ import {
   KeyRoundIcon,
   Trash2Icon,
   UploadIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 
 import type { AgentInfo } from "@shared/api";
 import { Badge } from "@/components/ui/badge";

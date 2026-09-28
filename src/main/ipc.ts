@@ -1,3 +1,9 @@
+import { ProjectCloudRouter } from './project-cloud.js';
+import type { OpenmaAccount } from './openma-account.js';
+import { ProjectWorkService } from "./project-work.js";
+import { ProjectAgentBridge } from "./project-agent.js";
+import { ProjectMcpBridge } from "./project-mcp.js";
+import type { OpenMAEvent as ProjectAgentEvent } from "@openmatter/agent";
 /**
  * IPC handler registration — bridges main's SessionManager to the renderer.
  *
@@ -124,6 +130,7 @@ import { SessionHistoryMcpBridge } from "./session-history-mcp.js";
 import { formatSessionHistory } from "./session-history-tool.js";
 
 interface RegisterDeps {
+  openmaAccount?: OpenmaAccount;
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
    *  overlay-only set; later phases pass `app.getPath('userData')/...` */
   registryCachePath: string;
@@ -418,6 +425,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   };
   setBrokerSessionEventSink((msg) => {
     const enriched = enrichSessionEvent(msg);
+    if (enriched.openma_event) projectAgents?.observe(enriched.openma_event as ProjectAgentEvent);
     deliverSessionEvent(enriched, {
       publish: publishSingle,
       persist: persistCanonicalSessionEvent,
@@ -440,9 +448,12 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // single sink, which is the correct behavior for the boot window
   // before any pair is registered.
   let pairManager: PairManager | null = null;
+  let projectAgents: ProjectAgentBridge | undefined;
+  let projectMcp: ProjectMcpBridge | undefined;
   const send = (msg: SessionEventOut) => {
     deps.sessionActivitySink?.(msg);
     const enriched = enrichSessionEvent(msg);
+    if (enriched.openma_event) projectAgents?.observe(enriched.openma_event as ProjectAgentEvent);
     deliverSessionEvent(enriched, {
       publish: (message) => {
         const routed = pairManager?.routeOrPassthrough(message) ?? false;
@@ -472,6 +483,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         deps.browserMcpServerForTask?.(taskId) as SettingsMcpServer | undefined,
         browserPluginMcpServer,
         scheduleMcpBridge?.descriptor(taskId),
+        projectMcp?.descriptor(taskId),
         sessionHistoryMcpBridge.descriptor(taskId),
       ].filter((server): server is SettingsMcpServer => !!server),
     ),
@@ -540,6 +552,25 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // calls its 1:1 API; the tee installed above routes pair-owned
   // session events into PairManager's reshape path.
   pairManager = new PairManager({ sessionManager, pairSink });
+
+  const projectWork = new ProjectWorkService({
+    directory: join(openmaRoot(), "backchat", "projects"),
+    getProject,
+    driver: (agentId, project, role, config) => projectAgents!.driver(agentId, project, role, config),
+  });
+  projectAgents = new ProjectAgentBridge(projectWork.db, {
+    start: p => sessionManager.start(p), prompt: p => sessionManager.prompt(p),
+    cancel: (id, turn) => sessionManager.cancel(id, turn),
+    dispose: id => sessionManager.dispose(id), findSession: getSession,
+  });
+  projectMcp = new ProjectMcpBridge(projectWork, projectAgents);
+  await projectMcp.start();
+  projectWork.start();
+  const projectRouter = new ProjectCloudRouter(projectWork, scope => { if(!deps.openmaAccount) throw new Error("OpenMA login required"); return deps.openmaAccount.connection(scope); }, getProject, process.env.BACKCHAT_PROJECT_WORKER_URL);
+  ipcMain.handle(InvokeChannel.ProjectWorkView, (_e, id: string) => projectRouter.view(id));
+  ipcMain.handle(InvokeChannel.ProjectWorkSave, (_e, config) => projectRouter.save(config));
+  ipcMain.handle(InvokeChannel.ProjectWorkSubmit, (_e, input) => projectRouter.submit(input));
+  ipcMain.handle(InvokeChannel.ProjectWorkGoal, (_e, input) => projectRouter.goal(input));
 
   const scheduledTaskExecutor = new ScheduledTaskExecutor({
     start: (input) => sessionManager.start(input),
@@ -878,18 +909,22 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   ipcMain.handle(
     InvokeChannel.ProjectDelete,
-    (_e, p: { project_id: string }): void => deleteProject(p.project_id),
+    async (_e, p: { project_id: string }): Promise<void> => { await projectRouter.remove(p.project_id); deleteProject(p.project_id); },
   );
   ipcMain.handle(
     InvokeChannel.WorkspacesList,
-    (_e, p?: { project_id?: string }): Promise<WorkspaceInfo[]> =>
-      workspaceService.list(p?.project_id?.trim() || undefined),
+    (_e, p?: { project_id?: string; source_directory?: string }): Promise<WorkspaceInfo[]> =>
+      workspaceService.list(p?.project_id?.trim() || undefined, p?.source_directory),
   );
   ipcMain.handle(
     InvokeChannel.WorkspaceCreate,
     (_e, p: WorkspaceCreateParams): Promise<WorkspaceInfo> => {
-      if (!p.project_id?.trim()) throw new Error("Project id is required");
-      return workspaceService.create({ project_id: p.project_id.trim(), name: p.name });
+      return workspaceService.create({
+        project_id: p.project_id?.trim() || null,
+        name: p.name,
+        checkouts: p.checkouts,
+        source_directories: !p.project_id && p.source_directory ? [p.source_directory] : undefined,
+      });
     },
   );
   ipcMain.handle(
@@ -1295,6 +1330,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     },
     async dispose() {
       scheduleEngine.stop();
+      projectWork.stop();
       stopBrowserPluginState();
       await Promise.allSettled([
         sessionManager.disposeAll(),
@@ -1306,6 +1342,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         chromeExtensionBridge?.close(),
         sessionHistoryMcpBridge.stop(),
       ]);
+      await projectMcp?.close();
+      await projectWork.close();
       scheduleStore.close();
     },
   };

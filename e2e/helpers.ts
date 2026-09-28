@@ -304,6 +304,9 @@ export async function injectSession(
     supportsSteering?: boolean;
   } = {},
 ): Promise<string> {
+  // A reload can finish before React subscribes to the push bridge.
+  // Do not lose a synthetic session.ready event during that boot gap.
+  await waitForRendererReady(page);
   const sessionId = opts.sessionId ?? `e2e-${Math.random().toString(36).slice(2, 8)}`;
   const agentId = opts.agentId ?? "claude-acp";
   const cwd = opts.cwd ?? "/tmp/backchat-test";
@@ -319,10 +322,11 @@ export async function injectSession(
     name: `${agentId} · ${sessionId.slice(0, 6)}`,
   });
   if (!(await sessionButton.isVisible())) {
-    const projectButton = page.getByRole("button", {
-      name: basename(cwd),
-      exact: true,
-    });
+    const projectButton = page.getByRole("complementary")
+      .locator("[data-sidebar-project]")
+      .filter({ hasText: basename(cwd) })
+      .locator("button[aria-expanded]")
+      .first();
     if ((await projectButton.getAttribute("aria-expanded")) !== "true") {
       await projectButton.click();
     }

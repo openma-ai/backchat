@@ -1,4 +1,4 @@
-import { ChevronRightIcon, LightbulbIcon } from "lucide-react";
+import { ChevronRightIcon, LightbulbIcon } from "@/components/Icons";
 import { useState } from "react";
 
 import type { PlanDocumentPresentation } from "@/lib/session-plan";

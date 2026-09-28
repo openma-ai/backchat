@@ -1,6 +1,6 @@
 import { useI18n } from "@/lib/i18n";
 import { useMemo, useState } from "react";
-import { ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon } from "@/components/Icons";
 
 import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";

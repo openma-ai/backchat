@@ -1,3 +1,4 @@
+import {PageTopbarProvider, PageTopbarSlot} from "./PageTopbar";
 import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
@@ -299,6 +300,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
       <RightRailCollapseContext.Provider value={rightRailCollapse}>
         <RightRailExpansionContext.Provider value={rightExpansion}>
           <BottomBarCollapseContext.Provider value={bottomCollapse}>
+            <PageTopbarProvider>
             <AppShell
               sidebar={isSettings
                 ? <SettingsSidebar returnTo={returnToAppRef.current} />
@@ -308,8 +310,9 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
                   <Topbar onCancel={cancelActive} />
                 ) : isPair ? (
                   <PairTopbar />
-                ) : null
+                ) : location.pathname.startsWith("/projects/") ? <PageTopbarSlot /> : null
               }
+              taskResources={hasTaskChrome || (isChat && !!activeSession?.openma)}
               rightPanel={hasTaskChrome && !activeSession?.openma ? <SideChatPanel /> : undefined}
               bottomPanel={hasTaskChrome && !activeSession?.openma ? <BottomPanel /> : undefined}
             >
@@ -318,6 +321,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
               <OpenmaFilePreviewDialog />
               <CommandPalette />
             </AppShell>
+            </PageTopbarProvider>
           </BottomBarCollapseContext.Provider>
         </RightRailExpansionContext.Provider>
       </RightRailCollapseContext.Provider>

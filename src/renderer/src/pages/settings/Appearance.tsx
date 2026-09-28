@@ -1,4 +1,4 @@
-import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
+import { MonitorIcon, MoonIcon, SunIcon } from "@/components/Icons";
 import { cn } from "@/lib/utils";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import type { ThemeModePreference, ThemePlugin } from "@/lib/theme-plugin";

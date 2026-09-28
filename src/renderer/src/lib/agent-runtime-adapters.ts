@@ -157,8 +157,10 @@ export const codexRuntimeAdapter: AgentRuntimeAdapter = {
     const normalized = normalizeAgentId(agentId);
     return normalized === "codex-acp" || normalized.includes("codex");
   },
-  nativeAgentToolUpdates(tool, context) {
-    return detectCodexNativeAgentToolEvent(tool, context);
+  nativeAgentToolUpdates(tool, context, logicalTool) {
+    // ACP updates are patches: native metadata may arrive after rawInput.
+    // Use the accumulated tool so a late identity retains its task/context.
+    return detectCodexNativeAgentToolEvent(logicalTool ?? tool, context);
   },
   nativeAgentRawUpdates(event) {
     return detectCodexNativeAgentRawEvent(event);

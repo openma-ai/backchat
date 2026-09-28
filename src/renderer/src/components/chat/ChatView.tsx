@@ -1,11 +1,12 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
 } from "react";
-import { BugIcon, SendIcon } from "lucide-react";
+import { BugIcon, SendIcon } from "@/components/Icons";
 import { useNavigate } from "@tanstack/react-router";
 import { AgentChatView } from "@openma/common/chat-ui";
 import type { AgentUITurnState } from "@openma/common/agent-ui";
@@ -14,7 +15,7 @@ import { toast } from "sonner";
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import { Badge } from "@/components/ui/badge";
 import { StatusNotice } from "@/components/ui/status-notice";
-import { Spinner } from "@/components/ui/spinner";
+import { OpenmaStartupLoader } from "@/components/OpenmaStartupLoader";
 import {
   selectActive,
   selectOpenMAEventsFor,
@@ -48,6 +49,7 @@ import { useHomeSuggestionState } from "@/lib/home-suggestion-state";
 import { useChatSessionActions } from "@/lib/chat-session-actions";
 import { Composer } from "./Composer";
 import { ComposerAuthSetup } from "./ComposerAuthSetup";
+import { reconnectAuthenticatedSession } from "@/lib/session-auth-recovery";
 import { ComposerNotice } from "./ComposerNotice";
 import { ComposerProgress } from "./ComposerProgress";
 import { SessionRuntimeSummary } from "./SessionRuntimeSummary";
@@ -202,6 +204,29 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   const navigate = useNavigate();
   const isNativeSubagent = active?.sideKind === "subagent";
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const [paintedSessionId, setPaintedSessionId] = useState<string | null>(null);
+  const persistedSessionId = active && active.status !== "draft" ? active.id : null;
+  const loadingFirstScreen = !!persistedSessionId
+    && (historyPending || paintedSessionId !== persistedSessionId);
+  useLayoutEffect(() => {
+    if (!persistedSessionId || historyPending) {
+      setPaintedSessionId(null);
+      return;
+    }
+    // Mount the transcript behind the loader, then settle its initial viewport
+    // before revealing it. A request resolving is not a rendered first screen.
+    let revealFrame = 0;
+    const layoutFrame = requestAnimationFrame(() => {
+      const scroller = transcriptRef.current?.closest(".chat-scrollbar");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      revealFrame = requestAnimationFrame(() => setPaintedSessionId(persistedSessionId));
+    });
+    return () => {
+      cancelAnimationFrame(layoutFrame);
+      cancelAnimationFrame(revealFrame);
+    };
+  }, [persistedSessionId, historyPending]);
+
   const canForkCurrentSession = !isSide
     && active?.status !== "draft"
     && active?.supportsSessionFork === true
@@ -355,6 +380,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       authRequired={!!active?.authRequired}
       sessionAuth={active?.auth}
       onClose={() => setAuthSetupOpen(false)}
+      onAuthenticated={() => reconnectAuthenticatedSession(active?.id)}
     />
   );
   const progressPresentation = active?.goal
@@ -497,7 +523,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
         const next = await window.backchat.uiFsPickDir({
           defaultPath: draftProjectCwd || undefined,
         });
-        if (next) setDraftProjectCwd(next);
+        return next;
       }}
       onSetCwd={(p) => setDraftProjectCwd(p)}
       onClearCwd={() => setDraftProjectCwd(null)}
@@ -512,128 +538,117 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     <SessionRuntimeSummary session={active} queueDepth={queuedTurnCount} />
   ) : null;
 
-  // A persisted session whose first history page is still in flight has no
-  // turns yet. Hold a quiet loading surface here instead of letting the
-  // shared shell flash the home empty state and then jump to the transcript.
-  if (
-    active
-    && active.status !== "draft"
-    && turns.length === 0
-    && historyPending
-  ) {
-    return (
-      <div
-        className="flex h-full min-h-0 flex-col"
-        data-chat-surface={isSide ? "side" : "main"}
-        data-chat-history-loading="true"
-      >
-        <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
-          <Spinner className="mr-2" />
-          {t("chat.loadingHistory")}
-        </div>
-        <div className="shrink-0">{composer}</div>
-      </div>
-    );
-  }
-
   return (
-    <AgentChatView
-      sessionId={active?.id}
-      surface={isSide ? "side" : "main"}
-      phase={resolveAgentChatPhase(active)}
-      turns={chatSurfaceTurns}
-      transcriptRef={transcriptRef}
-      homeStyle={
-        homeComposer?.width !== undefined
-          ? {
-              "--home-composer-theme-width": `${homeComposer.width}px`,
-            } as CSSProperties
-          : undefined
-      }
-      homeComposerStyle={
-        homeComposer?.width !== undefined
-          ? {
-              "--home-composer-frame-width": `${homeComposer.width}px`,
-            } as CSSProperties
-          : undefined
-      }
-      renderTurn={({ turn }) => {
-        const sourceTurn = turnsById.get(turn.id);
-        return sourceTurn ? (
-          <TurnBlock
-            turn={sourceTurn}
-            onFork={sourceTurn.id === latestForkableTurnId
-              ? continueInNewChat
-              : undefined}
-          />
-        ) : null;
-      }}
-      slots={{
-        empty: (
-          <EmptyStateIntro
-            hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
-            selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}
-            onSelectSuggestion={selectHomeSuggestion}
-            onSuggestion={
-              isSide ||
-              isNativeSubagent ||
-              homeSuggestionPhase === "dismissed"
-                ? undefined
-                : (prompt) => {
-                    fillSuggestionPrefix(prompt);
-                  }
-            }
-          />
-        ),
-        homeBeforeComposer:
-          homeSuggestionPhase === "choosing" &&
-          homeSuggestionSelection &&
-          !isSide ? (
-            <HomeSuggestionSelect
-              selection={homeSuggestionSelection}
-              selectedPrompt={selectedSuggestionPrompt}
-              onBack={backHomeSuggestion}
-              onSuggestion={selectHomeSuggestionTemplate}
-            />
-          ) : null,
-        beforeComposer: (
-          <>
-            {composerAuthSetup}
-            {composerNotice}
-            {composerProgress}
-          </>
-        ),
-        composer,
-        afterComposer: (
-          <>
-            {chipRow}
-            {runtimeFooter}
-          </>
-        ),
-        wrapConversationContent: (children) => (
-          <MarkdownCwdProvider cwd={active?.cwd}>
-            {children}
-          </MarkdownCwdProvider>
-        ),
-        conversationContentAfter: active ? (
-          <ResponseAnnotationController
-            scopeRef={transcriptRef}
-            destinationSessionId={active.id}
-            onAskInSideChat={askInSideChat}
-          />
-        ) : null,
-        conversationOverlay:
-          !isSide && active ? (
-            <>
-              <HistoryPager sessionId={active.id} />
-              <ConversationTimeline turns={transcriptTurns} />
-            </>
-          ) : null,
-        emptyAfter: !isSide ? (
-          <div className="home-corner-decoration" aria-hidden="true" />
-        ) : null,
-      }}
-    />
+    <div className="relative flex h-full min-h-0 flex-col" aria-busy={loadingFirstScreen}>
+      {loadingFirstScreen && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center app-canvas-surface"
+          data-chat-history-loading="true">
+          <OpenmaStartupLoader label={t("chat.loadingHistory")} />
+        </div>
+      )}
+      <div className="flex h-full min-h-0 flex-1 flex-col"
+        style={loadingFirstScreen ? { visibility: "hidden" } : undefined}
+        inert={loadingFirstScreen}>
+        <AgentChatView
+          key={active?.id}
+          sessionId={active?.id}
+          surface={isSide ? "side" : "main"}
+          phase={resolveAgentChatPhase(active)}
+          turns={chatSurfaceTurns}
+          transcriptRef={transcriptRef}
+          homeStyle={
+            homeComposer?.width !== undefined
+              ? {
+                  "--home-composer-theme-width": `${homeComposer.width}px`,
+                } as CSSProperties
+              : undefined
+          }
+          homeComposerStyle={
+            homeComposer?.width !== undefined
+              ? {
+                  "--home-composer-frame-width": `${homeComposer.width}px`,
+                } as CSSProperties
+              : undefined
+          }
+          renderTurn={({ turn }) => {
+            const sourceTurn = turnsById.get(turn.id);
+            return sourceTurn ? (
+              <TurnBlock
+                turn={sourceTurn}
+                onFork={sourceTurn.id === latestForkableTurnId
+                  ? continueInNewChat
+                  : undefined}
+              />
+            ) : null;
+          }}
+          slots={{
+            empty: (
+              <EmptyStateIntro
+                hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
+                selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}
+                onSelectSuggestion={selectHomeSuggestion}
+                onSuggestion={
+                  isSide ||
+                  isNativeSubagent ||
+                  homeSuggestionPhase === "dismissed"
+                    ? undefined
+                    : (prompt) => {
+                        fillSuggestionPrefix(prompt);
+                      }
+                }
+              />
+            ),
+            homeBeforeComposer:
+              homeSuggestionPhase === "choosing" &&
+              homeSuggestionSelection &&
+              !isSide ? (
+                <HomeSuggestionSelect
+                  selection={homeSuggestionSelection}
+                  selectedPrompt={selectedSuggestionPrompt}
+                  onBack={backHomeSuggestion}
+                  onSuggestion={selectHomeSuggestionTemplate}
+                />
+              ) : null,
+            beforeComposer: (
+              <>
+                {composerAuthSetup}
+                {composerNotice}
+                {composerProgress}
+              </>
+            ),
+            composer,
+            afterComposer: (
+              <>
+                {chipRow}
+                {runtimeFooter}
+              </>
+            ),
+            wrapConversationContent: (children) => (
+              <MarkdownCwdProvider cwd={active?.cwd}>
+                {children}
+              </MarkdownCwdProvider>
+            ),
+            conversationContentAfter: active ? (
+              <ResponseAnnotationController
+                scopeRef={transcriptRef}
+                destinationSessionId={active.id}
+                onAskInSideChat={askInSideChat}
+              />
+            ) : null,
+            conversationOverlay:
+              !isSide && active ? (
+                <>
+                  <HistoryPager sessionId={active.id} />
+                  <ConversationTimeline turns={transcriptTurns} />
+                </>
+              ) : null,
+            emptyAfter: !isSide ? (
+              <div className="home-corner-decoration" aria-hidden="true" />
+            ) : null,
+          }}
+        />
+      </div>
+    </div>
   );
 }
 

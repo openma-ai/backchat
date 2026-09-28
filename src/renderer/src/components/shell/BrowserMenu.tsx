@@ -16,7 +16,7 @@ import {
   SmartphoneIcon,
   Trash2Icon,
   UploadIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import type { BrowserDataPanel } from "@/components/shell/BrowserDataDialog";
 import {
   DropdownMenu,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon } from "@/components/Icons";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useSettings } from "@/lib/settings-store";
 import { useI18n } from "@/lib/i18n";

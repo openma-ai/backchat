@@ -20,6 +20,13 @@ describe("selectRecentProjectPaths", () => {
     ]);
   });
 
+  it("rejects generated checkouts even without workspace metadata", () => {
+    expect(selectRecentProjectPaths([
+      { cwd: "/Users/mini/.oma/worktrees/ws-fix/01-backend" },
+      { cwd: "/Users/mini/work/hilo" },
+    ])).toEqual(["/Users/mini/work/hilo"]);
+  });
+
   it("limits the result without reordering the persisted rows", () => {
     const rows = Array.from({ length: 10 }, (_, index) => ({
       cwd: `/Users/mini/work/project-${index + 1}`,

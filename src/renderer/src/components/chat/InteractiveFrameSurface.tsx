@@ -16,7 +16,7 @@ import {
   PanelRightIcon,
   PictureInPicture2Icon,
   XIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { cn } from "@/lib/utils";
 import { sessionStore } from "@/lib/session-store";
 import {

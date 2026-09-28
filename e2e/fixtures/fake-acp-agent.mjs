@@ -2,6 +2,7 @@
 import {
   AgentSideConnection,
   PROTOCOL_VERSION,
+  RequestError,
   ndJsonStream,
 } from "../../packages/acp/node_modules/@agentclientprotocol/sdk/dist/acp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -10,12 +11,28 @@ import {
   getDefaultEnvironment,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Readable, Writable } from "node:stream";
-import { appendFile, writeFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const fakeAgentName = process.env.BACKCHAT_FAKE_AGENT_NAME ?? "fake-acp-agent";
 const fakeAgentTitle = process.env.BACKCHAT_FAKE_AGENT_TITLE ?? "Fake ACP Agent";
 const fakeAgentVersion = process.env.BACKCHAT_FAKE_AGENT_VERSION ?? "0.0.0-e2e";
+const authStatePath = process.env.BACKCHAT_FAKE_AUTH_STATE;
+const expiredAuthMessage = "Your access token could not be refreshed. Please sign in again.";
+
+async function authState() {
+  return authStatePath ? readFile(authStatePath, "utf8") : "configured";
+}
+
+async function recordAuthEvent(event) {
+  if (authStatePath) await appendFile(`${authStatePath}.events.jsonl`, `${JSON.stringify(event)}\n`);
+}
+
+async function requireFixtureAuth() {
+  if (authStatePath && await authState() === "expired") {
+    throw RequestError.authRequired({ message: expiredAuthMessage });
+  }
+}
 
 class FakeAcpAgent {
   constructor(connection) {
@@ -34,9 +51,12 @@ class FakeAcpAgent {
         title: fakeAgentTitle,
         version: fakeAgentVersion,
       },
+      ...(authStatePath ? { authMethods: [{ id: "e2e-login", name: "Test sign in" }] } : {}),
       agentCapabilities: {
         loadSession: true,
+        ...(process.env.BACKCHAT_FAKE_CAPTURE_PROMPT ? {promptCapabilities:{image:true}} : {}),
         sessionCapabilities: {
+          ...(process.env.BACKCHAT_FAKE_ADDITIONAL_DIRECTORIES === "1" ? { additionalDirectories: {} } : {}),
           resume: {},
         },
       },
@@ -44,21 +64,27 @@ class FakeAcpAgent {
   }
 
   async newSession(params) {
+    await requireFixtureAuth();
     const sessionId = `fake-acp-${Date.now().toString(36)}`;
     this.sessions.set(sessionId, params.mcpServers ?? []);
     this.directories.set(sessionId, params.cwd);
+    await recordAuthEvent({ method: "session/new", sessionId });
     return { sessionId };
   }
 
   async loadSession(params) {
+    await requireFixtureAuth();
     this.sessions.set(params.sessionId, params.mcpServers ?? []);
     this.directories.set(params.sessionId, params.cwd);
+    await recordAuthEvent({ method: "session/load", sessionId: params.sessionId });
     return {};
   }
 
   async resumeSession(params) {
+    await requireFixtureAuth();
     this.sessions.set(params.sessionId, params.mcpServers ?? []);
     this.directories.set(params.sessionId, params.cwd);
+    await recordAuthEvent({ method: "session/resume", sessionId: params.sessionId });
     return {};
   }
 
@@ -66,10 +92,24 @@ class FakeAcpAgent {
     if (!this.sessions.has(params.sessionId)) {
       throw new Error(`unknown fake session: ${params.sessionId}`);
     }
+    if (process.env.BACKCHAT_FAKE_CAPTURE_PROMPT) await appendFile(process.env.BACKCHAT_FAKE_CAPTURE_PROMPT, JSON.stringify(params.prompt)+"\n");
     const promptText = params.prompt
       .filter((block) => block?.type === "text" && typeof block.text === "string")
       .map((block) => block.text)
       .join("\n");
+    await recordAuthEvent({ method: "session/prompt", sessionId: params.sessionId, text: promptText });
+    if (authStatePath && await authState() !== "recovered" && promptText.includes("expire-codex-auth-e2e")) {
+      await writeFile(authStatePath, "expired");
+      // codex-acp 1.12 emits assistant text, then rejects the prompt with this
+      // structured legacy error even when credentials were already configured.
+      await this.connection.sessionUpdate({ sessionId: params.sessionId, update: {
+        sessionUpdate: "agent_message_chunk", content: { type: "text", text: `${expiredAuthMessage}\n\n` },
+      } });
+      throw RequestError.internalError({
+        message: expiredAuthMessage,
+        codexErrorInfo: "unauthorized",
+      });
+    }
     if (promptText === "fail-after-accept-e2e") {
       throw new Error("Fake accepted prompt then failed");
     }
@@ -224,7 +264,12 @@ class FakeAcpAgent {
     }
   }
 
-  async authenticate() {
+  async authenticate(params) {
+    if (authStatePath) {
+      if (params.methodId !== "e2e-login") throw RequestError.invalidParams("Unknown fixture auth method");
+      await writeFile(authStatePath, "recovered");
+      await recordAuthEvent({ method: "authenticate", methodId: params.methodId });
+    }
     return {};
   }
 

@@ -1,6 +1,10 @@
 packages:
   - 'packages/*'
 
+# Each OpenMatter package is pinned to the same source snapshot. Their internal
+# workspace dependencies resolve through these overrides in a clean checkout.
+blockExoticSubdeps: false
+
 # pnpm v11 — allow native build scripts for deps that need them.
 # better-sqlite3 needs node-gyp at install; without this its addon
 # file is missing and require() throws "Could not locate the bindings
@@ -21,6 +25,21 @@ minimumReleaseAgeExclude:
   - '@agentclientprotocol/claude-agent-acp@0.64.2'
   - '@agentclientprotocol/codex-acp@1.1.0'
 overrides:
+  '@openma/common': 'git+https://github.com/openma-ai/openma-common.git#v0.6.0'
+  '@openmatter/agent': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent'
+  '@openmatter/agent-claude': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-claude'
+  '@openmatter/agent-mock': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-mock'
+  '@openmatter/core': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/core'
+  '@openmatter/inbox': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/inbox'
+  '@openmatter/inbox-sqlite': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/inbox-sqlite'
+  '@openmatter/integration': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/integration'
+  '@openmatter/orchestration': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/orchestration'
+  '@openmatter/project': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/project'
+  '@openmatter/project-host': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/project-host'
+  '@openmatter/project-mcp': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/project-mcp'
+  '@openmatter/runtime': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/runtime'
+  '@openmatter/store': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/store'
+  '@openmatter/store-sqlite': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/store-sqlite'
   # Security fixes for electron-builder's plist dependencies; keep each minor line.
   '@xmldom/xmldom@>=0.8.0 <0.8.15': 0.8.15
   '@xmldom/xmldom@>=0.9.0 <0.9.12': 0.9.12

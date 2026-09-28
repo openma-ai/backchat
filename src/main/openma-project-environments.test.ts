@@ -82,3 +82,17 @@ describe("project-scoped runner environments", () => {
     expect(store.list(scope, "p")).toEqual([]);
   });
 });
+
+it("exposes only an existing runner task's scoped checkout paths", () => {
+  store = new OpenmaProjectEnvironments(join(root, "read-paths.db"), () => project);
+  store.link(scope, { projectId: "p", environmentId: "env", runtimeId: "runner" });
+  const association = store.resolveRunnerSession(scope, "runner", "env", "task", "codex-acp");
+  const task = { ...scope, id: association.taskId, sessionId: "task", title: "Task", status: "idle" as const, createdAt: 0, updatedAt: 0, afterSeq: 0,
+    target: { ...scope, kind: "runner" as const, agentId: "codex-acp", agentName: "Codex", environmentId: "env", environmentName: "Environment", runtimeId: "runner", runtimeName: "Runner" } };
+  expect(store.pathsForTask(task)).toEqual(["/work/app", "/work/shared"]);
+  expect(store.pathsForTask({ ...task, workspaceId: "other" })).toBeNull();
+  expect(store.pathsForTask({ ...task, sessionId: "not-started" })).toBeNull();
+  expect(store.pathsForTask({ ...task, target: { ...task.target, environmentId: "other" } })).toBeNull();
+  expect(store.pathsForTask({ ...task, target: { ...task.target, runtimeId: "other" } })).toBeNull();
+  expect(store.pathsForTask({ ...task, target: { ...task.target, kind: "cloud", runtimeId: null } })).toBeNull();
+});
