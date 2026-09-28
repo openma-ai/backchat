@@ -206,7 +206,7 @@ export function syncTrafficLight(win: BrowserWindow): void {
     .catch(() => {});
 }
 
-function createWindow(): BrowserWindow {
+function createWindow(startupStartedAt?: number): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -244,6 +244,9 @@ function createWindow(): BrowserWindow {
   // apply the default once the renderer exists. Later reloads retain the
   // user's View-menu zoom instead of forcing the default again.
   win.webContents.once("did-finish-load", () => {
+    if (startupStartedAt !== undefined) logAppEvent("app.startup_stage", {
+      stage: "renderer_loaded", elapsed_ms: Math.round(performance.now() - startupStartedAt),
+    });
     // Start one existing View → Zoom In step above Electron's actual size.
     // This scales the complete UI (including rem- and fixed-pixel controls)
     // instead of selectively increasing body copy and leaving chrome behind.
@@ -256,6 +259,9 @@ function createWindow(): BrowserWindow {
   win.on("focus", () => syncTrafficLight(win));
 
   win.once("ready-to-show", () => {
+    if (startupStartedAt !== undefined) logAppEvent("app.startup_stage", {
+      stage: "window_ready_to_show", elapsed_ms: Math.round(performance.now() - startupStartedAt),
+    });
     if (!testHooksEnabled) win.maximize();
     if (!testHooksEnabled || showE2eWindow) win.show();
   });
@@ -343,6 +349,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    const startupStartedAt = performance.now();
     // Wire the oma-file:// handler. Whitelist enforced here so a
     // compromised renderer can't read arbitrary user files via
     // `fetch("oma-file://local/file?path=/etc/passwd")`. Paths must live
@@ -416,6 +423,10 @@ if (!gotLock) {
     // session cwd helpers create their own subpaths on demand.
     const root = openmaRoot();
     configureAppLog(root);
+    const logStartupStage = (stage: string) => logAppEvent("app.startup_stage", {
+      stage, elapsed_ms: Math.round(performance.now() - startupStartedAt),
+    });
+    logStartupStage("settings_loaded");
     const acpRoot = join(root, "acp");
     const acpBinDir = join(acpRoot, "bin");
     const bundledNodeRuntime = await provisionBundledNodeRuntime({
@@ -433,6 +444,7 @@ if (!gotLock) {
       configuredNpmRegistryUrl:
         process.env.NPM_CONFIG_REGISTRY ?? process.env.npm_config_registry,
     });
+    logStartupStage("runtime_provisioned");
     process.env.OPENMA_ACP_BIN_DIR = acpBinDir;
     process.env.PATH = [acpBinDir, desktopCliPath()].filter(Boolean).join(delimiter);
     logAppEvent("app.startup", {
@@ -444,9 +456,11 @@ if (!gotLock) {
     });
     setSessionRoot(join(root, "sessions"));
     openSessionDb(join(root, "sessions.db"));
+    logStartupStage("session_db_opened");
     const openmaAccount = await registerOpenmaIpc(join(root, "backchat", "openma"));
     const projectEnvironments = new OpenmaProjectEnvironments(join(root, "backchat", "openma", "projects.db"), getProject);
     await browserHarnessMcpBridge.start();
+    logStartupStage("base_bridges_started");
     let resumeTaskObservers = () => {};
     let localSessionExists = (_id: string) => true;
     const powerManagement = new DesktopPowerManagement({
@@ -471,6 +485,7 @@ if (!gotLock) {
       requestRunnerPermission: (id, params) => openmaRunner?.requestPermission(id, params) ?? Promise.resolve({ outcome: { outcome: "cancelled" } }),
       cancelRunnerPending: (id) => openmaRunner?.cancelPendingFor(id),
     });
+    logStartupStage("ipc_registered");
     localSessionExists = (id) => ipcRuntime.sessionManager.has(id);
     hasLocalProcesses = () => ipcRuntime.sessionManager.hasLocalProcesses();
     const runnerProfile = (process.env.OMA_PROFILE ?? "").trim();
@@ -509,6 +524,7 @@ if (!gotLock) {
     resumeTaskObservers = () => openmaTasks.resume();
     registerOpenmaTaskIpc(openmaTasks);
     await openmaRunner.restore();
+    logStartupStage("runner_restored");
     disposeSessionsForShutdown = async () => {
       openmaAccount.cancelLogin();
       openmaTasks.close();
@@ -524,7 +540,8 @@ if (!gotLock) {
       focusedWebContentsSend: sendToFocused,
     });
 
-    createWindow();
+    createWindow(startupStartedAt);
+    logStartupStage("window_created");
     const initialDeepLink = findBackchatDeepLink(process.argv);
     if (initialDeepLink) pendingDeepLinks.push(initialDeepLink);
     drainPendingDeepLinks();

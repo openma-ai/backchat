@@ -638,6 +638,14 @@ export function Sidebar() {
     "truncate",
   );
 
+  const newSectionAction = (
+    <button type="button" aria-label={t("sidebar.newSection")}
+      title={t("sidebar.newSection")} className="sidebar-row-action app-no-drag"
+      onClick={() => openSectionDialog("create")}>
+      <PlusIcon aria-hidden="true" />
+    </button>
+  );
+
   return (
     <div className="sidebar-navigation flex h-full min-h-0 flex-col">
       {/* TrafficLight drag region — just empty space inside the sidebar
@@ -743,8 +751,9 @@ export function Sidebar() {
         <div>
         {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 && customSections.length === 0 ? (
           <div>
-            <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-ui font-normal text-fg-subtle", labelCls)}>
-              {t("sidebar.chats")}
+            <div className="mb-0.5 flex h-[var(--sidebar-row-h)] items-center justify-between px-2 text-ui font-normal text-fg-subtle">
+              <span className={labelCls}>{t("sidebar.chats")}</span>
+              {newSectionAction}
             </div>
             <button
               type="button"
@@ -1013,10 +1022,12 @@ export function Sidebar() {
                     </ul>
                   )}
                 </SidebarSection>
-                {chats.length > 0 && (
+                {(
                   <SidebarSection
                     title={t("sidebar.chats")}
                     icon={<MessageSquareIcon className="size-3.5" />}
+                    action={newSectionAction}
+                    alwaysShowAction
                     open={openSectionKeys.has("chats")}
                     onToggle={() => toggleSection("chats")}
                     labelCls={labelCls}
@@ -1210,6 +1221,7 @@ function SidebarSection({
   labelCls,
   children,
   action,
+  alwaysShowAction = false,
   icon,
   customSectionId,
 }: {
@@ -1219,6 +1231,7 @@ function SidebarSection({
   labelCls: string;
   children: ReactNode;
   action?: ReactNode;
+  alwaysShowAction?: boolean;
   icon?: ReactNode;
   customSectionId?: string;
 }) {
@@ -1254,7 +1267,7 @@ function SidebarSection({
           </span>
         </button>
         <span className={cn("mr-1 shrink-0", labelCls)}>
-          <span className="inline-flex opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100">
+          <span className={cn("inline-flex transition-opacity", !alwaysShowAction && "opacity-0 group-hover/section:opacity-100 group-focus-within/section:opacity-100")}>
             {action}
           </span>
         </span>
