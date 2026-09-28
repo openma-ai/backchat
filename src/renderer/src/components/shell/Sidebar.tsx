@@ -638,10 +638,10 @@ export function Sidebar() {
     "truncate",
   );
 
-  const newSectionAction = (
-    <button type="button" aria-label={t("sidebar.newSection")}
-      title={t("sidebar.newSection")} className="sidebar-row-action app-no-drag"
-      onClick={() => openSectionDialog("create")}>
+  const newConversationAction = (
+    <button type="button" aria-label={t("sidebar.newConversation")}
+      title={t("sidebar.newConversation")} className="sidebar-row-action app-no-drag"
+      onClick={goHome}>
       <PlusIcon aria-hidden="true" />
     </button>
   );
@@ -1001,7 +1001,7 @@ export function Sidebar() {
                 <SidebarSection
                     title={t("sidebar.chats")}
                     icon={<MessageSquareIcon className="size-3.5" />}
-                    action={newSectionAction}
+                    action={newConversationAction}
                     alwaysShowAction
                     open={openSectionKeys.has("chats")}
                     onToggle={() => toggleSection("chats")}

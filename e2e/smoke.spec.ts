@@ -21,10 +21,12 @@ test.describe("backchat smoke", () => {
       await expect(navigation.getByRole("button", { name: "Projects", exact: true })).toBeVisible();
       await expect(navigation.getByRole("button", { name: "Chats", exact: true })).toBeVisible();
       const createProject = navigation.getByRole("button", { name: "Create project", exact: true });
-      const createSection = navigation.getByRole("button", { name: "New section", exact: true });
+      const createConversation = navigation.getByRole("button", { name: "New conversation", exact: true });
       await expect(createProject.locator("..")).toHaveCSS("opacity", "1");
-      await expect(createSection.locator("..")).toHaveCSS("opacity", "1");
+      await expect(createConversation.locator("..")).toHaveCSS("opacity", "1");
       await expect(navigation.getByRole("button", { name: "Start a new chat", exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "Sidebar options" }).click();
+      await expect(page.getByRole("menuitem", { name: "New section" })).toBeVisible();
 
       await expect(page.locator(".home-hero-title")).toBeVisible();
   });
