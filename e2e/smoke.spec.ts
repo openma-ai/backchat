@@ -22,8 +22,17 @@ test.describe("backchat smoke", () => {
       await expect(navigation.getByRole("button", { name: "Chats", exact: true })).toBeVisible();
       const createProject = navigation.getByRole("button", { name: "Create project", exact: true });
       const createConversation = navigation.getByRole("button", { name: "New conversation", exact: true });
-      await expect(createProject.locator("..")).toHaveCSS("opacity", "1");
+      await expect(createProject.locator("..")).toHaveCSS("opacity", "0");
+      await expect(createConversation.locator("..")).toHaveCSS("opacity", "0");
+      expect(await createConversation.locator("svg").innerHTML()).toBe(
+        await page.getByTestId("new-chat-button").locator("svg").innerHTML(),
+      );
+      const chatsHeader = navigation.getByRole("button", { name: "Chats", exact: true }).locator("..");
+      await chatsHeader.hover();
       await expect(createConversation.locator("..")).toHaveCSS("opacity", "1");
+      await expect(chatsHeader).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await createConversation.hover();
+      await expect(createConversation).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       await expect(navigation.getByRole("button", { name: "Start a new chat", exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "Sidebar options" }).click();
       await expect(page.getByRole("menuitem", { name: "New section" })).toBeVisible();

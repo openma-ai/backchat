@@ -277,6 +277,9 @@
 .sidebar-section-header > button {
   color: var(--fg-muted);
 }
+.sidebar-section-header .sidebar-row-action:is(:hover, :focus-visible, [data-state="open"], [aria-expanded="true"]) {
+  background: transparent;
+}
 .sidebar-scroll-area nav .sidebar-section .sidebar-section > .animated-collapse {
   padding-left: 20px;
 }
