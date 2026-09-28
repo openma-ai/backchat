@@ -78,7 +78,7 @@ for (const provider of ["openma", "claude-managed", "openai-agents"] as const) {
       const form = page.getByRole("form", { name: "Agent connections" });
       await form.getByLabel("Protocol", { exact: true }).selectOption(provider);
       await form.getByLabel("Tenant name (optional)").fill(title);
-      await form.getByLabel("Base URL", { exact: true }).fill(`${origin}${openai ? "/v1" : ""}`);
+      await form.getByLabel(/^Base URL/).fill(`${origin}${openai ? "/v1" : ""}`);
       await form.getByLabel("API Key", { exact: true }).fill("fake-secret");
       await form.getByRole("button", { name: "Add tenant", exact: true }).click();
       await expect(form.getByLabel("API Key", { exact: true })).toHaveValue("");
