@@ -1206,14 +1206,14 @@ function SidebarSection({
 }) {
   return (
     <section className="sidebar-section" data-state={open ? "open" : "closed"} data-sidebar-custom-section={customSectionId}>
-      <div className="sidebar-section-header group/section flex h-[var(--sidebar-row-h)] items-center">
+      <div className="sidebar-section-header group/section flex h-[var(--sidebar-row-h)] items-center rounded-md transition-colors hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]">
         <button
           type="button"
           onClick={onToggle}
           aria-label={title}
           aria-expanded={open}
           className={cn(
-            "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 px-2 text-left rounded-md hover:bg-[var(--control-bg-hover)]",
+            "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 px-2 text-left",
             "text-ui font-normal text-fg-subtle",
             "hover:text-fg-muted",
             "transition-colors duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
