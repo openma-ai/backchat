@@ -269,8 +269,8 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       electron:
-        specifier: ^42.3.3
-        version: 42.3.3(supports-color@10.2.2)
+        specifier: ^42.5.1
+        version: 42.5.1(supports-color@10.2.2)
       electron-builder:
         specifier: ^26.15.7
         version: 26.15.7(electron-builder-squirrel-windows@26.15.7)(supports-color@10.2.2)
@@ -868,6 +868,10 @@ packages:
   '@earendil-works/pi-telemetry@0.84.4':
     resolution: {integrity: sha512-8e2CuxM+ht+hedQXTZmi5JVl6/xDK9RpSDL2+MbITevKYQhMZ/z6lJOTFgox3HQyGxO8mOZEtYGVeQNaD4OzqA==}
     engines: {node: '>=22.19.0'}
+
+  '@electron-internal/extract-zip@1.0.5':
+    resolution: {integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==}
+    engines: {node: '>=22.12.0'}
 
   '@electron/asar@3.4.1':
     resolution: {integrity: sha512-i4/rNPRS84t0vSRa2HorerGRXWyF4vThfHesw0dmcWHp+cspK743UanA0suA5Q5y8kzY2y6YKrvbIUn69BCAiA==}
@@ -4423,8 +4427,8 @@ packages:
     deprecated: This version of Electron has a critical bug in Buffer handling, please upgrade to 42.3.3
     hasBin: true
 
-  electron@42.3.3:
-    resolution: {integrity: sha512-0MwYp9wTb7TrtTalOYqeW+suqd9T/Znstr/nDLKqFGIjHdBZX339guo3mQqTPURRZ/UQmYM4uMpzKpI5wLptfQ==}
+  electron@42.5.1:
+    resolution: {integrity: sha512-2VFNJcHHbrhIpGsJHdkLoi/nWPZPxN3GHVPe+9At3Oz3/TJRwpr+7JL97ddBDbKyLmHGx3GfI2jvzcEQL28uFw==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -7727,6 +7731,8 @@ snapshots:
       - zod
 
   '@earendil-works/pi-telemetry@0.84.4': {}
+
+  '@electron-internal/extract-zip@1.0.5': {}
 
   '@electron/asar@3.4.1':
     dependencies:
@@ -11529,11 +11535,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@42.3.3(supports-color@10.2.2):
+  electron@42.5.1(supports-color@10.2.2):
     dependencies:
+      '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.0.0(supports-color@10.2.2)
       '@types/node': 24.12.4
-      extract-zip: 2.0.1(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
 
