@@ -1,5 +1,5 @@
 import { useI18n } from "@/lib/i18n";
-import { MessageSquareTextIcon, ScanSearchIcon, XIcon } from "lucide-react";
+import { MessageSquareTextIcon, ScanSearchIcon, XIcon } from "@/components/Icons";
 
 import type { PromptAnnotation, PromptAttachment } from "@shared/session-events.js";
 import {
@@ -21,11 +21,11 @@ export function ComposerAnnotationStrip({
 }: {
   annotations: PromptAnnotation[];
   attachments: PromptAttachment[];
-  onRemove: (annotationId: string) => void;
+  onRemove?: (annotationId: string) => void;
 }) {
   const { t } = useI18n();
   const browserOnly = annotations.every(isBrowserPageAnnotation);
-  const label = annotationCountLabel(annotations.length, browserOnly);
+  const label = onRemove ? annotationCountLabel(annotations.length, browserOnly) : t("annotation.count", { count: annotations.length });
   const TriggerIcon = browserOnly ? ScanSearchIcon : MessageSquareTextIcon;
   return (
     <Popover>
@@ -73,7 +73,7 @@ export function ComposerAnnotationStrip({
                   <div className="text-[11px] text-fg-subtle">
                     {summary.sourceLabel}
                   </div>
-                  <p className="mt-0.5 line-clamp-5 whitespace-pre-wrap text-sm leading-5 text-fg">
+                  <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-fg">
                     {summary.primaryText}
                   </p>
                   {summary.sourceUrl && (
@@ -86,8 +86,8 @@ export function ComposerAnnotationStrip({
                   )}
                   {annotation.comment?.trim() && (
                     <div className="mt-2">
-                      <div className="text-[11px] text-fg-subtle">Comment</div>
-                      <p className="mt-0.5 line-clamp-3 text-xs leading-5 text-fg-muted">
+                      <div className="text-[11px] text-fg-subtle">{t("annotation.commentLabel")}</div>
+                      <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-5 text-fg-muted">
                         {annotation.comment.trim()}
                       </p>
                     </div>
@@ -106,7 +106,7 @@ export function ComposerAnnotationStrip({
                     </div>
                   ) : null}
                 </div>
-                <button
+                {onRemove && <button
                   type="button"
                   onClick={() => onRemove(annotation.id)}
                   aria-label={`Remove annotation ${index}`}
@@ -114,7 +114,7 @@ export function ComposerAnnotationStrip({
                   className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-bg-subtle hover:text-danger"
                 >
                   <XIcon className="size-3.5" />
-                </button>
+                </button>}
               </div>
             );
           })}

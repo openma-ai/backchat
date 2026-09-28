@@ -1,3 +1,5 @@
+import { configuredEnvironment, readLocalEnvironment } from "./task-environment.js";
+import type { TaskEnvironment } from "../shared/task-environment.js";
 import { sessionInputIdentityPrefix } from "@openma/common/protocol/managed";
 import { DirectAgentRuntime } from "./direct-agent-runtime.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
@@ -12,7 +14,7 @@ import type { OpenmaTaskResponse, OpenmaTaskUpdate } from "../shared/openma.js";
 import { OpenmaTaskFiles } from "./openma-task-files.js";
 import { openmaDesktopTaskId } from "./openma-identity.js";
 export { openmaDesktopTaskId } from "./openma-identity.js";
-interface Options { directory: string; account: OpenmaAccount; catalog: (scope: OpenmaScope) => Promise<OpenmaCatalog>; fetchImpl?: typeof fetch; onSnapshot?: (snapshot: OpenmaTaskSnapshot) => void; onTaskUpdated?: (task: OpenmaTask) => void; reconnectMs?: number }
+interface Options { runnerPaths?: (task: OpenmaTask) => string[] | null; directory: string; account: OpenmaAccount; catalog: (scope: OpenmaScope) => Promise<OpenmaCatalog>; fetchImpl?: typeof fetch; onSnapshot?: (snapshot: OpenmaTaskSnapshot) => void; onTaskUpdated?: (task: OpenmaTask) => void; reconnectMs?: number }
 interface Observer { owners: Set<string>; controller: AbortController; connection: OpenmaTaskSnapshot["connection"]; transient: OpenmaTaskEvent[]; error?: string; credentials: OpenmaConnection; publishTimer?: ReturnType<typeof setTimeout> }
 
 function timestamp(value: unknown, fallback: number): number {
@@ -89,6 +91,21 @@ export class OpenmaTasks {
     this.#updates.set(id, operation);
     try { return await operation; }
     finally { if (this.#updates.get(id) === operation) this.#updates.delete(id); }
+  }
+  async environment(id: string): Promise<TaskEnvironment> {
+    const task = this.#task(id);
+    const connection = this.options.account.connection(task);
+    // Only an existing, scoped execution binding may resolve a remote task to local paths.
+    const paths = task.target.kind === "runner" ? this.options.runnerPaths?.(task) : null;
+    if (paths) {
+      const result = await readLocalEnvironment(task.target.environmentId, paths);
+      this.#check(connection);
+      return result;
+    }
+    const session = await this.#client(connection).retrieveSession(task.sessionId);
+    this.#check(connection);
+    if (session.id !== task.sessionId || session.environment_id !== task.target.environmentId) throw new Error("Task environment changed");
+    return configuredEnvironment(task.target.environmentId, Array.isArray(session.resources) ? session.resources : []);
   }
   async files(id: string) {
     const task = this.#task(id);

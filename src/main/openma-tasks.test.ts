@@ -13,7 +13,7 @@ const target: OpenmaExecutionTarget = { baseUrl: "https://app.openma.ai", userId
 
 async function setup() {
   const directory = await mkdtemp(join(tmpdir(), "backchat-tasks-"));
-  const state = { rejectInput: false, historyHook: null as null | (() => void), strictInput: false, sends: 0, creates: 0, streams: 0, mutations: [] as string[], events: [] as OpenmaTaskEvent[], pushes: [] as OpenmaTaskSnapshot[], lostAck: false, title: "Task", failRename: false, listRequests: 0, listRemote: false, listGate: null as Promise<void> | null, controller: null as ReadableStreamDefaultController<Uint8Array> | null };
+  const state = { resources: [] as unknown[], rejectInput: false, historyHook: null as null | (() => void), strictInput: false, sends: 0, creates: 0, streams: 0, mutations: [] as string[], events: [] as OpenmaTaskEvent[], pushes: [] as OpenmaTaskSnapshot[], lostAck: false, title: "Task", failRename: false, listRequests: 0, listRemote: false, listGate: null as Promise<void> | null, controller: null as ReadableStreamDefaultController<Uint8Array> | null };
   const fetchImpl: typeof fetch = async (url, init) => {
     const request = new Request(url, init); const path = new URL(request.url).pathname;
     if (path === "/v1/oma/me") return Response.json({ user: { id: "user", email: "user@example.com", name: "User" }, tenant: { id: "team" }, tenants: [{ id: "team", name: "Team", role: "owner" }] });
@@ -32,7 +32,7 @@ async function setup() {
         if (state.failRename) return new Response("unavailable", { status: 503 });
         state.title = "Renamed";
       }
-      return Response.json({ id: "remote", status: state.events.some((e) => e.type === "session.status_running") ? "running" : "idle", title: state.title });
+      return Response.json({ id: "remote", environment_id: "env", resources: state.resources, status: state.events.some((e) => e.type === "session.status_running") ? "running" : "idle", title: state.title });
     }
     if (path === "/v1/sessions/remote/events" && request.method === "POST") {
       state.sends++; if (state.rejectInput) return Response.json({ error: { type: "permission_error", message: "denied" } }, { status: 403 }); const body = await request.json() as { events: OpenmaTaskEvent[] };
@@ -287,3 +287,13 @@ it("allows explicit approval retry after a definitive 403 rejection", async () =
     await vi.waitFor(() => expect(tasks.snapshot(task.id).events).toContainEqual(answer));
     expect(state.streams).toBe(1);
   });
+
+it("exposes remote repository configuration without reading local paths or changing task state", async () => {
+  const { tasks, state } = await setup();
+  const { task } = await tasks.create(target, "Task");
+  state.resources = [{ type: "github_repository", mount_path: "/tmp/same-path-as-local", url: "https://github.com/team/repo", checkout: { type: "branch", name: "main" } }];
+  const environment = await tasks.environment(task.id);
+  expect(environment).toMatchObject({ environmentId: "env", checkouts: [{ path: "/tmp/same-path-as-local", state: "configured", branch: null, headSha: null, changes: null, reviews: null, configuredRevision: { type: "branch", name: "main" } }] });
+  expect(tasks.snapshot(task.id).task.status).toBe("idle");
+  expect(state.mutations).toEqual(["POST /v1/sessions"]);
+});

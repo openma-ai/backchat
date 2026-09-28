@@ -1511,6 +1511,7 @@ export function toOpenMAEvent(
         event_id: transportEventId(`session-started:${message.session_id}`, message.acp_session_id),
         type: "session.started",
         data: {
+          ...(message.auth ? { auth: message.auth } : {}),
           acp_session_id: message.acp_session_id,
           agent_id: message.agent_id,
           cwd: message.cwd,
@@ -1771,6 +1772,7 @@ export function toOpenMAEvent(
         data: {
           message: message.message,
           ...(message.code ? { code: message.code } : {}),
+          ...(message.error_details ? { error_details: message.error_details } : {}),
           ...(message.agent_id ? { agent_id: message.agent_id } : {}),
           ...(message.auth ? { auth: message.auth } : {}),
         },

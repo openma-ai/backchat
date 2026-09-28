@@ -6,7 +6,7 @@ import {
   FileIcon,
   FolderIcon,
   FolderOpenIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { cn } from "@/lib/utils";
 
 /**

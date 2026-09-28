@@ -1,5 +1,5 @@
 import { useLayoutEffect, type RefObject } from "react";
-import { AtSignIcon, BoxIcon, FileTextIcon, XIcon } from "lucide-react";
+import { AtSignIcon, BoxIcon, FileTextIcon, XIcon } from "@/components/Icons";
 
 import type {
   PromptAttachment,

@@ -1,3 +1,4 @@
+import { useProjects } from "@/lib/projects-query";
 import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ export function OpenMAProjects() {
   const catalog = useOpenmaCatalog();
   const bindings = useOpenmaProjectBindings();
   const { data: runner } = useOpenmaRunner();
-  const { data: projects = [] } = useQuery({ queryKey: ["projects"], queryFn: () => window.backchat.projectsList() });
+  const { data: projects = [] } = useProjects();
   const [projectId, setProjectId] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [busy, setBusy] = useState(false);

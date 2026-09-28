@@ -7,7 +7,7 @@ import {
   SearchIcon,
   TerminalIcon,
   WrenchIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -109,7 +109,7 @@ export function ToolInputBlock({
       className={cn(
         "max-h-28 overflow-auto font-mono whitespace-pre-wrap break-words text-fg-muted",
         variant === "activity"
-          ? "ml-7 mt-1 rounded bg-bg-surface/45 px-2 py-1 text-[11px]"
+          ? "ml-[calc(var(--chat-activity-icon-size)+6px)] mt-1 rounded bg-bg-surface/45 px-2 py-1 text-[11px]"
           : "mt-4 px-2 py-1 text-[12px] leading-6 text-fg-subtle",
       )}
       data-tool-input={id}

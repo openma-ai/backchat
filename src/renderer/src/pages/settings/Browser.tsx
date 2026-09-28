@@ -13,7 +13,7 @@ import {
   RefreshCwIcon,
   ShieldCheckIcon,
   Trash2Icon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { toast } from "sonner";
 
 import { PageScaffold } from "@/components/shell/PageScaffold";

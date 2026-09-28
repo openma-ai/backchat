@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { access } from "node:fs/promises";
+import { access, realpath } from "node:fs/promises";
 import { basename, relative, join, isAbsolute, sep } from "node:path";
 import {
   countSessionsForWorkspace,
@@ -10,11 +10,13 @@ import {
   listProjects,
   listWorkspaces as listWorkspaceRows,
   saveWorkspace,
+  saveProject,
   setSessionWorkspace,
   type PersistedWorkspace,
 } from "./sql-store.js";
 import {
   defaultWorktreeStore,
+  discoverWorkspaceSources,
   gitHeadInfo,
   listRepoWorktrees,
   repoRootOf,
@@ -35,8 +37,8 @@ import type { ProjectInfo } from "../shared/projects.js";
 /**
  * Project → Workspace → Worktree.
  *
- * Owns the three workspace kinds. Managed workspaces are the only stored
- * ones; live derives from the project and external from `git worktree list`.
+ * Managed and linked workspaces are stored. Live derives from the project
+ * and external checkout choices from `git worktree list`.
  * Sessions reference a workspace by id and get their cwd / additional
  * directories from its roots, so "the code you see is the checkout you are
  * in" holds for every surface keyed on the session.
@@ -54,6 +56,7 @@ export class WorkspaceService {
     /** Defaults to the project's source folders, primary first. */
     source_directories?: string[];
     created_by_session_id?: string | null;
+    checkouts?: Array<{ repoRoot: string; path: string }>;
   }): Promise<WorkspaceInfo> {
     const name = input.name.trim();
     if (!name) throw new Error("Workspace name is required");
@@ -61,13 +64,69 @@ export class WorkspaceService {
     if (input.project_id && !project) {
       throw new Error(`Project not found: ${input.project_id}`);
     }
-    const sourceDirectories = input.source_directories?.length
+    const requestedDirectories = input.source_directories?.length
       ? input.source_directories
       : project
         ? orderedProjectFolders(project)
         : [];
+    const discovered = await Promise.all(requestedDirectories.map(async (folder) => {
+      const sources = await discoverWorkspaceSources(folder);
+      if (!sources.length) throw new Error(`No Git repositories found in source folder: ${folder}`);
+      return sources;
+    }));
+    const sourceDirectories = [...new Set(discovered.flat())];
     if (sourceDirectories.length === 0) {
       throw new Error("Workspace needs at least one source folder");
+    }
+    // Directory-based creation still needs a durable sidebar owner. Resolve
+    // exact source folders, not a shared repository or a path prefix.
+    const ensureProjectId = async (): Promise<string> => {
+      if (project) return project.id;
+      const folders = await Promise.all(requestedDirectories.map(folder => realpath(folder)));
+      for (const candidate of listProjects()) {
+        const existing = await Promise.all(candidate.source_folders.map(folder => realpath(folder).catch(() => folder)));
+        if (existing.length === folders.length && folders.every(folder => existing.includes(folder))) return candidate.id;
+      }
+      return saveProject({
+        id: `project-${randomBytes(8).toString("hex")}`,
+        name: basename(folders[0]!),
+        source_folders: folders,
+        primary_folder: folders[0],
+      }).id;
+    };
+    if (input.checkouts) {
+      const worktrees: WorkspaceWorktree[] = [];
+      const roots: WorkspaceRoot[] = [];
+      const byRepo = new Map(input.checkouts.map(choice => [choice.repoRoot, choice.path]));
+      if (byRepo.size !== input.checkouts.length) throw new Error("Choose one checkout per repository");
+      for (const sourcePath of sourceDirectories) {
+        const repoRoot = await repoRootOf(sourcePath);
+        if (!repoRoot) throw new Error(`Repository not found: ${sourcePath}`);
+        let index = worktrees.findIndex(tree => tree.repoRoot === repoRoot);
+        if (index < 0) {
+          const path = byRepo.get(repoRoot);
+          const choices = await listRepoWorktrees(repoRoot);
+          const choice = choices.find(choice => choice.path === path && !choice.prunable);
+          if (!choice || !(await exists(choice.path))) throw new Error(`Checkout not available for ${repoRoot}`);
+          index = worktrees.length;
+          worktrees.push({ repoRoot, path: choice.path, head: choice.head, branch: choice.branch });
+        }
+        roots.push({ sourcePath, effectivePath: join(worktrees[index]!.path, relative(repoRoot, sourcePath)), worktreeIndex: index });
+      }
+      if (worktrees.length !== byRepo.size) throw new Error("Checkout does not belong to this project");
+      const branches = new Set(worktrees.map(tree => tree.branch));
+      return managedInfo(saveWorkspace({
+        id: `ws-${safeName(name).toLowerCase().slice(0, 40)}-${randomBytes(4).toString("hex")}`,
+        kind: "linked",
+        project_id: await ensureProjectId(),
+        name,
+        branch: branches.size === 1 ? worktrees[0]!.branch : null,
+        root_dir: "",
+        source_directories: sourceDirectories,
+        roots,
+        worktrees,
+        created_by_session_id: null,
+      }));
     }
     const slug = safeName(name).toLowerCase().slice(0, 40);
     const suffix = randomBytes(2).toString("hex");
@@ -80,7 +139,7 @@ export class WorkspaceService {
     });
     const row = saveWorkspace({
       id,
-      project_id: input.project_id,
+      project_id: await ensureProjectId(),
       name,
       branch: prepared.branch,
       root_dir: prepared.rootDir,
@@ -93,20 +152,42 @@ export class WorkspaceService {
   }
 
   /** Live + managed + external for one project, or for every project. */
-  async list(projectId?: string): Promise<WorkspaceInfo[]> {
-    const projects = projectId
+  async list(projectId?: string, sourceDirectory?: string): Promise<WorkspaceInfo[]> {
+    const projects = sourceDirectory && !projectId
+      ? [{ id: "", name: basename(sourceDirectory), source_folders: [sourceDirectory], primary_folder: sourceDirectory, created_at: 0, updated_at: 0 }]
+      : projectId
       ? [getProject(projectId)].filter((p): p is ProjectInfo => !!p)
       : listProjects();
-    const managed = listWorkspaceRows(projectId);
+    const expandedProjects = await Promise.all(projects.map(async (project) => {
+      const discovered = await Promise.all(orderedProjectFolders(project).map(async (folder) => {
+        const sources = await discoverWorkspaceSources(folder).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        });
+        // Non-Git roots still belong to live/external workspaces.
+        return sources.length ? sources : [folder];
+      }));
+      const sources = [...new Set(discovered.flat())];
+      return { ...project, source_folders: sources, primary_folder: sources[0] ?? "" };
+    }));
+    const scopedSources = new Set(expandedProjects.flatMap(p => p.source_folders));
+    const managed = listWorkspaceRows(projectId).filter(row => !sourceDirectory || projectId || row.roots.some(root => (scopedSources.has(root.sourcePath) || scopedSources.has(root.effectivePath))));
     const managedPaths = new Set(
       managed.flatMap((row) => row.worktrees.map((w) => w.path)),
     );
     const result: WorkspaceInfo[] = [];
-    for (const project of projects) {
+    for (const project of expandedProjects) {
       result.push(await liveInfo(project));
     }
-    result.push(...managed.map(managedInfo));
-    for (const project of projects) {
+    result.push(...managed.map(row => {
+      const info = managedInfo(row);
+      if (info.project_id) return info;
+      const matches = expandedProjects.filter(project => project.id
+        && project.source_folders.length === row.roots.length
+        && project.source_folders.every(folder => row.roots.some(root => root.sourcePath === folder)));
+      return matches.length === 1 ? { ...info, project_id: matches[0]!.id } : info;
+    }));
+    for (const project of expandedProjects) {
       result.push(...await externalInfos(project, managedPaths, this.#store.root));
     }
     // Managed rows without a project (legacy worktree-mode sessions) still
@@ -127,7 +208,17 @@ export class WorkspaceService {
       return externalInfoForPath(path, project);
     }
     const row = getWorkspaceRow(id);
-    return row ? managedInfo(row) : null;
+    if (row?.kind === "linked") {
+      for (const tree of row.worktrees) {
+        if (!(await exists(tree.path))) throw new Error(`Workspace checkout no longer exists: ${tree.path}`);
+      }
+    }
+    if (!row) return null;
+    if (!row.project_id) {
+      const inferred = (await this.list()).find(workspace => workspace.id === id)?.project_id;
+      if (inferred) return managedInfo(saveWorkspace({ ...row, project_id: inferred }));
+    }
+    return managedInfo(row);
   }
 
   async delete(id: string): Promise<void> {
@@ -137,7 +228,7 @@ export class WorkspaceService {
     }
     const row = getWorkspaceRow(id);
     if (!row) return;
-    await this.#store.removeDir(row.root_dir);
+    if (row.kind !== "linked") await this.#store.removeDir(row.root_dir);
     deleteWorkspaceRow(id);
   }
 
@@ -193,6 +284,7 @@ export async function prepareSessionWorkspace(input: {
   workspaceId?: string;
 }): Promise<{
   workspaceId: string | null;
+  projectId: string | null;
   cwd: string;
   additionalDirectories: string[];
   created: boolean;
@@ -200,9 +292,13 @@ export async function prepareSessionWorkspace(input: {
   if (input.workspaceId) {
     const workspace = await workspaceService.resolve(input.workspaceId, input.projectId);
     if (!workspace) throw new Error(`Workspace not found: ${input.workspaceId}`);
+    if (input.projectId && workspace.project_id && input.projectId !== workspace.project_id) {
+      throw new Error("Workspace does not belong to the selected project");
+    }
     const mapped = mapRootsForSession(workspace, input.sourceDirectories);
     return {
       workspaceId: workspace.kind === "live" ? null : workspace.id,
+      projectId: workspace.project_id ?? input.projectId,
       ...mapped,
       created: false,
     };
@@ -215,7 +311,7 @@ export async function prepareSessionWorkspace(input: {
     source_directories: input.sourceDirectories,
     created_by_session_id: input.sessionId,
   });
-  return { workspaceId: workspace.id, ...mapRootsForSession(workspace, input.sourceDirectories), created: true };
+  return { workspaceId: workspace.id, projectId: workspace.project_id, ...mapRootsForSession(workspace, input.sourceDirectories), created: true };
 }
 
 export async function discardSessionWorkspace(workspaceId: string): Promise<void> {
@@ -237,7 +333,7 @@ function managedInfo(row: PersistedWorkspace): WorkspaceInfo {
     id: row.id,
     project_id: row.project_id,
     name: row.name,
-    kind: "managed",
+    kind: row.kind,
     branch: row.branch,
     roots: row.roots,
     worktrees: row.worktrees,

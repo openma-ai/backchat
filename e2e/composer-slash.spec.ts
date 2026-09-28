@@ -54,7 +54,7 @@ test.describe("composer slash commands", () => {
     await expect(page.getByRole("option", { name: /init/i })).toBeVisible();
     await expect(panel.locator(".lucide-slash")).toHaveCount(0);
     await expect(panel.locator(".slash-command-icon")).toHaveCount(3);
-    await expect(panel.locator(".lucide-box")).toHaveCount(1);
+    await expect(panel.locator('[data-command-icon="skill:review"] svg')).toHaveCount(1);
     await expect(panel.locator(".slash-command-section").nth(1)).toHaveCSS(
       "border-top-width",
       "0px",

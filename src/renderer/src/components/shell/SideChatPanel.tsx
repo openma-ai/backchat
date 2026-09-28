@@ -1,3 +1,4 @@
+import { PanelRightIcon } from "@/components/Icons";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -18,7 +19,7 @@ import {
   SquareTerminalIcon,
   XIcon,
   type LucideIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { ChatView } from "@/components/chat/ChatView";
 import { SubagentAvatar } from "@/components/SubagentAvatar";
 import { FileTree } from "@/components/shell/FileTree";
@@ -500,19 +501,7 @@ export function SideChatPanel() {
                 "transition-colors",
               )}
             >
-              <svg
-                viewBox="0 0 16 16"
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="2" y="3" width="12" height="10" rx="1.5" />
-                <line x1="10" y1="3" x2="10" y2="13" />
-              </svg>
+              <PanelRightIcon className="size-3.5" />
             </button>
           )}
         </div>

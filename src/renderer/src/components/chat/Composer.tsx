@@ -1,5 +1,6 @@
+import { ComposerSurface, ComposerInput, ComposerAction } from "./ComposerPrimitives";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "lucide-react";
+import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "@/components/Icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { createComposerDraftStore } from "@openma/common/chat-ui";
@@ -62,6 +63,7 @@ import {
 import { ComposerSlashCommandMenu } from "./ComposerSlashCommandMenu";
 import { useComposerSuggestionState } from "@/lib/composer-suggestion-state";
 import { useComposerHarnessState, composerActionDisabled, composerAuthNeeded } from "@/lib/composer-harness-state";
+import { reconnectAuthenticatedSession } from "@/lib/session-auth-recovery";
 import { useComposerSlashState } from "@/lib/composer-slash-state";
 import {
   filterSessionMentionCandidates,
@@ -306,6 +308,8 @@ export function Composer({
     promptQueueEnabled,
   });
   const currentAgentId = remoteTarget?.agentId ?? localAgentId;
+
+
   const hasHarnessSetup = isRemote || localHarnessSetup;
   const effectiveAvailableCommands = isRemote ? [] : localCommands;
   const effectiveConfigOptions = isRemote ? [] : localConfigOptions;
@@ -323,13 +327,14 @@ export function Composer({
   });
   const refreshAuth = useMutation({
     mutationFn: () => window.backchat.agentsList({ refresh: true }),
-    onSuccess: (next) => {
+    onSuccess: async (next) => {
       queryClient.setQueryData(AGENTS_QUERY_KEY, next);
       const updated = next.find((item) => item.id === currentAgentId);
       if (updated?.auth?.status === "configured" && sessionId) {
-        sessionStore.clearAuthRequired(sessionId);
+        await reconnectAuthenticatedSession(sessionId);
       }
     },
+    onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
   });
   const composerAvailableCommands = useMemo(
     () => withHostForkCommand(
@@ -911,13 +916,9 @@ export function Composer({
         attachTransfer(event.dataTransfer);
       }}
     >
-      <div
+      <ComposerSurface
         data-suggestion-fill-active={suggestionFillActive ? "true" : undefined}
         className={cn(
-        // Match the rails with an opaque surface. A restrained input shadow
-        // supplies depth without backdrop compositing or inset highlights.
-        "composer-control-row-inset composer-radius relative flex flex-col gap-[var(--composer-section-gap)] py-[var(--composer-card-padding-block)] app-composer-surface composer-card",
-          "transition-shadow",
           suggestionFillActive && "composer-suggestion-fill suggestion-fill-active",
         )}
       >
@@ -1006,7 +1007,7 @@ export function Composer({
                   />
                 </span>
               )}
-              <textarea
+              <ComposerInput
               ref={taRef}
               value={text}
               onChange={(e) => {
@@ -1132,14 +1133,6 @@ export function Composer({
                 selectedSkillCommand
                   ? "min-h-[var(--control-height-compact)]"
                   : "min-h-[var(--composer-body-min-height)]",
-                // What you type and what the transcript shows are the same
-                // prose, so the composer sits on the transcript's reading tier
-                // and font rather than on the UI chrome font.
-                "w-full max-h-[240px] resize-none bg-transparent font-chat text-[14px] leading-7 text-fg outline-none",
-                // A placeholder is instructional copy, not decoration. Muted
-                // still reads as "nothing typed yet" while clearing AA.
-                "placeholder:text-fg-muted",
-                "[field-sizing:content]",
               )}
             />
             </div>
@@ -1272,12 +1265,12 @@ export function Composer({
             />
           )}
 
+
           {/* One slot, one interaction weight: the glyph follows what Enter
               would do right now. With a draft it sends or queues; with an
               empty composer mid-run it stops the turn. Two adjacent buttons
               forced a choice between an enabled stop and a disabled send. */}
-          <button
-            type="button"
+          <ComposerAction
             onClick={() => {
               if (stopIsPrimary) {
                 onCancel();
@@ -1302,24 +1295,18 @@ export function Composer({
                   ? primaryRunningAction?.title
                   : t("chat.send")
             }
-            className={cn(
-              "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5",
-              "text-fg-subtle hover:text-fg hover:bg-[var(--control-bg-hover)]",
-              "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
-              "transition-colors",
-            )}
           >
             {stopIsPrimary ? (
               <SquareIcon className="size-3.5" />
             ) : (
               <CornerDownLeftIcon className="size-4" />
             )}
-          </button>
+          </ComposerAction>
         </div>
       </div>
       </>
       )}
-      </div>
+      </ComposerSurface>
 
       {/* These transient surfaces are siblings of the composer card, not
           children of its padded content box. Their containing block is

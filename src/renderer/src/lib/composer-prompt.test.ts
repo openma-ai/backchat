@@ -199,8 +199,8 @@ describe("composer prompt presentation", () => {
   });
 
   it("uses visible placeholders for prompts that only contain context", () => {
-    expect(derivePromptDisplayText("", [], 1)).toBe("[1 annotation]");
-    expect(derivePromptDisplayText("", [], 2)).toBe("[2 annotations]");
+    expect(derivePromptDisplayText("", [], 1)).toBe("");
+    expect(derivePromptDisplayText("", [], 2)).toBe("");
     expect(derivePromptDisplayText("", [], 0, 1)).toBe("[1 referenced session]");
     expect(derivePromptDisplayText("", [imageAttachment])).toBe(
       "[Attached image: screenshot.png]",

@@ -16,6 +16,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
+  HomeIcon,
   ClockIcon,
   MessageSquarePlusIcon,
   MoonStarIcon,
@@ -23,8 +24,10 @@ import {
   SunIcon,
   SearchIcon,
   CornerDownLeftIcon,
-} from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+} from "@/components/Icons";
+import { Dialog, DialogTitle } from "@/components/ui/dialog";
+import { PopupContent } from "@/components/ui/popup";
+import { SearchField } from "@/components/ui/search-field";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import {
@@ -169,18 +172,7 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent
-        showCloseButton={false}
-        className={cn(
-          "!max-w-xl gap-0 overflow-hidden p-0",
-          // Stable anchor on growth — top-anchored at 18vh instead of
-          // vertical-centered. List height changes don't shift the dialog
-          // up/down, which is the #1 source of "open flicker / height jump".
-          // Override the default `top-1/2 -translate-y-1/2` shadcn Dialog
-          // applies. We use important to beat shadcn's inline transform.
-          "!top-[18vh] !translate-y-0",
-        )}
-      >
+      <PopupContent>
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <Command
           shouldFilter={query.length < 2}
@@ -193,19 +185,17 @@ export function CommandPalette() {
           className="flex flex-col"
           label="Command palette"
         >
-          <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
-            <SearchIcon className="size-3.5 shrink-0 text-fg-subtle" />
+          <SearchField className="mx-1 mt-1">
             <Command.Input
               ref={inputRef}
               value={query}
               onValueChange={setQuery}
               placeholder={t("shell.commandPalettePlaceholder")}
-              className="flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
             />
             <kbd className="rounded bg-bg-surface px-1.5 py-0.5 font-mono text-[11px] text-fg-subtle">
               esc
             </kbd>
-          </div>
+          </SearchField>
 
           <Command.List
             className="overflow-y-auto p-1"
@@ -329,7 +319,7 @@ export function CommandPalette() {
                 className={itemClass}
               >
                 <CmdSlot>
-                  <SearchIcon className="size-3.5 text-fg-subtle opacity-0" />
+                  <HomeIcon className="size-3.5 text-fg-subtle" />
                 </CmdSlot>
                 <span className="flex-1 text-fg">Home</span>
               </Command.Item>
@@ -395,7 +385,7 @@ export function CommandPalette() {
             </span>
           </div>
         </Command>
-      </DialogContent>
+      </PopupContent>
     </Dialog>
   );
 }

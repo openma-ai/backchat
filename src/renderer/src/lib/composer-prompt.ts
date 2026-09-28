@@ -158,9 +158,7 @@ export function derivePromptDisplayText(
 ): string {
   if (text.trim().length > 0) return text;
   if (attachments.length === 0 && annotationCount > 0) {
-    return annotationCount === 1
-      ? "[1 annotation]"
-      : `[${annotationCount} annotations]`;
+    return "";
   }
   if (attachments.length === 0) {
     if (sessionReferenceCount > 0) {

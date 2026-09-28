@@ -5,7 +5,7 @@ import {
   ListChecksIcon,
   Loader2Icon,
   SquareIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";

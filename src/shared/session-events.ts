@@ -11,6 +11,7 @@ import type {
   AgentMessageIntent,
 } from "./agent-interaction.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
+import type { SessionErrorDetails } from "./auth-errors.js";
 
 export interface SessionStartParams {
   /** Stable id chosen by the renderer (uuid). Used as map key + spawn cwd
@@ -53,6 +54,7 @@ export interface SessionStartParams {
 export type SessionStartResult =
   | {
       status: "ready";
+      auth?: SessionAuthState;
       session_id: string;
       acp_session_id: string;
       agent_id: string;
@@ -343,11 +345,34 @@ export interface AcpPromptUsage {
   _meta?: Record<string, unknown> | null;
 }
 
+export interface SessionAuthState {
+  status: "configured" | "needs-auth" | "unknown";
+  message: string;
+  methodId?: string;
+  methodName?: string;
+  methods?: Array<{
+    id: string;
+    name?: string;
+    description?: string;
+    type?: string;
+    form?: "fields";
+    vars?: Array<{
+      name: string;
+      label?: string;
+      secret?: boolean;
+      optional?: boolean;
+    }>;
+    link?: string;
+  }>;
+}
+
 /** Outbound (main → renderer) wire shapes. The renderer subscribes via
  *  `window.backchat.onSessionEvent(handler)` (preload). */
 export type SessionEventOut = (
   | {
       type: "session.ready";
+      /** A live child's last auth failure survives renderer re-announcement. */
+      auth?: SessionAuthState;
       session_id: string;
       acp_session_id: string;
       agent_id: string;
@@ -557,28 +582,11 @@ export type SessionEventOut = (
       session_id: string;
       turn_id?: string;
       message: string;
+      /** Additive RPC evidence; legacy clients continue to use message/code. */
+      error_details?: SessionErrorDetails;
       code?: "auth_required";
       agent_id?: string;
-      auth?: {
-        status: "configured" | "needs-auth" | "unknown";
-        message: string;
-        methodId?: string;
-        methodName?: string;
-        methods?: Array<{
-          id: string;
-          name?: string;
-          description?: string;
-          type?: string;
-          form?: "fields";
-          vars?: Array<{
-            name: string;
-            label?: string;
-            secret?: boolean;
-            optional?: boolean;
-          }>;
-          link?: string;
-        }>;
-      };
+      auth?: SessionAuthState;
     }
   | { type: "session.disposed"; session_id: string }
 ) & {

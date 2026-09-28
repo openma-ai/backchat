@@ -10,6 +10,8 @@ vi.mock("@/components/AgentIcon", () => ({
 
 import { groupSidebarSessions } from "./Sidebar";
 import type { SessionRow } from "@/lib/session-store";
+import type { ProjectInfo } from "@shared/projects";
+import type { WorkspaceInfo } from "@shared/workspaces";
 
 function row(overrides: Partial<SessionRow>): SessionRow {
   return {
@@ -24,7 +26,128 @@ function row(overrides: Partial<SessionRow>): SessionRow {
   };
 }
 
+function savedProject(id: string, root: string): ProjectInfo {
+  return {
+    id,
+    name: root.split("/").at(-1)!,
+    primary_folder: root,
+    source_folders: [root],
+    created_at: 1,
+    updated_at: 1,
+  };
+}
+
+function legacyWorkspace(root: string, projectId: string | null = null): WorkspaceInfo {
+  return {
+    id: "ws-fix",
+    project_id: projectId,
+    name: "fix-abc",
+    kind: "managed",
+    branch: "fix-abc",
+    roots: [
+      { sourcePath: `${root}/api`, effectivePath: "/wt/fix/01-api", worktreeIndex: 0 },
+      { sourcePath: `${root}/web`, effectivePath: "/wt/fix/02-web", worktreeIndex: 1 },
+    ],
+    worktrees: [
+      { repoRoot: `${root}/api`, path: "/wt/fix/01-api", head: "abc123", branch: "fix-abc" },
+      { repoRoot: `${root}/web`, path: "/wt/fix/02-web", head: "def456", branch: "fix-abc" },
+    ],
+    created_by_session_id: null,
+    created_at: 1,
+    updated_at: 1,
+  };
+}
+
+describe("legacy project promotion", () => {
+  it("retains one project with its complete workspace and chats after saving its source folder", () => {
+    const source = row({ id: "source", cwd: "/work/hilo-agent-opencode" });
+    const child = row({ id: "child", cwd: "/wt/fix/01-api", workspaceId: "ws-fix" });
+    const workspace = legacyWorkspace("/work/hilo-agent-opencode");
+    const before = groupSidebarSessions([child, source], [], [workspace]);
+    expect(before.projects).toHaveLength(1);
+
+    const after = groupSidebarSessions(
+      [child, source],
+      [savedProject("saved-hilo", "/work/hilo-agent-opencode")],
+      [workspace],
+    );
+
+    expect(after.projects).toHaveLength(1);
+    expect(after.projects[0]).toMatchObject({
+      projectId: "saved-hilo",
+      label: "hilo-agent-opencode",
+      primaryRoot: "/work/hilo-agent-opencode",
+      sourceFolders: ["/work/hilo-agent-opencode"],
+    });
+    expect(after.projects[0].sessions.map(session => session.id)).toEqual(["source"]);
+    expect(after.projects[0].workspaces).toHaveLength(1);
+    expect(after.projects[0].workspaces[0]).toMatchObject({
+      id: "ws-fix",
+      label: "fix-abc",
+      branch: "fix-abc",
+      paths: ["/wt/fix/01-api", "/wt/fix/02-web"],
+      info: workspace,
+    });
+    expect(after.projects[0].workspaces[0].sessions.map(session => session.id)).toEqual(["child"]);
+    expect(after.chats).toEqual([]);
+  });
+
+  it.each([
+    { explicitOwner: null, expectedOwner: "hilo", description: "closest source-root owner" },
+    { explicitOwner: "all-work", expectedOwner: "all-work", description: "explicit workspace owner" },
+  ])("keeps a legacy workspace under its $description", ({ explicitOwner, expectedOwner }) => {
+    const child = row({ id: "child", cwd: "/wt/fix/01-api", workspaceId: "ws-fix" });
+    const projects = [
+      savedProject("all-work", "/work"),
+      savedProject("hilo", "/work/hilo"),
+      savedProject("api-only", "/work/hilo/api"),
+    ];
+    const workspace = legacyWorkspace("/work/hilo", explicitOwner);
+
+    const result = groupSidebarSessions([child], projects, [workspace]);
+
+    expect(result.projects).toHaveLength(3);
+    const owners = result.projects.filter(project => project.workspaces.length > 0);
+    expect(owners.map(project => project.projectId)).toEqual([expectedOwner]);
+    expect(owners[0].workspaces).toHaveLength(1);
+    expect(owners[0].workspaces[0].info).toEqual(workspace);
+    expect(owners[0].workspaces[0].sessions.map(session => session.id)).toEqual(["child"]);
+    expect(result.chats).toEqual([]);
+  });
+
+  it("does not merge unrelated projects that share a folder name", () => {
+    const sourceA = row({ id: "source-a", cwd: "/company-a/hilo" });
+    const sourceB = row({ id: "source-b", cwd: "/company-b/hilo" });
+    const child = row({ id: "child-b", cwd: "/wt/fix/01-api", workspaceId: "ws-fix" });
+    const workspace = legacyWorkspace("/company-b/hilo");
+
+    const result = groupSidebarSessions(
+      [sourceA, child, sourceB],
+      [savedProject("hilo-a", "/company-a/hilo"), savedProject("hilo-b", "/company-b/hilo")],
+      [workspace],
+    );
+
+    expect(result.projects).toHaveLength(2);
+    const projectA = result.projects.find(project => project.projectId === "hilo-a")!;
+    const projectB = result.projects.find(project => project.projectId === "hilo-b")!;
+    expect(projectA.sessions.map(session => session.id)).toEqual(["source-a"]);
+    expect(projectA.workspaces).toEqual([]);
+    expect(projectB.sessions.map(session => session.id)).toEqual(["source-b"]);
+    expect(projectB.workspaces).toHaveLength(1);
+    expect(projectB.workspaces[0].info).toEqual(workspace);
+    expect(projectB.workspaces[0].sessions.map(session => session.id)).toEqual(["child-b"]);
+  });
+});
+
 describe("groupSidebarSessions", () => {
+  it("keeps durable coordinator sessions out of ordinary and pinned chat entries", () => {
+    const coordinator = row({ id: "coordinator", pinnedAt: 1, projectId: "proj-1" });
+    const ordinary = row({ id: "ordinary", label: "Project coordinator", projectScope: "none" });
+    const grouped = groupSidebarSessions([coordinator, ordinary], [], [], [], new Set(["coordinator"]));
+    expect(grouped.pinned).toEqual([]);
+    expect(grouped.chats).toEqual([ordinary]);
+  });
+
   it("keeps an explicitly global chat out of projects even when cwd is stale", () => {
     const global = row({
       id: "global-chat",
@@ -94,6 +217,33 @@ describe("groupSidebarSessions", () => {
     expect(grouped.projects[0].workspaces.map((w) => w.id)).not.toContain("ext:abc");
   });
 
+  it("keeps a workspace chat in its owning project while starting and after reload without a session project id", () => {
+    const project = { id: "hilo", name: "Hilo", primary_folder: "/source/hilo", source_folders: ["/source/hilo"] } as never;
+    const workspace = { id: "ws-fix", project_id: "hilo", name: "fix", kind: "managed", roots: [], worktrees: [] } as never;
+    for (const state of [
+      { status: "starting" as const, cwd: "", chosenCwd: "/source/hilo", projectScope: "project" as const },
+      { status: "ready" as const, cwd: "/worktrees/fix/01-repo" },
+    ]) {
+      const grouped = groupSidebarSessions([row({ ...state, workspaceId: "ws-fix" })], [project], [workspace]);
+      expect(grouped.chats).toEqual([]);
+      expect(grouped.projects).toHaveLength(1);
+      expect(grouped.projects[0].workspaces[0].sessions.map(session => session.id)).toEqual(["sess-1"]);
+    }
+  });
+
+  it("keeps older unowned workspaces with their existing source-directory project group", () => {
+    const source = row({ id: "source", cwd: "/work/hilo" });
+    const child = row({ id: "child", cwd: "/wt/fix/01-api", workspaceId: "ws-fix" });
+    const workspace = { id: "ws-fix", project_id: null, name: "fix", kind: "managed", roots: [
+      { sourcePath: "/work/hilo/api", effectivePath: "/wt/fix/01-api" },
+      { sourcePath: "/work/hilo/web", effectivePath: "/wt/fix/02-web" },
+    ], worktrees: [] } as never;
+    const result = groupSidebarSessions([child, source], [], [workspace]);
+    expect(result.projects).toHaveLength(1);
+    expect(result.projects[0].primaryRoot).toBe("/work/hilo");
+    expect(result.projects[0].workspaces[0]).toMatchObject({ label: "fix", sessions: [{ id: "child" }] });
+  });
+
   it("keeps chats visible under a placeholder node when their workspace record is gone", () => {
     const orphan = row({
       id: "orphan",
@@ -112,19 +262,9 @@ describe("groupSidebarSessions", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
 
     expect(source).toContain("sessionStore.newDraft();");
-    expect(source).toContain("sessionStore.newDraft(cwd);");
+    expect(source).toContain("sourceFolders: project.sourceFolders,");
+    expect(source).toContain("onNewProjectChat(project, ws.id)");
     expect(source).toContain('navigate({ to: "/" })');
-  });
-
-  it("does not persist a selected style on project folders", () => {
-    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const projectRow = source.slice(
-      source.indexOf("function ProjectSidebarRow"),
-      source.indexOf("function PairSidebarRow"),
-    );
-
-    expect(projectRow).not.toContain("active: boolean");
-    expect(projectRow).not.toContain("app-selected-surface");
   });
 
   it("uses closed and open folder icons for project disclosure state", () => {
@@ -134,21 +274,11 @@ describe("groupSidebarSessions", () => {
       source.indexOf("function PairSidebarRow"),
     );
 
-    expect(projectRow).toContain("open ? FolderOpenIcon : FolderIcon");
+    expect(source).toContain('openSectionKeys.has("projects") ? <FolderOpenIcon');
     expect(projectRow).toContain("<ProjectIcon");
   });
 
-  it("keeps project disclosure on the folder icon instead of a trailing chevron", () => {
-    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const projectRow = source.slice(
-      source.indexOf("function ProjectSidebarRow"),
-      source.indexOf("function PairSidebarRow"),
-    );
-
-    expect(projectRow).not.toContain("ChevronRightIcon");
-  });
-
-  it("reveals project actions on hover without making the folder selected", () => {
+  it("reveals project actions on hover", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const projectRow = source.slice(
       source.indexOf("function ProjectSidebarRow"),
@@ -226,11 +356,10 @@ describe("groupSidebarSessions", () => {
 
   it("presents pair chat as a multi-Agent workflow with matching icons", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const launcher = source.slice(source.indexOf("function PairChatLauncher"));
 
     expect(source).toContain("UsersRoundIcon");
     expect(source).not.toContain("LayoutGridIcon");
-    expect(launcher).toContain("CheckIcon");
+    expect(source).not.toContain("function PairChatLauncher");
   });
 
   it("exposes rename actions for sessions and pair chats", () => {
@@ -271,13 +400,10 @@ describe("groupSidebarSessions", () => {
     expect(sessionRow).toContain("opacity-0 group-hover:opacity-100");
   });
 
-  it("links the multi-Agent picker to Agent settings with the settings icon", () => {
+  it("keeps the removed standalone multi-Agent launcher absent", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const launcher = source.slice(source.indexOf("function PairChatLauncher"));
 
-    expect(launcher).toContain('navigate({ to: "/settings/agents" })');
-    expect(launcher).toContain("CpuIcon");
-    expect(launcher).toContain('t("sidebar.manageAgents")');
+    expect(source).not.toContain("<PairChatLauncher");
   });
 
   it("centers the settings row inside symmetric footer padding", () => {
@@ -303,7 +429,7 @@ describe("groupSidebarSessions", () => {
     );
     const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
 
-    expect(footer).toContain('to="/settings"');
+    expect(footer).toContain('to="/settings/activity"');
     expect(footer).toContain("<AgentUpdateControl agents={agents} />");
     expect(footer).toContain(
       'className="flex w-full items-stretch overflow-hidden rounded-md"',
@@ -474,5 +600,23 @@ describe("groupSidebarSessions", () => {
       "managed",
       "plain",
     ]);
+  });
+});
+
+
+describe("removed projects", () => {
+  it("keeps existing chats accessible without recreating a removed project", () => {
+    const chat = row({ cwd: "/work/removed", projectId: "removed" });
+    expect(groupSidebarSessions([chat], [], [], ["/work/removed"])).toMatchObject({ projects: [], chats: [chat] });
+  });
+  it("lets an explicitly re-added folder appear again", () => {
+    const chat = row({ cwd: "/work/removed", projectId: "removed" });
+    const project = { id: "again", name: "Again", primary_folder: "/work/removed", source_folders: ["/work/removed"] } as never;
+    expect(groupSidebarSessions([chat], [project], [], ["/work/removed"]).projects).toHaveLength(1);
+  });
+  it("keeps a removed project's worktree chats outside project groups", () => {
+    const chat = row({ cwd: "/wt/feature", workspaceId: "ws" });
+    const workspace = { id: "ws", project_id: "removed", kind: "managed", roots: [{ sourcePath: "/work/removed", effectivePath: "/wt/feature" }] } as never;
+    expect(groupSidebarSessions([chat], [], [workspace], ["/work/removed"])).toMatchObject({ projects: [], chats: [chat] });
   });
 });

@@ -12,6 +12,7 @@ import {
   ServerIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
+  ShieldMinusIcon,
   TargetIcon,
   TerminalIcon,
   WrenchIcon,
@@ -20,7 +21,7 @@ import {
   LogInIcon,
   RefreshCwIcon,
   type LucideIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -704,7 +705,7 @@ export function ComposerSessionStateSlot({
             data-session-state-clear-glyph="true"
             className="absolute inset-0 flex items-center justify-center rounded-full bg-fg-muted text-bg opacity-0 transition-opacity group-hover/session-state:opacity-100 group-focus-visible/session-state:opacity-100"
           >
-            <XIcon className="size-2.5" strokeWidth={3} />
+            <XIcon className="size-2.5" />
           </span>
         </span>
         <span>{presentation.label}</span>
@@ -928,13 +929,13 @@ const MODE_META: Record<
     toneClass: "text-fg-muted",
   },
   auto: {
-    icon: ZapIcon,
+    icon: ShieldCheckIcon,
     labelKey: "permission.auto",
     hintKey: "permission.autoHint",
     toneClass: "text-warning",
   },
   read_only: {
-    icon: EyeIcon,
+    icon: ShieldMinusIcon,
     labelKey: "permission.readOnly",
     hintKey: "permission.readOnlyHint",
     toneClass: "text-fg-muted",

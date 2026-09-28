@@ -1,4 +1,4 @@
-import { XIcon } from "lucide-react";
+import { XIcon } from "@/components/Icons";
 import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -32,6 +32,7 @@ export function StatusNotice({
   tone = "info",
   appearance = "surface",
   dismissLabel,
+  actions,
   onDismiss,
   className,
   children,
@@ -41,6 +42,7 @@ export function StatusNotice({
   tone?: StatusNoticeTone;
   appearance?: StatusNoticeAppearance;
   dismissLabel?: string;
+  actions?: ReactNode;
   onDismiss?: () => void;
   children: ReactNode;
   role?: "alert" | "status";
@@ -79,6 +81,7 @@ export function StatusNotice({
       >
         {children}
       </div>
+      {actions}
       {onDismiss && dismissLabel && (
         <button
           type="button"

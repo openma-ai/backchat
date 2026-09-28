@@ -16,6 +16,7 @@
  * settings) is read from stores via hooks, not router context.
  */
 
+import { lazy } from "react";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -28,16 +29,20 @@ import { ChatPage } from "@/pages/ChatPage";
 import { NewChatPage } from "@/pages/NewChatPage";
 import { PairChatPage } from "@/pages/PairChatPage";
 import { ShellLayout } from "@/components/shell/ShellLayout";
-import { SettingsAgents } from "@/pages/settings/Agents";
-import { SettingsAppearance } from "@/pages/settings/Appearance";
-import { SettingsBrowserPage } from "@/pages/settings/Browser";
-import { SettingsAbout } from "@/pages/settings/About";
-import { SettingsMcpServers } from "@/pages/settings/McpServers";
-import { Archive as SettingsArchive } from "@/pages/settings/Archive";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
-import { SettingsOpenMA } from "@/pages/settings/OpenMA";
-import { SettingsActivity } from "@/pages/settings/Activity";
+import { ProjectSettingsPage } from "@/pages/settings/ProjectSettings";
+import { ProjectsPage } from "@/pages/Projects";
 import { ScheduledPage } from "@/pages/Scheduled";
+
+// Keep the settings shell synchronous; panels load inside its Suspense boundary.
+const SettingsAgents = lazy(() => import("@/pages/settings/Agents").then(module => ({ default: module.SettingsAgents })));
+const SettingsAppearance = lazy(() => import("@/pages/settings/Appearance").then(module => ({ default: module.SettingsAppearance })));
+const SettingsBrowserPage = lazy(() => import("@/pages/settings/Browser").then(module => ({ default: module.SettingsBrowserPage })));
+const SettingsAbout = lazy(() => import("@/pages/settings/About").then(module => ({ default: module.SettingsAbout })));
+const SettingsMcpServers = lazy(() => import("@/pages/settings/McpServers").then(module => ({ default: module.SettingsMcpServers })));
+const SettingsArchive = lazy(() => import("@/pages/settings/Archive").then(module => ({ default: module.Archive })));
+const SettingsOpenMA = lazy(() => import("@/pages/settings/OpenMA").then(module => ({ default: module.SettingsOpenMA })));
+const SettingsActivity = lazy(() => import("@/pages/settings/Activity").then(module => ({ default: module.SettingsActivity })));
 
 function RootRoute() {
   return (
@@ -69,6 +74,9 @@ const pairRoute = createRoute({
   component: PairChatPage,
 });
 
+const projectsRoute = createRoute({getParentRoute: () => rootRoute, path: "/projects", component: ProjectsPage});
+const projectRoute = createRoute({getParentRoute: () => rootRoute, path: "/projects/$projectId", component: ProjectsPage});
+
 const scheduledRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/scheduled",
@@ -87,6 +95,8 @@ const settingsRoot = createRoute({
     }
   },
 });
+
+const settingsProject = createRoute({ getParentRoute: () => settingsRoot, path: "/projects/$projectId", component: ProjectSettingsPage });
 
 const settingsAgents = createRoute({
   getParentRoute: () => settingsRoot,
@@ -130,7 +140,10 @@ const routeTree = rootRoute.addChildren([
   chatRoute,
   pairRoute,
   scheduledRoute,
+  projectsRoute,
+  projectRoute,
   settingsRoot.addChildren([
+    settingsProject,
     settingsOpenma,
     settingsActivity,
     settingsAgents,

@@ -12,7 +12,7 @@
  */
 
 import { siGooglegemini } from "simple-icons";
-import { BotIcon } from "lucide-react";
+import { BotIcon } from "@/components/Icons";
 import CodexIcon from "@lobehub/icons/es/Codex";
 import DeepSeekIcon from "@lobehub/icons/es/DeepSeek";
 import HermesAgentIcon from "@lobehub/icons/es/HermesAgent";

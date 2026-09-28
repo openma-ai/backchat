@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SquareTerminalIcon, XCircleIcon } from "lucide-react";
+import { SquareTerminalIcon, XCircleIcon } from "@/components/Icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useI18n, type TranslationKey } from "@/lib/i18n";

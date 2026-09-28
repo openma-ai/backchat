@@ -3,10 +3,10 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("desktop UI zoom and chrome geometry", () => {
-  it("starts one existing zoom step above actual size", () => {
+  it("starts at actual size so design tokens own interface sizing", () => {
     const main = readFileSync(resolve(__dirname, "index.ts"), "utf8");
 
-    expect(main).toContain("const DEFAULT_UI_ZOOM_FACTOR = 1.15;");
+    expect(main).toContain("const DEFAULT_UI_ZOOM_FACTOR = 1;");
     expect(main).toContain(
       "void win.webContents.setZoomFactor(DEFAULT_UI_ZOOM_FACTOR);",
     );
@@ -30,6 +30,6 @@ describe("desktop UI zoom and chrome geometry", () => {
     expect(shell).toContain(
       '"calc(var(--left-chrome-end) + var(--chrome-title-gap))"',
     );
-    expect(shell.match(/top: "var\(--chrome-top\)"/g)).toHaveLength(4);
+    expect(shell.match(/top: "var\(--chrome-top\)"/g)).toHaveLength(5);
   });
 });

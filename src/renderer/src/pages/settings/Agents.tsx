@@ -9,10 +9,10 @@ import {
   SearchIcon,
   Trash2Icon,
   XIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { SearchField } from "@/components/ui/search-field";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import { PageScaffold } from "@/components/shell/PageScaffold";
@@ -226,20 +226,15 @@ export function SettingsAgents() {
       )}
     >
       <div className="flex max-w-sm items-center gap-1">
-          <div className="relative min-w-0 flex-1">
-            <SearchIcon
-              aria-hidden="true"
-              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle"
-            />
-            <Input
+          <SearchField className="flex-1">
+            <input
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.currentTarget.value)}
               placeholder={t("settings.agentSearch")}
               aria-label={t("settings.agentSearchLabel")}
-              className="h-8 pl-8 text-xs"
             />
-          </div>
+          </SearchField>
           {hasSearchQuery && (
             <Button
               type="button"

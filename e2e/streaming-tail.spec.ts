@@ -31,3 +31,18 @@ test("a streaming paragraph shows its newest character while the turn runs", asy
   // The turn is still running: no completion event has been sent.
   await expect(answer).toContainText(paragraph, { timeout: 15_000 });
 });
+
+test("a live burst catches up without waiting for turn completion", async ({ page }) => {
+  const sessionId = await injectSession(page, { agentId: "codex-acp" });
+  const turnId = "turn-burst";
+  await injectEvent(page, { type: "session.prompt", session_id: sessionId, turn_id: turnId, text: "Stream quickly" });
+  const send = (text: string) => injectEvent(page, {
+    type: "session.event", session_id: sessionId, turn_id: turnId,
+    event: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
+  });
+  await send("Starting. ");
+  const answer = page.locator('[data-session-turn-answer="true"]').first();
+  await expect(answer).toContainText("Starting.");
+  await send("快速输出 👩🏽‍💻 ".repeat(200) + "Caught up.");
+  await expect(answer).toContainText("Caught up.", { timeout: 1000 });
+});

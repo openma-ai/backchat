@@ -509,12 +509,16 @@ export interface BackchatApi extends OpenmaAccountApi {
   pairsArchive(p: { pair_id: string }): Promise<void>;
   pairsUnarchive(p: { pair_id: string }): Promise<void>;
 
+  projectWorkView(id: string): Promise<import("./project-work.js").ProjectWorkView>;
+  projectWorkSave(config: import("./project-work.js").ProjectWorkConfig): Promise<import("./project-work.js").ProjectWorkConfig>;
+  projectWorkSubmit(input: import("./project-work.js").ProjectWorkCommand): Promise<void>;
+  projectWorkGoal(input: import("./project-work.js").ProjectWorkGoalInput): Promise<import("./project-work.js").ProjectWorkOutcome | null>;
   projectsList(): Promise<ProjectInfo[]>;
   projectSave(p: ProjectSaveParams): Promise<ProjectInfo>;
   projectDelete(p: { project_id: string }): Promise<void>;
   /** Project → Workspace → Worktree. Lists live + managed + external
    *  workspaces; omit project_id for every project. */
-  workspacesList(p?: { project_id?: string }): Promise<WorkspaceInfo[]>;
+  workspacesList(p?: { project_id?: string; source_directory?: string }): Promise<WorkspaceInfo[]>;
   workspaceCreate(p: WorkspaceCreateParams): Promise<WorkspaceInfo>;
   /** Managed only: removes the checkouts and detaches its sessions. */
   workspaceDelete(p: { workspace_id: string }): Promise<void>;
@@ -757,13 +761,15 @@ export interface BackchatApi extends OpenmaAccountApi {
   uiFsResolvePreview(p: { path: string }): Promise<{
     sourcePath: string;
     previewPath: string;
-    kind: "document" | "image" | "web" | "text";
+    kind: "document" | "image" | "web" | "text" | "directory";
   } | null>;
 
   /** Read the current git branch for a workspace dir. Returns the
    *  branch name (e.g. "main"), or null if the path isn't a git repo,
    *  the read failed, or HEAD is detached (40-char SHA). */
+  uiFsRepositoryImage(p: { path: string }): Promise<string | null>;
   uiFsGitBranch(p: { path: string }): Promise<string | null>;
+  uiFsGitCompare(p: { path: string; base_branch: string; head_branch: string }): Promise<import("./workspaces.js").GitComparison>;
 
   // ----- Browser plugin bridge -----
 

@@ -13,6 +13,15 @@ afterEach(async () => {
 });
 
 describe("resolveLocalFilePreview", () => {
+  it.each(["backend", "docs.md"])("recognizes directory %s before checking extensions", async (name) => {
+    const root = await mkdtemp(join(tmpdir(), "openma-file-preview-"));
+    temporaryRoots.push(root);
+    const sourcePath = join(root, name);
+    await mkdir(sourcePath);
+    await expect(resolveLocalFilePreview(sourcePath)).resolves.toEqual({
+      sourcePath, previewPath: sourcePath, kind: "directory",
+    });
+  });
   it("previews a generated DOCX sidecar while preserving the original open target", async () => {
     const root = await mkdtemp(join(tmpdir(), "openma-file-preview-"));
     temporaryRoots.push(root);

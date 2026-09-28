@@ -1447,6 +1447,7 @@ describe("SessionStore task side workspace persistence", () => {
       event: {
         sessionUpdate: "tool_call",
         toolCallId: "spawn-a",
+        _meta: { codex: { collaboration: { tool: "spawnAgent", receiverThreadIds: ["child-a"] } } },
         toolName: "spawn_agent",
         status: "completed",
         rawInput: { message: "Audit the layout" },
@@ -1460,6 +1461,7 @@ describe("SessionStore task side workspace persistence", () => {
       event: {
         sessionUpdate: "tool_call_update",
         toolCallId: "wait-a",
+        _meta: { codex: { collaboration: { tool: "wait", receiverThreadIds: ["child-a"] } } },
         toolName: "wait_agent",
         status: "completed",
         rawInput: { targets: ["child-a"] },
@@ -2448,6 +2450,96 @@ describe("SessionStore event reducers", () => {
     });
   });
 
+  test.each([
+    { code: "auth_required" },
+    { auth: { status: "needs-auth", message: "Reconnect this account", methods: [{ id: "login", name: "Sign in" }] } },
+    { error_details: { code: -32000, message: "Refresh the account" } },
+    { error_details: { code: -32603, message: "Refresh the account", data: { codexErrorInfo: "unauthorized" } } },
+  ])("restores structured authentication recovery from persisted canonical errors: %j", (evidence) => {
+    const store = new SessionStore();
+    const sessionId = "persisted-structured-auth";
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "persisted-remote-auth",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    const event = createOpenMAEvent({
+      event_id: "persisted-auth-error",
+      type: "session.error",
+      session_id: sessionId,
+      source: { kind: "harness", harness: "codex-acp", adapter: "acp" },
+      occurred_at: "2026-09-22T00:00:00.000Z",
+      data: { message: "Please reconnect this account", agent_id: "codex-acp", ...evidence },
+    });
+    store.replayHistory(sessionId, [{
+      seq: 1,
+      type: "openma_event",
+      data: JSON.stringify(event),
+      ts: 1_000,
+    }]);
+
+    expect(store.get(sessionId)).toMatchObject({
+      status: "ready",
+      authRequired: true,
+      lastError: undefined,
+      auth: "auth" in evidence ? evidence.auth : {
+        status: "needs-auth",
+        message: "Please reconnect this account",
+      },
+    });
+    expect(store.openmaEventsFor(sessionId)).toEqual([event]);
+  });
+
+  test.each([false, true])("keeps authentication recovery when a live session is reannounced (existing row: %s)", (existing) => {
+    const store = new SessionStore();
+    const ready = {
+      type: "session.ready" as const,
+      session_id: "reannounced-auth",
+      acp_session_id: "reannounced-remote-auth",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    };
+    const auth = {
+      status: "needs-auth" as const,
+      message: "Reconnect this account",
+      methods: [{ id: "login", name: "Sign in" }],
+    };
+    if (existing) store.apply(ready);
+    store.apply({ ...ready, auth });
+    expect(store.get(ready.session_id)).toMatchObject({
+      status: "ready",
+      authRequired: true,
+      auth,
+    });
+
+    // A genuinely fresh runtime without a failure still clears the old block.
+    store.apply(ready);
+    expect(store.get(ready.session_id)).toMatchObject({
+      status: "ready",
+      authRequired: false,
+      auth: { status: "configured" },
+    });
+  });
+
+  test.each(["needs-auth", "configured"] as const)("replays explicit canonical session authentication state: %s", (status) => {
+    const store = new SessionStore();
+    const sessionId = "replayed-session-auth";
+    store.registerStarting(sessionId, "codex-acp", "Codex");
+    const auth = { status, message: "Account state", methods: [{ id: "login", name: "Sign in" }] };
+    const event = createOpenMAEvent({
+      event_id: "replayed-session-start",
+      type: "session.started",
+      session_id: sessionId,
+      source: { kind: "harness", harness: "codex-acp", adapter: "acp" },
+      occurred_at: "2026-09-22T00:00:00.000Z",
+      data: { agent_id: "codex-acp", acp_session_id: "replayed-remote", cwd: "/tmp/project", auth },
+    });
+    store.replayHistory(sessionId, [{ seq: 1, type: "openma_event", data: JSON.stringify(event), ts: 1_000 }]);
+    expect(store.get(sessionId)).toMatchObject({ authRequired: status === "needs-auth", auth });
+  });
+
 });
 
 describe("SessionStore slash commands", () => {
@@ -3303,6 +3395,7 @@ describe("SessionStore side chats and native subagents", () => {
       event: {
         sessionUpdate: "tool_call",
         toolCallId: "call-spawn",
+        _meta: { codex: { collaboration: { tool: "spawnAgent", receiverThreadIds: ["codex-child-thread"] } } },
         toolName: "spawn_agent",
         status: "completed",
         rawInput: {
@@ -3386,6 +3479,7 @@ describe("SessionStore side chats and native subagents", () => {
       event: {
         sessionUpdate: "tool_call_update",
         toolCallId: "call-wait",
+        _meta: { codex: { collaboration: { tool: "wait", receiverThreadIds: ["codex-child-thread"] } } },
         toolName: "wait_agent",
         status: "completed",
         rawInput: { targets: ["codex-child-thread"], timeout_ms: 60000 },
@@ -3436,6 +3530,7 @@ describe("SessionStore side chats and native subagents", () => {
       event: {
         sessionUpdate: "tool_call_update",
         toolCallId: "call-close",
+        _meta: { codex: { collaboration: { tool: "closeAgent", receiverThreadIds: ["codex-child-thread"] } } },
         toolName: "close_agent",
         status: "completed",
         rawInput: { target: "codex-child-thread" },
@@ -3690,26 +3785,8 @@ describe("SessionStore side chats and native subagents", () => {
       },
     });
 
-    expect(store.subagentsFor("parent-session")[0]).toMatchObject({
-      childSessionId: "codex:call-spawn",
-      status: "running",
-    });
-    expect(store.subagentsFor("parent-session")).toHaveLength(1);
-    const initialActivity = store.subagentsFor("parent-session")[0]!;
-    expect(initialActivity.avatarId).toEqual(expect.any(String));
-    const initialAvatarId = initialActivity.avatarId;
-    const initialViewSessionId = (
-      initialActivity as typeof initialActivity & { viewSessionId?: string }
-    ).viewSessionId;
-    expect(initialViewSessionId).toEqual(expect.any(String));
-    expect(store.sideTabs()).toEqual([
-      expect.objectContaining({
-        type: "subagent",
-        payload: initialViewSessionId,
-        label: "Curie",
-        avatarId: initialAvatarId,
-      }),
-    ]);
+    // Tool-name-only pending events do not establish a native child.
+    expect(store.subagentsFor("parent-session")).toHaveLength(0);
 
     store.apply({
       type: "session.event",
@@ -3718,6 +3795,7 @@ describe("SessionStore side chats and native subagents", () => {
       event: {
         sessionUpdate: "tool_call_update",
         toolCallId: "call-spawn",
+        _meta: { codex: { collaboration: { tool: "spawnAgent", receiverThreadIds: ["codex-child-thread"] } } },
         status: "completed",
         rawOutput: {
           agent_id: "codex-child-thread",
@@ -3728,7 +3806,7 @@ describe("SessionStore side chats and native subagents", () => {
 
     expect(store.subagentsFor("parent-session")[0]).toMatchObject({
       childSessionId: "codex-child-thread",
-      avatarId: initialAvatarId,
+      avatarId: expect.any(String),
       inheritance: "fork",
       task: "Compare native session protocols",
       status: "running",
@@ -3740,16 +3818,17 @@ describe("SessionStore side chats and native subagents", () => {
     });
     expect(store.subagentsFor("parent-session")).toHaveLength(1);
     expect(store.sideTabs()).toHaveLength(1);
-    expect(
-      (store.subagentsFor("parent-session")[0] as SubagentActivity & {
-        viewSessionId?: string;
-      }).viewSessionId,
-    ).toBe(initialViewSessionId);
     expect(store.sideTabs()[0]).toMatchObject({
-      payload: initialViewSessionId,
+      payload: expect.any(String),
       label: "Cicero",
-      avatarId: initialAvatarId,
+      avatarId: expect.any(String),
     });
+    store.apply({ type: "session.event", session_id: "parent-session", turn_id: "turn-parent", event: {
+      sessionUpdate: "tool_call", toolCallId: "wait-split", status: "completed",
+      _meta: { codex: { collaboration: { tool: "wait", receiverThreadIds: ["codex-child-thread"] } } },
+      rawOutput: { status: { "codex-child-thread": { completed: "Finished" } } },
+    } });
+    expect(store.subagentsFor("parent-session")[0]).toMatchObject({ status: "complete" });
   });
 
   test("does not treat Codex-shaped tools from unknown agents as Codex events", () => {
@@ -4497,5 +4576,14 @@ describe("SessionStore Browser plugin rail sync", () => {
     });
 
     expect(store.sideTabs()).toEqual([]);
+  });
+});
+
+ describe("prompt annotation presentation", () => {
+  test("retains annotation-only prompt content when replaying history", () => {
+    const store = new SessionStore();
+    const annotations = [{ id: "a", source_session_id: "source", source_turn_id: "turn", text: "Quoted response", comment: "Explain this" }];
+    store.replayHistory("annotated", [{ seq: 1, type: "user_prompt", data: JSON.stringify({ text: "", annotations }), ts: 1 }]);
+    expect(store.turnsFor("annotated")[0]).toMatchObject({ annotations });
   });
 });

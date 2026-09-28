@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BotIcon, DatabaseIcon, RefreshCwIcon } from "lucide-react";
+import { BotIcon, DatabaseIcon, RefreshCwIcon } from "@/components/Icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentIcon } from "@/components/AgentIcon";
@@ -261,7 +261,7 @@ function Insight({ label, value }: { label: string; value: string }) {
 
 function LoadingPanel() {
   return (
-    <div className="overflow-hidden rounded-xl border border-border/55" aria-hidden="true">
+    <div className="overflow-hidden rounded-xl border border-border/55" data-settings-loading="true" aria-busy="true">
       <div className="grid grid-cols-5 border-b border-border/45">
         {Array.from({ length: 5 }, (_, index) => <div key={index} className="flex h-20 flex-col items-center justify-center gap-2"><Skeleton className="h-5 w-14" /><Skeleton className="h-2.5 w-20" /></div>)}
       </div>

@@ -49,7 +49,7 @@ import {
   PlusIcon,
   SquareIcon,
   XIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { nanoid } from "nanoid";
 import type {
   ChangeEvent,

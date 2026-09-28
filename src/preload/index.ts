@@ -22,9 +22,14 @@ import type { Settings } from "../shared/settings.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 
 const api: BackchatApi = {
+  projectWorkView: id => ipcRenderer.invoke(InvokeChannel.ProjectWorkView, id),
+  projectWorkSave: config => ipcRenderer.invoke(InvokeChannel.ProjectWorkSave, config),
+  projectWorkSubmit: input => ipcRenderer.invoke(InvokeChannel.ProjectWorkSubmit, input),
+  projectWorkGoal: input => ipcRenderer.invoke(InvokeChannel.ProjectWorkGoal, input),
   openmaRemoveDirect: (id) => ipcRenderer.invoke(InvokeChannel.OpenmaRemoveDirect, id),
   openmaConnectDirect: (input) => ipcRenderer.invoke(InvokeChannel.OpenmaConnectDirect, input),
   openmaAccountState: () => ipcRenderer.invoke(InvokeChannel.OpenmaAccountState),
+  taskEnvironment: (request) => ipcRenderer.invoke(InvokeChannel.TaskEnvironment, request),
   openmaTasksList: (scope) => ipcRenderer.invoke(InvokeChannel.OpenmaTasksList, scope),
   openmaTasksRefresh: (scope) => ipcRenderer.invoke(InvokeChannel.OpenmaTasksRefresh, scope),
   openmaTaskUpdate: (id, patch) => ipcRenderer.invoke(InvokeChannel.OpenmaTaskUpdate, id, patch),
@@ -443,10 +448,13 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.UiFsResolvePreview, p) as Promise<{
       sourcePath: string;
       previewPath: string;
-      kind: "document" | "image" | "web" | "text";
+      kind: "document" | "image" | "web" | "text" | "directory";
     } | null>,
+  uiFsRepositoryImage: (p) => ipcRenderer.invoke(InvokeChannel.UiFsRepositoryImage, p) as Promise<string | null>,
   uiFsGitBranch: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsGitBranch, p) as Promise<string | null>,
+  uiFsGitCompare: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsGitCompare, p) as Promise<import("../shared/workspaces.js").GitComparison>,
 
   browserList: () =>
     ipcRenderer.invoke(InvokeChannel.BrowserList) as Promise<

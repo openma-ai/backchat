@@ -124,6 +124,19 @@ export const OVERLAY_AGENTS: KnownAgentEntry[] = [
     homepage: "https://github.com/zed-industries/codex-acp",
   },
   {
+    // Keep the existing harness id while using OpenMA's Pi adapter. The public
+    // registry points at a different package; npm supplies this package's latest.
+    id: "pi-acp",
+    label: "Pi",
+    spec: { command: registryShimName("pi-acp") },
+    registryId: "pi-acp",
+    installSource: "registry",
+    install: { kind: "npm", package: "@openma/pi-acp" },
+    registryDistribution: { npx: { package: "@openma/pi-acp" } },
+    installHint: "npm install -g @openma/pi-acp@latest",
+    homepage: "https://github.com/openma-ai/pi-acp",
+  },
+  {
     id: "gemini",
     label: "Gemini CLI",
     spec: { command: registryShimName("gemini"), args: ["--acp"] },

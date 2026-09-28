@@ -1,3 +1,6 @@
+import { readLocalEnvironment } from "./task-environment.js";
+import { isAbsolute } from "node:path";
+import type { TaskEnvironmentRequest } from "../shared/task-environment.js";
 import { BrowserWindow, ipcMain, shell, dialog, type WebContents } from "electron";
 import { writeFile } from "node:fs/promises";
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
@@ -18,6 +21,13 @@ function scope(value: unknown): OpenmaScope | undefined {
 
 export function registerOpenmaTaskIpc(tasks: OpenmaTasks): void {
   const text = (value: unknown): string => { if (typeof value !== "string" || !value || value.length > 1_000_000) throw new Error("Invalid OpenMA task request"); return value; };
+  ipcMain.handle(InvokeChannel.TaskEnvironment, (_event, request: TaskEnvironmentRequest) => {
+    if (request?.kind === "remote") return tasks.environment(text(request.taskId));
+    if (request?.kind !== "local" || !(request.environmentId === null || typeof request.environmentId === "string")
+      || !Array.isArray(request.paths) || request.paths.length > 100
+      || request.paths.some(path => typeof path !== "string" || !isAbsolute(path))) throw new Error("Invalid environment request");
+    return readLocalEnvironment(request.environmentId, request.paths);
+  });
   const clients = new Map<number, Set<string>>();
   const ownerKey = (sender: WebContents, subscriptionId: unknown) => JSON.stringify([sender.id, text(subscriptionId)]);
   const own = (sender: WebContents, owner: string) => {

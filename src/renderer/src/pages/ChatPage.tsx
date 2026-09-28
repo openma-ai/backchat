@@ -4,6 +4,8 @@ import { ChatView } from "@/components/chat/ChatView";
 import { sessionStore, useSessionStore, type SessionRow } from "@/lib/session-store";
 import { openHistoryWindow } from "@/lib/history-paging";
 import { toast } from "sonner";
+import { OpenmaStartupLoader } from "@/components/OpenmaStartupLoader";
+import { useI18n } from "@/lib/i18n";
 
 /**
  * Chat page — backs `/chat/$sessionId`. The cold-create `/` route is a
@@ -22,6 +24,8 @@ const HISTORY_LOADED = new Set<string>();
 const PREWARMED = new Set<string>();
 
 export function ChatPage() {
+  const { t } = useI18n();
+  const activeId = useSessionStore(s => s.active()?.id);
   const params = useParams({ strict: false }) as { sessionId?: string };
   const routeSessionSelector = useMemo(() => {
     const sessionId = params.sessionId;
@@ -73,6 +77,13 @@ export function ChatPage() {
     }
   }, [params.sessionId, routeSession]);
 
+  if (params.sessionId && (!routeSession || activeId !== params.sessionId)) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center text-fg-muted" data-chat-history-loading="true">
+        <OpenmaStartupLoader label={t("chat.loadingHistory")} />
+      </div>
+    );
+  }
   return <ChatView />;
 }
 

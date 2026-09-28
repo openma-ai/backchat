@@ -54,11 +54,12 @@ describe("native agent event detection", () => {
     ]);
   });
 
-  test("normalizes codex-acp camelCase spawn/wait/close tool calls", () => {
+  test("normalizes structured codex-acp spawn/wait/close tool calls", () => {
     expect(
       detectNativeAgentToolEvent({
         toolCallId: "call-spawn",
         title: "spawnAgent",
+        meta: { codex: { collaboration: { tool: "spawnAgent", receiverThreadIds: ["child-thread"] } } },
         status: "completed",
         rawInput: {
           prompt: "Reply exactly CHILD_OK.",
@@ -84,6 +85,7 @@ describe("native agent event detection", () => {
       detectNativeAgentToolEvent({
         toolCallId: "call-wait",
         title: "wait",
+        meta: { codex: { collaboration: { tool: "wait", receiverThreadIds: ["child-thread"] } } },
         status: "completed",
         rawInput: {
           receiverThreadIds: ["child-thread"],
@@ -107,6 +109,7 @@ describe("native agent event detection", () => {
       detectNativeAgentToolEvent({
         toolCallId: "call-close",
         title: "closeAgent",
+        meta: { codex: { collaboration: { tool: "closeAgent", receiverThreadIds: ["child-thread"] } } },
         status: "completed",
         rawInput: {
           receiverThreadIds: ["child-thread"],
@@ -145,7 +148,7 @@ describe("native agent event detection", () => {
         meta: {
           codex: {
             collaboration: {
-              tool: "spawn_agent",
+              tool: "spawnAgent",
               senderThreadId: "parent-thread",
               receiverThreadIds: ["child-thread"],
             },
@@ -294,15 +297,8 @@ describe("native agent event detection", () => {
   });
 
   test("keeps Codex split spawn output running when only the output update has a child id", () => {
-    const [spawn] = detectNativeAgentToolEvent({
-      toolCallId: "call-spawn",
-      toolName: "spawn_agent",
-      status: "pending",
-      rawInput: {
-        fork_context: false,
-        message: "Inspect native sessions",
-      },
-    });
+    // Without native metadata, a tool's name must not invent a child.
+    expect(detectNativeAgentToolEvent({ toolCallId: "call-spawn", toolName: "spawn_agent", status: "pending" })).toEqual([]);
 
     expect(
       detectNativeAgentToolEvent(
@@ -313,9 +309,9 @@ describe("native agent event detection", () => {
         },
         {
           provider: "codex",
-          operation: spawn?.operation,
+          operation: "codex_spawn",
           toolCallId: "call-spawn",
-          childId: spawn?.childId ?? "codex:call-spawn",
+          childId: "codex:call-spawn",
         },
       ),
     ).toEqual([

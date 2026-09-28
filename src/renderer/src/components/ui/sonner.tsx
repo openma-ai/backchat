@@ -5,7 +5,7 @@ import {
   Loader2Icon,
   OctagonXIcon,
   TriangleAlertIcon,
-} from "lucide-react"
+} from "@/components/Icons"
 
 import { useTheme } from "@/lib/theme"
 

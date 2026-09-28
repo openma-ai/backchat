@@ -1,4 +1,4 @@
-import { isPerSessionFolderPath } from "./project-path";
+import { isPerSessionFolderPath, pathSegments } from "./project-path";
 
 export function selectRecentProjectPaths(
   rows: readonly { cwd?: string | null; workspace_id?: string | null }[],
@@ -11,7 +11,9 @@ export function selectRecentProjectPaths(
     const cwd = row.cwd?.trim();
     // A session inside a workspace ran in a checkout (…/worktrees/<ws>/01-repo),
     // which is not a project folder anyone would pick again.
-    if (!cwd || row.workspace_id || seen.has(cwd) || isPerSessionFolderPath(cwd)) continue;
+    const parts = pathSegments(cwd ?? "");
+    const managedCheckout = parts.some((part, index) => part === ".oma" && parts[index + 1] === "worktrees");
+    if (managedCheckout || !cwd || row.workspace_id || seen.has(cwd) || isPerSessionFolderPath(cwd)) continue;
     seen.add(cwd);
     paths.push(cwd);
     if (paths.length >= limit) break;

@@ -2,7 +2,7 @@ import {
   ChevronDownIcon,
   FolderOpenIcon,
   SquareArrowOutUpRightIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import {
   DropdownMenu,
   DropdownMenuContent,

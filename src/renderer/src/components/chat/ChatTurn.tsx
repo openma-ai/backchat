@@ -1,3 +1,4 @@
+import { ComposerAnnotationStrip } from "./ComposerAnnotations";
 import { turnStopNotice } from "@/lib/turn-stop-reason";
 import { memo, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -10,7 +11,7 @@ import {
   ListChecksIcon,
   Loader2Icon,
   TargetIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { AgentUITurnView, projectAcpChatTurn } from "@openma/common/chat-ui";
 import type {
   AgentUIMessageItem,
@@ -137,7 +138,7 @@ export const TurnBlock = memo(function TurnBlock({
         {
           id: turn.id,
           promptText:
-            hasSessionReferences || scheduledPrompt
+            hasSessionReferences || scheduledPrompt || (!!turn.annotations?.length && /^\[\d+ annotations?\]$/.test(turn.promptText.trim()))
               ? ""
               : (commandInvocation?.body ?? turn.promptText),
           attachments: turn.attachments,
@@ -156,6 +157,7 @@ export const TurnBlock = memo(function TurnBlock({
       hasSessionReferences,
       scheduledPrompt,
       turn.assistantText,
+      turn.annotations,
       turn.attachments,
       turn.endedAt,
       turn.errorMessage,
@@ -198,6 +200,11 @@ export const TurnBlock = memo(function TurnBlock({
       slots={{
         renderBeforeTurn: () => (
           <>
+            {!!turn.annotations?.length && (
+              <div data-prompt-annotations className="mb-2 flex justify-end">
+                <ComposerAnnotationStrip annotations={turn.annotations} attachments={turn.attachments ?? []} />
+              </div>
+            )}
             {hasSessionReferences && <ReferencedSessionPrompt turn={turn} />}
             {scheduledPrompt && !hasSessionReferences && (
               <ScheduledTaskUserPrompt turn={turn} surface={scheduledPrompt} />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TargetIcon } from "lucide-react";
+import { TargetIcon } from "@/components/Icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

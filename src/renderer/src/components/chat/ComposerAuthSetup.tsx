@@ -21,6 +21,7 @@ export function ComposerAuthSetup({
   sessionAuth,
   open = false,
   onClose,
+  onAuthenticated,
 }: {
   sessionId?: string;
   sessionAgentId?: string;
@@ -29,11 +30,14 @@ export function ComposerAuthSetup({
   sessionAuth?: SessionRow["auth"];
   open?: boolean;
   onClose?: () => void;
+  onAuthenticated?: () => Promise<void>;
 }) {
   const settings = useSettings();
   const queryClient = useQueryClient();
   const [selectedMethodId, setSelectedMethodId] = useState<string | undefined>();
   const [waitingForAuth, setWaitingForAuth] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string>();
   const { data: agents = [] } = useQuery({
     queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList(),
@@ -47,6 +51,21 @@ export function ComposerAuthSetup({
     recentAgentId: readRecentRunPreferences().agentId,
   });
   const agent = overlayAgentAuth(harness.currentAgent, sessionAuth);
+  const finishAuthentication = async () => {
+    setReconnecting(true);
+    setRecoveryError(undefined);
+    try {
+      await onAuthenticated?.();
+      if (sessionId && !onAuthenticated) sessionStore.clearAuthRequired(sessionId);
+      setWaitingForAuth(false);
+      onClose?.();
+    } catch (error) {
+      setRecoveryError(error instanceof Error ? error.message : String(error));
+      throw error;
+    } finally {
+      setReconnecting(false);
+    }
+  };
   const auth = useMutation({
     mutationFn: (input: { methodId?: string; values?: Record<string, string> }) =>
       window.backchat.agentAuthenticate({
@@ -56,15 +75,12 @@ export function ComposerAuthSetup({
       }),
     onMutate: () => {
       setWaitingForAuth(true);
+      setRecoveryError(undefined);
     },
-    onSuccess: (next) => {
+    onSuccess: async (next) => {
       queryClient.setQueryData(AGENTS_QUERY_KEY, next);
       const updated = next.find((item) => item.id === harness.currentAgentId);
-      if (updated?.auth?.status === "configured" && sessionId) {
-        sessionStore.clearAuthRequired(sessionId);
-        setWaitingForAuth(false);
-        onClose?.();
-      }
+      if (updated?.auth?.status === "configured") await finishAuthentication();
     },
     onError: () => {
       setWaitingForAuth(false);
@@ -103,8 +119,8 @@ export function ComposerAuthSetup({
       settings={settings}
       selectedMethodId={selectedMethodId}
       waitingForAuth={waitingForAuth}
-      pending={auth.isPending}
-      error={auth.error instanceof Error ? auth.error.message : auth.error ? String(auth.error) : undefined}
+      pending={auth.isPending || reconnecting}
+      error={recoveryError ?? (auth.error instanceof Error ? auth.error.message : auth.error ? String(auth.error) : undefined)}
       className=""
       onMethodIdChange={setSelectedMethodId}
       onStart={(methodId, options) => auth.mutate({
@@ -113,9 +129,8 @@ export function ComposerAuthSetup({
       })}
       onClose={() => onClose?.()}
       onSaved={() => {
-        if (sessionId) sessionStore.clearAuthRequired(sessionId);
         void queryClient.invalidateQueries({ queryKey: AGENTS_QUERY_KEY });
-        onClose?.();
+        void finishAuthentication().catch(() => {});
       }}
     />
   );

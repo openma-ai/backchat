@@ -4,7 +4,7 @@ import {
   MoreHorizontalIcon,
   PinIcon,
   PinOffIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 import { toast } from "sonner";
 import { useMemo } from "react";
 import { useState } from "react";
@@ -73,8 +73,8 @@ export function Topbar(_props: { onCancel: () => void }) {
   };
 
   return (
-    <div className="app-no-drag flex min-w-0 items-center gap-1.5 text-sm">
-      <span className="max-w-[min(42vw,32rem)] truncate font-medium text-fg">
+    <div className="app-no-drag flex min-w-0 items-center gap-1.5 text-ui">
+      <span className="app-drag-region max-w-[min(42vw,32rem)] truncate font-medium text-fg">
         {active.label || t("sidebar.newChat")}
       </span>
       {active.status !== "draft" && !active.openma && (

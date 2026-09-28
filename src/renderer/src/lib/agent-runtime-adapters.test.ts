@@ -45,6 +45,7 @@ describe("agent runtime adapters", () => {
   test("keeps native subagent parsing inside the matching provider adapter", () => {
     const codexSpawn = {
       toolCallId: "codex-spawn",
+      meta: { codex: { collaboration: { tool: "spawnAgent", receiverThreadIds: ["codex-child"] } } },
       toolName: "spawn_agent",
       status: "completed" as const,
       rawInput: { message: "Inspect the project" },
@@ -57,6 +58,7 @@ describe("agent runtime adapters", () => {
       rawInput: { description: "Inspect the project" },
     };
 
+    expect(codexRuntimeAdapter.nativeAgentToolUpdates({ ...codexSpawn, meta: undefined })).toEqual([]);
     expect(codexRuntimeAdapter.nativeAgentToolUpdates(codexSpawn)).toHaveLength(1);
     expect(codexRuntimeAdapter.nativeAgentToolUpdates(claudeSpawn)).toEqual([]);
     expect(claudeCodeRuntimeAdapter.nativeAgentToolUpdates(claudeSpawn)).toHaveLength(1);

@@ -7,7 +7,7 @@ import {
   GitBranchIcon,
   ZapIcon,
   type LucideIcon,
-} from "lucide-react";
+} from "@/components/Icons";
 
 import { OpenmaHomeMark } from "@/components/OpenmaHomeMark";
 import {

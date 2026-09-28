@@ -6,7 +6,12 @@
  */
 
 export const InvokeChannel = {
+  ProjectWorkView: "project-work:view",
+  ProjectWorkSave: "project-work:save",
+  ProjectWorkSubmit: "project-work:submit",
+  ProjectWorkGoal: "project-work:goal",
   OpenmaAccountState: "openma:account-state",
+  TaskEnvironment: "task:environment",
   OpenmaTasksList: "openma:tasks-list",
   OpenmaTasksRefresh: "openma:tasks-refresh",
   OpenmaTaskUpdate: "openma:task-update",
@@ -169,7 +174,9 @@ export const InvokeChannel = {
   /** Read the current git branch for a workspace dir. Returns the
    *  branch name (e.g. "main"), or null if the path isn't a git
    *  repo or the read fails. Used by the composer's branch chip. */
+  UiFsRepositoryImage: "uiFs:repositoryImage",
   UiFsGitBranch: "uiFs:gitBranch",
+  UiFsGitCompare: "uiFs:gitCompare",
   BrowserList: "browser:list",
   BrowserGet: "browser:get",
   BrowserTabs: "browser:tabs",

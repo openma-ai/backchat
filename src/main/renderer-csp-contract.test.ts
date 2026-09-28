@@ -10,7 +10,7 @@ describe("renderer content security policy", () => {
     );
 
     expect(html).toContain(
-      "img-src 'self' data: https://cdn.agentclientprotocol.com https://*/favicon.ico;",
+      "img-src 'self' data: https://cdn.agentclientprotocol.com https://*/favicon.ico https://*.githubusercontent.com https://github.com/user-attachments/;",
     );
     expect(html).not.toContain("img-src 'self' data: https:;");
   });

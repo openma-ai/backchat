@@ -1,3 +1,4 @@
+import { readRepositoryImage } from "./repository-image.js";
 /**
  * UI fs broker — readonly directory listing for the side-panel file
  * tree. Distinct from `brokers.ts` fs methods which serve ACP children
@@ -26,6 +27,7 @@ import {
 import type { PromptAttachment } from "../shared/session-events.js";
 import { resolveLocalFilePreview } from "./file-preview.js";
 import { openmaRoot } from "./storage-root.js";
+import { compareGitBranches } from "./git-environment.js";
 
 interface DirEntry {
   name: string;
@@ -456,6 +458,8 @@ ipcMain.handle(
   (_e, p: { path: string }) => resolveLocalFilePreview(p.path),
 );
 
+ipcMain.handle(InvokeChannel.UiFsRepositoryImage, (_e, p: { path: string }) => readRepositoryImage(p.path));
+
 ipcMain.handle(
   InvokeChannel.UiFsGitBranch,
   async (_e, p: { path: string }): Promise<string | null> => {
@@ -488,4 +492,12 @@ ipcMain.handle(
       return null;
     }
   },
+);
+
+
+
+ipcMain.handle(
+  InvokeChannel.UiFsGitCompare,
+  async (_e, p: { path: string; base_branch: string; head_branch: string }) =>
+    compareGitBranches(p.path, p.base_branch, p.head_branch),
 );

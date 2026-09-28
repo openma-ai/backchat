@@ -9,6 +9,7 @@ import type { DirectAgentProvider, OpenmaCatalog, OpenmaTaskEvent } from "../sha
 import type { CloudSessionCreateInput } from "./openmanaged-cloud-runtime.js";
 
 export interface RemoteSession {
+  resources?: unknown[];
   id: string; agent: { id: string; name?: string }; environment_id: string; title: string;
   status: "idle" | "running" | "rescheduling" | "terminated"; created_at: string; updated_at: string;
   metadata?: Record<string, string> | null;

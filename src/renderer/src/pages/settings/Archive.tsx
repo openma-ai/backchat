@@ -1,6 +1,6 @@
 import { openmaWorkspaceScope } from "@shared/openma";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArchiveRestoreIcon, Trash2Icon } from "lucide-react";
+import { ArchiveRestoreIcon, Trash2Icon } from "@/components/Icons";
 import { PageScaffold } from "@/components/shell/PageScaffold";
 import { useI18n } from "@/lib/i18n";
 import { StatusNotice } from "@/components/ui/status-notice";

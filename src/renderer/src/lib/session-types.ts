@@ -4,6 +4,7 @@ import type {
 } from "@shared/agent-interaction.js";
 import type {
   PromptAttachment,
+  PromptAnnotation,
   PromptSessionReference,
 } from "@shared/session-events.js";
 import type { AcpSessionConfigOption } from "./session-config-options";
@@ -135,6 +136,8 @@ export interface SessionRow {
    *  this field is no longer consulted (the ACP child has already
    *  spawned with whatever path won). */
   chosenCwd?: string;
+  /** Includes an explicit choice to use no project. */
+  projectSelectionExplicit?: boolean;
   /** Durable project container selected for this task. */
   projectId?: string;
   /** ACP secondary roots; cwd/chosenCwd remains the primary folder. */
@@ -390,6 +393,7 @@ export interface Turn {
   /** User-provided files/images are task sources. Persist metadata only so
    * the Task tab can restore them without duplicating inline image data. */
   attachments?: PromptAttachment[];
+  annotations?: PromptAnnotation[];
   sessionReferences?: PromptSessionReference[];
   events: TurnEvent[];
   /** Accumulated assistant text. The streaming channel pushes deltas into a

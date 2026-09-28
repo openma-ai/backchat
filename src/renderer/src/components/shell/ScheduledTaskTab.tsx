@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClockIcon, ExternalLinkIcon } from "lucide-react";
+import { CalendarClockIcon, ExternalLinkIcon } from "@/components/Icons";
 import { useI18n } from "@/lib/i18n";
 import type { ScheduleInfo } from "@shared/schedules.js";
 

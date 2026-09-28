@@ -139,7 +139,8 @@ function drainPendingDeepLinks(): void {
 const TOGGLE_TOP_PX = 12;        // CSS `top` on toggle (var(--chrome-top))
 const TOGGLE_SIZE_PX = 28;       // size-6 = 28px (after the .size-6 override)
 const TRAFFIC_LIGHT_DOT_PX = 12; // macOS standard window button diameter
-const DEFAULT_UI_ZOOM_FACTOR = 1.15;
+// Interface sizing belongs to design tokens; reserve window zoom for user actions.
+const DEFAULT_UI_ZOOM_FACTOR = 1;
 
 // Privileged custom protocol for serving local filesystem assets to the
 // renderer. The dev renderer runs on `http://localhost:5173` and the
@@ -212,6 +213,8 @@ function createWindow(): BrowserWindow {
     minWidth: 720,
     minHeight: 480,
     show: false,
+    // Let the activating click also reach controls on macOS.
+    acceptFirstMouse: true,
     backgroundColor: "#0b0b0c",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     // macOS only: trafficLight at (24, 18) — center y = 25, center x = 31.
@@ -453,6 +456,7 @@ if (!gotLock) {
       onResume: () => { openmaRunner?.resume(); resumeTaskObservers(); },
     });
     const ipcRuntime = await registerIpc({
+      openmaAccount,
       registryCachePath: join(root, "registry-cache.json"),
       probeCachePath: join(root, "agent-probe-cache.json"),
       acpBinDir,
@@ -494,6 +498,7 @@ if (!gotLock) {
     const openmaTasks = new OpenmaTasks({
       directory: join(root, "backchat", "openma"), account: openmaAccount,
       catalog: (scope) => openmaProjects.catalog(scope),
+      runnerPaths: task => projectEnvironments.pathsForTask(task),
       onSnapshot: (snapshot) => {
         for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(PushChannel.OpenmaTask, snapshot);
       },

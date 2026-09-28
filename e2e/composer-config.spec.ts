@@ -140,7 +140,7 @@ test.describe("composer configuration", () => {
     expect(Math.abs(approvalBox!.width - configBox!.width)).toBeLessThanOrEqual(2);
   });
 
-  test("uses ringless, non-selectable focus feedback for composer selectors", async ({
+  test("uses visible, non-selectable focus feedback for composer selectors", async ({
     page,
     bridge,
   }) => {
@@ -210,7 +210,7 @@ test.describe("composer configuration", () => {
       };
     });
     expect(focusAppearance.boxShadow).toBe("none");
-    expect(focusAppearance.outlineStyle).toBe("none");
+    expect(focusAppearance.outlineStyle).toBe("solid");
     expect(focusAppearance.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   });
 

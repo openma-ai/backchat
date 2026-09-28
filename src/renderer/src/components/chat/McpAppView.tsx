@@ -6,7 +6,7 @@ import {
   getToolUiResourceUri,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon } from "@/components/Icons";
 import { StatusNotice } from "@/components/ui/status-notice";
 import type { ToolEntry } from "@/lib/reduce-turn";
 import { clampMcpAppHeight } from "@/lib/mcp-app-sandbox";

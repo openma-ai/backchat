@@ -1,21 +1,18 @@
-import { useMemo, useState } from "react";
+import { ProjectIcon } from "@/components/ProjectIcon";
+import { useProjects } from "@/lib/projects-query";
+import { ArchiveIcon, PaletteIcon } from "@/components/BackchatIcons";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import {
-  ArchiveIcon,
   ArrowLeftIcon,
   ChartColumnIcon,
   CpuIcon,
   InfoIcon,
-  PaletteIcon,
   PanelTopIcon,
-  SearchIcon,
   ServerIcon,
-} from "lucide-react";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
+} from "@/components/Icons";
+import { Skeleton } from "@/components/ui/skeleton";
+import { SearchField } from "@/components/ui/search-field";
 import { ContentPage } from "@/components/shell/PageScaffold";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -48,10 +45,37 @@ const SECTION_LABELS: Record<SettingsTab["section"], TranslationKey> = {
 const iconSlotClass = "flex w-4 shrink-0 items-center justify-center";
 
 export function SettingsLayout() {
+  const { pathname } = useLocation();
+  const [readyPath, setReadyPath] = useState<string | null>(null);
+  useEffect(() => {
+    // Commit the navigation/sidebar and paint its skeleton before mounting
+    // potentially expensive settings panels, including cached activity charts.
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setReadyPath(pathname));
+    });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [pathname]);
   return (
     <ContentPage>
-      <Outlet />
+      {readyPath === pathname ? (
+        <Suspense fallback={<SettingsLoadingPanel />}><Outlet /></Suspense>
+      ) : <SettingsLoadingPanel />}
     </ContentPage>
+  );
+}
+
+function SettingsLoadingPanel() {
+  const { t } = useI18n();
+  return (
+    <div data-settings-loading="true" role="status" aria-label={t("common.loadingShort")}
+      className="mx-auto w-full max-w-4xl space-y-6 p-6" aria-busy="true">
+      <Skeleton className="h-7 w-32" />
+      <Skeleton className="h-4 w-64 max-w-full" />
+      {[0, 1, 2].map(key => <div key={key} className="space-y-4 rounded-xl border border-border/55 p-5">
+        <Skeleton className="h-4 w-40" /><Skeleton className="h-10 w-full" /><Skeleton className="h-4 w-2/3" />
+      </div>)}
+    </div>
   );
 }
 
@@ -60,6 +84,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
   const navigate = useNavigate();
   const { t } = useI18n();
   const [query, setQuery] = useState("");
+  const projects = useProjects();
   const visibleTabs = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return TABS;
@@ -70,32 +95,30 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-fg">
+    <div className="flex h-full min-h-0 flex-col text-ui font-medium text-fg">
       <div className="app-drag-region h-[36px] shrink-0" />
       <div className="px-2 pt-[var(--row-gap-y)]">
         <button
           type="button"
           onClick={backToApp}
           aria-label={t("settings.backToApp")}
-          className="app-no-drag mb-2 inline-flex h-7 w-fit items-center gap-2 rounded-md px-2 text-xs text-fg-subtle transition-colors hover:bg-bg-surface/55 hover:text-fg"
+          className="app-no-drag mb-2 inline-flex h-[var(--sidebar-row-h)] w-fit items-center gap-2 rounded-md px-2 text-ui text-fg-subtle transition-colors hover:bg-bg-surface/55 hover:text-fg"
         >
           <span className={iconSlotClass}>
-            <ArrowLeftIcon className="size-3.5" />
+            <ArrowLeftIcon className="size-4" />
           </span>
           <span>{t("settings.backToApp")}</span>
         </button>
 
-        <InputGroup className="app-no-drag mb-3 h-8 rounded-lg border-border/45 bg-bg/65 shadow-chip-press">
-          <InputGroupAddon className="pl-2 pr-1 text-fg-subtle">
-            <SearchIcon className="size-3.5" />
-          </InputGroupAddon>
-          <InputGroupInput
+        <SearchField className="app-no-drag mb-3">
+          <input
+            className="!text-ui"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("settings.search")}
-            className="h-8 text-xs text-fg placeholder:text-fg-subtle md:text-xs"
+            aria-label={t("settings.search")}
           />
-        </InputGroup>
+        </SearchField>
       </div>
 
       <ScrollArea
@@ -109,7 +132,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
             if (items.length === 0) return null;
             return (
               <div key={section} className="mb-4">
-                <div className="mb-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{t(SECTION_LABELS[section])}</div>
+                <div className="mb-1.5 px-2 text-ui font-medium text-fg-subtle">{t(SECTION_LABELS[section])}</div>
                 <ul className="space-y-0.5">
                   {items.map((tab) => {
                     const active = location.pathname === tab.to;
@@ -119,14 +142,14 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
                         <Link
                           to={tab.to}
                           className={cn(
-                            "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
+                            "flex h-[var(--sidebar-row-h)] items-center gap-2 rounded-md px-2 text-ui transition-colors",
                             active
                               ? "app-selected-surface text-fg"
                               : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
                           )}
                         >
                           <span className={iconSlotClass}>
-                            <Icon className="size-3.5" />
+                            <Icon className="size-4" />
                           </span>
                           <span>{t(tab.labelKey)}</span>
                         </Link>
@@ -137,6 +160,14 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
               </div>
             );
           })}
+          {!!projects.data?.length && <div className="mb-4">
+            <div className="mb-1.5 px-2 text-ui font-medium text-fg-subtle">{t("sidebar.projects")}</div>
+            <ul className="space-y-0.5">{projects.data.filter(project => project.name.toLowerCase().includes(query.trim().toLowerCase())).map(project => <li key={project.id}>
+              <Link to="/settings/projects/$projectId" params={{ projectId: project.id }} className={cn("flex h-[var(--sidebar-row-h)] items-center gap-2 rounded-md px-2 text-ui", location.pathname === `/settings/projects/${project.id}` ? "app-selected-surface text-fg" : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg")}>
+                <ProjectIcon identity={`project:${project.id}`} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} /><span className="truncate">{project.name}</span>
+              </Link>
+            </li>)}</ul>
+          </div>}
         </nav>
       </ScrollArea>
     </div>

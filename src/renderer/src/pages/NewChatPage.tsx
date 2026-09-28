@@ -145,6 +145,7 @@ export function NewChatPage() {
           onClose={() => setAuthSetupOpen(false)}
         />
         <Composer
+
           sessionId={draft?.id}
           sessionAgentId={binding.sessionAgentId}
           disabled={!draft}
@@ -174,7 +175,7 @@ export function NewChatPage() {
             const next = await window.backchat.uiFsPickDir({
               defaultPath: draftProjectCwd || undefined,
             });
-            if (next) setDraftProjectCwd(next);
+            return next;
           }}
           onSetCwd={setDraftProjectCwd}
           onClearCwd={() => setDraftProjectCwd(null)}

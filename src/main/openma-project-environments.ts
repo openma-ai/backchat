@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, parse } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { ProjectInfo } from "../shared/projects.js";
-import type { OpenmaProjectBinding, OpenmaScope } from "../shared/openma.js";
+import type { OpenmaProjectBinding, OpenmaScope, OpenmaTask } from "../shared/openma.js";
 import { openmaDesktopTaskId, openmaRunnerSessionId } from "./openma-identity.js";
 
 export interface OpenmaRunnerSession extends OpenmaScope {
@@ -100,6 +100,14 @@ export class OpenmaProjectEnvironments {
     const association = { ...normalized, ...workspace, sessionId, localSessionId, taskId: openmaDesktopTaskId(normalized, sessionId), runtimeId, environmentId, agentId };
     this.#db.prepare("INSERT INTO runner_sessions VALUES (?, ?, ?, ?)").run(localSessionId, scopeKey(normalized), sessionId, JSON.stringify(association));
     return association;
+  }
+
+  /** Read an existing execution binding; viewing a task never creates or moves it. */
+  pathsForTask(task: OpenmaTask): string[] | null {
+    if (task.target.kind !== "runner") return null;
+    const binding = this.runnerSession(openmaRunnerSessionId(task, task.sessionId));
+    if (!binding || binding.runtimeId !== task.target.runtimeId || binding.environmentId !== task.target.environmentId) return null;
+    return [binding.cwd, ...binding.additionalDirectories];
   }
 
   runnerSession(localSessionId: string): OpenmaRunnerSession | null {

@@ -66,6 +66,34 @@ export function StreamingMarkdown({
     }
   }, []);
 
+  const decorateLinks = useCallback((nodes: readonly Element[]) => {
+    for (const root of nodes) {
+      decorateStreamingHttpLinks(root);
+      const selector = "a:not([data-markdown-file-link])";
+      for (const anchor of [
+        ...(root.matches(selector) ? [root as HTMLAnchorElement] : []),
+        ...root.querySelectorAll<HTMLAnchorElement>(selector),
+      ]) {
+        const target = resolveMarkdownLinkTarget(anchor.getAttribute("href") ?? "", cwdRef.current);
+        if (target.kind !== "file") continue;
+        anchor.dataset.markdownFileLink = "true";
+        anchor.classList.add("markdown-local-file-link");
+        anchor.title = target.path;
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("viewBox", "0 0 24 24");
+        icon.setAttribute("fill", "none");
+        icon.setAttribute("stroke", "currentColor");
+        icon.setAttribute("stroke-width", "2");
+        icon.setAttribute("aria-hidden", "true");
+        icon.setAttribute("class", "mr-1 inline-block size-3.5 align-text-bottom");
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z M14 2v6h6 M8 13h8 M8 17h6");
+        icon.append(path);
+        anchor.prepend(icon);
+      }
+    }
+  }, []);
+
   const onContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
     const anchor = target?.closest("a") as HTMLAnchorElement | null;
@@ -88,7 +116,7 @@ export function StreamingMarkdown({
             prefixSkip={prefixSkip}
             paceReplay={paceReplay}
             onLinkActivate={onLinkActivate}
-            decorate={decorateStreamingHttpLinks}
+            decorateNodes={decorateLinks}
             className={cn(
               MARKDOWN_PROSE_TYPE,
               MARKDOWN_BLOCK_RHYTHM,

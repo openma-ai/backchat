@@ -1,7 +1,10 @@
+import { defaultRehypePlugins } from "streamdown";
+import { FileTextIcon } from "@/components/Icons";
 import { useI18n } from "@/lib/i18n";
 import {
   createContext,
   useContext,
+  useMemo,
   type AnchorHTMLAttributes,
   type ReactNode,
 } from "react";
@@ -83,12 +86,34 @@ export function StreamdownText({
   sessionId: string;
   surfacePrefix: string;
 }) {
+  const rehypePlugins = useMemo(() => [
+    defaultRehypePlugins.raw,
+    defaultRehypePlugins.sanitize,
+    // Resolve before harden normalizes ./folder to /folder against its dummy
+    // web origin. Keep the default sanitization and hardening on both sides.
+    () => (tree: { children?: unknown[] }) => {
+      const visit = (node: { tagName?: string; properties?: Record<string, unknown>; children?: unknown[] }) => {
+        const href = node.properties?.href;
+        if (node.tagName === "a" && typeof href === "string"
+          && !/^(?:[a-z][a-z0-9+.-]*:|[/#?])/i.test(href)) {
+          const target = resolveMarkdownLinkTarget(href, cwd);
+          if (target.kind === "file") node.properties!.href = target.path;
+        }
+        for (const child of node.children ?? []) {
+          if (child && typeof child === "object") visit(child);
+        }
+      };
+      visit(tree);
+    },
+    defaultRehypePlugins.harden,
+  ], [cwd]);
   const renderMarkdown = (source: string, key?: string) =>
     <ChatMarkdown
       key={key}
       text={source}
       className={className}
       components={{ a: MarkdownAnchor }}
+      rehypePlugins={rehypePlugins}
     />;
   const segments = splitInlineVisualizations(text);
   if (!cwd || (segments.length === 1 && segments[0]?.kind === "markdown")) {
@@ -151,11 +176,14 @@ export function MarkdownAnchor({
       className={
         target.kind === "http"
           ? "text-info underline underline-offset-2 hover:text-info/80"
-          : "text-fg underline underline-offset-2 hover:text-fg-muted"
+          : "markdown-local-file-link"
       }
+      title={target.kind === "file" ? target.path : rest.title}
+      data-markdown-file-link={target.kind === "file" ? "true" : undefined}
       data-markdown-http-link={target.kind === "http" ? "true" : undefined}
     >
       {target.kind === "http" && <MarkdownLinkFavicon url={target.url} />}
+      {target.kind === "file" && <FileTextIcon className="mr-1 inline-block size-3.5 align-text-bottom" aria-hidden="true" />}
       {children}
     </a>
   );
