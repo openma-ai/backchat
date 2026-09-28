@@ -36,6 +36,9 @@ importers:
       '@fontsource-variable/jetbrains-mono':
         specifier: ^5.2.8
         version: 5.3.0
+      '@hono/node-server':
+        specifier: 1.19.14
+        version: 1.19.14(hono@4.12.27)
       '@lobehub/icons':
         specifier: ^5.10.0
         version: 5.10.0(@lobehub/ui@5.15.8)(@types/react@19.2.16)(antd@6.4.3(luxon@3.7.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
@@ -135,12 +138,33 @@ importers:
       ai:
         specifier: ^6.0.194
         version: 6.0.194(zod@4.4.3)
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: 3.0.1
+        version: 3.0.1(ajv@8.20.0)
+      cors:
+        specifier: 2.8.6
+        version: 2.8.6
       cron-parser:
         specifier: ^5.6.2
         version: 5.6.2
+      cross-spawn:
+        specifier: 7.0.6
+        version: 7.0.6
       effect:
         specifier: ^3.22.1
         version: 3.22.2
+      eventsource:
+        specifier: 3.0.7
+        version: 3.0.7
+      express:
+        specifier: 5.2.1
+        version: 5.2.1(supports-color@10.2.2)
+      express-rate-limit:
+        specifier: 8.5.2
+        version: 8.5.2(express@5.2.1(supports-color@10.2.2))
       liquid-glass-react:
         specifier: ^1.1.1
         version: 1.1.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -162,6 +186,9 @@ importers:
       radix-ui:
         specifier: ^1.4.3
         version: 1.6.7(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      raw-body:
+        specifier: 3.0.2
+        version: 3.0.2
       rrule:
         specifier: ^2.8.1
         version: 2.8.1
@@ -242,8 +269,8 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       electron:
-        specifier: ^42.3.1
-        version: 42.3.1(supports-color@10.2.2)
+        specifier: ^42.3.3
+        version: 42.3.3(supports-color@10.2.2)
       electron-builder:
         specifier: ^26.15.7
         version: 26.15.7(electron-builder-squirrel-windows@26.15.7)(supports-color@10.2.2)
@@ -4396,6 +4423,11 @@ packages:
     deprecated: This version of Electron has a critical bug in Buffer handling, please upgrade to 42.3.3
     hasBin: true
 
+  electron@42.3.3:
+    resolution: {integrity: sha512-0MwYp9wTb7TrtTalOYqeW+suqd9T/Znstr/nDLKqFGIjHdBZX339guo3mQqTPURRZ/UQmYM4uMpzKpI5wLptfQ==}
+    engines: {node: '>= 22.12.0'}
+    hasBin: true
+
   emoji-mart@5.6.0:
     resolution: {integrity: sha512-eJp3QRe79pjwa+duv+n7+5YsNhRcMl812EcFVwrnRvYKoNPoQb5qxU8DG6Bgwji0akHdp6D4Ln6tYLG58MFSow==}
 
@@ -6733,10 +6765,6 @@ packages:
     resolution: {integrity: sha512-4yqz8a3n5HmGTlsbADNtr/dJlhkh/55Rq798G6ibiULcXbDtaLpTl1pvdqcbFfeoj3iSi52lePFM7h9H21cw/A==}
     engines: {node: '>=18.17'}
 
-  undici@7.27.0:
-    resolution: {integrity: sha512-+t2Z/GwkZQDtu00813aP66ygViGtPHKhhoFZpQKpKrE+9jIgES+Zw+mFNaDWOVRKiuJjuqKHzD3B1sfGg8+ZOQ==}
-    engines: {node: '>=20.18.1'}
-
   undici@7.29.0:
     resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
     engines: {node: '>=20.18.1'}
@@ -7732,10 +7760,10 @@ snapshots:
       env-paths: 3.0.0
       graceful-fs: 4.2.11
       progress: 2.0.3
-      semver: 7.8.1
+      semver: 7.8.5
       sumchecker: 3.0.1(supports-color@10.2.2)
     optionalDependencies:
-      undici: 7.27.0
+      undici: 7.29.0
     transitivePeerDependencies:
       - supports-color
 
@@ -11501,6 +11529,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  electron@42.3.3(supports-color@10.2.2):
+    dependencies:
+      '@electron/get': 5.0.0(supports-color@10.2.2)
+      '@types/node': 24.12.4
+      extract-zip: 2.0.1(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - supports-color
+
   emoji-mart@5.6.0: {}
 
   emoji-regex@10.6.0: {}
@@ -14427,9 +14463,6 @@ snapshots:
   undici-types@7.16.0: {}
 
   undici@6.26.0: {}
-
-  undici@7.27.0:
-    optional: true
 
   undici@7.29.0: {}
 
