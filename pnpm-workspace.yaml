@@ -25,6 +25,8 @@ minimumReleaseAgeExclude:
   - '@agentclientprotocol/claude-agent-acp@0.64.2'
   - '@agentclientprotocol/codex-acp@1.1.0'
 overrides:
+  # Security patches for transitive dependencies outside our direct manifests.
+  '@ai-sdk/provider-utils@4.0.27': 4.0.33
   '@openma/common': 'git+https://github.com/openma-ai/openma-common.git#v0.6.0'
   '@openmatter/agent': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent'
   '@openmatter/agent-claude': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-claude'
@@ -43,3 +45,10 @@ overrides:
   # Security fixes for electron-builder's plist dependencies; keep each minor line.
   '@xmldom/xmldom@>=0.8.0 <0.8.15': 0.8.15
   '@xmldom/xmldom@>=0.9.0 <0.9.12': 0.9.12
+  brace-expansion@2.1.1: 2.1.4
+  brace-expansion@5.0.6: 5.0.9
+  colord@2.9.3: 2.9.4
+  decode-uri-component@0.4.1: 0.5.0
+  js-yaml@4.2.0: 4.3.2
+  sharp@0.35.2: 0.35.4
+  undici@6.26.0: 6.28.0
