@@ -1022,8 +1022,7 @@ export function Sidebar() {
                     </ul>
                   )}
                 </SidebarSection>
-                {(
-                  <SidebarSection
+                <SidebarSection
                     title={t("sidebar.chats")}
                     icon={<MessageSquareIcon className="size-3.5" />}
                     action={newSectionAction}
@@ -1055,8 +1054,7 @@ export function Sidebar() {
                         </li>
                       ))}
                     </ul>
-                  </SidebarSection>
-                )}
+                </SidebarSection>
               </>
             );
           })()
