@@ -749,32 +749,7 @@ export function Sidebar() {
         })}
         <SidebarSection title={t("chat.local")} open={localOpen} onToggle={() => setLocalOpen(!localOpen)} labelCls={labelCls}>
         <div>
-        {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 && customSections.length === 0 ? (
-          <div>
-            <div className="mb-0.5 flex h-[var(--sidebar-row-h)] items-center justify-between px-2 text-ui font-normal text-fg-subtle">
-              <span className={labelCls}>{t("sidebar.chats")}</span>
-              {newSectionAction}
-            </div>
-            <button
-              type="button"
-              onClick={goHome}
-              className="flex h-[var(--sidebar-row-h)] w-full items-center px-2 text-left text-ui text-fg-muted hover:text-fg"
-            >
-              {t("sidebar.startNewChat")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCreateProjectOpen(true)}
-              className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 px-2 text-left text-ui text-fg-muted hover:text-fg"
-            >
-              <span className="sidebar-row-icon">
-                <PlusIcon />
-              </span>
-              {t("project.create")}
-            </button>
-          </div>
-        ) : (
-          (() => {
+          {(() => {
             const { pinned, projects, chats } = grouped;
             return (
               <>
@@ -885,6 +860,7 @@ export function Sidebar() {
                   open={openSectionKeys.has("projects")}
                   onToggle={() => toggleSection("projects")}
                   labelCls={labelCls}
+                  alwaysShowAction
                   action={
                     <button
                       type="button"
@@ -1057,8 +1033,7 @@ export function Sidebar() {
                 </SidebarSection>
               </>
             );
-          })()
-        )}
+          })()}
         </div>
         </SidebarSection>
         </nav>
