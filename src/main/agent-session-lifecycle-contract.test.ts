@@ -16,7 +16,7 @@ describe("agent and session lifecycle contract", () => {
     expect(manager).not.toContain("setDefaultAgent");
   });
 
-  it("treats cold-start warmup as a single readiness barrier", () => {
+  it("runs cold-start warmup while the shell uses a nonblocking snapshot", () => {
     const ipc = source("ipc.ts");
     const gate = source("../renderer/src/components/AppStartupGate.tsx");
     const listHandler = ipc.slice(
@@ -28,7 +28,8 @@ describe("agent and session lifecycle contract", () => {
     expect(ipc).toContain('process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"]');
     expect(listHandler).toContain("await agentWarmup");
     expect(gate).toContain('readiness: "ready"');
-    expect(gate).not.toContain('readiness: "snapshot"');
+    expect(gate).toContain('readiness: "snapshot"');
+    expect(gate).toContain("return children;");
   });
 
   it("allows full probes only for manual refresh and post-install/update", () => {

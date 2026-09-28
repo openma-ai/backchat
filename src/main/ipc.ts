@@ -297,10 +297,14 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     watch.close();
     inlineVisualizationWatches.delete(watchId);
   };
+  const agentWarmupStartedAt = performance.now();
   const agentWarmup =
     testHooksEnabled && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1"
       ? Promise.resolve()
-      : agentSetup.warmup().catch((error) => {
+      : agentSetup.warmup().then(() => {
+          logAppEvent("app.agent_warmup", { outcome: "ready", duration_ms: Math.round(performance.now() - agentWarmupStartedAt) });
+        }).catch((error) => {
+          logAppEvent("app.agent_warmup", { outcome: "error", duration_ms: Math.round(performance.now() - agentWarmupStartedAt), message: error instanceof Error ? error.message : String(error) });
           process.stderr.write(`! ACP agent warmup failed: ${error instanceof Error ? error.message : String(error)}\n`);
         });
   const requestedChromeExtensionBridgePort = Number(

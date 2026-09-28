@@ -17,6 +17,17 @@ test.describe("backchat smoke", () => {
       await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Search", exact: true })).toBeVisible();
 
+      const navigation = page.getByRole("navigation");
+      await expect(navigation.getByRole("button", { name: "Projects", exact: true })).toBeVisible();
+      await expect(navigation.getByRole("button", { name: "Chats", exact: true })).toBeVisible();
+      const createProject = navigation.getByRole("button", { name: "Create project", exact: true });
+      const createConversation = navigation.getByRole("button", { name: "New conversation", exact: true });
+      await expect(createProject.locator("..")).toHaveCSS("opacity", "1");
+      await expect(createConversation.locator("..")).toHaveCSS("opacity", "1");
+      await expect(navigation.getByRole("button", { name: "Start a new chat", exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "Sidebar options" }).click();
+      await expect(page.getByRole("menuitem", { name: "New section" })).toBeVisible();
+
       await expect(page.locator(".home-hero-title")).toBeVisible();
   });
 
@@ -298,7 +309,7 @@ test.describe("backchat smoke", () => {
       const iconBoxes = await Promise.all([
         page.getByTestId("new-chat-button").locator(".sidebar-row-icon").boundingBox(),
         navigation.locator(".sidebar-row-icon").first().boundingBox(),
-        navigation.locator(".sidebar-row-icon").last().boundingBox(),
+        sessionActions.locator("../..").locator(".sidebar-row-icon").boundingBox(),
       ]);
       for (const box of iconBoxes) expect(box).not.toBeNull();
       const [navIcon, projectIcon, childIcon] = iconBoxes;

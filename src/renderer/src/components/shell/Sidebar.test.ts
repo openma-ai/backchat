@@ -554,7 +554,7 @@ describe("groupSidebarSessions", () => {
     const pinnedSection = source.indexOf("{pinned.length > 0 && (");
     const pairSection = source.indexOf("{pairs.length > 0 && (");
     const projectSection = source.indexOf("{projects.length > 0 && (");
-    const chatSection = source.indexOf("{chats.length > 0 && (");
+    const chatSection = source.indexOf('title={t("sidebar.chats")}', pinnedSection);
 
     expect(pinnedSection).toBeGreaterThan(-1);
     expect(source.slice(pinnedSection, pairSection)).toContain('t("sidebar.pinned")');

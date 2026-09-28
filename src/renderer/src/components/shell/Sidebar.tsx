@@ -638,6 +638,14 @@ export function Sidebar() {
     "truncate",
   );
 
+  const newConversationAction = (
+    <button type="button" aria-label={t("sidebar.newConversation")}
+      title={t("sidebar.newConversation")} className="sidebar-row-action app-no-drag"
+      onClick={goHome}>
+      <PlusIcon aria-hidden="true" />
+    </button>
+  );
+
   return (
     <div className="sidebar-navigation flex h-full min-h-0 flex-col">
       {/* TrafficLight drag region — just empty space inside the sidebar
@@ -741,31 +749,7 @@ export function Sidebar() {
         })}
         <SidebarSection title={t("chat.local")} open={localOpen} onToggle={() => setLocalOpen(!localOpen)} labelCls={labelCls}>
         <div>
-        {localSessions.length === 0 && pairs.length === 0 && savedProjects.length === 0 && customSections.length === 0 ? (
-          <div>
-            <div className={cn("mb-0.5 flex h-[var(--sidebar-row-h)] items-center px-2 text-ui font-normal text-fg-subtle", labelCls)}>
-              {t("sidebar.chats")}
-            </div>
-            <button
-              type="button"
-              onClick={goHome}
-              className="flex h-[var(--sidebar-row-h)] w-full items-center px-2 text-left text-ui text-fg-muted hover:text-fg"
-            >
-              {t("sidebar.startNewChat")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCreateProjectOpen(true)}
-              className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 px-2 text-left text-ui text-fg-muted hover:text-fg"
-            >
-              <span className="sidebar-row-icon">
-                <PlusIcon />
-              </span>
-              {t("project.create")}
-            </button>
-          </div>
-        ) : (
-          (() => {
+          {(() => {
             const { pinned, projects, chats } = grouped;
             return (
               <>
@@ -876,6 +860,7 @@ export function Sidebar() {
                   open={openSectionKeys.has("projects")}
                   onToggle={() => toggleSection("projects")}
                   labelCls={labelCls}
+                  alwaysShowAction
                   action={
                     <button
                       type="button"
@@ -1013,10 +998,11 @@ export function Sidebar() {
                     </ul>
                   )}
                 </SidebarSection>
-                {chats.length > 0 && (
-                  <SidebarSection
+                <SidebarSection
                     title={t("sidebar.chats")}
                     icon={<MessageSquareIcon className="size-3.5" />}
+                    action={newConversationAction}
+                    alwaysShowAction
                     open={openSectionKeys.has("chats")}
                     onToggle={() => toggleSection("chats")}
                     labelCls={labelCls}
@@ -1044,12 +1030,10 @@ export function Sidebar() {
                         </li>
                       ))}
                     </ul>
-                  </SidebarSection>
-                )}
+                </SidebarSection>
               </>
             );
-          })()
-        )}
+          })()}
         </div>
         </SidebarSection>
         </nav>
@@ -1210,6 +1194,7 @@ function SidebarSection({
   labelCls,
   children,
   action,
+  alwaysShowAction = false,
   icon,
   customSectionId,
 }: {
@@ -1219,6 +1204,7 @@ function SidebarSection({
   labelCls: string;
   children: ReactNode;
   action?: ReactNode;
+  alwaysShowAction?: boolean;
   icon?: ReactNode;
   customSectionId?: string;
 }) {
@@ -1254,7 +1240,7 @@ function SidebarSection({
           </span>
         </button>
         <span className={cn("mr-1 shrink-0", labelCls)}>
-          <span className="inline-flex opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100">
+          <span className={cn("inline-flex transition-opacity", !alwaysShowAction && "opacity-0 group-hover/section:opacity-100 group-focus-within/section:opacity-100")}>
             {action}
           </span>
         </span>

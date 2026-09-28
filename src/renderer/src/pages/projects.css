@@ -109,7 +109,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 clamp(20px, 3vw, 40px) 16px;
+  padding: 0;
 }
 .project-knowledge {
   overflow-y: auto;
@@ -166,26 +166,6 @@
 .project-runtime-summary dd {
   text-align: right;
   overflow-wrap: anywhere;
-}
-.project-transcript {
-  flex: 1;
-  max-width: 750px;
-  width: 100%;
-  margin: auto;
-  padding: 28px 2px 12px;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.project-composer {
-  max-width: 750px;
-  width: 100%;
-  margin: 0 auto;
-  flex-shrink: 0;
-  padding-top: 12px;
-}
-.project-turn {
-  margin-bottom: 32px;
 }
 .project-user-message {
   background: var(--control-bg-hover);
@@ -353,7 +333,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 16px;
+  width: min(750px, calc(100% - 32px));
+  margin: 16px auto 0;
 }
 .project-runs select {
   max-width: 220px;
@@ -632,9 +613,6 @@
   }
   .projects-grid {
     grid-template-columns: 1fr;
-  }
-  .project-main {
-    padding: 0 16px 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

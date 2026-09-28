@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectWorkView, ThreadGoal } from "@shared/project-work";
-import { projectThreads, projectGoalPresentation, projectOutcomeLabel } from "./project-goals";
+import { projectThreads, projectGoalPresentation, projectOutcomeLabel, projectCoordinatorTurns } from "./project-goals";
+import { reduceTurn } from "./reduce-turn";
 
 const goal = {
   id: "goal-1", scopeId: "p", workThreadId: "opaque-worker-thread",
@@ -10,6 +11,46 @@ const goal = {
 } as ThreadGoal;
 
 describe("project thread goals", () => {
+  it("projects only coordinator turns with the original prompt and full agent activity", () => {
+    const at = "2026-09-22T00:00:00Z";
+    const event = (id: string, type: string, sessionId: string, turnId: string, data: unknown) => ({
+      schema_version: "oma.event.v1", event_id: id, type, session_id: sessionId,
+      turn_id: turnId, source: { kind: "harness" }, occurred_at: at, data,
+    });
+    const view = {
+      project: { id: "p" },
+      facts: {
+        sessions: [
+          { id: "coordinator-session", scopeId: "p", workThreadId: "p:coordinator", agentId: "coordinator" },
+          { id: "worker-session", scopeId: "p", workThreadId: "p:worker", agentId: "worker" },
+        ],
+        turns: [
+          { id: "coordinator-turn", sessionId: "coordinator-session", triggerEventId: "user-event", state: "completed", createdAt: at },
+          { id: "worker-turn", sessionId: "worker-session", triggerEventId: "worker-event", state: "completed", createdAt: at },
+        ],
+        events: [
+          { id: "user-event", payload: { text: "Ship the fix" } },
+          { id: "worker-event", payload: { text: "Worker instruction" } },
+        ],
+        agentEvents: [
+          event("start", "turn.started", "coordinator-session", "coordinator-turn", {}),
+          event("tool-start", "tool.started", "coordinator-session", "coordinator-turn", { tool_call_id: "tool-1", title: "Read files" }),
+          event("tool-done", "tool.completed", "coordinator-session", "coordinator-turn", { tool_call_id: "tool-1", title: "Read files" }),
+          event("message", "agent.message", "coordinator-session", "coordinator-turn", { text: "Done", message_id: "message-1" }),
+          event("done", "turn.completed", "coordinator-session", "coordinator-turn", {}),
+          event("worker-message", "agent.message", "worker-session", "worker-turn", { text: "Private worker output" }),
+        ],
+      },
+    } as unknown as ProjectWorkView;
+    const turns = projectCoordinatorTurns(view);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ status: "complete", promptText: "Ship the fix", assistantText: "Done" });
+    expect(reduceTurn(turns[0]!.events).tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: "Read files", status: "completed" }),
+    ]));
+    expect(JSON.stringify(turns)).not.toContain("Private worker output");
+  });
+
   it("keeps one worker and its active goal across replacement sessions and completed turns", () => {
     const view = {
       project: { id: "p" },
