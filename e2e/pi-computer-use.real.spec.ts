@@ -86,8 +86,10 @@ test("drives pi-computer-use through Electron, ACP, Pi, and the native helper", 
       launched.page.getByText("PI_COMPUTER_USE_E2E_OK", { exact: true }),
     ).toBeVisible({ timeout: 180_000 });
 
+    const screenshotPath = testInfo.outputPath("pi-computer-use.png");
+    await launched.page.screenshot({ path: screenshotPath, fullPage: true });
     await testInfo.attach("Pi computer use real E2E", {
-      body: await launched.page.screenshot({ fullPage: true }),
+      path: screenshotPath,
       contentType: "image/png",
     });
   } finally {
