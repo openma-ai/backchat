@@ -298,7 +298,7 @@ test.describe("backchat smoke", () => {
       const iconBoxes = await Promise.all([
         page.getByTestId("new-chat-button").locator(".sidebar-row-icon").boundingBox(),
         navigation.locator(".sidebar-row-icon").first().boundingBox(),
-        navigation.locator(".sidebar-row-icon").last().boundingBox(),
+        sessionActions.locator("../..").locator(".sidebar-row-icon").boundingBox(),
       ]);
       for (const box of iconBoxes) expect(box).not.toBeNull();
       const [navIcon, projectIcon, childIcon] = iconBoxes;
