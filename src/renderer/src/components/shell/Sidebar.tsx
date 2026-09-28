@@ -642,7 +642,7 @@ export function Sidebar() {
     <button type="button" aria-label={t("sidebar.newConversation")}
       title={t("sidebar.newConversation")} className="sidebar-row-action app-no-drag"
       onClick={goHome}>
-      <PlusIcon aria-hidden="true" />
+      <SquarePenIcon aria-hidden="true" />
     </button>
   );
 
@@ -860,7 +860,6 @@ export function Sidebar() {
                   open={openSectionKeys.has("projects")}
                   onToggle={() => toggleSection("projects")}
                   labelCls={labelCls}
-                  alwaysShowAction
                   action={
                     <button
                       type="button"
@@ -1002,7 +1001,6 @@ export function Sidebar() {
                     title={t("sidebar.chats")}
                     icon={<MessageSquareIcon className="size-3.5" />}
                     action={newConversationAction}
-                    alwaysShowAction
                     open={openSectionKeys.has("chats")}
                     onToggle={() => toggleSection("chats")}
                     labelCls={labelCls}
@@ -1194,7 +1192,6 @@ function SidebarSection({
   labelCls,
   children,
   action,
-  alwaysShowAction = false,
   icon,
   customSectionId,
 }: {
@@ -1204,7 +1201,6 @@ function SidebarSection({
   labelCls: string;
   children: ReactNode;
   action?: ReactNode;
-  alwaysShowAction?: boolean;
   icon?: ReactNode;
   customSectionId?: string;
 }) {
@@ -1240,7 +1236,7 @@ function SidebarSection({
           </span>
         </button>
         <span className={cn("mr-1 shrink-0", labelCls)}>
-          <span className={cn("inline-flex transition-opacity", !alwaysShowAction && "opacity-0 group-hover/section:opacity-100 group-focus-within/section:opacity-100")}>
+          <span className="inline-flex opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100">
             {action}
           </span>
         </span>
