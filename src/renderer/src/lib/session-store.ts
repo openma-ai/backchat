@@ -1867,6 +1867,7 @@ export class SessionStore {
       additionalDirectories: roots.length > 1 ? roots.slice(1) : undefined,
       workspaceId: project?.workspaceId ?? undefined,
       projectScope: project || normalizedCwd ? "project" : "none",
+      projectSelectionExplicit: !project && !normalizedCwd,
     });
     this.#activeId = id;
     this.#emit();

@@ -2034,13 +2034,20 @@ describe("SessionStore project drafts", () => {
 
   test("marks a global draft as explicitly outside projects", () => {
     const store = new SessionStore();
+    store.newDraft({
+      projectId: "proj-work",
+      sourceFolders: ["/work/app"],
+    });
 
     const id = store.newDraft();
 
     expect(store.get(id)).toMatchObject({
       status: "draft",
       projectScope: "none",
+      projectSelectionExplicit: true,
     });
+    expect(store.get(id)?.chosenCwd).toBeUndefined();
+    expect(store.get(id)?.projectId).toBeUndefined();
   });
 
   test("binds a named project and preserves secondary workspace roots", () => {
