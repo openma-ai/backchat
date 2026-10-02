@@ -166,8 +166,8 @@ export class ScheduleStore {
       next_run_at: nextRunAt,
       last_run_at: null,
     };
-    if (!row.name || !row.prompt || !row.source_session_id || !row.agent_id) {
-      throw new Error("Schedule name, prompt, source task, and harness are required");
+    if (!row.name || !row.prompt || !row.agent_id || (!row.source_session_id && row.target !== "new_task")) {
+      throw new Error("Schedule name, prompt, and harness are required; returning to a task requires a source task");
     }
     this.#statements.insert.run(
       row.id,

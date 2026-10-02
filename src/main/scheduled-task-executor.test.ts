@@ -86,4 +86,27 @@ describe("ScheduledTaskExecutor", () => {
       }),
     });
   });
+
+  it("runs a standalone schedule without looking up a source task", async () => {
+    const start = vi.fn(async () => ({ status: "ready" as const }));
+    const prompt = vi.fn(async () => undefined);
+    const findSession = vi.fn(() => null);
+    const executor = new ScheduledTaskExecutor({
+      start,
+      prompt,
+      findSession,
+      createId: vi.fn().mockReturnValueOnce("new-task").mockReturnValueOnce("turn-1"),
+    });
+
+    await executor.execute(schedule({ sourceSessionId: "", target: "new_task", cwd: "" }));
+
+    expect(findSession).not.toHaveBeenCalled();
+    expect(start).toHaveBeenCalledWith({
+      session_id: "new-task",
+      agent_id: "codex-acp",
+      cwd: undefined,
+      workspace_mode: "managed",
+    });
+    expect(prompt).toHaveBeenCalledOnce();
+  });
 });

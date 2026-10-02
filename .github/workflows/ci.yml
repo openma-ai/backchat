@@ -60,6 +60,14 @@ jobs:
       - name: Run fast Electron e2e
         run: pnpm run test:e2e:fast
 
+      - name: Upload E2E screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: test-results/**/*.png
+          if-no-files-found: ignore
+
       - name: Run OpenMA tenant and daemon e2e
         run: pnpm run test:e2e:openma
 

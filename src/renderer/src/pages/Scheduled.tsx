@@ -1,17 +1,20 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarClockIcon,
   CheckCircle2Icon,
   CirclePauseIcon,
   Clock3Icon,
+  ChevronDownIcon,
   HistoryIcon,
+  MessageCircleIcon,
   PencilIcon,
   PlayIcon,
-  PlusIcon,
   RefreshCwIcon,
+  SearchIcon,
   Trash2Icon,
+  XIcon,
   XCircleIcon,
 } from "@/components/Icons";
 import { toast } from "sonner";
@@ -21,8 +24,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ContentPage, PageScaffold } from "@/components/shell/PageScaffold";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
+import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
+import { useProjects } from "@/lib/projects-query";
+import { useSettings } from "@/lib/settings-store";
+import { sessionStore } from "@/lib/session-store";
 import {
   SCHEDULES_QUERY_KEY,
   formatScheduleListMeta,
@@ -38,6 +47,8 @@ import type {
   ScheduleTarget,
 } from "@shared/schedules.js";
 import type { PersistedSessionInfo } from "@shared/api.js";
+import type { AgentInfo } from "@shared/api.js";
+import type { ProjectInfo } from "@shared/projects.js";
 
 type TriggerKind = ScheduleTriggerDraft["type"];
 
@@ -45,6 +56,8 @@ interface ScheduleFormState {
   name: string;
   prompt: string;
   sourceSessionId: string;
+  agentId: string;
+  cwd: string;
   target: ScheduleTarget;
   triggerType: TriggerKind;
   triggerValue: string;
@@ -65,7 +78,9 @@ function newForm(sourceSessionId = ""): ScheduleFormState {
     name: "",
     prompt: "",
     sourceSessionId,
-    target: "current_task",
+    agentId: "",
+    cwd: "",
+    target: sourceSessionId ? "current_task" : "new_task",
     triggerType: "at",
     triggerValue: nextLocalHour(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
@@ -81,6 +96,7 @@ const SCHEDULE_TABS: { id: SchedulePageTab; label: TranslationKey }[] = [
 
 export function ScheduledPage() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const schedules = useQuery({
     queryKey: SCHEDULES_QUERY_KEY,
@@ -92,20 +108,37 @@ export function ScheduledPage() {
     queryFn: () => window.backchat.sessionsList(500),
     staleTime: 15_000,
   });
+  const agents = useQuery({
+    queryKey: AGENTS_QUERY_KEY,
+    queryFn: () => window.backchat.agentsList(),
+  });
+  const projects = useProjects();
+  const settings = useSettings();
+  const enabledIds = enabledAgentIds(settings);
+  const availableAgents = (agents.data ?? []).filter((agent) => enabledIds.has(agent.id) && isAgentRunnable(agent));
   const [form, setForm] = useState<ScheduleFormState>(() => newForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [tab, setTab] = useState<SchedulePageTab>("all");
+  const [search, setSearch] = useState("");
 
   const sourceSessions = sessions.data ?? [];
-  const rows = scheduleRowsForTab(schedules.data ?? [], tab);
+  const rows = scheduleRowsForTab(schedules.data ?? [], tab).filter((schedule) =>
+    `${schedule.name} ${schedule.prompt}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
+  );
 
   const openCreate = () => {
     setEditingId(null);
-    setForm(newForm(sourceSessions[0]?.id ?? ""));
+    setForm(newForm());
     setFormOpen(true);
+  };
+
+  const createWithCodex = () => {
+    window.sessionStorage.setItem("backchat.schedule-setup-prompt", t("scheduled.codexPrompt"));
+    sessionStore.newDraft();
+    void navigate({ to: "/" });
   };
 
   const openEdit = (schedule: ScheduleInfo) => {
@@ -124,6 +157,8 @@ export function ScheduledPage() {
       name: schedule.name,
       prompt: schedule.prompt,
       sourceSessionId: schedule.sourceSessionId,
+      agentId: schedule.agentId,
+      cwd: schedule.cwd,
       target: schedule.target,
       triggerType: schedule.trigger.type,
       triggerValue,
@@ -135,8 +170,12 @@ export function ScheduledPage() {
 
   const save = async () => {
     const source = sourceSessions.find((session) => session.id === form.sourceSessionId);
-    if (!editingId && !source) {
+    if (!editingId && form.sourceSessionId && !source) {
       toast.error(t("scheduled.sourceRequired"));
+      return;
+    }
+    if (!editingId && !source && !availableAgents.some((agent) => agent.id === form.agentId)) {
+      toast.error(t("scheduled.agentRequired"));
       return;
     }
     setSaving(true);
@@ -161,9 +200,9 @@ export function ScheduledPage() {
           prompt: form.prompt,
           trigger,
           target: form.target,
-          sourceSessionId: source!.id,
-          agentId: source!.agent_id,
-          cwd: source!.cwd,
+          sourceSessionId: source?.id ?? "",
+          agentId: source?.agent_id ?? form.agentId,
+          cwd: source?.cwd ?? form.cwd,
           notificationPolicy: form.notificationPolicy,
         });
       }
@@ -209,6 +248,7 @@ export function ScheduledPage() {
   return (
     <ContentPage>
       <PageScaffold
+        className={formOpen ? "max-w-[1240px]" : undefined}
         title={t("scheduled.title")}
         description={t("scheduled.description")}
         actions={(
@@ -224,94 +264,124 @@ export function ScheduledPage() {
             >
               <RefreshCwIcon className={cn("size-3.5", schedules.isFetching && "animate-spin")} />
             </Button>
-            <Button size="sm" onClick={openCreate} disabled={sourceSessions.length === 0}>
-              <PlusIcon className="size-3.5" />
-              {t("scheduled.new")}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" aria-label={t("scheduled.new")}>
+                  {t("scheduled.new")}
+                  <ChevronDownIcon className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-52">
+                <DropdownMenuItem onSelect={createWithCodex}>
+                  <MessageCircleIcon className="size-4" />
+                  {t("scheduled.createWithCodex")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={openCreate}>
+                  <PencilIcon className="size-4" />
+                  {t("scheduled.setUpManually")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         )}
       >
-        <div role="tablist" aria-label={t("scheduled.title")} className="flex gap-5">
-          {SCHEDULE_TABS.map((item) => {
-            const selected = tab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                onClick={() => setTab(item.id)}
-                className={cn(
-                  "relative pb-2 text-[13px] transition-colors",
-                  selected ? "font-medium text-fg" : "text-fg-muted hover:text-fg",
-                )}
-              >
-                {t(item.label)}
-                {selected && (
-                  <span className="absolute inset-x-0 bottom-0 h-px bg-fg" aria-hidden="true" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {formOpen && (
-          <ScheduleForm
-            form={form}
-            setForm={setForm}
-            sessions={sourceSessions}
-            editing={!!editingId}
-            saving={saving}
-            onCancel={() => setFormOpen(false)}
-            onSave={() => void save()}
-          />
-        )}
-
-        <section className="mt-2">
-          {schedules.isLoading ? (
-            <div className="space-y-3 py-4">
-              {[0, 1, 2].map((item) => <Skeleton key={item} className="h-14 w-full rounded-lg" />)}
+        <div className={cn(formOpen && "grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
+          <div className="min-w-0">
+            <div role="tablist" aria-label={t("scheduled.title")} className="flex gap-5">
+              {SCHEDULE_TABS.map((item) => {
+                const selected = tab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setTab(item.id)}
+                    className={cn(
+                      "relative pb-2 text-[13px] transition-colors",
+                      selected ? "font-medium text-fg" : "text-fg-muted hover:text-fg",
+                    )}
+                  >
+                    {t(item.label)}
+                    {selected && (
+                      <span className="absolute inset-x-0 bottom-0 h-px bg-fg" aria-hidden="true" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
-          ) : schedules.isError ? (
-            <EmptyState
-              icon={<XCircleIcon className="size-5" />}
-              title={t("scheduled.loadFailed")}
-              description={schedules.error instanceof Error ? schedules.error.message : String(schedules.error)}
-            />
-          ) : rows.length === 0 ? (
-            <EmptyState
-              icon={<CalendarClockIcon className="size-5" />}
-              title={t("scheduled.empty")}
-              description={sourceSessions.length === 0
-                ? t("scheduled.emptyNoTasks")
-                : t("scheduled.emptyHint")}
-            />
-          ) : (
-            <ul className="mt-1">
-              {rows.map((schedule) => (
-                <ScheduleRow
-                  key={schedule.id}
-                  schedule={schedule}
-                  sourceLabel={scheduleSourceSessionLabel(sourceSessions, schedule.sourceSessionId)}
-                  expanded={expandedId === schedule.id}
-                  onToggleRuns={() => setExpandedId((id) => id === schedule.id ? null : schedule.id)}
-                  onEdit={() => openEdit(schedule)}
-                  onToggleStatus={() => void updateStatus(schedule)}
-                  onDelete={() => void remove(schedule)}
+            <div className="relative mt-5">
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t("scheduled.search")}
+                aria-label={t("scheduled.search")}
+                className="pl-9 text-sm"
+              />
+            </div>
+            <section className="mt-4">
+              {schedules.isLoading ? (
+                <div className="space-y-3 py-4">
+                  {[0, 1, 2].map((item) => <Skeleton key={item} className="h-14 w-full rounded-lg" />)}
+                </div>
+              ) : schedules.isError ? (
+                <EmptyState
+                  icon={<XCircleIcon className="size-5" />}
+                  title={t("scheduled.loadFailed")}
+                  description={schedules.error instanceof Error ? schedules.error.message : String(schedules.error)}
                 />
-              ))}
-            </ul>
+              ) : rows.length === 0 ? (
+                <EmptyState
+                  icon={<CalendarClockIcon className="size-5" />}
+                  title={t(search.trim() ? "scheduled.noSearchResults" : "scheduled.empty")}
+                  description={search.trim() ? "" : t("scheduled.emptyHint")}
+                />
+              ) : (
+                <ul className="mt-1">
+                  {rows.map((schedule) => (
+                    <ScheduleRow
+                      key={schedule.id}
+                      schedule={schedule}
+                      sourceLabel={schedule.sourceSessionId
+                        ? scheduleSourceSessionLabel(sourceSessions, schedule.sourceSessionId)
+                        : t("scheduled.noSourceTask")}
+                      expanded={expandedId === schedule.id}
+                      onToggleRuns={() => setExpandedId((id) => id === schedule.id ? null : schedule.id)}
+                      onEdit={() => openEdit(schedule)}
+                      onToggleStatus={() => void updateStatus(schedule)}
+                      onDelete={() => void remove(schedule)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+          {formOpen && (
+            <ScheduleForm
+              form={form}
+              setForm={setForm}
+              sessions={sourceSessions}
+              agents={availableAgents}
+              projects={projects.data ?? []}
+              editing={!!editingId}
+              saving={saving}
+              onCancel={() => setFormOpen(false)}
+              onSave={() => void save()}
+            />
           )}
-        </section>
+        </div>
       </PageScaffold>
     </ContentPage>
   );
 }
 
-function ScheduleForm({ form, setForm, sessions, editing, saving, onCancel, onSave }: {
+function ScheduleForm({ form, setForm, sessions, agents, projects, editing, saving, onCancel, onSave }: {
   form: ScheduleFormState;
   setForm: React.Dispatch<React.SetStateAction<ScheduleFormState>>;
   sessions: PersistedSessionInfo[];
+  agents: AgentInfo[];
+  projects: ProjectInfo[];
   editing: boolean;
   saving: boolean;
   onCancel: () => void;
@@ -329,46 +399,81 @@ function ScheduleForm({ form, setForm, sessions, editing, saving, onCancel, onSa
         : t("scheduled.rruleHint");
 
   return (
-    <section className="mt-5 rounded-xl bg-bg-surface/40 p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xs font-medium text-fg">
-            {editing ? t("scheduled.editTitle") : t("scheduled.createTitle")}
-          </h2>
-          <p className="mt-1 text-[10px] text-fg-subtle">{t("scheduled.formHint")}</p>
-        </div>
-        <Button variant="ghost" size="xs" onClick={onCancel}>{t("common.cancel")}</Button>
+    <section className="min-w-0 border-t border-border/60 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-medium text-fg">
+          {editing ? t("scheduled.editTitle") : t("scheduled.createTitle")}
+        </h2>
+        <Button variant="ghost" size="icon-sm" onClick={onCancel} aria-label={t("common.close")}>
+          <XIcon className="size-4" />
+        </Button>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Field label={t("scheduled.name")}>
-          <Input value={form.name} onChange={(event) => patch("name", event.target.value)} className="text-xs" />
-        </Field>
-        <Field label={t("scheduled.sourceTask")}>
-          <select
-            value={form.sourceSessionId}
-            onChange={(event) => patch("sourceSessionId", event.target.value)}
-            disabled={editing}
-            className={selectClass}
-          >
-            <option value="">{t("scheduled.chooseTask")}</option>
-            {sessions.map((session) => (
-              <option key={session.id} value={session.id}>
-                {session.title || session.id.slice(0, 8)} · {session.agent_id}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="lg:col-span-2">
+      <div className="mt-6 grid gap-x-4 gap-y-5 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Field label={t("scheduled.name")}>
+            <Input value={form.name} onChange={(event) => patch("name", event.target.value)} className="text-sm" />
+          </Field>
+        </div>
+        <div className="sm:col-span-2">
           <Field label={t("scheduled.prompt")}>
             <Textarea
               value={form.prompt}
               onChange={(event) => patch("prompt", event.target.value)}
               rows={3}
-              className="min-h-20 resize-y text-xs leading-5"
+              className="min-h-24 resize-y text-sm leading-5"
             />
           </Field>
         </div>
+        {(sessions.length > 0 || !!form.sourceSessionId) && (
+          <div className="sm:col-span-2">
+            <Field label={t("scheduled.sourceTask")}>
+              <select
+                value={form.sourceSessionId}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  sourceSessionId: event.target.value,
+                  target: event.target.value
+                    ? current.sourceSessionId ? current.target : "current_task"
+                    : "new_task",
+                }))}
+                disabled={editing}
+                className={selectClass}
+              >
+                <option value="">{t("scheduled.noSourceTask")}</option>
+                {sessions.map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {session.title || session.id.slice(0, 8)} · {session.agent_id}
+                  </option>
+                ))}
+                {form.sourceSessionId && !sessions.some((session) => session.id === form.sourceSessionId) && (
+                  <option value={form.sourceSessionId}>{form.sourceSessionId.slice(0, 8)}</option>
+                )}
+              </select>
+            </Field>
+          </div>
+        )}
+        {!form.sourceSessionId && (
+          <>
+            <div>
+              <Field label={t("scheduled.agent")}>
+                <select value={form.agentId} onChange={(event) => patch("agentId", event.target.value)} disabled={editing} className={selectClass}>
+                  <option value="">{t("scheduled.chooseAgent")}</option>
+                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.label}</option>)}
+                </select>
+              </Field>
+              {!editing && agents.length === 0 && <Link to="/settings/agents" className="mt-2 inline-block text-xs text-fg-muted underline">{t("scheduled.configureAgent")}</Link>}
+            </div>
+            <Field label={t("scheduled.project")}>
+              <select value={form.cwd} onChange={(event) => patch("cwd", event.target.value)} disabled={editing} className={selectClass}>
+                <option value="">{t("scheduled.noProject")}</option>
+                {projects.filter((project) => project.primary_folder).map((project) => (
+                  <option key={project.id} value={project.primary_folder}>{project.name}</option>
+                ))}
+              </select>
+            </Field>
+          </>
+        )}
         <Field label={t("scheduled.scheduleType")}>
           <select
             value={form.triggerType}
@@ -391,34 +496,36 @@ function ScheduleForm({ form, setForm, sessions, editing, saving, onCancel, onSa
             min={form.triggerType === "interval" ? 1 : undefined}
             value={form.triggerValue}
             onChange={(event) => patch("triggerValue", event.target.value)}
-            className={cn("text-xs", (form.triggerType === "cron" || form.triggerType === "rrule") && "font-mono")}
+            className={cn("text-sm", (form.triggerType === "cron" || form.triggerType === "rrule") && "font-mono")}
           />
         </Field>
-        {(form.triggerType === "at" || form.triggerType === "cron" || form.triggerType === "rrule") && (
+        {(form.triggerType === "cron" || form.triggerType === "rrule") && (
           <Field label={t("scheduled.timezone")}>
-            <Input value={form.timezone} onChange={(event) => patch("timezone", event.target.value)} className="font-mono text-xs" />
+            <Input value={form.timezone} onChange={(event) => patch("timezone", event.target.value)} className="font-mono text-sm" />
           </Field>
         )}
-        <Field label={t("scheduled.destination")}>
+        {form.sourceSessionId && <Field label={t("scheduled.destination")}>
           <select value={form.target} onChange={(event) => patch("target", event.target.value as ScheduleTarget)} className={selectClass}>
             <option value="current_task">{t("scheduled.currentTask")}</option>
             <option value="new_task">{t("scheduled.newTask")}</option>
           </select>
-        </Field>
-        <Field label={t("scheduled.notifications")}>
-          <select value={form.notificationPolicy} onChange={(event) => patch("notificationPolicy", event.target.value as ScheduleNotificationPolicy)} className={selectClass}>
-            <option value="always">{t("scheduled.notifyAlways")}</option>
-            <option value="failures">{t("scheduled.notifyFailures")}</option>
-            <option value="never">{t("scheduled.notifyNever")}</option>
-          </select>
-        </Field>
+        </Field>}
+        <div className="sm:col-span-2">
+          <Field label={t("scheduled.notifications")}>
+            <select value={form.notificationPolicy} onChange={(event) => patch("notificationPolicy", event.target.value as ScheduleNotificationPolicy)} className={selectClass}>
+              <option value="always">{t("scheduled.notifyAlways")}</option>
+              <option value="failures">{t("scheduled.notifyFailures")}</option>
+              <option value="never">{t("scheduled.notifyNever")}</option>
+            </select>
+          </Field>
+        </div>
       </div>
-      <div className="mt-5 flex justify-end gap-2">
+      <div className="mt-6 flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onCancel}>{t("common.cancel")}</Button>
         <Button
           size="sm"
           loading={saving}
-          disabled={!form.name.trim() || !form.prompt.trim() || (!editing && !form.sourceSessionId)}
+          disabled={!form.name.trim() || !form.prompt.trim() || (!editing && !form.sourceSessionId && !agents.some((agent) => agent.id === form.agentId))}
           onClick={onSave}
         >
           {editing ? t("common.save") : t("scheduled.create")}
@@ -448,7 +555,7 @@ function ScheduleRow({ schedule, sourceLabel, expanded, onToggleRuns, onEdit, on
             : <Clock3Icon className="size-3.5" />}
         </span>
         <div className="min-w-0 flex-1">
-          <Link
+          {schedule.sourceSessionId ? <Link
             to="/chat/$sessionId"
             params={{ sessionId: schedule.sourceSessionId }}
             aria-label={t("scheduled.openSource")}
@@ -458,7 +565,7 @@ function ScheduleRow({ schedule, sourceLabel, expanded, onToggleRuns, onEdit, on
             <span className="block truncate text-[13px] font-medium text-fg" title={schedule.name}>
               {schedule.name}
             </span>
-          </Link>
+          </Link> : <span className="block truncate text-[13px] font-medium text-fg" title={schedule.name}>{schedule.name}</span>}
           <button
             type="button"
             onClick={onToggleRuns}
@@ -537,10 +644,10 @@ function RunRow({ run, locale }: { run: ScheduleRunInfo; locale: string }) {
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="block text-[11px] text-fg-muted">
-      <span className="mb-1.5 block font-medium text-fg">{label}</span>
+    <label className="block text-xs text-fg-muted">
+      <span className="mb-2 block font-medium text-fg">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-[9px] leading-4 text-fg-subtle">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-xs leading-4 text-fg-muted">{hint}</span>}
     </label>
   );
 }
@@ -569,4 +676,4 @@ function toLocalInput(source: string): string {
     .slice(0, 16);
 }
 
-const selectClass = "h-8 w-full rounded-lg border border-input bg-bg px-2.5 text-xs text-fg outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
+const selectClass = "h-9 w-full rounded-lg border border-input bg-bg px-2.5 text-sm text-fg outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";

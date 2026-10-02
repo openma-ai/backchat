@@ -1206,7 +1206,7 @@ function SidebarSection({
 }) {
   return (
     <section className="sidebar-section" data-state={open ? "open" : "closed"} data-sidebar-custom-section={customSectionId}>
-      <div className="sidebar-section-header group/section flex h-[var(--sidebar-row-h)] items-center rounded-md transition-colors hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]">
+      <div className="sidebar-section-header group/section flex h-[var(--sidebar-row-h)] items-center rounded-md transition-colors hover:bg-[var(--control-bg-hover)]">
         <button
           type="button"
           onClick={onToggle}
@@ -1235,7 +1235,7 @@ function SidebarSection({
             />
           </span>
         </button>
-        <span className={cn("mr-1 shrink-0", labelCls)}>
+        <span className={cn("sidebar-section-action", labelCls)}>
           <span className="inline-flex opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100">
             {action}
           </span>

@@ -243,6 +243,14 @@
 /* Match the reference navigation rhythm: 28px rows with a 1px step. */
 .sidebar-navigation {
   --sidebar-row-h: 28px;
+  --sidebar-section-action-inset: 4px;
+}
+.sidebar-section-action {
+  display: flex;
+  height: var(--sidebar-row-h);
+  flex-shrink: 0;
+  align-items: center;
+  margin-right: var(--sidebar-section-action-inset);
 }
 /* Scroll viewports and collapsed groups clip outward focus rings. Keep
    keyboard focus entirely inside the row, including after menu dismissal. */
