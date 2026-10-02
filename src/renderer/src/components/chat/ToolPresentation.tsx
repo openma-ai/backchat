@@ -162,11 +162,16 @@ export function ToolRow({
               />
             ) : undefined
           }
-          trailing={
-            lifecycle.value === "completed" ? undefined : (
+        />
+        {(lifecycle.value !== "completed" || hasBody) && (
+          <span
+            className="ml-auto inline-flex shrink-0 items-center gap-1"
+            data-tool-row-trailing="true"
+          >
+            {lifecycle.value !== "completed" && (
               <span
                 className={cn(
-                  "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                  "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
                   lifecycle.value === "failed"
                     ? "bg-danger-subtle text-danger"
                     : lifecycle.value === "denied"
@@ -177,10 +182,10 @@ export function ToolRow({
               >
                 {lifecycleLabel}
               </span>
-            )
-          }
-        />
-        {hasBody && <DisclosureChevron open={open} />}
+            )}
+            {hasBody && <DisclosureChevron open={open} />}
+          </span>
+        )}
       </button>
 
       {open && tool.rawInput !== undefined && (

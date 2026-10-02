@@ -3,6 +3,36 @@ import { expect, test } from "@playwright/test";
 import { injectEvent, injectSession, launchApp } from "./helpers";
 
 const denyCommand = "echo PR28R2-REJECT-ME > pr28r2-shell-reject.txt";
+const longCommand =
+  "echo PR28R2-LONG-FAIL this command is long enough that the tool row must truncate it before the status label instead of letting the label drift into the middle of the line";
+
+async function trailingPlacement(row: import("@playwright/test").Locator) {
+  return row.evaluate((root) => {
+    const badge = root.querySelector("[data-tool-status-label]");
+    const line = root.querySelector(".activity-disclosure-row");
+    const chevron = line?.querySelector(".activity-disclosure-chevron");
+    const command = line?.querySelector("[data-tool-activity-identity] .truncate");
+    if (
+      !(badge instanceof HTMLElement)
+      || !(line instanceof HTMLElement)
+      || !(chevron instanceof HTMLElement)
+      || !(command instanceof HTMLElement)
+    ) {
+      return null;
+    }
+    const badgeBox = badge.getBoundingClientRect();
+    const lineBox = line.getBoundingClientRect();
+    const chevronBox = chevron.getBoundingClientRect();
+    const commandBox = command.getBoundingClientRect();
+    return {
+      commandToBadge: badgeBox.left - commandBox.right,
+      badgeToChevron: chevronBox.left - badgeBox.right,
+      chevronToEnd: lineBox.right - chevronBox.right,
+      overlaps: commandBox.right > badgeBox.left + 1,
+      truncated: command.scrollWidth > command.clientWidth + 1,
+    };
+  });
+}
 
 test("shows a denied shell as not run, and keeps a real failure at the end of the row", async () => {
   const shotDir = process.env.BACKCHAT_SHELL_SHOT_DIR;
@@ -73,8 +103,26 @@ test("shows a denied shell as not run, and keeps a real failure at the end of th
       turn_id: "turn-fail",
     });
 
+    await send("turn-long", {
+      sessionUpdate: "tool_call",
+      toolCallId: "shell-long",
+      kind: "execute",
+      status: "failed",
+      title: longCommand,
+      rawOutput: "exit 1",
+    });
+    await send("turn-long", {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "LONG" },
+    });
+    await injectEvent(page, {
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-long",
+    });
+
     const triggers = page.locator('[data-chat-reasoning-trigger="true"]');
-    await expect(triggers).toHaveCount(2);
+    await expect(triggers).toHaveCount(3);
     for (const trigger of await triggers.all()) {
       if ((await trigger.getAttribute("aria-expanded")) !== "true") {
         await trigger.click();
@@ -83,34 +131,26 @@ test("shows a denied shell as not run, and keeps a real failure at the end of th
 
     const denyTurn = page.locator('[data-turn-id="turn-deny"]');
     const failTurn = page.locator('[data-turn-id="turn-fail"]');
+    const longTurn = page.locator('[data-turn-id="turn-long"]');
     await expect(denyTurn.getByText("REJECTED")).toBeVisible();
 
     if (shotDir) {
       await page.screenshot({ path: `${shotDir}/shell-turns.png` });
       await denyTurn.screenshot({ path: `${shotDir}/denied-shell.png` });
       await failTurn.screenshot({ path: `${shotDir}/failed-shell.png` });
+      await longTurn.screenshot({ path: `${shotDir}/long-failed.png` });
     }
 
     const failed = failTurn.locator('[data-tool-call-id="shell-fail"]');
     await expect(failed).toBeVisible();
-    const placement = await failed.evaluate((row) => {
-      const badge = row.querySelector("[data-tool-status-label]");
-      const line = row.querySelector(".activity-disclosure-row");
-      const chevron = line?.querySelector(".activity-disclosure-chevron");
-      if (!(badge instanceof HTMLElement) || !(line instanceof HTMLElement) || !(chevron instanceof HTMLElement)) {
-        return null;
-      }
-      const badgeBox = badge.getBoundingClientRect();
-      const lineBox = line.getBoundingClientRect();
-      const chevronBox = chevron.getBoundingClientRect();
-      return {
-        badgeToChevron: chevronBox.left - badgeBox.right,
-        chevronToEnd: lineBox.right - chevronBox.right,
-      };
-    });
+    const placement = await trailingPlacement(failed);
     expect(placement).not.toBeNull();
-    expect(placement!.badgeToChevron).toBeLessThan(16);
-    expect(placement!.chevronToEnd).toBeLessThan(12);
+    expect(placement!.overlaps).toBe(false);
+    expect(placement!.commandToBadge).toBeGreaterThanOrEqual(-1);
+    expect(placement!.commandToBadge).toBeLessThan(24);
+    expect(placement!.badgeToChevron).toBeGreaterThanOrEqual(-1);
+    expect(placement!.badgeToChevron).toBeLessThan(12);
+    expect(placement!.chevronToEnd).toBeLessThan(8);
     await expect(failed).toContainText("Failed");
     await expect(failed.locator(".text-danger")).not.toHaveCount(0);
 
@@ -123,6 +163,16 @@ test("shows a denied shell as not run, and keeps a real failure at the end of th
     await expect(denied).not.toContainText("已运行");
     await expect(denied).not.toContainText("Failed");
     await expect(denied.locator(".text-danger")).toHaveCount(0);
+
+    const longFailed = longTurn.locator('[data-tool-call-id="shell-long"]');
+    await expect(longFailed).toBeVisible();
+    const longPlacement = await trailingPlacement(longFailed);
+    expect(longPlacement).not.toBeNull();
+    expect(longPlacement!.truncated).toBe(true);
+    expect(longPlacement!.overlaps).toBe(false);
+    expect(longPlacement!.badgeToChevron).toBeGreaterThanOrEqual(-1);
+    expect(longPlacement!.badgeToChevron).toBeLessThan(12);
+    expect(longPlacement!.chevronToEnd).toBeLessThan(8);
   } finally {
     await launched.cleanup();
   }

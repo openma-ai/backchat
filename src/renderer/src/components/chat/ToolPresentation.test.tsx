@@ -74,6 +74,8 @@ describe("ToolRow acceptance contract", () => {
     expect(html).not.toContain("Ran");
     expect(html).not.toContain("text-danger");
     expect(html).toContain("text-warning");
+    expect(html).toContain('data-tool-row-trailing="true"');
+    expect(html).not.toMatch(/data-tool-status-label="denied"[^>]*ml-auto|ml-auto[^>]*data-tool-status-label="denied"/);
   });
 
   it("keeps the tool input hidden until its tool row is expanded", () => {

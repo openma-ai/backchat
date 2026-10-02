@@ -2471,11 +2471,11 @@ header:not(.app-drag-region) .app-drag-region {
   color: var(--fg);
 }
 
-/* The status label has owned margin-left: auto since e79568f. Commit 800cf88
-   also gave .activity-disclosure-chevron margin-left: auto. Two auto margins
-   in one flex row split the free space, so the label sits in the middle and
-   the chevron takes the end. The label keeps the only auto margin; the
-   chevron follows it. */
+/* e79568f put margin-left: auto on the status label, and 800cf88 put the
+   same auto margin on .activity-disclosure-chevron. Both are on main, not
+   from #27/#28. Two auto margins split the free space, so the label hangs
+   between the command and the chevron. The label and chevron now share one
+   trailing cluster; the command truncates in the space before it. */
 [data-session-turn-response] .activity-disclosure-chevron {
   margin-left: 0;
 }
