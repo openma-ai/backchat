@@ -107,7 +107,7 @@ import { composePromptContext } from "./session-prompt-context.js";
 import { desktopCliPath } from "./cli-path.js";
 import { collapseUnsupportedWorkspaceRoots } from "./workspace-roots.js";
 import { restrictCursorEdits } from "./cursor-edit-gate.js";
-import { isReadOnlyToolCall, toolWasApproved } from "./permission-policy.js";
+import { isReadOnlyToolCall, rememberedPermissionDecision, toolWasApproved } from "./permission-policy.js";
 import {
   isSessionPermissionPolicy,
   setRuntimePermissionPolicy,
@@ -1605,6 +1605,10 @@ export class SessionManager {
             ? inner.id
             : undefined;
     if (!toolCallId || isReadOnlyToolCall(inner) || toolWasApproved(sess.id, toolCallId)) return;
+    // A shell the user already accepted or rejected came through
+    // session/request_permission. Do not treat that later tool_call as an
+    // unapproved start; the permission decision owns the outcome.
+    if (rememberedPermissionDecision(sess.id, toolCallId)) return;
     this.cancel(sess.id, turnId, { suppressStreamResult: true });
     this.#send({
       type: "session.error",
