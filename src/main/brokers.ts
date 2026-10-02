@@ -166,6 +166,7 @@ export function requestPermission(
     });
     rememberBrokerEvent(sessionId, "permission_request", {
       request_id: requestId,
+      tool_call_id: toolCallIdOf(p.toolCall),
       title: ask.presentation.title,
       kind: ask.presentation.kind,
       options: ask.options,
@@ -631,11 +632,18 @@ export function respondPermission(requestId: string, optionId: string | null | u
   const pending = pendingPermission.get(requestId);
   if (!pending) return false;
   pendingPermission.delete(requestId);
-  if (optionId != null) noteToolApproval(pending.sessionId, toolCallIdOf(pending.ask.toolCall));
+  const option = optionId == null
+    ? undefined
+    : pending.ask.options.find((entry) => entry.optionId === optionId);
+  const allows = option?.kind === "allow_once" || option?.kind === "allow_always";
+  const rejects = option?.kind === "reject_once" || option?.kind === "reject_always";
+  if (allows) noteToolApproval(pending.sessionId, toolCallIdOf(pending.ask.toolCall));
   rememberBrokerEvent(pending.sessionId, "permission_response", {
     request_id: requestId,
+    tool_call_id: toolCallIdOf(pending.ask.toolCall),
     option_id: optionId,
-    outcome: optionId == null ? "cancelled" : "selected",
+    option_kind: option?.kind,
+    outcome: optionId == null ? "cancelled" : rejects ? "rejected" : "selected",
     title: pending.ask.presentation.title,
   });
   brokerSessionEventSink?.({

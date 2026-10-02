@@ -989,6 +989,32 @@ describe("SessionEventOut → OpenMA event boundary", () => {
     });
   });
 
+  it("treats a completed tool whose result says the write was denied as a failure", () => {
+    const result = toOpenMAEvent({
+      type: "session.event",
+      session_id: "sess-1",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "edit-1",
+        kind: "edit",
+        status: "completed",
+        rawOutput: "Write permission denied",
+      },
+    }, options);
+
+    expect(result).toMatchObject({
+      type: "tool.failed",
+      data: {
+        tool_call_id: "edit-1",
+        status: "failed",
+        outcome: "denied",
+        reason: "denied",
+        error: "Write permission denied",
+      },
+    });
+  });
+
   it("lifts Claude non-execution metadata into a canonical tool failure reason", () => {
     const result = toOpenMAEvent({
       type: "session.event",

@@ -7,7 +7,7 @@ vi.mock("electron", () => ({
 }));
 
 import { listPendingAsks, requestPermission, respondPermission } from "./brokers.js";
-import { isReadOnlyToolCall, setRuntimePermissionPolicy } from "./permission-policy.js";
+import { isReadOnlyToolCall, setRuntimePermissionPolicy, toolWasApproved } from "./permission-policy.js";
 
 describe("session permission policy", () => {
   it("auto-approves read-only tools and keeps writes pending", async () => {
@@ -38,5 +38,19 @@ describe("session permission policy", () => {
     expect(isReadOnlyToolCall({ kind: "read", title: "shell ls" })).toBe(false);
     expect(isReadOnlyToolCall({ title: "Edit file" })).toBe(false);
     expect(isReadOnlyToolCall({ kind: "read", title: "Read file" })).toBe(true);
+  });
+
+  it("does not treat a rejected option as approval", async () => {
+    const pending = requestPermission("sess-reject", {
+      toolCall: { toolCallId: "shell-1", kind: "execute", title: "echo" },
+      options: [
+        { optionId: "allow-once", kind: "allow_once", name: "Allow" },
+        { optionId: "reject-once", kind: "reject_once", name: "Reject" },
+      ],
+    });
+    const ask = listPendingAsks("sess-reject")[0]!;
+    expect(respondPermission(ask.id, "reject-once")).toBe(true);
+    await pending;
+    expect(toolWasApproved("sess-reject", "shell-1")).toBe(false);
   });
 });

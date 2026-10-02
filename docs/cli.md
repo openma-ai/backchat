@@ -151,57 +151,73 @@ kind is `read`, `search`, or `think`. `edit`, `write`, `delete`, `move`,
 `execute`, and any unknown kind stay in `session pending`. A title or name
 that mentions edit, write, delete, move, or shell is not treated as
 read-only. `ask` prompts for every tool. `auto-all` approves tool calls and
-file writes. With no `--approve`, in-workspace file writes stay silent, which
-is the GUI default.
+client filesystem writes. With no `--approve`, in-workspace `fs/write_text_file`
+calls stay silent, which is the GUI default for agents that use the client
+filesystem. Cursor does not. See below.
 
-### What Cursor actually does, separate from Backchat
+### What Cursor does, separate from Backchat
 
-This was checked against Backchat's ACP client code and Cursor's published
-ACP docs (`cursor.com/docs/cli/acp`, modes `agent` / `plan` / `ask`). This
-environment has no `cursor-agent` binary, so the mode list was not re-probed
-live against 2026.10.01. The macOS acceptance run is the live observation:
-an edit wrote `CLI_TEST.md` with no `session/request_permission`, and only
-the shell tool showed up in `session pending`.
+This is Cursor's own ACP behavior, measured by cursor killer against
+`cursor-agent` 2026.10.01 over raw stdio, with no Backchat process in the
+path. Global cli-config was `approvalMode: allowlist` and `allow: ["Shell(ls)"]`.
+A follow-up run with the machine's `preToolUse` hook disabled was the same.
+See the table on PR #28.
 
-Cursor's own minimal ACP sample sets `fs.readTextFile` and
-`fs.writeTextFile` to false. Its edit tool is the agent process writing the
-file, not a client `fs/write_text_file` call. `agent` mode is documented as
-full tool access. `plan` and `ask` are read-only. Switching to `ask` does
-not make edits emit `request_permission`; it stops the agent from editing.
-Approval in the docs and in that macOS run is for commands (shell), unless
-`--force` allows them.
+| Mode | `request_permission` for an edit | `fs/write_text_file` | File written |
+| --- | --- | --- | --- |
+| agent (default), any `clientCapabilities.fs` | no | no | yes, directly |
+| plan | no | no | no; the agent calls `cursor/create_plan` |
+| ask | no | no | no; the model refuses |
+| agent, shell `echo` | yes, `kind: execute` | — | no, after reject |
+| agent plus project `.cursor/cli.json` deny `Write(**)` | no | no | no; the tool says permission denied |
 
-Backchat's session `initialize` does advertise the client filesystem and
-terminal, because the desktop wires those callbacks:
+Cursor does not advertise a client-settable approval option. `session/new`
+offers modes `agent`, `plan`, and `ask`, and config options `mode` and
+`model`. Shell commands follow the cli-config allowlist and do send
+`session/request_permission`. A rejected or denied tool call still ends with
+status `completed`, so that status is not success. An edit `tool_call` starts
+with empty `rawInput`, then a path; the diff arrives on completion, after the
+write. `clientCapabilities.fs` does not change this: the edit tool never
+calls `fs/write_text_file`.
 
-- `fs.readTextFile: true`
-- `fs.writeTextFile: true`
-- `terminal: true`
+### What Backchat does about that
 
-Advertising `writeTextFile` only means Backchat will answer
-`fs/write_text_file` if the agent calls it. It does not make Cursor route
-its edit tool through that method. The macOS log does not show an
-`fs/write_text_file` call for the edit.
+Cursor edits cannot be approved one by one. Backchat is not dropping a
+permission request; agent mode never sends one. Backchat does not invent a
+prompt Cursor will not send, and it does not write `.cursor/cli.json` into
+the checkout.
 
-Backchat does not drop an edit `request_permission`. `auto-read` auto-approves
-only kinds `read`, `search`, and `think`. `edit`, `write`, `delete`, `move`,
-`execute`, and unknown kinds stay pending. A tool_call of kind `edit` is
-forwarded on the stream as `tool_call` with that kind. Nothing in that path
-discards edit.
+When a Cursor session requires approval, Backchat calls `session/set_mode`
+(and the `mode` config option, when Cursor lists the value there) before the
+first prompt:
 
-There is a separate Backchat gap, at the acceptance commit: an in-workspace
-`fs/write_text_file` was applied with no ask, for every session. That would
-hide a write only if the agent used the client filesystem method. It is not
-what the macOS edit symptom matches, because shell permissions still arrived
-and the edit produced none. `ask` and `auto-read` now hold those client
-filesystem writes in `session pending` as well.
+- `--approve ask` or `--approve auto-read`
+- no `--approve`, unless Settings → permission mode is Auto
+- a read-only session (`permission_mode: read_only`), even if that session
+  also passed `--approve auto-all`
 
-For a Cursor session started with `ask` or `auto-read`, Backchat also calls
-`session/set_mode` with `ask` when Cursor's new-session response lists that
-mode, and cancels the turn if a non-read tool_call starts without a prior
-approval. That is fail-closed. It does not create a permission prompt Cursor
-did not send, and it cannot undo bytes Cursor already wrote. `auto-all`
-leaves the default `agent` mode alone.
+The mode is `ask` when Cursor advertises it, otherwise `plan`. Both modes
+leave the file untouched. `plan` may call `cursor/create_plan`; Backchat
+answers that through the normal permission broker, or with a rejected outcome
+when no broker is installed, and does not surface a protocol error. If
+neither mode can be selected, the session does not start.
+
+Cursor may write files directly only when the caller opts into that:
+
+- `session start --approve auto-all`
+- or Settings permission mode Auto, when the session has no stricter
+  `--approve` policy
+
+That opt-in leaves the default `agent` mode in place. Shell commands can
+still ask, based on Cursor's own allowlist. If a non-read tool starts without
+an approval after Backchat has left agent mode, the turn is cancelled. That
+cancel does not undo a write that already landed, which is why the mode
+switch happens first.
+
+`tool_call` status `completed` is not success. The stream's `outcome` and the
+transcript's tool `status` use the permission decision or the tool result
+when one is present: `ok` / `completed` only then, otherwise `denied`,
+`failed`, `cancelled`, or `finished`.
 
 `session send --wait` blocks until the turn finishes and includes `reply`,
 the assistant text of that turn. `--timeout <sec>` returns the current
@@ -216,7 +232,10 @@ that line and call `session respond` before the turn ends.
 `session transcript` merges adjacent assistant text chunks. Tool rows include
 `name` and `status: start` when the tool starts, a later `tool_result`, a
 `status` row when the turn completes or is cancelled, and `permission` rows
-with `status` `pending` or `selected`/`cancelled`.
+with `status` `pending`, `selected`, `rejected`, or `cancelled`. A tool result
+status of `completed` means the permission outcome or the tool result showed
+success. Wire status `completed` with neither of those is `finished`. A
+rejected call is `denied`.
 
 `session transcript --since <cursor>` returns only newer events. `cursor` is
 the monotonic event sequence.
@@ -245,7 +264,7 @@ failures stay on stdout.
 | `type` | When |
 | --- | --- |
 | `message_delta` | Assistant text chunk. `text` is the delta |
-| `tool_call` | `status` is `start` or `end`. Includes `tool_call_id`, `title`, `kind` |
+| `tool_call` | `status` is `start` or `end`. `outcome` on `end` is `ok`, `denied`, `failed`, `cancelled`, or `finished`. `end` alone is not success. Includes `tool_call_id`, `title`, `kind` |
 | `permission` | A permission request is waiting. Includes `request_id` and `options` |
 | `result` | Turn finished. `status` is `complete`, `error`, `cancelled`, or `timeout` |
 

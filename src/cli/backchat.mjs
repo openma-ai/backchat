@@ -41,6 +41,14 @@ Coordinator loop (set --client or BACKCHAT_CLIENT):
   work list|status|view|steer|cancel|transcript for that client's tasks
   session send to steer a live thread; session cancel to stop it
 
+Cursor edits:
+  Cursor writes files itself in agent mode. It does not ask first, and
+  clientCapabilities.fs does not change that. Edits cannot be approved one
+  by one. --approve ask, --approve auto-read, and a read-only session switch
+  Cursor to plan or ask mode so it does not write. --approve auto-all, or
+  Settings permission mode Auto, opts into those direct writes. A tool_call
+  status of completed is not success; read the tool result or outcome.
+
 Global:
   --json              machine-readable stdout. Argument errors are JSON on stderr.
   --client <name>     caller identity (or BACKCHAT_CLIENT). Filters session list and work list/status/view to that client.

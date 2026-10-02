@@ -46,6 +46,7 @@ vi.mock("./sql-store.js", () => ({
   setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
   touchSession: vi.fn(),
+  getSession: vi.fn(),
   upsertSession: vi.fn(),
 }));
 

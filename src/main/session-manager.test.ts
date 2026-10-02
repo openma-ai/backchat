@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
@@ -77,6 +78,8 @@ vi.mock("./sql-store.js", () => ({
   getSession: vi.fn(),
   setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
+  setSessionExternalClient: vi.fn(),
+  setSessionPermissionPolicy: vi.fn(),
   touchSession: vi.fn(),
   upsertSession: vi.fn(),
 }));
@@ -1539,6 +1542,7 @@ describe("SessionManager prompt queue", () => {
       session_id: "sess-cursor-extensions",
       agent_id: "cursor",
       cwd: "/repo",
+      permission_policy: "auto-all",
     });
 
     const startOptions = mocks.runtimeStart.mock.calls.at(-1)?.[0] as
@@ -2072,6 +2076,7 @@ describe("SessionManager prompt queue", () => {
       session_id: "sess-managed-shim-args",
       agent_id: "cursor",
       cwd: "/repo",
+      permission_policy: "auto-all",
     });
 
     expect(mocks.runtimeStart).toHaveBeenCalledWith(
@@ -3827,7 +3832,176 @@ describe("SessionManager prompt queue", () => {
     }));
   });
 
+  it("switches an approval-required Cursor session to ask mode before it can edit", async () => {
+    const fake = createControllableAcpSession({ modes: cursorWriteModes() });
+    const setMode = vi.spyOn(fake.session, "setMode");
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (message) => events.push(message),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ permissionMode: "ask" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-cursor-ask",
+      agent_id: "cursor",
+      cwd: "/repo",
+      permission_policy: "auto-read",
+    });
+
+    expect(result).toMatchObject({ status: "ready" });
+    expect(setMode).toHaveBeenCalledWith("ask");
+    expect(result.status === "ready" && result.modes?.currentModeId).toBe("ask");
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.event",
+      event: { sessionUpdate: "current_mode_update", currentModeId: "ask" },
+    }));
+  });
+
+  it("leaves Cursor in agent mode only for an explicit auto-edit opt-in", async () => {
+    const fake = createControllableAcpSession({ modes: cursorWriteModes() });
+    const setMode = vi.spyOn(fake.session, "setMode");
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ permissionMode: "ask" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-cursor-auto",
+      agent_id: "cursor",
+      cwd: "/repo",
+      permission_policy: "auto-all",
+    });
+
+    expect(result).toMatchObject({ status: "ready" });
+    expect(setMode).not.toHaveBeenCalled();
+    expect(result.status === "ready" && result.modes?.currentModeId).toBe("agent");
+  });
+
+  it("uses plan mode when Cursor does not advertise ask", async () => {
+    const fake = createControllableAcpSession({
+      modes: {
+        currentModeId: "agent",
+        availableModes: [
+          { id: "agent", name: "Agent" },
+          { id: "plan", name: "Plan" },
+        ],
+      },
+    });
+    const setMode = vi.spyOn(fake.session, "setMode");
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-cursor-plan",
+      agent_id: "cursor",
+      cwd: "/repo",
+    });
+
+    expect(setMode).toHaveBeenCalledWith("plan");
+    expect(result.status === "ready" && result.modes?.currentModeId).toBe("plan");
+  });
+
+  it("does not start Cursor, and does not write cli.json, when no read-only mode is advertised", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-cursor-gate-"));
+    const fake = createControllableAcpSession();
+    const dispose = vi.spyOn(fake.session, "dispose");
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ permissionMode: "read_only" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-cursor-blocked",
+      agent_id: "cursor",
+      cwd: root,
+      permission_policy: "auto-all",
+    });
+
+    expect(result).toMatchObject({
+      status: "error",
+      message: expect.stringContaining("did not advertise plan or ask"),
+    });
+    expect(dispose).toHaveBeenCalled();
+    expect(manager.sessionCount()).toBe(0);
+    expect(existsSync(join(root, ".cursor", "cli.json"))).toBe(false);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("cancels a Cursor edit that still starts without approval", async () => {
+    const fake = createControllableAcpSession({
+      modes: cursorWriteModes(),
+      promptEvents: [{
+        sessionUpdate: "tool_call",
+        toolCallId: "edit-1",
+        title: "Edit file",
+        kind: "edit",
+        status: "in_progress",
+        rawInput: {},
+      }],
+    });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (message) => events.push(message),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({
+      session_id: "sess-cursor-backstop",
+      agent_id: "cursor",
+      cwd: "/repo",
+      permission_policy: "ask",
+    });
+
+    const prompting = manager.prompt({
+      session_id: "sess-cursor-backstop",
+      turn_id: "turn-edit",
+      text: "create the file",
+    });
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: "session.error",
+      message: expect.stringContaining("Stopped the turn"),
+    })));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.cancel_requested",
+      turn_id: "turn-edit",
+    }));
+    fake.releaseNext();
+    await prompting;
+  });
+
 });
+
+function cursorWriteModes(): NonNullable<AcpSession["modes"]> {
+  return {
+    currentModeId: "agent",
+    availableModes: [
+      { id: "agent", name: "Agent" },
+      { id: "plan", name: "Plan" },
+      { id: "ask", name: "Ask" },
+    ],
+  };
+}
 
 function createControllableAcpSession(opts: {
   protocolVersion?: AcpSession["protocolVersion"];
@@ -3929,14 +4103,16 @@ function createControllableAcpSession(opts: {
       pendingEvents = [];
       return events;
     },
-    async setConfigOption() {
-      return [];
+    async setConfigOption(configId: string, value: string | boolean) {
+      const option = session.configOptions.find((entry) => entry.id === configId);
+      if (option) (option as { currentValue: string | boolean }).currentValue = value;
+      return session.configOptions;
     },
     async authenticate() {
       return;
     },
-    async setMode() {
-      return;
+    async setMode(modeId: string) {
+      if (session.modes) (session.modes as { currentModeId: string }).currentModeId = modeId;
     },
     promptCapabilities: opts.promptCapabilities ?? {},
     supportsSessionFork: opts.supportsSessionFork ?? false,
@@ -4062,14 +4238,16 @@ function createStreamingAcpSession(events: unknown[]): {
     drainPendingEvents() {
       return [];
     },
-    async setConfigOption() {
-      return [];
+    async setConfigOption(configId: string, value: string | boolean) {
+      const option = session.configOptions.find((entry) => entry.id === configId);
+      if (option) (option as { currentValue: string | boolean }).currentValue = value;
+      return session.configOptions;
     },
     async authenticate() {
       return;
     },
-    async setMode() {
-      return;
+    async setMode(modeId: string) {
+      if (session.modes) (session.modes as { currentModeId: string }).currentModeId = modeId;
     },
     promptCapabilities: {},
     supportsSessionFork: false,

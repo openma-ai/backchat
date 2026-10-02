@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { streamEventsFromSession } from "./live-bus.js";
 import { transcriptFromHistory } from "./transcript.js";
 import type { PersistedEvent } from "../sql-store.js";
 
@@ -53,5 +54,66 @@ describe("control transcript", () => {
     expect(events[3]).toMatchObject({ type: "permission", status: "selected", name: "allow" });
     expect(events[4]).toMatchObject({ type: "status", status: "complete" });
     expect(events[5]).toMatchObject({ type: "status", status: "cancelled" });
+  });
+
+  it("does not treat a completed tool status as success", () => {
+    const events = transcriptFromHistory([
+      row(1, "openma_event", {
+        type: "tool.completed",
+        data: {
+          tool_call_id: "edit-1",
+          status: "completed",
+          raw_output: "Write permission denied",
+        },
+      }),
+      row(2, "permission_request", { request_id: "perm-2", tool_call_id: "shell-1", title: "echo" }),
+      row(3, "permission_response", {
+        request_id: "perm-2",
+        tool_call_id: "shell-1",
+        option_id: "reject-once",
+        option_kind: "reject_once",
+        outcome: "rejected",
+      }),
+      row(4, "openma_event", {
+        type: "tool.completed",
+        data: { tool_call_id: "shell-1", status: "completed" },
+      }),
+      row(5, "openma_event", {
+        type: "tool.completed",
+        data: { tool_call_id: "edit-2", status: "completed", raw_output: { path: "ok.md" } },
+      }),
+      row(6, "openma_event", {
+        type: "tool.completed",
+        data: { tool_call_id: "mystery", status: "completed" },
+      }),
+    ]);
+
+    expect(events.map((event) => event.status)).toEqual([
+      "denied",
+      "pending",
+      "rejected",
+      "denied",
+      "completed",
+      "finished",
+    ]);
+    expect(streamEventsFromSession({
+      type: "session.event",
+      session_id: "sess",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "edit-1",
+        status: "completed",
+        rawOutput: "Write permission denied",
+      },
+    })[0]).toMatchObject({ status: "end", outcome: "denied" });
+    expect(streamEventsFromSession({
+      type: "session.event",
+      session_id: "sess",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "mystery",
+        status: "completed",
+      },
+    })[0]).toMatchObject({ status: "end", outcome: "finished" });
   });
 });

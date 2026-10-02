@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -206,4 +206,171 @@ describe("control CLI against the fake ACP agent", () => {
     const cancelled = await run(["work", "cancel", "--json", "--project", projectId, "--task", taskId]);
     expect(JSON.parse(cancelled.body).status).toBe("cancelled");
   }, 20_000);
+
+  it("reproduces Cursor's direct edits and only allows them after an explicit opt-in", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-cursor-edits-"));
+    roots.push(root);
+    const harness = await startCursorHarness(root);
+    const autoRead = await harness.run([
+      "session", "start", "--json", "--root", root, "--agent", "cursor", "--approve", "auto-read",
+    ]);
+    expect(autoRead.code).toBe(0);
+    const readOnly = jsonBody(autoRead.body) as { session_id: string; modes?: { currentModeId?: string } };
+    expect(readOnly.modes?.currentModeId).toBe("ask");
+    const refused = await harness.run([
+      "session", "send", readOnly.session_id, "cursor-direct-edit", "--wait", "--timeout", "20", "--json",
+    ]);
+    expect(refused.code).toBe(0);
+    expect(String(jsonBody(refused.body).reply)).toContain("ask mode refuses writes");
+    await expect(access(join(root, "CURSOR_DIRECT_EDIT.md"))).rejects.toThrow();
+    await expect(access(join(root, ".cursor", "cli.json"))).rejects.toThrow();
+    expect(harness.fsWrites).toEqual([]);
+    expect(harness.permissions).toEqual([]);
+
+    const autoAll = await harness.run([
+      "session", "start", "--json", "--root", root, "--agent", "cursor", "--approve", "auto-all",
+    ]);
+    expect(autoAll.code).toBe(0);
+    const writing = jsonBody(autoAll.body) as { session_id: string; modes?: { currentModeId?: string } };
+    expect(writing.modes?.currentModeId).toBe("agent");
+    harness.fsWrites.length = 0;
+    harness.permissions.length = 0;
+    const edited = await harness.run([
+      "session", "send", writing.session_id, "cursor-direct-edit", "--stream", "--timeout", "20",
+    ]);
+    expect(edited.code).toBe(0);
+    const stream = jsonLines(edited.body) as Array<{ type?: string; outcome?: string; status?: string }>;
+    expect(stream.some((event) => event.type === "permission")).toBe(false);
+    expect(stream).toContainEqual(expect.objectContaining({ type: "tool_call", status: "end", outcome: "ok" }));
+    await access(join(root, "CURSOR_DIRECT_EDIT.md"));
+    expect(harness.fsWrites).toEqual([]);
+    expect(harness.permissions).toEqual([]);
+
+    const denied = harness.run([
+      "session", "send", readOnly.session_id, "cursor-reject-shell", "--stream", "--timeout", "20",
+    ]);
+    const requestId = await harness.requestId(readOnly.session_id);
+    expect(await harness.run([
+      "session", "respond", readOnly.session_id, requestId, "reject-once", "--json",
+    ])).toMatchObject({ code: 0 });
+    const deniedResult = await denied;
+    expect(deniedResult.code).toBe(0);
+    const deniedStream = jsonLines(deniedResult.body) as Array<{ outcome?: string }>;
+    expect(deniedStream).toContainEqual(expect.objectContaining({ outcome: "denied" }));
+    const transcript = await harness.run(["session", "transcript", readOnly.session_id, "--json"]);
+    const rows = jsonBody(transcript.body).events as Array<{ type?: string; tool_call_id?: string; status?: string }>;
+    expect(rows).toContainEqual(expect.objectContaining({
+      type: "tool_result",
+      tool_call_id: "shell-1",
+      status: "denied",
+    }));
+  }, 30_000);
+
+  it("answers cursor/create_plan in plan mode without writing or throwing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-cursor-plan-"));
+    roots.push(root);
+    const harness = await startCursorHarness(root, "agent,plan");
+    const started = await harness.run([
+      "session", "start", "--json", "--root", root, "--agent", "cursor", "--approve", "ask",
+    ]);
+    expect(started.code).toBe(0);
+    const session = jsonBody(started.body) as { session_id: string; modes?: { currentModeId?: string } };
+    expect(session.modes?.currentModeId).toBe("plan");
+    const pending = harness.run([
+      "session", "send", session.session_id, "cursor-direct-edit", "--wait", "--timeout", "20", "--json",
+    ]);
+    const requestId = await harness.requestId(session.session_id);
+    expect(await harness.run([
+      "session", "respond", session.session_id, requestId, "accept", "--json",
+    ])).toMatchObject({ code: 0 });
+    const planned = await pending;
+    expect(planned.code).toBe(0);
+    expect(String(jsonBody(planned.body).reply)).toContain("plan only");
+    await expect(access(join(root, "CURSOR_DIRECT_EDIT.md"))).rejects.toThrow();
+    expect(harness.fsWrites).toEqual([]);
+  }, 30_000);
 });
+
+function jsonLines(body: string): Array<Record<string, unknown>> {
+  return body.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function jsonBody(body: string): Record<string, unknown> {
+  const start = body.indexOf("{");
+  const end = body.lastIndexOf("}");
+  if (start < 0 || end < start) throw new Error(body || "empty CLI response");
+  return JSON.parse(body.slice(start, end + 1)) as Record<string, unknown>;
+}
+
+async function startCursorHarness(root: string, modes?: string) {
+  openSessionDb(join(root, "sessions.db"));
+  const fsWrites: unknown[] = [];
+  const permissions: unknown[] = [];
+  const enrich = createSessionEventEnricher(() => new Date().toISOString());
+  const manager = new SessionManager({
+    send: (message) => {
+      const enriched = enrich(message);
+      for (const event of streamEventsFromSession(enriched)) publishControlLiveEvent(event);
+      deliverSessionEvent(enriched, {
+        publish: () => undefined,
+        persist: (event) => appendEvent(event.session_id, "openma_event", event),
+      });
+    },
+    resolveMcpServers: () => [],
+    buildCallbacks: (sessionId) => ({
+      requestPermission: (params) => {
+        permissions.push(params);
+        return requestPermission(sessionId, params, "cursor") as Promise<never>;
+      },
+      writeTextFile: async (params) => {
+        fsWrites.push(params);
+        return {};
+      },
+    }),
+    resolveDefaults: () => ({ permissionMode: "ask", promptQueueEnabled: true }),
+    resolveAgentOverride: (agentId) => agentId === "cursor"
+      ? {
+        commandOverride: process.execPath,
+        argsOverride: [resolve("e2e/fixtures/fake-acp-agent.mjs")],
+        envOverride: {
+          BACKCHAT_FAKE_CURSOR: "1",
+          ...(modes ? { BACKCHAT_FAKE_CURSOR_MODES: modes } : {}),
+        },
+      }
+      : undefined,
+  });
+  managers.push(manager);
+  const socketPath = join(root, "control.sock");
+  servers.push(await startControlServer({
+    socketPath,
+    api: createControlApi({ sessions: manager }),
+  }));
+  const env = { BACKCHAT_CONTROL_SOCK: socketPath };
+  return {
+    fsWrites,
+    permissions,
+    async run(args: string[]) {
+      const lines: string[] = [];
+      const code = await runCli(args, env, {
+        stdout: (line: string) => lines.push(line),
+        stderr: (line: string) => lines.push(line),
+      });
+      return { code, body: lines.join("\n") };
+    },
+    async requestId(sessionId: string) {
+      let id = "";
+      await vi.waitFor(async () => {
+        const lines: string[] = [];
+        const listed = await runCli(["session", "pending", sessionId, "--json"], env, {
+          stdout: (line: string) => lines.push(line),
+          stderr: () => undefined,
+        });
+        expect(listed).toBe(0);
+        const parsed = JSON.parse(lines.at(-1) ?? "{}") as { requests?: Array<{ id: string }> };
+        id = parsed.requests?.[0]?.id ?? "";
+        expect(id).not.toBe("");
+      }, { timeout: 15_000, interval: 50 });
+      return id;
+    },
+  };
+}

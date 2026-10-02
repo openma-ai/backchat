@@ -1,3 +1,5 @@
+import { toolCallOutcome } from "../../shared/tool-outcome.js";
+
 export type ControlLiveEvent = {
   type: string;
   session_id?: string;
@@ -97,7 +99,9 @@ export function streamEventsFromSession(event: {
       turn_id: event.turn_id,
       tool_call_id: stringField(update.toolCallId),
       title: stringField(update.title),
+      kind: stringField(update.kind),
       status: "end",
+      outcome: toolCallOutcome(update) ?? "finished",
       timestamp,
     }];
   }

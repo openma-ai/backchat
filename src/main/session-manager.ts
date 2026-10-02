@@ -106,6 +106,7 @@ import {
 import { composePromptContext } from "./session-prompt-context.js";
 import { desktopCliPath } from "./cli-path.js";
 import { collapseUnsupportedWorkspaceRoots } from "./workspace-roots.js";
+import { restrictCursorEdits } from "./cursor-edit-gate.js";
 import { isReadOnlyToolCall, toolWasApproved } from "./permission-policy.js";
 import {
   isSessionPermissionPolicy,
@@ -160,7 +161,7 @@ interface ActiveSession {
   latestAvailableCommandsUpdate: unknown | null;
   /** Prepended to the next prompt when extra workspace roots were collapsed. */
   pendingDirectoryNote?: string;
-  /** Cursor applied an edit without requestPermission. Further writes cancel the turn. */
+  /** Cursor was switched out of agent mode. A non-read tool that still starts without approval cancels the turn. */
   failClosedWrites?: boolean;
 }
 
@@ -888,6 +889,24 @@ export class SessionManager {
         }
         return { status: "cancelled", session_id: p.session_id };
       }
+      const storedPolicy = getSession(p.session_id)?.permission_policy;
+      const permissionPolicy = isSessionPermissionPolicy(p.permission_policy)
+        ? p.permission_policy
+        : isSessionPermissionPolicy(storedPolicy)
+          ? storedPolicy
+          : undefined;
+      const cursorGate = await restrictCursorEdits(acpSession, {
+        agentId: agent.id,
+        policy: permissionPolicy,
+        permissionMode: defaults.permissionMode,
+      });
+      if (cursorGate.action === "blocked") {
+        await Promise.resolve(acpSession.dispose()).catch(() => undefined);
+        if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
+          await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
+        }
+        return this.#errorResult(p.session_id, cursorGate.message, { agentId: agent.id });
+      }
       const workspaceId = preparedWorktrees?.workspaceId ?? null;
       const projectId = preparedWorktrees?.projectId ?? (p.project_id?.trim() || undefined);
       const activeSession: ActiveSession = {
@@ -901,6 +920,7 @@ export class SessionManager {
         workspaceId,
         startParams: {
           ...p,
+          ...(permissionPolicy ? { permission_policy: permissionPolicy } : {}),
           project_id: projectId || undefined,
           cwd: sessionCwd,
           additional_directories: additionalDirectories,
@@ -922,6 +942,7 @@ export class SessionManager {
         latestAvailableCommandsUpdate: null,
         ...(p.external_client?.trim() ? { externalClient: p.external_client.trim() } : {}),
         ...(pendingDirectoryNote ? { pendingDirectoryNote } : {}),
+        ...(cursorGate.action === "restricted" ? { failClosedWrites: true } : {}),
       };
       activeForOutOfBandUpdates = activeSession;
       this.#sessions.set(p.session_id, activeSession);
@@ -945,15 +966,22 @@ export class SessionManager {
       if (p.external_client?.trim()) {
         setSessionExternalClient(p.session_id, p.external_client);
       }
-      if (isSessionPermissionPolicy(p.permission_policy)) {
-        setSessionPermissionPolicy(p.session_id, p.permission_policy);
-        setRuntimePermissionPolicy(p.session_id, p.permission_policy);
-      } else {
-        const saved = getSession(p.session_id)?.permission_policy;
-        if (isSessionPermissionPolicy(saved)) setRuntimePermissionPolicy(p.session_id, saved);
+      if (permissionPolicy) {
+        setSessionPermissionPolicy(p.session_id, permissionPolicy);
+        setRuntimePermissionPolicy(p.session_id, permissionPolicy);
       }
-      await enforceCursorApproval(activeSession, p.permission_policy);
       const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
+      if (cursorGate.action === "restricted") {
+        this.#send({
+          type: "session.event",
+          session_id: p.session_id,
+          turn_id: "",
+          event: {
+            sessionUpdate: "current_mode_update",
+            currentModeId: cursorGate.mode,
+          },
+        });
+      }
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
       await this.#observeConfiguredAuth(agent.id);
       await this.#observeLiveSessionConfig(agent.id, {
@@ -1583,7 +1611,7 @@ export class SessionManager {
         type: "session.error",
         session_id: sess.id,
         turn_id: turnId,
-        message: "Blocked a non-read tool that was not submitted for approval. Ask and auto-read fail closed when Cursor edits without requestPermission.",
+        message: "Stopped the turn. Cursor started a non-read tool without approval. A completed tool status does not mean the edit was allowed.",
       });
       this.cancel(sess.id, turnId);
     }
@@ -2177,25 +2205,6 @@ export class SessionManager {
         configOptions,
       },
     });
-  }
-}
-
-async function enforceCursorApproval(
-  sess: ActiveSession,
-  policy: SessionStartParams["permission_policy"],
-): Promise<void> {
-  if (policy !== "ask" && policy !== "auto-read") return;
-  if (sess.agentId !== "cursor" && !sess.agentId.includes("cursor")) return;
-  // Cursor's agent mode applies edits without session/request_permission.
-  // ask mode is read-only. If that mode is missing, or an edit still starts
-  // without an approval, the turn is cancelled.
-  sess.failClosedWrites = true;
-  const askMode = sess.acp.modes?.availableModes?.find((mode) => mode.id === "ask");
-  if (!askMode) return;
-  try {
-    await sess.acp.setMode("ask");
-  } catch {
-    // The fail-closed check still cancels unapproved writes.
   }
 }
 

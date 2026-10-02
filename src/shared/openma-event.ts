@@ -7,6 +7,7 @@ import {
 } from "@openma/common/session-events/openma";
 import { ACP_NOTIFICATION_CONTEXT_KEY } from "@openma/common/session-events/acp";
 import { extractAcpSystemNotice } from "./acp-system-notices.js";
+import { toolCallOutcome, toolResultText } from "./tool-outcome.js";
 
 import type { SessionEventOut } from "./session-events.js";
 
@@ -247,11 +248,13 @@ function canonicalToolLifecycle(
             : typeof exitSignal === "string" && exitSignal.length > 0
               ? "failed"
               : undefined;
+  const outcome = toolCallOutcome(inner);
+  const deniedDespiteCompleted = outcome === "denied" || (outcome === "failed" && derivedStatus === "completed");
   const type =
-    derivedStatus === "completed"
-      ? "tool.completed"
-      : derivedStatus === "failed"
-        ? "tool.failed"
+    deniedDespiteCompleted || derivedStatus === "failed"
+      ? "tool.failed"
+      : derivedStatus === "completed"
+        ? "tool.completed"
         : rawType === "tool_call"
           ? "tool.started"
           : "tool.progress";
@@ -259,7 +262,14 @@ function canonicalToolLifecycle(
   const data: Record<string, unknown> = { tool_call_id: toolCallId };
   if (typeof inner.title === "string") data.title = inner.title;
   if (typeof inner.kind === "string") data.kind = inner.kind;
-  if (derivedStatus) data.status = derivedStatus;
+  if (deniedDespiteCompleted) data.status = "failed";
+  else if (derivedStatus) data.status = derivedStatus;
+  if (outcome) data.outcome = outcome;
+  if (outcome === "denied" && !data.reason) data.reason = "denied";
+  if (deniedDespiteCompleted && !data.error) {
+    const resultText = toolResultText(inner);
+    if (resultText) data.error = resultText;
+  }
   const toolName =
     stringValue(claudeMeta.toolName)
     ?? stringValue(inner.toolName)

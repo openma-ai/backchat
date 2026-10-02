@@ -95,6 +95,23 @@ describe("per-harness ACP extension request adapters", () => {
     })).resolves.toEqual({ outcome: { outcome: "accepted" } });
   });
 
+  it("answers cursor/create_plan without a permission broker and without throwing", async () => {
+    const handler = extensionRequestHandlerForHarness({
+      agentId: "cursor",
+      sessionId: "sess-cursor",
+    });
+
+    await expect(handler?.("cursor/create_plan", {
+      name: "Release",
+      plan: "# Release",
+    })).resolves.toEqual({
+      outcome: {
+        outcome: "rejected",
+        reason: "Plan review is not available",
+      },
+    });
+  });
+
   it("leaves extension handling absent for non-Cursor harnesses", () => {
     expect(extensionRequestHandlerForHarness({
       agentId: "claude-acp",

@@ -165,7 +165,12 @@ async function reviewCursorPlan(
 ): Promise<Record<string, unknown>> {
   const requestPermission = options.requestPermission;
   if (!requestPermission) {
-    throw RequestError.methodNotFound("cursor/create_plan");
+    return {
+      outcome: {
+        outcome: "rejected",
+        reason: "Plan review is not available",
+      },
+    };
   }
   const name = stringValue(params.name) ?? "Proposed plan";
   const overview = stringValue(params.overview);
@@ -175,7 +180,7 @@ async function reviewCursorPlan(
     toolCall: {
       toolCallId: stringValue(params.toolCallId) ?? "cursor-plan",
       title: `Review plan: ${name}`,
-      kind: "think",
+      kind: "other",
       status: "pending",
       content: [{
         type: "content",

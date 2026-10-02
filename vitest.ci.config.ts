@@ -43,6 +43,7 @@ export default defineConfig({
       "src/cli/stream.test.ts",
       "src/main/control/transcript.test.ts",
       "src/main/permission-policy.test.ts",
+      "src/main/cursor-edit-gate.test.ts",
       "src/main/control/fake-acp.integration.test.ts",
       "packages/acp/src/registry.test.ts",
       "packages/acp-agent-setup/src/index.test.ts",

@@ -1,4 +1,5 @@
 import type { TranscriptEvent } from "../../shared/control-protocol.js";
+import { toolCallOutcome, type ToolCallOutcome } from "../../shared/tool-outcome.js";
 import type { PersistedEvent } from "../sql-store.js";
 
 /** Stable, pollable transcript. `cursor` is the SQLite event seq. */
@@ -18,6 +19,7 @@ export function transcriptFromHistory(
       userMessages.add(textOf(parsed.data)!);
     }
   }
+  const permissions = permissionOutcomes(rows);
   const events: TranscriptEvent[] = [];
   for (const row of rows) {
     if (sinceSeq !== undefined && row.seq <= sinceSeq) continue;
@@ -25,7 +27,7 @@ export function transcriptFromHistory(
       const text = textOf(parseData(row.data));
       if (text && userMessages.has(text)) continue;
     }
-    const mapped = mapRow(row);
+    const mapped = mapRow(row, permissions);
     if (mapped) events.push(mapped);
   }
   return mergeAdjacentText(events);
@@ -82,7 +84,36 @@ function mergeAdjacentText(events: TranscriptEvent[]): TranscriptEvent[] {
   return merged;
 }
 
-function mapRow(row: PersistedEvent): TranscriptEvent | null {
+function permissionOutcomes(rows: readonly PersistedEvent[]): Map<string, {
+  outcome?: string;
+  optionKind?: string;
+  optionId?: string;
+}> {
+  const byRequest = new Map<string, string>();
+  const byTool = new Map<string, { outcome?: string; optionKind?: string; optionId?: string }>();
+  for (const row of rows) {
+    const fields = record(parseData(row.data));
+    const requestId = stringField(fields.request_id);
+    const toolCallId = stringField(fields.tool_call_id) ?? stringField(fields.toolCallId);
+    if (row.type === "permission_request" && requestId && toolCallId) {
+      byRequest.set(requestId, toolCallId);
+    }
+    if (row.type !== "permission_response") continue;
+    const id = toolCallId ?? (requestId ? byRequest.get(requestId) : undefined);
+    if (!id) continue;
+    byTool.set(id, {
+      outcome: stringField(fields.outcome),
+      optionKind: stringField(fields.option_kind),
+      optionId: stringField(fields.option_id),
+    });
+  }
+  return byTool;
+}
+
+function mapRow(
+  row: PersistedEvent,
+  permissions: Map<string, { outcome?: string; optionKind?: string; optionId?: string }>,
+): TranscriptEvent | null {
   const cursor = String(row.seq);
   const timestamp = new Date(row.ts).toISOString();
   const parsed = parseData(row.data);
@@ -102,6 +133,7 @@ function mapRow(row: PersistedEvent): TranscriptEvent | null {
       timestamp,
       text: stringField(fields.title),
       request_id: stringField(fields.request_id),
+      tool_call_id: stringField(fields.tool_call_id) ?? stringField(fields.toolCallId),
       status: stringField(fields.outcome) ?? (row.type === "permission_request" ? "pending" : undefined),
       name: stringField(fields.option_id) ?? stringField(fields.kind),
     };
@@ -134,6 +166,7 @@ function mapRow(row: PersistedEvent): TranscriptEvent | null {
   }
   if (kind === "tool.result" || kind === "tool.completed" || kind === "tool.failed" || kind === "tool.cancelled") {
     const fields = record(data);
+    const toolCallId = stringField(fields.tool_call_id) ?? stringField(fields.toolCallId);
     return {
       cursor,
       role: "tool",
@@ -141,8 +174,8 @@ function mapRow(row: PersistedEvent): TranscriptEvent | null {
       timestamp,
       text,
       name: stringField(fields.tool_name) ?? stringField(fields.name) ?? stringField(fields.title),
-      tool_call_id: stringField(fields.tool_call_id) ?? stringField(fields.toolCallId),
-      status: kind === "tool.failed" ? "failed" : kind === "tool.cancelled" ? "cancelled" : stringField(fields.status) ?? "completed",
+      tool_call_id: toolCallId,
+      status: toolResultStatus(kind, fields, toolCallId ? permissions.get(toolCallId) : undefined),
     };
   }
   if (kind === "turn.completed" || kind === "turn.failed" || kind === "turn.cancelled" || kind === "turn.interrupted") {
@@ -168,6 +201,43 @@ function mapRow(row: PersistedEvent): TranscriptEvent | null {
   }
   if (!text) return null;
   return { cursor, role: "system", type: "status", timestamp, text, status: kind };
+}
+
+function toolResultStatus(
+  kind: string,
+  fields: Record<string, unknown>,
+  permission: { outcome?: string; optionKind?: string; optionId?: string } | undefined,
+): string {
+  if (kind === "tool.cancelled") return "cancelled";
+  const recorded = stringField(fields.outcome);
+  if (recorded === "denied" || permissionDenies(permission)) return "denied";
+  if (kind === "tool.failed" || recorded === "failed") return "failed";
+  const derived = (recorded as ToolCallOutcome | undefined) ?? toolCallOutcome({
+    status: kind === "tool.completed" ? stringField(fields.status) ?? "completed" : stringField(fields.status),
+    rawOutput: fields.raw_output ?? fields.rawOutput ?? fields.text,
+    content: fields.content,
+    error: fields.error,
+    permission_outcome: permission?.outcome,
+    option_kind: permission?.optionKind,
+    option_id: permission?.optionId,
+  });
+  if (derived === "ok") return "completed";
+  if (derived === "denied") return "denied";
+  if (derived === "failed") return "failed";
+  if (derived === "cancelled") return "cancelled";
+  if (derived === "finished") return "finished";
+  if (kind === "tool.result" && (textOf(fields) || stringField(fields.error))) return "completed";
+  return "finished";
+}
+
+function permissionDenies(permission: { outcome?: string; optionKind?: string; optionId?: string } | undefined): boolean {
+  if (!permission) return false;
+  const outcome = permission.outcome?.toLowerCase();
+  if (outcome === "cancelled" || outcome === "rejected" || outcome === "denied") return true;
+  const kind = permission.optionKind?.toLowerCase();
+  if (kind === "reject_once" || kind === "reject_always") return true;
+  const optionId = permission.optionId?.toLowerCase();
+  return optionId === "reject" || optionId === "reject-once" || optionId === "reject_once";
 }
 
 function parseData(data: string): Record<string, unknown> | null {
