@@ -398,15 +398,17 @@ Alt+Enter as a *follow-up*, delivered once the agent would otherwise stop
 `src/shared/agent-interaction.ts` is pinned to that shape: submit and steer are
 `llm_boundary`, queue is `turn_end`.
 
-Published pi-acp 0.0.33 never sends pi's `steer` RPC and does not negotiate
-`_session/steering`. A concurrent `session/prompt` lands in the adapter's own
-FIFO (pi follow-up, one-at-a-time) and is reported as
-`_meta.piAcp.queueDepth`, which the host keeps read-only (I4). The transport
-therefore degrades Enter to the turn-end queue with `delivery_degraded` set;
-nothing is emulated with a concurrent prompt. Upstream svkozak/pi-acp#115 adds
-the `_session/steering` contract common already speaks (`injected` /
-`promptRequired` / `startedNewTurn`); with that adapter `supportsSteering`
-becomes true on `session.ready` and no host change is needed. The `/steering`
-and `/follow-up` commands in pi-acp's catalogue only switch pi's drain modes
-and are not steer inputs (I10). Alt+Enter in the composer sends the `queue`
+Backchat launches `~/.oma/acp/bin/openma-acp-pi-acp`, which is
+`@openma/pi-acp`. From 0.1.4 that adapter advertises
+`_meta.steering.supported: true` on initialize and implements
+`_session/steering` (`injected` / `promptRequired` / `startedNewTurn`). A
+negotiated session sets `supportsSteering` on `session.ready`, and Enter is
+delivered as llm_boundary steer. Nothing is emulated with a concurrent
+prompt. A third-party adapter that does not negotiate the extension, such as
+pi-acp 0.0.33, still has no pi `steer` RPC: a concurrent `session/prompt`
+lands in that adapter's own FIFO (pi follow-up, one-at-a-time), reported as
+`_meta.piAcp.queueDepth` and kept read-only by the host (I4). Enter then
+degrades to the turn-end queue with `delivery_degraded` set. The `/steering`
+and `/follow-up` commands in the catalogue only switch pi's drain modes and
+are not steer inputs (I10). Alt+Enter in the composer sends the `queue`
 intent for every harness.

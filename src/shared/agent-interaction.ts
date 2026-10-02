@@ -122,13 +122,15 @@ const profiles: Record<string, AgentInteractionProfile> = {
   // assistant turn finishes its tool calls, before the next model call) and
   // Alt+Enter is a *follow-up* (delivered once the agent would otherwise stop)
   // — pi-agent-core README "Steering and Follow-up". Pinned per harness (I10)
-  // so the generic profile cannot silently re-map pi. Published pi-acp 0.0.33
-  // never sends pi's `steer` RPC and does not negotiate `_session/steering`;
-  // a concurrent session/prompt lands in the adapter's own FIFO (pi follow-up,
-  // one-at-a-time, reported as `_meta.piAcp.queueDepth`), so until an adapter
-  // with svkozak/pi-acp#115 negotiates the extension, submit degrades to the
-  // turn-end queue. The catalogue's `/steering` and `/follow-up` commands only
-  // switch pi's drain modes; they are not steer inputs.
+  // so the generic profile cannot silently re-map pi. Backchat launches
+  // `~/.oma/acp/bin/openma-acp-pi-acp`, which is `@openma/pi-acp`. From 0.1.4
+  // that adapter advertises `_meta.steering.supported: true` and implements
+  // `_session/steering`, so a negotiated session delivers Enter as
+  // llm_boundary steer. A third-party adapter that does not negotiate, such
+  // as pi-acp 0.0.33, still degrades Enter to the turn-end queue (its own
+  // FIFO: pi follow-up, one-at-a-time, reported as `_meta.piAcp.queueDepth`).
+  // The catalogue's `/steering` and `/follow-up` commands only switch pi's
+  // drain modes; they are not steer inputs.
   "pi-acp": {
     agentId: "pi-acp",
     source: "pi_product",

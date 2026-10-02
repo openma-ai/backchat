@@ -10,7 +10,7 @@
 | Claude ACP | 0.64.2，依赖 Claude Agent SDK 0.3.220 |
 | Claude Agent SDK 最新 | 0.3.222 |
 | Codex ACP | 1.1.9 |
-| Pi ACP | 0.0.33 |
+| Pi ACP | `@openma/pi-acp` 0.1.4（Backchat 的 `openma-acp-pi-acp`）。第三方 `pi-acp` 0.0.33 不协商 steering |
 | Kimi Code | 0.33.0 (`@moonshot-ai/kimi-code`, `kimi acp`) |
 | OpenCode | 1.18.13（2026-08-05 registry 最新） |
 | Kilo | 7.4.20（2026-08-05 registry 最新） |
@@ -42,7 +42,7 @@
 | session/fork | 是 | 实验 | fork response `_meta` | 已支持 capability gate | `session.started` | Side chat | 已填 | 未填 | 未填 | 未填 | 已填 | 已填 | 已填 | Claude/OpenCode/Kilo/Kimi Code 当前版本声明 fork；fork 只表示 context seed，不是 native subagent |
 | prompt text/content blocks | 是 | 稳定 | image/resource metadata | 已支持 text、image、structured blocks | `user.message` | 主聊天 | 已填 | 已填 | 已填 | 已填 | 已填 | 已填 | 已填 | typed cross-harness command 尚缺 |
 | cancel | 是 | 稳定 | TaskStop、close、terminal kill | 一次 Stop 只发送一次 session/cancel；发送时立即把当前 turn 未结束 tool 投影为 cancelled，并继续接收 prompt 终态前的晚到 tool update | `user.interrupt`、`tool.cancelled`、`turn.cancelled` | Stop/Tool | 部分 | 已填 | 部分 | 已填 | 已填 | 已填 | 部分 | `tool.cancelled` 是 ACP client 派生事实，不伪造成 ACP wire status；provider task stop 能力仍不统一 |
-| steering | 否 | 实验扩展 | Claude/Codex `_meta.steering`；Pi 需 pi-acp#115（`_session/steering` → pi 原生 `steer` RPC） | negotiated steering 已支持 | `user.message` + `session.steering` | Composer/Turn | 已填 | 已填 | 未填 | 部分 | 未填 | 未填 | 未填 | 不能定向发给 child agent；pi-acp 0.0.33 不协商，Enter 降级为 adapter 自己的 FIFO（= pi follow-up one-at-a-time），`/steering` `/follow-up` 只是 drain mode 开关 |
+| steering | 否 | 实验扩展 | Claude/Codex `_meta.steering`；`@openma/pi-acp` 0.1.4 起声明 `_meta.steering.supported: true` 并实现 `_session/steering` → pi 原生 `steer` RPC | negotiated steering 已支持 | `user.message` + `session.steering` | Composer/Turn | 已填 | 已填 | 未填 | 已填 | 未填 | 未填 | 未填 | 不能定向发给 child agent。`@openma/pi-acp` 协商成功时 Enter 走 llm_boundary steer。第三方 pi-acp 0.0.33 这类不协商的 adapter，Enter 降级为 turn-end 排队（adapter 自己的 FIFO，即 pi follow-up one-at-a-time）。`/steering` `/follow-up` 只是 drain mode 开关 |
 | set mode | 是 | 稳定兼容 | legacy mode metadata | 已支持 | `capability.updated` | Mode/config | 已填 | 已填 | 部分 | 已填 | 已填 | 已填 | 已填 | 只有 capability evidence 才发送 |
 | set config option | 是 | 稳定 | vendor option values | 已支持 select/boolean | `capability.updated` | Model/config | 已填 | 已填 | 部分 | 已填 | 已填 | 已填 | 已填 | free-form schema 未扩展 |
 | available command invoke | 否 | OpenMA command | catalog command + args；Codex `_meta.commandAction` 是展示/adapter 行为提示 | 普通 prompt；host 记录选择事实 | `user.message` + `input_kind:"command"` | Command palette；不新增聊天气泡 | 已填 | 已填 | 已填 | 已填 | 已填 | 已填 | 已填 | command/args 在 OpenMA 结构化保留；ACP wire 仍是文本 prompt；例如 `/plan` 由 Codex adapter 收到 prompt 后调用 `setConfigOption`，GUI 不绕过 ACP |

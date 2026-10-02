@@ -66,8 +66,9 @@ describe("decideRunningMessageDelivery", () => {
   });
 
   it("degrades a pi submit to the adapter queue until _session/steering is negotiated", () => {
-    // pi-acp 0.0.33 does not advertise `_meta.steering.supported`, so a
-    // running-time Enter can only reach the adapter's own FIFO (pi follow-up).
+    // `@openma/pi-acp` from 0.1.4 advertises steering. A third-party adapter
+    // that does not, such as pi-acp 0.0.33, can only queue Enter into its own
+    // FIFO (pi follow-up).
     const stock = decideRunningMessageDelivery({
       agentId: "pi-acp",
       intent: "submit",
@@ -79,8 +80,8 @@ describe("decideRunningMessageDelivery", () => {
     expect(stock.effectiveDelivery).toBe("turn_end");
     expect(stock.degraded).toBe(true);
 
-    // An adapter carrying svkozak/pi-acp#115 negotiates the extension and
-    // Enter becomes pi's native steer with no host change.
+    // Once the adapter negotiates the extension, Enter is pi's native steer
+    // with no further host change. `@openma/pi-acp` 0.1.4 does this.
     const negotiated = decideRunningMessageDelivery({
       agentId: "pi-acp",
       intent: "submit",
