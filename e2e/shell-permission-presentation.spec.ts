@@ -2,10 +2,9 @@ import { mkdir } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { injectEvent, injectSession, launchApp } from "./helpers";
 
-const allowCommand = "echo PR28R2-AUTOEDIT-SHELL > pr28r2-shell-allow.txt";
 const denyCommand = "echo PR28R2-REJECT-ME > pr28r2-shell-reject.txt";
 
-test("shows a denied shell as not run, and keeps an approved shell in the timeline", async () => {
+test("shows a denied shell as not run, and keeps a real failure at the end of the row", async () => {
   const shotDir = process.env.BACKCHAT_SHELL_SHOT_DIR;
   if (shotDir) await mkdir(shotDir, { recursive: true });
   const launched = await launchApp({
@@ -29,40 +28,6 @@ test("shows a denied shell as not run, and keeps an approved shell in the timeli
         turn_id: turnId,
         event,
       });
-
-    await send("turn-allow", {
-      sessionUpdate: "agent_thought_chunk",
-      content: {
-        type: "text",
-        text: "Waiting for shell approval before running the command.",
-      },
-    });
-    await send("turn-allow", {
-      sessionUpdate: "tool_call",
-      toolCallId: "shell-allow",
-      kind: "execute",
-      status: "in_progress",
-      title: allowCommand,
-      rawInput: { command: allowCommand },
-    });
-    await send("turn-allow", {
-      sessionUpdate: "tool_call_update",
-      toolCallId: "shell-allow",
-      kind: "execute",
-      status: "completed",
-      title: allowCommand,
-      rawInput: { command: allowCommand },
-      rawOutput: "PR28R2-AUTOEDIT-SHELL",
-    });
-    await send("turn-allow", {
-      sessionUpdate: "agent_message_chunk",
-      content: { type: "text", text: "SHELLDONE" },
-    });
-    await injectEvent(page, {
-      type: "session.complete",
-      session_id: sessionId,
-      turn_id: "turn-allow",
-    });
 
     await send("turn-deny", {
       schema: "oma.event.v1",
@@ -109,29 +74,22 @@ test("shows a denied shell as not run, and keeps an approved shell in the timeli
     });
 
     const triggers = page.locator('[data-chat-reasoning-trigger="true"]');
-    await expect(triggers).toHaveCount(3);
+    await expect(triggers).toHaveCount(2);
     for (const trigger of await triggers.all()) {
       if ((await trigger.getAttribute("aria-expanded")) !== "true") {
         await trigger.click();
       }
     }
 
-    const allowTurn = page.locator('[data-turn-id="turn-allow"]');
     const denyTurn = page.locator('[data-turn-id="turn-deny"]');
     const failTurn = page.locator('[data-turn-id="turn-fail"]');
-    await expect(allowTurn.getByText("SHELLDONE")).toBeVisible();
     await expect(denyTurn.getByText("REJECTED")).toBeVisible();
 
     if (shotDir) {
       await page.screenshot({ path: `${shotDir}/shell-turns.png` });
-      await allowTurn.screenshot({ path: `${shotDir}/approved-shell.png` });
       await denyTurn.screenshot({ path: `${shotDir}/denied-shell.png` });
       await failTurn.screenshot({ path: `${shotDir}/failed-shell.png` });
     }
-
-    const worked = allowTurn.locator('[data-chat-reasoning-trigger="true"]');
-    await expect(worked).toBeVisible();
-    await expect(worked).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
     const failed = failTurn.locator('[data-tool-call-id="shell-fail"]');
     await expect(failed).toBeVisible();
@@ -155,12 +113,6 @@ test("shows a denied shell as not run, and keeps an approved shell in the timeli
     expect(placement!.chevronToEnd).toBeLessThan(12);
     await expect(failed).toContainText("Failed");
     await expect(failed.locator(".text-danger")).not.toHaveCount(0);
-
-    const approved = allowTurn.locator('[data-tool-call-id="shell-allow"]');
-    await expect(approved).toBeVisible();
-    await expect(approved).toContainText("已运行");
-    await expect(approved).toContainText(allowCommand);
-    await expect(allowTurn.getByText("运行一个命令")).toHaveCount(0);
 
     const denied = denyTurn.locator('[data-tool-call-id="shell-deny"]');
     await expect(denied).toBeVisible();

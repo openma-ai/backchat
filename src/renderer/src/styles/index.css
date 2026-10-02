@@ -2471,13 +2471,6 @@ header:not(.app-drag-region) .app-drag-region {
   color: var(--fg);
 }
 
-/* "已工作 N 秒" is a sentence in the transcript, not a chip. Common paints
-   .chat-reasoning-trigger with the bubble color, which is the gray pill. */
-[data-session-turn-response] .chat-reasoning-trigger,
-[data-session-turn-response] .chat-reasoning-trigger:hover {
-  background: transparent !important;
-}
-
 /* The status label has owned margin-left: auto since e79568f. Commit 800cf88
    also gave .activity-disclosure-chevron margin-left: auto. Two auto margins
    in one flex row split the free space, so the label sits in the middle and
