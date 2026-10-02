@@ -160,7 +160,7 @@ test("new-chat worktree choices auto-match branches but allow independent main a
   await execFile("git", ["-C", join(parent, "web"), "rev-parse", "HEAD"]);
 });
 
-test("new chats reuse the last selected project while an explicit empty choice stays empty", async ({ page, app, home }) => {
+test("global new chats stay outside projects while project new chats keep their project", async ({ page, app, home }) => {
   const folder = join(home, "recent-project");
   await mkdir(folder);
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, folder);
@@ -170,7 +170,13 @@ test("new chats reuse the last selected project while an explicit empty choice s
   await expect(project).toContainText("recent-project");
   await expect(page.getByRole("complementary").getByRole("button", { name: /^(Expand|Collapse) project: recent-project$/ })).toBeVisible();
   await page.getByTestId("new-chat-button").click();
+  await expect(project).toContainText("Choose project");
+  const projectRow = page.locator('[data-sidebar-project]').filter({ hasText: "recent-project" });
+  await projectRow.hover();
+  await projectRow.getByRole("button", { name: "New chat in project" }).click();
   await expect(project).toContainText("recent-project");
+  await page.getByTestId("new-chat-button").click();
+  await expect(project).toContainText("Choose project");
   await project.click();
   await page.getByRole("option", { name: /No project/ }).click();
   await expect(project).toContainText("Choose project");
@@ -178,5 +184,5 @@ test("new chats reuse the last selected project while an explicit empty choice s
   await page.keyboard.press("Escape");
   await expect(project).toContainText("Choose project");
   await page.getByTestId("new-chat-button").click();
-  await expect(project).toContainText("recent-project");
+  await expect(project).toContainText("Choose project");
 });
