@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import http from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+const MAX_SOCKET_PATH_BYTES = 100;
 
 export function controlSocketPath(env = process.env, platform = process.platform) {
   const override = env.BACKCHAT_CONTROL_SOCK;
@@ -13,7 +16,10 @@ export function controlSocketPath(env = process.env, platform = process.platform
   const root = env.BACKCHAT_TEST_HOOKS === "1" && testHome
     ? testHome
     : join(homedir(), ".oma");
-  return join(root, "control.sock");
+  const preferred = join(root, "control.sock");
+  if (Buffer.byteLength(preferred) <= MAX_SOCKET_PATH_BYTES) return preferred;
+  const hash = createHash("sha256").update(preferred).digest("hex").slice(0, 16);
+  return join("/tmp", `backchat-${hash}.sock`);
 }
 
 export function callControl({ socketPath, method, params, client }) {

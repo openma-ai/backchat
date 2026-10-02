@@ -18,7 +18,11 @@ with the app. Add `~/.local/bin` to `PATH` if it is not already there.
 
 The socket is `<storage root>/control.sock`. The storage root is `~/.oma`, or
 `$BACKCHAT_HOME` when `BACKCHAT_TEST_HOOKS=1`. Override the socket with
-`BACKCHAT_CONTROL_SOCK`.
+`BACKCHAT_CONTROL_SOCK`. If that path would be longer than 100 bytes (the
+macOS Unix-socket limit), both the app and the CLI use
+`/tmp/backchat-<hash>.sock` instead so startup cannot fail with
+`ENAMETOOLONG`. A failure to bind the socket is logged and does not stop the
+GUI.
 
 ## Caller identity
 

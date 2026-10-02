@@ -935,11 +935,15 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   let controlServer: ControlServer | null = null;
   if (process.env["BACKCHAT_DISABLE_CONTROL"] !== "1") {
     const socketPath = controlSocketPath();
-    controlServer = await startControlServer({
-      socketPath,
-      api: createControlApi(),
-    });
-    if (process.env["BACKCHAT_TEST_HOOKS"] !== "1") {
+    try {
+      controlServer = await startControlServer({
+        socketPath,
+        api: createControlApi(),
+      });
+    } catch (error) {
+      console.warn("[control] failed to start; the GUI will keep running", error);
+    }
+    if (controlServer && process.env["BACKCHAT_TEST_HOOKS"] !== "1") {
       const scriptPath = app.isPackaged
         ? join(process.resourcesPath, "cli", "backchat.mjs")
         : join(app.getAppPath(), "src", "cli", "backchat.mjs");

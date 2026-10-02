@@ -1,5 +1,10 @@
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+/** macOS sockaddr_un.sun_path is 104 bytes. Stay under that so listen() cannot
+ * fail with ENAMETOOLONG and block app startup. */
+const MAX_SOCKET_PATH_BYTES = 100;
 
 /** Root shared by Backchat and OMA. BACKCHAT_HOME remains test-only so E2E
  * processes cannot read or mutate the developer's real local state. */
@@ -21,5 +26,8 @@ export function controlSocketPath(
     const user = (env["USERNAME"] || env["USER"] || "user").replace(/[^A-Za-z0-9_.-]/g, "_");
     return `\\\\.\\pipe\\backchat-control-${user}`;
   }
-  return join(backchatStorageRoot(env), "control.sock");
+  const preferred = join(backchatStorageRoot(env), "control.sock");
+  if (Buffer.byteLength(preferred) <= MAX_SOCKET_PATH_BYTES) return preferred;
+  const hash = createHash("sha256").update(preferred).digest("hex").slice(0, 16);
+  return join("/tmp", `backchat-${hash}.sock`);
 }

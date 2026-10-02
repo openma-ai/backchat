@@ -19,6 +19,12 @@ describe("backchat CLI parsing", () => {
     expect(controlSocketPath(env, "linux")).toBe(sharedSocketPath(env, "linux"));
     expect(controlSocketPath({ BACKCHAT_CONTROL_SOCK: "/tmp/custom.sock" }, "linux"))
       .toBe("/tmp/custom.sock");
+    const longHome = `/tmp/${"backchat-e2e-home-".repeat(8)}`;
+    const envLong = { BACKCHAT_TEST_HOOKS: "1", BACKCHAT_HOME: longHome };
+    const socket = controlSocketPath(envLong, "linux");
+    expect(socket).toBe(sharedSocketPath(envLong, "linux"));
+    expect(Buffer.byteLength(socket)).toBeLessThanOrEqual(100);
+    expect(socket.startsWith("/tmp/backchat-")).toBe(true);
   });
 
   it("parses project create with repeated sources and a client", () => {
