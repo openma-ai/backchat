@@ -21,6 +21,17 @@ describe("agent interaction profiles", () => {
     expect(claude.actions.queue).toBe("turn_end");
   });
 
+  it("models pi like its own editor: Enter steers, follow-up queues", () => {
+    const pi = getAgentInteractionProfile("pi-acp");
+
+    expect(pi.source).toBe("pi_product");
+    expect(pi.actions.submit).toBe("llm_boundary");
+    expect(pi.actions.queue).toBe("turn_end");
+    expect(pi.actions.steer).toBe("llm_boundary");
+    expect(pi.actions.interrupt).toBe("unsupported");
+    expect(pi.actions.collect).toBe("unsupported");
+  });
+
   it("falls back unknown ACP agents to turn-end delivery", () => {
     const generic = getAgentInteractionProfile("some-registry-agent");
 
@@ -52,6 +63,33 @@ describe("decideRunningMessageDelivery", () => {
     expect(decision.requestedDelivery).toBe("llm_boundary");
     expect(decision.effectiveDelivery).toBe("llm_boundary");
     expect(decision.degraded).toBe(false);
+  });
+
+  it("degrades a pi submit to the adapter queue until _session/steering is negotiated", () => {
+    // `@openma/pi-acp` from 0.1.4 advertises steering. A third-party adapter
+    // that does not, such as pi-acp 0.0.33, can only queue Enter into its own
+    // FIFO (pi follow-up).
+    const stock = decideRunningMessageDelivery({
+      agentId: "pi-acp",
+      intent: "submit",
+      transport: GENERIC_ACP_DELIVERY_CAPABILITIES,
+    });
+
+    expect(stock.source).toBe("pi_product");
+    expect(stock.requestedDelivery).toBe("llm_boundary");
+    expect(stock.effectiveDelivery).toBe("turn_end");
+    expect(stock.degraded).toBe(true);
+
+    // Once the adapter negotiates the extension, Enter is pi's native steer
+    // with no further host change. `@openma/pi-acp` 0.1.4 does this.
+    const negotiated = decideRunningMessageDelivery({
+      agentId: "pi-acp",
+      intent: "submit",
+      transport: { llmBoundary: true, interrupt: false, collect: false },
+    });
+
+    expect(negotiated.effectiveDelivery).toBe("llm_boundary");
+    expect(negotiated.degraded).toBe(false);
   });
 
   it("does not pretend interrupt/collect can be delivered by generic ACP", () => {

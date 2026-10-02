@@ -68,6 +68,7 @@ export type ComposerKeyAction =
   | "slash-previous"
   | "slash-pick"
   | "slash-dismiss"
+  | "queue"
   | "submit";
 
 export function resolveComposerKeyAction({
@@ -80,6 +81,7 @@ export function resolveComposerKeyAction({
   slashPickerOpen,
   hasSlashSelection,
   shiftKey,
+  altKey = false,
   isComposing,
 }: {
   key: string;
@@ -91,6 +93,7 @@ export function resolveComposerKeyAction({
   slashPickerOpen: boolean;
   hasSlashSelection: boolean;
   shiftKey: boolean;
+  altKey?: boolean;
   isComposing: boolean;
 }): ComposerKeyAction | null {
   const backspaceTarget = resolveComposerEmptyBackspace({
@@ -118,6 +121,10 @@ export function resolveComposerKeyAction({
     if (key === "Escape") return "slash-dismiss";
   }
 
+  // pi's editor: Enter steers, Alt+Enter queues a follow-up that waits for
+  // the agent to finish. Every profile maps the `queue` intent to the
+  // turn-end queue, so the second gesture means the same thing on any harness.
+  if (key === "Enter" && altKey && !shiftKey && !isComposing) return "queue";
   if (key === "Enter" && !shiftKey && !isComposing) return "submit";
   return null;
 }

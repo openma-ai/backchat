@@ -42,6 +42,36 @@ describe("describeRunningMessageAction", () => {
     expect(action.decision.degraded).toBe(false);
   });
 
+  it("labels pi Enter as Steer once negotiated and as a degraded queue before", () => {
+    const negotiated = describeRunningMessageAction({
+      agentId: "pi-acp",
+      intent: "submit",
+      supportsSteering: true,
+    });
+
+    expect(negotiated.label).toBe("Steer");
+    expect(negotiated.decision.effectiveDelivery).toBe("llm_boundary");
+    expect(negotiated.disabled).toBe(false);
+
+    const stock = describeRunningMessageAction({
+      agentId: "pi-acp",
+      intent: "submit",
+      supportsSteering: false,
+    });
+
+    // Until the adapter negotiates `_session/steering`, Enter stays a queue
+    // and the button explains the degradation instead of offering a steer
+    // this transport cannot deliver.
+    expect(stock.label).toBe("Queue");
+    expect(stock.ariaLabel).toBe("Queue (Enter)");
+    expect(stock.decision.degraded).toBe(true);
+    expect(stock.decision.effectiveDelivery).toBe("turn_end");
+    expect(stock.title).toBe(
+      "Steer is not available over this ACP transport; queue for next turn",
+    );
+    expect(stock.disabled).toBe(false);
+  });
+
   it("marks default Hermes interrupt as unavailable over generic ACP", () => {
     const action = describeRunningMessageAction({
       agentId: "hermes",
