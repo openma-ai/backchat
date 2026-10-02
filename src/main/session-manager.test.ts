@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
 /** A directory that really exists, for starts that declare a project workspace. */
@@ -8,10 +7,6 @@ const PROJECT_ROOT = process.cwd();
 import { join } from "node:path";
 import type { AcpSession, SessionOptions } from "@open-managed-agents-desktop/acp";
 import { acpEventUiRoute, SessionManager } from "./session-manager";
-import {
-  PI_CODING_AGENT_DIR_ENV,
-  piAgentDirFromArgs,
-} from "./pi-settings-isolation";
 import { configureAppLog, flushAppLog } from "./app-log.js";
 import {
   appendEvent,
@@ -1901,90 +1896,6 @@ describe("SessionManager prompt queue", () => {
       expect.objectContaining({ type: "session.error" }),
     );
     expect(manager.sessionCount()).toBe(1);
-  });
-
-  it("keeps ~/.pi/agent/settings.json unchanged when a pi session switches models", async () => {
-    // --agent-dir is pi's global settings directory, normally ~/.pi/agent.
-    // Hash that settings.json before and after session/set_config_option.
-    const root = await mkdtemp(join(tmpdir(), "pi-model-switch-"));
-    const sourceAgentDir = join(root, "agent");
-    const shadowRoot = join(root, "shadows");
-    const settingsPath = join(sourceAgentDir, "settings.json");
-    const original = `${JSON.stringify({
-      defaultProvider: "anthropic-proxy",
-      defaultModel: "claude-fable-5-1",
-    }, null, 2)}\n`;
-    await mkdir(join(sourceAgentDir, "sessions"), { recursive: true });
-    await writeFile(settingsPath, original);
-    await writeFile(join(sourceAgentDir, "sessions", "keep.txt"), "keep\n");
-
-    const fake = createControllableAcpSession();
-    fake.session.setConfigOption = vi.fn(async (_configId: string, value: string | boolean) => {
-      const options = mocks.runtimeStart.mock.calls.at(-1)?.[0] as SessionOptions;
-      // Same precedence as pi-acp: --agent-dir wins over PI_CODING_AGENT_DIR,
-      // and either one is the settings.json pi will rewrite.
-      const agentDir = piAgentDirFromArgs(options.agent.args ?? [])
-        ?? options.agent.env?.[PI_CODING_AGENT_DIR_ENV];
-      if (!agentDir) throw new Error("pi-acp would persist into ~/.pi/agent/settings.json");
-      const shadowSettingsPath = join(agentDir, "settings.json");
-      const settings = JSON.parse(await readFile(shadowSettingsPath, "utf8")) as {
-        defaultProvider?: string;
-        defaultModel?: string;
-      };
-      // pi-acp 0.1.3 persists both fields into the agent dir it was spawned with.
-      settings.defaultProvider = "anthropic-proxy";
-      settings.defaultModel = String(value);
-      await writeFile(shadowSettingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-      return [];
-    });
-    mocks.runtimeStart.mockClear();
-    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
-    const manager = new SessionManager({
-      send: vi.fn(),
-      resolveMcpServers: () => [],
-      buildCallbacks: () => ({}),
-      resolveDefaults: () => ({}),
-      resolveAgentOverride: () => ({
-        argsOverride: ["--agent-dir", sourceAgentDir, "--quiet-startup"],
-        envOverride: { PI_CODING_AGENT_DIR: join(root, "ignored-env-dir") },
-      }),
-      piSettingsShadowRoot: shadowRoot,
-    });
-
-    try {
-      await manager.start({
-        session_id: "sess-pi-model-switch",
-        agent_id: "pi-acp",
-        cwd: "/repo",
-      });
-      const options = mocks.runtimeStart.mock.calls.at(-1)?.[0] as SessionOptions;
-      const shadowDir = options.agent.env?.PI_CODING_AGENT_DIR;
-      expect(shadowDir).toBeTruthy();
-      expect(shadowDir).not.toBe(sourceAgentDir);
-      expect(options.agent.args).toEqual(["--quiet-startup"]);
-
-      const before = createHash("sha256").update(await readFile(settingsPath)).digest("hex");
-      await manager.setConfigOption({
-        session_id: "sess-pi-model-switch",
-        config_id: "model",
-        value: "MiniMax-M3.1-Flash-Preview",
-      });
-      const after = createHash("sha256").update(await readFile(settingsPath)).digest("hex");
-
-      expect(after).toBe(before);
-      expect(await readFile(settingsPath, "utf8")).toBe(original);
-      const shadowSettings = JSON.parse(
-        await readFile(join(shadowDir!, "settings.json"), "utf8"),
-      ) as { defaultModel?: string };
-      expect(shadowSettings.defaultModel).toBe("MiniMax-M3.1-Flash-Preview");
-      expect(await readFile(join(sourceAgentDir, "sessions", "keep.txt"), "utf8")).toBe("keep\n");
-
-      await manager.dispose("sess-pi-model-switch");
-      expect(await readFile(join(sourceAgentDir, "sessions", "keep.txt"), "utf8")).toBe("keep\n");
-      expect(await readFile(settingsPath, "utf8")).toBe(original);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
   });
 
   it("routes the existing mode control to session/set_mode for mode-only ACP agents", async () => {

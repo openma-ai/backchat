@@ -59,9 +59,9 @@ describe("describeRunningMessageAction", () => {
       supportsSteering: false,
     });
 
-    // pi-acp 0.0.33 does not negotiate `_session/steering`. Enter stays a
-    // queue, and the button explains the degradation instead of offering a
-    // steer the adapter cannot deliver.
+    // Until the adapter negotiates `_session/steering`, Enter stays a queue
+    // and the button explains the degradation instead of offering a steer
+    // this transport cannot deliver.
     expect(stock.label).toBe("Queue");
     expect(stock.ariaLabel).toBe("Queue (Enter)");
     expect(stock.decision.degraded).toBe(true);

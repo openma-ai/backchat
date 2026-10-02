@@ -40,7 +40,7 @@ import {
 } from "@openma/common/session-orchestrator";
 import { createOpenMAEvent } from "@openma/common/session-events/openma";
 import { access, mkdir } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -77,10 +77,6 @@ import type {
   SessionStartParams,
   SessionStartResult,
 } from "../shared/session-events.js";
-import {
-  isolatePiAgentSettingsForSpawn,
-  removePiAgentSettingsShadow,
-} from "./pi-settings-isolation.js";
 import type {
   ElicitationFormRequestInfo,
   ElicitationFormResponseInfo,
@@ -153,8 +149,6 @@ interface ActiveSession {
   /** Latest complete ACP slash-command catalog for renderer re-announcement.
    * Session-scoped only: never restored from SQLite across process restarts. */
   latestAvailableCommandsUpdate: unknown | null;
-  /** Private pi agent dir whose settings.json is a copy of the user's. */
-  piSettingsShadowDir?: string;
 }
 
 interface OutOfBandSteeringTurn {
@@ -251,8 +245,6 @@ export interface SessionManagerDeps {
       session_modes?: unknown;
     },
   ) => Promise<void> | void;
-  /** Parent directory for per-session pi settings shadows. Tests pass a temp dir. */
-  piSettingsShadowRoot?: string;
   /** Override points keep workspace lifecycle deterministic in tests. */
   prepareWorktreeWorkspace?: (input: {
     sessionId: string;
@@ -285,7 +277,6 @@ export class SessionManager {
     NonNullable<SessionManagerDeps["prepareWorktreeWorkspace"]>;
   #removeWorktreeWorkspace:
     NonNullable<SessionManagerDeps["removeWorktreeWorkspace"]>;
-  #piSettingsShadowRoot: string;
   #spawner = new NodeSpawner();
   #runtime = new AcpRuntimeImpl(this.#spawner);
   #sessions = new Map<string, ActiveSession>();
@@ -310,9 +301,6 @@ export class SessionManager {
       deps.prepareWorktreeWorkspace ?? prepareSessionWorkspace;
     this.#removeWorktreeWorkspace =
       deps.removeWorktreeWorkspace ?? discardSessionWorkspace;
-    this.#piSettingsShadowRoot =
-      deps.piSettingsShadowRoot
-      ?? join(tmpdir(), "backchat-pi-agent-shadow");
   }
 
   setSender(send: Sender): void {
@@ -635,7 +623,7 @@ export class SessionManager {
     // custom binary path or inject env vars (ANTHROPIC_API_KEY etc.) per
     // agent without touching the registry.
     let command = override.commandOverride || agent.spec.command;
-    let launchArgs = override.argsOverride ?? agent.spec.args;
+    const args = override.argsOverride ?? agent.spec.args;
     const agentEnv = scrubAcpSpawnEnv({
       ...(agent.spec.env ?? {}),
       ...(override.envOverride ?? {}),
@@ -752,8 +740,6 @@ export class SessionManager {
       );
     }
 
-    let spawnEnv = runtimeAgentEnv;
-    let piSettingsShadowDir: string | undefined;
     try {
       if (this.#cancelledStarts.has(p.session_id)) {
         if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
@@ -806,25 +792,12 @@ export class SessionManager {
           ? { forkFrom: { acpSessionId: p.fork.acp_session_id } }
           : {}),
       });
-      if (agent.id === "pi-acp") {
-        // pi-acp persists model/thinking into the agent dir's settings.json.
-        // Give this process a private copy so the user's global file stays.
-        const isolated = await isolatePiAgentSettingsForSpawn({
-          args: launchArgs ?? [],
-          env: spawnEnv,
-          shadowDir: join(this.#piSettingsShadowRoot, p.session_id),
-          homeDir: homedir(),
-        });
-        launchArgs = isolated.args;
-        spawnEnv = isolated.env;
-        piSettingsShadowDir = isolated.shadowDir;
-      }
       const acpSession = await this.#runtime.start({
         agent: {
           command,
-          args: launchArgs,
+          args,
           cwd: sessionCwd,
-          env: spawnEnv,
+          env: runtimeAgentEnv,
           onDiagnosticLine: (line) => {
             logAppEvent("acp.process.diagnostic", {
               session_id: p.session_id,
@@ -863,8 +836,6 @@ export class SessionManager {
       });
       if (this.#cancelledStarts.has(p.session_id)) {
         await Promise.resolve(acpSession.dispose()).catch(() => undefined);
-        await removePiAgentSettingsShadow(piSettingsShadowDir);
-        piSettingsShadowDir = undefined;
         if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
           await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
         }
@@ -902,7 +873,6 @@ export class SessionManager {
         promptQueueEnabled: defaults.promptQueueEnabled !== false,
         readyAt: Date.now(),
         latestAvailableCommandsUpdate: null,
-        piSettingsShadowDir,
       };
       activeForOutOfBandUpdates = activeSession;
       this.#sessions.set(p.session_id, activeSession);
@@ -954,7 +924,6 @@ export class SessionManager {
       }
       return result;
     } catch (e) {
-      await removePiAgentSettingsShadow(piSettingsShadowDir);
       if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
         await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
       }
@@ -2021,7 +1990,6 @@ export class SessionManager {
     }
     for (const ctrl of sess.turns.values()) ctrl.abort();
     await Promise.resolve(sess.acp.dispose()).catch(() => undefined);
-    await removePiAgentSettingsShadow(sess.piSettingsShadowDir);
     this.#sessions.delete(session_id);
     // Unblock any pending permission / fs / terminal request for this
     // session — its ACP child is gone, no one will answer them.
