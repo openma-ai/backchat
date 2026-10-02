@@ -34,6 +34,7 @@ function session(modes: string[], current = "agent"): CursorEditSession & { mode
 describe("Cursor edit gate", () => {
   it("allows direct edits only for an explicit opt-in", () => {
     expect(cursorMayEditDirectly({ policy: "auto-all" })).toBe(true);
+    expect(cursorMayEditDirectly({ policy: "auto-edit" })).toBe(true);
     expect(cursorMayEditDirectly({ permissionMode: "auto" })).toBe(true);
     expect(cursorMayEditDirectly({ policy: "ask" })).toBe(false);
     expect(cursorMayEditDirectly({ policy: "auto-read" })).toBe(false);

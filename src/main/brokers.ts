@@ -28,9 +28,10 @@ import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { PushChannel, InvokeChannel } from "../shared/ipc-channels.js";
 import {
   firstAllowOption,
-  isReadOnlyToolCall,
   noteToolApproval,
+  rememberPermissionDecision,
   runtimePermissionPolicy,
+  shouldAutoApproveTool,
   toolCallIdOf,
 } from "./permission-policy.js";
 import { appendEvent } from "./sql-store.js";
@@ -142,8 +143,7 @@ export function requestPermission(
   };
   const policy = runtimePermissionPolicy(sessionId);
   const allow = firstAllowOption(p.options ?? []);
-  const auto = policy === "auto-all"
-    || (policy === "auto-read" && isReadOnlyToolCall(p.toolCall));
+  const auto = shouldAutoApproveTool(policy, p.toolCall);
   if (auto && allow) {
     noteToolApproval(sessionId, toolCallIdOf(p.toolCall));
     return Promise.resolve({
@@ -254,7 +254,7 @@ export function writeTextFile(
   const roots = typeof sessionRoots === "string" ? [sessionRoots] : sessionRoots;
   const insideCwd = roots.some((root) => isInsideCwd(p.path, root));
   const policy = runtimePermissionPolicy(sessionId);
-  const autoAll = policy === "auto-all";
+  const autoAll = policy === "auto-all" || policy === "auto-edit";
   const gateWrites = policy === "ask" || policy === "auto-read";
   return new Promise(async (resolve, reject) => {
     if ((insideCwd && !gateWrites) || autoAll) {
@@ -637,13 +637,20 @@ export function respondPermission(requestId: string, optionId: string | null | u
     : pending.ask.options.find((entry) => entry.optionId === optionId);
   const allows = option?.kind === "allow_once" || option?.kind === "allow_always";
   const rejects = option?.kind === "reject_once" || option?.kind === "reject_always";
-  if (allows) noteToolApproval(pending.sessionId, toolCallIdOf(pending.ask.toolCall));
+  const toolCallId = toolCallIdOf(pending.ask.toolCall);
+  const outcome = optionId == null ? "cancelled" : rejects ? "rejected" : "selected";
+  if (allows) noteToolApproval(pending.sessionId, toolCallId);
+  rememberPermissionDecision(pending.sessionId, toolCallId, {
+    outcome,
+    optionKind: option?.kind,
+    optionId: optionId ?? undefined,
+  });
   rememberBrokerEvent(pending.sessionId, "permission_response", {
     request_id: requestId,
-    tool_call_id: toolCallIdOf(pending.ask.toolCall),
+    tool_call_id: toolCallId,
     option_id: optionId,
     option_kind: option?.kind,
-    outcome: optionId == null ? "cancelled" : rejects ? "rejected" : "selected",
+    outcome,
     title: pending.ask.presentation.title,
   });
   brokerSessionEventSink?.({
@@ -651,7 +658,7 @@ export function respondPermission(requestId: string, optionId: string | null | u
     session_id: pending.sessionId,
     request_id: requestId,
     option_id: optionId,
-    outcome: optionId == null ? "cancelled" : "selected",
+    outcome,
   });
   if (optionId == null) {
     pending.resolve({ outcome: { outcome: "cancelled" } });

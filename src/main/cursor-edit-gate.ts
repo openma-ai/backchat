@@ -48,7 +48,7 @@ export function cursorMayEditDirectly(input: {
 }): boolean {
   if (input.permissionMode === "read_only") return false;
   if (input.policy === "ask" || input.policy === "auto-read") return false;
-  if (input.policy === "auto-all") return true;
+  if (input.policy === "auto-edit" || input.policy === "auto-all") return true;
   return input.permissionMode === "auto";
 }
 
@@ -68,7 +68,7 @@ export async function restrictCursorEdits(
   if (!target) {
     return {
       action: "blocked",
-      message: "Cursor writes files directly in agent mode and does not ask before an edit. This session requires approval, and Cursor did not advertise plan or ask mode, so Backchat did not start it. Pass --approve auto-all, or set permission mode to auto, to opt into those direct edits.",
+      message: "Cursor writes files directly in agent mode and does not ask before an edit. This session requires approval, and Cursor did not advertise plan or ask mode, so Backchat did not start it. Pass --approve auto-edit or auto-all, or set permission mode to auto, to opt into those direct edits.",
     };
   }
   let applied = false;
@@ -87,7 +87,7 @@ export async function restrictCursorEdits(
   if (!applied) {
     return {
       action: "blocked",
-      message: "Cursor stayed in a mode that writes files directly. Backchat did not start the session. Pass --approve auto-all, or set permission mode to auto, to opt into those direct edits.",
+      message: "Cursor stayed in a mode that writes files directly. Backchat did not start the session. Pass --approve auto-edit or auto-all, or set permission mode to auto, to opt into those direct edits.",
     };
   }
   return { action: "restricted", mode: target };

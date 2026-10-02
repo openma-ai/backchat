@@ -288,7 +288,7 @@ async function startSession(
   const prompt = typeof params.prompt === "string" ? params.prompt : "";
   const approve = params.approve;
   if (approve !== undefined && !isSessionPermissionPolicy(approve)) {
-    throw new ControlError("invalid_args", "--approve must be ask, auto-read, or auto-all");
+    throw new ControlError("invalid_args", "--approve must be ask, auto-read, auto-edit, or auto-all");
   }
   if (!workspaceId && !root) {
     throw new ControlError("invalid_args", "session start needs --workspace or --root");

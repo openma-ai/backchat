@@ -261,15 +261,51 @@ describe("control CLI against the fake ACP agent", () => {
     ])).toMatchObject({ code: 0 });
     const deniedResult = await denied;
     expect(deniedResult.code).toBe(0);
-    const deniedStream = jsonLines(deniedResult.body) as Array<{ outcome?: string }>;
-    expect(deniedStream).toContainEqual(expect.objectContaining({ outcome: "denied" }));
+    const deniedStream = jsonLines(deniedResult.body) as Array<{ type?: string; tool_call_id?: string; outcome?: string }>;
+    const shellEnd = deniedStream.find((event) => event.type === "tool_call" && event.tool_call_id === "shell-1" && event.outcome);
+    expect(shellEnd).toMatchObject({ outcome: "denied" });
+    expect(deniedStream.some((event) => event.tool_call_id === "shell-1" && event.outcome === "finished")).toBe(false);
     const transcript = await harness.run(["session", "transcript", readOnly.session_id, "--json"]);
     const rows = jsonBody(transcript.body).events as Array<{ type?: string; tool_call_id?: string; status?: string }>;
-    expect(rows).toContainEqual(expect.objectContaining({
-      type: "tool_result",
-      tool_call_id: "shell-1",
-      status: "denied",
-    }));
+    expect(rows.filter((event) => event.type === "tool_result" && event.tool_call_id === "shell-1")).toEqual([
+      expect.objectContaining({ status: "denied" }),
+    ]);
+  }, 30_000);
+
+  it("auto-edit writes files and still requires approval for a shell", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-cursor-auto-edit-"));
+    roots.push(root);
+    const harness = await startCursorHarness(root);
+    const started = await harness.run([
+      "session", "start", "--json", "--root", root, "--agent", "cursor", "--approve", "auto-edit",
+    ]);
+    expect(started.code).toBe(0);
+    const session = jsonBody(started.body) as { session_id: string; modes?: { currentModeId?: string } };
+    expect(session.modes?.currentModeId).toBe("agent");
+    const edited = await harness.run([
+      "session", "send", session.session_id, "cursor-direct-edit", "--wait", "--timeout", "20", "--json",
+    ]);
+    expect(edited.code).toBe(0);
+    await access(join(root, "CURSOR_DIRECT_EDIT.md"));
+    expect(harness.permissions).toEqual([]);
+
+    const denied = harness.run([
+      "session", "send", session.session_id, "cursor-reject-shell", "--stream", "--timeout", "20",
+    ]);
+    const requestId = await harness.requestId(session.session_id);
+    expect(await harness.run([
+      "session", "respond", session.session_id, requestId, "reject-once", "--json",
+    ])).toMatchObject({ code: 0 });
+    const deniedResult = await denied;
+    expect(deniedResult.code).toBe(0);
+    const stream = jsonLines(deniedResult.body) as Array<{ type?: string; tool_call_id?: string; outcome?: string }>;
+    expect(stream).toContainEqual(expect.objectContaining({ type: "permission" }));
+    expect(stream.find((event) => event.tool_call_id === "shell-1" && event.outcome)).toMatchObject({ outcome: "denied" });
+    const transcript = await harness.run(["session", "transcript", session.session_id, "--json"]);
+    const rows = jsonBody(transcript.body).events as Array<{ type?: string; tool_call_id?: string; status?: string }>;
+    expect(rows.filter((event) => event.type === "tool_result" && event.tool_call_id === "shell-1")).toEqual([
+      expect.objectContaining({ status: "denied" }),
+    ]);
   }, 30_000);
 
   it("answers cursor/create_plan in plan mode without writing or throwing", async () => {

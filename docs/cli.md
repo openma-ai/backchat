@@ -91,7 +91,7 @@ backchat workspace remove <id> [--force]
 backchat session list [--workspace <id>] [--project <id>]
 backchat session start --workspace <id> --agent <agentId> \
   [--root <dir>] [--dir <dir> ...] [--prompt <text>] \
-  [--approve ask|auto-read|auto-all]
+  [--approve ask|auto-read|auto-edit|auto-all]
 backchat session send <id> <message> [--wait] [--stream] [--timeout <sec>]
 backchat session status <id>
 backchat session transcript <id> [--since <cursor>]
@@ -150,7 +150,9 @@ deleted.
 kind is `read`, `search`, or `think`. `edit`, `write`, `delete`, `move`,
 `execute`, and any unknown kind stay in `session pending`. A title or name
 that mentions edit, write, delete, move, or shell is not treated as
-read-only. `ask` prompts for every tool. `auto-all` approves tool calls and
+read-only. `ask` prompts for every tool. `auto-edit` auto-approves reads and
+edits, including client filesystem writes, and leaves shell and `execute`
+in `session pending`. `auto-all` approves tool calls, including shell, and
 client filesystem writes. With no `--approve`, in-workspace `fs/write_text_file`
 calls stay silent, which is the GUI default for agents that use the client
 filesystem. Cursor does not. See below.
@@ -194,7 +196,7 @@ first prompt:
 - `--approve ask` or `--approve auto-read`
 - no `--approve`, unless Settings → permission mode is Auto
 - a read-only session (`permission_mode: read_only`), even if that session
-  also passed `--approve auto-all`
+  also passed `--approve auto-edit` or `--approve auto-all`
 
 The mode is `ask` when Cursor advertises it, otherwise `plan`. Both modes
 leave the file untouched. `plan` may call `cursor/create_plan`; Backchat
@@ -204,20 +206,27 @@ neither mode can be selected, the session does not start.
 
 Cursor may write files directly only when the caller opts into that:
 
-- `session start --approve auto-all`
-- or Settings permission mode Auto, when the session has no stricter
-  `--approve` policy
+- `session start --approve auto-edit` leaves shell and `execute` in
+  `session pending`. Edit and read calls are auto-approved.
+- `session start --approve auto-all` also auto-approves shell.
+- Settings permission mode Auto, with no `--approve` flag, also leaves
+  Cursor in agent mode. Shell permission requests stay pending, because
+  that setting does not select `auto-all`.
 
-That opt-in leaves the default `agent` mode in place. Shell commands can
-still ask, based on Cursor's own allowlist. If a non-read tool starts without
-an approval after Backchat has left agent mode, the turn is cancelled. That
-cancel does not undo a write that already landed, which is why the mode
+`auto-edit` and `auto-all` leave the default `agent` mode in place, so
+Cursor's edit tool writes the file itself. With `auto-edit`, a shell command
+still sends `session/request_permission` and waits for `session respond`.
+Cursor's own cli-config allowlist can also ask. If a non-read tool starts
+without an approval after Backchat has left agent mode, the turn is cancelled.
+That cancel does not undo a write that already landed, which is why the mode
 switch happens first.
 
-`tool_call` status `completed` is not success. The stream's `outcome` and the
-transcript's tool `status` use the permission decision or the tool result
-when one is present: `ok` / `completed` only then, otherwise `denied`,
-`failed`, `cancelled`, or `finished`.
+`tool_call` status `completed` is not success. The stream's `outcome`, the
+transcript's tool `status`, and the persisted tool event use the same
+permission decision when one was recorded, otherwise the tool result. A
+rejection is `denied` on every one of those. Success is stream `ok` and
+transcript `completed`. With neither a decision nor a result, the outcome is
+`finished`.
 
 `session send --wait` blocks until the turn finishes and includes `reply`,
 the assistant text of that turn. `--timeout <sec>` returns the current

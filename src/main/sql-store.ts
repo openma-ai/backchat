@@ -77,7 +77,7 @@ export interface PersistedSession {
   /** Set when an external coordinator created the session. */
   external_client?: string | null;
   /** CLI permission policy for this session. Absent or null means ask. */
-  permission_policy?: "ask" | "auto-read" | "auto-all" | null;
+  permission_policy?: "ask" | "auto-read" | "auto-edit" | "auto-all" | null;
 }
 
 type PersistedSessionRow = Omit<PersistedSession, "additional_directories"> & {
@@ -920,7 +920,7 @@ export function setSessionExternalClient(id: string, client: string): void {
 
 export function setSessionPermissionPolicy(
   id: string,
-  policy: "ask" | "auto-read" | "auto-all",
+  policy: "ask" | "auto-read" | "auto-edit" | "auto-all",
 ): void {
   stmts().setPermissionPolicy.run(policy, id);
   writeSessionMetadata(id);

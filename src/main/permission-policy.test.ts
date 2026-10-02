@@ -53,4 +53,27 @@ describe("session permission policy", () => {
     await pending;
     expect(toolWasApproved("sess-reject", "shell-1")).toBe(false);
   });
+
+  it("auto-edit approves an edit and leaves a shell call pending", async () => {
+    setRuntimePermissionPolicy("sess-auto-edit", "auto-edit");
+    await expect(requestPermission("sess-auto-edit", {
+      toolCall: { toolCallId: "edit-1", kind: "edit", title: "Edit file" },
+      options: [{ optionId: "allow", kind: "allow_once", name: "Allow" }],
+    })).resolves.toEqual({ outcome: { outcome: "selected", optionId: "allow" } });
+
+    const pending = requestPermission("sess-auto-edit", {
+      toolCall: { toolCallId: "shell-1", kind: "execute", title: "echo" },
+      options: [
+        { optionId: "allow-once", kind: "allow_once", name: "Allow" },
+        { optionId: "reject-once", kind: "reject_once", name: "Reject" },
+      ],
+    });
+    const ask = listPendingAsks("sess-auto-edit")[0];
+    expect(ask).toMatchObject({ title: "echo" });
+    expect(respondPermission(ask!.id, "reject-once")).toBe(true);
+    await expect(pending).resolves.toEqual({
+      outcome: { outcome: "selected", optionId: "reject-once" },
+    });
+    expect(toolWasApproved("sess-auto-edit", "shell-1")).toBe(false);
+  });
 });

@@ -1,3 +1,4 @@
+import { rememberedPermissionDecision } from "../permission-policy.js";
 import { toolCallOutcome } from "../../shared/tool-outcome.js";
 
 export type ControlLiveEvent = {
@@ -93,15 +94,24 @@ export function streamEventsFromSession(event: {
   if (kind === "tool_call_update") {
     const status = stringField(update.status);
     if (status !== "completed" && status !== "failed" && status !== "cancelled") return [];
+    const toolCallId = stringField(update.toolCallId) ?? stringField(update.tool_call_id);
+    const decision = rememberedPermissionDecision(sessionId, toolCallId);
     return [{
       type: "tool_call",
       session_id: sessionId,
       turn_id: event.turn_id,
-      tool_call_id: stringField(update.toolCallId),
+      tool_call_id: toolCallId,
       title: stringField(update.title),
       kind: stringField(update.kind),
       status: "end",
-      outcome: toolCallOutcome(update) ?? "finished",
+      outcome: toolCallOutcome({
+        ...update,
+        ...(decision ? {
+          permission_outcome: decision.outcome,
+          option_kind: decision.optionKind,
+          option_id: decision.optionId,
+        } : {}),
+      }) ?? "finished",
       timestamp,
     }];
   }

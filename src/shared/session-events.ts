@@ -44,7 +44,7 @@ export interface SessionStartParams {
   /** External coordinator that created this session, shown in the GUI. */
   external_client?: string;
   /** Permission policy for this session. Writes stay pending under auto-read. */
-  permission_policy?: "ask" | "auto-read" | "auto-all";
+  permission_policy?: "ask" | "auto-read" | "auto-edit" | "auto-all";
   /** Directories to add after a workspace has supplied its own roots. */
   extra_directories?: string[];
   /** Provide an existing ACP-side session id to resume conversation history.
@@ -440,7 +440,7 @@ export type SessionEventOut = (
       session_id: string;
       request_id: string;
       option_id?: string | null;
-      outcome: "selected" | "cancelled";
+      outcome: "selected" | "rejected" | "cancelled";
     }
   | {
       /** User's decision for an out-of-workspace ACP filesystem write.

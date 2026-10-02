@@ -259,7 +259,7 @@ class FakeAcpAgent {
           title: "echo",
           kind: "execute",
           status: "completed",
-          rawOutput: allowed ? "echo ok" : "Write permission denied",
+          ...(allowed ? { rawOutput: "echo ok" } : {}),
         },
       });
       await this.say(sessionId, allowed ? "shell ok" : "shell denied");

@@ -1357,6 +1357,9 @@ function ProjectWorkspace({
                       <article className="project-worker" key={task.id} data-testid="external-task">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <p className="project-worker-title min-w-0 flex-1 truncate">{task.text}</p>
+                          {task.status === "cancelled" ? (
+                            <span className="shrink-0 text-[11px] text-fg-subtle">Cancelled</span>
+                          ) : null}
                           <ExternalSourceBadge client={task.coordinator_name} />
                         </div>
                       </article>

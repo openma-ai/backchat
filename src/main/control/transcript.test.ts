@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { streamEventsFromSession } from "./live-bus.js";
+import { rememberPermissionDecision } from "../permission-policy.js";
 import { sessionTurnSummary, transcriptFromHistory } from "./transcript.js";
 import type { PersistedEvent } from "../sql-store.js";
 
@@ -115,6 +116,24 @@ describe("control transcript", () => {
         status: "completed",
       },
     })[0]).toMatchObject({ status: "end", outcome: "finished" });
+  });
+
+  it("reports a rejected shell as denied on the stream when the tool only says completed", () => {
+    rememberPermissionDecision("sess-stream", "shell-1", {
+      outcome: "rejected",
+      optionKind: "reject_once",
+      optionId: "reject-once",
+    });
+    expect(streamEventsFromSession({
+      type: "session.event",
+      session_id: "sess-stream",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "shell-1",
+        kind: "execute",
+        status: "completed",
+      },
+    })[0]).toMatchObject({ status: "end", outcome: "denied" });
   });
 
   it("reports the last turn outcome and reply", () => {

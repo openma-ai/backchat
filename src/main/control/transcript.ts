@@ -20,6 +20,7 @@ export function transcriptFromHistory(
     }
   }
   const permissions = permissionOutcomes(rows);
+  const brokerPermissionIds = brokerPermissionRequestIds(rows);
   const events: TranscriptEvent[] = [];
   for (const row of rows) {
     if (sinceSeq !== undefined && row.seq <= sinceSeq) continue;
@@ -27,7 +28,7 @@ export function transcriptFromHistory(
       const text = textOf(parseData(row.data));
       if (text && userMessages.has(text)) continue;
     }
-    const mapped = mapRow(row, permissions);
+    const mapped = mapRow(row, permissions, brokerPermissionIds);
     if (mapped) events.push(mapped);
   }
   return mergeAdjacentText(events);
@@ -69,10 +70,21 @@ function mergeAdjacentText(events: TranscriptEvent[]): TranscriptEvent[] {
     const previous = merged.at(-1);
     if (
       previous
+      && previous.type === "status"
+      && event.type === "status"
+      && previous.status === "cancelled"
+      && event.status === "cancelled"
+    ) {
+      previous.cursor = event.cursor;
+      previous.timestamp = event.timestamp;
+      continue;
+    }
+    if (
+      previous
       && previous.role === "assistant"
-      && previous.type === "text"
       && event.role === "assistant"
-      && event.type === "text"
+      && previous.type === event.type
+      && (event.type === "text" || event.type === "thought")
     ) {
       previous.text = `${previous.text ?? ""}${event.text ?? ""}`;
       previous.cursor = event.cursor;
@@ -82,6 +94,16 @@ function mergeAdjacentText(events: TranscriptEvent[]): TranscriptEvent[] {
     merged.push({ ...event });
   }
   return merged;
+}
+
+function brokerPermissionRequestIds(rows: readonly PersistedEvent[]): Set<string> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.type !== "permission_request" && row.type !== "permission_response") continue;
+    const requestId = stringField(record(parseData(row.data)).request_id);
+    if (requestId) ids.add(requestId);
+  }
+  return ids;
 }
 
 function permissionOutcomes(rows: readonly PersistedEvent[]): Map<string, {
@@ -113,6 +135,7 @@ function permissionOutcomes(rows: readonly PersistedEvent[]): Map<string, {
 function mapRow(
   row: PersistedEvent,
   permissions: Map<string, { outcome?: string; optionKind?: string; optionId?: string }>,
+  brokerPermissionIds: Set<string>,
 ): TranscriptEvent | null {
   const cursor = String(row.seq);
   const timestamp = new Date(row.ts).toISOString();
@@ -188,6 +211,8 @@ function mapRow(
   }
   if (kind.includes("permission")) {
     const fields = record(data);
+    const requestId = stringField(fields.request_id) ?? stringField(fields.requestId);
+    if (requestId && brokerPermissionIds.has(requestId)) return null;
     return {
       cursor,
       role: "system",

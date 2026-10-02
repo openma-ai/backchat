@@ -17,7 +17,7 @@ Usage:
   backchat workspace create --project <id> --branch <name> [--base <ref>] [--json]
   backchat workspace remove <id> [--force] [--json]
   backchat session list [--workspace <id>] [--project <id>] [--json]
-  backchat session start --workspace <id> --agent <id> [--root <dir>] [--dir <dir>] [--prompt <text>] [--approve ask|auto-read|auto-all] [--json]
+  backchat session start --workspace <id> --agent <id> [--root <dir>] [--dir <dir>] [--prompt <text>] [--approve ask|auto-read|auto-edit|auto-all] [--json]
   backchat session send <id> <message> [--wait] [--stream] [--timeout <sec>] [--json]
   backchat session status <id> [--json]
   backchat session transcript <id> [--since <cursor>] [--json]
@@ -45,9 +45,11 @@ Cursor edits:
   Cursor writes files itself in agent mode. It does not ask first, and
   clientCapabilities.fs does not change that. Edits cannot be approved one
   by one. --approve ask, --approve auto-read, and a read-only session switch
-  Cursor to plan or ask mode so it does not write. --approve auto-all, or
-  Settings permission mode Auto, opts into those direct writes. A tool_call
-  status of completed is not success; read the tool result or outcome.
+  Cursor to plan or ask mode so it does not write. --approve auto-edit opts
+  into those direct writes and auto-approves edit and read calls; shell still
+  waits for session respond. --approve auto-all also approves shell. A
+  rejected tool is outcome denied on the stream and in the transcript. A
+  tool_call status of completed is not success.
 
 Global:
   --json              machine-readable stdout. Argument errors are JSON on stderr.
