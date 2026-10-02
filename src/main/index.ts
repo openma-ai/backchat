@@ -29,6 +29,7 @@ import {
   resolveBundledNpmCliPath,
 } from "./bundled-node-runtime.js";
 import { configureAppLog, logAppEvent } from "./app-log.js";
+import { resolveRemoteDebugging } from "./remote-debugging.js";
 
 // Chromium's OSCrypt otherwise initializes the macOS system credential store
 // even though Backchat does not persist browser credentials. Its documented
@@ -38,19 +39,22 @@ if (process.platform === "darwin") {
   app.commandLine.appendSwitch("use-mock-keychain");
 }
 
-// Dev-only: enable CDP on port 9222 so agent-browser can drive the
-// renderer for end-to-end UI tests. No-op in production. Also skip
-// when Playwright is the one driving — it opens its own CDP port and
-// our hard-coded 9222 collides with another running dev electron.
-if (
-  process.env["NODE_ENV"] !== "production" &&
-  process.env["BACKCHAT_TEST_HOOKS"] !== "1"
-) {
-  app.commandLine.appendSwitch("remote-debugging-port", "9222");
-  // Allow our diagnostic scripts (and the agent-browser e2e harness) to
-  // open a CDP WebSocket without the dev-tools Origin check rejecting
-  // them. Dev-only — never set in production.
-  app.commandLine.appendSwitch("remote-allow-origins", "*");
+// CDP for agent-browser during `electron-vite dev`, or when
+// BACKCHAT_REMOTE_DEBUGGING_PORT is set explicitly. Packaged apps do not
+// set NODE_ENV, so do not use that as the production gate. Playwright
+// (`BACKCHAT_TEST_HOOKS=1`) opens its own CDP port and must not inherit
+// the dev default. Any opened port binds to 127.0.0.1.
+const remoteDebugging = resolveRemoteDebugging({
+  isPackaged: app.isPackaged,
+  devBuild: import.meta.env.DEV,
+  env: process.env,
+});
+if (remoteDebugging) {
+  app.commandLine.appendSwitch("remote-debugging-address", remoteDebugging.address);
+  app.commandLine.appendSwitch("remote-debugging-port", remoteDebugging.port);
+  // Non-browser CDP clients fail Chromium's DevTools origin check without
+  // this. Only applied when a port is intentionally opened.
+  app.commandLine.appendSwitch("remote-allow-origins", remoteDebugging.allowOrigins);
 }
 
 const windows = new Set<BrowserWindow>();
