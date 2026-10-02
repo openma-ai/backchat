@@ -105,6 +105,7 @@ function mergeOverlay(
         homepage: ov.homepage || o.homepage,
         featured: ov.featured,
         systemPath: ov.systemPath,
+        systemCommand: ov.systemCommand,
         wraps: ov.wraps,
         install: ov.install ?? o.install,
         registryId: ov.registryId ?? o.registryId,
@@ -144,17 +145,29 @@ export async function detectEntry(
   options: ResolveAgentCommandOptions = {},
 ): Promise<KnownAgentEntry | null> {
   const managedCommand = await resolveManagedCommand(entry.spec.command, options);
-  if (!managedCommand && entry.installSource === "registry" && !entry.systemPath) {
+  const allowSystem = Boolean(entry.systemPath || entry.systemCommand);
+  if (!managedCommand && entry.installSource === "registry" && !allowSystem) {
     return null;
   }
-  const command = managedCommand ?? await resolveSystemCommand(entry, options);
-  if (!command) return null;
-  if (entry.spec.command === "npx" && !isNpxPackageInstalled(entry)) return null;
-  if (entry.spec.command === "uvx" && !isUvxPackageInstalled(entry)) return null;
-  const args =
+  let command = managedCommand;
+  let args =
     managedCommand && entry.installSource === "registry"
       ? undefined
       : entry.spec.args;
+  if (!command && entry.systemCommand) {
+    command = await resolveCommandInDirs(
+      entry.systemCommand,
+      await systemBinDirsWithNodeManagers(options),
+    );
+    args = entry.spec.args;
+  }
+  if (!command) {
+    command = await resolveSystemCommand(entry, options);
+    if (command) args = entry.spec.args;
+  }
+  if (!command) return null;
+  if (entry.spec.command === "npx" && !isNpxPackageInstalled(entry)) return null;
+  if (entry.spec.command === "uvx" && !isUvxPackageInstalled(entry)) return null;
   return {
     ...entry,
     spec: {

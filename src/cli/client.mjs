@@ -22,7 +22,7 @@ export function controlSocketPath(env = process.env, platform = process.platform
   return join("/tmp", `backchat-${hash}.sock`);
 }
 
-export function callControl({ socketPath, method, params, client }) {
+export function callControl({ socketPath, method, params, client, onEvent }) {
   const payload = JSON.stringify({
     method,
     params: params ?? {},
@@ -43,6 +43,22 @@ export function callControl({ socketPath, method, params, client }) {
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => {
         const text = chunks.join("");
+        const contentType = String(res.headers["content-type"] ?? "");
+        if (contentType.includes("ndjson")) {
+          const events = text.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+          for (const event of events) onEvent?.(event);
+          const last = events.at(-1);
+          if (last?.status === "timeout" || last?.type === "result" && last?.status === "timeout") {
+            reject(Object.assign(new Error("Timed out"), { code: "timeout", result: { events } }));
+            return;
+          }
+          if (last?.type === "result" && last?.status === "error") {
+            reject(Object.assign(new Error(last.message || "Session error"), { code: "error", result: { events } }));
+            return;
+          }
+          resolve({ events });
+          return;
+        }
         let body;
         try {
           body = text ? JSON.parse(text) : {};

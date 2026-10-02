@@ -6,6 +6,7 @@ import { materializeProjectAttachments } from "./project-attachments.js";
 import { THREAD_GOAL_INSTRUCTIONS } from "@openmatter/project-mcp";
 import { join } from "node:path";
 import { openmaRoot } from "./storage-root.js";
+import { externalClientContext } from "./external-client.js";
 import { ProjectWorkspaceManager } from "./project-workspace.js";
 import type { ProjectWorkConfig } from "@openmatter/project-host";
 import { randomUUID } from "node:crypto";
@@ -79,6 +80,7 @@ export class ProjectAgentBridge {
       });
       const saved = this.host.findSession(id);
       const resume = remote ?? saved?.acp_session_id;
+      const externalClient = externalClientContext.getStore()?.trim();
       const result = await this.host.start({
         session_id: id,
         agent_id: agentId,
@@ -87,6 +89,7 @@ export class ProjectAgentBridge {
         additional_directories: workspace.additionalDirectories,
         workspace_mode: "project",
         ...(resume ? { resume: { acp_session_id: resume } } : {}),
+        ...(externalClient ? { external_client: externalClient } : {}),
       });
       if (result.status !== "ready")
         throw new AgentDriverError({

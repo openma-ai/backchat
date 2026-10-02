@@ -14,6 +14,18 @@ Usage:
   backchat workspace show <id> [--json]
   backchat workspace create --project <id> --branch <name> [--base <ref>] [--json]
   backchat workspace remove <id> [--force] [--json]
+  backchat session list [--workspace <id>] [--project <id>] [--json]
+  backchat session start --workspace <id> --agent <id> [--root <dir>] [--dir <dir>] [--prompt <text>] [--approve ask|auto-read|auto-all] [--json]
+  backchat session send <id> <message> [--wait] [--stream] [--timeout <sec>] [--json]
+  backchat session status <id> [--json]
+  backchat session transcript <id> [--since <cursor>] [--json]
+  backchat session cancel <id> [--json]
+  backchat session pending <id> [--json]
+  backchat session respond <id> <requestId> <option> [--json]
+  backchat work submit --project <id> --text <text> [--type message|delegate|steer|cancel] [--worker <id>] [--json]
+  backchat work status [<projectId>] [--json]
+  backchat work view --project <id> [--json]
+  backchat work goal --project <id> --thread <id> [--status active|paused] [--objective <text>] [--clear] [--json]
 
 Global:
   --json              machine-readable stdout
@@ -50,28 +62,32 @@ export async function runCli(argv, env = process.env, io = { stdout: console.log
     return ExitCode.invalidArgs;
   }
   try {
+    const lines = [];
     const result = await callControl({
       socketPath: controlSocketPath(env),
       method: call.method,
       params: call.params,
       client,
+      onEvent: (event) => lines.push(JSON.stringify(event)),
     });
-    io.stdout(parsed.json ? JSON.stringify(result, null, 2) : formatText(call.method, result));
+    if (call.params?.stream) {
+      io.stdout(lines.join("\n"));
+    } else {
+      io.stdout(parsed.json ? JSON.stringify(result, null, 2) : formatText(call.method, result));
+    }
     return ExitCode.ok;
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "error";
     const message = error instanceof Error ? error.message : String(error);
-    if (parsed.json) {
+    const failure = error && typeof error === "object" && "result" in error ? error.result : undefined;
+    if (parsed.json || failure !== undefined) {
       io.stdout(JSON.stringify({
         ok: false,
         error: { code, message },
-        ...(error && typeof error === "object" && "result" in error && error.result !== undefined
-          ? { result: error.result }
-          : {}),
+        ...(failure !== undefined ? { result: failure } : {}),
       }, null, 2));
-    } else {
-      io.stderr(message);
     }
+    if (!parsed.json) io.stderr(message);
     return exitCodeFor(code);
   }
 }
@@ -113,6 +129,105 @@ function commandCall(parsed) {
     return {
       method: "workspace.remove",
       params: { id: requiredArg(args[0], "workspace id"), force: flags.force === true },
+    };
+  }
+  if (group === "session" && action === "list") {
+    return {
+      method: "session.list",
+      params: {
+        ...(typeof flags.workspace === "string" ? { workspace_id: flags.workspace } : {}),
+        ...(typeof flags.project === "string" ? { project_id: flags.project } : {}),
+      },
+    };
+  }
+  if (group === "session" && action === "start") {
+    if (typeof flags.agent !== "string") throw new ParseError("--agent is required");
+    return {
+      method: "session.start",
+      params: {
+        agent_id: flags.agent,
+        ...(typeof flags.workspace === "string" ? { workspace_id: flags.workspace } : {}),
+        ...(typeof flags.root === "string" ? { root: flags.root } : {}),
+        ...(Array.isArray(flags.dir) ? { directories: flags.dir } : {}),
+        ...(typeof flags.prompt === "string" ? { prompt: flags.prompt } : {}),
+        ...(typeof flags.approve === "string" ? { approve: flags.approve } : {}),
+        ...(typeof flags.project === "string" ? { project_id: flags.project } : {}),
+      },
+    };
+  }
+  if (group === "session" && action === "send") {
+    return {
+      method: "session.send",
+      params: {
+        id: requiredArg(args[0], "session id"),
+        message: requiredArg(args.slice(1).join(" "), "message"),
+        wait: flags.wait === true,
+        stream: flags.stream === true,
+        ...(typeof flags.timeout === "string" ? { timeout: flags.timeout } : {}),
+      },
+    };
+  }
+  if (group === "session" && action === "status") {
+    return { method: "session.status", params: { id: requiredArg(args[0], "session id") } };
+  }
+  if (group === "session" && action === "transcript") {
+    return {
+      method: "session.transcript",
+      params: {
+        id: requiredArg(args[0], "session id"),
+        ...(typeof flags.since === "string" ? { since: flags.since } : {}),
+      },
+    };
+  }
+  if (group === "session" && action === "cancel") {
+    return { method: "session.cancel", params: { id: requiredArg(args[0], "session id") } };
+  }
+  if (group === "session" && action === "pending") {
+    return { method: "session.pending", params: { id: requiredArg(args[0], "session id") } };
+  }
+  if (group === "session" && action === "respond") {
+    return {
+      method: "session.respond",
+      params: {
+        id: requiredArg(args[0], "session id"),
+        request_id: requiredArg(args[1], "request id"),
+        option: requiredArg(args[2], "option"),
+      },
+    };
+  }
+  if (group === "work" && action === "submit") {
+    if (typeof flags.project !== "string") throw new ParseError("--project is required");
+    if (typeof flags.text !== "string") throw new ParseError("--text is required");
+    return {
+      method: "work.submit",
+      params: {
+        project_id: flags.project,
+        text: flags.text,
+        ...(typeof flags.type === "string" ? { type: flags.type } : {}),
+        ...(typeof flags.worker === "string" ? { worker_id: flags.worker } : {}),
+        ...(typeof flags.run === "string" ? { run_id: flags.run } : {}),
+      },
+    };
+  }
+  if (group === "work" && action === "status") {
+    return { method: "work.status", params: args[0] ? { id: args[0] } : {} };
+  }
+  if (group === "work" && action === "view") {
+    if (typeof flags.project !== "string") throw new ParseError("--project is required");
+    return { method: "work.view", params: { project_id: flags.project } };
+  }
+  if (group === "work" && action === "goal") {
+    if (typeof flags.project !== "string") throw new ParseError("--project is required");
+    if (typeof flags.thread !== "string") throw new ParseError("--thread is required");
+    return {
+      method: "work.goal",
+      params: {
+        project_id: flags.project,
+        thread_id: flags.thread,
+        ...(typeof flags.status === "string" ? { status: flags.status } : {}),
+        ...(typeof flags.objective === "string" ? { objective: flags.objective } : {}),
+        ...(flags.clear === true ? { clear: true } : {}),
+      },
     };
   }
   throw new ParseError(`Unknown command: ${[group, action].filter(Boolean).join(" ") || "(none)"}`);

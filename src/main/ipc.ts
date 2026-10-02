@@ -61,6 +61,8 @@ import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-exp
 import { openmaRoot } from "./storage-root.js";
 import { controlSocketPath } from "../shared/control-socket.js";
 import { createControlApi } from "./control/handlers.js";
+import { publishControlLiveEvent, streamEventsFromSession } from "./control/live-bus.js";
+import { getProjectExternalCoordinator } from "./sql-store.js";
 import { startControlServer, type ControlServer } from "./control/server.js";
 import { installBackchatCli } from "./control/cli-install.js";
 import { saveProjectCommand } from "./project-commands.js";
@@ -460,6 +462,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   let projectAgents: ProjectAgentBridge | undefined;
   let projectMcp: ProjectMcpBridge | undefined;
   const send = (msg: SessionEventOut) => {
+    for (const event of streamEventsFromSession(msg)) publishControlLiveEvent(event);
     deps.sessionActivitySink?.(msg);
     const enriched = enrichSessionEvent(msg);
     if (enriched.openma_event) projectAgents?.observe(enriched.openma_event as ProjectAgentEvent);
@@ -576,7 +579,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   await projectMcp.start();
   projectWork.start();
   const projectRouter = new ProjectCloudRouter(projectWork, scope => { if(!deps.openmaAccount) throw new Error("OpenMA login required"); return deps.openmaAccount.connection(scope); }, getProject, process.env.BACKCHAT_PROJECT_WORKER_URL);
-  ipcMain.handle(InvokeChannel.ProjectWorkView, (_e, id: string) => projectRouter.view(id));
+  ipcMain.handle(InvokeChannel.ProjectWorkView, async (_e, id: string) => ({
+    ...await projectRouter.view(id),
+    external_coordinator: getProjectExternalCoordinator(id),
+  }));
   ipcMain.handle(InvokeChannel.ProjectWorkSave, (_e, config) => projectRouter.save(config));
   ipcMain.handle(InvokeChannel.ProjectWorkSubmit, (_e, input) => projectRouter.submit(input));
   ipcMain.handle(InvokeChannel.ProjectWorkGoal, (_e, input) => projectRouter.goal(input));
@@ -938,7 +944,17 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     try {
       controlServer = await startControlServer({
         socketPath,
-        api: createControlApi(),
+        api: createControlApi({
+          sessions: sessionManager,
+          work: {
+            submit: (input) => projectRouter.submit(input),
+            view: async (id) => ({
+              ...await projectRouter.view(id),
+              external_coordinator: getProjectExternalCoordinator(id),
+            }),
+            goal: (input) => projectRouter.goal(input),
+          },
+        }),
       });
     } catch (error) {
       console.warn("[control] failed to start; the GUI will keep running", error);

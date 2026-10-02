@@ -1,5 +1,6 @@
 import { useProjects } from "@/lib/projects-query";
 import { useI18n } from "@/lib/i18n";
+import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { defaultCoordinatorConfig as defaults } from "@/lib/project-coordinator";
 import { PageTopbar } from "@/components/shell/PageTopbar";
 import type { PromptAttachment } from "@shared/session-events";
@@ -986,6 +987,9 @@ function ProjectWorkspace({
               </Button>
             </div>
           ) : null}
+          {view.external_coordinator ? (
+            <ExternalSourceBadge client={view.external_coordinator} variant="coordinator" />
+          ) : null}
           {coordinatorOutcome ? (
             <ProjectOutcomeBar
               goal={coordinatorOutcome}
@@ -1185,6 +1189,9 @@ function ProjectWorkspace({
                 ) : tab === "workers" ? (
                   <div className="project-work-list">
                     <div className="project-panel-summary">
+                      {view.external_coordinator ? (
+                        <ExternalSourceBadge client={view.external_coordinator} variant="coordinator" />
+                      ) : null}
                       <span>
                         {workers.length
                           ? `${workers.length} ${t("project.threads").toLowerCase()}`

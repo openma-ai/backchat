@@ -26,4 +26,6 @@ export interface ProjectWorkConfig extends HostConfig {
 }
 export type ProjectWorkView = Omit<HostView<ProjectInfo>, "config"> & {
   config: ProjectWorkConfig | null;
+  /** Set when `work submit` came from an external coordinator. */
+  external_coordinator?: string | null;
 };

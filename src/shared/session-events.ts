@@ -41,6 +41,12 @@ export interface SessionStartParams {
    *  shared/workspaces.ts). Implies worktree mode; `cwd` and
    *  `additional_directories` are then resolved from the workspace roots. */
   workspace_id?: string;
+  /** External coordinator that created this session, shown in the GUI. */
+  external_client?: string;
+  /** Permission policy for this session. Writes stay pending under auto-read. */
+  permission_policy?: "ask" | "auto-read" | "auto-all";
+  /** Directories to add after a workspace has supplied its own roots. */
+  extra_directories?: string[];
   /** Provide an existing ACP-side session id to resume conversation history.
    *  The runtime tries `session/resume`, then `session/load`, then
    *  `session/new`, according to the agent's advertised capabilities. */
@@ -381,6 +387,8 @@ export type SessionEventOut = (
       project_id?: string;
       /** Managed/external workspace the session runs in; absent for live. */
       workspace_id?: string | null;
+      /** External coordinator that started this session. */
+      external_client?: string;
       /** ACP `NewSessionResponse.configOptions` /
        *  `LoadSessionResponse.configOptions`, if the agent supports
        *  runtime session configuration. Kept as unknown at the shared

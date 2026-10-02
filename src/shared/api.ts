@@ -175,6 +175,8 @@ export interface PersistedSessionInfo {
   /** Managed/external workspace id, or null when the session works in the
    *  project's own source folders. */
   workspace_id: string | null;
+  /** External coordinator that created the session, when started from the CLI. */
+  external_client?: string | null;
 }
 
 /** Public shape of one persisted event. `data` is JSON-encoded text — the

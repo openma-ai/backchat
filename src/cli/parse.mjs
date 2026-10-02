@@ -1,4 +1,4 @@
-const BOOLEAN_FLAGS = new Set(["json", "help", "wait", "stream", "force"]);
+const BOOLEAN_FLAGS = new Set(["json", "help", "wait", "stream", "force", "clear"]);
 const REPEATABLE_FLAGS = new Set(["source", "dir"]);
 
 export class ParseError extends Error {

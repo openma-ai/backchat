@@ -26,6 +26,7 @@ import type { SessionRow } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { RenameDialog } from "./RenameDialog";
 import {
   ArchiveScheduledChatDialog,
@@ -77,6 +78,7 @@ export function Topbar(_props: { onCancel: () => void }) {
       <span className="app-drag-region max-w-[min(42vw,32rem)] truncate font-medium text-fg">
         {active.label || t("sidebar.newChat")}
       </span>
+      {active.externalClient ? <ExternalSourceBadge client={active.externalClient} /> : null}
       {active.status !== "draft" && !active.openma && (
         <SessionRuntimeUpdateControl sessionId={active.id} />
       )}

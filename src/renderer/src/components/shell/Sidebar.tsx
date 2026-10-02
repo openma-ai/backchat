@@ -39,6 +39,7 @@ import {
   type SessionRow,
 } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
+import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { AnimatedCollapse } from "@/components/ui/animated-collapse";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSidebarCollapse } from "@/components/shell/AppShell";
@@ -1732,6 +1733,7 @@ function SessionRow({
               ) : null}
             </span>
             <span className={cn("flex-1 truncate text-left", labelCls)}>{row.label}</span>
+            {row.externalClient ? <ExternalSourceBadge client={row.externalClient} /> : null}
           </button>
 
           <span className="sidebar-row-trailing">

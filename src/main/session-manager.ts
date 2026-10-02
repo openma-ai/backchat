@@ -99,10 +99,16 @@ import {
   setSessionTitle,
   setSessionTitleIfEmpty,
   touchSession,
+  setSessionExternalClient,
+  setSessionPermissionPolicy,
   upsertSession,
 } from "./sql-store.js";
 import { composePromptContext } from "./session-prompt-context.js";
 import { desktopCliPath } from "./cli-path.js";
+import {
+  isSessionPermissionPolicy,
+  setRuntimePermissionPolicy,
+} from "./permission-policy.js";
 import { logAppEvent } from "./app-log.js";
 import { extensionRequestHandlerForHarness } from "./acp-extension-adapters.js";
 import { elicitationCallbackForSession } from "./acp-client-callback-adapters.js";
@@ -129,6 +135,7 @@ interface ActiveSession {
   /** Managed/external workspace the session runs in; null for live. */
   workspaceId: string | null;
   startParams: SessionStartParams;
+  externalClient?: string;
   /** Live turns keyed by turn_id. abort() cancels the ACP request and unwinds
    *  the prompt() async iterator. */
   turns: Map<string, AbortController>;
@@ -311,7 +318,7 @@ export class SessionManager {
     session_id: string,
     sess: Pick<
       ActiveSession,
-      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "workspaceId" | "acp" | "auth"
+      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "workspaceId" | "acp" | "auth" | "externalClient"
     >,
   ): SessionStartResult {
     this.#transition(session_id, {
@@ -355,6 +362,8 @@ export class SessionManager {
       cwd: result.cwd,
       additional_directories: result.additional_directories,
       project_id: result.project_id,
+      workspace_id: result.workspace_id,
+      ...(sess.externalClient ? { external_client: sess.externalClient } : {}),
       config_options: result.config_options,
       modes: result.modes,
       protocol_version: result.protocol_version,
@@ -462,6 +471,11 @@ export class SessionManager {
           }
         : {}),
     });
+  }
+
+  activeTurnIds(sessionId: string): string[] {
+    const sess = this.#sessions.get(sessionId);
+    return sess ? [...sess.turns.keys()] : [];
   }
 
   has(id: string): boolean {
@@ -676,7 +690,17 @@ export class SessionManager {
         );
       }
       sessionCwd = preparedWorktrees.cwd;
-      requestedAdditionalDirectories = preparedWorktrees.additionalDirectories;
+      const workspaceDirectories = new Set([
+        preparedWorktrees.cwd,
+        ...preparedWorktrees.additionalDirectories,
+      ]);
+      requestedAdditionalDirectories = [
+        ...preparedWorktrees.additionalDirectories,
+        ...(p.extra_directories ?? []).filter((dir) => {
+          const trimmed = dir.trim();
+          return trimmed.length > 0 && !workspaceDirectories.has(trimmed);
+        }),
+      ];
     } else if (
       p.workspace_mode === "project"
       || p.workspace_mode === "inherited"
@@ -873,6 +897,7 @@ export class SessionManager {
         promptQueueEnabled: defaults.promptQueueEnabled !== false,
         readyAt: Date.now(),
         latestAvailableCommandsUpdate: null,
+        ...(p.external_client?.trim() ? { externalClient: p.external_client.trim() } : {}),
       };
       activeForOutOfBandUpdates = activeSession;
       this.#sessions.set(p.session_id, activeSession);
@@ -893,6 +918,16 @@ export class SessionManager {
         additional_directories: additionalDirectories,
         workspace_id: workspaceId,
       });
+      if (p.external_client?.trim()) {
+        setSessionExternalClient(p.session_id, p.external_client);
+      }
+      if (isSessionPermissionPolicy(p.permission_policy)) {
+        setSessionPermissionPolicy(p.session_id, p.permission_policy);
+        setRuntimePermissionPolicy(p.session_id, p.permission_policy);
+      } else {
+        const saved = getSession(p.session_id)?.permission_policy;
+        if (isSessionPermissionPolicy(saved)) setRuntimePermissionPolicy(p.session_id, saved);
+      }
       const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
       await this.#observeConfiguredAuth(agent.id);

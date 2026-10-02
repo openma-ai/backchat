@@ -67,6 +67,10 @@ export interface PersistedSession {
    *  row's id. Sidebar lists hide rows with `pair_id != null` and shows
    *  the pair row instead. */
   pair_id: string | null;
+  /** Set when an external coordinator created the session. */
+  external_client?: string | null;
+  /** CLI permission policy for this session. Absent or null means ask. */
+  permission_policy?: "ask" | "auto-read" | "auto-all" | null;
 }
 
 type PersistedSessionRow = Omit<PersistedSession, "additional_directories"> & {
@@ -168,6 +172,10 @@ let _stmts: {
   listWorkspacesForProject: StatementSync;
   deleteWorkspace: StatementSync;
   setSessionWorkspace: StatementSync;
+  setExternalClient: StatementSync;
+  setPermissionPolicy: StatementSync;
+  setExternalCoordinator: StatementSync;
+  getExternalCoordinator: StatementSync;
   clearSessionsWorkspace: StatementSync;
   countSessionsForWorkspace: StatementSync;
 } | null = null;
@@ -380,6 +388,19 @@ export function openSessionDb(path: string): void {
   if (!sessionCols.has("workspace_id")) {
     db.exec(`ALTER TABLE sessions ADD COLUMN workspace_id TEXT`);
   }
+  if (!sessionCols.has("external_client")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN external_client TEXT`);
+  }
+  if (!sessionCols.has("permission_policy")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN permission_policy TEXT`);
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS external_coordinators (
+      project_id TEXT PRIMARY KEY,
+      client TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
   db.exec(`
     CREATE INDEX IF NOT EXISTS sessions_pinned_idx
       ON sessions(archived_at, pinned_at DESC);
@@ -540,6 +561,16 @@ export function openSessionDb(path: string): void {
     ),
     deleteWorkspace: db.prepare(`DELETE FROM workspaces WHERE id = ?`),
     setSessionWorkspace: db.prepare(`UPDATE sessions SET workspace_id = ? WHERE id = ?`),
+    setExternalClient: db.prepare(`UPDATE sessions SET external_client = ? WHERE id = ?`),
+    setPermissionPolicy: db.prepare(`UPDATE sessions SET permission_policy = ? WHERE id = ?`),
+    setExternalCoordinator: db.prepare(`
+      INSERT INTO external_coordinators (project_id, client, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(project_id) DO UPDATE SET
+        client = excluded.client,
+        updated_at = excluded.updated_at
+    `),
+    getExternalCoordinator: db.prepare(`SELECT client FROM external_coordinators WHERE project_id = ?`),
     clearSessionsWorkspace: db.prepare(
       `UPDATE sessions SET workspace_id = NULL WHERE workspace_id = ?`,
     ),
@@ -739,6 +770,32 @@ export function upsertSession(row: {
     row.workspace_id ?? null,
   );
   writeSessionMetadata(row.id);
+}
+
+export function setSessionExternalClient(id: string, client: string): void {
+  const trimmed = client.trim();
+  if (!trimmed) return;
+  stmts().setExternalClient.run(trimmed.slice(0, 80), id);
+  writeSessionMetadata(id);
+}
+
+export function setSessionPermissionPolicy(
+  id: string,
+  policy: "ask" | "auto-read" | "auto-all",
+): void {
+  stmts().setPermissionPolicy.run(policy, id);
+  writeSessionMetadata(id);
+}
+
+export function setProjectExternalCoordinator(projectId: string, client: string): void {
+  const trimmed = client.trim();
+  if (!projectId || !trimmed) return;
+  stmts().setExternalCoordinator.run(projectId, trimmed.slice(0, 80), Date.now());
+}
+
+export function getProjectExternalCoordinator(projectId: string): string | null {
+  const row = stmts().getExternalCoordinator.get(projectId) as { client?: string } | undefined;
+  return row?.client ?? null;
 }
 
 export function setSessionWorkspace(sessionId: string, workspaceId: string | null): void {
@@ -1428,6 +1485,8 @@ function writeSessionMetadata(sessionId: string): void {
       last_used_at: session.last_used_at,
       pair_id: session.pair_id ?? "",
       project_id: session.project_id ?? "",
+      external_client: session.external_client ?? "",
+      permission_policy: session.permission_policy ?? "",
       workdir: session.cwd,
       ...(session.additional_directories !== null
         ? { additional_directories: session.additional_directories }

@@ -2895,6 +2895,7 @@ export class SessionStore {
       project_id?: string | null;
       additional_directories?: string[];
       workspace_id?: string | null;
+      external_client?: string | null;
     }>,
   ): void {
     for (const r of rows) {
@@ -2919,6 +2920,7 @@ export class SessionStore {
           additionalDirectories:
             r.additional_directories ?? s.additionalDirectories,
           workspaceId: r.workspace_id ?? s.workspaceId,
+          externalClient: r.external_client ?? s.externalClient,
           acp_session_id: r.acp_session_id || s.acp_session_id,
           label: r.title || s.label,
           titleManuallySet: r.title_manually_set === 1 || s.titleManuallySet,
@@ -2937,6 +2939,7 @@ export class SessionStore {
         projectId: r.project_id ?? undefined,
         additionalDirectories: r.additional_directories,
         workspaceId: r.workspace_id ?? undefined,
+        externalClient: r.external_client || undefined,
         acp_session_id: r.acp_session_id,
         label: r.title || "New chat",
         titleManuallySet: r.title_manually_set === 1,
@@ -3551,6 +3554,7 @@ export class SessionStore {
             additionalDirectories:
               ev.additional_directories ?? s.additionalDirectories,
             workspaceId: ev.workspace_id === undefined ? s.workspaceId : ev.workspace_id,
+            externalClient: ev.external_client ?? s.externalClient,
             configOptions: configOptions ?? s.configOptions,
             currentModeId:
               selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
@@ -3592,6 +3596,8 @@ export class SessionStore {
             cwd: ev.cwd,
             projectId: ev.project_id,
             additionalDirectories: ev.additional_directories,
+            workspaceId: ev.workspace_id ?? undefined,
+            externalClient: ev.external_client,
             acp_session_id: ev.acp_session_id,
             label: `${ev.agent_id} · ${ev.session_id.slice(0, 6)}`,
             status: "ready",

@@ -236,4 +236,33 @@ describe("ACP agent setup registry", () => {
 
     expect(detected).toBeNull();
   });
+
+  it("runs Cursor from cursor-agent acp on PATH and prefers the managed shim", async () => {
+    const sysDir = join(tmpdir(), `backchat-cursor-path-${process.pid}-${Date.now()}`);
+    await mkdir(sysDir, { recursive: true });
+    const cursorAgent = join(sysDir, "cursor-agent");
+    await writeFile(cursorAgent, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+    const fromPath = await detect("cursor", {
+      env: { PATH: sysDir, OPENMA_ACP_BIN_DIR: join(sysDir, "missing") },
+      systemPathFallbackDirs: [],
+    });
+    expect(fromPath).toMatchObject({
+      id: "cursor",
+      spec: { command: cursorAgent, args: ["acp"] },
+    });
+
+    const binDir = join(tmpdir(), `backchat-cursor-shim-${process.pid}-${Date.now()}`);
+    await mkdir(binDir, { recursive: true });
+    const shim = join(binDir, "openma-acp-cursor");
+    await writeFile(shim, "#!/bin/sh\nexec cursor-agent acp \"$@\"\n", { mode: 0o755 });
+    const fromShim = await detect("cursor", {
+      env: { PATH: sysDir, OPENMA_ACP_BIN_DIR: binDir },
+      systemPathFallbackDirs: [],
+    });
+    expect(fromShim).toMatchObject({
+      id: "cursor",
+      spec: { command: shim, args: undefined },
+    });
+  });
 });
