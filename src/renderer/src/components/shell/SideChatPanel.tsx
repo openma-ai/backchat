@@ -367,9 +367,10 @@ export function SideChatPanel() {
           shared --chrome-* tokens. The geometry is covered by the right-panel
           E2E so zoom changes cannot silently separate the three controls. */}
       <div
+        data-panel-titlebar="true"
         data-header-clears-left-chrome={expanded && leftSidebarCollapsed}
         className={cn(
-          "app-no-drag pointer-events-auto shrink-0 flex h-[var(--top-row-h)] items-start gap-[var(--chrome-gap)] pl-3 pr-[var(--chrome-gap)]",
+          "app-drag-region pointer-events-auto shrink-0 flex h-[var(--top-row-h)] items-start gap-[var(--chrome-gap)] pl-3 pr-[var(--chrome-gap)]",
           expanded ? "bg-bg-sidebar" : "bg-transparent",
         )}
         style={{
@@ -397,7 +398,7 @@ export function SideChatPanel() {
                 onClick={selectMain}
                 title={mainActive.label}
                 className={cn(
-                  "inline-flex h-[var(--row-h)] max-w-48 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs",
+                  "app-no-drag inline-flex h-[var(--row-h)] max-w-48 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs",
                   mainSelected
                     ? "app-floating-tab text-fg"
                     : "text-fg-muted hover:bg-bg-surface/60 hover:text-fg",
@@ -1070,7 +1071,7 @@ function TabChip({
   return (
     <div
       className={cn(
-        "group relative inline-flex h-[var(--row-h)] w-32 shrink-0 items-center rounded-md pl-2 pr-1 text-xs select-none",
+        "app-no-drag group relative inline-flex h-[var(--row-h)] w-32 shrink-0 items-center rounded-md pl-2 pr-1 text-xs select-none",
         // Active tab: an opaque bordered surface with a small shadow, leaving
         // the panel visible around all four sides. Inactive: transparent until hover, with the
         // foreground color still visible enough to be a click target
