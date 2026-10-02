@@ -59,9 +59,16 @@ describe("describeRunningMessageAction", () => {
       supportsSteering: false,
     });
 
+    // pi-acp 0.0.33 does not negotiate `_session/steering`. Enter stays a
+    // queue, and the button explains the degradation instead of offering a
+    // steer the adapter cannot deliver.
     expect(stock.label).toBe("Queue");
+    expect(stock.ariaLabel).toBe("Queue (Enter)");
     expect(stock.decision.degraded).toBe(true);
-    expect(stock.title).toContain("Steer is not available");
+    expect(stock.decision.effectiveDelivery).toBe("turn_end");
+    expect(stock.title).toBe(
+      "Steer is not available over this ACP transport; queue for next turn",
+    );
     expect(stock.disabled).toBe(false);
   });
 

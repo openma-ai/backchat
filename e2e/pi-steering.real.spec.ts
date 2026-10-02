@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { access, mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,6 +18,17 @@ const realE2eEnabled = process.env["OPENMA_REAL_PI_STEERING_E2E"] === "1";
 const piAcpCommand =
   process.env["PI_ACP_BIN"]
   || join(homedir(), ".oma", "acp", "bin", "openma-acp-pi-acp");
+
+const piSettingsPath = join(homedir(), ".pi", "agent", "settings.json");
+
+async function settingsSha256(path: string): Promise<string | null> {
+  try {
+    return createHash("sha256").update(await readFile(path)).digest("hex");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -38,6 +50,7 @@ test("steers a running pi turn from the composer with Enter", async ({}, testInf
   );
 
   test.setTimeout(300_000);
+  const settingsBefore = await settingsSha256(piSettingsPath);
   const home = testInfo.outputPath("home");
   await mkdir(home, { recursive: true });
 
@@ -85,10 +98,18 @@ test("steers a running pi turn from the composer with Enter", async ({}, testInf
     await composer.press("Enter");
 
     // The steered instruction reached the model mid-turn: the answer carries a
-    // token that appears nowhere in the user's own text.
-    await expect(launched.page.getByText(/\bSEVEN\b/)).toBeVisible({
+    // token that appears nowhere in the user's own text. Pi also echoes that
+    // token inside a hidden thought paragraph; strict mode fails if the
+    // locator matches both. Only the visible answer counts.
+    await expect(
+      launched.page.getByText(/\bSEVEN\b/).filter({ visible: true }).first(),
+    ).toBeVisible({
       timeout: 240_000,
     });
+    // Steer itself must not rewrite the user's global pi settings. Model
+    // switches are covered by the session-manager hash test; this guards the
+    // real process against any other write during the turn.
+    expect(await settingsSha256(piSettingsPath)).toBe(settingsBefore);
 
     await testInfo.attach("pi steering real E2E", {
       body: await launched.page.screenshot({ fullPage: true }),
