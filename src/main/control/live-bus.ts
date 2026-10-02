@@ -31,6 +31,8 @@ export function streamEventsFromSession(event: {
   session_id?: string;
   turn_id?: string;
   message?: string;
+  tool_call_id?: string;
+  suppress_result?: boolean;
   event?: unknown;
 }): ControlLiveEvent[] {
   const timestamp = new Date().toISOString();
@@ -56,11 +58,23 @@ export function streamEventsFromSession(event: {
     }];
   }
   if (event.type === "session.cancel_requested") {
+    if (event.suppress_result) return [];
     return [{
       type: "result",
       session_id: sessionId,
       turn_id: event.turn_id,
       status: "cancelled",
+      timestamp,
+    }];
+  }
+  if (event.type === "session.tool_cancelled") {
+    return [{
+      type: "tool_call",
+      session_id: sessionId,
+      turn_id: event.turn_id,
+      tool_call_id: event.tool_call_id,
+      status: "end",
+      outcome: "cancelled",
       timestamp,
     }];
   }

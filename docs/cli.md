@@ -120,9 +120,12 @@ picker offers it.
 
 `project create` with the same name and the same source directories returns
 the existing project (`created: false`). A source directory that does not
-exist is exit `5`. `project remove` deletes the project record. Managed
-workspaces are removed with it, and a dirty checkout is refused unless
-`--force` is set. Creating or removing a project refreshes the sidebar.
+exist is exit `5`. `project remove` deletes the project record. It first stops and archives
+every chat that belongs to the project, including the agent process, so a
+removed project does not leave sessions `running` against a deleted
+directory. Managed workspaces are removed with it, and a dirty checkout is
+refused unless `--force` is set. Creating or removing a project refreshes
+the sidebar.
 
 A managed workspace is one git worktree per source repository, all on the same
 branch name. If that branch already exists, the worktree checks it out.

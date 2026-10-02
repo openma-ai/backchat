@@ -60,7 +60,7 @@ import type { WorkspaceCreateParams, WorkspaceInfo } from "../shared/workspaces.
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
 import { openmaRoot } from "./storage-root.js";
 import { controlSocketPath } from "../shared/control-socket.js";
-import { createControlApi } from "./control/handlers.js";
+import { createControlApi, disposeProjectSessions } from "./control/handlers.js";
 import { publishControlLiveEvent, streamEventsFromSession } from "./control/live-bus.js";
 import {
   ensureExternalCoordinator,
@@ -945,7 +945,12 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   ipcMain.handle(
     InvokeChannel.ProjectDelete,
-    async (_e, p: { project_id: string }): Promise<void> => { await projectRouter.remove(p.project_id); deleteProject(p.project_id); },
+    async (_e, p: { project_id: string }): Promise<void> => {
+      const listed = await workspaceService.list(p.project_id);
+      await disposeProjectSessions(sessionManager, p.project_id, listed.map((workspace) => workspace.id));
+      await projectRouter.remove(p.project_id);
+      deleteProject(p.project_id);
+    },
   );
   ipcMain.handle(
     InvokeChannel.WorkspacesList,

@@ -145,6 +145,8 @@ let _stmts: {
   pin: StatementSync;
   unpin: StatementSync;
   list: StatementSync;
+  listByProject: StatementSync;
+  listByWorkspace: StatementSync;
   listArchived: StatementSync;
   listForSidebar: StatementSync;
   deleteRow: StatementSync;
@@ -558,6 +560,14 @@ export function openSessionDb(path: string): void {
       WHERE archived_at IS NULL AND pair_id IS NULL
       ORDER BY last_used_at DESC
       LIMIT ?
+    `),
+    listByProject: db.prepare(`
+      SELECT * FROM sessions
+      WHERE archived_at IS NULL AND project_id = ?
+    `),
+    listByWorkspace: db.prepare(`
+      SELECT * FROM sessions
+      WHERE archived_at IS NULL AND workspace_id = ?
     `),
     listArchived: db.prepare(`
       SELECT * FROM sessions
@@ -1147,6 +1157,26 @@ export function listSessions(limit = 200): PersistedSession[] {
 export function listSessionsForSidebar(): PersistedSession[] {
   return (stmts().listForSidebar.all() as unknown as PersistedSessionRow[])
     .map(decodeSessionRow);
+}
+
+/** Non-archived sessions that belong to a project, including pair members.
+ *  Workspace membership covers a session whose project id was already cleared. */
+export function listSessionsForProjectRemoval(
+  projectId: string,
+  workspaceIds: readonly string[] = [],
+): PersistedSession[] {
+  const byId = new Map<string, PersistedSession>();
+  for (const row of stmts().listByProject.all(projectId) as unknown as PersistedSessionRow[]) {
+    const session = decodeSessionRow(row);
+    byId.set(session.id, session);
+  }
+  for (const workspaceId of workspaceIds) {
+    for (const row of stmts().listByWorkspace.all(workspaceId) as unknown as PersistedSessionRow[]) {
+      const session = decodeSessionRow(row);
+      byId.set(session.id, session);
+    }
+  }
+  return [...byId.values()];
 }
 
 // -------------------- task side workspaces --------------------

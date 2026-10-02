@@ -6,6 +6,8 @@ import { createControlApi } from "./handlers.js";
 import {
   closeSessionDb,
   getSession,
+  archiveSession,
+  listSessions,
   openSessionDb,
   setSessionExternalClient,
   upsertSession,
@@ -119,6 +121,53 @@ describe("external coordinator work", () => {
       name: "Missing",
       sources: [join(root, "nope")],
     })).rejects.toThrow(/does not exist/);
+  });
+
+  it("stops and archives sessions before a project is removed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-project-remove-"));
+    roots.push(root);
+    openSessionDb(join(root, "sessions.db"));
+    const source = join(root, "src");
+    await mkdir(source);
+    const disposed: string[] = [];
+    const api = createControlApi({
+      sessions: {
+        dispose: async (id: string) => {
+          disposed.push(id);
+          archiveSession(id);
+        },
+      } as never,
+    });
+    const project = await api.call("project.create", {
+      name: "Remove me",
+      sources: [source],
+    }) as { id: string };
+    upsertSession({
+      id: "sess-running",
+      agent_id: "cursor",
+      cwd: join(root, "gone"),
+      project_id: project.id,
+      workspace_id: "ws-gone",
+      title: "still running",
+    });
+    upsertSession({
+      id: "sess-other",
+      agent_id: "cursor",
+      cwd: source,
+      project_id: "project-else",
+      title: "leave me",
+    });
+
+    const removed = await api.call("project.remove", {
+      id: project.id,
+      force: true,
+    }) as { removed: boolean; disposed_sessions: string[] };
+
+    expect(removed.removed).toBe(true);
+    expect(removed.disposed_sessions).toEqual(["sess-running"]);
+    expect(disposed).toEqual(["sess-running"]);
+    expect(listSessions(20).map((session) => session.id)).toEqual(["sess-other"]);
+    expect(getSession("sess-running")?.archived_at).toEqual(expect.any(Number));
   });
 
   it("reports an unknown agent as invalid arguments", async () => {

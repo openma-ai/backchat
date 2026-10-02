@@ -532,6 +532,8 @@ export type SessionEventOut = (
       type: "session.cancel_requested";
       session_id: string;
       turn_id: string;
+      /** Host-only. A fail-closed stop already published the error result. */
+      suppress_result?: boolean;
     }
   | {
       /** ACP-client projection required by the cancellation contract. This is

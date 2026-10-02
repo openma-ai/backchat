@@ -1582,6 +1582,36 @@ export class SessionManager {
     }
     this.#trackOpenToolCall(sess, turnId, event);
     this.#sendAcpSessionEvent(sess, turnId, event);
+    this.#stopUnapprovedCursorTool(sess, turnId, event);
+  }
+
+  /** Cursor ask/plan must not run a shell or edit that never asked. The tool
+   *  event is already on the stream; then the call is settled and the turn
+   *  stops with one error result, not a cancel result that races ahead of it. */
+  #stopUnapprovedCursorTool(
+    sess: ActiveSession,
+    turnId: string,
+    event: unknown,
+  ): void {
+    if (!turnId || !sess.failClosedWrites) return;
+    if (sessionUpdateType(event) !== "tool_call") return;
+    const inner = sessionUpdateInner(event);
+    const toolCallId =
+      typeof inner.toolCallId === "string"
+        ? inner.toolCallId
+        : typeof inner.tool_call_id === "string"
+          ? inner.tool_call_id
+          : typeof inner.id === "string"
+            ? inner.id
+            : undefined;
+    if (!toolCallId || isReadOnlyToolCall(inner) || toolWasApproved(sess.id, toolCallId)) return;
+    this.cancel(sess.id, turnId, { suppressStreamResult: true });
+    this.#send({
+      type: "session.error",
+      session_id: sess.id,
+      turn_id: turnId,
+      message: "Stopped the turn. Cursor started a non-read tool without approval. A completed tool status does not mean the edit was allowed.",
+    });
   }
 
   #trackOpenToolCall(
@@ -1601,20 +1631,6 @@ export class SessionManager {
             ? inner.id
             : undefined;
     if (!toolCallId) return;
-    if (
-      sess.failClosedWrites
-      && updateType === "tool_call"
-      && !isReadOnlyToolCall(inner)
-      && !toolWasApproved(sess.id, toolCallId)
-    ) {
-      this.#send({
-        type: "session.error",
-        session_id: sess.id,
-        turn_id: turnId,
-        message: "Stopped the turn. Cursor started a non-read tool without approval. A completed tool status does not mean the edit was allowed.",
-      });
-      this.cancel(sess.id, turnId);
-    }
     const status = typeof inner.status === "string"
       ? inner.status.toLowerCase()
       : undefined;
@@ -1810,6 +1826,7 @@ export class SessionManager {
           }
         }
         this.#sendAcpSessionEvent(sess, p.turn_id, ev);
+        this.#stopUnapprovedCursorTool(sess, p.turn_id, ev);
       }
       const stopReason = typeof promptResponse?.stopReason === "string"
         ? promptResponse.stopReason
@@ -1998,7 +2015,11 @@ export class SessionManager {
     });
   }
 
-  cancel(session_id: string, turn_id: string): void {
+  cancel(
+    session_id: string,
+    turn_id: string,
+    options?: { suppressStreamResult?: boolean },
+  ): void {
     const sess = this.#sessions.get(session_id);
     if (!sess) return;
     const turn = sess.turns.get(turn_id);
@@ -2015,6 +2036,7 @@ export class SessionManager {
         type: "session.cancel_requested",
         session_id,
         turn_id,
+        ...(options?.suppressStreamResult ? { suppress_result: true } : {}),
       });
       this.#preemptivelyCancelOpenTools(sess, turn_id);
       void sess.acp.cancelCurrentTurn().catch(() => {});
@@ -2025,6 +2047,7 @@ export class SessionManager {
       type: "session.cancel_requested",
       session_id,
       turn_id,
+      ...(options?.suppressStreamResult ? { suppress_result: true } : {}),
     });
     this.#preemptivelyCancelOpenTools(sess, turn_id);
     turn.abort();

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 const PROJECT_ROOT = process.cwd();
 import { join } from "node:path";
 import type { AcpSession, SessionOptions } from "@open-managed-agents-desktop/acp";
+import { streamEventsFromSession } from "./control/live-bus.js";
 import { acpEventUiRoute, SessionManager } from "./session-manager";
 import { configureAppLog, flushAppLog } from "./app-log.js";
 import {
@@ -3982,10 +3983,43 @@ describe("SessionManager prompt queue", () => {
       type: "session.error",
       message: expect.stringContaining("Stopped the turn"),
     })));
+    const toolIndex = events.findIndex((event) =>
+      event != null
+      && typeof event === "object"
+      && (event as { type?: string }).type === "session.event"
+    );
+    const endIndex = events.findIndex((event) =>
+      event != null
+      && typeof event === "object"
+      && (event as { type?: string }).type === "session.tool_cancelled"
+    );
+    const errorIndex = events.findIndex((event) =>
+      event != null
+      && typeof event === "object"
+      && (event as { type?: string }).type === "session.error"
+    );
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    expect(endIndex).toBeGreaterThan(toolIndex);
+    expect(errorIndex).toBeGreaterThan(endIndex);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.tool_cancelled",
+      tool_call_id: "edit-1",
+    }));
     expect(events).toContainEqual(expect.objectContaining({
       type: "session.cancel_requested",
       turn_id: "turn-edit",
+      suppress_result: true,
     }));
+    const streamed = events.flatMap((event) =>
+      streamEventsFromSession(event as Parameters<typeof streamEventsFromSession>[0]),
+    ).filter((event) => event.type === "tool_call" || event.type === "result");
+    expect(streamed.map((event) =>
+      event.type === "result" ? event.status : `${event.status}:${event.outcome ?? ""}`,
+    )).toEqual([
+      "start:",
+      "end:cancelled",
+      "error",
+    ]);
     fake.releaseNext();
     await prompting;
   });

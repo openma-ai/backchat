@@ -12,6 +12,7 @@ import {
   listExternalTaskNotes,
   listExternalTasks,
   listSessions,
+  listSessionsForProjectRemoval,
   loadHistory,
   setExternalTaskStatus,
 } from "../sql-store.js";
@@ -82,7 +83,7 @@ export function createControlApi(deps: ControlApiDeps = {}) {
           return created;
         }
         case "project.remove":
-          return removeProject(workspaces, params, deps.onProjectsChanged);
+          return removeProject(workspaces, deps.sessions, params, deps.onProjectsChanged);
         case "workspace.list": {
           const projectId = typeof params.project_id === "string" ? params.project_id.trim() : "";
           if (projectId && !getProject(projectId)) {
@@ -566,21 +567,51 @@ function goalInput(params: Record<string, unknown>): ProjectWorkGoalInput {
   };
 }
 
+/** Stop every chat that belongs to the project before its worktrees disappear.
+ *  dispose kills the ACP child and archives the row, so the session leaves the
+ *  global list and does not stay `running` against a deleted directory. */
+export async function disposeProjectSessions(
+  sessions: SessionManager | undefined,
+  projectId: string,
+  workspaceIds: readonly string[] = [],
+): Promise<string[]> {
+  const owned = listSessionsForProjectRemoval(projectId, workspaceIds);
+  if (owned.length === 0) return [];
+  if (!sessions) {
+    throw new ControlError(
+      "error",
+      `Cannot remove project ${projectId} while ${owned.length} session(s) are still attached. Stop them first.`,
+    );
+  }
+  const disposed: string[] = [];
+  for (const session of owned) {
+    await sessions.dispose(session.id);
+    disposed.push(session.id);
+  }
+  return disposed;
+}
+
 async function removeProject(
   workspaces: WorkspaceService,
+  sessions: SessionManager | undefined,
   params: Record<string, unknown>,
   onProjectsChanged?: () => void,
 ) {
   const id = requiredString(params, "id", "Project id");
   if (!getProject(id)) throw new ControlError("not_found", `Project not found: ${id}`);
   const workspacesForProject = await workspaces.list(id);
+  const disposedSessions = await disposeProjectSessions(
+    sessions,
+    id,
+    workspacesForProject.map((workspace) => workspace.id),
+  );
   for (const workspace of workspacesForProject) {
     if (workspace.kind !== "managed") continue;
     await workspaces.delete(workspace.id, { force: params.force === true });
   }
   deleteProject(id);
   onProjectsChanged?.();
-  return { id, removed: true };
+  return { id, removed: true, disposed_sessions: disposedSessions };
 }
 
 function requireSessions(sessions: SessionManager | undefined): SessionManager {
