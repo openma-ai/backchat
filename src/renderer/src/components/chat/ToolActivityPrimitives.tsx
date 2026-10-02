@@ -85,11 +85,12 @@ export function ToolActivityIdentity({
       <span className={cn("shrink-0", failed ? "text-danger" : "text-fg-muted")}>
         {label}
       </span>
-      {target && (
-        <span className="min-w-0 truncate text-fg-muted/80" title={target}>
-          {target}
-        </span>
-      )}
+      <span
+        className="min-w-0 flex-1 truncate text-fg-muted/80"
+        title={target || undefined}
+      >
+        {target}
+      </span>
       {trailing}
     </span>
   );

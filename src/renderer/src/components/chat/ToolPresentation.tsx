@@ -20,6 +20,7 @@ import { safeJson } from "@/lib/format";
 import {
   pickToolActivityTarget,
   toolActivityVerbKey,
+  toolWasDenied,
   shortToolPath as shortPath,
 } from "@/lib/chat-tool-presentation";
 import { CHAT_GENERATED_IMAGE_CLASS } from "@/lib/chat-layout";
@@ -49,10 +50,11 @@ function hasMcpAppResource(tool: ToolEntry): boolean {
   );
 }
 
-function toolLifecycleStatus(status: string): {
-  value: "started" | "progress" | "completed" | "failed" | "cancelled";
+function toolLifecycleStatus(status: string, denied: boolean): {
+  value: "started" | "progress" | "completed" | "failed" | "cancelled" | "denied";
   label: string;
 } {
+  if (denied) return { value: "denied", label: "tool.denied" };
   switch (status) {
     case "in_progress":
       return { value: "progress", label: "In progress" };
@@ -78,7 +80,9 @@ export function ToolRow({
 }) {
   const { t } = useI18n();
   const status = tool.status ?? "pending";
-  const lifecycle = toolLifecycleStatus(status);
+  const denied = toolWasDenied(tool);
+  const lifecycle = toolLifecycleStatus(status, denied);
+  const lifecycleLabel = lifecycle.value === "denied" ? t("tool.denied") : lifecycle.label;
   const inProgress = status === "in_progress" || status === "pending";
   const verb = t(toolActivityVerbKey(tool));
   const target = pickToolActivityTarget(tool, (name) =>
@@ -149,7 +153,7 @@ export function ToolRow({
           kind={tool.kind}
           label={verb}
           target={target}
-          failed={status === "failed"}
+          failed={status === "failed" && !denied}
           leading={
             subagent ? (
               <SubagentAvatar
@@ -165,11 +169,13 @@ export function ToolRow({
                   "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
                   lifecycle.value === "failed"
                     ? "bg-danger-subtle text-danger"
-                    : "bg-bg-surface text-fg-muted",
+                    : lifecycle.value === "denied"
+                      ? "bg-warning-subtle text-warning"
+                      : "bg-bg-surface text-fg-muted",
                 )}
                 data-tool-status-label={lifecycle.value}
               >
-                {lifecycle.label}
+                {lifecycleLabel}
               </span>
             )
           }

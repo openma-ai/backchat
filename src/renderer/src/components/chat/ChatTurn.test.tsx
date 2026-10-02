@@ -1110,6 +1110,112 @@ describe("Codex thinking while a tool runs", () => {
   });
 });
 
+describe("shell permission presentation", () => {
+  it("keeps an approved shell on the timeline after the turn settles", () => {
+    const command = "echo PR28R2-AUTOEDIT-SHELL > pr28r2-shell-allow.txt";
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          id: "turn-allow",
+          status: "complete",
+          startedAt: 1_000,
+          endedAt: 111_000,
+          assistantText: "SHELLDONE",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "agent_thought_chunk",
+                content: {
+                  type: "text",
+                  text: "Waiting for shell approval before running the command.",
+                },
+              },
+              receivedAt: 1_100,
+            },
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "shell-allow",
+                kind: "execute",
+                status: "completed",
+                title: command,
+                rawInput: { command },
+              },
+              receivedAt: 2_000,
+            },
+            {
+              payload: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "SHELLDONE" },
+              },
+              receivedAt: 111_000,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain("SHELLDONE");
+    expect(html).toContain('data-tool-call-id="shell-allow"');
+    expect(html).toContain("tool.ran");
+    expect(html).toContain("echo PR28R2-AUTOEDIT-SHELL &gt; pr28r2-shell-allow.txt");
+    expect(html).toContain("Waiting for shell approval");
+    expect(html).not.toContain("data-tool-group-size");
+    expect(html).toMatch(
+      /data-tool-call-id="shell-allow"[^>]*data-tool-status="completed"/,
+    );
+  });
+
+  it("renders a rejected shell as denied, not as a failed run", () => {
+    const command = "echo PR28R2-REJECT-ME > pr28r2-shell-reject.txt";
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          id: "turn-deny",
+          status: "complete",
+          assistantText: "REJECTED",
+          events: [
+            {
+              payload: {
+                schema: "oma.event.v1",
+                event_id: "tool-denied",
+                type: "tool.failed",
+                session_id: "session-1",
+                turn_id: "turn-deny",
+                data: {
+                  tool_call_id: "shell-deny",
+                  title: command,
+                  kind: "execute",
+                  status: "failed",
+                  outcome: "denied",
+                  reason: "denied",
+                },
+              },
+              receivedAt: 1,
+            },
+            {
+              payload: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "REJECTED" },
+              },
+              receivedAt: 2,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-tool-call-id="shell-deny"');
+    expect(html).toContain('data-tool-status="denied"');
+    expect(html).toContain("tool.notRun");
+    expect(html).toContain("tool.denied");
+    expect(html).toContain("echo PR28R2-REJECT-ME &gt; pr28r2-shell-reject.txt");
+    expect(html).not.toContain("tool.ran");
+    expect(html).not.toContain(">Failed<");
+    expect(html).not.toContain("text-danger");
+  });
+});
+
 describe("scheduled task message bars", () => {
   it("renders a created scheduled-task bar with an Open control", () => {
     const html = renderToStaticMarkup(

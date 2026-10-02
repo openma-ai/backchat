@@ -132,7 +132,7 @@ export const TurnBlock = memo(function TurnBlock({
     () => parseScheduledTaskPrompt(turn.promptText),
     [turn.promptText],
   );
-  const projectedTurn = useMemo(
+  const fullProjectedTurn = useMemo(
     () =>
       projectAcpChatTurn(
         {
@@ -168,6 +168,23 @@ export const TurnBlock = memo(function TurnBlock({
       turn.status,
     ],
   );
+  // A settled turn with one tool used to fold that tool into the thought
+  // group. Opening "worked for Ns" then showed "ran a command" and hid the
+  // call. Keep the thought, and put the tool on the timeline as its own row.
+  const revealSettledTool =
+    turn.status !== "running" && activityRendered.tools.length === 1;
+  const projectedTurn = useMemo(() => {
+    if (!revealSettledTool) return fullProjectedTurn;
+    return {
+      ...fullProjectedTurn,
+      items: fullProjectedTurn.items.filter((item) => item.kind !== "thinking"),
+    };
+  }, [fullProjectedTurn, revealSettledTool]);
+  const parkedThoughts: AgentUIMessageItem[] = revealSettledTool
+    ? fullProjectedTurn.items.filter(
+        (item): item is AgentUIMessageItem => item.kind === "thinking",
+      )
+    : [];
   const activityToolsById = useMemo(
     () =>
       new Map(
@@ -261,12 +278,17 @@ export const TurnBlock = memo(function TurnBlock({
             ),
           summary: describeProjectedTool(tool, t, live),
         }),
-        projectToolRun: ({ tools }) => ({
-          leading: (
-            <ListChecksIcon className="chat-activity-icon text-fg-muted" />
-          ),
-          summary: describeProjectedToolRun(tools, t),
-        }),
+        projectToolRun: ({ tools }) =>
+          tools.length === 1 && tools[0]
+            ? {
+                summary: describeProjectedTool(tools[0], t),
+              }
+            : {
+                leading: (
+                  <ListChecksIcon className="chat-activity-icon text-fg-muted" />
+                ),
+                summary: describeProjectedToolRun(tools, t),
+              },
         renderTool: ({ tool }) => {
           const activityTool = activityToolsById.get(tool.id);
           return activityTool ? (
@@ -293,14 +315,29 @@ export const TurnBlock = memo(function TurnBlock({
             </p>
           ) : null,
         hasSupplementalProcess: () => supplementalProcess,
-        renderProcessBefore: () =>
-          planDocument ? (
-            <PlanDocumentActivity
-              document={planDocument}
-              cwd={cwd}
-              sessionId={turn.sessionId}
-            />
-          ) : null,
+        renderProcessBefore: () => (
+          <>
+            {planDocument ? (
+              <PlanDocumentActivity
+                document={planDocument}
+                cwd={cwd}
+                sessionId={turn.sessionId}
+              />
+            ) : null}
+            {parkedThoughts.map((item) => (
+              <ThoughtEventRow
+                key={item.id}
+                turn={turn}
+                text={item.text}
+                index={itemContentNumber(item, "timelineIndex")}
+                cwd={cwd}
+                live={false}
+                prefixSkip={0}
+                durationSeconds={itemContentNumber(item, "durationSeconds")}
+              />
+            ))}
+          </>
+        ),
         renderProcessAfter: () => (
           <>
             <RawEventInspector events={rawEvents} />
@@ -348,6 +385,7 @@ function projectedToolPresentation(tool: AgentUIToolItem) {
     kind: tool.toolKind,
     status: tool.status,
     title: tool.title,
+    meta: tool.adapterMeta,
     locations: tool.locations,
     content: tool.content as
       | Array<{

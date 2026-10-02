@@ -2471,6 +2471,22 @@ header:not(.app-drag-region) .app-drag-region {
   color: var(--fg);
 }
 
+/* "已工作 N 秒" is a sentence in the transcript, not a chip. Common paints
+   .chat-reasoning-trigger with the bubble color, which is the gray pill. */
+[data-session-turn-response] .chat-reasoning-trigger,
+[data-session-turn-response] .chat-reasoning-trigger:hover {
+  background: transparent !important;
+}
+
+/* The status label has owned margin-left: auto since e79568f. Commit 800cf88
+   also gave .activity-disclosure-chevron margin-left: auto. Two auto margins
+   in one flex row split the free space, so the label sits in the middle and
+   the chevron takes the end. The label keeps the only auto margin; the
+   chevron follows it. */
+[data-session-turn-response] .activity-disclosure-chevron {
+  margin-left: 0;
+}
+
 /* Expanded thought text lines up with the row label, not the icon. */
 [data-session-turn-response] [data-thought-stream-body] {
   margin-left: calc(var(--chat-activity-icon-size) + 6px);

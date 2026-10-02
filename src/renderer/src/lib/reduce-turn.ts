@@ -134,22 +134,32 @@ function projectCanonicalEvent(event: unknown): unknown {
     const toolCallId = data.tool_call_id ?? data.toolCallId ?? envelope.parent_id;
     if (typeof toolCallId !== "string" || !toolCallId) return event;
     const output = record(data.output);
+    // `reason: "denied"` is the permission decision, not command output. Using
+    // it as rawOutput made a refused shell look like a command that printed
+    // "denied" and then failed.
+    const denied = data.outcome === "denied" || data.reason === "denied";
     const rawOutput = data.raw_output
       ?? data.rawOutput
       ?? (typeof output?.data === "string" ? output.data : undefined)
       ?? data.error
-      ?? data.reason;
-    const status = typeof data.status === "string"
-      ? data.status
-      : envelope.type === "tool.started"
-        ? "pending"
-        : envelope.type === "tool.progress"
-          ? "in_progress"
-          : envelope.type === "tool.completed"
-            ? "completed"
-            : envelope.type === "tool.cancelled"
-              ? "cancelled"
-              : "failed";
+      ?? (denied ? undefined : data.reason);
+    const status = denied
+      ? "denied"
+      : typeof data.status === "string"
+        ? data.status
+        : envelope.type === "tool.started"
+          ? "pending"
+          : envelope.type === "tool.progress"
+            ? "in_progress"
+            : envelope.type === "tool.completed"
+              ? "completed"
+              : envelope.type === "tool.cancelled"
+                ? "cancelled"
+                : "failed";
+    const meta = {
+      ...(adapterMeta ?? {}),
+      ...(denied ? { permissionOutcome: "denied" } : {}),
+    };
     return {
       sessionUpdate: envelope.type === "tool.started" ? "tool_call" : "tool_call_update",
       toolCallId,
@@ -161,7 +171,7 @@ function projectCanonicalEvent(event: unknown): unknown {
       ...(rawOutput !== undefined ? { rawOutput } : {}),
       ...(Array.isArray(data.content) ? { content: data.content } : {}),
       ...(Array.isArray(data.locations) ? { locations: data.locations } : {}),
-      ...(adapterMeta ? { _meta: adapterMeta } : {}),
+      ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     };
   }
 

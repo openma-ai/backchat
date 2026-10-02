@@ -49,6 +49,33 @@ describe("ToolRow acceptance contract", () => {
     },
   );
 
+  it("shows a denied shell as not run, with a warning badge instead of a failure", () => {
+    const command = "echo PR28R2-REJECT-ME > pr28r2-shell-reject.txt";
+    const html = renderToStaticMarkup(
+      <ToolRow
+        sessionId="session-denied-shell"
+        tool={{
+          toolCallId: "shell-deny",
+          title: command,
+          kind: "execute",
+          status: "denied",
+          meta: { permissionOutcome: "denied" },
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-tool-call-id="shell-deny"');
+    expect(html).toContain('data-tool-status="denied"');
+    expect(html).toContain('data-tool-status-label="denied"');
+    expect(html).toContain("Not run");
+    expect(html).toContain("Denied");
+    expect(html).toContain("echo PR28R2-REJECT-ME &gt; pr28r2-shell-reject.txt");
+    expect(html).not.toContain("Failed");
+    expect(html).not.toContain("Ran");
+    expect(html).not.toContain("text-danger");
+    expect(html).toContain("text-warning");
+  });
+
   it("keeps the tool input hidden until its tool row is expanded", () => {
     const html = renderToStaticMarkup(
       <ToolRow
