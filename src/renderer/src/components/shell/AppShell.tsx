@@ -318,8 +318,13 @@ export function AppShell({
         }}
       >
           <header
+            data-window-titlebar="true"
             className={cn(
               "flex shrink-0 items-center gap-2",
+              // macOS hiddenInset has no OS title bar. This row is the drag
+              // region; controls inside opt out in CSS. The expanded right
+              // panel covers this row with its own tab header, so leave the
+              // drag region off while that panel owns the top band.
               !rightExpanded && "app-drag-region",
             )}
             style={{

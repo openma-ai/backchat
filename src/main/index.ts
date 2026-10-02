@@ -61,6 +61,10 @@ const windows = new Set<BrowserWindow>();
 const mainDir = dirname(fileURLToPath(import.meta.url));
 const testHooksEnabled = process.env["BACKCHAT_TEST_HOOKS"] === "1";
 const showE2eWindow = process.env["BACKCHAT_E2E_VISIBLE"] === "1";
+// Linux/Windows dev builds keep the OS title bar. macOS uses hiddenInset, so
+// the custom header is the only drag surface. Tests on Linux opt into that
+// same hidden title bar to prove the CSS drag region actually moves the window.
+const e2eHiddenTitleBar = testHooksEnabled && process.env["BACKCHAT_E2E_HIDDEN_TITLEBAR"] === "1";
 const pendingDeepLinks: BackchatDeepLink[] = [];
 let disposeSessionsForShutdown: (() => Promise<void>) | null = null;
 let hasLocalProcesses = () => false;
@@ -220,7 +224,11 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
     // Let the activating click also reach controls on macOS.
     acceptFirstMouse: true,
     backgroundColor: "#0b0b0c",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    titleBarStyle: process.platform === "darwin"
+      ? "hiddenInset"
+      : e2eHiddenTitleBar
+        ? "hidden"
+        : "default",
     // macOS only: trafficLight at (24, 18) — center y = 25, center x = 31.
     // Matches the sidebar's icon-column center: stage_inset(6) +
     // sidebar_internal_paddingLeft(8) + button_paddingLeft(8) + size-4
