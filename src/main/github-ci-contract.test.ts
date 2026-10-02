@@ -35,9 +35,14 @@ describe("github ci", () => {
     expect(setup).toMatch(/uses: pnpm\/action-setup@v\d+/);
     expect(setup).toMatch(/uses: actions\/setup-node@v\d+/);
     expect(setup).toMatch(/node-version:\s*['"]?24\b/);
-    expect(ci).toMatch(/uses: actions\/checkout@v\d+/);
-    expect(ci).toMatch(/uses: actions\/dependency-review-action@v\d+/);
-    expect(ci).toMatch(/uses: actions\/upload-artifact@v\d+/);
+    expect(ci).toContain("uses: actions/checkout@v7");
+    expect(ci).toContain("uses: actions/dependency-review-action@v5");
+    expect(ci).toContain("uses: actions/upload-artifact@v7");
+    expect(ci).not.toContain("allow-unsafe-pr-checkout");
+    expect(dmg).toContain("uses: actions/checkout@v7");
+    expect(dmg).toContain("uses: actions/upload-artifact@v7");
+    expect(dmg).not.toContain("archive: false");
+    expect(codeql).toContain("uses: actions/checkout@v7");
     expect(codeql).toMatch(/uses: github\/codeql-action\/init@v\d+/);
     expect(codeql).toContain("javascript-typescript");
     expect(dependabot).toContain("package-ecosystem: github-actions");
@@ -52,6 +57,7 @@ describe("github ci", () => {
     expect(website).toContain("published");
     expect(website).toContain("workflow_dispatch");
     expect(website).toContain("pnpm run website:build");
+    expect(website).toContain("uses: actions/checkout@v7");
     expect(website).toMatch(/uses: cloudflare\/wrangler-action@v\d+/);
     expect(website).toContain("secrets.CLOUDFLARE_API_TOKEN");
   });

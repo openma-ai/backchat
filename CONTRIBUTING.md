@@ -186,7 +186,7 @@ node --test scripts/*.test.mjs
 
 Workflow `CI`（`.github/workflows/ci.yml`；`pull_request`、`push` 到 `main`、`workflow_dispatch`；`concurrency.cancel-in-progress: true`）：
 
-1. `dependency-review`：仅 `pull_request`，`ubuntu-latest`，超时 10 分钟，`actions/dependency-review-action@v4`。
+1. `dependency-review`：仅 `pull_request`，`ubuntu-latest`，超时 10 分钟，`actions/dependency-review-action@v5`。
 2. `unit`：`ubuntu-latest`，超时 15 分钟。顺序是 `pnpm run typecheck`、`pnpm run test:ci`、`node --test scripts/*.test.mjs`。
 3. `e2e`：`macos-latest`，超时 30 分钟，`CSC_IDENTITY_AUTO_DISCOVERY: "false"`。顺序是 `pnpm run test:e2e:fast`、`pnpm run test:e2e:openma`。失败时上传 `test-results/` 和 `playwright-report/`。
 
