@@ -264,6 +264,8 @@ export const PushChannel = {
   /** Whole-settings push fired after each patch — renderer subscribes once
    *  and re-renders settings-driven UI without polling. */
   SettingsChanged: "settings:changed",
+  /** CLI project create/remove. The sidebar refetches its project list. */
+  ProjectsChanged: "projects:changed",
   /** Permission ask from a running ACP child. The owning session's composer
    *  becomes an approval form; PermissionRespond routes the decision back. */
   PermissionRequest: "permission:request",

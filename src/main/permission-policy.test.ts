@@ -7,7 +7,7 @@ vi.mock("electron", () => ({
 }));
 
 import { listPendingAsks, requestPermission, respondPermission } from "./brokers.js";
-import { setRuntimePermissionPolicy } from "./permission-policy.js";
+import { isReadOnlyToolCall, setRuntimePermissionPolicy } from "./permission-policy.js";
 
 describe("session permission policy", () => {
   it("auto-approves read-only tools and keeps writes pending", async () => {
@@ -29,5 +29,14 @@ describe("session permission policy", () => {
     await expect(pending).resolves.toEqual({
       outcome: { outcome: "selected", optionId: "write-once" },
     });
+  });
+
+  it("treats edit, write, delete, move, and shell-like names as not read-only", () => {
+    for (const kind of ["edit", "write", "delete", "move", "execute", "other"]) {
+      expect(isReadOnlyToolCall({ kind })).toBe(false);
+    }
+    expect(isReadOnlyToolCall({ kind: "read", title: "shell ls" })).toBe(false);
+    expect(isReadOnlyToolCall({ title: "Edit file" })).toBe(false);
+    expect(isReadOnlyToolCall({ kind: "read", title: "Read file" })).toBe(true);
   });
 });

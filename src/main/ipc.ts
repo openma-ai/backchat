@@ -977,6 +977,11 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         socketPath,
         api: createControlApi({
           sessions: sessionManager,
+          onProjectsChanged: () => {
+            for (const window of BrowserWindow.getAllWindows()) {
+              if (!window.isDestroyed()) window.webContents.send(PushChannel.ProjectsChanged, {});
+            }
+          },
           work: {
             submit: (input) => projectRouter.submit(input),
             view: async (id) => withExternalWork(id, await projectRouter.view(id)),

@@ -41,6 +41,7 @@ import type {
   ExternalCoordinatorInfo,
   ExternalCoordinatorRemoveResult,
   ExternalTaskInfo,
+  ExternalTaskNote,
 } from "../shared/external-coordinator.js";
 import {
   normalizeProjectFolders,
@@ -189,6 +190,10 @@ let _stmts: {
   deleteExternalCoordinatorsForProject: StatementSync;
   insertExternalTask: StatementSync;
   getExternalTaskByCommand: StatementSync;
+  getExternalTaskById: StatementSync;
+  setExternalTaskStatus: StatementSync;
+  insertExternalTaskNote: StatementSync;
+  listExternalTaskNotes: StatementSync;
   listExternalTasks: StatementSync;
   listExternalTasksForProject: StatementSync;
   listExternalTasksForCoordinator: StatementSync;
@@ -235,6 +240,15 @@ const EXTERNAL_TASKS_SQL = `
     ON external_tasks(project_id);
   CREATE INDEX IF NOT EXISTS external_tasks_coordinator_idx
     ON external_tasks(coordinator_id);
+  CREATE TABLE IF NOT EXISTS external_task_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS external_task_notes_task_idx
+    ON external_task_notes(task_id, id);
 `;
 
 function migrateExternalCoordinators(db: DatabaseSync): void {
@@ -668,6 +682,15 @@ export function openSessionDb(path: string): void {
     getExternalTaskByCommand: db.prepare(`
       SELECT * FROM external_tasks WHERE command_id = ?
     `),
+    getExternalTaskById: db.prepare(`SELECT * FROM external_tasks WHERE id = ?`),
+    setExternalTaskStatus: db.prepare(`UPDATE external_tasks SET status = ? WHERE id = ?`),
+    insertExternalTaskNote: db.prepare(`
+      INSERT INTO external_task_notes (task_id, kind, text, created_at)
+      VALUES (?, ?, ?, ?)
+    `),
+    listExternalTaskNotes: db.prepare(`
+      SELECT * FROM external_task_notes WHERE task_id = ? ORDER BY id ASC
+    `),
     listExternalTasks: db.prepare(`
       SELECT * FROM external_tasks ORDER BY created_at ASC
     `),
@@ -976,11 +999,41 @@ export function insertExternalTask(input: {
   return task;
 }
 
-export function listExternalTasks(projectId?: string): ExternalTaskInfo[] {
+export function listExternalTasks(projectId?: string, client?: string): ExternalTaskInfo[] {
   const rows = projectId
     ? stmts().listExternalTasksForProject.all(projectId)
     : stmts().listExternalTasks.all();
-  return rows as unknown as ExternalTaskInfo[];
+  const tasks = rows as unknown as ExternalTaskInfo[];
+  const name = client?.trim();
+  return name ? tasks.filter((task) => task.coordinator_name === name) : tasks;
+}
+
+export function getExternalTask(id: string): ExternalTaskInfo | null {
+  return (stmts().getExternalTaskById.get(id) as ExternalTaskInfo | undefined) ?? null;
+}
+
+export function listExternalTaskNotes(taskId: string): ExternalTaskNote[] {
+  return stmts().listExternalTaskNotes.all(taskId) as unknown as ExternalTaskNote[];
+}
+
+export function appendExternalTaskNote(
+  taskId: string,
+  kind: ExternalTaskNote["kind"],
+  text: string,
+): ExternalTaskNote {
+  const created_at = Date.now();
+  const result = stmts().insertExternalTaskNote.run(taskId, kind, text, created_at);
+  return {
+    id: Number(result.lastInsertRowid),
+    task_id: taskId,
+    kind,
+    text,
+    created_at,
+  };
+}
+
+export function setExternalTaskStatus(id: string, status: ExternalTaskInfo["status"]): void {
+  stmts().setExternalTaskStatus.run(status, id);
 }
 
 export function removeExternalCoordinator(

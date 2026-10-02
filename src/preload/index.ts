@@ -140,6 +140,11 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.ProjectsList) as Promise<
       import("../shared/projects.js").ProjectInfo[]
     >,
+  onProjectsChanged: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on(PushChannel.ProjectsChanged, listener);
+    return () => ipcRenderer.removeListener(PushChannel.ProjectsChanged, listener);
+  },
   projectSave: (p) =>
     ipcRenderer.invoke(InvokeChannel.ProjectSave, p) as Promise<
       import("../shared/projects.js").ProjectInfo

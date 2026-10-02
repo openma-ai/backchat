@@ -18,7 +18,15 @@ export interface ExternalTaskInfo {
   type: "message" | "delegate" | "steer" | "cancel" | "complete";
   text: string;
   worker_id: string | null;
-  status: "submitted";
+  status: "submitted" | "cancelled";
+  created_at: number;
+}
+
+export interface ExternalTaskNote {
+  id: number;
+  task_id: string;
+  kind: "steer" | "cancel";
+  text: string;
   created_at: number;
 }
 

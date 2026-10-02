@@ -1,24 +1,20 @@
 import { useI18n } from "@/lib/i18n";
 
-/** Small source mark for a session or project work item created outside the GUI. */
-export function ExternalSourceBadge({
-  client,
-  variant = "session",
-}: {
-  client: string;
-  variant?: "session" | "coordinator";
-}) {
+/** Icon-only mark. The title stays in the row; the tooltip names the caller. */
+export function ExternalSourceBadge({ client }: { client: string }) {
   const { t } = useI18n();
-  const label = variant === "coordinator"
-    ? t("project.externalCoordinator", { client })
-    : t("session.externalSource", { client });
+  const label = t("session.startedBy", { client });
   return (
     <span
       data-testid="external-source-badge"
       title={label}
-      className="max-w-[4.75rem] min-w-0 shrink truncate rounded bg-bg-surface px-1 py-px text-[10px] leading-4 text-fg-subtle"
+      aria-label={label}
+      className="inline-flex size-3.5 shrink-0 items-center justify-center text-fg-subtle"
     >
-      {label}
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5">
+        <circle cx="8" cy="5.5" r="2.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M3.5 13.2c.7-2.2 2.4-3.3 4.5-3.3s3.8 1.1 4.5 3.3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
     </span>
   );
 }

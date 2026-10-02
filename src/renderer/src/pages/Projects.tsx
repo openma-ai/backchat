@@ -1,6 +1,6 @@
 import { useProjects } from "@/lib/projects-query";
 import { useI18n } from "@/lib/i18n";
-import { CoordinatorSiblings } from "@/components/shell/CoordinatorSiblings";
+import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { defaultCoordinatorConfig as defaults } from "@/lib/project-coordinator";
 import { PageTopbar } from "@/components/shell/PageTopbar";
 import type { PromptAttachment } from "@shared/session-events";
@@ -820,7 +820,6 @@ function ProjectWorkspace({
 }) {
   const { project, config, facts } = view;
   const { t } = useI18n();
-  const navigate = useNavigate();
   const [tab, setTab] = useState<
     "conversation" | "workers" | "activity" | "overview"
   >("conversation");
@@ -966,11 +965,6 @@ function ProjectWorkspace({
         className={`project-columns${tab !== "conversation" ? " project-panel-open" : ""}`}
       >
         <section className="project-main">
-          <CoordinatorSiblings
-            projectId={project.id}
-            active="builtin"
-            coordinators={view.external_coordinators ?? []}
-          />
           {config?.continuity === "per-run" ? (
             <div className="project-runs">
               <select
@@ -1361,23 +1355,9 @@ function ProjectWorkspace({
                     })}
                     {(view.external_tasks ?? []).map((task) => (
                       <article className="project-worker" key={task.id} data-testid="external-task">
-                        <div>
-                          <p className="project-worker-title">{task.text}</p>
-                          <p className="project-worker-attribution" data-testid="task-attribution">
-                            {t("project.externalCoordinator", { client: task.coordinator_name })}
-                          </p>
-                        </div>
-                        <div className="project-worker-actions">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => void navigate({
-                              to: "/projects/$projectId/coordinators/$coordinatorId",
-                              params: { projectId: project.id, coordinatorId: task.coordinator_id },
-                            })}
-                          >
-                            {t("project.viewThread")}
-                          </Button>
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <p className="project-worker-title min-w-0 flex-1 truncate">{task.text}</p>
+                          <ExternalSourceBadge client={task.coordinator_name} />
                         </div>
                       </article>
                     ))}

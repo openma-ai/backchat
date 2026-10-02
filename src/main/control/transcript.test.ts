@@ -33,4 +33,25 @@ describe("control transcript", () => {
       row(3, "openma_event", { type: "agent.message_chunk", data: { text: "Hi" } }),
     ], "2").map((event) => event.cursor)).toEqual(["3"]);
   });
+
+  it("merges text chunks and keeps tool, turn, and permission markers", () => {
+    const events = transcriptFromHistory([
+      row(1, "openma_event", { type: "agent.message_chunk", data: { text: "Hel" } }),
+      row(2, "openma_event", { type: "agent.message_chunk", data: { text: "lo" } }),
+      row(3, "openma_event", {
+        type: "tool.started",
+        data: { tool_name: "edit", tool_call_id: "call-9", title: "Edit file" },
+      }),
+      row(4, "permission_request", { request_id: "perm-1", title: "Edit file", kind: "edit" }),
+      row(5, "permission_response", { request_id: "perm-1", option_id: "allow", outcome: "selected", title: "Edit file" }),
+      row(6, "openma_event", { type: "turn.completed", data: {} }),
+      row(7, "turn_cancelled", { turn_id: "t" }),
+    ]);
+    expect(events[0]).toMatchObject({ type: "text", text: "Hello", cursor: "2" });
+    expect(events[1]).toMatchObject({ type: "tool_call", name: "edit", status: "start", tool_call_id: "call-9" });
+    expect(events[2]).toMatchObject({ type: "permission", status: "pending", request_id: "perm-1" });
+    expect(events[3]).toMatchObject({ type: "permission", status: "selected", name: "allow" });
+    expect(events[4]).toMatchObject({ type: "status", status: "complete" });
+    expect(events[5]).toMatchObject({ type: "status", status: "cancelled" });
+  });
 });

@@ -1,18 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { ProjectWorkCommand, ProjectWorkGoalInput } from "../../shared/project-work.js";
+import { deleteProject } from "../sql-store.js";
 import {
+  appendExternalTaskNote,
   ensureExternalCoordinator,
-  findExternalCoordinator,
-  getExternalCoordinator,
+  getExternalTask,
   getProject,
   getSession,
   insertExternalTask,
   listExternalCoordinators,
+  listExternalTaskNotes,
   listExternalTasks,
   listSessions,
-  listSessionsForExternalCoordinator,
   loadHistory,
-  removeExternalCoordinator,
+  setExternalTaskStatus,
 } from "../sql-store.js";
 import type { ExternalTaskInfo } from "../../shared/external-coordinator.js";
 import { workspaceService, type WorkspaceService } from "../workspace-service.js";
@@ -26,7 +27,7 @@ import {
   showProjectRecord,
 } from "../project-commands.js";
 import { ControlStream, subscribeControlLiveEvents } from "./live-bus.js";
-import { transcriptFromHistory } from "./transcript.js";
+import { sessionTurnSummary, transcriptFromHistory } from "./transcript.js";
 
 export interface ControlWorkApi {
   submit(input: ProjectWorkCommand): Promise<void>;
@@ -38,6 +39,7 @@ export interface ControlApiDeps {
   workspaces?: WorkspaceService;
   sessions?: SessionManager;
   work?: ControlWorkApi;
+  onProjectsChanged?: () => void;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -70,12 +72,17 @@ export function createControlApi(deps: ControlApiDeps = {}) {
           return listProjectRecords();
         case "project.show":
           return showProjectRecord(requiredString(params, "id", "Project id"));
-        case "project.create":
-          return saveProjectCommand({
+        case "project.create": {
+          const created = saveProjectCommand({
             name: typeof params.name === "string" ? params.name : "",
             source_folders: stringList(params.sources ?? params.source_folders),
             primary_folder: typeof params.primary_folder === "string" ? params.primary_folder : undefined,
           });
+          deps.onProjectsChanged?.();
+          return created;
+        }
+        case "project.remove":
+          return removeProject(workspaces, params, deps.onProjectsChanged);
         case "workspace.list": {
           const projectId = typeof params.project_id === "string" ? params.project_id.trim() : "";
           if (projectId && !getProject(projectId)) {
@@ -105,15 +112,9 @@ export function createControlApi(deps: ControlApiDeps = {}) {
           return { id, removed: true };
         }
         case "session.list":
-          return listSessionRecords(params);
+          return listSessionRecords(params, client);
         case "session.start":
           return startSession(deps.sessions, workspaces, params, client);
-        case "coordinator.create":
-          return createCoordinator(params);
-        case "coordinator.list":
-          return listCoordinators(params);
-        case "coordinator.remove":
-          return removeCoordinator(deps.sessions, params);
         case "session.send":
           return sendSession(deps.sessions, params);
         case "session.status":
@@ -133,12 +134,29 @@ export function createControlApi(deps: ControlApiDeps = {}) {
           return { ok: true };
         case "work.submit":
           return submitWork(deps.work, params, client);
+        case "work.list":
+          return listClientWork(params, client);
         case "work.status":
-          return workStatus(deps.work, params);
+          return workStatus(deps.work, params, client);
+        case "work.steer":
+          return steerWork(params, client);
+        case "work.cancel":
+          return cancelWork(params, client);
+        case "work.transcript":
+          return taskTranscript(params, client);
         case "work.view": {
+          if (typeof params.task_id === "string" && params.task_id.trim()) {
+            return taskRecord(requireOwnedTask(params, client).id);
+          }
           const projectId = requiredString(params, "project_id", "Project id");
           if (!getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
-          return withExternalWork(projectId, await requireWork(deps.work).view(projectId));
+          const view = withExternalWork(projectId, await requireWork(deps.work).view(projectId));
+          const caller = clientName(params, client);
+          if (!caller) return view;
+          return {
+            ...view,
+            external_tasks: (view.external_tasks ?? []).filter((task) => task.coordinator_name === caller),
+          };
         }
         case "work.goal":
           return requireWork(deps.work).goal(goalInput(params));
@@ -153,12 +171,14 @@ export function createControlApi(deps: ControlApiDeps = {}) {
   return { call };
 }
 
-function listSessionRecords(params: Record<string, unknown>) {
+function listSessionRecords(params: Record<string, unknown>, client?: string) {
   const projectId = typeof params.project_id === "string" ? params.project_id.trim() : "";
   const workspaceId = typeof params.workspace_id === "string" ? params.workspace_id.trim() : "";
+  const caller = clientName(params, client);
   return listSessions(500)
     .filter((session) => !projectId || session.project_id === projectId)
     .filter((session) => !workspaceId || session.workspace_id === workspaceId)
+    .filter((session) => !caller || session.external_client === caller)
     .map((session) => ({
       id: session.id,
       title: session.title,
@@ -173,39 +193,85 @@ function listSessionRecords(params: Record<string, unknown>) {
     }));
 }
 
-function createCoordinator(params: Record<string, unknown>) {
-  const projectId = requiredString(params, "project_id", "Project id");
-  const name = requiredString(params, "name", "Name");
-  if (!getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
-  return ensureExternalCoordinator(projectId, name);
+function clientName(params: Record<string, unknown>, client?: string): string {
+  const fromParams = typeof params.client === "string" ? params.client.trim() : "";
+  return fromParams || client?.trim() || "";
 }
 
-function listCoordinators(params: Record<string, unknown>) {
+function requireOwnedTask(params: Record<string, unknown>, client?: string) {
+  const taskId = requiredString(params, "task_id", "Task id");
+  const task = getExternalTask(taskId);
+  if (!task) throw new ControlError("not_found", `Task not found: ${taskId}`);
   const projectId = typeof params.project_id === "string" ? params.project_id.trim() : "";
-  if (projectId && !getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
-  return listExternalCoordinators(projectId || undefined);
+  if (projectId && task.project_id !== projectId) {
+    throw new ControlError("not_found", `Task not found: ${taskId}`);
+  }
+  const caller = clientName(params, client);
+  if (caller && task.coordinator_name !== caller) {
+    throw new ControlError("not_found", `Task not found: ${taskId}`);
+  }
+  return task;
 }
 
-async function removeCoordinator(sessions: SessionManager | undefined, params: Record<string, unknown>) {
-  const id = typeof params.id === "string" ? params.id.trim() : "";
-  const coordinator = id
-    ? getExternalCoordinator(id)
-    : findExternalCoordinator(
-      requiredString(params, "project_id", "Project id"),
-      requiredString(params, "name", "Name"),
-    );
-  if (!coordinator) throw new ControlError("not_found", "External coordinator not found");
-  const deleteThreads = params.delete_threads === true;
-  if (deleteThreads) {
-    for (const session of listSessionsForExternalCoordinator(coordinator)) {
-      try {
-        await sessions?.dispose(session.id);
-      } catch {
-        // The session may already be stopped. The row is still removed below.
-      }
-    }
+function taskRecord(taskId: string) {
+  const task = getExternalTask(taskId);
+  if (!task) throw new ControlError("not_found", `Task not found: ${taskId}`);
+  return { ...task, notes: listExternalTaskNotes(task.id) };
+}
+
+function listClientWork(params: Record<string, unknown>, client?: string) {
+  const projectId = typeof params.project_id === "string" ? params.project_id.trim()
+    : typeof params.id === "string" ? params.id.trim() : "";
+  if (projectId && !getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
+  const caller = clientName(params, client);
+  return {
+    project_id: projectId || null,
+    client: caller || null,
+    tasks: listExternalTasks(projectId || undefined, caller || undefined).map((task) => ({
+      ...task,
+      notes: listExternalTaskNotes(task.id),
+    })),
+  };
+}
+
+function steerWork(params: Record<string, unknown>, client?: string) {
+  const task = requireOwnedTask(params, client);
+  if (task.status === "cancelled") {
+    throw new ControlError("invalid_args", `Task ${task.id} is cancelled`);
   }
-  return removeExternalCoordinator(coordinator.id, deleteThreads);
+  const text = requiredString(params, "text", "Text");
+  const note = appendExternalTaskNote(task.id, "steer", text);
+  return { ...taskRecord(task.id), note };
+}
+
+function cancelWork(params: Record<string, unknown>, client?: string) {
+  const task = requireOwnedTask(params, client);
+  const text = typeof params.text === "string" && params.text.trim() ? params.text.trim() : "cancelled";
+  setExternalTaskStatus(task.id, "cancelled");
+  appendExternalTaskNote(task.id, "cancel", text);
+  return { ...taskRecord(task.id), cancelled: true };
+}
+
+function taskTranscript(params: Record<string, unknown>, client?: string) {
+  const task = requireOwnedTask(params, client);
+  const notes = listExternalTaskNotes(task.id);
+  return {
+    task_id: task.id,
+    project_id: task.project_id,
+    client: task.coordinator_name,
+    status: task.status,
+    events: [
+      { cursor: "0", role: "user", type: "text", text: task.text, timestamp: new Date(task.created_at).toISOString() },
+      ...notes.map((note) => ({
+        cursor: String(note.id),
+        role: note.kind === "steer" ? "user" as const : "system" as const,
+        type: note.kind === "cancel" ? "status" as const : "text" as const,
+        status: note.kind === "cancel" ? "cancelled" : undefined,
+        text: note.text,
+        timestamp: new Date(note.created_at).toISOString(),
+      })),
+    ],
+  };
 }
 
 async function startSession(
@@ -250,7 +316,12 @@ async function startSession(
     ...(client ? { external_client: client } : {}),
     ...(isSessionPermissionPolicy(approve) ? { permission_policy: approve } : {}),
   });
-  if (started.status === "error") throw new ControlError("error", started.message);
+  if (started.status === "error") {
+    if (/unknown ACP agent/i.test(started.message)) {
+      throw new ControlError("invalid_args", started.message);
+    }
+    throw new ControlError("error", started.message);
+  }
   if (started.status !== "ready") throw new ControlError("error", "Session start was cancelled");
   let turnId: string | undefined;
   if (prompt.trim()) {
@@ -291,7 +362,13 @@ async function sendSession(sessions: SessionManager | undefined, params: Record<
       status,
     });
   }
-  return { session_id: id, turn_id: turnId, state: "complete", status };
+  return {
+    session_id: id,
+    turn_id: turnId,
+    state: "complete",
+    reply: status.last_reply ?? "",
+    status,
+  };
 }
 
 async function* streamTurn(
@@ -363,6 +440,8 @@ async function sessionStatus(sessions: SessionManager | undefined, id: string) {
   const row = getSession(id);
   if (!row) throw new ControlError("not_found", `Session not found: ${id}`);
   const runtime = sessions ? await sessions.getRuntimeStatus(id) : null;
+  const summary = sessionTurnSummary(loadHistory(id));
+  const busy = runtime?.busy ?? false;
   return {
     id: row.id,
     title: row.title,
@@ -373,8 +452,10 @@ async function sessionStatus(sessions: SessionManager | undefined, id: string) {
     external_client: row.external_client,
     acp_session_id: row.acp_session_id,
     running: sessions?.has(id) ?? false,
-    busy: runtime?.busy ?? false,
+    busy,
     active_turn_ids: sessions?.activeTurnIds(id) ?? [],
+    last_outcome: busy ? "running" : summary.outcome,
+    ...(summary.reply ? { last_reply: summary.reply } : {}),
   };
 }
 
@@ -444,7 +525,8 @@ async function submitWork(work: ControlWorkApi | undefined, params: Record<strin
   };
 }
 
-async function workStatus(work: ControlWorkApi | undefined, params: Record<string, unknown>) {
+async function workStatus(work: ControlWorkApi | undefined, params: Record<string, unknown>, client?: string) {
+  if (clientName(params, client)) return listClientWork(params, client);
   const api = requireWork(work);
   const projectId = typeof params.project_id === "string" ? params.project_id.trim()
     : typeof params.id === "string" ? params.id.trim() : "";
@@ -482,6 +564,23 @@ function goalInput(params: Record<string, unknown>): ProjectWorkGoalInput {
     ...(status === "active" || status === "paused" ? { status } : {}),
     ...(params.clear === true ? { clear: true } : {}),
   };
+}
+
+async function removeProject(
+  workspaces: WorkspaceService,
+  params: Record<string, unknown>,
+  onProjectsChanged?: () => void,
+) {
+  const id = requiredString(params, "id", "Project id");
+  if (!getProject(id)) throw new ControlError("not_found", `Project not found: ${id}`);
+  const workspacesForProject = await workspaces.list(id);
+  for (const workspace of workspacesForProject) {
+    if (workspace.kind !== "managed") continue;
+    await workspaces.delete(workspace.id, { force: params.force === true });
+  }
+  deleteProject(id);
+  onProjectsChanged?.();
+  return { id, removed: true };
 }
 
 function requireSessions(sessions: SessionManager | undefined): SessionManager {

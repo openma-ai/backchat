@@ -28,7 +28,58 @@ export function transcriptFromHistory(
     const mapped = mapRow(row);
     if (mapped) events.push(mapped);
   }
-  return events;
+  return mergeAdjacentText(events);
+}
+
+export function sessionTurnSummary(rows: readonly PersistedEvent[]): {
+  outcome: "idle" | "running" | "complete" | "error" | "cancelled";
+  reply?: string;
+} {
+  let outcome: "idle" | "complete" | "error" | "cancelled" = "idle";
+  let reply = "";
+  let turnId: string | undefined;
+  for (const row of rows) {
+    const parsed = parseData(row.data);
+    const nextTurn = stringField(parsed?.turn_id) ?? stringField(record(parsed?.data).turn_id);
+    if (nextTurn && nextTurn !== turnId) {
+      turnId = nextTurn;
+      reply = "";
+      outcome = "idle";
+    }
+    if (row.type === "turn_cancelled") outcome = "cancelled";
+    if (!parsed) continue;
+    const kind = row.type === "openma_event" && typeof parsed.type === "string" ? parsed.type : "";
+    const text = textOf(parsed.data);
+    if (kind === "agent.message" || kind === "agent.message_chunk") {
+      if (text) reply += text;
+    }
+    if (kind === "turn.completed") outcome = "complete";
+    if (kind === "turn.failed" || kind === "session.error") outcome = "error";
+    if (kind === "turn.cancelled" || kind === "turn.interrupted") outcome = "cancelled";
+  }
+  const trimmed = reply.trim();
+  return { outcome, ...(trimmed ? { reply: trimmed } : {}) };
+}
+
+function mergeAdjacentText(events: TranscriptEvent[]): TranscriptEvent[] {
+  const merged: TranscriptEvent[] = [];
+  for (const event of events) {
+    const previous = merged.at(-1);
+    if (
+      previous
+      && previous.role === "assistant"
+      && previous.type === "text"
+      && event.role === "assistant"
+      && event.type === "text"
+    ) {
+      previous.text = `${previous.text ?? ""}${event.text ?? ""}`;
+      previous.cursor = event.cursor;
+      previous.timestamp = event.timestamp;
+      continue;
+    }
+    merged.push({ ...event });
+  }
+  return merged;
 }
 
 function mapRow(row: PersistedEvent): TranscriptEvent | null {
@@ -40,7 +91,20 @@ function mapRow(row: PersistedEvent): TranscriptEvent | null {
     return text ? { cursor, role: "user", type: "text", timestamp, text } : null;
   }
   if (row.type === "turn_cancelled") {
-    return { cursor, role: "system", type: "status", timestamp, status: "cancelled", text: "cancelled" };
+    return { cursor, role: "system", type: "status", timestamp, status: "cancelled", text: "turn cancelled" };
+  }
+  if (row.type === "permission_request" || row.type === "permission_response") {
+    const fields = record(parsed);
+    return {
+      cursor,
+      role: "system",
+      type: "permission",
+      timestamp,
+      text: stringField(fields.title),
+      request_id: stringField(fields.request_id),
+      status: stringField(fields.outcome) ?? (row.type === "permission_request" ? "pending" : undefined),
+      name: stringField(fields.option_id) ?? stringField(fields.kind),
+    };
   }
   if (row.type !== "openma_event" || !parsed) return null;
   const kind = typeof parsed.type === "string" ? parsed.type : "";
@@ -55,37 +119,51 @@ function mapRow(row: PersistedEvent): TranscriptEvent | null {
   if (kind === "agent.thinking" || kind === "agent.thought_chunk") {
     return text ? { cursor, role: "assistant", type: "thought", timestamp, text } : null;
   }
-  if (kind === "tool.call" || kind === "tool.called" || kind === "tool.start") {
+  if (kind === "tool.call" || kind === "tool.called" || kind === "tool.start" || kind === "tool.started") {
+    const fields = record(data);
     return {
       cursor,
       role: "tool",
       type: "tool_call",
       timestamp,
-      text,
-      name: stringField(record(data).name) ?? stringField(record(data).title),
-      tool_call_id: stringField(record(data).tool_call_id) ?? stringField(record(data).toolCallId),
+      text: text ?? stringField(fields.title),
+      name: stringField(fields.tool_name) ?? stringField(fields.name) ?? stringField(fields.title) ?? stringField(fields.kind),
+      tool_call_id: stringField(fields.tool_call_id) ?? stringField(fields.toolCallId),
       status: "start",
     };
   }
-  if (kind === "tool.result" || kind === "tool.completed") {
+  if (kind === "tool.result" || kind === "tool.completed" || kind === "tool.failed" || kind === "tool.cancelled") {
+    const fields = record(data);
     return {
       cursor,
       role: "tool",
       type: "tool_result",
       timestamp,
       text,
-      tool_call_id: stringField(record(data).tool_call_id) ?? stringField(record(data).toolCallId),
-      status: stringField(record(data).status) ?? "completed",
+      name: stringField(fields.tool_name) ?? stringField(fields.name) ?? stringField(fields.title),
+      tool_call_id: stringField(fields.tool_call_id) ?? stringField(fields.toolCallId),
+      status: kind === "tool.failed" ? "failed" : kind === "tool.cancelled" ? "cancelled" : stringField(fields.status) ?? "completed",
     };
   }
+  if (kind === "turn.completed" || kind === "turn.failed" || kind === "turn.cancelled" || kind === "turn.interrupted") {
+    const status = kind === "turn.completed"
+      ? "complete"
+      : kind === "turn.failed"
+        ? "error"
+        : "cancelled";
+    return { cursor, role: "system", type: "status", timestamp, status, text: status === "complete" ? "turn complete" : status === "error" ? "turn failed" : "turn cancelled" };
+  }
   if (kind.includes("permission")) {
+    const fields = record(data);
     return {
       cursor,
       role: "system",
       type: "permission",
       timestamp,
       text,
-      request_id: stringField(record(data).request_id) ?? stringField(record(data).requestId),
+      request_id: stringField(fields.request_id) ?? stringField(fields.requestId),
+      status: stringField(fields.outcome) ?? stringField(fields.status),
+      name: stringField(fields.option_id) ?? stringField(fields.optionId),
     };
   }
   if (!text) return null;

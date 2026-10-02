@@ -106,6 +106,7 @@ import {
 import { composePromptContext } from "./session-prompt-context.js";
 import { desktopCliPath } from "./cli-path.js";
 import { collapseUnsupportedWorkspaceRoots } from "./workspace-roots.js";
+import { isReadOnlyToolCall, toolWasApproved } from "./permission-policy.js";
 import {
   isSessionPermissionPolicy,
   setRuntimePermissionPolicy,
@@ -159,6 +160,8 @@ interface ActiveSession {
   latestAvailableCommandsUpdate: unknown | null;
   /** Prepended to the next prompt when extra workspace roots were collapsed. */
   pendingDirectoryNote?: string;
+  /** Cursor applied an edit without requestPermission. Further writes cancel the turn. */
+  failClosedWrites?: boolean;
 }
 
 interface OutOfBandSteeringTurn {
@@ -949,6 +952,7 @@ export class SessionManager {
         const saved = getSession(p.session_id)?.permission_policy;
         if (isSessionPermissionPolicy(saved)) setRuntimePermissionPolicy(p.session_id, saved);
       }
+      await enforceCursorApproval(activeSession, p.permission_policy);
       const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
       await this.#observeConfiguredAuth(agent.id);
@@ -1569,6 +1573,20 @@ export class SessionManager {
             ? inner.id
             : undefined;
     if (!toolCallId) return;
+    if (
+      sess.failClosedWrites
+      && updateType === "tool_call"
+      && !isReadOnlyToolCall(inner)
+      && !toolWasApproved(sess.id, toolCallId)
+    ) {
+      this.#send({
+        type: "session.error",
+        session_id: sess.id,
+        turn_id: turnId,
+        message: "Blocked a non-read tool that was not submitted for approval. Ask and auto-read fail closed when Cursor edits without requestPermission.",
+      });
+      this.cancel(sess.id, turnId);
+    }
     const status = typeof inner.status === "string"
       ? inner.status.toLowerCase()
       : undefined;
@@ -2159,6 +2177,25 @@ export class SessionManager {
         configOptions,
       },
     });
+  }
+}
+
+async function enforceCursorApproval(
+  sess: ActiveSession,
+  policy: SessionStartParams["permission_policy"],
+): Promise<void> {
+  if (policy !== "ask" && policy !== "auto-read") return;
+  if (sess.agentId !== "cursor" && !sess.agentId.includes("cursor")) return;
+  // Cursor's agent mode applies edits without session/request_permission.
+  // ask mode is read-only. If that mode is missing, or an edit still starts
+  // without an approval, the turn is cancelled.
+  sess.failClosedWrites = true;
+  const askMode = sess.acp.modes?.availableModes?.find((mode) => mode.id === "ask");
+  if (!askMode) return;
+  try {
+    await sess.acp.setMode("ask");
+  } catch {
+    // The fail-closed check still cancels unapproved writes.
   }
 }
 

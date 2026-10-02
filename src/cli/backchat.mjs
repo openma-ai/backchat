@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { writeSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { exitCodeFor, ExitCode } from "./exit-codes.mjs";
 import { parseArgs, ParseError } from "./parse.mjs";
@@ -10,6 +11,7 @@ Usage:
   backchat project list [--json]
   backchat project show <id> [--json]
   backchat project create --name <name> --source <dir> [--source <dir> ...] [--json]
+  backchat project remove <id> [--force] [--json]
   backchat workspace list [--project <id>] [--json]
   backchat workspace show <id> [--json]
   backchat workspace create --project <id> --branch <name> [--base <ref>] [--json]
@@ -22,17 +24,26 @@ Usage:
   backchat session cancel <id> [--json]
   backchat session pending <id> [--json]
   backchat session respond <id> <requestId> <option> [--json]
-  backchat coordinator create --project <id> --name <name> [--json]
-  backchat coordinator list [--project <id>] [--json]
-  backchat coordinator remove --project <id> --name <name> [--delete-threads] [--json]
   backchat work submit --project <id> --text <text> [--type message|delegate|steer|cancel] [--worker <id>] [--json]
+  backchat work list --project <id> [--json]
   backchat work status [<projectId>] [--json]
-  backchat work view --project <id> [--json]
+  backchat work view --project <id> [--task <id>] [--json]
+  backchat work steer --project <id> --task <id> --text <text> [--json]
+  backchat work cancel --project <id> --task <id> [--text <text>] [--json]
+  backchat work transcript --project <id> --task <id> [--json]
   backchat work goal --project <id> --thread <id> [--status active|paused] [--objective <text>] [--clear] [--json]
 
+Coordinator loop (set --client or BACKCHAT_CLIENT):
+  project create → workspace create → session start
+  session send --stream (read each line as it arrives; session respond on permission)
+  session status / transcript / cancel
+  work submit (no built-in coordinator setup required)
+  work list|status|view|steer|cancel|transcript for that client's tasks
+  session send to steer a live thread; session cancel to stop it
+
 Global:
-  --json              machine-readable stdout
-  --client <name>     caller identity (or BACKCHAT_CLIENT)
+  --json              machine-readable stdout. Argument errors are JSON on stderr.
+  --client <name>     caller identity (or BACKCHAT_CLIENT). Filters session list and work list/status/view to that client.
   --help
 
 Exit codes:
@@ -44,12 +55,19 @@ Exit codes:
   5 invalid arguments
 `;
 
-export async function runCli(argv, env = process.env, io = { stdout: console.log, stderr: console.error }) {
+function writeFd(fd, line) {
+  writeSync(fd, line.endsWith("\n") ? line : `${line}\n`);
+}
+
+export async function runCli(argv, env = process.env, io = {
+  stdout: (line) => writeFd(1, line),
+  stderr: (line) => writeFd(2, line),
+}) {
   let parsed;
   try {
     parsed = parseArgs(argv);
   } catch (error) {
-    io.stderr(error instanceof Error ? error.message : String(error));
+    writeArgumentError(io, argv, error instanceof Error ? error.message : String(error));
     return ExitCode.invalidArgs;
   }
   if (parsed.help || argv.length === 0) {
@@ -61,7 +79,7 @@ export async function runCli(argv, env = process.env, io = { stdout: console.log
   try {
     call = commandCall(parsed);
   } catch (error) {
-    io.stderr(error instanceof Error ? error.message : String(error));
+    writeArgumentError(io, argv, error instanceof Error ? error.message : String(error));
     return ExitCode.invalidArgs;
   }
   try {
@@ -71,10 +89,14 @@ export async function runCli(argv, env = process.env, io = { stdout: console.log
       method: call.method,
       params: call.params,
       client,
-      onEvent: (event) => lines.push(JSON.stringify(event)),
+      onEvent: (event) => {
+        const line = JSON.stringify(event);
+        if (call.params?.stream) io.stdout(line);
+        else lines.push(line);
+      },
     });
     if (call.params?.stream) {
-      io.stdout(lines.join("\n"));
+      if (lines.length) io.stdout(lines.join("\n"));
     } else {
       io.stdout(parsed.json ? JSON.stringify(result, null, 2) : formatText(call.method, result));
     }
@@ -106,6 +128,12 @@ function commandCall(parsed) {
     if (!flags.name || typeof flags.name !== "string") throw new ParseError("--name is required");
     if (sources.length === 0) throw new ParseError("At least one --source directory is required");
     return { method: "project.create", params: { name: flags.name, sources } };
+  }
+  if (group === "project" && (action === "remove" || action === "delete")) {
+    return {
+      method: "project.remove",
+      params: { id: requiredArg(args[0], "project id"), force: flags.force === true },
+    };
   }
   if (group === "workspace" && action === "list") {
     return {
@@ -198,26 +226,12 @@ function commandCall(parsed) {
       },
     };
   }
-  if (group === "coordinator" && action === "create") {
-    if (typeof flags.project !== "string") throw new ParseError("--project is required");
-    if (typeof flags.name !== "string") throw new ParseError("--name is required");
-    return { method: "coordinator.create", params: { project_id: flags.project, name: flags.name } };
-  }
-  if (group === "coordinator" && action === "list") {
+  if (group === "work" && (action === "list" || action === "status")) {
     return {
-      method: "coordinator.list",
-      params: typeof flags.project === "string" ? { project_id: flags.project } : {},
-    };
-  }
-  if (group === "coordinator" && action === "remove") {
-    if (typeof flags.project !== "string") throw new ParseError("--project is required");
-    if (typeof flags.name !== "string") throw new ParseError("--name is required");
-    return {
-      method: "coordinator.remove",
+      method: action === "list" ? "work.list" : "work.status",
       params: {
-        project_id: flags.project,
-        name: flags.name,
-        delete_threads: flags["delete-threads"] === true,
+        ...(args[0] ? { id: args[0] } : {}),
+        ...(typeof flags.project === "string" ? { project_id: flags.project } : {}),
       },
     };
   }
@@ -235,12 +249,41 @@ function commandCall(parsed) {
       },
     };
   }
-  if (group === "work" && action === "status") {
-    return { method: "work.status", params: args[0] ? { id: args[0] } : {} };
-  }
   if (group === "work" && action === "view") {
+    if (typeof flags.task === "string") {
+      return {
+        method: "work.view",
+        params: {
+          task_id: flags.task,
+          ...(typeof flags.project === "string" ? { project_id: flags.project } : {}),
+        },
+      };
+    }
     if (typeof flags.project !== "string") throw new ParseError("--project is required");
     return { method: "work.view", params: { project_id: flags.project } };
+  }
+  if (group === "work" && action === "steer") {
+    if (typeof flags.project !== "string") throw new ParseError("--project is required");
+    if (typeof flags.task !== "string") throw new ParseError("--task is required");
+    if (typeof flags.text !== "string") throw new ParseError("--text is required");
+    return { method: "work.steer", params: { project_id: flags.project, task_id: flags.task, text: flags.text } };
+  }
+  if (group === "work" && action === "cancel") {
+    if (typeof flags.project !== "string") throw new ParseError("--project is required");
+    if (typeof flags.task !== "string") throw new ParseError("--task is required");
+    return {
+      method: "work.cancel",
+      params: {
+        project_id: flags.project,
+        task_id: flags.task,
+        ...(typeof flags.text === "string" ? { text: flags.text } : {}),
+      },
+    };
+  }
+  if (group === "work" && action === "transcript") {
+    if (typeof flags.project !== "string") throw new ParseError("--project is required");
+    if (typeof flags.task !== "string") throw new ParseError("--task is required");
+    return { method: "work.transcript", params: { project_id: flags.project, task_id: flags.task } };
   }
   if (group === "work" && action === "goal") {
     if (typeof flags.project !== "string") throw new ParseError("--project is required");
@@ -259,6 +302,14 @@ function commandCall(parsed) {
   throw new ParseError(`Unknown command: ${[group, action].filter(Boolean).join(" ") || "(none)"}`);
 }
 
+function writeArgumentError(io, argv, message) {
+  if (argv.includes("--json")) {
+    io.stderr(JSON.stringify({ ok: false, error: { code: "invalid_args", message } }));
+    return;
+  }
+  io.stderr(message);
+}
+
 function requiredArg(value, label) {
   if (!value) throw new ParseError(`${label} is required`);
   return value;
@@ -269,6 +320,7 @@ function formatText(method, result) {
     if (result.length === 0) return "No projects.";
     return result.map((project) => `${project.id}\t${project.name}\t${project.primary_folder}`).join("\n");
   }
+  if (method === "project.remove") return `removed ${result.id}`;
   if (method === "project.show" || method === "project.create") {
     const sources = Array.isArray(result.source_folders) ? result.source_folders.join(", ") : "";
     return `${result.id}\t${result.name}\n${sources}`;
@@ -286,15 +338,10 @@ function formatText(method, result) {
     return lines.join("\n");
   }
   if (method === "workspace.remove") return `removed ${result.id}`;
-  if (method === "coordinator.create") {
-    return `${result.id}\t${result.name}\t${result.created ? "created" : "exists"}`;
-  }
-  if (method === "coordinator.list" && Array.isArray(result)) {
-    if (result.length === 0) return "No external coordinators.";
-    return result.map((coordinator) => `${coordinator.id}\t${coordinator.project_id}\t${coordinator.name}`).join("\n");
-  }
-  if (method === "coordinator.remove") {
-    return `removed ${result.name}${result.sessions_deleted?.length ? `, deleted ${result.sessions_deleted.length} threads` : ""}`;
+  if (method === "work.list" || (method === "work.status" && Array.isArray(result?.tasks))) {
+    const tasks = result.tasks ?? [];
+    if (tasks.length === 0) return "No tasks.";
+    return tasks.map((task) => `${task.id}\t${task.status}\t${task.coordinator_name}\t${task.text}`).join("\n");
   }
   if (method === "work.submit" && result?.routed === "external") {
     return `${result.task?.id ?? result.command_id}\t${result.external_coordinator}\t${result.task?.text ?? ""}`;

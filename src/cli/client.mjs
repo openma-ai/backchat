@@ -39,14 +39,34 @@ export function callControl({ socketPath, method, params, client, onEvent }) {
       },
     }, (res) => {
       const chunks = [];
+      let buffer = "";
+      const events = [];
+      const streaming = () => String(res.headers["content-type"] ?? "").includes("ndjson");
       res.setEncoding("utf8");
-      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("data", (chunk) => {
+        if (!streaming()) {
+          chunks.push(chunk);
+          return;
+        }
+        buffer += chunk;
+        let newline = buffer.indexOf("\n");
+        while (newline !== -1) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          newline = buffer.indexOf("\n");
+          if (!line.trim()) continue;
+          const event = JSON.parse(line);
+          events.push(event);
+          onEvent?.(event);
+        }
+      });
       res.on("end", () => {
-        const text = chunks.join("");
-        const contentType = String(res.headers["content-type"] ?? "");
-        if (contentType.includes("ndjson")) {
-          const events = text.split("\n").filter(Boolean).map((line) => JSON.parse(line));
-          for (const event of events) onEvent?.(event);
+        if (streaming()) {
+          if (buffer.trim()) {
+            const event = JSON.parse(buffer);
+            events.push(event);
+            onEvent?.(event);
+          }
           const last = events.at(-1);
           if (last?.status === "timeout" || last?.type === "result" && last?.status === "timeout") {
             reject(Object.assign(new Error("Timed out"), { code: "timeout", result: { events } }));
@@ -59,6 +79,7 @@ export function callControl({ socketPath, method, params, client, onEvent }) {
           resolve({ events });
           return;
         }
+        const text = chunks.join("");
         let body;
         try {
           body = text ? JSON.parse(text) : {};

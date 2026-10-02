@@ -133,6 +133,15 @@ export class WorkspaceService {
         created_by_session_id: null,
       }));
     }
+    if (project && input.branch?.trim()) {
+      const branchName = input.branch.trim();
+      const existing = listWorkspaceRows(project.id).find((row) =>
+        row.kind === "managed" && row.branch === branchName
+      );
+      if (existing) {
+        throw new Error(`Workspace already exists for branch ${branchName}: ${existing.id}`);
+      }
+    }
     const slug = safeName(name).toLowerCase().slice(0, 40);
     const suffix = randomBytes(2).toString("hex");
     const id = `ws-${slug}-${suffix}`;

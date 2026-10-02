@@ -18,7 +18,7 @@ export function asControlError(error: unknown): ControlError {
   if (error instanceof ControlError) return error;
   const message = error instanceof Error ? error.message : String(error);
   if (/not found/i.test(message)) return new ControlError("not_found", message);
-  if (/required|must be absolute|invalid|uncommitted changes|cannot be deleted|not managed/i.test(message)) {
+  if (/required|must be absolute|invalid|uncommitted changes|cannot be deleted|not managed|already exists|does not exist|unknown ACP agent/i.test(message)) {
     return new ControlError("invalid_args", message);
   }
   return new ControlError("error", message);

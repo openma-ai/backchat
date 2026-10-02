@@ -526,6 +526,7 @@ export interface BackchatApi extends OpenmaAccountApi {
     import("./external-coordinator.js").ExternalCoordinatorRemoveResult
   >;
   projectsList(): Promise<ProjectInfo[]>;
+  onProjectsChanged(handler: () => void): () => void;
   projectSave(p: ProjectSaveParams): Promise<ProjectInfo>;
   projectDelete(p: { project_id: string }): Promise<void>;
   /** Project → Workspace → Worktree. Lists live + managed + external

@@ -71,28 +71,24 @@ describe("backchat CLI parsing", () => {
     });
   });
 
-  it("parses coordinator create as idempotent display setup", () => {
+  it("parses work steer for a client task", () => {
     expect(parseArgs([
-      "coordinator",
-      "create",
+      "work",
+      "steer",
       "--project",
       "project-1",
-      "--name",
+      "--task",
+      "task-1",
+      "--text",
+      "narrow the diff",
+      "--client",
       "cursor killer",
     ])).toMatchObject({
-      group: "coordinator",
-      action: "create",
-      flags: { project: "project-1", name: "cursor killer" },
+      client: "cursor killer",
+      group: "work",
+      action: "steer",
+      flags: { project: "project-1", task: "task-1", text: "narrow the diff" },
     });
-    expect(parseArgs([
-      "coordinator",
-      "remove",
-      "--project",
-      "project-1",
-      "--name",
-      "cursor killer",
-      "--delete-threads",
-    ]).flags["delete-threads"]).toBe(true);
   });
 
   it("rejects a flag with no value", () => {

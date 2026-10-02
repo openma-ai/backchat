@@ -4,8 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/i18n", () => ({
   useI18n: () => ({
     t: (key: string, values?: Record<string, string | number>) => {
-      if (key === "session.externalSource") return `External · ${values?.client ?? ""}`;
-      if (key === "project.externalCoordinator") return `External coordinator: ${values?.client ?? ""}`;
+      if (key === "session.startedBy") return `Started by ${values?.client ?? ""}`;
       return key;
     },
   }),
@@ -19,13 +18,7 @@ describe("external source badge", () => {
       <ExternalSourceBadge client="cursor killer" />,
     );
     expect(html).toContain('data-testid="external-source-badge"');
-    expect(html).toContain("External · cursor killer");
-  });
-
-  it("attributes project work to the external coordinator", () => {
-    const html = renderToStaticMarkup(
-      <ExternalSourceBadge client="cursor killer" variant="coordinator" />,
-    );
-    expect(html).toContain("External coordinator: cursor killer");
+    expect(html).toContain('title="Started by cursor killer"');
+    expect(html).not.toContain("External ·");
   });
 });

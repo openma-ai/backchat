@@ -29,8 +29,11 @@ import { PushChannel, InvokeChannel } from "../shared/ipc-channels.js";
 import {
   firstAllowOption,
   isReadOnlyToolCall,
+  noteToolApproval,
   runtimePermissionPolicy,
+  toolCallIdOf,
 } from "./permission-policy.js";
+import { appendEvent } from "./sql-store.js";
 import { publishControlLiveEvent } from "./control/live-bus.js";
 import type {
   AcpTerminalInfo,
@@ -97,6 +100,14 @@ function makeRequestId(prefix: string): string {
   return `${prefix}-${nextRequestId++}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function rememberBrokerEvent(sessionId: string, type: string, data: unknown): void {
+  try {
+    appendEvent(sessionId, type, data);
+  } catch {
+    // Headless tests and a closed database still answer the permission.
+  }
+}
+
 function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send(channel, payload);
@@ -134,6 +145,7 @@ export function requestPermission(
   const auto = policy === "auto-all"
     || (policy === "auto-read" && isReadOnlyToolCall(p.toolCall));
   if (auto && allow) {
+    noteToolApproval(sessionId, toolCallIdOf(p.toolCall));
     return Promise.resolve({
       outcome: { outcome: "selected", optionId: allow.optionId },
     });
@@ -151,6 +163,12 @@ export function requestPermission(
       sessionId,
       ask,
       resolve: (d) => resolve(d),
+    });
+    rememberBrokerEvent(sessionId, "permission_request", {
+      request_id: requestId,
+      title: ask.presentation.title,
+      kind: ask.presentation.kind,
+      options: ask.options,
     });
     publishControlLiveEvent({
       type: "permission",
@@ -234,9 +252,11 @@ export function writeTextFile(
   const p = params as { path: string; content: string };
   const roots = typeof sessionRoots === "string" ? [sessionRoots] : sessionRoots;
   const insideCwd = roots.some((root) => isInsideCwd(p.path, root));
-  const autoAll = runtimePermissionPolicy(sessionId) === "auto-all";
+  const policy = runtimePermissionPolicy(sessionId);
+  const autoAll = policy === "auto-all";
+  const gateWrites = policy === "ask" || policy === "auto-read";
   return new Promise(async (resolve, reject) => {
-    if (insideCwd || autoAll) {
+    if ((insideCwd && !gateWrites) || autoAll) {
       try {
         await mkdir(dirname(p.path), { recursive: true });
         await writeFile(p.path, p.content, "utf-8");
@@ -264,6 +284,25 @@ export function writeTextFile(
       content: p.content,
       resolve: (v) => resolve(v),
       reject,
+    });
+    const options = [
+      { optionId: "allow", name: "Allow", kind: "allow_once" },
+      { optionId: "reject", name: "Reject", kind: "reject_once" },
+    ];
+    rememberBrokerEvent(sessionId, "permission_request", {
+      request_id: requestId,
+      title: p.path,
+      kind: "write",
+      options,
+    });
+    publishControlLiveEvent({
+      type: "permission",
+      session_id: sessionId,
+      request_id: requestId,
+      timestamp: new Date().toISOString(),
+      title: p.path,
+      kind: "write",
+      options,
     });
     broadcast(PushChannel.FsWriteApproval, ask);
   });
@@ -579,6 +618,11 @@ export function listPendingAsks(sessionId?: string): ListedBrokerAsk[] {
         session_id: pending.sessionId,
         kind: "fs_write" as const,
         path: pending.path,
+        title: pending.path,
+        options: [
+          { optionId: "allow", name: "Allow", kind: "allow_once" },
+          { optionId: "reject", name: "Reject", kind: "reject_once" },
+        ],
       })),
   ];
 }
@@ -587,6 +631,13 @@ export function respondPermission(requestId: string, optionId: string | null | u
   const pending = pendingPermission.get(requestId);
   if (!pending) return false;
   pendingPermission.delete(requestId);
+  if (optionId != null) noteToolApproval(pending.sessionId, toolCallIdOf(pending.ask.toolCall));
+  rememberBrokerEvent(pending.sessionId, "permission_response", {
+    request_id: requestId,
+    option_id: optionId,
+    outcome: optionId == null ? "cancelled" : "selected",
+    title: pending.ask.presentation.title,
+  });
   brokerSessionEventSink?.({
     type: "session.permission_response",
     session_id: pending.sessionId,
@@ -628,6 +679,12 @@ export async function respondToBrokerAsk(
     }
     pendingFsWrite.delete(requestId);
     const approved = option === "allow" || option === "approve" || option === "allow_once";
+    rememberBrokerEvent(sessionId, "permission_response", {
+      request_id: requestId,
+      option_id: approved ? option : null,
+      outcome: approved ? "selected" : "cancelled",
+      title: fsWrite.path,
+    });
     if (!approved) {
       fsWrite.reject(new Error("user denied write"));
       return;

@@ -152,13 +152,16 @@ class FakeAcpAgent {
     if (promptText === "cursor-plan-merge-e2e") {
       await this.runCursorPlanMerge();
     }
+    const reply = process.env.BACKCHAT_FAKE_SHORT_REPLY === "1"
+      ? `[fake agent] ok: ${promptText.trim().slice(0, 40)}`
+      : `Fake response saved for ${promptText}.`;
     await this.connection.sessionUpdate({
       sessionId: params.sessionId,
       update: {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: `Fake response saved for ${promptText}.`,
+          text: reply,
         },
       },
     });

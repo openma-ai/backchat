@@ -95,7 +95,7 @@ await page.evaluate(async ({ nodePath, agentPath }) => {
       enabled: true,
       command_override: nodePath,
       args_override: [agentPath],
-      env: [{ name: "BACKCHAT_FAKE_ADDITIONAL_DIRECTORIES", value: "1" }],
+      env: [{ name: "BACKCHAT_FAKE_SHORT_REPLY", value: "1" }],
     }],
   });
 }, { nodePath: process.execPath, agentPath: fakeAgent });
@@ -135,6 +135,13 @@ const started = cli([
 ]);
 if (started.status !== 0) throw new Error(`session start failed: ${started.stdout}`);
 const session = JSON.parse(started.stdout);
+if (session.additional_directories?.length) {
+  throw new Error(`fake agent without additionalDirectories should collapse roots, got ${JSON.stringify(session.additional_directories)}`);
+}
+if (session.cwd.includes("/01-") || session.cwd.includes("/02-")) {
+  throw new Error(`cwd is still one repository: ${session.cwd}`);
+}
+log(`fallback cwd (fake agent, additionalDirectories off): ${session.cwd}`);
 const streamed = cli([
   "session", "send", session.session_id, "EVIDENCE_HELLO",
   "--stream", "--timeout", "20",
@@ -187,10 +194,6 @@ for (let attempt = 0; attempt < 20; attempt += 1) {
   await new Promise((resolve) => setTimeout(resolve, 250));
 }
 if (requestId) cli(["session", "respond", session.session_id, requestId, "write:once", "--json"]);
-
-log("\n# coordinators");
-cli(["coordinator", "create", "--json", "--project", project.id, "--name", "cursor killer"]);
-cli(["coordinator", "create", "--json", "--project", project.id, "--name", "cursor killer"]);
 
 log("\n# built-in work, no client");
 await page.evaluate(async (projectId) => {
@@ -253,43 +256,43 @@ const projectButton = navigation.getByRole("button", { name: /hilo/ }).first();
 await projectButton.waitFor({ timeout: 15_000 });
 if ((await projectButton.getAttribute("aria-expanded")) !== "true") await projectButton.click();
 const hiloItem = projectButton.locator("xpath=ancestor::li[1]");
-const externalRow = hiloItem.getByTestId("external-coordinator-row");
 const sessionButton = hiloItem.getByRole("button", { name: "EVIDENCE_HELLO", exact: true });
 try {
-  await externalRow.waitFor({ timeout: 15_000 });
   await hiloItem.getByTestId("project-coordinator-row").waitFor({ timeout: 15_000 });
   await sessionButton.waitFor({ timeout: 15_000 });
+  await hiloItem.getByLabel("Started by cursor killer").first().waitFor({ timeout: 15_000 });
+  const freshToggle = navigation.getByRole("button", { name: /fresh/ }).first();
+  if (await freshToggle.count() && (await freshToggle.getAttribute("aria-expanded")) !== "true") {
+    await freshToggle.click();
+  }
 } catch (error) {
   await page.screenshot({ path: join(shots, "sidebar-debug.png") });
   log(`sidebar text: ${await navigation.innerText().catch(() => "")}`);
   throw error;
 }
-await page.screenshot({ path: join(shots, "sidebar-both-coordinators.png") });
+await page.screenshot({ path: join(shots, "sidebar-cli-session.png") });
 await sessionButton.click();
-await page.getByText("Fake response saved for EVIDENCE_HELLO.").waitFor({ timeout: 15_000 });
+await page.getByText(/\[fake agent\] ok:/).first().waitFor({ timeout: 15_000 });
 await page.locator("[data-testid=external-source-badge]:visible").first().waitFor({ timeout: 10_000 });
 await page.screenshot({ path: join(shots, "session-title-and-badge.png") });
 
 await hiloItem.getByTestId("project-coordinator-row").click();
+await page.getByText("[fake agent] ok:").first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Tasks" }).click();
 const threads = page.getByLabel("Threads");
 await threads.getByText("Review the branch").waitFor({ timeout: 15_000 });
-await threads.getByText("External coordinator: cursor killer").waitFor({ timeout: 15_000 });
-await page.getByText("Hello from the built-in coordinator", { exact: true }).waitFor({ timeout: 20_000 });
-await page.screenshot({ path: join(shots, "project-both-coordinators.png") });
+await threads.getByLabel("Started by cursor killer").waitFor({ timeout: 15_000 });
+await page.screenshot({ path: join(shots, "project-builtin-hilo.png") });
 
 const freshButton = navigation.getByRole("button", { name: /fresh/ }).first();
 await freshButton.waitFor({ timeout: 15_000 });
 if ((await freshButton.getAttribute("aria-expanded")) !== "true") await freshButton.click();
 const freshItem = freshButton.locator("xpath=ancestor::li[1]");
-await freshItem.getByTestId("external-coordinator-row").click();
-await page.getByRole("button", { name: "Fresh task without coordinator setup" }).waitFor({ timeout: 15_000 });
-await page.getByRole("textbox", { name: /read-only/ }).waitFor({ timeout: 10_000 });
-await page.screenshot({ path: join(shots, "fresh-external-task.png") });
 await freshItem.getByTestId("project-coordinator-row").click();
 await page.getByRole("button", { name: "Set up coordinator" }).waitFor({ timeout: 15_000 });
 await page.getByRole("button", { name: "Tasks" }).click();
 await page.getByLabel("Threads").getByText("Fresh task without coordinator setup").waitFor({ timeout: 15_000 });
+await page.getByLabel("Threads").getByLabel("Started by cursor killer").waitFor({ timeout: 15_000 });
 await page.screenshot({ path: join(shots, "fresh-no-builtin-setup.png") });
 
 await writeFile(logPath, `${lines.join("\n")}\n`);
