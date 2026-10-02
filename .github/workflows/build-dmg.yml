@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      # Temporary: exercise upload-artifact@v7 on this branch. Remove before merge.
+      - cursor/actions-major-bumps-ee69
     tags:
       - "v*"
 
