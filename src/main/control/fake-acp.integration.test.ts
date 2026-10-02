@@ -177,6 +177,12 @@ describe("control CLI against the fake ACP agent", () => {
     const sent = await run(["session", "send", sessionId, "hello from the loop", "--wait", "--timeout", "20", "--json"]);
     expect(sent.code).toBe(0);
     expect(JSON.parse(sent.body).reply).toContain("Fake response saved for hello from the loop");
+    const status = await run(["session", "status", sessionId, "--json"]);
+    expect(status.code).toBe(0);
+    expect(JSON.parse(status.body)).toMatchObject({
+      last_outcome: "complete",
+      last_reply: expect.stringContaining("Fake response saved for hello from the loop"),
+    });
 
     const sessions = await run(["session", "list", "--project", projectId, "--json"]);
     expect(JSON.parse(sessions.body)).toEqual([

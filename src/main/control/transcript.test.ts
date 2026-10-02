@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { streamEventsFromSession } from "./live-bus.js";
-import { transcriptFromHistory } from "./transcript.js";
+import { sessionTurnSummary, transcriptFromHistory } from "./transcript.js";
 import type { PersistedEvent } from "../sql-store.js";
 
 function row(seq: number, type: string, data: unknown, ts = 1_700_000_000_000 + seq): PersistedEvent {
@@ -115,5 +115,16 @@ describe("control transcript", () => {
         status: "completed",
       },
     })[0]).toMatchObject({ status: "end", outcome: "finished" });
+  });
+
+  it("reports the last turn outcome and reply", () => {
+    expect(sessionTurnSummary([
+      row(1, "openma_event", {
+        type: "agent.message_chunk",
+        turn_id: "t1",
+        data: { text: "Hi" },
+      }),
+      row(2, "openma_event", { type: "turn.completed", turn_id: "t1", data: {} }),
+    ])).toEqual({ outcome: "complete", reply: "Hi" });
   });
 });

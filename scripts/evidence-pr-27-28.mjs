@@ -43,6 +43,17 @@ function cli(args, timeout = 60_000, client = "cursor killer") {
   return { status: result.status ?? 1, stdout, stderr };
 }
 
+async function expectSessionTitle(button, title) {
+  const clipped = await button.evaluate((node, expected) => {
+    const label = [...node.querySelectorAll("span")].find((span) => span.textContent?.trim() === expected);
+    if (!label) return `missing ${expected}; text=${node.textContent}`;
+    return label.scrollWidth > label.clientWidth + 1
+      ? `clipped ${label.clientWidth}/${label.scrollWidth}`
+      : "";
+  }, title);
+  if (clipped) throw new Error(`sidebar session title is truncated: ${clipped}`);
+}
+
 function git(cwd, args) {
   const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout);
@@ -270,7 +281,21 @@ try {
   log(`sidebar text: ${await navigation.innerText().catch(() => "")}`);
   throw error;
 }
+const sidebarResizer = page.getByRole("separator", { name: "Resize sidebar" });
+const resizerBox = await sidebarResizer.boundingBox();
+if (resizerBox) {
+  await page.mouse.move(resizerBox.x + resizerBox.width / 2, resizerBox.y + 240);
+  await page.mouse.down();
+  await page.mouse.move(resizerBox.x + 180, resizerBox.y + 240, { steps: 8 });
+  await page.mouse.up();
+}
+const startedBy = sessionButton.getByLabel("Started by cursor killer");
+const callerTip = page.getByRole("tooltip", { name: "Started by cursor killer" });
+await startedBy.hover();
+await callerTip.waitFor({ timeout: 5_000 });
+log(`tooltip box: ${JSON.stringify(await callerTip.boundingBox())}`);
 await page.screenshot({ path: join(shots, "sidebar-cli-session.png") });
+await expectSessionTitle(sessionButton, "EVIDENCE_HELLO");
 await sessionButton.click();
 await page.getByText(/\[fake agent\] ok:/).first().waitFor({ timeout: 15_000 });
 await page.locator("[data-testid=external-source-badge]:visible").first().waitFor({ timeout: 10_000 });

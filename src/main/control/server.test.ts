@@ -128,6 +128,11 @@ describe("local control server", () => {
     }) as { worktrees: Array<{ path: string }> };
     expect(await readFile(join(workspace.worktrees[0]!.path, "app.txt"), "utf8")).toBe("v2\n");
     expect(await git(app, "branch", "--list", "feature/existing")).toContain("feature/existing");
+    await expect(callControl({
+      socketPath: fixture.socketPath,
+      method: "workspace.create",
+      params: { project_id: project.id, branch: "feature/existing", base: "main" },
+    })).rejects.toThrow(/Workspace already exists for branch feature\/existing/);
   });
 
   it("keeps a branch that already existed when the workspace checked it out", async () => {
