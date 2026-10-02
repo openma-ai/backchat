@@ -16,7 +16,7 @@ export function ExternalSourceBadge({
     <span
       data-testid="external-source-badge"
       title={label}
-      className="max-w-[11rem] shrink-0 truncate rounded bg-bg-surface px-1 py-px text-[10px] leading-4 text-fg-subtle"
+      className="max-w-[4.75rem] min-w-0 shrink truncate rounded bg-bg-surface px-1 py-px text-[10px] leading-4 text-fg-subtle"
     >
       {label}
     </span>

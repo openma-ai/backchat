@@ -35,6 +35,36 @@ const setup = (path?: string) => {
   services.push(service);
   return { service, path };
 };
+it("keeps built-in submit dependent on coordinator setup", async () => {
+  const { service } = setup();
+  await expect(service.submit({
+    projectId: project.id,
+    commandId: "unconfigured",
+    type: "message",
+    text: "Hello",
+  })).rejects.toThrow(/Configure this project first/);
+  await service.save({
+    projectId: project.id,
+    description: "",
+    instructions: "",
+    context: "",
+    resources: [],
+    coordinatorAgent: "coordinator",
+    workerAgent: "worker",
+    continuity: "per-scope",
+    controls: ["delegate", "steer", "cancel", "complete"],
+  });
+  await service.submit({
+    projectId: project.id,
+    commandId: "configured",
+    type: "message",
+    text: "Hello from the built-in coordinator",
+  });
+  await service.drain();
+  const view = await service.view(project.id);
+  expect(view.config?.coordinatorAgent).toBe("coordinator");
+  expect(view.facts.sessions.some((session) => session.agentId === "coordinator")).toBe(true);
+});
 it("persists project context and routes independent workers back to the coordinator across reopen", async () => {
   const { service, path } = setup();
   await service.save({

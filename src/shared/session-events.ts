@@ -597,6 +597,12 @@ export type SessionEventOut = (
       auth?: SessionAuthState;
     }
   | { type: "session.disposed"; session_id: string }
+  | {
+      /** First prompt became the sidebar title. The external badge stays separate. */
+      type: "session.retitled";
+      session_id: string;
+      title: string;
+    }
 ) & {
   /** Canonical OpenMA event produced at the main-process adapter boundary.
    *  `event` remains the legacy ACP payload during migration; consumers should

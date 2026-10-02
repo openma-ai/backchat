@@ -1,18 +1,23 @@
 import { randomUUID } from "node:crypto";
 import type { ProjectWorkCommand, ProjectWorkGoalInput } from "../../shared/project-work.js";
 import {
+  ensureExternalCoordinator,
+  findExternalCoordinator,
+  getExternalCoordinator,
   getProject,
-  getProjectExternalCoordinator,
   getSession,
+  insertExternalTask,
+  listExternalCoordinators,
+  listExternalTasks,
   listSessions,
+  listSessionsForExternalCoordinator,
   loadHistory,
-  setProjectExternalCoordinator,
-  setSessionTitleIfEmpty,
+  removeExternalCoordinator,
 } from "../sql-store.js";
+import type { ExternalTaskInfo } from "../../shared/external-coordinator.js";
 import { workspaceService, type WorkspaceService } from "../workspace-service.js";
 import type { SessionManager } from "../session-manager.js";
 import { listPendingAsks, respondToBrokerAsk } from "../brokers.js";
-import { externalClientContext } from "../external-client.js";
 import { isSessionPermissionPolicy } from "../permission-policy.js";
 import { ControlError, asControlError } from "./errors.js";
 import {
@@ -102,7 +107,13 @@ export function createControlApi(deps: ControlApiDeps = {}) {
         case "session.list":
           return listSessionRecords(params);
         case "session.start":
-          return startSession(deps.sessions, params, client);
+          return startSession(deps.sessions, workspaces, params, client);
+        case "coordinator.create":
+          return createCoordinator(params);
+        case "coordinator.list":
+          return listCoordinators(params);
+        case "coordinator.remove":
+          return removeCoordinator(deps.sessions, params);
         case "session.send":
           return sendSession(deps.sessions, params);
         case "session.status":
@@ -124,8 +135,11 @@ export function createControlApi(deps: ControlApiDeps = {}) {
           return submitWork(deps.work, params, client);
         case "work.status":
           return workStatus(deps.work, params);
-        case "work.view":
-          return requireWork(deps.work).view(requiredString(params, "project_id", "Project id"));
+        case "work.view": {
+          const projectId = requiredString(params, "project_id", "Project id");
+          if (!getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
+          return withExternalWork(projectId, await requireWork(deps.work).view(projectId));
+        }
         case "work.goal":
           return requireWork(deps.work).goal(goalInput(params));
         default:
@@ -159,8 +173,44 @@ function listSessionRecords(params: Record<string, unknown>) {
     }));
 }
 
+function createCoordinator(params: Record<string, unknown>) {
+  const projectId = requiredString(params, "project_id", "Project id");
+  const name = requiredString(params, "name", "Name");
+  if (!getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
+  return ensureExternalCoordinator(projectId, name);
+}
+
+function listCoordinators(params: Record<string, unknown>) {
+  const projectId = typeof params.project_id === "string" ? params.project_id.trim() : "";
+  if (projectId && !getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
+  return listExternalCoordinators(projectId || undefined);
+}
+
+async function removeCoordinator(sessions: SessionManager | undefined, params: Record<string, unknown>) {
+  const id = typeof params.id === "string" ? params.id.trim() : "";
+  const coordinator = id
+    ? getExternalCoordinator(id)
+    : findExternalCoordinator(
+      requiredString(params, "project_id", "Project id"),
+      requiredString(params, "name", "Name"),
+    );
+  if (!coordinator) throw new ControlError("not_found", "External coordinator not found");
+  const deleteThreads = params.delete_threads === true;
+  if (deleteThreads) {
+    for (const session of listSessionsForExternalCoordinator(coordinator)) {
+      try {
+        await sessions?.dispose(session.id);
+      } catch {
+        // The session may already be stopped. The row is still removed below.
+      }
+    }
+  }
+  return removeExternalCoordinator(coordinator.id, deleteThreads);
+}
+
 async function startSession(
   sessions: SessionManager | undefined,
+  workspaces: WorkspaceService,
   params: Record<string, unknown>,
   client?: string,
 ) {
@@ -177,6 +227,14 @@ async function startSession(
   if (!workspaceId && !root) {
     throw new ControlError("invalid_args", "session start needs --workspace or --root");
   }
+  let projectId = typeof params.project_id === "string" ? params.project_id.trim() : "";
+  if (!projectId && workspaceId) {
+    projectId = (await workspaces.resolve(workspaceId))?.project_id ?? "";
+  }
+  if (client && projectId) {
+    if (!getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
+    ensureExternalCoordinator(projectId, client);
+  }
   const sessionId = `sess-${randomUUID().slice(0, 8)}`;
   const started = await manager.start({
     session_id: sessionId,
@@ -188,17 +246,12 @@ async function startSession(
         ? { extra_directories: directories }
         : { additional_directories: directories }
       : {}),
-    ...(typeof params.project_id === "string" && params.project_id.trim()
-      ? { project_id: params.project_id.trim() }
-      : {}),
+    ...(projectId ? { project_id: projectId } : {}),
     ...(client ? { external_client: client } : {}),
     ...(isSessionPermissionPolicy(approve) ? { permission_policy: approve } : {}),
   });
   if (started.status === "error") throw new ControlError("error", started.message);
   if (started.status !== "ready") throw new ControlError("error", "Session start was cancelled");
-  if (!prompt.trim()) {
-    setSessionTitleIfEmpty(sessionId, client ? `${agentId} · ${client}` : agentId);
-  }
   let turnId: string | undefined;
   if (prompt.trim()) {
     turnId = randomUUID();
@@ -354,7 +407,6 @@ async function submitWork(work: ControlWorkApi | undefined, params: Record<strin
   }
   const text = typeof params.text === "string" ? params.text : "";
   if (!text.trim()) throw new ControlError("invalid_args", "Work text is required");
-  if (client) setProjectExternalCoordinator(projectId, client);
   const command: ProjectWorkCommand = {
     projectId,
     commandId: typeof params.command_id === "string" && params.command_id.trim()
@@ -365,8 +417,31 @@ async function submitWork(work: ControlWorkApi | undefined, params: Record<strin
     ...(typeof params.worker_id === "string" && params.worker_id.trim() ? { workerId: params.worker_id.trim() } : {}),
     ...(typeof params.run_id === "string" && params.run_id.trim() ? { runId: params.run_id.trim() } : {}),
   };
-  await externalClientContext.run(client ?? "", () => api.submit(command));
-  return { project_id: projectId, command_id: command.commandId, external_coordinator: client ?? null };
+  if (client) {
+    const coordinator = ensureExternalCoordinator(projectId, client);
+    const task = insertExternalTask({
+      projectId,
+      coordinator,
+      commandId: command.commandId,
+      type,
+      text,
+      ...(command.workerId ? { workerId: command.workerId } : {}),
+    });
+    return {
+      project_id: projectId,
+      command_id: command.commandId,
+      external_coordinator: coordinator.name,
+      routed: "external" as const,
+      task,
+    };
+  }
+  await api.submit(command);
+  return {
+    project_id: projectId,
+    command_id: command.commandId,
+    external_coordinator: null,
+    routed: "builtin" as const,
+  };
 }
 
 async function workStatus(work: ControlWorkApi | undefined, params: Record<string, unknown>) {
@@ -377,11 +452,22 @@ async function workStatus(work: ControlWorkApi | undefined, params: Record<strin
     return listProjectRecords().map((project) => ({
       id: project.id,
       name: project.name,
-      external_coordinator: getProjectExternalCoordinator(project.id),
+      external_coordinators: listExternalCoordinators(project.id),
     }));
   }
   if (!getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
-  return api.view(projectId);
+  return withExternalWork(projectId, await api.view(projectId));
+}
+
+export function withExternalWork<T>(projectId: string, view: T): T & {
+  external_coordinators: ReturnType<typeof listExternalCoordinators>;
+  external_tasks: ExternalTaskInfo[];
+} {
+  return {
+    ...view,
+    external_coordinators: listExternalCoordinators(projectId),
+    external_tasks: listExternalTasks(projectId),
+  };
 }
 
 function goalInput(params: Record<string, unknown>): ProjectWorkGoalInput {

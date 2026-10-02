@@ -62,7 +62,15 @@ import { openmaRoot } from "./storage-root.js";
 import { controlSocketPath } from "../shared/control-socket.js";
 import { createControlApi } from "./control/handlers.js";
 import { publishControlLiveEvent, streamEventsFromSession } from "./control/live-bus.js";
-import { getProjectExternalCoordinator } from "./sql-store.js";
+import {
+  ensureExternalCoordinator,
+  getExternalCoordinator,
+  listExternalCoordinators,
+  listExternalTasks,
+  listSessionsForExternalCoordinator,
+  removeExternalCoordinator,
+} from "./sql-store.js";
+import { withExternalWork } from "./control/handlers.js";
 import { startControlServer, type ControlServer } from "./control/server.js";
 import { installBackchatCli } from "./control/cli-install.js";
 import { saveProjectCommand } from "./project-commands.js";
@@ -579,10 +587,33 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   await projectMcp.start();
   projectWork.start();
   const projectRouter = new ProjectCloudRouter(projectWork, scope => { if(!deps.openmaAccount) throw new Error("OpenMA login required"); return deps.openmaAccount.connection(scope); }, getProject, process.env.BACKCHAT_PROJECT_WORKER_URL);
-  ipcMain.handle(InvokeChannel.ProjectWorkView, async (_e, id: string) => ({
-    ...await projectRouter.view(id),
-    external_coordinator: getProjectExternalCoordinator(id),
+  ipcMain.handle(InvokeChannel.ProjectWorkView, async (_e, id: string) =>
+    withExternalWork(id, await projectRouter.view(id)));
+  ipcMain.handle(InvokeChannel.ExternalCoordinatorsList, () => ({
+    coordinators: listExternalCoordinators(),
+    tasks: listExternalTasks(),
   }));
+  ipcMain.handle(InvokeChannel.ExternalCoordinatorCreate, (_e, input: { project_id: string; name: string }) => {
+    if (!input?.project_id?.trim() || !input?.name?.trim()) {
+      throw new Error("Project id and name are required");
+    }
+    if (!getProject(input.project_id.trim())) throw new Error("Project not found");
+    return ensureExternalCoordinator(input.project_id.trim(), input.name);
+  });
+  ipcMain.handle(InvokeChannel.ExternalCoordinatorRemove, async (_e, input: { id: string; delete_threads?: boolean }) => {
+    const coordinator = getExternalCoordinator(input?.id ?? "");
+    if (!coordinator) throw new Error("External coordinator not found");
+    if (input.delete_threads) {
+      for (const session of listSessionsForExternalCoordinator(coordinator)) {
+        try {
+          await sessionManager.dispose(session.id);
+        } catch {
+          // Already stopped.
+        }
+      }
+    }
+    return removeExternalCoordinator(coordinator.id, input.delete_threads === true);
+  });
   ipcMain.handle(InvokeChannel.ProjectWorkSave, (_e, config) => projectRouter.save(config));
   ipcMain.handle(InvokeChannel.ProjectWorkSubmit, (_e, input) => projectRouter.submit(input));
   ipcMain.handle(InvokeChannel.ProjectWorkGoal, (_e, input) => projectRouter.goal(input));
@@ -948,10 +979,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
           sessions: sessionManager,
           work: {
             submit: (input) => projectRouter.submit(input),
-            view: async (id) => ({
-              ...await projectRouter.view(id),
-              external_coordinator: getProjectExternalCoordinator(id),
-            }),
+            view: async (id) => withExternalWork(id, await projectRouter.view(id)),
             goal: (input) => projectRouter.goal(input),
           },
         }),

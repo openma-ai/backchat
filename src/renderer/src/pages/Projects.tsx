@@ -1,6 +1,6 @@
 import { useProjects } from "@/lib/projects-query";
 import { useI18n } from "@/lib/i18n";
-import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
+import { CoordinatorSiblings } from "@/components/shell/CoordinatorSiblings";
 import { defaultCoordinatorConfig as defaults } from "@/lib/project-coordinator";
 import { PageTopbar } from "@/components/shell/PageTopbar";
 import type { PromptAttachment } from "@shared/session-events";
@@ -820,6 +820,7 @@ function ProjectWorkspace({
 }) {
   const { project, config, facts } = view;
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<
     "conversation" | "workers" | "activity" | "overview"
   >("conversation");
@@ -965,6 +966,11 @@ function ProjectWorkspace({
         className={`project-columns${tab !== "conversation" ? " project-panel-open" : ""}`}
       >
         <section className="project-main">
+          <CoordinatorSiblings
+            projectId={project.id}
+            active="builtin"
+            coordinators={view.external_coordinators ?? []}
+          />
           {config?.continuity === "per-run" ? (
             <div className="project-runs">
               <select
@@ -986,9 +992,6 @@ function ProjectWorkspace({
                 New run
               </Button>
             </div>
-          ) : null}
-          {view.external_coordinator ? (
-            <ExternalSourceBadge client={view.external_coordinator} variant="coordinator" />
           ) : null}
           {coordinatorOutcome ? (
             <ProjectOutcomeBar
@@ -1189,12 +1192,9 @@ function ProjectWorkspace({
                 ) : tab === "workers" ? (
                   <div className="project-work-list">
                     <div className="project-panel-summary">
-                      {view.external_coordinator ? (
-                        <ExternalSourceBadge client={view.external_coordinator} variant="coordinator" />
-                      ) : null}
                       <span>
-                        {workers.length
-                          ? `${workers.length} ${t("project.threads").toLowerCase()}`
+                        {workers.length + (view.external_tasks?.length ?? 0)
+                          ? `${workers.length + (view.external_tasks?.length ?? 0)} ${t("project.threads").toLowerCase()}`
                           : t("project.noTasks")}
                       </span>
                       {config?.controls.includes("delegate") ? (
@@ -1209,7 +1209,7 @@ function ProjectWorkspace({
                         </Button>
                       ) : null}
                     </div>
-                    {!workers.length ? (
+                    {!workers.length && !(view.external_tasks?.length) ? (
                       <div className="project-workers-empty">
                         <h3>{t("project.tasksAppearHere")}</h3>
                         <p>{t("project.tasksEmptyHint")}</p>
@@ -1273,6 +1273,9 @@ function ProjectWorkspace({
                                   >
                                     {workerId}
                                   </button>
+                                  <p className="project-worker-attribution" data-testid="task-attribution">
+                                    {t("project.builtInAttribution")}
+                                  </p>
                                   <p className="project-worker-preview">
                                     {projectResponseText(
                                       facts.agentEvents.filter(
@@ -1356,6 +1359,28 @@ function ProjectWorkspace({
                         </section>
                       );
                     })}
+                    {(view.external_tasks ?? []).map((task) => (
+                      <article className="project-worker" key={task.id} data-testid="external-task">
+                        <div>
+                          <p className="project-worker-title">{task.text}</p>
+                          <p className="project-worker-attribution" data-testid="task-attribution">
+                            {t("project.externalCoordinator", { client: task.coordinator_name })}
+                          </p>
+                        </div>
+                        <div className="project-worker-actions">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => void navigate({
+                              to: "/projects/$projectId/coordinators/$coordinatorId",
+                              params: { projectId: project.id, coordinatorId: task.coordinator_id },
+                            })}
+                          >
+                            {t("project.viewThread")}
+                          </Button>
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 ) : (
                   <div className="project-work-list">

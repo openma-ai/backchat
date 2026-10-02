@@ -1,8 +1,14 @@
 import { useProjects } from "@/lib/projects-query";
+import {
+  externalCoordinatorNodes,
+  externalCoordinatorSessionIds,
+} from "@/lib/external-coordinator-tree";
+import type { ExternalCoordinatorInfo } from "@shared/external-coordinator";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { ChevronRightIcon as ChevronRightIcon, MoreIcon as MoreHorizontalIcon, ChatIcon as MessageSquareIcon, ChatsIcon as MessagesSquareIcon, PinIcon as PinIcon, PinOffIcon as PinOffIcon, SearchIcon as SearchIcon, SettingsIcon as Settings2Icon, ComposeIcon as SquarePenIcon, ArchiveIcon as ArchiveIcon, ScheduleIcon as CalendarClockIcon, FolderClosedIcon as FolderIcon, FolderOpenIcon as FolderOpenIcon, BranchIcon as GitBranchIcon, PlusIcon as PlusIcon, TrashIcon as Trash2Icon, ParticipantsIcon as UsersRoundIcon, CoordinationIcon as WorkflowIcon } from "@/components/BackchatIcons";
 import { rememberRemovedProject, useRemovedProjectPaths } from "@/lib/removed-projects";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { openmaWorkspaceScope } from "@shared/openma";
 import { useOpenmaAccount, useOpenmaCatalog } from "@/lib/openma-account";
@@ -167,6 +173,7 @@ export function groupSidebarSessions(
   removedPaths: readonly string[] = [],
   coordinatorSessionIds: ReadonlySet<string> = new Set(),
   sections: readonly SidebarCustomSection[] = [],
+  hiddenSessionIds: ReadonlySet<string> = new Set(),
 ): {
   pinned: SessionRow[];
   projects: SidebarProjectGroup[];
@@ -238,7 +245,7 @@ export function groupSidebarSessions(
   }
 
   for (const session of sessions) {
-    if (coordinatorSessionIds.has(session.id)) continue;
+    if (coordinatorSessionIds.has(session.id) || hiddenSessionIds.has(session.id)) continue;
     if (session.pinnedAt != null) {
       pinned.push(session);
       continue;
@@ -358,6 +365,9 @@ export function Sidebar() {
   // "right-click row A then row B leaves both menus open" bug.
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [externalDraft, setExternalDraft] = useState<{ projectId: string; name: string } | null>(null);
+  const [externalRemove, setExternalRemove] = useState<ExternalCoordinatorInfo | null>(null);
+  const [deleteExternalThreads, setDeleteExternalThreads] = useState(false);
   const removedPaths = useRemovedProjectPaths();
   const [projectAction, setProjectAction] = useState<{ kind: "archive" | "remove"; project: SidebarProjectGroup } | null>(null);
   const [projectActionBusy, setProjectActionBusy] = useState(false);
@@ -454,9 +464,36 @@ export function Sidebar() {
   const [localOpen, setLocalOpen] = useState(() => readDisclosureKeys("backchat:sidebar-local:v1", ["local"]).has("local"));
   useEffect(() => saveDisclosureKeys("backchat:sidebar-local:v1", new Set(localOpen ? ["local"] : [])), [localOpen]);
   const localSessions = useMemo(() => sessions.filter((row) => !row.openma && !row.executionTarget), [sessions]);
+  const externalWork = useQuery({
+    queryKey: ["external-coordinators"],
+    queryFn: () => window.backchat.externalCoordinatorsList(),
+    refetchInterval: 2000,
+  });
+  const externalCoordinators = externalWork.data?.coordinators ?? [];
+  const externalTasks = externalWork.data?.tasks ?? [];
+  const hiddenExternalSessionIds = useMemo(
+    () => externalCoordinatorSessionIds(localSessions, externalCoordinators),
+    [localSessions, externalCoordinators],
+  );
   const grouped = useMemo(
-    () => groupSidebarSessions(localSessions, savedProjects, workspaces, removedPaths, coordinatorSessionIds, customSections),
-    [savedProjects, localSessions, workspaces, removedPaths, customSections, [...coordinatorSessionIds].sort().join(",")],
+    () => groupSidebarSessions(
+      localSessions,
+      savedProjects,
+      workspaces,
+      removedPaths,
+      coordinatorSessionIds,
+      customSections,
+      hiddenExternalSessionIds,
+    ),
+    [
+      savedProjects,
+      localSessions,
+      workspaces,
+      removedPaths,
+      customSections,
+      [...coordinatorSessionIds].sort().join(","),
+      [...hiddenExternalSessionIds].sort().join(","),
+    ],
   );
 
   const goHome = () => {
@@ -885,6 +922,9 @@ export function Sidebar() {
                               open={open}
                               labelCls={labelCls}
                               onToggle={() => toggleProject(project.key)}
+                              onAddCoordinator={project.projectId
+                                ? () => setExternalDraft({ projectId: project.projectId!, name: "" })
+                                : undefined}
                               onNewChat={() =>
                                 onNewProjectChat(project)
                               }
@@ -911,6 +951,57 @@ export function Sidebar() {
                                     labelCls={labelCls}
                                   />
                                 </li>
+                                {externalCoordinatorNodes(project.projectId, localSessions, externalCoordinators, externalTasks).map((node) => (
+                                  <li key={node.coordinator.id}>
+                                    <ExternalCoordinatorSidebarRow
+                                      coordinator={node.coordinator}
+                                      active={location.pathname === `/projects/${node.coordinator.project_id}/coordinators/${node.coordinator.id}`}
+                                      labelCls={labelCls}
+                                      onRemove={() => {
+                                        setDeleteExternalThreads(false);
+                                        setExternalRemove(node.coordinator);
+                                      }}
+                                    />
+                                    {node.sessions.length || node.tasks.length ? (
+                                      <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0 pl-4">
+                                        {node.sessions.map((s) => (
+                                          <li key={s.id}>
+                                            <SessionRow
+                                              row={s}
+                                              {...sectionRowProps}
+                                              agentIconUrl={agentIconUrls.get(s.agent_id)}
+                                              active={s.id === activeId && location.pathname.startsWith("/chat/")}
+                                              hasSchedule={scheduledSessionIds.has(s.id)}
+                                              labelCls={labelCls}
+                                              onSelect={() => onSelectSession(s.id)}
+                                              onRename={() =>
+                                                requestRename({ kind: "session", id: s.id, title: s.label })
+                                              }
+                                              onArchive={() => void requestArchive([s.id])}
+                                              menuOpen={openMenuId === s.id}
+                                              onMenuOpenChange={(openMenu) =>
+                                                setOpenMenuId(openMenu ? s.id : null)
+                                              }
+                                            />
+                                          </li>
+                                        ))}
+                                        {node.tasks.map((task) => (
+                                          <li key={task.id}>
+                                            <Link
+                                              to="/projects/$projectId/coordinators/$coordinatorId"
+                                              params={{ projectId: node.coordinator.project_id, coordinatorId: node.coordinator.id }}
+                                              data-testid="external-task"
+                                              className="sidebar-coordinator-row"
+                                              title={task.text}
+                                            >
+                                              <span className="min-w-0 flex-1 truncate">{task.text}</span>
+                                            </Link>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : null}
+                                  </li>
+                                ))}
                                 {project.sessions.map((s) => (
                                   <li key={s.id}>
                                     <SessionRow
@@ -1114,6 +1205,69 @@ export function Sidebar() {
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={externalDraft !== null} onOpenChange={(open) => { if (!open) setExternalDraft(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>{t("project.addExternalCoordinator")}</DialogTitle></DialogHeader>
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!externalDraft?.name.trim()) return;
+              void window.backchat.externalCoordinatorCreate({
+                project_id: externalDraft.projectId,
+                name: externalDraft.name.trim(),
+              }).then(() => {
+                setExternalDraft(null);
+                void queryClient.invalidateQueries({ queryKey: ["external-coordinators"] });
+                void queryClient.invalidateQueries({ queryKey: ["project-work", externalDraft.projectId] });
+              });
+            }}
+          >
+            <label className="grid gap-1 text-sm">
+              {t("project.externalCoordinatorName")}
+              <Input
+                autoFocus
+                value={externalDraft?.name ?? ""}
+                onChange={(event) => setExternalDraft((current) => current ? { ...current, name: event.target.value } : current)}
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setExternalDraft(null)}>{t("common.cancel")}</Button>
+              <Button type="submit" disabled={!externalDraft?.name.trim()}>{t("project.addExternalCoordinator")}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={externalRemove !== null} onOpenChange={(open) => { if (!open) setExternalRemove(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>{t("project.removeExternalCoordinator")}</DialogTitle></DialogHeader>
+          <p className="text-sm text-fg-muted">{t("project.removeExternalCoordinatorBody")}</p>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={deleteExternalThreads} onChange={(event) => setDeleteExternalThreads(event.target.checked)} />
+            {t("project.deleteExternalThreads")}
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setExternalRemove(null)}>{t("common.cancel")}</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!externalRemove) return;
+                const coordinator = externalRemove;
+                void window.backchat.externalCoordinatorRemove({
+                  id: coordinator.id,
+                  delete_threads: deleteExternalThreads,
+                }).then(() => {
+                  setExternalRemove(null);
+                  void queryClient.invalidateQueries({ queryKey: ["external-coordinators"] });
+                  void queryClient.invalidateQueries({ queryKey: ["project-work", coordinator.project_id] });
+                });
+              }}
+            >
+              {t("project.removeExternalCoordinator")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <CreateProjectDialog
         open={createProjectOpen}
         onOpenChange={setCreateProjectOpen}
@@ -1252,6 +1406,7 @@ function ProjectSidebarRow({
   open,
   labelCls,
   onToggle,
+  onAddCoordinator,
   onNewChat,
   onArchiveChats,
   onRemove,
@@ -1262,6 +1417,7 @@ function ProjectSidebarRow({
   open: boolean;
   labelCls: string;
   onToggle: () => void;
+  onAddCoordinator?: () => void;
   onNewChat: () => void;
   onArchiveChats: () => void;
   onRemove: () => void;
@@ -1324,6 +1480,11 @@ function ProjectSidebarRow({
             {group.projectId && <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/projects/$projectId", params: { projectId: group.projectId! } })} className="flex items-center gap-2 py-1 text-ui">
               <Settings2Icon className="size-3.5" /><span>{t("project.settings")}</span>
             </DropdownMenuItem>}
+            {onAddCoordinator ? (
+              <DropdownMenuItem onSelect={onAddCoordinator} className="flex items-center gap-2 py-1 text-ui">
+                <PlusIcon className="size-3.5" /><span>{t("project.addExternalCoordinator")}</span>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem
               onSelect={() =>
                 group.primaryRoot
@@ -1356,6 +1517,51 @@ function ProjectSidebarRow({
   );
 }
 
+function ExternalCoordinatorSidebarRow({
+  coordinator,
+  active,
+  labelCls,
+  onRemove,
+}: {
+  coordinator: ExternalCoordinatorInfo;
+  active: boolean;
+  labelCls: string;
+  onRemove: () => void;
+}) {
+  const { t } = useI18n();
+  const label = t("project.externalCoordinatorEntry", { client: coordinator.name });
+  return (
+    <div className="group flex w-full items-center gap-1">
+      <Link
+        to="/projects/$projectId/coordinators/$coordinatorId"
+        params={{ projectId: coordinator.project_id, coordinatorId: coordinator.id }}
+        data-testid="external-coordinator-row"
+        data-external-coordinator={coordinator.name}
+        aria-current={active ? "page" : undefined}
+        aria-label={label}
+        className={cn("sidebar-coordinator-row min-w-0 flex-1", active && "app-selected-surface")}
+      >
+        <span className="sidebar-coordinator-icon">
+          <WorkflowIcon className={cn("size-3.5 shrink-0 text-fg-muted", labelCls)} aria-hidden="true" />
+        </span>
+        <span className={cn("min-w-0 flex-1 truncate font-medium", labelCls)}>{label}</span>
+      </Link>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label={t("project.removeExternalCoordinator")} className="sidebar-row-action opacity-0 group-hover:opacity-100">
+            <MoreHorizontalIcon aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={4}>
+          <DropdownMenuItem onSelect={onRemove} className="text-danger">
+            {t("project.removeExternalCoordinator")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 function ProjectCoordinatorRow({
   group,
   active,
@@ -1381,6 +1587,7 @@ function ProjectCoordinatorRow({
     "aria-label": `${t(hasCoordinator ? "project.openCoordinator" : "project.setupCoordinator")}: ${group.label}`,
     "aria-current": active ? "page" as const : undefined,
     "data-project-coordinator": group.key,
+    "data-testid": "project-coordinator-row",
     "data-configured": hasCoordinator,
     className: cn("sidebar-coordinator-row", active && "app-selected-surface"),
   };
@@ -1732,7 +1939,7 @@ function SessionRow({
                 <AgentIcon agentId={row.agent_id} iconUrl={agentIconUrl} className="size-3.5" title={row.agent_id} />
               ) : null}
             </span>
-            <span className={cn("flex-1 truncate text-left", labelCls)}>{row.label}</span>
+            <span className={cn("min-w-[4.5rem] flex-1 truncate text-left", labelCls)}>{row.label}</span>
             {row.externalClient ? <ExternalSourceBadge client={row.externalClient} /> : null}
           </button>
 

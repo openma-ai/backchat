@@ -105,6 +105,7 @@ import {
 } from "./sql-store.js";
 import { composePromptContext } from "./session-prompt-context.js";
 import { desktopCliPath } from "./cli-path.js";
+import { collapseUnsupportedWorkspaceRoots } from "./workspace-roots.js";
 import {
   isSessionPermissionPolicy,
   setRuntimePermissionPolicy,
@@ -156,6 +157,8 @@ interface ActiveSession {
   /** Latest complete ACP slash-command catalog for renderer re-announcement.
    * Session-scoped only: never restored from SQLite across process restarts. */
   latestAvailableCommandsUpdate: unknown | null;
+  /** Prepended to the next prompt when extra workspace roots were collapsed. */
+  pendingDirectoryNote?: string;
 }
 
 interface OutOfBandSteeringTurn {
@@ -735,7 +738,8 @@ export class SessionManager {
       agent.id,
       agentEnv,
     );
-    const additionalDirectories: string[] = [];
+    let additionalDirectories: string[] = [];
+    let pendingDirectoryNote: string | undefined;
     const seenDirectories = new Set([sessionCwd]);
     for (const rawDirectory of requestedAdditionalDirectories) {
       const directory = rawDirectory.trim();
@@ -816,13 +820,14 @@ export class SessionManager {
           ? { forkFrom: { acpSessionId: p.fork.acp_session_id } }
           : {}),
       });
-      const acpSession = await this.#runtime.start({
+      const mcpServers = await this.#resolveMcpServers(agent.id, p.session_id) as never;
+      const startInput = {
         agent: {
           command,
           args,
           cwd: sessionCwd,
           env: runtimeAgentEnv,
-          onDiagnosticLine: (line) => {
+          onDiagnosticLine: (line: string) => {
             logAppEvent("acp.process.diagnostic", {
               session_id: p.session_id,
               agent_id: agent.id,
@@ -830,7 +835,7 @@ export class SessionManager {
             });
           },
         },
-        mcpServers: await this.#resolveMcpServers(agent.id, p.session_id) as never,
+        mcpServers,
         additionalDirectories,
         ...(sessionRequestMetaForHarness(agent.id)
           ? { sessionRequestMeta: sessionRequestMetaForHarness(agent.id) }
@@ -850,14 +855,29 @@ export class SessionManager {
             }
           : {}),
         clientCallbacks: runtimeCallbacks,
-        onOutOfBandSessionUpdate: (update) => {
+        onOutOfBandSessionUpdate: (update: unknown) => {
           if (activeForOutOfBandUpdates) {
             this.#handleOutOfBandSessionUpdate(activeForOutOfBandUpdates, update);
           } else {
             pendingOutOfBandUpdates.push(update);
           }
         },
-      });
+      };
+      let acpSession;
+      try {
+        acpSession = await this.#runtime.start(startInput);
+      } catch (error) {
+        const collapsed = collapseUnsupportedWorkspaceRoots(error, sessionCwd, additionalDirectories);
+        if (!collapsed) throw error;
+        sessionCwd = collapsed.cwd;
+        additionalDirectories = [];
+        pendingDirectoryNote = collapsed.note;
+        acpSession = await this.#runtime.start({
+          ...startInput,
+          additionalDirectories,
+          agent: { ...startInput.agent, cwd: sessionCwd },
+        });
+      }
       if (this.#cancelledStarts.has(p.session_id)) {
         await Promise.resolve(acpSession.dispose()).catch(() => undefined);
         if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
@@ -898,6 +918,7 @@ export class SessionManager {
         readyAt: Date.now(),
         latestAvailableCommandsUpdate: null,
         ...(p.external_client?.trim() ? { externalClient: p.external_client.trim() } : {}),
+        ...(pendingDirectoryNote ? { pendingDirectoryNote } : {}),
       };
       activeForOutOfBandUpdates = activeSession;
       this.#sessions.set(p.session_id, activeSession);
@@ -1669,12 +1690,21 @@ export class SessionManager {
       // for reload-restored sessions fall back to "agent · slug" and look
       // identical to each other. derivePromptLabel matches the renderer's
       // logic in ChatView.deriveLabel.
-      setSessionTitleIfEmpty(p.session_id, derivePromptLabel(displayText));
+      const title = derivePromptLabel(displayText);
+      if (setSessionTitleIfEmpty(p.session_id, title)) {
+        this.#send({ type: "session.retitled", session_id: p.session_id, title });
+      }
     }
     touchSession(p.session_id);
 
     try {
-      const promptBlocks = buildAcpPromptBlocks(p, sess.acp.promptCapabilities);
+      let agentPrompt = p;
+      if (sess.pendingDirectoryNote) {
+        const note = sess.pendingDirectoryNote;
+        sess.pendingDirectoryNote = undefined;
+        agentPrompt = { ...p, text: `${note}\n\n${p.text}` };
+      }
+      const promptBlocks = buildAcpPromptBlocks(agentPrompt, sess.acp.promptCapabilities);
       for await (const ev of sess.acp.prompt(promptBlocks, { abortSignal: ctrl.signal })) {
         if (sess.orchestration.disposed) break;
         const t = (ev as { type?: string } | null | undefined)?.type;

@@ -71,6 +71,30 @@ describe("backchat CLI parsing", () => {
     });
   });
 
+  it("parses coordinator create as idempotent display setup", () => {
+    expect(parseArgs([
+      "coordinator",
+      "create",
+      "--project",
+      "project-1",
+      "--name",
+      "cursor killer",
+    ])).toMatchObject({
+      group: "coordinator",
+      action: "create",
+      flags: { project: "project-1", name: "cursor killer" },
+    });
+    expect(parseArgs([
+      "coordinator",
+      "remove",
+      "--project",
+      "project-1",
+      "--name",
+      "cursor killer",
+      "--delete-threads",
+    ]).flags["delete-threads"]).toBe(true);
+  });
+
   it("rejects a flag with no value", () => {
     expect(() => parseArgs(["project", "create", "--name"])).toThrow(ParseError);
   });

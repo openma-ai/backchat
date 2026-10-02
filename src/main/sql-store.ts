@@ -29,6 +29,7 @@
  *     migration path is to phase bulk callers toward file-primary writes.
  */
 
+import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, sep } from "node:path";
@@ -36,6 +37,11 @@ import { stringify as toToml } from "smol-toml";
 import { rebuildSessionIndexFromTranscriptFiles } from "./file-first-rebuild.js";
 import { queryActivityStats } from "./activity-stats.js";
 import type { ActivityStatsInfo } from "../shared/api.js";
+import type {
+  ExternalCoordinatorInfo,
+  ExternalCoordinatorRemoveResult,
+  ExternalTaskInfo,
+} from "../shared/external-coordinator.js";
 import {
   normalizeProjectFolders,
   type ProjectInfo,
@@ -174,8 +180,21 @@ let _stmts: {
   setSessionWorkspace: StatementSync;
   setExternalClient: StatementSync;
   setPermissionPolicy: StatementSync;
-  setExternalCoordinator: StatementSync;
-  getExternalCoordinator: StatementSync;
+  insertExternalCoordinator: StatementSync;
+  getExternalCoordinatorByName: StatementSync;
+  getExternalCoordinatorById: StatementSync;
+  listExternalCoordinators: StatementSync;
+  listExternalCoordinatorsForProject: StatementSync;
+  deleteExternalCoordinator: StatementSync;
+  deleteExternalCoordinatorsForProject: StatementSync;
+  insertExternalTask: StatementSync;
+  getExternalTaskByCommand: StatementSync;
+  listExternalTasks: StatementSync;
+  listExternalTasksForProject: StatementSync;
+  listExternalTasksForCoordinator: StatementSync;
+  deleteExternalTasksForCoordinator: StatementSync;
+  deleteExternalTasksForProject: StatementSync;
+  listSessionsForExternalClient: StatementSync;
   clearSessionsWorkspace: StatementSync;
   countSessionsForWorkspace: StatementSync;
 } | null = null;
@@ -185,6 +204,68 @@ export function closeSessionDb(): void {
   const db = _db;
   _db = null;
   db?.close();
+}
+
+const EXTERNAL_COORDINATORS_SQL = `
+  CREATE TABLE external_coordinators (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(project_id, name)
+  );
+  CREATE INDEX IF NOT EXISTS external_coordinators_project_idx
+    ON external_coordinators(project_id);
+`;
+
+const EXTERNAL_TASKS_SQL = `
+  CREATE TABLE IF NOT EXISTS external_tasks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    coordinator_id TEXT NOT NULL,
+    coordinator_name TEXT NOT NULL,
+    command_id TEXT NOT NULL UNIQUE,
+    type TEXT NOT NULL,
+    text TEXT NOT NULL,
+    worker_id TEXT,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS external_tasks_project_idx
+    ON external_tasks(project_id);
+  CREATE INDEX IF NOT EXISTS external_tasks_coordinator_idx
+    ON external_tasks(coordinator_id);
+`;
+
+function migrateExternalCoordinators(db: DatabaseSync): void {
+  const existing = db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'external_coordinators'`,
+  ).get() as { name?: string } | undefined;
+  if (!existing) {
+    db.exec(EXTERNAL_COORDINATORS_SQL);
+  } else {
+    const columns = new Set(
+      (db.prepare(`PRAGMA table_info(external_coordinators)`).all() as Array<{ name: string }>)
+        .map((column) => column.name),
+    );
+    if (!columns.has("name")) {
+      const legacy = db.prepare(
+        `SELECT project_id, client, updated_at FROM external_coordinators`,
+      ).all() as Array<{ project_id: string; client: string; updated_at: number }>;
+      db.exec(`DROP TABLE external_coordinators`);
+      db.exec(EXTERNAL_COORDINATORS_SQL);
+      const insert = db.prepare(`
+        INSERT INTO external_coordinators (id, project_id, name, created_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      for (const row of legacy) {
+        const name = row.client.trim().slice(0, 80);
+        if (!row.project_id || !name) continue;
+        insert.run(`coord-${randomBytes(6).toString("hex")}`, row.project_id, name, row.updated_at);
+      }
+    }
+  }
+  db.exec(EXTERNAL_TASKS_SQL);
 }
 
 export function openSessionDb(path: string): void {
@@ -394,13 +475,7 @@ export function openSessionDb(path: string): void {
   if (!sessionCols.has("permission_policy")) {
     db.exec(`ALTER TABLE sessions ADD COLUMN permission_policy TEXT`);
   }
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS external_coordinators (
-      project_id TEXT PRIMARY KEY,
-      client TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
+  migrateExternalCoordinators(db);
   db.exec(`
     CREATE INDEX IF NOT EXISTS sessions_pinned_idx
       ON sessions(archived_at, pinned_at DESC);
@@ -563,14 +638,55 @@ export function openSessionDb(path: string): void {
     setSessionWorkspace: db.prepare(`UPDATE sessions SET workspace_id = ? WHERE id = ?`),
     setExternalClient: db.prepare(`UPDATE sessions SET external_client = ? WHERE id = ?`),
     setPermissionPolicy: db.prepare(`UPDATE sessions SET permission_policy = ? WHERE id = ?`),
-    setExternalCoordinator: db.prepare(`
-      INSERT INTO external_coordinators (project_id, client, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(project_id) DO UPDATE SET
-        client = excluded.client,
-        updated_at = excluded.updated_at
+    insertExternalCoordinator: db.prepare(`
+      INSERT INTO external_coordinators (id, project_id, name, created_at)
+      VALUES (?, ?, ?, ?)
     `),
-    getExternalCoordinator: db.prepare(`SELECT client FROM external_coordinators WHERE project_id = ?`),
+    getExternalCoordinatorByName: db.prepare(`
+      SELECT * FROM external_coordinators WHERE project_id = ? AND name = ?
+    `),
+    getExternalCoordinatorById: db.prepare(`
+      SELECT * FROM external_coordinators WHERE id = ?
+    `),
+    listExternalCoordinators: db.prepare(`
+      SELECT * FROM external_coordinators ORDER BY created_at ASC
+    `),
+    listExternalCoordinatorsForProject: db.prepare(`
+      SELECT * FROM external_coordinators WHERE project_id = ? ORDER BY created_at ASC
+    `),
+    deleteExternalCoordinator: db.prepare(`DELETE FROM external_coordinators WHERE id = ?`),
+    deleteExternalCoordinatorsForProject: db.prepare(`
+      DELETE FROM external_coordinators WHERE project_id = ?
+    `),
+    insertExternalTask: db.prepare(`
+      INSERT INTO external_tasks (
+        id, project_id, coordinator_id, coordinator_name, command_id,
+        type, text, worker_id, status, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    getExternalTaskByCommand: db.prepare(`
+      SELECT * FROM external_tasks WHERE command_id = ?
+    `),
+    listExternalTasks: db.prepare(`
+      SELECT * FROM external_tasks ORDER BY created_at ASC
+    `),
+    listExternalTasksForProject: db.prepare(`
+      SELECT * FROM external_tasks WHERE project_id = ? ORDER BY created_at ASC
+    `),
+    listExternalTasksForCoordinator: db.prepare(`
+      SELECT * FROM external_tasks WHERE coordinator_id = ?
+    `),
+    deleteExternalTasksForCoordinator: db.prepare(`
+      DELETE FROM external_tasks WHERE coordinator_id = ?
+    `),
+    deleteExternalTasksForProject: db.prepare(`
+      DELETE FROM external_tasks WHERE project_id = ?
+    `),
+    listSessionsForExternalClient: db.prepare(`
+      SELECT * FROM sessions
+      WHERE project_id = ? AND external_client = ?
+    `),
     clearSessionsWorkspace: db.prepare(
       `UPDATE sessions SET workspace_id = NULL WHERE workspace_id = ?`,
     ),
@@ -787,15 +903,107 @@ export function setSessionPermissionPolicy(
   writeSessionMetadata(id);
 }
 
-export function setProjectExternalCoordinator(projectId: string, client: string): void {
-  const trimmed = client.trim();
-  if (!projectId || !trimmed) return;
-  stmts().setExternalCoordinator.run(projectId, trimmed.slice(0, 80), Date.now());
+export function ensureExternalCoordinator(projectId: string, name: string): ExternalCoordinatorInfo & { created: boolean } {
+  const trimmed = name.trim().slice(0, 80);
+  if (!projectId || !trimmed) throw new Error("External coordinator name is required");
+  const existing = stmts().getExternalCoordinatorByName.get(projectId, trimmed) as ExternalCoordinatorInfo | undefined;
+  if (existing) return { ...existing, created: false };
+  const created: ExternalCoordinatorInfo = {
+    id: `coord-${randomBytes(6).toString("hex")}`,
+    project_id: projectId,
+    name: trimmed,
+    created_at: Date.now(),
+  };
+  stmts().insertExternalCoordinator.run(created.id, created.project_id, created.name, created.created_at);
+  return { ...created, created: true };
 }
 
-export function getProjectExternalCoordinator(projectId: string): string | null {
-  const row = stmts().getExternalCoordinator.get(projectId) as { client?: string } | undefined;
-  return row?.client ?? null;
+export function listExternalCoordinators(projectId?: string): ExternalCoordinatorInfo[] {
+  const rows = projectId
+    ? stmts().listExternalCoordinatorsForProject.all(projectId)
+    : stmts().listExternalCoordinators.all();
+  return rows as unknown as ExternalCoordinatorInfo[];
+}
+
+export function getExternalCoordinator(id: string): ExternalCoordinatorInfo | null {
+  return (stmts().getExternalCoordinatorById.get(id) as ExternalCoordinatorInfo | undefined) ?? null;
+}
+
+export function findExternalCoordinator(projectId: string, name: string): ExternalCoordinatorInfo | null {
+  const trimmed = name.trim().slice(0, 80);
+  return (stmts().getExternalCoordinatorByName.get(projectId, trimmed) as ExternalCoordinatorInfo | undefined) ?? null;
+}
+
+export function listSessionsForExternalCoordinator(coordinator: ExternalCoordinatorInfo): PersistedSession[] {
+  return (stmts().listSessionsForExternalClient.all(coordinator.project_id, coordinator.name) as unknown as PersistedSessionRow[])
+    .map(decodeSessionRow);
+}
+
+export function insertExternalTask(input: {
+  projectId: string;
+  coordinator: ExternalCoordinatorInfo;
+  commandId: string;
+  type: ExternalTaskInfo["type"];
+  text: string;
+  workerId?: string;
+}): ExternalTaskInfo {
+  const existing = stmts().getExternalTaskByCommand.get(input.commandId) as ExternalTaskInfo | undefined;
+  if (existing) return existing;
+  const task: ExternalTaskInfo = {
+    id: `task-${randomUUID()}`,
+    project_id: input.projectId,
+    coordinator_id: input.coordinator.id,
+    coordinator_name: input.coordinator.name,
+    command_id: input.commandId,
+    type: input.type,
+    text: input.text,
+    worker_id: input.workerId ?? null,
+    status: "submitted",
+    created_at: Date.now(),
+  };
+  stmts().insertExternalTask.run(
+    task.id,
+    task.project_id,
+    task.coordinator_id,
+    task.coordinator_name,
+    task.command_id,
+    task.type,
+    task.text,
+    task.worker_id,
+    task.status,
+    task.created_at,
+  );
+  return task;
+}
+
+export function listExternalTasks(projectId?: string): ExternalTaskInfo[] {
+  const rows = projectId
+    ? stmts().listExternalTasksForProject.all(projectId)
+    : stmts().listExternalTasks.all();
+  return rows as unknown as ExternalTaskInfo[];
+}
+
+export function removeExternalCoordinator(
+  id: string,
+  deleteThreads: boolean,
+): ExternalCoordinatorRemoveResult {
+  const coordinator = getExternalCoordinator(id);
+  if (!coordinator) throw new Error(`External coordinator not found: ${id}`);
+  const sessions = listSessionsForExternalCoordinator(coordinator);
+  const tasks = stmts().listExternalTasksForCoordinator.all(id) as unknown as ExternalTaskInfo[];
+  if (deleteThreads) {
+    for (const session of sessions) deleteSession(session.id);
+    stmts().deleteExternalTasksForCoordinator.run(id);
+  }
+  stmts().deleteExternalCoordinator.run(id);
+  return {
+    id: coordinator.id,
+    project_id: coordinator.project_id,
+    name: coordinator.name,
+    removed: true,
+    sessions_deleted: deleteThreads ? sessions.map((session) => session.id) : [],
+    tasks_deleted: deleteThreads ? tasks.length : 0,
+  };
 }
 
 export function setSessionWorkspace(sessionId: string, workspaceId: string | null): void {
@@ -830,11 +1038,12 @@ export function renameSession(id: string, title: string): void {
 /** Conditional version — only writes the title if the row's current
  *  title is empty. Lets the first user prompt seed a sensible label
  *  without overwriting whatever the user may have later renamed it to. */
-export function setSessionTitleIfEmpty(id: string, title: string): void {
+export function setSessionTitleIfEmpty(id: string, title: string): boolean {
   const row = stmts().getSession.get(id) as unknown as PersistedSessionRow | undefined;
-  if (!row || row.title) return;
+  if (!row || row.title) return false;
   stmts().setTitle.run(title, id);
   writeSessionMetadata(id);
+  return true;
 }
 
 export function archiveSession(id: string): void {
@@ -972,6 +1181,8 @@ export function listProjects(): ProjectInfo[] {
 }
 
 export function deleteProject(id: string): void {
+  stmts().deleteExternalTasksForProject.run(id);
+  stmts().deleteExternalCoordinatorsForProject.run(id);
   stmts().unlinkProjectSessions.run(id);
   stmts().deleteProject.run(id);
 }

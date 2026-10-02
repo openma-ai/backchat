@@ -32,6 +32,7 @@ import { ShellLayout } from "@/components/shell/ShellLayout";
 import { SettingsLayout } from "@/pages/settings/SettingsLayout";
 import { ProjectSettingsPage } from "@/pages/settings/ProjectSettings";
 import { ProjectsPage } from "@/pages/Projects";
+import { ExternalCoordinatorPage } from "@/pages/ExternalCoordinator";
 import { ScheduledPage } from "@/pages/Scheduled";
 
 // Keep the settings shell synchronous; panels load inside its Suspense boundary.
@@ -76,6 +77,11 @@ const pairRoute = createRoute({
 
 const projectsRoute = createRoute({getParentRoute: () => rootRoute, path: "/projects", component: ProjectsPage});
 const projectRoute = createRoute({getParentRoute: () => rootRoute, path: "/projects/$projectId", component: ProjectsPage});
+const externalCoordinatorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/coordinators/$coordinatorId",
+  component: ExternalCoordinatorPage,
+});
 
 const scheduledRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -142,6 +148,7 @@ const routeTree = rootRoute.addChildren([
   scheduledRoute,
   projectsRoute,
   projectRoute,
+  externalCoordinatorRoute,
   settingsRoot.addChildren([
     settingsProject,
     settingsOpenma,

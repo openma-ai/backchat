@@ -111,6 +111,36 @@
   flex-direction: column;
   padding: 0;
 }
+.coordinator-siblings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px 0;
+}
+.project-worker-attribution {
+  margin: 2px 0 0;
+  color: var(--fg-subtle);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.project-external-composer {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.project-external-composer p {
+  color: var(--fg-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.project-external-steer {
+  display: grid;
+  gap: 10px;
+  margin: 0 12px 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
 .project-knowledge {
   overflow-y: auto;
   min-height: 0;

@@ -26,6 +26,8 @@ export interface ProjectWorkConfig extends HostConfig {
 }
 export type ProjectWorkView = Omit<HostView<ProjectInfo>, "config"> & {
   config: ProjectWorkConfig | null;
-  /** Set when `work submit` came from an external coordinator. */
-  external_coordinator?: string | null;
+  /** Display-only coordinators created by `--client` or `coordinator create`. */
+  external_coordinators?: import("./external-coordinator.js").ExternalCoordinatorInfo[];
+  /** Tasks recorded for an external coordinator. They do not start the built-in one. */
+  external_tasks?: import("./external-coordinator.js").ExternalTaskInfo[];
 };

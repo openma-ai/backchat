@@ -515,6 +515,16 @@ export interface BackchatApi extends OpenmaAccountApi {
   projectWorkSave(config: import("./project-work.js").ProjectWorkConfig): Promise<import("./project-work.js").ProjectWorkConfig>;
   projectWorkSubmit(input: import("./project-work.js").ProjectWorkCommand): Promise<void>;
   projectWorkGoal(input: import("./project-work.js").ProjectWorkGoalInput): Promise<import("./project-work.js").ProjectWorkOutcome | null>;
+  externalCoordinatorsList(): Promise<{
+    coordinators: import("./external-coordinator.js").ExternalCoordinatorInfo[];
+    tasks: import("./external-coordinator.js").ExternalTaskInfo[];
+  }>;
+  externalCoordinatorCreate(input: { project_id: string; name: string }): Promise<
+    import("./external-coordinator.js").ExternalCoordinatorInfo & { created: boolean }
+  >;
+  externalCoordinatorRemove(input: { id: string; delete_threads?: boolean }): Promise<
+    import("./external-coordinator.js").ExternalCoordinatorRemoveResult
+  >;
   projectsList(): Promise<ProjectInfo[]>;
   projectSave(p: ProjectSaveParams): Promise<ProjectInfo>;
   projectDelete(p: { project_id: string }): Promise<void>;

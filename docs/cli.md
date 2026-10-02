@@ -30,13 +30,30 @@ If the app is not running, every command exits `2` and prints where it looked.
 
 ## Caller identity
 
-`--client <name>` or `BACKCHAT_CLIENT` names the coordinator (for example
-`cursor killer`). The CLI stores that name on every session it starts and on
-project work it submits. The GUI shows `External · cursor killer` on the
-session row and in the session header, and `External coordinator: cursor killer`
-on the project work list. Those sessions otherwise behave like any other chat:
-open them, continue them, cancel them, and answer permissions in the GUI or
-with `session pending` / `session respond`.
+`--client <name>` or `BACKCHAT_CLIENT` names an external coordinator (for
+example `cursor killer`). A project can have the built-in Project coordinator
+and any number of external coordinators at the same time. The external one is
+a display and attribution record. It does not configure, replace, or disable
+the built-in coordinator, and Backchat does not run an in-app model for it.
+
+The record is created the first time that client starts a session in the
+project or submits work, and again with `coordinator create` (idempotent per
+project and name). In the sidebar and on the project page it is a sibling of
+Project coordinator: `External coordinator · cursor killer`. Its sessions and
+submitted tasks nest under that row. Sessions keep the title from the first
+prompt, with a separate `External · cursor killer` badge. Open a session to
+continue it in the GUI, or from `session send`.
+
+`work submit` from an external client does not need the built-in coordinator
+to be set up, and it does not send the task to that coordinator. The task is
+stored on the project task list and attributed `External coordinator: cursor
+killer`. Built-in work, submitted without `--client`, still uses the project
+coordinator and still requires that setup.
+
+The external coordinator page lists that work and those threads. Its composer
+is read-only: there is no in-app chat. Submit the next task with `work submit`.
+Removing the coordinator in the GUI or with `coordinator remove` keeps its
+threads unless `--delete-threads` (or the GUI checkbox) is set.
 
 ## Commands
 
@@ -61,6 +78,10 @@ backchat session cancel <id>
 backchat session pending <id>
 backchat session respond <id> <requestId> <option>
 
+backchat coordinator create --project <id> --name <name>
+backchat coordinator list [--project <id>]
+backchat coordinator remove --project <id> --name <name> [--delete-threads]
+
 backchat work submit --project <id> --text <text> [--type message|delegate|steer|cancel|complete] [--worker <id>]
 backchat work status [<projectId>]
 backchat work view --project <id>
@@ -80,6 +101,13 @@ branch name. If that branch already exists, the worktree checks it out.
 `--base` is the start point for a new branch. When the branch already exists,
 `--base` must be an ancestor of that branch or the command fails. A `--base`
 ref that does not resolve names that ref in the error.
+
+Agents that accept additional workspace directories get one root per
+repository. If the agent reports that it does not support additional workspace
+directories, the session runs in the directory that contains those checkouts
+and the first prompt lists the repository paths. If the checkouts do not share
+a parent, startup fails with that agent's error. The same fallback is used
+when a session is started from the GUI.
 
 `workspace show` returns each repository's worktree path, branch, HEAD sha, and
 dirty state. `workspace remove` deletes the managed worktrees and refuses when
@@ -167,9 +195,20 @@ backchat session send sess-… "What is the next step?" --stream --timeout 120
 backchat session transcript sess-… --json
 backchat session transcript sess-… --since 40 --json
 
+backchat coordinator create --json --project project-… --name "cursor killer"
+
 backchat work submit --json --project project-… --text "Review the branch"
 backchat work status project-… --json
 ```
+
+`work submit` in that example does not require a project coordinator in the
+GUI. A second project can keep its built-in coordinator configured; external
+tasks stay attributed to `cursor killer` and built-in threads stay on the
+Project coordinator.
+
+The fake ACP agent used by local evidence runs echoes the prompt it receives.
+A transcript that contains the raw prompt JSON is that echo, not the GUI
+dumping protocol messages into the chat.
 
 ## Threat model
 

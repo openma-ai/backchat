@@ -4290,6 +4290,12 @@ export class SessionStore {
         }));
         break;
       }
+      case "session.retitled": {
+        this.#mutateSession(ev.session_id, (s) => (
+          s.titleManuallySet ? s : { ...s, label: ev.title }
+        ));
+        break;
+      }
       case "session.disposed": {
         this.#recordSubagentActivity(ev.session_id, { status: "cancelled" });
         this.#mutateSession(ev.session_id, (s) => ({ ...s, status: "disposed" }));

@@ -1382,7 +1382,7 @@ describe("SessionManager prompt queue", () => {
     const removeWorktreeWorkspace = vi.fn(async () => undefined);
     mocks.runtimeStart.mockClear();
     mocks.runtimeStart.mockRejectedValueOnce(
-      new Error("ACP agent does not support additional workspace directories"),
+      new Error("agent process exited during startup"),
     );
     const manager = new SessionManager({
       send: vi.fn(),
@@ -1404,13 +1404,57 @@ describe("SessionManager prompt queue", () => {
 
     expect(result).toMatchObject({
       status: "error",
-      message: "ACP agent does not support additional workspace directories",
+      message: "agent process exited during startup",
     });
     // Only a checkout set created for this start is rolled back, by its id.
     expect(removeWorktreeWorkspace).toHaveBeenCalledWith("ws-sess-worktree-fail-ab12");
     expect(upsertSession).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: "sess-worktree-fail" }),
     );
+  });
+
+  it("retries in the shared parent when the agent rejects additional directories", async () => {
+    const prepareWorktreeWorkspace = vi.fn(async () => ({
+      workspaceId: "ws-collapse",
+      projectId: "proj-collapse",
+      cwd: "/managed/worktrees/ws-collapse/01-app",
+      additionalDirectories: ["/managed/worktrees/ws-collapse/02-docs"],
+      created: true,
+    }));
+    const removeWorktreeWorkspace = vi.fn(async () => undefined);
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart
+      .mockRejectedValueOnce(new Error("ACP agent does not support additional workspace directories"))
+      .mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      prepareWorktreeWorkspace,
+      removeWorktreeWorkspace,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-collapse",
+      agent_id: "codex-acp",
+      workspace_mode: "worktree",
+      cwd: "/source/app",
+      additional_directories: ["/source/docs"],
+    });
+
+    expect(result).toMatchObject({
+      status: "ready",
+      cwd: "/managed/worktrees/ws-collapse",
+      additional_directories: [],
+    });
+    expect(removeWorktreeWorkspace).not.toHaveBeenCalled();
+    expect(mocks.runtimeStart).toHaveBeenLastCalledWith(expect.objectContaining({
+      additionalDirectories: [],
+      agent: expect.objectContaining({ cwd: "/managed/worktrees/ws-collapse" }),
+    }));
   });
 
   it("rejects a multi-root project before ACP startup when a secondary root is missing", async () => {

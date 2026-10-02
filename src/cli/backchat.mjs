@@ -22,6 +22,9 @@ Usage:
   backchat session cancel <id> [--json]
   backchat session pending <id> [--json]
   backchat session respond <id> <requestId> <option> [--json]
+  backchat coordinator create --project <id> --name <name> [--json]
+  backchat coordinator list [--project <id>] [--json]
+  backchat coordinator remove --project <id> --name <name> [--delete-threads] [--json]
   backchat work submit --project <id> --text <text> [--type message|delegate|steer|cancel] [--worker <id>] [--json]
   backchat work status [<projectId>] [--json]
   backchat work view --project <id> [--json]
@@ -195,6 +198,29 @@ function commandCall(parsed) {
       },
     };
   }
+  if (group === "coordinator" && action === "create") {
+    if (typeof flags.project !== "string") throw new ParseError("--project is required");
+    if (typeof flags.name !== "string") throw new ParseError("--name is required");
+    return { method: "coordinator.create", params: { project_id: flags.project, name: flags.name } };
+  }
+  if (group === "coordinator" && action === "list") {
+    return {
+      method: "coordinator.list",
+      params: typeof flags.project === "string" ? { project_id: flags.project } : {},
+    };
+  }
+  if (group === "coordinator" && action === "remove") {
+    if (typeof flags.project !== "string") throw new ParseError("--project is required");
+    if (typeof flags.name !== "string") throw new ParseError("--name is required");
+    return {
+      method: "coordinator.remove",
+      params: {
+        project_id: flags.project,
+        name: flags.name,
+        delete_threads: flags["delete-threads"] === true,
+      },
+    };
+  }
   if (group === "work" && action === "submit") {
     if (typeof flags.project !== "string") throw new ParseError("--project is required");
     if (typeof flags.text !== "string") throw new ParseError("--text is required");
@@ -260,6 +286,19 @@ function formatText(method, result) {
     return lines.join("\n");
   }
   if (method === "workspace.remove") return `removed ${result.id}`;
+  if (method === "coordinator.create") {
+    return `${result.id}\t${result.name}\t${result.created ? "created" : "exists"}`;
+  }
+  if (method === "coordinator.list" && Array.isArray(result)) {
+    if (result.length === 0) return "No external coordinators.";
+    return result.map((coordinator) => `${coordinator.id}\t${coordinator.project_id}\t${coordinator.name}`).join("\n");
+  }
+  if (method === "coordinator.remove") {
+    return `removed ${result.name}${result.sessions_deleted?.length ? `, deleted ${result.sessions_deleted.length} threads` : ""}`;
+  }
+  if (method === "work.submit" && result?.routed === "external") {
+    return `${result.task?.id ?? result.command_id}\t${result.external_coordinator}\t${result.task?.text ?? ""}`;
+  }
   return JSON.stringify(result, null, 2);
 }
 
