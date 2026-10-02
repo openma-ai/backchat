@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures";
-import { enableAgent, injectEvent, injectSession } from "./helpers";
+import { enableAgent, injectEvent, injectSession, persistSessionFixture } from "./helpers";
 
 test.describe("backchat smoke", () => {
   test("e2e launch keeps the window hidden by default", async ({ app }) => {
@@ -1384,5 +1384,49 @@ test.describe("backchat smoke", () => {
       await expect(
         page.locator('[data-chat-surface="main"]').getByRole("button", { name: "1 annotation" }),
       ).toHaveCount(0);
+  });
+
+  test("title bar text drags, its buttons do not, and chats compose starts a new chat", async ({ page }) => {
+      const regionOf = (locator: ReturnType<typeof page.locator>) => locator.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return style.getPropertyValue("-webkit-app-region").trim()
+          || style.getPropertyValue("app-region").trim();
+      });
+      const header = page.locator('[data-window-titlebar="true"]');
+      await expect(header).toBeVisible();
+      expect(await regionOf(header)).toBe("drag");
+      expect(await regionOf(page.getByTestId("new-chat-button"))).toBe("no-drag");
+
+      await persistSessionFixture(page, {
+        sessionId: "header-chat",
+        title: "Header chat",
+        agentId: "codex-acp",
+        cwd: "",
+        acpSessionId: "",
+        events: [
+          { type: "user_prompt", data: { text: "Keep this conversation" } },
+          { type: "agent_message_chunk", data: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Existing answer." } } },
+        ],
+      });
+      await page.reload();
+      await page.getByRole("button", { name: "Header chat", exact: true }).click();
+      await expect(page.getByText("Existing answer.", { exact: true })).toBeVisible();
+      const title = header.getByText("Header chat", { exact: true });
+      expect(await regionOf(title)).toBe("drag");
+      expect(await regionOf(title.locator("xpath=.."))).toBe("drag");
+      const taskActions = header.getByRole("button", { name: "Task actions", exact: true });
+      expect(await regionOf(taskActions)).toBe("no-drag");
+      await taskActions.click();
+      await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+
+      const navigation = page.getByRole("navigation");
+      await navigation.getByRole("button", { name: "Chats", exact: true }).hover();
+      const createConversation = navigation.getByRole("button", { name: "New conversation", exact: true });
+      expect(await regionOf(createConversation)).toBe("no-drag");
+      await createConversation.click();
+      await expect(page.getByTestId("new-chat-button")).toHaveAttribute("aria-current", "page");
+      await expect(page.locator(".composer-card").first()).toBeVisible();
+      await expect(page.getByText("Existing answer.", { exact: true })).toHaveCount(0);
   });
 });

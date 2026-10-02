@@ -2329,14 +2329,47 @@ body,
   }
 }
 
-/* Drag region for the macOS hidden-titlebar window. The AppShell's top stage
-   row carries this class so a click-drag anywhere in the empty header area
-   moves the window. Buttons inside it opt out via `-webkit-app-region: no-drag`. */
+/* Drag region for the macOS hidden-titlebar window. Electron 42 reads
+   `-webkit-app-region`; the unprefixed `app-region` is the same property in
+   current Electron docs. The AppShell header carries `.app-drag-region`, so
+   a click-drag in that top band moves the window.
+
+   A no-drag ancestor excludes its whole subtree, so a title marked drag
+   inside an `.app-no-drag` wrapper never becomes draggable. Wrappers in the
+   header are only grouping; put them back in the drag region. Activatable
+   controls opt out again. `!important` wins when the control itself also
+   has `.app-no-drag` (that class matches the wrapper rule). */
 .app-drag-region {
   -webkit-app-region: drag;
+  app-region: drag;
 }
 .app-no-drag {
   -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+header.app-drag-region .app-no-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+header.app-drag-region :is(
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary,
+  label,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="combobox"],
+  [contenteditable="true"]
+) {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
 }
 
 /* Shared intrinsic-height disclosure. CSS grid can interpolate 0fr → 1fr
