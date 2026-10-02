@@ -172,6 +172,13 @@ let _stmts: {
   countSessionsForWorkspace: StatementSync;
 } | null = null;
 
+export function closeSessionDb(): void {
+  _storageRoot = null;
+  const db = _db;
+  _db = null;
+  db?.close();
+}
+
 export function openSessionDb(path: string): void {
   if (_db) return;
   const dir = dirname(path);

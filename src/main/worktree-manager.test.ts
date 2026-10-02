@@ -217,6 +217,39 @@ describe("ManagedWorktreeStore", () => {
     expect((await git(app, "rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("main");
   });
 
+  it("checks out an existing branch instead of failing, and validates --base", async () => {
+    const fixture = await createFixture();
+    const app = await createRepo(fixture, "app", { "app.txt": "app\n" });
+    await git(app, "checkout", "-b", "feature/existing");
+    await writeFile(join(app, "app.txt"), "feature\n");
+    await git(app, "add", ".");
+    await git(app, "commit", "-m", "feature");
+    await git(app, "checkout", "main");
+    const store = new ManagedWorktreeStore(fixture.worktreeRoot);
+
+    const prepared = await store.prepare({
+      workspaceId: "ws-existing",
+      sourceDirectories: [app],
+      branch: "feature/existing",
+      baseRef: "main",
+    });
+
+    expect((await git(prepared.cwd, "rev-parse", "--abbrev-ref", "HEAD")).trim())
+      .toBe("feature/existing");
+    expect(await readFile(join(prepared.cwd, "app.txt"), "utf8")).toBe("feature\n");
+    expect((await git(app, "rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("main");
+
+    await writeFile(join(app, "later.txt"), "later\n");
+    await git(app, "add", ".");
+    await git(app, "commit", "-m", "later on main");
+    await expect(store.prepare({
+      workspaceId: "ws-bad-base",
+      sourceDirectories: [app],
+      branch: "feature/existing",
+      baseRef: "main",
+    })).rejects.toThrow(/not an ancestor/);
+  });
+
   it("adopts a legacy session-keyed manifest under a workspace id without moving files", async () => {
     const fixture = await createFixture();
     const repo = await createRepo(fixture, "app", { "app.txt": "app\n" });

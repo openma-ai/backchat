@@ -12,7 +12,7 @@ import type { OpenMAEvent as ProjectAgentEvent } from "@openmatter/agent";
  * `webContents.send` from the SessionManager's `Sender` callback.
  */
 
-import { BrowserWindow, ipcMain, Notification, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, Notification, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 import { getKnownAgents } from "@open-managed-agents-desktop/acp/registry";
@@ -51,7 +51,7 @@ import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveProject, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
+import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
 import type { PersistedSession } from "./sql-store.js";
 import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
@@ -59,6 +59,11 @@ import { workspaceService } from "./workspace-service.js";
 import type { WorkspaceCreateParams, WorkspaceInfo } from "../shared/workspaces.js";
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
 import { openmaRoot } from "./storage-root.js";
+import { controlSocketPath } from "../shared/control-socket.js";
+import { createControlApi } from "./control/handlers.js";
+import { startControlServer, type ControlServer } from "./control/server.js";
+import { installBackchatCli } from "./control/cli-install.js";
+import { saveProjectCommand } from "./project-commands.js";
 import { forwardSessionEventToPet } from "./pet-hook-bridge.js";
 import {
   createSessionEventEnricher,
@@ -67,7 +72,7 @@ import {
 } from "./session-event-enricher.js";
 import { logAppEvent } from "./app-log.js";
 import { deliverSessionEvent } from "./session-event-delivery.js";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import {
   cancelPendingFor,
   createTerminal,
@@ -893,23 +898,13 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   ipcMain.handle(InvokeChannel.ProjectsList, (): ProjectInfo[] => listProjects());
   ipcMain.handle(
     InvokeChannel.ProjectSave,
-    (_e, p: ProjectSaveParams): ProjectInfo => {
-      if (!p.project_id.trim()) throw new Error("Project id is required");
-      if (!p.name.trim()) throw new Error("Project name is required");
-      const sourceFolders = p.source_folders.map((folder) => folder.trim());
-      const invalidFolder = sourceFolders.find(
-        (folder) => folder && !isAbsolute(folder),
-      );
-      if (invalidFolder) {
-        throw new Error(`Project source folders must be absolute: ${invalidFolder}`);
-      }
-      return saveProject({
-        id: p.project_id,
-        name: p.name,
-        source_folders: sourceFolders,
-        primary_folder: p.primary_folder,
-      });
-    },
+    (_e, p: ProjectSaveParams): ProjectInfo => saveProjectCommand({
+      project_id: p.project_id,
+      name: p.name,
+      source_folders: p.source_folders,
+      primary_folder: p.primary_folder,
+      requireId: true,
+    }),
   );
   ipcMain.handle(
     InvokeChannel.ProjectDelete,
@@ -937,6 +932,25 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   // Checkout sets created per session before workspaces existed become
   // workspaces of their own; nothing on disk moves.
+  let controlServer: ControlServer | null = null;
+  if (process.env["BACKCHAT_DISABLE_CONTROL"] !== "1") {
+    const socketPath = controlSocketPath();
+    controlServer = await startControlServer({
+      socketPath,
+      api: createControlApi(),
+    });
+    if (process.env["BACKCHAT_TEST_HOOKS"] !== "1") {
+      const scriptPath = app.isPackaged
+        ? join(process.resourcesPath, "cli", "backchat.mjs")
+        : join(app.getAppPath(), "src", "cli", "backchat.mjs");
+      void installBackchatCli({ scriptPath }).then((installed) => {
+        process.stdout.write(`[control] ${installed.detail} socket=${socketPath}\n`);
+      }).catch((error: unknown) => {
+        console.warn("[control] CLI install failed", error);
+      });
+    }
+  }
+
   void workspaceService.migrateLegacy().then(({ adopted, removed }) => {
     if (adopted || removed) {
       process.stdout.write(`[workspaces] migrated legacy worktrees adopted=${adopted} removed=${removed}\n`);
@@ -1346,6 +1360,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         chromeExtensionBridge?.close(),
         sessionHistoryMcpBridge.stop(),
       ]);
+      await controlServer?.close();
       await projectMcp?.close();
       await projectWork.close();
       scheduleStore.close();
