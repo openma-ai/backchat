@@ -55,6 +55,9 @@ export function applyMacPackaging(pkg, plan) {
     owner: "openma-ai",
     repo: "backchat",
   };
+  // electron-builder names the mac update file from publish.channel.
+  // A preview version must emit preview-mac.yml, which is what the app requests.
+  if (/^\d+\.\d+\.\d+-preview\.\d+$/.test(next.version)) next.publish.channel = "preview";
   return next;
 }
 

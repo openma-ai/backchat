@@ -341,7 +341,10 @@ async function main() {
   requireDeveloperId(newApp);
 
   const ymls = findFiles(releaseRoot, "preview-mac.yml").filter((file) => file.includes(newVersion));
-  if (ymls.length !== 1) throw new Error(`expected one ${newVersion} preview-mac.yml, found ${ymls.join(", ")}`);
+  if (ymls.length !== 1) {
+    const present = findFiles(releaseRoot, "*.yml");
+    throw new Error(`expected one ${newVersion} preview-mac.yml, found ${ymls.join(", ") || "(none)"}; yml files: ${present.join(", ") || "(none)"}`);
+  }
   const ymlPath = ymls[0];
   const ymlText = readFileSync(ymlPath, "utf8");
   const zipName = zipNameFromFeedYaml(ymlText);

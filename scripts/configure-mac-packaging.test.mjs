@@ -41,6 +41,7 @@ test("a complete secret set enables hardened runtime and notarization without em
   assert.equal(pkg.build.mac.entitlements, "build/entitlements.mac.plist");
   assert.equal(pkg.build.mac.entitlementsInherit, "build/entitlements.mac.plist");
   assert.equal(JSON.stringify(pkg).includes("TEAMID"), false);
+  assert.equal(pkg.publish.channel, undefined);
   const entitlements = await readFile(new URL("../build/entitlements.mac.plist", import.meta.url), "utf8");
   assert.match(entitlements, /com\.apple\.security\.cs\.allow-jit/);
   assert.match(entitlements, /com\.apple\.security\.cs\.disable-library-validation/);
@@ -57,4 +58,6 @@ test("preview builds get a monotonic prerelease version and stable builds do not
   assert.equal(packagedVersion("0.0.12", "preview", 42001), "0.0.12-preview.42001");
   assert.equal(packagedVersion("0.0.12", "stable", 42001), "0.0.12");
   assert.equal(packagedVersion("0.0.12", "preview", 0), "0.0.12");
+  const preview = applyMacPackaging({ version: "0.0.12-preview.42001", build: {} }, { mode: "adhoc" });
+  assert.equal(preview.publish.channel, "preview");
 });
