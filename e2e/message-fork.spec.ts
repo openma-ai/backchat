@@ -14,7 +14,6 @@ const fakeAcpAgentPath = join(
   "fixtures",
   "fake-acp-agent.mjs",
 );
-const screenshotDir = "/opt/cursor/artifacts/screenshots";
 
 type ForkLevel = "none" | "session" | "message";
 
@@ -89,11 +88,6 @@ test.describe("message fork with the local fake ACP agent", () => {
     await expect(messageFork).toBeDisabled();
     await expect(messageFork).toHaveAttribute("title", supportFor("none").message);
     await expect(page.locator("[data-turn-fork-action='true']")).toHaveCount(0);
-    await mkdir(screenshotDir, { recursive: true });
-    await page.screenshot({
-      path: join(screenshotDir, "fork-level-none.png"),
-      fullPage: true,
-    });
     await capture("fork-level-none.png", "fork level none");
   });
 
@@ -107,11 +101,6 @@ test.describe("message fork with the local fake ACP agent", () => {
     await expect(messageFork).toBeDisabled();
     await expect(messageFork).toHaveAttribute("title", supportFor("session").message);
     await expect(page.locator("[data-turn-fork-action='true']")).toHaveCount(1);
-    await mkdir(screenshotDir, { recursive: true });
-    await page.screenshot({
-      path: join(screenshotDir, "fork-level-session.png"),
-      fullPage: true,
-    });
     await capture("fork-level-session.png", "fork level session");
   });
 
@@ -130,11 +119,6 @@ test.describe("message fork with the local fake ACP agent", () => {
     await expect(messageForks.nth(1)).toBeEnabled();
     await expect(messageForks.nth(0)).toHaveAttribute("title", "Fork from here");
     await expect(page.locator("[data-turn-fork-action='true']")).toHaveCount(1);
-    await mkdir(screenshotDir, { recursive: true });
-    await page.screenshot({
-      path: join(screenshotDir, "fork-level-message.png"),
-      fullPage: true,
-    });
     await capture("fork-level-message.png", "fork from here on each completed turn");
 
     await messageForks.nth(0).click();
@@ -177,10 +161,7 @@ test.describe("message fork with the local fake ACP agent", () => {
     await expect(page.getByText("Fake response saved for fork-followup.").last()).toBeVisible({
       timeout: 20_000,
     });
-    await page.screenshot({
-      path: join(screenshotDir, "fork-from-message-result.png"),
-      fullPage: true,
-    });
+    await capture("fork-from-message-result.png", "forked session reply");
   });
 
   test("shows the agent invalidParams error instead of forking the whole session", async ({ page, capture }, testInfo) => {
@@ -205,11 +186,6 @@ test.describe("message fork with the local fake ACP agent", () => {
       _meta?: { jetbrains?: { air?: { fork?: { messageId?: string } } } };
     };
     expect(request._meta?.jetbrains?.air?.fork?.messageId).toBe("fake-assistant-1");
-    await mkdir(screenshotDir, { recursive: true });
-    await page.screenshot({
-      path: join(screenshotDir, "fork-point-not-found.png"),
-      fullPage: true,
-    });
     await capture("fork-point-not-found.png", "fork point was not found");
   });
 });
