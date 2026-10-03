@@ -74,6 +74,9 @@ describe("github ci", () => {
     expect(dmg).toContain("preview-mac.yml");
     expect(dmg).toContain("latest-mac.yml");
     expect(dmg).toContain("BACKCHAT_REQUIRE_DEVELOPER_ID");
+    expect(dmg).toContain("codesign --verify --deep --strict");
+    expect(dmg).toContain("spctl -a -vv");
+    expect(dmg).toContain("stapler validate");
     expect(dmg).not.toContain("apply-mac-update");
     expect(dmg).not.toContain("continue-on-error");
   });

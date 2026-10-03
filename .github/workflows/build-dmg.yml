@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+      # One signed build of this PR before it is on main. Publish steps
+      # below still run only for main and version tags.
+      - cursor/macos-auto-update-9d8b
     tags:
       - "v*"
 
@@ -68,6 +71,54 @@ jobs:
             export BACKCHAT_REQUIRE_DEVELOPER_ID=1
           fi
           node scripts/verify-packaged-macos-signature.mjs "$app"
+
+      - name: Record codesign, Gatekeeper, and stapler evidence
+        if: always()
+        run: |
+          set -u
+          mkdir -p test-results
+          log=test-results/signing-evidence.txt
+          : > "$log"
+          app=$(find release -type d -name "Backchat.app" -print -quit || true)
+          if [ -z "$app" ]; then
+            echo "Backchat.app was not produced" | tee -a "$log"
+            exit 0
+          fi
+          failed=0
+          record() {
+            echo "\$ $*" | tee -a "$log"
+            set +e
+            "$@" >>"$log" 2>&1
+            status=$?
+            set -e
+            echo "exit:${status}" | tee -a "$log"
+            echo | tee -a "$log"
+            if [ "$status" -ne 0 ]; then
+              failed=1
+            fi
+          }
+          record /usr/bin/codesign --verify --deep --strict "$app"
+          record /usr/bin/codesign --verify --deep --strict --verbose=4 "$app"
+          record /usr/bin/codesign -dvvv "$app"
+          record /usr/sbin/spctl -a -vv "$app"
+          record xcrun stapler validate "$app"
+          mode="${BACKCHAT_MAC_SIGNING:-unset}"
+          echo "mac signing mode: ${mode}" | tee -a "$log"
+          if [ "$mode" = "developer-id" ] && [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+          if [ "$GITHUB_REF" = "refs/heads/cursor/macos-auto-update-9d8b" ] && [ "$mode" != "developer-id" ]; then
+            echo "this branch required Developer ID signing and notarization" | tee -a "$log"
+            exit 1
+          fi
+
+      - name: Upload signing evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: signing-evidence
+          path: test-results/signing-evidence.txt
+          if-no-files-found: ignore
 
       - name: Verify packaged first prompt
         run: |
