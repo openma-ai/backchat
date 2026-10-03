@@ -83,14 +83,16 @@ export function mergeExternalClientSessionsIntoWorkView<
 ): T {
   const { sessions, turns } = externalClientWorkFacts(projectId, client);
   if (sessions.length === 0) return view;
-  const existingSessionIds = new Set(view.facts.sessions.map((session) => session.id));
+  const existingSessions = view.facts.sessions ?? [];
+  const existingTurns = view.facts.turns ?? [];
+  const existingSessionIds = new Set(existingSessions.map((session) => session.id));
   const mergedSessions = [
-    ...view.facts.sessions,
+    ...existingSessions,
     ...sessions.filter((session) => !existingSessionIds.has(session.id)),
   ];
-  const existingTurnIds = new Set(view.facts.turns.map((turn) => turn.id));
+  const existingTurnIds = new Set(existingTurns.map((turn) => turn.id));
   const mergedTurns = [
-    ...view.facts.turns,
+    ...existingTurns,
     ...turns.filter((turn) => !existingTurnIds.has(turn.id)),
   ];
   return {

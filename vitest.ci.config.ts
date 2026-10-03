@@ -39,6 +39,7 @@ export default defineConfig({
       "src/main/project-work.test.ts",
       "src/main/workspace-roots.test.ts",
       "src/main/control/external-work.test.ts",
+      "src/main/control/external-client-work-sessions.test.ts",
       "src/cli/parse.test.ts",
       "src/cli/stream.test.ts",
       "src/main/control/transcript.test.ts",
