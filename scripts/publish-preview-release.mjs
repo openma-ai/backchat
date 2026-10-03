@@ -9,6 +9,7 @@ const previewTag = "preview";
 const previewTitle = "Backchat Preview";
 const previewNotes = "Latest successful build from the main branch.";
 const previewAssetName = "Backchat-preview-arm64.dmg";
+const previewMacYml = "preview-mac.yml";
 
 async function findArm64Dmgs(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -40,6 +41,32 @@ function runGh(args, { allowFailure = false } = {}) {
   return result.status === 0;
 }
 
+async function findFiles(directory, accept) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const matches = [];
+  for (const entry of entries) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) matches.push(...await findFiles(path, accept));
+    else if (entry.isFile() && accept(entry.name)) matches.push(path);
+  }
+  return matches;
+}
+
+async function previewUpdateAssets(releaseRoot) {
+  const zips = await findFiles(
+    releaseRoot,
+    (name) => name.startsWith("Backchat-") && name.endsWith(".zip"),
+  );
+  const manifests = await findFiles(releaseRoot, (name) => name === previewMacYml);
+  if (zips.length !== 1) {
+    throw new Error(`Expected one Backchat zip under ${releaseRoot}; found ${zips.length}`);
+  }
+  if (manifests.length !== 1) {
+    throw new Error(`Expected one ${previewMacYml} under ${releaseRoot}; found ${manifests.length}`);
+  }
+  return { zipPath: zips[0], manifestPath: manifests[0] };
+}
+
 export async function publishPreviewRelease(releaseDirectory) {
   const releaseRoot = resolve(releaseDirectory);
   const candidates = await findArm64Dmgs(releaseRoot);
@@ -51,6 +78,8 @@ export async function publishPreviewRelease(releaseDirectory) {
 
   const previewAsset = resolve(releaseRoot, previewAssetName);
   await copyFile(candidates[0], previewAsset);
+  const { zipPath, manifestPath } = await previewUpdateAssets(releaseRoot);
+  const assets = [previewAsset, zipPath, manifestPath];
 
   const releaseExists = runGh(["release", "view", previewTag], { allowFailure: true });
   if (!releaseExists) {
@@ -58,7 +87,7 @@ export async function publishPreviewRelease(releaseDirectory) {
       "release",
       "create",
       previewTag,
-      previewAsset,
+      ...assets,
       "--prerelease",
       "--title",
       previewTitle,
@@ -68,7 +97,7 @@ export async function publishPreviewRelease(releaseDirectory) {
     return;
   }
 
-  runGh(["release", "upload", previewTag, previewAsset, "--clobber"]);
+  runGh(["release", "upload", previewTag, ...assets, "--clobber"]);
   runGh([
     "release",
     "edit",

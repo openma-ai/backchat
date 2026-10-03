@@ -2,6 +2,7 @@
 export class QuitCoordinator {
   #pending = false;
   #finished = false;
+  #preapproved = false;
   constructor(private options: {
     needsConfirmation(): boolean;
     confirm(): Promise<boolean>;
@@ -9,6 +10,8 @@ export class QuitCoordinator {
     quit(): void;
   }) {}
   get pending(): boolean { return this.#pending; }
+  /** The update dialog already explained that local agents will stop. */
+  approve(): void { this.#preapproved = true; }
   /** True only on the final app.quit() after cleanup. */
   request(): boolean {
     if (this.#finished) return true;
@@ -20,7 +23,9 @@ export class QuitCoordinator {
   }
   async #run(): Promise<void> {
     try {
-      if (this.options.needsConfirmation() && !await this.options.confirm()) return;
+      const preapproved = this.#preapproved;
+      this.#preapproved = false;
+      if (!preapproved && this.options.needsConfirmation() && !await this.options.confirm()) return;
       try { await this.options.dispose(); } catch { /* Exit even if a child already died. */ }
       this.#finished = true;
       this.options.quit();

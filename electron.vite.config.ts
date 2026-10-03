@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ["@openma/sdk"] })],
+    plugins: [externalizeDepsPlugin({ exclude: ["@openma/sdk", "electron-updater"] })],
     build: {
       outDir: "out/main",
       rollupOptions: {

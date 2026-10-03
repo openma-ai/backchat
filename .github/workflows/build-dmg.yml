@@ -18,9 +18,7 @@ permissions:
 jobs:
   dmg:
     runs-on: macos-latest
-    timeout-minutes: 45
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    timeout-minutes: 60
 
     steps:
       - name: Check out source
@@ -43,10 +41,18 @@ jobs:
         run: node --test scripts/*.test.mjs
 
       - name: Build DMG
+        env:
+          BACKCHAT_UPDATE_CHANNEL: ${{ startsWith(github.ref, 'refs/tags/v') && 'stable' || 'preview' }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           pnpm exec electron-vite build
           pnpm run runtime:prepare
-          pnpm exec electron-builder --publish never
+          node scripts/run-mac-builder.mjs
 
       - name: Verify packaged runtime imports
         run: |
@@ -58,7 +64,54 @@ jobs:
         run: |
           app=$(find release -type d -name "Backchat.app" -print -quit)
           test -n "$app"
+          if [ "$BACKCHAT_MAC_SIGNING" = "developer-id" ]; then
+            export BACKCHAT_REQUIRE_DEVELOPER_ID=1
+          fi
           node scripts/verify-packaged-macos-signature.mjs "$app"
+
+      - name: Record codesign, Gatekeeper, and stapler evidence
+        if: always()
+        run: |
+          set -u
+          mkdir -p test-results
+          log=test-results/signing-evidence.txt
+          : > "$log"
+          app=$(find release -type d -name "Backchat.app" -print -quit || true)
+          if [ -z "$app" ]; then
+            echo "Backchat.app was not produced" | tee -a "$log"
+            exit 0
+          fi
+          failed=0
+          record() {
+            echo "\$ $*" | tee -a "$log"
+            set +e
+            "$@" 2>&1 | tee -a "$log"
+            status=${PIPESTATUS[0]}
+            set -e
+            echo "exit:${status}" | tee -a "$log"
+            echo | tee -a "$log"
+            if [ "$status" -ne 0 ]; then
+              failed=1
+            fi
+          }
+          record /usr/bin/codesign --verify --deep --strict "$app"
+          record /usr/bin/codesign --verify --deep --strict --verbose=4 "$app"
+          record /usr/bin/codesign -dvvv "$app"
+          record /usr/sbin/spctl -a -vv "$app"
+          record xcrun stapler validate "$app"
+          mode="${BACKCHAT_MAC_SIGNING:-unset}"
+          echo "mac signing mode: ${mode}" | tee -a "$log"
+          if [ "$mode" = "developer-id" ] && [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Upload signing evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: signing-evidence
+          path: test-results/signing-evidence.txt
+          if-no-files-found: ignore
 
       - name: Verify packaged first prompt
         run: |
@@ -70,9 +123,14 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: backchat-macos-dmg
-          path: release/**/*.dmg
+          path: |
+            release/**/*.dmg
+            release/**/*.zip
+            release/**/*-mac.yml
           if-no-files-found: error
 
+      # preview-mac.yml is uploaded by publish-preview-release.mjs.
+      # latest-mac.yml is uploaded with the tagged release below.
       - name: Publish latest preview download
         if: github.ref == 'refs/heads/main'
         env:
@@ -88,7 +146,11 @@ jobs:
           test -n "$versioned"
           stable="$(dirname "$versioned")/Backchat-arm64.dmg"
           cp "$versioned" "$stable"
-          gh release create "${GITHUB_REF_NAME}" "$versioned" "$stable" --generate-notes --verify-tag
+          yml=$(find release -type f -name 'latest-mac.yml' -print)
+          test "$(printf '%s\n' "$yml" | grep -c .)" -eq 1
+          zip=$(find release -type f -name 'Backchat-*.zip' -print)
+          test "$(printf '%s\n' "$zip" | grep -c .)" -eq 1
+          gh release create "${GITHUB_REF_NAME}" "$versioned" "$stable" "$zip" "$yml" --generate-notes --verify-tag
 
       - name: Upload packaged first-prompt screenshot
         if: always()

@@ -99,6 +99,9 @@ export const InvokeChannel = {
   SessionsDelete: "sessions:delete",
   SettingsGet: "settings:get",
   SettingsPatch: "settings:patch",
+  UpdateGetState: "update:getState",
+  UpdateCheck: "update:check",
+  UpdateInstall: "update:install",
   McpAppResolve: "mcpApp:resolve",
   McpAppRequest: "mcpApp:request",
   InlineVisualizationRead: "inlineVisualization:read",
@@ -266,6 +269,7 @@ export const PushChannel = {
   /** Whole-settings push fired after each patch — renderer subscribes once
    *  and re-renders settings-driven UI without polling. */
   SettingsChanged: "settings:changed",
+  UpdateState: "update:state",
   /** CLI project create/remove. The sidebar refetches its project list. */
   ProjectsChanged: "projects:changed",
   /** Permission ask from a running ACP child. The owning session's composer
