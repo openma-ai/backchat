@@ -82,6 +82,8 @@ async function main() {
     const pkg = JSON.parse(original);
     const packaged = packagedVersion(pkg.version, channel, build);
     const edited = applyMacPackaging({ ...pkg, version: packaged }, plan);
+    const updateChannel = edited.build?.publish?.channel ?? "latest";
+    console.log(`mac update info: ${updateChannel}-mac.yml`);
     await writeFile(packageJsonPath, `${JSON.stringify(edited, null, 2)}\n`);
     const env = builderEnv(process.env, plan, plan.mode === "developer-id" ? await apiKeyPath(process.env) : "");
     keyPath = env.APPLE_API_KEY ?? "";

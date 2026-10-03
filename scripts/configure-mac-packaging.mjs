@@ -50,14 +50,16 @@ export function applyMacPackaging(pkg, plan) {
     delete next.build.mac.entitlementsInherit;
     delete next.build.mac.gatekeeperAssess;
   }
-  next.publish = {
+  // electron-builder reads build.publish. The mac update filename comes from
+  // publish.channel; the GitHub provider does not copy the prerelease id itself.
+  next.build.publish = {
     provider: "github",
     owner: "openma-ai",
     repo: "backchat",
   };
-  // electron-builder names the mac update file from publish.channel.
-  // A preview version must emit preview-mac.yml, which is what the app requests.
-  if (/^\d+\.\d+\.\d+-preview\.\d+$/.test(next.version)) next.publish.channel = "preview";
+  if (/^\d+\.\d+\.\d+-preview\.\d+$/.test(String(next.version ?? ""))) {
+    next.build.publish.channel = "preview";
+  }
   return next;
 }
 
