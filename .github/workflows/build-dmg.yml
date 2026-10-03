@@ -88,8 +88,8 @@ jobs:
           record() {
             echo "\$ $*" | tee -a "$log"
             set +e
-            "$@" >>"$log" 2>&1
-            status=$?
+            "$@" 2>&1 | tee -a "$log"
+            status=${PIPESTATUS[0]}
             set -e
             echo "exit:${status}" | tee -a "$log"
             echo | tee -a "$log"

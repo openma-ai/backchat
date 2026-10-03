@@ -155,7 +155,7 @@ Dependabot 和手工 lockfile 更新都要做兼容性检查。CI 变绿只是�
 
 没有 `.node-version` 或 `.nvmrc`。根 `package.json` 的 `engines.node` 是 `>=24`，`packageManager` 是 `pnpm@11.24.0`。CI 的 `.github/actions/setup-node-pnpm/action.yml` 用 `pnpm/action-setup@v4` 安装 pnpm `11.24.0`，用 `actions/setup-node@v4` 的 `node-version: 24`，然后 `pnpm install --frozen-lockfile`。`node-version: 24` 只写主版本。2026-10-02 的 [CI run 37018810738](https://github.com/openma-ai/backchat/actions/runs/37018810738)（push 到 `main`，head `85caaa8`，#29）里，`unit` 打印 `node: v24.21.0`，`e2e` 打印 `node: v24.20.0`。
 
-根 `package.json` 的 `devDependencies.electron` 是 `^42.5.1`，`pnpm-lock.yaml` 的根 importer 解析为 `42.5.1`。`.npmrc` 写 `runtime=electron`、`target=42.5.1`，注释要求改 electron 时一起改 `target`。`packages/pet-app/package.json` 的 `electron` 是 `^42.11.8`，同一份 lock 解析为 `42.11.8`。根 lock 里 `electron-builder` 是 `26.15.7`，`electron-vite` 是 `5.0.0`，`typescript` 是 `6.0.3`，`vite` 是 `8.0.16`，`vitest` 是 `4.1.11`，`wrangler` 是 `4.123.0`。
+根 `package.json` 的 `devDependencies.electron` 是 `^42.5.1`，`pnpm-lock.yaml` 的根 importer 解析为 `42.5.1`。`.npmrc` 写 `runtime=electron`、`target=42.5.1`，注释要求改 electron 时一起改 `target`。`packages/pet-app/package.json` 的 `electron` 是 `^42.11.8`，同一份 lock 解析为 `42.11.8`。根 lock 里 `electron-builder` 是 `26.17.0`，`electron-vite` 是 `5.0.0`，`typescript` 是 `6.0.3`，`vite` 是 `8.0.16`，`vitest` 是 `4.1.11`，`wrangler` 是 `4.123.0`。
 
 与 `unit` job 相同的命令：
 
