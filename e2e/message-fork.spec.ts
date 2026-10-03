@@ -181,6 +181,8 @@ test.describe("message fork with the local fake ACP agent", () => {
   test("fork keeps a managed cwd and the same project cwd", async ({ page, capture }) => {
     test.setTimeout(120_000);
     const projectDir = await mkdtemp(join(tmpdir(), "backchat-fork-project-"));
+    const decoyDir = `${projectDir}-decoy`;
+    await mkdir(decoyDir);
     await page.evaluate(async (dir) => {
       await window.backchat.projectSave({
         project_id: "fork-kept-project",
