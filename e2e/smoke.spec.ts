@@ -1429,4 +1429,147 @@ test.describe("backchat smoke", () => {
       await expect(page.locator(".composer-card").first()).toBeVisible();
       await expect(page.getByText("Existing answer.", { exact: true })).toHaveCount(0);
   });
+
+  test("side panel chrome blanks drag, and an expanded tab is not covered by a drag title", async ({ page }) => {
+    await enableAgent(page, "codex-acp");
+    await persistSessionFixture(page, {
+      sessionId: "header-chat",
+      title: "Header chat",
+      agentId: "codex-acp",
+      cwd: "",
+      acpSessionId: "",
+      events: [
+        { type: "user_prompt", data: { text: "Keep this conversation" } },
+        { type: "agent_message_chunk", data: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Existing answer." } } },
+      ],
+    });
+    await page.reload();
+    await page.getByRole("button", { name: "Header chat", exact: true }).click();
+    await expect(page.getByText("Existing answer.", { exact: true })).toBeVisible();
+    const openPanel = page.getByRole("button", { name: "Open side panel", exact: true });
+    if (await openPanel.isVisible()) await openPanel.click();
+    const panel = page.locator('aside[data-right-panel-collapsed="false"]');
+    await expect(panel).toHaveAttribute("data-right-panel-expanded", "false");
+    await expect.poll(() => page.evaluate(() => {
+      const rail = document.querySelector('aside[data-right-panel-collapsed="false"][data-right-panel-expanded="false"]');
+      if (!(rail instanceof HTMLElement)) return false;
+      const box = rail.getBoundingClientRect();
+      return box.width > 200 && box.right <= window.innerWidth + 1 && box.left > window.innerWidth * 0.45;
+    })).toBe(true);
+
+    const open = await page.evaluate(samplePanelTitlebar, "open");
+    expect(open.title.own).toBe("drag");
+    expect(open.title.overlapsPanel).toBe(false);
+    expect(open.blanks.length).toBeGreaterThan(3);
+    expect(open.controls.length).toBeGreaterThan(0);
+    for (const sample of open.blanks) expect(sample.effective, JSON.stringify(sample)).toBe("drag");
+    for (const sample of open.controls) expect(sample.effective, JSON.stringify(sample)).toBe("no-drag");
+
+    await page.getByRole("button", { name: "Expand panel", exact: true }).click();
+    await expect(panel).toHaveAttribute("data-right-panel-expanded", "true");
+    await expect.poll(() => page.evaluate(() => {
+      const rail = document.querySelector('aside[data-right-panel-expanded="true"]');
+      const sidebar = document.querySelector("aside.theme-sidebar-background");
+      if (!(rail instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) return false;
+      const railBox = rail.getBoundingClientRect();
+      const sidebarBox = sidebar.getBoundingClientRect();
+      return railBox.width > window.innerWidth * 0.5 && Math.abs(railBox.left - sidebarBox.right) < 8;
+    })).toBe(true);
+
+    const expanded = await page.evaluate(samplePanelTitlebar, "expanded");
+    expect(expanded.title.own).toBe("no-drag");
+    expect(expanded.title.parent).toBe("no-drag");
+    expect(expanded.title.overlapsTab).toBe(true);
+    expect(expanded.tabPoints.length).toBeGreaterThan(0);
+    for (const sample of expanded.tabPoints) {
+      expect(sample.effective, JSON.stringify(sample)).toBe("no-drag");
+      expect(sample.coveredDrag, JSON.stringify(sample)).toEqual([]);
+    }
+    expect(expanded.blanks.length).toBeGreaterThan(0);
+    for (const sample of expanded.blanks) expect(sample.effective, JSON.stringify(sample)).toBe("drag");
+    for (const sample of expanded.controls) expect(sample.effective, JSON.stringify(sample)).toBe("no-drag");
+  });
 });
+
+function samplePanelTitlebar(mode: "open" | "expanded") {
+  const explicit = (el: Element | null) => {
+    if (!(el instanceof Element)) return "";
+    const style = getComputedStyle(el);
+    const value = (style.getPropertyValue("-webkit-app-region") || style.getPropertyValue("app-region")).trim();
+    return value === "none" ? "" : value;
+  };
+  const effective = (el: Element | null) => {
+    let node = el;
+    while (node instanceof Element) {
+      const value = explicit(node);
+      if (value) return value;
+      node = node.parentElement;
+    }
+    return "";
+  };
+  const isControl = (el: Element | null, stop: Element) => {
+    let node = el;
+    while (node instanceof Element && node !== stop) {
+      const role = node.getAttribute("role");
+      if (node.tagName === "BUTTON" || node.tagName === "A" || node.tagName === "INPUT" || role === "tab" || role === "button") {
+        return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  };
+  const coveredDrag = (x: number, y: number, top: Element) => document.elementsFromPoint(x, y)
+    .filter((el) => el !== top && !el.contains(top) && explicit(el) === "drag")
+    .map((el) => ({
+      tag: el.tagName,
+      text: (el.textContent || "").trim().slice(0, 40),
+      className: String(el.className).slice(0, 80),
+    }));
+  const panel = document.querySelector("aside[data-right-panel-expanded]");
+  const chrome = panel?.querySelector("[data-panel-titlebar]");
+  const header = document.querySelector('[data-window-titlebar="true"]');
+  const title = [...(header?.querySelectorAll("span") ?? [])].find((el) => el.textContent === "Header chat") ?? null;
+  const tab = panel?.querySelector('[data-pinned-main-session="true"]') ?? null;
+  const boxOf = (el: Element | null) => {
+    if (!(el instanceof HTMLElement)) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, w: rect.width, h: rect.height, right: rect.right, bottom: rect.bottom };
+  };
+  const overlaps = (a: { x: number; y: number; right: number; bottom: number } | null, b: typeof a) => Boolean(
+    a && b && !(a.right < b.x || b.right < a.x || a.bottom < b.y || b.bottom < a.y),
+  );
+  const titleBox = boxOf(title);
+  const tabBox = boxOf(tab);
+  const panelBox = boxOf(panel instanceof HTMLElement ? panel : null);
+  const chromeBox = boxOf(chrome instanceof HTMLElement ? chrome : null);
+  if (!chromeBox || !(chrome instanceof HTMLElement)) {
+    throw new Error("panel titlebar is missing");
+  }
+  const y = chromeBox.y + chromeBox.h / 2;
+  const blanks: Array<{ x: number; effective: string }> = [];
+  const controls: Array<{ x: number; effective: string; label: string }> = [];
+  const tabPoints: Array<{ x: number; effective: string; coveredDrag: ReturnType<typeof coveredDrag> }> = [];
+  for (let x = chromeBox.x + 8; x < chromeBox.right - 8; x += 16) {
+    const top = document.elementFromPoint(x, y);
+    if (!(top instanceof Element)) continue;
+    const point = { x: Math.round(x), effective: effective(top), label: (top.getAttribute("aria-label") || top.textContent || "").trim().slice(0, 40) };
+    if (tabBox && x >= tabBox.x + 4 && x <= tabBox.right - 4) {
+      tabPoints.push({ x: point.x, effective: point.effective, coveredDrag: coveredDrag(x, y, top) });
+      continue;
+    }
+    if (isControl(top, chrome)) controls.push(point);
+    else blanks.push({ x: point.x, effective: point.effective });
+  }
+  return {
+    mode,
+    title: {
+      own: explicit(title),
+      parent: explicit(title?.parentElement ?? null),
+      overlapsPanel: overlaps(titleBox, panelBox),
+      overlapsTab: overlaps(titleBox, tabBox),
+    },
+    blanks,
+    controls,
+    tabPoints,
+  };
+}

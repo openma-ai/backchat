@@ -2371,6 +2371,42 @@ header.app-drag-region :is(
   -webkit-app-region: no-drag !important;
   app-region: no-drag !important;
 }
+/* The expanded right panel owns the top band, so AppShell drops
+   `.app-drag-region` from the header. A title span that still carries the
+   class would union its own drag rect back on top of the panel's first tab:
+   Electron applies regions in order, and a later drag rect covers an earlier
+   no-drag rect. Neutralize those leftover drag classes. */
+header:not(.app-drag-region) .app-drag-region {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+/* The open side panel's top strip is the drag surface for the blank space
+   beside its tabs. Controls inside punch no-drag holes. The strip is not
+   inside the shell header, so the header rule above does not cover it. */
+[data-panel-titlebar] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+[data-panel-titlebar] :is(
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary,
+  label,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="combobox"],
+  [contenteditable="true"]
+) {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
 
 /* Shared intrinsic-height disclosure. CSS grid can interpolate 0fr → 1fr
    without measuring content in JavaScript, which keeps nested sidebar rows

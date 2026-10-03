@@ -43,6 +43,26 @@ describe("window title bar drag region", () => {
     expect(controls).toContain("app-region: no-drag !important;");
   });
 
+  it("does not leave a drag title under the expanded panel, and lets panel chrome blanks drag", () => {
+    expect(css).toContain("header:not(.app-drag-region) .app-drag-region {");
+    expect(css).toContain("[data-panel-titlebar] {");
+    const panelRule = css.slice(css.indexOf("[data-panel-titlebar] :is("));
+    expect(panelRule).toContain("button,");
+    expect(panelRule).toContain('[role="tab"]');
+    expect(panelRule).toContain("-webkit-app-region: no-drag !important;");
+    const panel = read("SideChatPanel.tsx");
+    expect(panel).toContain('data-panel-titlebar="true"');
+    expect(panel).toContain(
+      "app-drag-region pointer-events-auto shrink-0 flex h-[var(--top-row-h)]",
+    );
+    expect(panel).toContain('data-pinned-main-session="true"');
+    const pinned = panel.slice(
+      panel.indexOf('data-pinned-main-session="true"'),
+      panel.indexOf('data-pinned-main-session="true"') + 280,
+    );
+    expect(pinned).toContain("app-no-drag");
+  });
+
   it("keeps the chats compose icon as the new-conversation action", () => {
     const sidebar = read("Sidebar.tsx");
     expect(sidebar).toContain('aria-label={t("sidebar.newConversation")}');
