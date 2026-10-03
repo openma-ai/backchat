@@ -47,6 +47,9 @@ interface WorktreeManifestV2 {
   version: 2;
   workspaceId: string;
   branch: string | null;
+  /** Repo roots where this workspace created `branch`. Missing on older
+   *  manifests; those checkouts are not treated as branch owners. */
+  createdBranchRepos?: string[];
   sourceDirectories: string[];
   roots: WorkspaceRoot[];
   worktrees: WorkspaceWorktree[];
@@ -102,10 +105,13 @@ export class ManagedWorktreeStore {
   async prepare(input: {
     workspaceId: string;
     sourceDirectories: string[];
-    /** Branch to create in every repository. Detached when omitted. */
+    /** Branch to create in every repository. Detached when omitted.
+     *  An existing local branch is checked out instead of failing. */
     branch?: string | null;
     /** Optional pinned commit/ref per repository; defaults to the current HEAD. */
     baseRefs?: Readonly<Record<string,string>>;
+    /** One base ref applied to every repository when `baseRefs` has no entry. */
+    baseRef?: string | null;
   }): Promise<PreparedWorktreeWorkspace> {
     const rootDir = this.#workspaceDir(input.workspaceId);
     const sourceDirectories = await canonicalSourceDirectories(
@@ -161,7 +167,9 @@ export class ManagedWorktreeStore {
       if (worktreeIndex === undefined) {
         worktreeIndex = repoPlans.length;
         repoByRoot.set(repoRoot, worktreeIndex);
-        const head = (await git(repoRoot, "rev-parse", "--verify", "--end-of-options", `${input.baseRefs?.[repoRoot] ?? "HEAD"}^{commit}`)).trim();
+        const explicitBase = input.baseRefs?.[repoRoot] ?? input.baseRef?.trim();
+        const pinned = explicitBase || "HEAD";
+        const head = await resolveBaseCommit(repoRoot, pinned, Boolean(explicitBase));
         repoPlans.push({
           repoRoot,
           head,
@@ -182,33 +190,41 @@ export class ManagedWorktreeStore {
     const branch = input.branch?.trim() || null;
     await mkdir(rootDir, { recursive: true });
     const created: RepoPlan[] = [];
+    const createdBranchRepos: string[] = [];
     try {
       for (const plan of repoPlans) {
-        await git(
-          plan.repoRoot,
-          "worktree",
-          "add",
-          ...(branch ? ["-b", branch] : ["--detach"]),
-          plan.path,
-          plan.head,
-        );
+        if (!branch) {
+          await git(plan.repoRoot, "worktree", "add", "--detach", plan.path, plan.head);
+        } else if (await localBranchExists(plan.repoRoot, branch)) {
+          const base = input.baseRefs?.[plan.repoRoot] ?? input.baseRef?.trim();
+          if (base) await assertBaseContained(plan.repoRoot, branch, base);
+          await git(plan.repoRoot, "worktree", "add", plan.path, branch);
+        } else {
+          await git(plan.repoRoot, "worktree", "add", "-b", branch, plan.path, plan.head);
+          createdBranchRepos.push(plan.repoRoot);
+        }
         created.push(plan);
       }
+      const checkedOut = await Promise.all(repoPlans.map(async (plan) => ({
+        ...plan,
+        head: (await git(plan.path, "rev-parse", "HEAD")).trim(),
+      })));
 
       const manifest: WorktreeManifestV2 = {
         version: 2,
         workspaceId: input.workspaceId,
         branch,
+        createdBranchRepos,
         sourceDirectories,
         roots: rootPlans.map((rootPlan) => ({
           sourcePath: rootPlan.sourcePath,
           effectivePath: join(
-            repoPlans[rootPlan.worktreeIndex]!.path,
+            checkedOut[rootPlan.worktreeIndex]!.path,
             rootPlan.relativePath,
           ),
           worktreeIndex: rootPlan.worktreeIndex,
         })),
-        worktrees: repoPlans.map(({ repoRoot, path, head }) => ({
+        worktrees: checkedOut.map(({ repoRoot, path, head }) => ({
           repoRoot,
           path,
           head,
@@ -244,10 +260,12 @@ export class ManagedWorktreeStore {
           await rm(worktree.path, { recursive: true, force: true });
           await git(worktree.repoRoot, "worktree", "prune").catch(() => "");
         }
-        // The workspace branch goes with its checkout, but only via the safe
-        // delete: git refuses when the branch carries unmerged commits, so
-        // work the user has not integrated is never dropped silently.
-        if (manifest.version === 2 && manifest.branch) {
+        // Only a branch this workspace created is deleted with the checkout.
+        // A branch that already existed and was checked out stays. `git branch
+        // -d` still refuses a created branch that carries unmerged commits.
+        const createdBranch = manifest.version === 2
+          && manifest.createdBranchRepos?.includes(worktree.repoRoot) === true;
+        if (manifest.version === 2 && manifest.branch && createdBranch) {
           await git(worktree.repoRoot, "branch", "-d", manifest.branch).catch(() => "");
         }
       }
@@ -525,6 +543,54 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
     maxBuffer: 4 * 1024 * 1024,
   });
   return result.stdout;
+}
+
+async function resolveBaseCommit(repo: string, ref: string, callerSupplied: boolean): Promise<string> {
+  try {
+    return (await git(repo, "rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`)).trim();
+  } catch (error) {
+    if (!callerSupplied) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Unknown base ref ${ref}: ${message}`);
+  }
+}
+
+async function localBranchExists(repo: string, branch: string): Promise<boolean> {
+  try {
+    await git(repo, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `--base` on an existing branch must already be contained in that branch. */
+async function assertBaseContained(repo: string, branch: string, base: string): Promise<void> {
+  try {
+    await git(repo, "merge-base", "--is-ancestor", `${base}^{commit}`, `refs/heads/${branch}`);
+  } catch {
+    throw new Error(
+      `Base ${base} is not an ancestor of existing branch ${branch} in ${repo}`,
+    );
+  }
+}
+
+export interface WorktreeStatus {
+  head: string;
+  branch: string | null;
+  dirty: boolean;
+}
+
+/** Live checkout facts for `workspace show` and safe removal. */
+export async function worktreeStatus(path: string): Promise<WorktreeStatus> {
+  const head = (await git(path, "rev-parse", "HEAD")).trim();
+  const name = (await git(path, "rev-parse", "--abbrev-ref", "HEAD")).trim();
+  const porcelain = await git(path, "status", "--porcelain");
+  return {
+    head,
+    branch: name === "HEAD" ? null : name,
+    dirty: porcelain.trim().length > 0,
+  };
 }
 
 export function safeName(value: string): string {

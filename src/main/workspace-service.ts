@@ -21,6 +21,7 @@ import {
   listRepoWorktrees,
   repoRootOf,
   safeName,
+  worktreeStatus,
   type ManagedWorktreeStore,
 } from "./worktree-manager.js";
 import {
@@ -57,6 +58,10 @@ export class WorkspaceService {
     source_directories?: string[];
     created_by_session_id?: string | null;
     checkouts?: Array<{ repoRoot: string; path: string }>;
+    /** Use this branch in every source repo. Existing branches are checked out. */
+    branch?: string;
+    /** Start point for a new branch. Validated when the branch already exists. */
+    base_ref?: string;
   }): Promise<WorkspaceInfo> {
     const name = input.name.trim();
     if (!name) throw new Error("Workspace name is required");
@@ -131,11 +136,12 @@ export class WorkspaceService {
     const slug = safeName(name).toLowerCase().slice(0, 40);
     const suffix = randomBytes(2).toString("hex");
     const id = `ws-${slug}-${suffix}`;
-    const branch = `backchat/${slug}-${suffix}`;
+    const branch = input.branch?.trim() || `backchat/${slug}-${suffix}`;
     const prepared = await this.#store.prepare({
       workspaceId: id,
       sourceDirectories,
       branch,
+      ...(input.base_ref?.trim() ? { baseRef: input.base_ref.trim() } : {}),
     });
     const row = saveWorkspace({
       id,
@@ -221,15 +227,52 @@ export class WorkspaceService {
     return managedInfo(row);
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, options?: { force?: boolean }): Promise<void> {
     if (isLiveWorkspaceId(id)) throw new Error("The live workspace cannot be deleted");
     if (isExternalWorkspaceId(id)) {
       throw new Error("External worktrees are not managed by Backchat; remove them with git");
     }
     const row = getWorkspaceRow(id);
     if (!row) return;
+    // The GUI keeps the historical force-remove. Callers that pass
+    // `force: false` (the CLI) refuse dirty checkouts.
+    if (options?.force === false && row.kind !== "linked") {
+      for (const tree of row.worktrees) {
+        const status = await worktreeStatus(tree.path).catch(() => null);
+        if (status?.dirty) {
+          throw new Error(
+            `Workspace ${id} has uncommitted changes in ${tree.path}. Re-run with --force to remove it.`,
+          );
+        }
+      }
+    }
     if (row.kind !== "linked") await this.#store.removeDir(row.root_dir);
     deleteWorkspaceRow(id);
+  }
+
+  /** Refresh each checkout's branch, HEAD, and dirty state from git. */
+  async show(id: string): Promise<WorkspaceInfo & {
+    repos: Array<{
+      repo_root: string;
+      path: string;
+      branch: string | null;
+      head: string;
+      dirty: boolean;
+    }>;
+  }> {
+    const info = await this.resolve(id);
+    if (!info) throw new Error(`Workspace not found: ${id}`);
+    const repos = await Promise.all(info.worktrees.map(async (tree) => {
+      const live = await worktreeStatus(tree.path).catch(() => null);
+      return {
+        repo_root: tree.repoRoot,
+        path: tree.path,
+        branch: live?.branch ?? tree.branch,
+        head: live?.head || tree.head,
+        dirty: live?.dirty ?? false,
+      };
+    }));
+    return { ...info, repos };
   }
 
   /** Session-keyed checkout sets from before workspaces existed become
