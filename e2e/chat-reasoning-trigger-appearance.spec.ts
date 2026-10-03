@@ -4,30 +4,12 @@ import { injectEvent, injectSession } from "./helpers";
 type ThemeMode = "light" | "dark";
 type TurnPhase = "running" | "complete";
 
-const BASELINE: Record<
-  ThemeMode,
-  Record<TurnPhase, { idle: string; hover: string }>
-> = {
-  light: {
-    running: {
-      idle: "rgb(233, 233, 233)",
-      hover: "color(srgb 0.0784314 0.0784314 0.0784314 / 0.08)",
-    },
-    complete: {
-      idle: "rgb(233, 233, 233)",
-      hover: "color(srgb 0.0784314 0.0784314 0.0784314 / 0.08)",
-    },
-  },
-  dark: {
-    running: {
-      idle: "rgb(64, 64, 64)",
-      hover: "color(srgb 0.921569 0.913725 0.882353 / 0.08)",
-    },
-    complete: {
-      idle: "rgb(64, 64, 64)",
-      hover: "color(srgb 0.921569 0.913725 0.882353 / 0.08)",
-    },
-  },
+/** Resting process header row: full width, no bubble fill (openma-common v0.7.6+). */
+const TRANSPARENT_IDLE = "rgba(0, 0, 0, 0)";
+
+const HOVER_WASH: Record<ThemeMode, string> = {
+  light: "color(srgb 0.0784314 0.0784314 0.0784314 / 0.08)",
+  dark: "color(srgb 0.921569 0.913725 0.882353 / 0.08)",
 };
 
 async function setTheme(page: import("@playwright/test").Page, theme: ThemeMode) {
@@ -38,10 +20,6 @@ async function setTheme(page: import("@playwright/test").Page, theme: ThemeMode)
     });
   }, theme);
   await expect(page.locator("html")).toHaveAttribute("data-theme-mode", theme);
-}
-
-async function readBackground(trigger: import("@playwright/test").Locator) {
-  return trigger.evaluate((node) => getComputedStyle(node).backgroundColor);
 }
 
 async function hoverTrigger(
@@ -93,7 +71,7 @@ async function seedTurn(
   }
 }
 
-test("chat reasoning trigger backgrounds match commit 49c6ae2", async ({ page }) => {
+test("chat reasoning trigger uses plain full-width row styling", async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 860 });
   const sessionId = await injectSession(page, { agentId: "codex-acp" });
   const shotRoot = process.env.BACKCHAT_REASONING_TRIGGER_SHOT_DIR;
@@ -111,19 +89,15 @@ test("chat reasoning trigger backgrounds match commit 49c6ae2", async ({ page })
       }
 
       await page.mouse.move(0, 0);
-      await expect(trigger).toHaveCSS(
-        "background-color",
-        BASELINE[theme][phase].idle,
-      );
+      await expect(trigger).toHaveCSS("background-color", TRANSPARENT_IDLE);
 
       await hoverTrigger(page, trigger);
-      await expect(trigger).toHaveCSS(
-        "background-color",
-        BASELINE[theme][phase].hover,
-      );
+      await expect(trigger).toHaveCSS("background-color", HOVER_WASH[theme]);
 
-      const width = Math.round((await trigger.boundingBox())?.width ?? 0);
-      expect(width).toBeLessThan(200);
+      const turnWidth = (await turn.boundingBox())?.width ?? 0;
+      const triggerWidth = (await trigger.boundingBox())?.width ?? 0;
+      expect(triggerWidth).toBeGreaterThan(200);
+      expect(triggerWidth).toBeGreaterThanOrEqual(turnWidth * 0.9);
 
       if (shotRoot) {
         await page.mouse.move(0, 0);

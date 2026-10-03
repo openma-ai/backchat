@@ -150,10 +150,7 @@ test("shows a denied shell as not run, and keeps a real failure at the end of th
       }, theme);
       await expect(page.locator("html")).toHaveAttribute("data-theme-mode", theme);
       await page.mouse.move(0, 0);
-      await expect(worked).toHaveCSS(
-        "background-color",
-        theme === "light" ? "rgb(233, 233, 233)" : "rgb(64, 64, 64)",
-      );
+      await expect(worked).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     };
 
     await applyTheme("light");
