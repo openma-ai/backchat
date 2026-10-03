@@ -74,6 +74,43 @@ describe("sql-store file-first write-through", () => {
     });
     expect(metadata).not.toHaveProperty("archived_at");
     expect(metadata).not.toHaveProperty("pinned_at");
+    expect(metadata).toMatchObject({
+      parent_session_id: "",
+      fork_kind: "",
+    });
+
+    upsertSession({
+      id: "sess_fork_child",
+      agent_id: "pi-acp",
+      cwd: join(root, "sessions", "sess_fork_child"),
+      acp_session_id: "acp_fork_child",
+      title: "Forked chat",
+      parent_session_id: "sess_file_first",
+      fork_kind: "message",
+    });
+    expect(getSession("sess_fork_child")).toMatchObject({
+      parent_session_id: "sess_file_first",
+      fork_kind: "message",
+    });
+    const childMetadata = parseToml(await readFile(
+      join(root, "transcripts", "2026", "06", "14", "sess_fork_child.meta.toml"),
+      "utf-8",
+    )) as Record<string, unknown>;
+    expect(childMetadata).toMatchObject({
+      parent_session_id: "sess_file_first",
+      fork_kind: "message",
+      workdir: join(root, "sessions", "sess_fork_child"),
+    });
+    upsertSession({
+      id: "sess_fork_child",
+      agent_id: "pi-acp",
+      cwd: join(root, "sessions", "sess_fork_child"),
+      acp_session_id: "acp_fork_child",
+    });
+    expect(getSession("sess_fork_child")).toMatchObject({
+      parent_session_id: "sess_file_first",
+      fork_kind: "message",
+    });
 
     appendEvent("sess_file_first", "user_prompt", { text: "hello files" });
     upsertSession({

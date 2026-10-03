@@ -40,7 +40,12 @@ function runtimeAgentIdentity(row: SessionRow): { name: string; version?: string
 
 function methodCapabilityLabels(row: SessionRow): string[] {
   const methods: RuntimeMethodCapability[] = [
-    { label: "session.fork", supported: row.supportsSessionFork },
+    {
+      label: "session.fork",
+      supported: row.forkSupport
+        ? row.forkSupport.level !== "none"
+        : row.supportsSessionFork,
+    },
     { label: "session.list", supported: row.supportsSessionList },
     { label: "session.delete", supported: row.supportsSessionDelete },
     { label: "session.resume", supported: row.supportsSessionResume },

@@ -56,6 +56,7 @@ import {
   type SideTabType,
   type SubagentActivity,
 } from "@/lib/session-store";
+import { wholeSessionForkEnabled } from "@/lib/fork-support";
 import type { AcpTerminalInfo } from "@shared/api.js";
 import type { ScheduleInfo } from "@shared/schedules.js";
 
@@ -147,7 +148,9 @@ export function SideChatPanel() {
   const navigate = useNavigate();
   const canStartSideChat = !!mainActive && mainActive.status !== "draft";
   const canForkSideChat =
-    canStartSideChat && !!mainActive?.supportsSessionFork && !!mainActive?.acp_session_id;
+    canStartSideChat
+    && wholeSessionForkEnabled(mainActive?.forkSupport)
+    && !!mainActive?.acp_session_id;
   const restoringTerminals = useRef(new Set<string>());
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const [tabScrollFade, setTabScrollFade] = useState({

@@ -3,11 +3,11 @@ import { turnStopNotice } from "@/lib/turn-stop-reason";
 import { memo, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ArrowRightFromLineIcon,
   AtSignIcon,
   CalendarClockIcon,
   CheckIcon,
   CopyIcon,
+  GitBranchIcon,
   ListChecksIcon,
   Loader2Icon,
   TargetIcon,
@@ -60,9 +60,11 @@ import { BACKCHAT_COLLAPSIBLE_PRIMITIVES } from "@/components/ai-elements/reason
 export const TurnBlock = memo(function TurnBlock({
   turn,
   onFork,
+  forkLabel,
 }: {
   turn: Turn;
   onFork?: () => void;
+  forkLabel?: string;
 }) {
   const { t } = useI18n();
   const rendered = useMemo(() => reduceTurn(turn.events), [turn.events]);
@@ -334,7 +336,12 @@ export const TurnBlock = memo(function TurnBlock({
           </>
         ),
         renderFooter: () => (
-          <TurnFooter turn={turn} isStreaming={isStreaming} onFork={onFork} />
+          <TurnFooter
+            turn={turn}
+            isStreaming={isStreaming}
+            onFork={onFork}
+            forkLabel={forkLabel}
+          />
         ),
       }}
     />
@@ -651,15 +658,18 @@ function TurnFooter({
   turn,
   isStreaming,
   onFork,
+  forkLabel,
 }: {
   turn: Turn;
   isStreaming: boolean;
   onFork?: () => void;
+  forkLabel?: string;
 }) {
   const { t } = useI18n();
   const answer = turn.assistantText.trim();
   const canFork =
     Boolean(onFork) && turn.status === "complete" && answer.length > 0;
+  const forkTitle = forkLabel ?? t("chat.continueInNewChat");
   const endedAt = turn.status === "running" ? undefined : turn.endedAt;
   const layer =
     "col-start-1 row-start-1 flex min-w-0 items-center transition-opacity duration-[var(--dur-slow)] ease-[var(--ease-soft)]";
@@ -693,12 +703,13 @@ function TurnFooter({
             <button
               type="button"
               data-turn-fork-action="true"
-              aria-label={t("chat.continueInNewChat")}
-              title={t("chat.continueInNewChat")}
+              data-fork-kind={forkLabel ? "message" : "session"}
+              aria-label={forkTitle}
+              title={forkTitle}
               onClick={onFork}
               className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ArrowRightFromLineIcon className="size-4" aria-hidden="true" />
+              <GitBranchIcon className="size-4" aria-hidden="true" />
             </button>
           )}
         </TurnMetaActions>

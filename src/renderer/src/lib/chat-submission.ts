@@ -13,6 +13,8 @@ import {
   deriveChatLabel,
   derivePromptDisplayText,
 } from "./composer-prompt";
+import type { AcpForkPoint } from "@openma/common/acp-runtime";
+import { sessionUsesManagedWorkspace } from "./fork-workspace";
 import type {
   SessionRow,
   SideSessionParentLink,
@@ -81,14 +83,114 @@ export function resolveWorkspaceMode(
   return undefined;
 }
 
+export interface DraftStartWorkspace {
+  workspace_mode: SessionStartParams["workspace_mode"];
+  cwd?: string;
+  additional_directories?: string[];
+  project_id?: string;
+  workspace_id?: string;
+  parent_session_id?: string;
+  fork_kind?: "session" | "message";
+}
+
+function forkKindFor(
+  link: Pick<SideSessionParentLink, "inheritance" | "point"> | undefined,
+): "session" | "message" | undefined {
+  if (link?.inheritance !== "fork") return undefined;
+  return link.point ? "message" : "session";
+}
+
+/** Workspace a draft should start in.
+ *
+ *  Forks and side chats inherit the source session. A page-level picked
+ *  directory is the composer's last project and must not replace that
+ *  inheritance: a managed source stays managed (a new per-session folder),
+ *  and a project source stays on the same project. */
+export function resolveDraftStartWorkspace({
+  target,
+  isSide,
+  pickedCwd,
+}: {
+  target: Pick<
+    SessionRow,
+    | "cwd"
+    | "chosenCwd"
+    | "projectScope"
+    | "projectId"
+    | "additionalDirectories"
+    | "workspaceId"
+    | "forkParent"
+    | "sideParent"
+  >;
+  isSide: boolean;
+  pickedCwd?: string | null;
+}): DraftStartWorkspace {
+  const forkLink = target.forkParent?.inheritance === "fork"
+    ? target.forkParent
+    : undefined;
+  if (forkLink || isSide) {
+    const managed = sessionUsesManagedWorkspace(target);
+    const link = forkLink
+      ?? (target.sideParent?.inheritance === "fork" ? target.sideParent : undefined);
+    const lineage = {
+      parent_session_id: link?.parentSessionId,
+      fork_kind: forkKindFor(link),
+    };
+    if (forkLink && managed) {
+      return { workspace_mode: "managed", ...lineage };
+    }
+    const cwd = (
+      managed ? target.cwd : (target.chosenCwd || target.cwd)
+    )?.trim() || undefined;
+    const workspaceId = managed ? undefined : target.workspaceId?.trim() || undefined;
+    return {
+      workspace_mode: isSide
+        ? "inherited"
+        : resolveWorkspaceMode(
+          managed ? "none" : "project",
+          false,
+          !!cwd,
+          workspaceId,
+        ),
+      cwd,
+      additional_directories: managed ? undefined : target.additionalDirectories,
+      project_id: managed ? undefined : target.projectId,
+      workspace_id: workspaceId,
+      ...lineage,
+    };
+  }
+
+  const startCwd = resolveChatStartCwd({
+    pickedCwd: resolveProjectScopedPickedCwd(target.projectScope, pickedCwd),
+    chosenCwd: target.chosenCwd,
+    sessionCwd: target.cwd,
+  });
+  return {
+    workspace_mode: resolveWorkspaceMode(
+      target.projectScope,
+      false,
+      !!startCwd,
+      target.workspaceId,
+    ),
+    cwd: startCwd,
+    additional_directories: target.additionalDirectories,
+    project_id: target.projectId,
+    workspace_id: target.workspaceId ?? undefined,
+  };
+}
+
 export function resolveChatFork(
   parentLink:
-    | Pick<SideSessionParentLink, "inheritance" | "parentAcpSessionId">
+    | Pick<SideSessionParentLink, "inheritance" | "parentAcpSessionId" | "point">
     | undefined,
-): { acp_session_id: string } | undefined {
-  return parentLink?.inheritance === "fork" && parentLink.parentAcpSessionId
-    ? { acp_session_id: parentLink.parentAcpSessionId }
-    : undefined;
+): { acp_session_id: string; point?: AcpForkPoint } | undefined {
+  if (parentLink?.inheritance !== "fork" || !parentLink.parentAcpSessionId) {
+    return undefined;
+  }
+  return {
+    acp_session_id: parentLink.parentAcpSessionId,
+    ...(parentLink.point ? { point: parentLink.point } : {}),
+  };
 }
 
 export function chatIdleDeliveryMeta(
@@ -243,30 +345,29 @@ export function useChatSubmission({
         });
       }
       const parentLink = target.forkParent ?? target.sideParent ?? target.subagent;
-      const startCwd = resolveChatStartCwd({
-        pickedCwd: resolveProjectScopedPickedCwd(
-          target.projectScope,
-          pickedCwd,
-        ),
-        chosenCwd: target.chosenCwd,
-        sessionCwd: target.cwd,
+      const workspace = resolveDraftStartWorkspace({
+        target,
+        isSide,
+        pickedCwd,
       });
       const startResult = await window.backchat.sessionStart({
         session_id: target.id,
         agent_id: draftAgentId,
-        workspace_mode: resolveWorkspaceMode(
-          target.projectScope,
-          isSide,
-          !!startCwd,
-          target.workspaceId,
-        ),
-        cwd: startCwd,
-        additional_directories: target.additionalDirectories,
-        project_id: target.projectId,
-        workspace_id: target.workspaceId ?? undefined,
+        workspace_mode: workspace.workspace_mode,
+        cwd: workspace.cwd,
+        additional_directories: workspace.additional_directories,
+        project_id: workspace.project_id,
+        workspace_id: workspace.workspace_id,
         fork: resolveChatFork(parentLink),
+        parent_session_id: workspace.parent_session_id,
+        fork_kind: workspace.fork_kind,
       });
-      if (startResult.status !== "ready") return;
+      if (startResult.status !== "ready") {
+        if (startResult.status === "error" && parentLink?.inheritance === "fork") {
+          toast.error(startResult.message);
+        }
+        return;
+      }
 
       for (const [config_id, value] of Object.entries(configOverrides)) {
         try {

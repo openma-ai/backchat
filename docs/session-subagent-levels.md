@@ -15,8 +15,10 @@ Backchat keeps three levels separate:
 2. Side chat
    - Created by Backchat GUI in the right rail.
    - Stored as a side session with `sideKind: "chat"` and a `sideParent` link.
-   - If the active ACP agent advertises `sessionCapabilities.fork`, Backchat
+   - If `forkSupport()` from `@openma/common` is not `"none"`, Backchat
      starts the side chat through ACP `session/fork` so it inherits context.
+     Message fork is a separate action and only runs when the level is
+     `"message"`.
    - It remains subordinate while it lives in the side rail.
 
 3. Fork
@@ -25,10 +27,13 @@ Backchat keeps three levels separate:
 
 ## Current Evidence
 
-- ACP fork plumbing is covered by `packages/acp/src/session.test.ts` and
-  `src/main/session-manager.test.ts`. Those tests prove Backchat passes
-  `forkFromAcpSessionId` into the SDK's unstable `session/fork` surface and
-  returns `supports_session_fork` to the renderer.
+- ACP fork plumbing is covered by `packages/acp/src/session.test.ts`,
+  `packages/acp/src/fork-point-contract.test.ts`, and
+  `src/main/session-manager.test.ts`. The main process calls `forkSupport()`
+  and sends `fork_support` plus `supports_session_fork` (`level !== "none"`).
+  A message fork also passes `SessionOptions.forkPoint`. The runtime
+  deep-merges that into `session/fork` `_meta` and does not fall back to a
+  whole-session fork when the agent rejects the point.
 - Renderer side-chat behavior is covered by
   `src/renderer/src/lib/session-store.test.ts`. Those tests prove a side chat
   carries `sideParent`, and promotion clears that link.

@@ -8,6 +8,7 @@ const PROJECT_ROOT = process.cwd();
 import { join } from "node:path";
 import type { AcpSession, SessionOptions } from "@open-managed-agents-desktop/acp";
 import { streamEventsFromSession } from "./control/live-bus.js";
+import { forkSupport } from "@openma/common/acp-runtime";
 import { acpEventUiRoute, SessionManager } from "./session-manager";
 import { configureAppLog, flushAppLog } from "./app-log.js";
 import {
@@ -357,6 +358,7 @@ describe("SessionManager prompt queue", () => {
       title_manually_set: 1, created_at: 1, last_used_at: 2,
       archived_at: null, pinned_at: null, project_id: "project-original",
       additional_directories: [PROJECT_ROOT], workspace_id: null, pair_id: null,
+      parent_session_id: null, fork_kind: null,
     });
     const send = vi.fn();
     const manager = new SessionManager({
@@ -383,6 +385,7 @@ describe("SessionManager prompt queue", () => {
       title_manually_set: 1, created_at: 1, last_used_at: 2,
       archived_at: null, pinned_at: null, project_id: null,
       additional_directories: [], workspace_id: null, pair_id: null,
+      parent_session_id: null, fork_kind: null,
     });
     const send = vi.fn();
     const manager = new SessionManager({
@@ -1301,6 +1304,57 @@ describe("SessionManager prompt queue", () => {
     );
   });
 
+  it("persists fork lineage and ignores a requested project cwd for a managed fork", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ cwd: "/default-project" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-fork-child",
+      agent_id: "codex-acp",
+      workspace_mode: "managed",
+      cwd: "/last-project",
+      project_id: "proj-last",
+      parent_session_id: "sess-parent",
+      fork_kind: "message",
+      fork: {
+        acp_session_id: "acp-parent",
+        point: {
+          messageId: "assistant-1",
+          messageText: "Hello",
+          messageOccurrence: 1,
+        },
+      },
+    });
+
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({ cwd: "/tmp/backchat-test" }),
+        forkFromAcpSessionId: "acp-parent",
+        forkPoint: {
+          messageId: "assistant-1",
+          messageText: "Hello",
+          messageOccurrence: 1,
+        },
+      }),
+    );
+    expect(vi.mocked(upsertSession)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "sess-fork-child",
+        cwd: "/tmp/backchat-test",
+        parent_session_id: "sess-parent",
+        fork_kind: "message",
+      }),
+    );
+  });
+
   it("prepares all project roots as session worktrees before ACP startup", async () => {
     const fake = createControllableAcpSession();
     const prepareWorktreeWorkspace = vi.fn(async () => ({
@@ -2119,7 +2173,12 @@ describe("SessionManager prompt queue", () => {
   });
 
   it("passes fork requests to the ACP runtime without treating fork as the subagent protocol", async () => {
-    const fake = createControllableAcpSession({ supportsSessionFork: true });
+    const fake = createControllableAcpSession({
+      supportsSessionFork: true,
+      agentCapabilities: {
+        sessionCapabilities: { fork: {} },
+      },
+    });
     mocks.runtimeStart.mockResolvedValueOnce(fake.session);
     const events: unknown[] = [];
     const manager = new SessionManager({
@@ -2147,8 +2206,126 @@ describe("SessionManager prompt queue", () => {
         type: "session.ready",
         session_id: "sess-subagent",
         supports_session_fork: true,
+        fork_support: expect.objectContaining({
+          level: "session",
+          reason: "message-fork-not-advertised",
+        }),
       }),
     );
+  });
+
+  it("reports fork_support from forkSupport() and ignores the boolean getter", async () => {
+    const fake = createControllableAcpSession({
+      supportsSessionFork: true,
+      agentCapabilities: {},
+    });
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "codex-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-fork-getter-ignored",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      supports_session_fork: false,
+      fork_support: expect.objectContaining({
+        level: "none",
+        reason: "session-fork-not-advertised",
+        message: "This agent does not support forking a session.",
+      }),
+    }));
+  });
+
+  it("reports message fork from the inclusive capability key", async () => {
+    const fake = createControllableAcpSession({
+      supportsSessionFork: false,
+      agentCapabilities: {
+        sessionCapabilities: { fork: {} },
+        _meta: {
+          jetbrains: {
+            air: { fork: { version: 1, inclusive: true } },
+          },
+        },
+      } as AcpSession["agentCapabilities"],
+    });
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "pi-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-message-fork-capability",
+      agent_id: "pi-acp",
+      cwd: "/repo",
+    });
+
+    expect(fake.session.supportsSessionFork).toBe(false);
+    expect(result).toEqual(expect.objectContaining({
+      supports_session_fork: true,
+      fork_support: expect.objectContaining({
+        level: "message",
+        reason: "message-fork-advertised",
+      }),
+    }));
+  });
+
+  it("passes forkPoint beside harness sessionRequestMeta and does not retry a rejection", async () => {
+    const point = {
+      messageId: "assistant-1",
+      messageText: "Hello",
+      messageOccurrence: 1,
+    };
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockRejectedValueOnce(new Error(
+      "Fork point message assistant-1 was not found in session parent-acp-session",
+    ));
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (message) => events.push(message),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "claude-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-message-fork-rejected",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+      fork: { acp_session_id: "parent-acp-session", point },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      status: "error",
+      message: "Fork point message assistant-1 was not found in session parent-acp-session",
+    }));
+    expect(mocks.runtimeStart).toHaveBeenCalledTimes(1);
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(expect.objectContaining({
+      forkFromAcpSessionId: "parent-acp-session",
+      forkPoint: point,
+      sessionRequestMeta: expect.objectContaining({
+        claudeCode: expect.any(Object),
+      }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.error",
+      session_id: "sess-message-fork-rejected",
+      message: "Fork point message assistant-1 was not found in session parent-acp-session",
+    }));
   });
 
   it("rejects a session start that tries to resume and fork at once", async () => {
@@ -2296,6 +2473,9 @@ describe("SessionManager prompt queue", () => {
   it("carries the complete negotiated ACP method capability set through session.ready", async () => {
     const fake = createControllableAcpSession({
       supportsSessionFork: true,
+      agentCapabilities: {
+        sessionCapabilities: { fork: {} },
+      },
       supportsSessionList: true,
       supportsSessionDelete: true,
       supportsSessionResume: true,
@@ -4178,6 +4358,11 @@ function createControllableAcpSession(opts: {
     },
     promptCapabilities: opts.promptCapabilities ?? {},
     supportsSessionFork: opts.supportsSessionFork ?? false,
+    forkSupport: forkSupport({
+      agentCapabilities: opts.agentCapabilities ?? {},
+      agentInfo: opts.agentInfo ?? null,
+    }),
+    legacyModels: null,
     supportsSessionList: opts.supportsSessionList ?? false,
     supportsSessionDelete: opts.supportsSessionDelete ?? false,
     supportsSessionResume: opts.supportsSessionResume ?? false,
@@ -4313,6 +4498,8 @@ function createStreamingAcpSession(events: unknown[]): {
     },
     promptCapabilities: {},
     supportsSessionFork: false,
+    forkSupport: forkSupport({ agentCapabilities: {}, agentInfo: null }),
+    legacyModels: null,
     supportsSessionList: false,
     supportsSessionDelete: false,
     supportsSessionResume: false,

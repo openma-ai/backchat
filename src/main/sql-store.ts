@@ -78,10 +78,15 @@ export interface PersistedSession {
   external_client?: string | null;
   /** CLI permission policy for this session. Absent or null means ask. */
   permission_policy?: "ask" | "auto-read" | "auto-edit" | "auto-all" | null;
+  /** Backchat session this row was forked from. Null for ordinary chats. */
+  parent_session_id: string | null;
+  /** `session` forks the whole parent. `message` forks from one reply. */
+  fork_kind: "session" | "message" | null;
 }
 
-type PersistedSessionRow = Omit<PersistedSession, "additional_directories"> & {
+type PersistedSessionRow = Omit<PersistedSession, "additional_directories" | "fork_kind"> & {
   additional_directories_json: string | null;
+  fork_kind: string | null;
 };
 
 function decodeSessionRow(row: PersistedSessionRow): PersistedSession {
@@ -97,8 +102,16 @@ function decodeSessionRow(row: PersistedSessionRow): PersistedSession {
       // use their legacy project fallback instead of crashing the sidebar.
     }
   }
-  const { additional_directories_json: _json, ...session } = row;
-  return { ...session, additional_directories: additionalDirectories };
+  const { additional_directories_json: _json, fork_kind: rawForkKind, ...session } = row;
+  const forkKind = rawForkKind === "session" || rawForkKind === "message"
+    ? rawForkKind
+    : null;
+  return {
+    ...session,
+    additional_directories: additionalDirectories,
+    parent_session_id: session.parent_session_id || null,
+    fork_kind: forkKind,
+  };
 }
 
 export interface PersistedPairSession {
@@ -313,7 +326,10 @@ export function openSessionDb(path: string): void {
       pinned_at     INTEGER,
       pair_id       TEXT,
       project_id    TEXT,
-      additional_directories_json TEXT
+      additional_directories_json TEXT,
+      workspace_id  TEXT,
+      parent_session_id TEXT,
+      fork_kind     TEXT
     );
     CREATE INDEX IF NOT EXISTS sessions_last_used_idx
       ON sessions(archived_at, last_used_at DESC);
@@ -492,6 +508,12 @@ export function openSessionDb(path: string): void {
     db.exec(`ALTER TABLE sessions ADD COLUMN permission_policy TEXT`);
   }
   migrateExternalCoordinators(db);
+  if (!sessionCols.has("parent_session_id")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN parent_session_id TEXT`);
+  }
+  if (!sessionCols.has("fork_kind")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN fork_kind TEXT`);
+  }
   db.exec(`
     CREATE INDEX IF NOT EXISTS sessions_pinned_idx
       ON sessions(archived_at, pinned_at DESC);
@@ -510,9 +532,10 @@ export function openSessionDb(path: string): void {
     upsert: db.prepare(`
       INSERT INTO sessions (
         id, agent_id, cwd, acp_session_id, title, last_used_at, created_at,
-        pair_id, project_id, additional_directories_json, workspace_id
+        pair_id, project_id, additional_directories_json, workspace_id,
+        parent_session_id, fork_kind
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         agent_id       = excluded.agent_id,
         cwd            = excluded.cwd,
@@ -530,7 +553,9 @@ export function openSessionDb(path: string): void {
           excluded.additional_directories_json,
           sessions.additional_directories_json
         ),
-        workspace_id   = COALESCE(excluded.workspace_id, sessions.workspace_id)
+        workspace_id   = COALESCE(excluded.workspace_id, sessions.workspace_id),
+        parent_session_id = COALESCE(excluded.parent_session_id, sessions.parent_session_id),
+        fork_kind      = COALESCE(excluded.fork_kind, sessions.fork_kind)
     `),
     touch: db.prepare(`UPDATE sessions SET last_used_at = ? WHERE id = ?`),
     setTitle: db.prepare(
@@ -900,6 +925,10 @@ export function upsertSession(row: {
   /** Omitted or null preserves the previous value; use setSessionWorkspace
    *  to detach a session from its workspace. */
   workspace_id?: string | null;
+  /** Omitted preserves a previous fork parent. */
+  parent_session_id?: string | null;
+  /** Omitted preserves a previous fork kind. */
+  fork_kind?: "session" | "message" | null;
 }): void {
   const now = Date.now();
   const additionalDirectoriesJson = row.additional_directories === undefined
@@ -917,6 +946,8 @@ export function upsertSession(row: {
     row.project_id ?? null,
     additionalDirectoriesJson,
     row.workspace_id ?? null,
+    row.parent_session_id?.trim() || null,
+    row.fork_kind === "session" || row.fork_kind === "message" ? row.fork_kind : null,
   );
   writeSessionMetadata(row.id);
 }
@@ -1786,6 +1817,8 @@ function writeSessionMetadata(sessionId: string): void {
       project_id: session.project_id ?? "",
       external_client: session.external_client ?? "",
       permission_policy: session.permission_policy ?? "",
+      parent_session_id: session.parent_session_id ?? "",
+      fork_kind: session.fork_kind ?? "",
       workdir: session.cwd,
       ...(session.additional_directories !== null
         ? { additional_directories: session.additional_directories }

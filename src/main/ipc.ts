@@ -908,6 +908,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         project_id: member.project_id ?? null,
         additional_directories: [],
         workspace_id: null,
+        parent_session_id: member.parent_session_id ?? null,
+        fork_kind: member.fork_kind ?? null,
       })),
     })),
   );

@@ -1,9 +1,13 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import type { AcpAvailableCommand } from "./session-types";
 import { describe, expect, it } from "vitest";
 
 import {
   buildSlashCommandSections,
   hostSessionStateAction,
+  isBareHostForkText,
   isHostForkSlashCommand,
   isSkillSlashCommand,
   matchesSlashCommand,
@@ -157,6 +161,30 @@ describe("composer slash commands", () => {
       },
     });
     expect(isHostForkSlashCommand(enabled[0]!)).toBe(true);
+    expect(isBareHostForkText("/fork")).toBe(true);
+    expect(isBareHostForkText("  /FORK  ")).toBe(true);
+    expect(isBareHostForkText("/fork more")).toBe(false);
+
+    const composer = readFileSync(
+      resolve(__dirname, "../components/chat/Composer.tsx"),
+      "utf8",
+    );
+    const clearHostFork = composer.slice(
+      composer.indexOf("const clearHostForkComposer = () => {"),
+      composer.indexOf("const pickCommand"),
+    );
+    expect(clearHostFork).toContain(
+      'composerTextBySession.write(composerTextKey, "")',
+    );
+    const hostFork = composer.slice(
+      composer.indexOf("if (isHostForkSlashCommand(cmd))"),
+      composer.indexOf("if (isSkillSlashCommand(cmd))"),
+    );
+    expect(hostFork.indexOf("clearHostForkComposer()")).toBeGreaterThanOrEqual(0);
+    expect(hostFork.indexOf("clearHostForkComposer()")).toBeLessThan(
+      hostFork.indexOf("onFork?.()"),
+    );
+    expect(composer).toContain("isBareHostForkText(promptText)");
     expect(withHostForkCommand(existing, false, {
       title: "Continue in new chat",
       description: "Create a new chat with the current context",

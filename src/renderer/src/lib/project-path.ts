@@ -12,7 +12,7 @@ export function isPerSessionFolderPath(path: string): boolean {
   if (parts.length < 2) return false;
   const folder = parts.at(-1) ?? "";
   const parent = parts.at(-2) ?? "";
-  return parent === "sessions" && folder.startsWith("sess-");
+  return parent === "sessions" && /^(?:sess|fork)-/.test(folder);
 }
 
 export function projectKeyForCwd(cwd: string | null | undefined): string | null {

@@ -169,7 +169,31 @@ describe("TurnBlock", () => {
 
     expect(html).toContain('data-turn-fork-action="true"');
     expect(html).toContain('aria-label="chat.continueInNewChat"');
-    expect(html).toContain("lucide-arrow-right-from-line");
+    expect(html).toContain('data-backchat-icon="branch"');
+    expect(html).not.toContain("lucide-arrow-right-from-line");
+  });
+
+  it("uses the branch icon for fork-from-here and does not add a second button", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          assistantText: "A completed answer",
+          status: "complete",
+        })}
+        onFork={() => undefined}
+        forkLabel="chat.forkFromHere"
+      />,
+    );
+
+    expect(html.match(/data-turn-fork-action="true"/g)).toHaveLength(1);
+    expect(html).toContain('data-fork-kind="message"');
+    expect(html).toContain('aria-label="chat.forkFromHere"');
+    expect(html).toContain('data-backchat-icon="branch"');
+    expect(html).not.toContain("lucide-arrow-right-from-line");
+    expect(html).not.toContain("data-turn-message-fork");
+    expect(html).not.toContain("disabled");
+    expect(html).not.toContain("This agent can fork");
+    expect(html).not.toContain("does not support");
   });
 
   it("does not render the response fork action without an eligible callback", () => {

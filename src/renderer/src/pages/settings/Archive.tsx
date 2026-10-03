@@ -47,7 +47,7 @@ export function Archive() {
       const remoteRows: ArchiveEntry[] = tasks.filter((task) => task.archivedAt != null).map((task) => ({
         id: task.id, agent_id: task.target.agentId, title: task.title, cwd: "", acp_session_id: "",
         title_manually_set: 1, last_used_at: task.updatedAt, created_at: task.createdAt,
-        pinned_at: task.pinnedAt ?? null, archived_at: task.archivedAt!, project_id: null, additional_directories: [], workspace_id: null, openma: task,
+        pinned_at: task.pinnedAt ?? null, archived_at: task.archivedAt!, project_id: null, additional_directories: [], workspace_id: null, parent_session_id: null, fork_kind: null, openma: task,
       }));
       setRows([...local, ...remoteRows].sort((a, b) => (b.archived_at ?? 0) - (a.archived_at ?? 0)));
       setError(null);

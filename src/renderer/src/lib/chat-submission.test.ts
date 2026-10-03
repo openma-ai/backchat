@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   chatIdleDeliveryMeta,
+  resolveDraftStartWorkspace,
   resolveProjectScopedPickedCwd,
   resolveWorkspaceMode,
   resolveChatFork,
@@ -90,6 +91,133 @@ describe("chat submission decisions", () => {
       inheritance: "fork",
     })).toBeUndefined();
     expect(resolveChatFork(undefined)).toBeUndefined();
+    expect(resolveChatFork({
+      inheritance: "fork",
+      parentAcpSessionId: "acp-parent",
+      point: {
+        messageId: "assistant-1",
+        messageText: "Hello",
+        messageOccurrence: 1,
+      },
+    })).toEqual({
+      acp_session_id: "acp-parent",
+      point: {
+        messageId: "assistant-1",
+        messageText: "Hello",
+        messageOccurrence: 1,
+      },
+    });
+  });
+
+  it("keeps a managed fork out of the last project, including message fork", () => {
+    const managed = {
+      cwd: "/Users/mini/.oma/sessions/sess-parent",
+      projectScope: "none" as const,
+      forkParent: {
+        parentSessionId: "sess-parent",
+        parentAcpSessionId: "acp-parent",
+        inheritance: "fork" as const,
+      },
+    };
+    expect(resolveDraftStartWorkspace({
+      target: managed,
+      isSide: false,
+      pickedCwd: "/tmp/last-project",
+    })).toEqual({
+      workspace_mode: "managed",
+      parent_session_id: "sess-parent",
+      fork_kind: "session",
+    });
+    expect(resolveDraftStartWorkspace({
+      target: {
+        ...managed,
+        chosenCwd: "/tmp/last-project",
+        forkParent: {
+          ...managed.forkParent,
+          point: {
+            messageId: "assistant-1",
+            messageText: "Hello",
+            messageOccurrence: 1,
+          },
+        },
+      },
+      isSide: false,
+      pickedCwd: "/tmp/last-project",
+    })).toEqual({
+      workspace_mode: "managed",
+      parent_session_id: "sess-parent",
+      fork_kind: "message",
+    });
+  });
+
+  it("keeps a project fork on the same project and ignores a stale picked directory", () => {
+    expect(resolveDraftStartWorkspace({
+      target: {
+        cwd: "/work/app",
+        chosenCwd: "/work/app",
+        projectScope: "project",
+        projectId: "proj-app",
+        additionalDirectories: ["/work/docs"],
+        workspaceId: "ws-feature",
+        forkParent: {
+          parentSessionId: "sess-parent",
+          parentAcpSessionId: "acp-parent",
+          inheritance: "fork",
+        },
+      },
+      isSide: false,
+      pickedCwd: "/tmp/last-project",
+    })).toEqual({
+      workspace_mode: "worktree",
+      cwd: "/work/app",
+      additional_directories: ["/work/docs"],
+      project_id: "proj-app",
+      workspace_id: "ws-feature",
+      parent_session_id: "sess-parent",
+      fork_kind: "session",
+    });
+  });
+
+  it("keeps a side chat on the parent cwd instead of the last project", () => {
+    expect(resolveDraftStartWorkspace({
+      target: {
+        cwd: "/Users/mini/.oma/sessions/sess-parent",
+        projectScope: "none",
+        sideParent: {
+          parentSessionId: "sess-parent",
+          parentAcpSessionId: "acp-parent",
+          inheritance: "fork",
+        },
+      },
+      isSide: true,
+      pickedCwd: "/tmp/last-project",
+    })).toMatchObject({
+      workspace_mode: "inherited",
+      cwd: "/Users/mini/.oma/sessions/sess-parent",
+      parent_session_id: "sess-parent",
+      fork_kind: "session",
+    });
+    expect(resolveDraftStartWorkspace({
+      target: {
+        cwd: "/work/app",
+        chosenCwd: "/work/app",
+        projectScope: "project",
+        projectId: "proj-app",
+        sideParent: {
+          parentSessionId: "sess-parent",
+          parentAcpSessionId: "acp-parent",
+          inheritance: "fork",
+        },
+      },
+      isSide: true,
+      pickedCwd: "/tmp/last-project",
+    })).toMatchObject({
+      workspace_mode: "inherited",
+      cwd: "/work/app",
+      project_id: "proj-app",
+      parent_session_id: "sess-parent",
+      fork_kind: "session",
+    });
   });
 
   it("uses turn-end delivery for an idle session without degradation", () => {
