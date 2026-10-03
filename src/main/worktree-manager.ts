@@ -47,6 +47,9 @@ interface WorktreeManifestV2 {
   version: 2;
   workspaceId: string;
   branch: string | null;
+  /** Repo roots where this workspace created `branch`. Missing on older
+   *  manifests; those checkouts are not treated as branch owners. */
+  createdBranchRepos?: string[];
   sourceDirectories: string[];
   roots: WorkspaceRoot[];
   worktrees: WorkspaceWorktree[];
@@ -164,8 +167,9 @@ export class ManagedWorktreeStore {
       if (worktreeIndex === undefined) {
         worktreeIndex = repoPlans.length;
         repoByRoot.set(repoRoot, worktreeIndex);
-        const pinned = input.baseRefs?.[repoRoot] ?? input.baseRef?.trim() ?? "HEAD";
-        const head = (await git(repoRoot, "rev-parse", "--verify", "--end-of-options", `${pinned}^{commit}`)).trim();
+        const explicitBase = input.baseRefs?.[repoRoot] ?? input.baseRef?.trim();
+        const pinned = explicitBase || "HEAD";
+        const head = await resolveBaseCommit(repoRoot, pinned, Boolean(explicitBase));
         repoPlans.push({
           repoRoot,
           head,
@@ -186,6 +190,7 @@ export class ManagedWorktreeStore {
     const branch = input.branch?.trim() || null;
     await mkdir(rootDir, { recursive: true });
     const created: RepoPlan[] = [];
+    const createdBranchRepos: string[] = [];
     try {
       for (const plan of repoPlans) {
         if (!branch) {
@@ -196,6 +201,7 @@ export class ManagedWorktreeStore {
           await git(plan.repoRoot, "worktree", "add", plan.path, branch);
         } else {
           await git(plan.repoRoot, "worktree", "add", "-b", branch, plan.path, plan.head);
+          createdBranchRepos.push(plan.repoRoot);
         }
         created.push(plan);
       }
@@ -208,6 +214,7 @@ export class ManagedWorktreeStore {
         version: 2,
         workspaceId: input.workspaceId,
         branch,
+        createdBranchRepos,
         sourceDirectories,
         roots: rootPlans.map((rootPlan) => ({
           sourcePath: rootPlan.sourcePath,
@@ -253,10 +260,12 @@ export class ManagedWorktreeStore {
           await rm(worktree.path, { recursive: true, force: true });
           await git(worktree.repoRoot, "worktree", "prune").catch(() => "");
         }
-        // The workspace branch goes with its checkout, but only via the safe
-        // delete: git refuses when the branch carries unmerged commits, so
-        // work the user has not integrated is never dropped silently.
-        if (manifest.version === 2 && manifest.branch) {
+        // Only a branch this workspace created is deleted with the checkout.
+        // A branch that already existed and was checked out stays. `git branch
+        // -d` still refuses a created branch that carries unmerged commits.
+        const createdBranch = manifest.version === 2
+          && manifest.createdBranchRepos?.includes(worktree.repoRoot) === true;
+        if (manifest.version === 2 && manifest.branch && createdBranch) {
           await git(worktree.repoRoot, "branch", "-d", manifest.branch).catch(() => "");
         }
       }
@@ -534,6 +543,16 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
     maxBuffer: 4 * 1024 * 1024,
   });
   return result.stdout;
+}
+
+async function resolveBaseCommit(repo: string, ref: string, callerSupplied: boolean): Promise<string> {
+  try {
+    return (await git(repo, "rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`)).trim();
+  } catch (error) {
+    if (!callerSupplied) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Unknown base ref ${ref}: ${message}`);
+  }
 }
 
 async function localBranchExists(repo: string, branch: string): Promise<boolean> {

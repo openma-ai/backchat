@@ -248,6 +248,23 @@ describe("ManagedWorktreeStore", () => {
       branch: "feature/existing",
       baseRef: "main",
     })).rejects.toThrow(/not an ancestor/);
+
+    await store.remove("ws-existing");
+    expect(await git(app, "branch", "--list", "feature/existing")).toContain("feature/existing");
+  });
+
+  it("names the missing ref when --base does not resolve", async () => {
+    const fixture = await createFixture();
+    const app = await createRepo(fixture, "app", { "app.txt": "app\n" });
+    const store = new ManagedWorktreeStore(fixture.worktreeRoot);
+
+    await expect(store.prepare({
+      workspaceId: "ws-missing-base",
+      sourceDirectories: [app],
+      branch: "backchat/missing-base",
+      baseRef: "no-such-ref",
+    })).rejects.toThrow(/no-such-ref/);
+    expect(await git(app, "branch", "--list", "backchat/missing-base")).toBe("");
   });
 
   it("adopts a legacy session-keyed manifest under a workspace id without moving files", async () => {

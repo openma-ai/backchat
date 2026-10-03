@@ -33,6 +33,7 @@ export default defineConfig({
       "src/main/quit-coordinator.test.ts",
       "src/main/session-cwd.test.ts",
       "src/main/session-manager.test.ts",
+      "src/main/control/server.test.ts",
       "src/shared/agent-interaction.test.ts",
       "src/renderer/src/lib/composer-delivery.test.ts",
       "packages/acp/src/registry.test.ts",

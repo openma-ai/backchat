@@ -129,6 +129,49 @@ describe("local control server", () => {
     expect(await readFile(join(workspace.worktrees[0]!.path, "app.txt"), "utf8")).toBe("v2\n");
     expect(await git(app, "branch", "--list", "feature/existing")).toContain("feature/existing");
   });
+
+  it("keeps a branch that already existed when the workspace checked it out", async () => {
+    const fixture = await createFixture();
+    const app = await createRepo(fixture.root, "app", { "app.txt": "v1\n" });
+    await git(app, "checkout", "-b", "pre-existing");
+    await git(app, "checkout", "main");
+    const server = await startControlServer({ socketPath: fixture.socketPath, api: fixture.api });
+    servers.push(server);
+    const project = await callControl({
+      socketPath: fixture.socketPath,
+      method: "project.create",
+      params: { name: "App", sources: [app] },
+    }) as { id: string };
+    const workspace = await callControl({
+      socketPath: fixture.socketPath,
+      method: "workspace.create",
+      params: { project_id: project.id, branch: "pre-existing" },
+    }) as { id: string };
+    await callControl({
+      socketPath: fixture.socketPath,
+      method: "workspace.remove",
+      params: { id: workspace.id },
+    });
+    expect(await git(app, "branch", "--list", "pre-existing")).toContain("pre-existing");
+  });
+
+  it("names the missing ref when --base does not resolve", async () => {
+    const fixture = await createFixture();
+    const app = await createRepo(fixture.root, "app", { "app.txt": "v1\n" });
+    const server = await startControlServer({ socketPath: fixture.socketPath, api: fixture.api });
+    servers.push(server);
+    const project = await callControl({
+      socketPath: fixture.socketPath,
+      method: "project.create",
+      params: { name: "App", sources: [app] },
+    }) as { id: string };
+    await expect(callControl({
+      socketPath: fixture.socketPath,
+      method: "workspace.create",
+      params: { project_id: project.id, branch: "feature/missing-base", base: "no-such-ref" },
+    })).rejects.toThrow(/no-such-ref/);
+    expect(await git(app, "branch", "--list", "feature/missing-base")).toBe("");
+  });
 });
 
 async function createFixture(): Promise<{

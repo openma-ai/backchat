@@ -54,12 +54,15 @@ use a non-zero exit code. With `--json`, the error document is also on stdout:
 A managed workspace is one git worktree per source repository, all on the same
 branch name. If that branch already exists, the worktree checks it out.
 `--base` is the start point for a new branch. When the branch already exists,
-`--base` must be an ancestor of that branch or the command fails.
+`--base` must be an ancestor of that branch or the command fails. A `--base`
+ref that does not resolve names that ref in the error.
 
 `workspace show` returns each repository's worktree path, branch, HEAD sha, and
 dirty state. `workspace remove` deletes the managed worktrees and refuses when
-they have uncommitted changes unless `--force` is set. The live project
-checkout is never deleted.
+they have uncommitted changes unless `--force` is set. It deletes a branch only
+when this workspace created that branch; a branch that already existed and was
+checked out is left in the repository. The live project checkout is never
+deleted.
 
 ## Exit codes
 
