@@ -1,0 +1,3012 @@
+{
+ "method": "step 4px over top 60px; css = nearest explicit region on elementFromPoint; native = all visible explicit-region elements in DOM order, later rect wins",
+ "states": {
+  "panel-closed": {
+   "viewport": [
+    1512,
+    883
+   ],
+   "header": {
+    "rect": [
+     246,
+     0,
+     1260,
+     50
+    ],
+    "className": "flex shrink-0 items-center gap-2 app-drag-region",
+    "own": "drag"
+   },
+   "panel": {
+    "rect": [
+     1527,
+     23,
+     365,
+     836
+    ],
+    "collapsed": "true",
+    "expanded": "false"
+   },
+   "chrome": {
+    "rect": [
+     1528,
+     24,
+     363,
+     36
+    ],
+    "own": "drag",
+    "className": "app-drag-region"
+   },
+   "counts": {
+    "drag": 3961,
+    "no-drag": 462,
+    "none": 1247,
+    "mismatch": 32
+   },
+   "title": {
+    "rect": [
+     262,
+     15,
+     11,
+     20
+    ],
+    "own": "drag",
+    "parent": "drag",
+    "cls": "app-drag-region"
+   },
+   "focus": [
+    {
+     "why": "header row",
+     "x": 256,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 316,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 376,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 436,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 496,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 556,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 616,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 676,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 736,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 796,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 856,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 916,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 976,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1036,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1096,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1156,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1216,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1276,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1336,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1396,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1456,
+     "y": 25,
+     "top": "path \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,1260,50]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1444,12,28,28]"
+     ]
+    }
+   ],
+   "tabs": []
+  },
+  "panel-open": {
+   "viewport": [
+    1512,
+    883
+   ],
+   "header": {
+    "rect": [
+     246,
+     0,
+     880,
+     50
+    ],
+    "className": "flex shrink-0 items-center gap-2 app-drag-region",
+    "own": "drag"
+   },
+   "panel": {
+    "rect": [
+     1126,
+     6,
+     380,
+     871
+    ],
+    "collapsed": "false",
+    "expanded": "false"
+   },
+   "chrome": {
+    "rect": [
+     1127,
+     7,
+     378,
+     38
+    ],
+    "own": "drag",
+    "className": "app-drag-region"
+   },
+   "counts": {
+    "drag": 3560,
+    "no-drag": 586,
+    "none": 1524,
+    "mismatch": 50
+   },
+   "title": {
+    "rect": [
+     262,
+     15,
+     11,
+     20
+    ],
+    "own": "drag",
+    "parent": "drag",
+    "cls": "app-drag-region"
+   },
+   "focus": [
+    {
+     "why": "header row",
+     "x": 256,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 316,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 376,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 436,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 496,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 556,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 616,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 676,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 736,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 796,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 856,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 916,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 976,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1036,
+     "y": 25,
+     "top": "header.app-drag-region[data-window-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1096,
+     "y": 25,
+     "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: header.app-drag-region[data-window-titlebar] \"\" [246,0,880,50]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1092,12,28,28]"
+     ]
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1136,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1166,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1196,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1226,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1256,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1286,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1316,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1346,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1376,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1406,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1436,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1466,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1496,
+     "y": 3,
+     "top": "div \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1135,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1147,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1159,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1171,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1183,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1195,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1207,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1219,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1231,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1243,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1255,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1267,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1279,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1291,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1303,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1315,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1327,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1339,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1351,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1363,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1375,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1387,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1399,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1411,
+     "y": 26,
+     "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1407,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1423,
+     "y": 26,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1407,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1435,
+     "y": 26,
+     "top": "div \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1447,
+     "y": 26,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1459,
+     "y": 26,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1471,
+     "y": 26,
+     "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1483,
+     "y": 26,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1495,
+     "y": 26,
+     "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+     ]
+    }
+   ],
+   "tabs": [
+    {
+     "el": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "rect": [
+      1407,
+      13,
+      28,
+      28
+     ],
+     "own": "no-drag",
+     "center": {
+      "why": "tab center",
+      "x": 1421,
+      "y": 27,
+      "top": "path \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1407,13,28,28]"
+      ]
+     },
+     "left": {
+      "why": "tab left edge+6",
+      "x": 1413,
+      "y": 27,
+      "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1407,13,28,28]"
+      ]
+     }
+    },
+    {
+     "el": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "rect": [
+      1439,
+      13,
+      28,
+      28
+     ],
+     "own": "no-drag",
+     "center": {
+      "why": "tab center",
+      "x": 1453,
+      "y": 27,
+      "top": "svg \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+      ]
+     },
+     "left": {
+      "why": "tab left edge+6",
+      "x": 1445,
+      "y": 27,
+      "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+      ]
+     }
+    },
+    {
+     "el": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "rect": [
+      1471,
+      13,
+      28,
+      28
+     ],
+     "own": "no-drag",
+     "center": {
+      "why": "tab center",
+      "x": 1485,
+      "y": 27,
+      "top": "svg \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+      ]
+     },
+     "left": {
+      "why": "tab left edge+6",
+      "x": 1477,
+      "y": 27,
+      "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [1127,7,378,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+      ]
+     }
+    }
+   ]
+  },
+  "panel-expanded": {
+   "viewport": [
+    1512,
+    883
+   ],
+   "header": {
+    "rect": [
+     246,
+     0,
+     1260,
+     50
+    ],
+    "className": "flex shrink-0 items-center gap-2",
+    "own": ""
+   },
+   "panel": {
+    "rect": [
+     246,
+     6,
+     1260,
+     871
+    ],
+    "collapsed": "false",
+    "expanded": "true"
+   },
+   "chrome": {
+    "rect": [
+     247,
+     7,
+     1258,
+     38
+    ],
+    "own": "drag",
+    "className": "app-drag-region"
+   },
+   "counts": {
+    "drag": 3021,
+    "no-drag": 459,
+    "none": 2190,
+    "mismatch": 34
+   },
+   "title": {
+    "rect": [
+     262,
+     15,
+     11,
+     20
+    ],
+    "own": "no-drag",
+    "parent": "no-drag",
+    "cls": "app-drag-region"
+   },
+   "focus": [
+    {
+     "why": "header row",
+     "x": 256,
+     "y": 25,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 316,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 376,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 436,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 496,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 556,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 616,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 676,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 736,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 796,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 856,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 916,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 976,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1036,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1096,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1156,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1216,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1276,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1336,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1396,
+     "y": 25,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "header row",
+     "x": 1456,
+     "y": 25,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+     ]
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 256,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 286,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 316,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 346,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 376,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 406,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 436,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 466,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 496,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 526,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 556,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 586,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 616,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 646,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 676,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 706,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 736,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 766,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 796,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 826,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 856,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 886,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 916,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 946,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 976,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1006,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1036,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1066,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1096,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1126,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1156,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1186,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1216,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1246,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1276,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1306,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1336,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1366,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1396,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1426,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1456,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "above panel (gap between window top and panel)",
+     "x": 1486,
+     "y": 3,
+     "top": "header[data-window-titlebar] \"\"",
+     "css": "none",
+     "native": "none",
+     "stack": []
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 255,
+     "y": 26,
+     "top": "div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 267,
+     "y": 26,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[role=tab][data-pinned-main-session] \"\" [259,13,46,28]",
+      "no-drag: div.app-no-drag \"\" [262,11,45,28]",
+      "no-drag: span.app-drag-region \"\" [262,15,11,20]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 279,
+     "y": 26,
+     "top": "path \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[role=tab][data-pinned-main-session] \"\" [259,13,46,28]",
+      "no-drag: div.app-no-drag \"\" [262,11,45,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 291,
+     "y": 26,
+     "top": "span \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[role=tab][data-pinned-main-session] \"\" [259,13,46,28]",
+      "no-drag: div.app-no-drag \"\" [262,11,45,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 303,
+     "y": 26,
+     "top": "button.app-no-drag[role=tab][data-pinned-main-session] \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[role=tab][data-pinned-main-session] \"\" [259,13,46,28]",
+      "no-drag: div.app-no-drag \"\" [262,11,45,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 315,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 327,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 339,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 351,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 363,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 375,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 387,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 399,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 411,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 423,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 435,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 447,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 459,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 471,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 483,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 495,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 507,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 519,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 531,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 543,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 555,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 567,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 579,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 591,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 603,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 615,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 627,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 639,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 651,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 663,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 675,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 687,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 699,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 711,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 723,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 735,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 747,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 759,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 771,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 783,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 795,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 807,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 819,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 831,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 843,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 855,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 867,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 879,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 891,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 903,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 915,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 927,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 939,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 951,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 963,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 975,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 987,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 999,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1011,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1023,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1035,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1047,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1059,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1071,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1083,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1095,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1107,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1119,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1131,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1143,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1155,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1167,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1179,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1191,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1203,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1215,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1227,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1239,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1251,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1263,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1275,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1287,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1299,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1311,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1323,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1335,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1347,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1359,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1371,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1383,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1395,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1407,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1419,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1431,
+     "y": 26,
+     "top": "div[aria-label=\"\"][role=tablist] \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1443,
+     "y": 26,
+     "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1455,
+     "y": 26,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1467,
+     "y": 26,
+     "top": "div \"\"",
+     "css": "drag",
+     "native": "drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1479,
+     "y": 26,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+     ]
+    },
+    {
+     "why": "panel chrome strip",
+     "x": 1491,
+     "y": 26,
+     "top": "svg \"\"",
+     "css": "no-drag",
+     "native": "no-drag",
+     "stack": [
+      "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+      "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+     ]
+    }
+   ],
+   "tabs": [
+    {
+     "el": "button.app-no-drag[role=tab][data-pinned-main-session] \"\"",
+     "rect": [
+      259,
+      13,
+      46,
+      28
+     ],
+     "own": "no-drag",
+     "center": {
+      "why": "tab center",
+      "x": 282,
+      "y": 27,
+      "top": "button.app-no-drag[role=tab][data-pinned-main-session] \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+       "no-drag: button.app-no-drag[role=tab][data-pinned-main-session] \"\" [259,13,46,28]",
+       "no-drag: div.app-no-drag \"\" [262,11,45,28]"
+      ]
+     },
+     "left": {
+      "why": "tab left edge+6",
+      "x": 265,
+      "y": 27,
+      "top": "button.app-no-drag[role=tab][data-pinned-main-session] \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+       "no-drag: button.app-no-drag[role=tab][data-pinned-main-session] \"\" [259,13,46,28]",
+       "no-drag: div.app-no-drag \"\" [262,11,45,28]",
+       "no-drag: span.app-drag-region \"\" [262,15,11,20]"
+      ]
+     }
+    },
+    {
+     "el": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "rect": [
+      1439,
+      13,
+      28,
+      28
+     ],
+     "own": "no-drag",
+     "center": {
+      "why": "tab center",
+      "x": 1453,
+      "y": 27,
+      "top": "path \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+      ]
+     },
+     "left": {
+      "why": "tab left edge+6",
+      "x": 1445,
+      "y": 27,
+      "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1439,13,28,28]"
+      ]
+     }
+    },
+    {
+     "el": "button.app-no-drag[aria-label=\"\"] \"\"",
+     "rect": [
+      1471,
+      13,
+      28,
+      28
+     ],
+     "own": "no-drag",
+     "center": {
+      "why": "tab center",
+      "x": 1485,
+      "y": 27,
+      "top": "svg \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+      ]
+     },
+     "left": {
+      "why": "tab left edge+6",
+      "x": 1477,
+      "y": 27,
+      "top": "button.app-no-drag[aria-label=\"\"] \"\"",
+      "css": "no-drag",
+      "native": "no-drag",
+      "stack": [
+       "drag: div.app-drag-region.pointer-events-auto[data-panel-titlebar] \"\" [247,7,1258,38]",
+       "no-drag: button.app-no-drag[aria-label=\"\"] \"\" [1471,13,28,28]"
+      ]
+     }
+    }
+   ]
+  }
+ }
+}
