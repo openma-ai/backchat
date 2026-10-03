@@ -786,6 +786,7 @@ export interface BackchatApi extends OpenmaAccountApi {
    *  the read failed, or HEAD is detached (40-char SHA). */
   uiFsRepositoryImage(p: { path: string }): Promise<string | null>;
   uiFsGitBranch(p: { path: string }): Promise<string | null>;
+  uiFsGitUpstream(p: { path: string }): Promise<{ remote: string | null; branch: string | null; repositoryUrl: string | null }>;
   uiFsGitCompare(p: { path: string; base_branch: string; head_branch: string }): Promise<import("./workspaces.js").GitComparison>;
 
   // ----- Browser plugin bridge -----

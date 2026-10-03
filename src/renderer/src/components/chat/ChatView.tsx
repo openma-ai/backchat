@@ -58,6 +58,7 @@ import { reconnectAuthenticatedSession } from "@/lib/session-auth-recovery";
 import { ComposerNotice } from "./ComposerNotice";
 import { ComposerProgress } from "./ComposerProgress";
 import { SessionRuntimeSummary } from "./SessionRuntimeSummary";
+import { CursorCloudBinding } from "./CursorCloudBinding";
 
 export {
   buildSlashCommandSections,
@@ -662,6 +663,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             afterComposer: (
               <>
                 {chipRow}
+                <CursorCloudBinding session={active} />
                 {runtimeFooter}
               </>
             ),

@@ -122,6 +122,17 @@ export class OpenmaTaskStore {
   settleOperation(id: string, operationId: string, state: "accepted" | "uncertain"): void {
     this.#db.prepare("UPDATE operations SET state = ? WHERE task_id = ? AND id = ? AND state != 'reconciled'").run(state, id, operationId);
   }
+  replaceOperation(id: string, operationId: string, event: OpenmaTaskEvent): void {
+    this.#db.prepare("UPDATE operations SET event = ? WHERE task_id = ? AND id = ? AND state = 'pending'").run(JSON.stringify(event), id, operationId);
+  }
+  removeOperation(id: string, operationId: string): void {
+    this.#db.prepare("DELETE FROM operations WHERE task_id = ? AND id = ? AND state = 'pending'").run(id, operationId);
+  }
+  reorderOperations(id: string, operationIds: readonly string[], now = Date.now()): void {
+    operationIds.forEach((operationId, index) => {
+      this.#db.prepare("UPDATE operations SET created_at = ? WHERE task_id = ? AND id = ? AND state = 'pending'").run(now + index, id, operationId);
+    });
+  }
   operations(id: string): OpenmaTaskOperation[] {
     return (this.#db.prepare("SELECT * FROM operations WHERE task_id = ? AND state != 'reconciled' ORDER BY created_at").all(id) as Array<{ id: string; event: string; state: OpenmaTaskOperation["state"]; created_at: number }>).map((row) => ({ id: row.id, event: JSON.parse(row.event), state: row.state, createdAt: row.created_at }));
   }

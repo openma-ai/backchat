@@ -4,9 +4,21 @@ import OpenAI from "openai";
 import type { AgentSession, AgentSessionEvent, AgentSessionItem } from "openai/resources/beta/agents/agents";
 import type { Turn as RemoteTurn } from "openai/resources/beta/agents/sessions/turns";
 import { decodeManagedStreamEvent, type ManagedStreamEvent } from "@openma/common/protocol/managed";
-import { createOpenMAEvent, createVendorEvent, type OpenMAEvent, type CanonicalEventType } from "@openma/common/session-events/openma";
+import {
+  decodeOpenAIAgentsItem,
+  decodeOpenAIAgentsPendingActions,
+  decodeOpenAIAgentsStreamEvent,
+  decodeOpenAIAgentsTurn,
+  type OpenAIAgentsDecodeContext,
+  type OpenAIAgentsItem,
+  type OpenAIAgentsStreamEvent,
+  type OpenAIAgentsTurn,
+} from "@openma/common/protocol/openai-agents";
+import { createOpenMAEvent, type OpenMAEvent, type CanonicalEventType } from "@openma/common/session-events/openma";
 import type { DirectAgentProvider, OpenmaCatalog, OpenmaTaskEvent } from "../shared/openma.js";
 import type { CloudSessionCreateInput } from "./openmanaged-cloud-runtime.js";
+import { CursorCloudClient } from "./cursor-cloud-client.js";
+import { CursorCloudRuntime, type CursorCloudSendResult } from "./cursor-cloud-runtime.js";
 
 export interface RemoteSession {
   resources?: unknown[];
@@ -24,9 +36,20 @@ export class DirectAgentRuntime {
   readonly openai: OpenAI;
   #turnId?: string;
   #streamIndex = 0;
+  #cursorRuntime?: CursorCloudRuntime;
   constructor(readonly options: Options) {
     this.claude = new Anthropic({ apiKey: options.apiKey, baseURL: options.baseUrl, fetch: options.fetchImpl, maxRetries: 0, timeout: 30_000 });
     this.openai = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseUrl, fetch: options.fetchImpl, maxRetries: 0, timeout: 30_000 });
+  }
+  #cursor(): CursorCloudRuntime | null {
+    if (this.options.provider !== "cursor-cloud") return null;
+    this.#cursorRuntime ??= new CursorCloudRuntime(new CursorCloudClient({
+      baseUrl: this.options.baseUrl, apiKey: this.options.apiKey, fetchImpl: this.options.fetchImpl, onUnauthorized: this.options.onUnauthorized,
+    }));
+    return this.#cursorRuntime;
+  }
+  #openaiContext(sessionId: string): OpenAIAgentsDecodeContext {
+    return { sessionId, now: () => new Date().toISOString() };
   }
   async request<T>(fn: () => PromiseLike<T>): Promise<T> {
     try { return await fn(); } catch (error) {
@@ -38,6 +61,8 @@ export class DirectAgentRuntime {
     }
   }
   async catalog(): Promise<OpenmaCatalog> {
+    const cursor = this.#cursor();
+    if (cursor) return cursor.catalog();
     const cloudAgents: OpenmaCatalog["cloudAgents"] = [];
     const environments: OpenmaCatalog["environments"] = [];
     await this.request(async () => {
@@ -57,11 +82,15 @@ export class DirectAgentRuntime {
       created_at: iso(s.created_at), updated_at: iso(s.last_active_at), metadata: s.metadata };
   }
   async createRemoteSession(input: CloudSessionCreateInput): Promise<RemoteSession> {
+    const cursor = this.#cursor();
+    if (cursor) return cursor.createRemoteSession(input);
     return this.request(async () => this.options.provider === "claude-managed"
       ? await this.claude.beta.sessions.create({ agent: input.agentId, environment_id: input.environmentId, title: input.title, metadata: input.metadata }) as RemoteSession
       : this.#session(await this.openai.beta.agents.sessions.create({ agent_id: input.agentId, environment: input.environmentId === "none" ? { type: "none" } : { type: "openai_hosted" }, metadata: { ...input.metadata, "backchat.title": input.title ?? "", "backchat.environment": input.environmentId } })));
   }
   async listSessions(): Promise<RemoteSession[]> {
+    const cursor = this.#cursor();
+    if (cursor) return cursor.listSessions();
     return this.request(async () => {
       const rows: RemoteSession[] = [];
       if (this.options.provider === "claude-managed") for await (const s of this.claude.beta.sessions.list()) rows.push(s as RemoteSession);
@@ -70,16 +99,22 @@ export class DirectAgentRuntime {
     });
   }
   async retrieveSession(id: string, signal?: AbortSignal): Promise<RemoteSession> {
+    const cursor = this.#cursor();
+    if (cursor) return cursor.retrieveSession(id, signal);
     return this.request(async () => this.options.provider === "claude-managed" ? await this.claude.beta.sessions.retrieve(id, {}, { signal }) as RemoteSession : this.#session(await this.openai.beta.agents.sessions.retrieve(id, { signal })));
   }
   async updateSession(id: string, title: string): Promise<RemoteSession> {
+    const cursor = this.#cursor();
+    if (cursor) return cursor.updateSession(id, title);
     return this.request(async () => {
       if (this.options.provider === "claude-managed") return await this.claude.beta.sessions.update(id, { title }) as RemoteSession;
       const s = await this.openai.beta.agents.sessions.retrieve(id);
       return this.#session(await this.openai.beta.agents.sessions.update(id, { metadata: { ...s.metadata, "backchat.title": title } }));
     });
   }
-  async sendEvent(id: string, event: OpenmaTaskEvent, idempotencyKey?: string): Promise<void> {
+  async sendEvent(id: string, event: OpenmaTaskEvent, idempotencyKey?: string): Promise<CursorCloudSendResult | void> {
+    const cursor = this.#cursor();
+    if (cursor) return cursor.sendEvent(id, event, idempotencyKey);
     await this.request(async () => {
       if (this.options.provider === "claude-managed") {
         const { metadata: _metadata, ...input } = event;
@@ -120,24 +155,14 @@ export class DirectAgentRuntime {
     return events;
   }
   #item(sessionId: string, item: AgentSessionItem): OpenmaTaskEvent {
-    const id = item.id ?? `${item.turn_id}:user`;
-    if (item.type === "message") return this.#event(sessionId, `item:${id}:${item.status}`, item.role === "user" ? "user.message" : "agent.message", { message_id: id, text: text(item.content), content: item.content }, item.turn_id);
-    if (item.type === "reasoning") return this.#event(sessionId, `item:${id}`, "agent.thinking", { message_id: id, text: text(item.summary) }, item.turn_id);
-    if (item.type === "function_call_output") return this.#event(sessionId, `item:${id}`, item.status === "failed" ? "tool.failed" : "tool.completed", { tool_call_id: item.call_id, raw_output: item.output, error: item.error }, item.turn_id);
-    if ("status" in item && (item.type.endsWith("_call") || item.type === "command_execution")) {
-      const value = item as unknown as Record<string, unknown>;
-      return this.#event(sessionId, `item:${id}:${value.status}`, value.status === "failed" ? "tool.failed" : value.status === "completed" ? "tool.completed" : "tool.started", { tool_call_id: value.call_id ?? id, tool_name: value.name ?? item.type, title: value.name ?? item.type, raw_input: value.arguments ?? value.command ?? item, raw_output: value.output, error: value.error }, item.turn_id);
-    }
-    return this.#vendor(sessionId, `item:${id}`, item.type, item, item.turn_id);
-  }
-  #vendor(sessionId: string, id: string, name: string, data: unknown, turnId?: string): OpenmaTaskEvent {
-    return this.#wrap(createVendorEvent({ event_id: id, session_id: sessionId, ...(turnId ? { turn_id: turnId } : {}), source: { kind: "harness", harness: "openai-agents" }, occurred_at: new Date().toISOString(), harness: "openai-agents", namespace: "agents", name, data }));
+    return this.#wrap(decodeOpenAIAgentsItem(item as OpenAIAgentsItem, this.#openaiContext(sessionId)));
   }
   #turn(sessionId: string, turn: RemoteTurn): OpenmaTaskEvent {
-    const type = ({ completed: "turn.completed", failed: "turn.failed", cancelled: "turn.cancelled", queued: "turn.queued", in_progress: "session.running", waiting: "session.running" } as const)[turn.status];
-    return this.#event(sessionId, `turn:${turn.id}:${turn.status}`, type, { error: turn.error, message: turn.error?.message }, turn.id, iso(turn.completed_at ?? turn.created_at));
+    return this.#wrap(decodeOpenAIAgentsTurn(turn as unknown as OpenAIAgentsTurn, this.#openaiContext(sessionId)));
   }
-  async *history(sessionId: string, options: { afterSeq?: number; signal?: AbortSignal } = {}): AsyncIterable<OpenmaTaskEvent> {
+  async *history(sessionId: string, options: { afterSeq?: number; preferLocal?: boolean; signal?: AbortSignal } = {}): AsyncIterable<OpenmaTaskEvent> {
+    const cursor = this.#cursor();
+    if (cursor) { yield* cursor.history(sessionId, options); return; }
     if (this.options.provider === "claude-managed") {
       this.#turnId = undefined;
       // Official pagination is opaque page-based, not OpenMA's after_seq extension.
@@ -155,6 +180,8 @@ export class DirectAgentRuntime {
     }
   }
   async openStream(sessionId: string, signal?: AbortSignal): Promise<{ events: AsyncIterable<OpenmaTaskEvent>; close: () => void }> {
+    const cursor = this.#cursor();
+    if (cursor) return cursor.openStream(sessionId, signal);
     const client = this;
     if (this.options.provider === "claude-managed") {
       const stream = await this.request(() => this.claude.beta.sessions.events.stream(sessionId, { event_deltas: ["agent.message"] }, { signal }));
@@ -176,26 +203,23 @@ export class DirectAgentRuntime {
     try { options.onConnected?.(); yield* live.events; } finally { live.close(); }
   }
   #pending(sessionId: string, id: string, session: AgentSession): OpenmaTaskEvent {
-    // This is desktop pending-input state, separate from the canonical transcript.
-    // Keep the complete provider snapshot as a vendor event for replay/debugging.
-    const event = this.#vendor(sessionId, id, "required_actions", session.required_actions ?? []);
-    event.pendingActions = (session.required_actions ?? []).flatMap(action => action.type === "function_call" ? [{
+    // Desktop pending-input state stays here. The vendor record comes from the shared decoder.
+    const decoded = decodeOpenAIAgentsPendingActions(session as unknown as Parameters<typeof decodeOpenAIAgentsPendingActions>[0], { ...this.#openaiContext(sessionId), eventId: id });
+    const event = this.#wrap(decoded.event);
+    event.pendingActions = decoded.functionCalls.map((action) => ({
       id: action.call_id, type: "custom_result", event: { type: "function_call", id: action.call_id, name: action.name, input: action.arguments, turn_id: action.turn_id },
-    }] : []);
+    }));
     return event;
   }
   *#openaiEvent(sessionId: string, event: AgentSessionEvent): Iterable<OpenmaTaskEvent> {
-    if (event.type === "agent.session.turn.item.added" || event.type === "agent.session.turn.item.done") { yield this.#item(sessionId, event.item); return; }
-    if (event.type === "agent.session.turn.output_text.delta") {
-      yield this.#event(sessionId, event.event_id, "agent.message_chunk", { message_id: event.item_id, text: event.delta }, event.turn_id ?? undefined); return;
-    }
-    if ("turn" in event) { yield this.#turn(sessionId, event.turn); return; }
-    if ("session" in event) {
-      const type = event.session.status === "idle" ? "session.idle" : event.session.status === "failed" ? "session.error" : "session.running";
-      yield this.#event(sessionId, event.event_id, type, { message: event.session.error });
-      yield this.#pending(sessionId, `${event.event_id}:required`, event.session);
+    const decoded = decodeOpenAIAgentsStreamEvent(event as unknown as OpenAIAgentsStreamEvent, this.#openaiContext(sessionId));
+    if ("session" in event && event.session) {
+      for (const item of decoded) {
+        if (item.type === "vendor.event") yield this.#pending(sessionId, `${event.event_id}:required`, event.session);
+        else yield this.#wrap(item);
+      }
       return;
     }
-    yield this.#vendor(sessionId, event.event_id, event.type, event, "turn_id" in event ? event.turn_id ?? undefined : undefined);
+    for (const item of decoded) yield this.#wrap(item);
   }
 }

@@ -1,4 +1,20 @@
-export type DirectAgentProvider = "claude-managed" | "openai-agents";
+export const DIRECT_AGENT_PROVIDERS = ["claude-managed", "openai-agents", "cursor-cloud"] as const;
+export type DirectAgentProvider = typeof DIRECT_AGENT_PROVIDERS[number];
+
+/** Repository and branch chosen when a Cursor Cloud thread is created. */
+export interface CursorCloudBinding {
+  /** Empty string means the user chose a no-repo agent. Undefined means "not chosen yet". */
+  repoUrl?: string;
+  startingRef?: string;
+  /** Project folder used to default `repoUrl` and `startingRef`. */
+  sourcePath?: string;
+  pendingCreate?: boolean;
+  latestRunId?: string;
+  /** Branch Cursor pushed, from the run `git` vendor event. */
+  branch?: string;
+  prUrl?: string;
+  url?: string;
+}
 export type AgentConnectionProvider = DirectAgentProvider | "openma";
 export interface DirectAgentConnectionInput { provider: AgentConnectionProvider; baseUrl: string; apiKey: string; name?: string }
 /** Public desktop state. Credentials never cross the preload boundary. */
@@ -10,6 +26,7 @@ export interface OpenmaExecutionTarget extends OpenmaScope {
   agentId: string; agentName: string;
   environmentId: string; environmentName: string;
   runtimeId: string | null; runtimeName: string;
+  cursor?: CursorCloudBinding;
 }
 export interface OpenmaTask extends OpenmaScope {
   provider?: DirectAgentProvider;
@@ -20,6 +37,8 @@ export interface OpenmaTask extends OpenmaScope {
   pinnedAt?: number | null; archivedAt?: number | null;
   /** Monotonic desktop metadata revision, separate from the remote event cursor. */
   revision?: number;
+  /** Cursor Cloud binding and the latest pushed branch / pull request. */
+  cursor?: CursorCloudBinding;
 }
 export interface OpenmaTaskUpdate { title?: string; pinned?: boolean; archived?: boolean }
 export interface OpenmaTaskSearchHit { task: OpenmaTask; seq: number; type: string; ts: number; snippet: string }
@@ -88,6 +107,8 @@ export interface OpenmaCatalog {
   }>;
   cloudAgents: Array<{ id: string; name: string }>;
   environments: Array<{ id: string; name: string; type: "cloud" | "self_hosted"; runtimeId: string | null; projectName?: string }>;
+  /** GitHub repositories Cursor can see. Cached; absent when the rate limit hides them. */
+  repositories?: Array<{ url: string }>;
 }
 
 export interface OpenmaRunnerState {

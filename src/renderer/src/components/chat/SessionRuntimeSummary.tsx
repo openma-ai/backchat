@@ -8,6 +8,7 @@ import {
 import { cn } from "@/lib/utils";
 import { RuntimeLocationControl } from "./RuntimeLocationControl";
 import { OpenmaTaskFiles } from "./OpenmaTaskFiles";
+import { openExternalBrowserUrl } from "@/lib/browser-open";
 
 type RuntimeMethodCapability = {
   label: string;
@@ -74,6 +75,7 @@ export function SessionRuntimeSummary({
     ...methodCapabilityLabels(session),
   ]));
   const usage = session.usage ? contextUsagePresentation(session.usage) : undefined;
+  const cursor = session.openma?.provider === "cursor-cloud" ? session.openma.cursor : undefined;
   const usagePercentage = session.usage
     ? Math.min(100, Math.max(0, Math.round((session.usage.used / session.usage.size) * 100)))
     : 0;
@@ -95,6 +97,16 @@ export function SessionRuntimeSummary({
       <RuntimeLocationControl title={runtimeTitle} session={session} />
       {session.openma && <OpenmaTaskFiles taskId={session.id} />}
       {session.openma && <span role="status" className="text-xs text-fg-muted">{t(session.remoteConnection === "offline" ? "openma.connectionInterrupted" : session.remoteConnection === "connecting" ? "openma.reconnecting" : "openma.connected")}</span>}
+      {cursor?.branch || cursor?.prUrl ? (
+        <span className="inline-flex min-w-0 items-center gap-2" data-cursor-cloud-outcome="true">
+          {cursor.branch ? <span className="truncate" data-cursor-branch="true">{cursor.branch}</span> : null}
+          {cursor.prUrl ? (
+            <button type="button" className="shrink-0 hover:text-fg" data-cursor-pr="true" onClick={() => openExternalBrowserUrl(cursor.prUrl!)}>
+              {t("cursor.pullRequest")}
+            </button>
+          ) : null}
+        </span>
+      ) : null}
       {usage ? (
         <span
           aria-label={usage.title}

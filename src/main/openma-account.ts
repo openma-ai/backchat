@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { hostname } from "node:os";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { DirectAgentConnectionInput, DirectAgentProvider, OpenmaAccountState, OpenmaScope } from "../shared/openma.js";
+import { DIRECT_AGENT_PROVIDERS, type DirectAgentConnectionInput, type DirectAgentProvider, type OpenmaAccountState, type OpenmaScope } from "../shared/openma.js";
 
 const DEFAULT_ORIGIN = "https://app.openma.ai";
 // Derive a stable cache identity without exposing a fast verifier for the key.
@@ -181,7 +181,7 @@ export class OpenmaAccount {
       const c = JSON.parse(await readFile(join(this.#options.directory, "account.json"), "utf8")) as Credentials;
       if (c.version !== 2 || !c.user?.id || !c.tenants || Array.isArray(c.tenants)) return;
       for (const t of Object.values(c.tenants)) if (!t || typeof t.token !== "string" || !t.token || typeof t.key_id !== "string") return;
-      for (const t of Object.values(c.tenants)) if (t.provider && (!["claude-managed", "openai-agents"].includes(t.provider) || !t.base_url || !t.user_id)) return;
+      for (const t of Object.values(c.tenants)) if (t.provider && (!(DIRECT_AGENT_PROVIDERS as readonly string[]).includes(t.provider) || !t.base_url || !t.user_id)) return;
       c.base_url = openmaBaseUrl(c.base_url);
       if (!c.active_tenant_id || !Object.hasOwn(c.tenants, c.active_tenant_id)) c.active_tenant_id = null;
       this.#credentials = c;
@@ -192,7 +192,7 @@ export class OpenmaAccount {
   }
 
   async connectDirect(input: DirectAgentConnectionInput): Promise<void> {
-    if (!input || !["openma", "claude-managed", "openai-agents"].includes(input.provider)
+    if (!input || !["openma", ...DIRECT_AGENT_PROVIDERS].includes(input.provider)
       || typeof input.apiKey !== "string" || !input.apiKey.trim() || input.apiKey.length > 16384
       || input.name !== undefined && (typeof input.name !== "string" || input.name.length > 200)
       || typeof input.baseUrl !== "string" || !input.baseUrl.trim()) throw new Error("Enter a provider, server address and API key");

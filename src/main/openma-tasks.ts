@@ -2,6 +2,8 @@ import { configuredEnvironment, readLocalEnvironment } from "./task-environment.
 import type { TaskEnvironment } from "../shared/task-environment.js";
 import { sessionInputIdentityPrefix } from "@openma/common/protocol/managed";
 import { DirectAgentRuntime } from "./direct-agent-runtime.js";
+import { CursorCloudRequestError } from "./cursor-cloud-client.js";
+import { resolveCursorCloudBinding } from "./cursor-cloud-git.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -11,11 +13,20 @@ import { OpenmaTaskStore } from "./openma-task-store.js";
 import { OpenManagedCloudRuntimeClient, OpenmaRequestError } from "./openmanaged-cloud-runtime.js";
 import { openmaPendingActions } from "../shared/openma-actions.js";
 import type { OpenmaTaskResponse, OpenmaTaskUpdate } from "../shared/openma.js";
+import type { SessionPromptQueueCommandParams } from "../shared/session-events.js";
 import { OpenmaTaskFiles } from "./openma-task-files.js";
 import { openmaDesktopTaskId } from "./openma-identity.js";
 export { openmaDesktopTaskId } from "./openma-identity.js";
 interface Options { runnerPaths?: (task: OpenmaTask) => string[] | null; directory: string; account: OpenmaAccount; catalog: (scope: OpenmaScope) => Promise<OpenmaCatalog>; fetchImpl?: typeof fetch; onSnapshot?: (snapshot: OpenmaTaskSnapshot) => void; onTaskUpdated?: (task: OpenmaTask) => void; reconnectMs?: number }
 interface Observer { owners: Set<string>; controller: AbortController; connection: OpenmaTaskSnapshot["connection"]; transient: OpenmaTaskEvent[]; error?: string; credentials: OpenmaConnection; publishTimer?: ReturnType<typeof setTimeout> }
+
+function cursorGit(canonical: OpenMAEvent): { branch?: string; prUrl?: string } | null {
+  if (canonical.type !== "vendor.event" || !canonical.data || typeof canonical.data !== "object") return null;
+  const data = canonical.data as { name?: string; data?: { payload?: { branches?: Array<{ branch?: string; prUrl?: string }> } } };
+  if (data.name !== "git") return null;
+  const branch = data.data?.payload?.branches?.find((item) => item.branch || item.prUrl);
+  return branch ? { branch: branch.branch, prUrl: branch.prUrl } : null;
+}
 
 function timestamp(value: unknown, fallback: number): number {
   const time = typeof value === "string" ? Date.parse(value) : NaN;
@@ -28,6 +39,7 @@ export class OpenmaTasks {
   #unsubscribe: () => void;
   #closed = false;
   #updates = new Map<string, Promise<unknown>>();
+  #cursorSending = new Set<string>();
   constructor(private options: Options) {
     this.#store = new OpenmaTaskStore(join(options.directory, "tasks.db"));
     this.#unsubscribe = options.account.subscribe(() => {
@@ -149,9 +161,18 @@ export class OpenmaTasks {
         const runtimeId = session.metadata?.["backchat.runtime_id"] || environment?.runtimeId || null;
         const runner = catalog.runners.find((runtime) => runtime.id === runtimeId);
         const kind = runtimeId || environment?.type === "self_hosted" || session.metadata?.["backchat.runtime_kind"] === "runner" ? "runner" : "cloud";
-        this.#store.save({ ...scope, ...(connection.provider ? { provider: connection.provider } : {}), id, sessionId: session.id, title: session.title ?? session.id, status: session.status,
+        const cursor = connection.provider === "cursor-cloud" ? {
+          ...previous?.cursor,
+          ...(session.metadata?.["backchat.cursor.repo"] && !previous?.cursor?.repoUrl ? { repoUrl: session.metadata["backchat.cursor.repo"] } : {}),
+          ...(session.metadata?.["backchat.cursor.branch"] && !previous?.cursor?.startingRef ? { startingRef: session.metadata["backchat.cursor.branch"] } : {}),
+          ...(session.metadata?.["backchat.cursor.run"] ? { latestRunId: session.metadata["backchat.cursor.run"] } : {}),
+          ...(session.metadata?.["backchat.cursor.url"] ? { url: session.metadata["backchat.cursor.url"] } : {}),
+        } : undefined;
+        this.#store.save({ ...scope, ...(connection.provider ? { provider: connection.provider } : {}), id, sessionId: session.id,
+          title: connection.provider === "cursor-cloud" && previous?.title ? previous.title : (session.title ?? session.id), status: session.status,
           createdAt: timestamp(session.created_at, previous?.createdAt ?? Date.now()), updatedAt: timestamp(session.updated_at, previous?.updatedAt ?? Date.now()), afterSeq: previous?.afterSeq ?? 0,
           // A mutable environment or agent catalogue cannot move an existing task.
+          ...(cursor ? { cursor } : {}),
           target: previous?.target ?? { ...scope, kind, agentId: session.agent.id, agentName: session.agent.name ?? session.agent.id, environmentId: session.environment_id, environmentName: environment?.name ?? session.environment_id, runtimeId, runtimeName: runner?.name ?? (kind === "runner" ? "Runner" : "Cloud") },
         });
       }
@@ -179,14 +200,17 @@ export class OpenmaTasks {
     }
     this.#check(connection);
     const client = this.#client(connection);
+    const cursor = connection.provider === "cursor-cloud" ? await resolveCursorCloudBinding(target.cursor) : undefined;
     const session = await client.createRemoteSession({
       agentId: target.agentId, environmentId: env.id, title,
       metadata: { "backchat.runtime_kind": target.kind, "backchat.runtime_id": target.runtimeId ?? "", "backchat.creation_id": randomUUID() },
+      ...(cursor ? { cursor } : {}),
     });
     if (!session.id) throw new Error("OpenMA did not return a session ID");
     const scope = { baseUrl: connection.baseUrl, userId: connection.userId, workspaceId: connection.workspaceId };
     const task: OpenmaTask = { ...scope, ...(connection.provider ? { provider: connection.provider } : {}), id: openmaDesktopTaskId(scope, session.id), sessionId: session.id,
-      target: { ...scope, kind: target.kind, agentId: target.agentId, agentName, environmentId: env.id, environmentName: env.name, runtimeId: target.runtimeId, runtimeName },
+      target: { ...scope, kind: target.kind, agentId: target.agentId, agentName, environmentId: env.id, environmentName: env.name, runtimeId: target.runtimeId, runtimeName, ...(cursor ? { cursor } : {}) },
+      ...(cursor ? { cursor: { ...cursor, pendingCreate: true } } : {}),
       title, status: session.status, afterSeq: 0, createdAt: timestamp(session.created_at, Date.now()), updatedAt: timestamp(session.updated_at, Date.now()),
     };
     if (this.#closed) throw new Error("OpenMA client closed after task creation");
@@ -229,6 +253,11 @@ export class OpenmaTasks {
       } else {
         this.#store.append(id, event);
         if (canonical.type === "agent.message") observer.transient = observer.transient.filter(e => (e.canonical as OpenMAEvent | undefined)?.data && ((e.canonical as OpenMAEvent).data as { message_id?: string }).message_id !== data.message_id);
+        if (this.#store.get(id)?.provider === "cursor-cloud") {
+          this.#ingestCursor(id, canonical);
+          this.#publish(id);
+          return;
+        }
         const status = canonical.type === "session.running" ? "running" : canonical.type === "session.idle" ? "idle" : canonical.type === "session.terminated" || canonical.type === "session.error" ? "terminated" : undefined;
         if (status) this.#store.save({ ...this.#store.get(id)!, status, updatedAt: Date.now() });
       }
@@ -280,14 +309,15 @@ export class OpenmaTasks {
         // arrive during catch-up remain buffered and deduplicate by event ID.
         void first.catch(failed);
         await ready;
-        for await (const event of client.history(task.sessionId, { signal: attemptSignal })) {
+        const hasLocal = this.#store.events(id).some((event) => event.canonical);
+        for await (const event of client.history(task.sessionId, { signal: attemptSignal, preferLocal: hasLocal })) {
           if (signal.aborted) return;
           this.#ingest(id, observer, event);
         }
         const revision = this.#store.get(id)?.revision;
         const session = await client.retrieveSession(task.sessionId, attemptSignal);
         if (signal.aborted) return;
-        if (this.#store.get(id)?.revision === revision) this.#store.save({ ...this.#store.get(id)!, status: session.status, title: session.title ?? task.title, updatedAt: timestamp(session.updated_at, task.updatedAt) });
+        if (this.#store.get(id)?.revision === revision) this.#store.save({ ...this.#store.get(id)!, status: session.status, title: task.provider === "cursor-cloud" ? task.title : (session.title ?? task.title), updatedAt: timestamp(session.updated_at, task.updatedAt) });
         observer.connection = "online"; this.#publish(id);
         for (let next = await first; !next.done; next = await live.next()) {
           if (signal.aborted) return;
@@ -315,28 +345,124 @@ export class OpenmaTasks {
     }
   }
 
-  async #send(id: string, operationId: string, event: OpenmaTaskEvent): Promise<void> {
+  async #send(id: string, operationId: string, event: OpenmaTaskEvent, existing = false): Promise<void> {
     const task = this.#task(id);
+    const cursorTask = task.provider === "cursor-cloud";
+    if (cursorTask) this.#cursorSending.add(id);
     const expectedId = `${await sessionInputIdentityPrefix(task.workspaceId, task.sessionId, operationId)}0`;
     this.#task(id);
     const outgoing = { ...event, id: expectedId };
-    if (!this.#store.beginOperation(id, operationId, outgoing)) return;
+    if (!existing && !this.#store.beginOperation(id, operationId, outgoing)) {
+      if (cursorTask) this.#cursorSending.delete(id);
+      return;
+    }
+    if (existing && !this.#pendingMessages(id).some((operation) => operation.id === operationId)) {
+      if (cursorTask) this.#cursorSending.delete(id);
+      return;
+    }
     this.#publish(id);
     try {
-      await this.#client(this.options.account.connection(task)).sendEvent(task.sessionId, event, operationId);
-      if (!this.#closed) this.#store.settleOperation(id, operationId, "accepted");
+      const result = await this.#client(this.options.account.connection(task)).sendEvent(task.sessionId, event, operationId);
+      if (!this.#closed) {
+        this.#store.settleOperation(id, operationId, "accepted");
+        if (cursorTask && event.type === "user.message" && result && "runId" in result) this.#rememberCursorRun(id, result.runId);
+      }
     } catch (error) {
       if (!this.#closed) {
-        if (error instanceof OpenmaRequestError && error.definitelyRejected) this.#store.rejectOperation(id, operationId);
+        if (error instanceof CursorCloudRequestError && error.busy) {
+          const current = this.#store.get(id);
+          if (current) this.#store.save({ ...current, status: "running" });
+          return;
+        }
+        if ((error instanceof OpenmaRequestError || error instanceof CursorCloudRequestError) && error.definitelyRejected) this.#store.rejectOperation(id, operationId);
         else this.#store.settleOperation(id, operationId, "uncertain");
       }
       throw error;
-    } finally { this.#publish(id); }
+    } finally {
+      if (cursorTask) this.#cursorSending.delete(id);
+      this.#publish(id);
+      // A terminal stream event can arrive while cancel is still in flight.
+      // Flushing only from that event would see the in-flight send and drop
+      // the desktop queue, so try again once this send has released it.
+      if (cursorTask) void this.#flushCursorQueue(id);
+    }
   }
   async send(id: string, operationId: string, text: string): Promise<void> {
     if (!text.trim()) throw new Error("Enter a message");
     if (!operationId) throw new Error("Message operation ID is required");
-    await this.#send(id, operationId, { type: "user.message", content: [{ type: "text", text }] });
+    const task = this.#task(id);
+    const event: OpenmaTaskEvent = { type: "user.message", content: [{ type: "text", text }] };
+    if (task.provider === "cursor-cloud") {
+      event.metadata = {
+        "backchat.cursor.model": task.target.agentId,
+        "backchat.cursor.repo": task.cursor?.repoUrl ?? "",
+        "backchat.cursor.branch": task.cursor?.startingRef ?? "",
+        "backchat.cursor.title": task.title,
+      };
+      if (task.status === "running" || this.#cursorSending.has(id) || this.#pendingMessages(id).length > 0) {
+        this.#enqueue(id, operationId, event);
+        return;
+      }
+    }
+    await this.#send(id, operationId, event);
+  }
+  owns(id: string): boolean {
+    return !this.#closed && !!this.#store.get(id);
+  }
+  /** Edits the desktop follow-up queue. Cursor Cloud has no server-side queue. */
+  updatePromptQueue(command: SessionPromptQueueCommandParams): void {
+    const task = this.#task(command.session_id);
+    if (task.provider !== "cursor-cloud") throw new Error("This connection does not queue follow-ups");
+    if (command.action === "steer") return;
+    if (command.action === "clear") {
+      for (const operation of this.#pendingMessages(task.id)) this.#store.removeOperation(task.id, operation.id);
+    } else if (command.action === "remove") this.#store.removeOperation(task.id, command.turn_id);
+    else if (command.action === "update") {
+      const text = command.text.trim();
+      if (!text) throw new Error("queued prompt text is required");
+      const operation = this.#pendingMessages(task.id).find((item) => item.id === command.turn_id);
+      if (!operation) return;
+      this.#store.replaceOperation(task.id, operation.id, { ...operation.event, content: [{ type: "text", text }] });
+    } else this.#store.reorderOperations(task.id, command.turn_ids);
+    this.#publish(task.id);
+  }
+  #pendingMessages(id: string) {
+    return this.#store.operations(id).filter((operation) => operation.state === "pending" && operation.event.type === "user.message");
+  }
+  #enqueue(id: string, operationId: string, event: OpenmaTaskEvent): void {
+    const expected = { ...event, id: operationId };
+    this.#store.beginOperation(id, operationId, expected);
+    this.#publish(id);
+  }
+  #rememberCursorRun(id: string, runId?: string): void {
+    const current = this.#store.get(id);
+    if (!current) return;
+    this.#store.save({ ...current, status: "running", cursor: { ...current.cursor, pendingCreate: false, ...(runId ? { latestRunId: runId } : {}) } });
+  }
+  #ingestCursor(id: string, canonical: OpenMAEvent): void {
+    const task = this.#store.get(id);
+    if (!task) return;
+    const status = canonical.type === "turn.started" || canonical.type === "turn.queued" ? "running"
+      : canonical.type === "turn.completed" || canonical.type === "turn.failed" || canonical.type === "turn.cancelled" || canonical.type === "session.error" ? "idle"
+      : undefined;
+    const git = cursorGit(canonical);
+    if (status || git) {
+      this.#store.save({
+        ...this.#store.get(id)!,
+        ...(status ? { status, updatedAt: Date.now() } : {}),
+        cursor: { ...task.cursor, ...(git?.branch ? { branch: git.branch } : {}), ...(git?.prUrl ? { prUrl: git.prUrl } : {}) },
+      });
+    }
+    if (status === "idle") void this.#flushCursorQueue(id);
+  }
+  async #flushCursorQueue(id: string): Promise<void> {
+    if (this.#closed || this.#cursorSending.has(id)) return;
+    const task = this.#store.get(id);
+    if (!task || task.provider !== "cursor-cloud" || task.status === "running") return;
+    const next = this.#pendingMessages(id)[0];
+    if (!next) return;
+    try { await this.#send(id, next.id, next.event, true); }
+    catch { /* #send already settled a definite failure. A busy agent stays queued. */ }
   }
   async interrupt(id: string): Promise<void> { await this.#send(id, randomUUID(), { type: "user.interrupt" }); }
   async respond(id: string, requestId: string, response: OpenmaTaskResponse): Promise<void> {

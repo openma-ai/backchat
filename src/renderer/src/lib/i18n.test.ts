@@ -32,6 +32,9 @@ describe("i18n", () => {
   it("translates shell labels and interpolates values", async () => {
     const { translate } = await loadI18n();
 
+    expect(translate?.("en", "cursor.provider")).toBe("Cursor Cloud Agents");
+    expect(translate?.("zh-CN", "cursor.repository")).toBe("仓库");
+    expect(translate?.("zh-CN", "cursor.pullRequest")).toBe("拉取请求");
     expect(translate?.("zh-CN", "sidebar.pinned")).toBe("置顶");
     expect(translate?.("zh-CN", "sidebar.pairChat")).toBe("多 Agent 对话");
     expect(translate?.("zh-CN", "sidebar.pairs")).toBe("多 Agent 对话");

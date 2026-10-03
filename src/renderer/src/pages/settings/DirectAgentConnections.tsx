@@ -14,16 +14,17 @@ import {
   SETTINGS_SELECT_CLASS,
 } from "./SettingsPrimitives";
 
-const PROVIDERS: Array<{ value: AgentConnectionProvider; label: string; baseUrl: string }> = [
+const PROVIDERS: Array<{ value: AgentConnectionProvider; labelKey?: "cursor.provider"; label: string; baseUrl: string }> = [
   { value: "openma", label: "OpenMA", baseUrl: "https://app.openma.ai" },
   { value: "claude-managed", label: "Claude Managed Agents", baseUrl: "https://api.anthropic.com" },
   { value: "openai-agents", label: "OpenAI Agents API", baseUrl: "https://api.openai.com/v1" },
+  { value: "cursor-cloud", label: "Cursor Cloud Agents", labelKey: "cursor.provider", baseUrl: "https://api.cursor.com" },
 ];
 
 const FIELD_CLASS = "h-8 text-xs";
 
 export function DirectAgentConnections() {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const zh = locale === "zh-CN";
   const { data: account } = useOpenmaAccount();
   const [provider, setProvider] = useState<AgentConnectionProvider>("openma");
@@ -66,7 +67,7 @@ export function DirectAgentConnections() {
                   setBaseUrl(PROVIDERS.find((p) => p.value === next)?.baseUrl ?? "");
                 }}
               >
-                {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.labelKey ? t(p.labelKey) : p.label}</option>)}
               </select>
             </SettingsField>
             <SettingsField label={zh ? "租户名称（选填）" : "Tenant name (optional)"}>
@@ -74,7 +75,9 @@ export function DirectAgentConnections() {
             </SettingsField>
             <SettingsField
               label={zh ? "服务地址" : "Base URL"}
-              hint={provider === "openai-agents"
+              hint={provider === "cursor-cloud"
+                ? t("cursor.baseHint")
+                : provider === "openai-agents"
                 ? (zh ? "填写 SDK base URL，含 /v1；OpenMA 兼容入口为 /openai/v1。" : "Use the SDK base URL including /v1; OpenMA's compatibility endpoint is /openai/v1.")
                 : (zh ? "填写服务根地址，不含 /v1。" : "Use the service root without /v1.")}
             >
@@ -100,7 +103,7 @@ export function DirectAgentConnections() {
           <SettingsListRow
             key={workspace.id}
             title={workspace.name}
-            description={`${workspace.provider === "claude-managed" ? "Claude Managed Agents" : workspace.provider === "openai-agents" ? "OpenAI Agents API" : "OpenMA"} · ${workspace.baseUrl}`}
+            description={`${workspace.provider === "claude-managed" ? "Claude Managed Agents" : workspace.provider === "openai-agents" ? "OpenAI Agents API" : workspace.provider === "cursor-cloud" ? t("cursor.provider") : "OpenMA"} · ${workspace.baseUrl}`}
             actions={(
               <>
                 <Button type="button" variant="outline" size="xs" onClick={() => void window.backchat.openmaSelectWorkspace(workspace.id).catch((e) => setError(String(e)))}>{zh ? "选择" : "Select"}</Button>
