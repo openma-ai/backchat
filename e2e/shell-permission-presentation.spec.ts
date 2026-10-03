@@ -134,11 +134,34 @@ test("shows a denied shell as not run, and keeps a real failure at the end of th
     const longTurn = page.locator('[data-turn-id="turn-long"]');
     await expect(denyTurn.getByText("REJECTED")).toBeVisible();
 
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setContentSize(720, 640);
+    });
+
+    const worked = longTurn.locator('[data-chat-reasoning-trigger="true"]');
+    await expect(worked).toBeVisible();
+
+    const applyTheme = async (theme: "light" | "dark") => {
+      await page.evaluate(async (next) => {
+        const current = await window.backchat.settingsGet();
+        await window.backchat.settingsPatch({
+          appearance: { ...current.appearance, theme: next, language: "zh-CN" },
+        });
+      }, theme);
+      await expect(page.locator("html")).toHaveAttribute("data-theme-mode", theme);
+      await page.mouse.move(0, 0);
+      await expect(worked).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    };
+
+    await applyTheme("light");
     if (shotDir) {
-      await page.screenshot({ path: `${shotDir}/shell-turns.png` });
-      await denyTurn.screenshot({ path: `${shotDir}/denied-shell.png` });
-      await failTurn.screenshot({ path: `${shotDir}/failed-shell.png` });
-      await longTurn.screenshot({ path: `${shotDir}/long-failed.png` });
+      await page.screenshot({ path: `${shotDir}/narrow-light.png` });
+      await longTurn.screenshot({ path: `${shotDir}/long-failed-light.png` });
+    }
+    await applyTheme("dark");
+    if (shotDir) {
+      await page.screenshot({ path: `${shotDir}/narrow-dark.png` });
+      await longTurn.screenshot({ path: `${shotDir}/long-failed-dark.png` });
     }
 
     const failed = failTurn.locator('[data-tool-call-id="shell-fail"]');
