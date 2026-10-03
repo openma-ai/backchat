@@ -1,0 +1,65 @@
+name: macOS update e2e
+
+# One signed update proof for this branch. It never publishes.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/macos-auto-update-9d8b
+
+concurrency:
+  group: macos-update-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Test the update harness
+        run: node --test scripts/macos-update-e2e.test.mjs
+
+      - name: Build two notarized preview versions and install the newer one
+        env:
+          BACKCHAT_UPDATE_CHANNEL: preview
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "missing ${name}"
+              exit 1
+            fi
+          done
+          pnpm exec electron-vite build
+          pnpm run runtime:prepare
+          BACKCHAT_UPDATE_BUILD=910001 node scripts/run-mac-builder.mjs --mac zip
+          BACKCHAT_UPDATE_BUILD=910002 node scripts/run-mac-builder.mjs --mac zip
+          node scripts/macos-update-e2e.mjs release
+
+      - name: Upload update evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-update-e2e
+          path: |
+            test-results/macos-update-e2e.txt
+            test-results/backchat-update-evidence.log
+            test-results/outside-app.log
+            test-results/installed-app.log
+          if-no-files-found: ignore

@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { autoUpdater } from "electron-updater";
 import {
   UPDATE_CHECK_INTERVAL_MS,
-  UPDATE_STARTUP_DELAY_MS,
   appBundlePathFromExecutable,
   buildFromVersion,
   canInstallUpdate,
   feedForChannel,
   parseUpdateIdentity,
+  shouldAutoAcceptUpdate,
   updateErrorCode,
+  updateStartupDelayMs,
   type AppUpdateState,
   type AvailableUpdate,
   type UpdateIdentity,
@@ -18,6 +19,7 @@ import {
 import { InvokeChannel, PushChannel } from "../shared/ipc-channels.js";
 import { logAppEvent } from "./app-log.js";
 import { settingsStore } from "./settings-store.js";
+import { recordUpdateEvidence } from "./update-evidence.js";
 
 interface UpdateQuit {
   approve(): void;
@@ -54,6 +56,14 @@ export async function startAppUpdater(quit: UpdateQuit): Promise<() => void> {
       version: state.available?.version ?? state.version,
       error: state.errorCode,
     });
+    recordUpdateEvidence("update-state", {
+      status: state.status,
+      installBlock: state.installBlock,
+      canInstall: state.canInstall,
+      version: state.version,
+      available: state.available?.version ?? "",
+      errorCode: state.errorCode ?? "",
+    });
     return state;
   };
 
@@ -61,6 +71,17 @@ export async function startAppUpdater(quit: UpdateQuit): Promise<() => void> {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowDowngrade = false;
+  if (process.env["BACKCHAT_UPDATE_E2E"] === "1") {
+    const write = (level: "log" | "warn" | "error", message?: unknown) => {
+      console[level](`[updater] ${String(message)}`);
+    };
+    autoUpdater.logger = {
+      info: (message?: unknown) => write("log", message),
+      warn: (message?: unknown) => write("warn", message),
+      error: (message?: unknown) => write("error", message),
+      debug: (message?: string) => write("log", message),
+    };
+  }
   if (feed) {
     autoUpdater.setFeedURL({ provider: "generic", url: feed.url });
     autoUpdater.channel = feed.channel;
@@ -130,6 +151,7 @@ export async function startAppUpdater(quit: UpdateQuit): Promise<() => void> {
     if (quit.pending) return state;
     if (!(await confirmUpdate(state))) return state;
     publish({ status: "installing", errorCode: null });
+    recordUpdateEvidence("quit-and-install", { version: state.available?.version ?? "" });
     autoUpdater.quitAndInstall();
     return state;
   }
@@ -141,7 +163,7 @@ export async function startAppUpdater(quit: UpdateQuit): Promise<() => void> {
   const timers: NodeJS.Timeout[] = [];
   const automatic = Boolean(feed) && app.isPackaged && process.env["BACKCHAT_DISABLE_UPDATE"] !== "1";
   if (automatic) {
-    const startup = setTimeout(() => void check(), UPDATE_STARTUP_DELAY_MS);
+    const startup = setTimeout(() => void check(), updateStartupDelayMs(process.env));
     startup.unref();
     const interval = setInterval(() => void check(), UPDATE_CHECK_INTERVAL_MS);
     interval.unref();
@@ -208,6 +230,10 @@ function prefersChinese(): boolean {
 
 async function confirmUpdate(state: AppUpdateState): Promise<boolean> {
   const version = state.available?.version ?? state.version;
+  if (shouldAutoAcceptUpdate(process.env)) {
+    recordUpdateEvidence("update-accepted", { version, mode: "test-hook" });
+    return true;
+  }
   const zh = prefersChinese();
   const result = await dialog.showMessageBox({
     type: "info",

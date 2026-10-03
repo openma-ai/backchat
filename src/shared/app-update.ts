@@ -9,6 +9,8 @@
 
 export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 export const UPDATE_STARTUP_DELAY_MS = 20_000;
+/** Fixed path. Written only when `BACKCHAT_UPDATE_E2E=1`, never a user setting. */
+export const UPDATE_E2E_EVIDENCE_PATH = "/tmp/backchat-update-evidence.log";
 export const GITHUB_REPOSITORY = "openma-ai/backchat";
 export const PREVIEW_MAC_YML = "preview-mac.yml";
 export const LATEST_MAC_YML = "latest-mac.yml";
@@ -156,6 +158,19 @@ export function parseUpdateIdentity(value: unknown, version: string): UpdateIden
 
 function isLoopback(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+/** Test-only. Both env vars are required so a stray accept flag cannot skip the dialog. */
+export function shouldAutoAcceptUpdate(env: NodeJS.ProcessEnv): boolean {
+  return env["BACKCHAT_UPDATE_E2E"] === "1" && env["BACKCHAT_UPDATE_ACCEPT"] === "1";
+}
+
+export function updateEvidencePath(env: NodeJS.ProcessEnv): string | null {
+  return env["BACKCHAT_UPDATE_E2E"] === "1" ? UPDATE_E2E_EVIDENCE_PATH : null;
+}
+
+export function updateStartupDelayMs(env: NodeJS.ProcessEnv): number {
+  return env["BACKCHAT_UPDATE_E2E"] === "1" ? 1_000 : UPDATE_STARTUP_DELAY_MS;
 }
 
 export function assertFeedUrl(url: string): void {

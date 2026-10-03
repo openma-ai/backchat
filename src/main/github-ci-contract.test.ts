@@ -79,5 +79,21 @@ describe("github ci", () => {
     expect(dmg).toContain("stapler validate");
     expect(dmg).not.toContain("apply-mac-update");
     expect(dmg).not.toContain("continue-on-error");
+    expect(dmg).not.toContain("cursor/macos-auto-update-9d8b");
+    expect(dmg).toContain("github.ref == 'refs/heads/main'");
+    expect(dmg).toContain("startsWith(github.ref, 'refs/tags/')");
+  });
+
+  it("proves the macOS update on this branch without publishing", () => {
+    const update = readFileSync(resolve(".github/workflows/macos-update-e2e.yml"), "utf8");
+    expect(update).toContain("cursor/macos-auto-update-9d8b");
+    expect(update).toContain("workflow_dispatch");
+    expect(update).toContain("contents: read");
+    expect(update).toContain("node scripts/macos-update-e2e.mjs release");
+    expect(update).toContain("BACKCHAT_UPDATE_BUILD=910001");
+    expect(update).toContain("BACKCHAT_UPDATE_BUILD=910002");
+    expect(update).not.toContain("gh release");
+    expect(update).not.toContain("publish-preview-release");
+    expect(update).not.toContain("contents: write");
   });
 });

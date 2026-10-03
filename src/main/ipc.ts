@@ -81,6 +81,7 @@ import {
   latestPersistedOpenMAEventSequence,
 } from "./session-event-enricher.js";
 import { logAppEvent } from "./app-log.js";
+import { recordUpdateEvidence } from "./update-evidence.js";
 import { deliverSessionEvent } from "./session-event-delivery.js";
 import { join } from "node:path";
 import {
@@ -1422,7 +1423,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         chromeExtensionBridge?.close(),
         sessionHistoryMcpBridge.stop(),
       ]);
+      const closedSocket = controlServer?.socketPath ?? "";
       await controlServer?.close();
+      if (controlServer) recordUpdateEvidence("control-socket-closed", { socket: closedSocket });
+      else recordUpdateEvidence("control-socket-missing", { socket: "" });
       await projectMcp?.close();
       await projectWork.close();
       scheduleStore.close();

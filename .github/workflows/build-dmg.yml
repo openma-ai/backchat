@@ -5,9 +5,6 @@ on:
   push:
     branches:
       - main
-      # One signed build of this PR before it is on main. Publish steps
-      # below still run only for main and version tags.
-      - cursor/macos-auto-update-9d8b
     tags:
       - "v*"
 
@@ -105,10 +102,6 @@ jobs:
           mode="${BACKCHAT_MAC_SIGNING:-unset}"
           echo "mac signing mode: ${mode}" | tee -a "$log"
           if [ "$mode" = "developer-id" ] && [ "$failed" -ne 0 ]; then
-            exit 1
-          fi
-          if [ "$GITHUB_REF" = "refs/heads/cursor/macos-auto-update-9d8b" ] && [ "$mode" != "developer-id" ]; then
-            echo "this branch required Developer ID signing and notarization" | tee -a "$log"
             exit 1
           fi
 

@@ -3,6 +3,7 @@ import {
   LATEST_MAC_YML,
   PREVIEW_MAC_YML,
   UPDATE_CHECK_INTERVAL_MS,
+  UPDATE_STARTUP_DELAY_MS,
   appBundlePathFromExecutable,
   canInstallUpdate,
   compareAppVersions,
@@ -10,7 +11,11 @@ import {
   isNewerRelease,
   parseUpdateIdentity,
   previewAppVersion,
+  shouldAutoAcceptUpdate,
   updateErrorCode,
+  updateEvidencePath,
+  updateStartupDelayMs,
+  UPDATE_E2E_EVIDENCE_PATH,
   type UpdateIdentity,
 } from "./app-update.js";
 
@@ -80,6 +85,17 @@ describe("channel selection", () => {
       allowPrerelease: false,
     });
     expect(feedForChannel("dev", {})).toBeNull();
+  });
+
+  it("auto-accepts an update only for the e2e hook, and keeps the evidence path off the settings UI", () => {
+    expect(shouldAutoAcceptUpdate({})).toBe(false);
+    expect(shouldAutoAcceptUpdate({ BACKCHAT_UPDATE_ACCEPT: "1" })).toBe(false);
+    expect(shouldAutoAcceptUpdate({ BACKCHAT_UPDATE_E2E: "1" })).toBe(false);
+    expect(shouldAutoAcceptUpdate({ BACKCHAT_UPDATE_E2E: "1", BACKCHAT_UPDATE_ACCEPT: "1" })).toBe(true);
+    expect(updateEvidencePath({})).toBeNull();
+    expect(updateEvidencePath({ BACKCHAT_UPDATE_E2E: "1" })).toBe(UPDATE_E2E_EVIDENCE_PATH);
+    expect(updateStartupDelayMs({})).toBe(UPDATE_STARTUP_DELAY_MS);
+    expect(updateStartupDelayMs({ BACKCHAT_UPDATE_E2E: "1" })).toBe(1_000);
   });
 
   it("accepts a loopback feed override and rejects other hosts", () => {
