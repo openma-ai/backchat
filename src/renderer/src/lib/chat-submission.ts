@@ -13,6 +13,7 @@ import {
   deriveChatLabel,
   derivePromptDisplayText,
 } from "./composer-prompt";
+import type { AcpForkPoint } from "@openma/common/acp-runtime";
 import type {
   SessionRow,
   SideSessionParentLink,
@@ -83,12 +84,16 @@ export function resolveWorkspaceMode(
 
 export function resolveChatFork(
   parentLink:
-    | Pick<SideSessionParentLink, "inheritance" | "parentAcpSessionId">
+    | Pick<SideSessionParentLink, "inheritance" | "parentAcpSessionId" | "point">
     | undefined,
-): { acp_session_id: string } | undefined {
-  return parentLink?.inheritance === "fork" && parentLink.parentAcpSessionId
-    ? { acp_session_id: parentLink.parentAcpSessionId }
-    : undefined;
+): { acp_session_id: string; point?: AcpForkPoint } | undefined {
+  if (parentLink?.inheritance !== "fork" || !parentLink.parentAcpSessionId) {
+    return undefined;
+  }
+  return {
+    acp_session_id: parentLink.parentAcpSessionId,
+    ...(parentLink.point ? { point: parentLink.point } : {}),
+  };
 }
 
 export function chatIdleDeliveryMeta(
@@ -266,7 +271,12 @@ export function useChatSubmission({
         workspace_id: target.workspaceId ?? undefined,
         fork: resolveChatFork(parentLink),
       });
-      if (startResult.status !== "ready") return;
+      if (startResult.status !== "ready") {
+        if (startResult.status === "error" && parentLink?.inheritance === "fork") {
+          toast.error(startResult.message);
+        }
+        return;
+      }
 
       for (const [config_id, value] of Object.entries(configOverrides)) {
         try {

@@ -45,6 +45,11 @@ import {
   HomeSuggestionSelect,
 } from "./HomeSuggestions";
 import { useChatSubmission } from "@/lib/chat-submission";
+import { forkPointsByTurn } from "@/lib/fork-point";
+import {
+  messageForkEnabled,
+  wholeSessionForkEnabled,
+} from "@/lib/fork-support";
 import { useHomeSuggestionState } from "@/lib/home-suggestion-state";
 import { useChatSessionActions } from "@/lib/chat-session-actions";
 import { Composer } from "./Composer";
@@ -229,11 +234,25 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
 
   const canForkCurrentSession = !isSide
     && active?.status !== "draft"
-    && active?.supportsSessionFork === true
-    && !!active.acp_session_id;
+    && wholeSessionForkEnabled(active?.forkSupport)
+    && !!active?.acp_session_id;
+  const canForkFromMessage = canForkCurrentSession
+    && messageForkEnabled(active?.forkSupport);
+  const messageForkPoints = useMemo(
+    () => forkPointsByTurn(transcriptTurns),
+    [transcriptTurns],
+  );
   const continueInNewChat = () => {
     if (!active || !canForkCurrentSession) return;
     const forkId = sessionStore.newMainForkDraft(active.id);
+    if (!forkId) return;
+    void navigate({ to: "/" });
+  };
+  const forkFromTurn = (turnId: string) => {
+    if (!active || !canForkFromMessage) return;
+    const point = messageForkPoints.get(turnId);
+    if (!point) return;
+    const forkId = sessionStore.newMainForkDraft(active.id, point);
     if (!forkId) return;
     void navigate({ to: "/" });
   };
@@ -539,7 +558,11 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
   ) : null;
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col" aria-busy={loadingFirstScreen}>
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      aria-busy={loadingFirstScreen}
+      data-fork-support={active?.forkSupport?.level ?? "unknown"}
+    >
       {loadingFirstScreen && (
         <div className="absolute inset-0 z-10 flex items-center justify-center app-canvas-surface"
           data-chat-history-loading="true">
@@ -572,12 +595,33 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
           }
           renderTurn={({ turn }) => {
             const sourceTurn = turnsById.get(turn.id);
+            const messagePoint = sourceTurn
+              ? messageForkPoints.get(sourceTurn.id)
+              : undefined;
+            const showMessageFork = !!sourceTurn
+              && !isSide
+              && sourceTurn.status === "complete"
+              && sourceTurn.assistantText.trim().length > 0
+              && !!active?.forkSupport
+              && active.status !== "draft";
             return sourceTurn ? (
               <TurnBlock
                 turn={sourceTurn}
                 onFork={sourceTurn.id === latestForkableTurnId
                   ? continueInNewChat
                   : undefined}
+                messageFork={showMessageFork ? {
+                  enabled: canForkFromMessage && !!messagePoint,
+                  label: t("chat.forkFromHere"),
+                  tooltip: canForkFromMessage
+                    ? (messagePoint
+                      ? t("chat.forkFromHere")
+                      : t("chat.forkPointMissing"))
+                    : active.forkSupport?.message ?? t("chat.forkPointMissing"),
+                  onFork: canForkFromMessage && messagePoint
+                    ? () => forkFromTurn(sourceTurn.id)
+                    : undefined,
+                } : undefined}
               />
             ) : null;
           }}

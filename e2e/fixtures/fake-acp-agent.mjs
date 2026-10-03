@@ -34,6 +34,11 @@ async function requireFixtureAuth() {
   }
 }
 
+function fakeForkLevel() {
+  const level = process.env.BACKCHAT_FAKE_FORK ?? "none";
+  return level === "session" || level === "message" ? level : "none";
+}
+
 class FakeAcpAgent {
   constructor(connection) {
     this.connection = connection;
@@ -42,9 +47,11 @@ class FakeAcpAgent {
     this.modes = new Map();
     /** sessionId -> resolver for a deliberately stalled turn. */
     this.pendingStalls = new Map();
+    this.nextMessageId = 1;
   }
 
   async initialize() {
+    const forkLevel = fakeForkLevel();
     return {
       protocolVersion: PROTOCOL_VERSION,
       agentInfo: {
@@ -59,7 +66,14 @@ class FakeAcpAgent {
         sessionCapabilities: {
           ...(process.env.BACKCHAT_FAKE_ADDITIONAL_DIRECTORIES === "1" ? { additionalDirectories: {} } : {}),
           resume: {},
+          ...(forkLevel === "session" || forkLevel === "message" ? { fork: {} } : {}),
         },
+        // Contract owned by openma-ai/openma-common (ACP_INCLUSIVE_FORK_CAPABILITY).
+        ...(forkLevel === "message" ? {
+          _meta: {
+            jetbrains: { air: { fork: { version: 1, inclusive: true } } },
+          },
+        } : {}),
       },
     };
   }
@@ -165,10 +179,13 @@ class FakeAcpAgent {
     const reply = process.env.BACKCHAT_FAKE_SHORT_REPLY === "1"
       ? `[fake agent] ok: ${promptText.trim().slice(0, 40)}`
       : `Fake response saved for ${promptText}.`;
+    const messageId = `fake-assistant-${this.nextMessageId}`;
+    this.nextMessageId += 1;
     await this.connection.sessionUpdate({
       sessionId: params.sessionId,
       update: {
         sessionUpdate: "agent_message_chunk",
+        messageId,
         content: {
           type: "text",
           text: reply,
@@ -276,6 +293,27 @@ class FakeAcpAgent {
         content: { type: "text", text },
       },
     });
+  }
+
+  async unstable_forkSession(params) {
+    if (process.env.BACKCHAT_FAKE_FORK_LOG) {
+      await appendFile(process.env.BACKCHAT_FAKE_FORK_LOG, `${JSON.stringify(params)}\n`);
+    }
+    const fork = params?._meta?.jetbrains?.air?.fork;
+    if (process.env.BACKCHAT_FAKE_FORK_REJECT === "not-found") {
+      const messageId = typeof fork?.messageId === "string" ? fork.messageId : "";
+      throw RequestError.invalidParams(
+        { messageId },
+        `Fork point message ${messageId} was not found in session ${params.sessionId}`,
+      );
+    }
+    if (fork != null && (typeof fork !== "object" || fork.version !== 1)) {
+      throw RequestError.invalidParams(undefined, "Unsupported jetbrains.air.fork version");
+    }
+    const sessionId = `fake-fork-${Date.now().toString(36)}`;
+    this.sessions.set(sessionId, []);
+    this.directories.set(sessionId, params.cwd);
+    return { sessionId };
   }
 
   async runCursorPlanMerge() {

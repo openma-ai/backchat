@@ -834,7 +834,7 @@ async function updateRoot(root, batchRoot, runAt) {
     },
     {
       harness: "Pi", harnessDir: "pi", runtime: "pi ACP with deepseek-anthropic/DeepSeek V4 Flash",
-      forkKind: "fresh subordinate fallback because pi-acp does not advertise session/fork",
+      forkKind: "ACP session/fork when forkSupport() is not none; pi-acp now advertises session/fork",
     },
   ]) {
     await markLive({
@@ -844,7 +844,7 @@ async function updateRoot(root, batchRoot, runAt) {
       sourceName: "session-fork-side-chat.jpg",
       trigger: `Computer Use: open the real ${run.harness} main-session menu, choose Open context fork, and inspect the selected side composer`,
       selector: "[data-side-tab-type=chat]",
-      expected: "A GUI-created subordinate side chat opens in the right rail, uses ACP session/fork when advertised, and otherwise uses the documented fresh fallback while preserving harness/config.",
+      expected: "A GUI-created subordinate side chat opens in the right rail, uses ACP session/fork when forkSupport() is not none, and otherwise uses the documented fresh fallback while preserving harness/config.",
       observed: `The selected 上下文分支 tab is visible beside the unchanged parent transcript; the side composer visibly remains ${run.runtime}. Path: ${run.forkKind}.`,
     });
     await markLive({

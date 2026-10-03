@@ -90,6 +90,22 @@ describe("chat submission decisions", () => {
       inheritance: "fork",
     })).toBeUndefined();
     expect(resolveChatFork(undefined)).toBeUndefined();
+    expect(resolveChatFork({
+      inheritance: "fork",
+      parentAcpSessionId: "acp-parent",
+      point: {
+        messageId: "assistant-1",
+        messageText: "Hello",
+        messageOccurrence: 1,
+      },
+    })).toEqual({
+      acp_session_id: "acp-parent",
+      point: {
+        messageId: "assistant-1",
+        messageText: "Hello",
+        messageOccurrence: 1,
+      },
+    });
   });
 
   it("uses turn-end delivery for an idle session without degradation", () => {

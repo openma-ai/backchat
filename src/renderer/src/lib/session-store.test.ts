@@ -3168,6 +3168,11 @@ describe("SessionStore side chats and native subagents", () => {
       agent_id: "codex-acp",
       cwd: "/repo",
       supports_session_fork: true,
+      fork_support: {
+        level: "session",
+        reason: "message-fork-not-advertised",
+        message: "This agent can fork the whole session but not from a specific message.",
+      },
       config_options: [{
         id: "model",
         name: "Model",
@@ -3182,6 +3187,10 @@ describe("SessionStore side chats and native subagents", () => {
     });
 
     expect(store.get("parent-session")?.supportsSessionFork).toBe(true);
+    expect(store.get("parent-session")?.forkSupport).toMatchObject({
+      level: "session",
+      reason: "message-fork-not-advertised",
+    });
   });
 
   test("opens a subordinate side chat with fork inheritance", () => {
@@ -3250,6 +3259,11 @@ describe("SessionStore side chats and native subagents", () => {
       agent_id: "codex-acp",
       cwd: "/repo",
       supports_session_fork: true,
+      fork_support: {
+        level: "session",
+        reason: "message-fork-not-advertised",
+        message: "This agent can fork the whole session but not from a specific message.",
+      },
     });
 
     const forkId = store.newMainForkDraft("parent-session");

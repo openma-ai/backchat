@@ -4,6 +4,7 @@ import { memo, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRightFromLineIcon,
+  GitBranchIcon,
   AtSignIcon,
   CalendarClockIcon,
   CheckIcon,
@@ -60,9 +61,16 @@ import { BACKCHAT_COLLAPSIBLE_PRIMITIVES } from "@/components/ai-elements/reason
 export const TurnBlock = memo(function TurnBlock({
   turn,
   onFork,
+  messageFork,
 }: {
   turn: Turn;
   onFork?: () => void;
+  messageFork?: {
+    enabled: boolean;
+    label: string;
+    tooltip: string;
+    onFork?: () => void;
+  };
 }) {
   const { t } = useI18n();
   const rendered = useMemo(() => reduceTurn(turn.events), [turn.events]);
@@ -334,7 +342,12 @@ export const TurnBlock = memo(function TurnBlock({
           </>
         ),
         renderFooter: () => (
-          <TurnFooter turn={turn} isStreaming={isStreaming} onFork={onFork} />
+          <TurnFooter
+            turn={turn}
+            isStreaming={isStreaming}
+            onFork={onFork}
+            messageFork={messageFork}
+          />
         ),
       }}
     />
@@ -651,10 +664,17 @@ function TurnFooter({
   turn,
   isStreaming,
   onFork,
+  messageFork,
 }: {
   turn: Turn;
   isStreaming: boolean;
   onFork?: () => void;
+  messageFork?: {
+    enabled: boolean;
+    label: string;
+    tooltip: string;
+    onFork?: () => void;
+  };
 }) {
   const { t } = useI18n();
   const answer = turn.assistantText.trim();
@@ -689,6 +709,20 @@ function TurnFooter({
         aria-hidden={isStreaming ? true : undefined}
       >
         <TurnMetaActions timestamp={endedAt} copyText={answer} align="start">
+          {messageFork && answer.length > 0 && turn.status === "complete" && (
+            <button
+              type="button"
+              data-turn-message-fork="true"
+              data-message-fork-state={messageFork.enabled ? "enabled" : "disabled"}
+              aria-label={messageFork.tooltip}
+              title={messageFork.tooltip}
+              disabled={!messageFork.enabled}
+              onClick={messageFork.enabled ? messageFork.onFork : undefined}
+              className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle"
+            >
+              <GitBranchIcon className="size-4" aria-hidden="true" />
+            </button>
+          )}
           {canFork && (
             <button
               type="button"

@@ -2,6 +2,7 @@ import type {
   AgentMessageDelivery,
   AgentMessageIntent,
 } from "@shared/agent-interaction.js";
+import type { AcpForkPoint, AcpForkSupport } from "@openma/common/acp-runtime";
 import type {
   PromptAttachment,
   PromptAnnotation,
@@ -61,8 +62,10 @@ export interface SessionRow {
    *  id is only used for fork-based context seeding; task progress is tracked
    *  in Backchat's own store. */
   subagent?: SubagentLink;
-  /** Whether the live ACP agent advertised the unstable session/fork
-   *  capability. This gates inherited subagent startup only. */
+  /** `forkSupport()` result published by the main process. Fork actions
+   *  read this and do not derive capability from the harness. */
+  forkSupport?: AcpForkSupport;
+  /** `forkSupport.level !== "none"`. Informational compatibility field. */
   supportsSessionFork?: boolean;
   /** Whether the live ACP initialize response negotiated `_session/steering`.
    * This is session-scoped capability evidence, never inferred from agent id. */
@@ -287,6 +290,8 @@ export interface SideSessionParentLink {
   parentSessionId: string;
   parentAcpSessionId?: string;
   inheritance: SubagentInheritance;
+  /** Inclusive message fork. Absent for a whole-session fork. */
+  point?: AcpForkPoint;
 }
 
 export interface SubagentLink {

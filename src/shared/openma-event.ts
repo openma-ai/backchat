@@ -1548,6 +1548,9 @@ export function toOpenMAEvent(
           ...(message.session_setup_meta
             ? { session_setup_meta: message.session_setup_meta }
             : {}),
+          ...(message.fork_support
+            ? { fork_support: message.fork_support }
+            : {}),
           ...(message.supports_session_fork !== undefined
             || message.supports_session_list !== undefined
             || message.supports_session_delete !== undefined

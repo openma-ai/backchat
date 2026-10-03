@@ -65,7 +65,11 @@ describe("chat session actions", () => {
         agent_id: "codex-acp",
         cwd: "/session",
         acp_session_id: "acp-parent",
-        supportsSessionFork: true,
+        forkSupport: {
+          level: "session",
+          reason: "message-fork-not-advertised",
+          message: "This agent can fork the whole session but not from a specific message.",
+        },
       },
       homePath: "/home",
     })).toEqual({
@@ -84,7 +88,11 @@ describe("chat session actions", () => {
         agent_id: "",
         cwd: "",
         acp_session_id: "",
-        supportsSessionFork: false,
+        forkSupport: {
+          level: "none",
+          reason: "session-fork-not-advertised",
+          message: "This agent does not support forking a session.",
+        },
       },
       homePath: "/home",
     })).toEqual({

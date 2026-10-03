@@ -35,6 +35,12 @@ import {
   sanitizeAuthenticationMessage,
   sessionErrorDetails,
 } from "@shared/auth-errors.js";
+import { forkSupportFromWire } from "@shared/fork-support.js";
+import type { AcpForkPoint } from "@openma/common/acp-runtime";
+import {
+  messageForkEnabled,
+  wholeSessionForkEnabled,
+} from "./fork-support.js";
 import {
   createOpenMAEvent,
   reduceWorkItems,
@@ -587,6 +593,7 @@ export class SessionStore {
           typeof capabilities.session_fork === "boolean"
             ? capabilities.session_fork
             : session.supportsSessionFork,
+        forkSupport: forkSupportFromWire(data.fork_support) ?? session.forkSupport,
         supportsSteering:
           typeof capabilities.steering === "boolean"
             ? capabilities.steering
@@ -1926,17 +1933,18 @@ export class SessionStore {
    *  ACP context on its first prompt. The provider session is intentionally
    *  started lazily, matching ordinary drafts and avoiding an idle child
    *  process when the user changes their mind. */
-  newMainForkDraft(parentSessionId: string): string | null {
+  newMainForkDraft(parentSessionId: string, point?: AcpForkPoint): string | null {
     const parent = this.#sessions.get(parentSessionId);
     if (
       !parent
       || parent.status === "draft"
       || parent.sideKind === "subagent"
-      || !parent.supportsSessionFork
+      || !wholeSessionForkEnabled(parent.forkSupport)
       || !parent.acp_session_id
     ) {
       return null;
     }
+    if (point && !messageForkEnabled(parent.forkSupport)) return null;
     const id = `fork-${Math.random().toString(36).slice(2, 10)}`;
     this.#sessions.set(id, {
       id,
@@ -1963,6 +1971,7 @@ export class SessionStore {
         parentSessionId: parent.id,
         parentAcpSessionId: parent.acp_session_id,
         inheritance: "fork",
+        ...(point ? { point } : {}),
       },
     });
     this.#activeId = id;
@@ -3559,6 +3568,7 @@ export class SessionStore {
             currentModeId:
               selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
             supportsSessionFork: ev.supports_session_fork ?? s.supportsSessionFork,
+            forkSupport: forkSupportFromWire(ev.fork_support) ?? s.forkSupport,
             supportsSteering: ev.supports_steering ?? s.supportsSteering,
             protocolVersion: ev.protocol_version ?? s.protocolVersion,
             agentInfo: ev.agent_info ?? s.agentInfo,
@@ -3605,6 +3615,7 @@ export class SessionStore {
             configOptions,
             currentModeId: selectedModeIdFromConfigOptions(configOptions),
             supportsSessionFork: ev.supports_session_fork,
+            forkSupport: forkSupportFromWire(ev.fork_support),
             supportsSteering: ev.supports_steering,
             protocolVersion: ev.protocol_version,
             agentInfo: ev.agent_info,

@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { ElicitationResponseInfo } from "@shared/api.js";
 import type { PromptAnnotation } from "@shared/session-events.js";
 import { promptAnnotationStore } from "./prompt-annotations";
+import { wholeSessionForkEnabled } from "./fork-support";
 import type { SessionRow, SubagentInheritance } from "./session-store";
 import { sessionStore } from "./session-store";
 
@@ -76,12 +77,12 @@ export function resolveResponseSideChatDraft({
     | "agent_id"
     | "cwd"
     | "acp_session_id"
-    | "supportsSessionFork"
+    | "forkSupport"
   >;
   homePath: string;
 }): ResponseSideChatDraftInput {
   const canFork =
-    !!active.supportsSessionFork && !!active.acp_session_id;
+    wholeSessionForkEnabled(active.forkSupport) && !!active.acp_session_id;
   return {
     parentSessionId: active.id,
     parentAcpSessionId: canFork ? active.acp_session_id : undefined,

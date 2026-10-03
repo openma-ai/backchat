@@ -1361,6 +1361,36 @@ describe("SessionEventOut → OpenMA event boundary", () => {
     });
   });
 
+  it("keeps fork_support on the canonical session.started event", () => {
+    const forkSupport = {
+      level: "message" as const,
+      reason: "message-fork-advertised" as const,
+      message: "This agent can fork from a specific message.",
+      messageFork: {
+        version: 1 as const,
+        inclusive: true as const,
+        source: "capability" as const,
+      },
+    };
+    const result = toOpenMAEvent({
+      type: "session.ready",
+      session_id: "sess-1",
+      acp_session_id: "acp-1",
+      agent_id: "pi-acp",
+      cwd: "/repo",
+      supports_session_fork: true,
+      fork_support: forkSupport,
+    }, options);
+
+    expect(result).toMatchObject({
+      type: "session.started",
+      data: {
+        fork_support: forkSupport,
+        capabilities: { session_fork: true },
+      },
+    });
+  });
+
   it("maps a user Stop request to user.interrupt", () => {
     const result = toOpenMAEvent({
       type: "session.cancel_requested",

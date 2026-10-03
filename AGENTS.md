@@ -40,8 +40,10 @@
 - Keep the three agent/session levels distinct:
   1. Native subagent: created by the provider/agent runtime, surfaced from
      structured ACP events or adapter `_meta`; the GUI must not create these.
-  2. Side chat: a GUI-created side session subordinate to the current main
-     session. Use `session/fork` for context inheritance when the agent
-     advertises it, and keep the parent link while it lives in the side rail.
+   2. Side chat: a GUI-created side session subordinate to the current main
+     session. Use `session/fork` for context inheritance when `forkSupport()`
+     from `@openma/common` reports a level other than `"none"`. Do not branch
+     on harness name or version. Keep the parent link while it lives in the
+     side rail.
   3. Fork: a fully independent main session that inherited context. Promoting
      a side chat clears its side-parent link and makes it this level.

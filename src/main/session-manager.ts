@@ -38,6 +38,7 @@ import {
   SessionOrchestrator,
   sessionInheritance,
 } from "@openma/common/session-orchestrator";
+import { forkSupport } from "@openma/common/acp-runtime";
 import { createOpenMAEvent } from "@openma/common/session-events/openma";
 import { access, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -349,7 +350,7 @@ export class SessionManager {
       agent_capabilities: sess.acp.agentCapabilities,
       initialize_meta: sess.acp.initializeMeta,
       session_setup_meta: sess.acp.sessionSetupMeta,
-      supports_session_fork: sess.acp.supportsSessionFork,
+      ...forkCapabilityFields(sess.acp),
       supports_session_list: sess.acp.supportsSessionList,
       supports_session_delete: sess.acp.supportsSessionDelete,
       supports_session_resume: sess.acp.supportsSessionResume,
@@ -378,6 +379,7 @@ export class SessionManager {
       agent_capabilities: result.agent_capabilities,
       initialize_meta: result.initialize_meta,
       session_setup_meta: result.session_setup_meta,
+      fork_support: result.fork_support,
       supports_session_fork: result.supports_session_fork,
       supports_session_list: result.supports_session_list,
       supports_session_delete: result.supports_session_delete,
@@ -824,6 +826,12 @@ export class SessionManager {
           ? { forkFrom: { acpSessionId: p.fork.acp_session_id } }
           : {}),
       });
+      if (p.fork?.point && inheritance.kind !== "fork") {
+        return this.#errorResult(
+          p.session_id,
+          "Message fork requires an ACP session to fork from.",
+        );
+      }
       const mcpServers = await this.#resolveMcpServers(agent.id, p.session_id) as never;
       const startInput = {
         agent: {
@@ -848,7 +856,10 @@ export class SessionManager {
           ? { resumeAcpSessionId: inheritance.resumeAcpSessionId }
           : {}),
         ...(inheritance.kind === "fork"
-          ? { forkFromAcpSessionId: inheritance.forkFromAcpSessionId }
+          ? {
+              forkFromAcpSessionId: inheritance.forkFromAcpSessionId,
+              ...(p.fork?.point ? { forkPoint: p.fork.point } : {}),
+            }
           : {}),
         ...(!harnessCreateElicitation && createElicitation
           ? {
@@ -2267,6 +2278,17 @@ export class SessionManager {
       },
     });
   }
+}
+
+function forkCapabilityFields(session: Parameters<typeof forkSupport>[0]): {
+  supports_session_fork: boolean;
+  fork_support: ReturnType<typeof forkSupport>;
+} {
+  const support = forkSupport(session);
+  return {
+    supports_session_fork: support.level !== "none",
+    fork_support: support,
+  };
 }
 
 function sessionRequestMetaForHarness(

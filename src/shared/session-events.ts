@@ -10,6 +10,7 @@ import type {
   AgentMessageDelivery,
   AgentMessageIntent,
 } from "./agent-interaction.js";
+import type { AcpForkPoint, AcpForkSupport } from "@openma/common/acp-runtime";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 import type { SessionErrorDetails } from "./auth-errors.js";
 
@@ -53,8 +54,11 @@ export interface SessionStartParams {
   resume?: { acp_session_id: string };
   /** Seed this session by forking an existing ACP-side session. This is the
    *  SDK's unstable `session/fork` path and should be treated as a context
-   *  inheritance mechanism, not as the whole subagent communication model. */
-  fork?: { acp_session_id: string };
+   *  inheritance mechanism, not as the whole subagent communication model.
+   *  `point` is an inclusive message fork. Omit it for a whole-session fork.
+   *  The main process passes it as `SessionOptions.forkPoint` and does not
+   *  build `_meta` itself. */
+  fork?: { acp_session_id: string; point?: AcpForkPoint };
 }
 
 export type SessionStartResult =
@@ -77,6 +81,8 @@ export type SessionStartResult =
       /** Raw adapter metadata returned by the successful session setup
        * response (new/load/resume/fork). */
       session_setup_meta?: Record<string, unknown> | null;
+      /** `forkSupport()` result. `supports_session_fork` is `level !== "none"`. */
+      fork_support?: AcpForkSupport;
       supports_session_fork?: boolean;
       supports_session_list?: boolean;
       supports_session_delete?: boolean;
@@ -405,10 +411,12 @@ export type SessionEventOut = (
       agent_capabilities?: unknown;
       initialize_meta?: Record<string, unknown> | null;
       session_setup_meta?: Record<string, unknown> | null;
-      /** Whether the agent advertised the unstable `session/fork`
-       *  capability on initialize. The renderer uses this only to seed
-       *  GUI-created side chats / forks with inherited context; native
-       *  subagent communication state is tracked separately. */
+      /** `forkSupport(session)` from the main process. The renderer stores
+       *  this and does not derive fork capability from harness name, version,
+       *  or `agentCapabilities`. */
+      fork_support?: AcpForkSupport;
+      /** `fork_support.level !== "none"`. Kept so older readers still see
+       *  whether whole-session fork is available. */
       supports_session_fork?: boolean;
       supports_session_list?: boolean;
       supports_session_delete?: boolean;
