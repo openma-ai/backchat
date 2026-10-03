@@ -32,17 +32,47 @@ async function hoverTrigger(
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 }
 
-async function seedTurn(
+async function seedCompleteExchange(
   page: import("@playwright/test").Page,
   sessionId: string,
   turnId: string,
-  phase: TurnPhase,
+  prompt: string,
+  answer: string,
 ) {
   await injectEvent(page, {
     type: "session.prompt",
     session_id: sessionId,
     turn_id: turnId,
-    text: "appearance probe",
+    text: prompt,
+  });
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: turnId,
+    event: {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: answer },
+    },
+  });
+  await injectEvent(page, {
+    type: "session.complete",
+    session_id: sessionId,
+    turn_id: turnId,
+  });
+}
+
+async function seedTurn(
+  page: import("@playwright/test").Page,
+  sessionId: string,
+  turnId: string,
+  phase: TurnPhase,
+  prompt = "appearance probe",
+) {
+  await injectEvent(page, {
+    type: "session.prompt",
+    session_id: sessionId,
+    turn_id: turnId,
+    text: prompt,
   });
   await injectEvent(page, {
     type: "session.event",
@@ -99,13 +129,46 @@ test("chat reasoning trigger uses plain full-width row styling", async ({ page }
       expect(triggerWidth).toBeGreaterThan(200);
       expect(triggerWidth).toBeGreaterThanOrEqual(turnWidth * 0.9);
 
-      if (shotRoot) {
-        await page.mouse.move(0, 0);
-        const name = `${theme}-${phase}`;
-        await trigger.screenshot({ path: `${shotRoot}/${name}-idle.png` });
-        await hoverTrigger(page, trigger);
-        await trigger.screenshot({ path: `${shotRoot}/${name}-hover.png` });
-      }
+    }
+  }
+
+  if (shotRoot) {
+    for (const theme of ["light", "dark"] as const) {
+      await setTheme(page, theme);
+      const contextSessionId = await injectSession(page, { agentId: "codex-acp" });
+      await seedCompleteExchange(
+        page,
+        contextSessionId,
+        `turn-before-${theme}`,
+        "上一条用户消息：帮我总结昨天的会议。",
+        "这是上一条助手回复，用于给进程行提供上下文。",
+      );
+      const focusTurnId = `turn-focus-${theme}`;
+      await seedTurn(
+        page,
+        contextSessionId,
+        focusTurnId,
+        "complete",
+        "当前回合：请说明进程头样式应为普通整行。",
+      );
+      const focusTurn = page.locator(`[data-turn-id="${focusTurnId}"]`);
+      const focusTrigger = focusTurn.locator('[data-chat-reasoning-trigger="true"]');
+      const beforeTurn = page.locator(`[data-turn-id="turn-before-${theme}"]`);
+      await expect(beforeTurn).toBeVisible();
+      await expect(focusTurn).toBeVisible();
+      await focusTurn.scrollIntoViewIfNeeded();
+
+      await page.mouse.move(0, 0);
+      await page.screenshot({
+        path: `${shotRoot}/window-${theme}-idle.png`,
+        fullPage: false,
+      });
+
+      await hoverTrigger(page, focusTrigger);
+      await page.screenshot({
+        path: `${shotRoot}/window-${theme}-hover.png`,
+        fullPage: false,
+      });
     }
   }
 });
