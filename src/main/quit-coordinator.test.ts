@@ -28,6 +28,16 @@ describe('desktop quit', () => {
     expect(quit.request()).toBe(false);
     disposed(); await vi.waitFor(() => expect(effects).toEqual(['ask', 'dispose', 'quit']));
   });
+  it('skips the quit dialog after an update was approved, and still disposes local work', async () => {
+    const effects: string[] = [];
+    const quit = new QuitCoordinator({ needsConfirmation: () => true,
+      confirm: async () => { effects.push('ask'); return false; },
+      dispose: async () => { effects.push('dispose'); },
+      quit: () => { effects.push('quit'); } });
+    quit.approve();
+    expect(quit.request()).toBe(false);
+    await vi.waitFor(() => expect(effects).toEqual(['dispose', 'quit']));
+  });
   it('exits without a dialog when no local host exists, even if cleanup fails', async () => {
     const effects: string[] = [];
     const quit = new QuitCoordinator({ needsConfirmation: () => false,

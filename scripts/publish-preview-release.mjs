@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { copyFile, readdir } from "node:fs/promises";
+import { copyFile, readFile, readdir, stat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,6 +9,8 @@ const previewTag = "preview";
 const previewTitle = "Backchat Preview";
 const previewNotes = "Latest successful build from the main branch.";
 const previewAssetName = "Backchat-preview-arm64.dmg";
+const previewZipName = "Backchat-preview-arm64.zip";
+const manifestName = "Backchat-mac-arm64-update.json";
 
 async function findArm64Dmgs(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -40,6 +42,30 @@ function runGh(args, { allowFailure = false } = {}) {
   return result.status === 0;
 }
 
+async function previewUpdateAssets(releaseRoot) {
+  const manifestPath = resolve(releaseRoot, manifestName);
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : "";
+    if (code === "ENOENT") {
+      throw new Error(`Missing ${manifestName}. Run write-update-manifest.mjs before publishing.`);
+    }
+    throw error;
+  }
+  if (manifest.channel !== "preview" || manifest.zipName !== previewZipName) {
+    throw new Error(`Preview manifest must name ${previewZipName}`);
+  }
+  const zipPath = resolve(releaseRoot, previewZipName);
+  try {
+    await stat(zipPath);
+  } catch {
+    throw new Error(`Missing ${previewZipName} next to the preview manifest`);
+  }
+  return { zipPath, manifestPath };
+}
+
 export async function publishPreviewRelease(releaseDirectory) {
   const releaseRoot = resolve(releaseDirectory);
   const candidates = await findArm64Dmgs(releaseRoot);
@@ -51,6 +77,8 @@ export async function publishPreviewRelease(releaseDirectory) {
 
   const previewAsset = resolve(releaseRoot, previewAssetName);
   await copyFile(candidates[0], previewAsset);
+  const { zipPath, manifestPath } = await previewUpdateAssets(releaseRoot);
+  const assets = [previewAsset, zipPath, manifestPath];
 
   const releaseExists = runGh(["release", "view", previewTag], { allowFailure: true });
   if (!releaseExists) {
@@ -58,7 +86,7 @@ export async function publishPreviewRelease(releaseDirectory) {
       "release",
       "create",
       previewTag,
-      previewAsset,
+      ...assets,
       "--prerelease",
       "--title",
       previewTitle,
@@ -68,7 +96,7 @@ export async function publishPreviewRelease(releaseDirectory) {
     return;
   }
 
-  runGh(["release", "upload", previewTag, previewAsset, "--clobber"]);
+  runGh(["release", "upload", previewTag, ...assets, "--clobber"]);
   runGh([
     "release",
     "edit",

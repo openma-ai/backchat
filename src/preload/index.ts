@@ -19,6 +19,7 @@ import type {
   SessionStartResult,
 } from "../shared/session-events.js";
 import type { Settings } from "../shared/settings.js";
+import type { AppUpdateState } from "../shared/app-update.js";
 import type { OpenMAEvent } from "@openma/common/session-events/openma";
 
 const api: BackchatApi = {
@@ -240,6 +241,14 @@ const api: BackchatApi = {
     const listener = (_e: IpcRendererEvent, s: Settings) => handler(s);
     ipcRenderer.on(PushChannel.SettingsChanged, listener);
     return () => ipcRenderer.removeListener(PushChannel.SettingsChanged, listener);
+  },
+  updateGetState: () => ipcRenderer.invoke(InvokeChannel.UpdateGetState) as Promise<AppUpdateState>,
+  updateCheck: () => ipcRenderer.invoke(InvokeChannel.UpdateCheck) as Promise<AppUpdateState>,
+  updateInstall: () => ipcRenderer.invoke(InvokeChannel.UpdateInstall) as Promise<AppUpdateState>,
+  onUpdateState: (handler) => {
+    const listener = (_e: IpcRendererEvent, state: AppUpdateState) => handler(state);
+    ipcRenderer.on(PushChannel.UpdateState, listener);
+    return () => ipcRenderer.removeListener(PushChannel.UpdateState, listener);
   },
   mcpAppResolve: (p) =>
     ipcRenderer.invoke(InvokeChannel.McpAppResolve, p) as Promise<

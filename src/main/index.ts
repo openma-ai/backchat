@@ -29,6 +29,7 @@ import {
   resolveBundledNpmCliPath,
 } from "./bundled-node-runtime.js";
 import { configureAppLog, logAppEvent } from "./app-log.js";
+import { startAppUpdater } from "./app-updater.js";
 import { resolveRemoteDebugging } from "./remote-debugging.js";
 
 // Chromium's OSCrypt otherwise initializes the macOS system credential store
@@ -68,6 +69,7 @@ const e2eHiddenTitleBar = testHooksEnabled && process.env["BACKCHAT_E2E_HIDDEN_T
 const pendingDeepLinks: BackchatDeepLink[] = [];
 let disposeSessionsForShutdown: (() => Promise<void>) | null = null;
 let hasLocalProcesses = () => false;
+let startUpdater: (() => Promise<unknown>) | null = null;
 let openmaRunner: OpenmaRunner | null = null;
 
 function registerBackchatProtocolClient(): void {
@@ -552,6 +554,7 @@ if (!gotLock) {
       focusedWebContentsSend: sendToFocused,
     });
 
+    await startUpdater?.();
     createWindow(startupStartedAt);
     logStartupStage("window_created");
     const initialDeepLink = findBackchatDeepLink(process.argv);
@@ -596,6 +599,7 @@ const quitCoordinator = new QuitCoordinator({
   },
   quit: () => app.quit(),
 });
+startUpdater = () => startAppUpdater(quitCoordinator);
 
 app.on("before-quit", (event) => {
   if (!quitCoordinator.request()) event.preventDefault();

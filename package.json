@@ -37,9 +37,9 @@
     "test:e2e": "electron-vite build && playwright test",
     "test:verify": "pnpm run typecheck && pnpm run test && pnpm run test:e2e:fast",
     "runtime:prepare": "node scripts/prepare-bundled-npm-runtime.mjs",
-    "package": "electron-vite build && pnpm run runtime:prepare && electron-builder",
+    "package": "electron-vite build && pnpm run runtime:prepare && node scripts/write-update-metadata.mjs && electron-builder",
     "package:browser-extension": "tsx scripts/package-browser-extension.ts",
-    "package:dir": "electron-vite build && pnpm run runtime:prepare && electron-builder --dir",
+    "package:dir": "electron-vite build && pnpm run runtime:prepare && node scripts/write-update-metadata.mjs && electron-builder --dir",
     "rebuild": "electron-rebuild -f -w better-sqlite3,node-pty",
     "test:e2e:openma": "electron-vite build && playwright test e2e/openma-account.spec.ts e2e/openma-cloud.spec.ts e2e/openma-daemon-ownership.spec.ts e2e/openma-tenants.spec.ts e2e/direct-agents.spec.ts e2e/power-management.spec.ts e2e/quit-confirmation.spec.ts"
   },
@@ -170,6 +170,14 @@
         "from": "src/cli",
         "to": "cli",
         "filter": ["**/*.mjs"]
+      },
+      {
+        "from": "build/update-metadata.json",
+        "to": "update-metadata.json"
+      },
+      {
+        "from": "scripts/apply-mac-update.sh",
+        "to": "apply-mac-update.sh"
       }
     ],
     "asarUnpack": [
@@ -179,7 +187,8 @@
       "identity": "-",
       "hardenedRuntime": false,
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "category": "public.app-category.developer-tools"
     },

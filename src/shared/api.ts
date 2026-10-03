@@ -6,6 +6,7 @@
  */
 
 import type { OpenmaAccountApi } from "./openma.js";
+import type { AppUpdateState } from "./app-update.js";
 import type { PastedImageMimeType } from "./image-bytes.js";
 import type {
   BrowserAssetBundleResult,
@@ -605,6 +606,14 @@ export interface BackchatApi extends OpenmaAccountApi {
   settingsPatch(partial: Partial<Settings>): Promise<void>;
   /** Notified on every patch. Returns an unsubscribe fn. */
   onSettingsChanged(handler: (s: Settings) => void): () => void;
+
+  /** Installed version, channel, and the latest update check. */
+  updateGetState(): Promise<AppUpdateState>;
+  /** Look for a newer build of this installation's channel. */
+  updateCheck(): Promise<AppUpdateState>;
+  /** Ask the user to restart, then replace the app in /Applications. */
+  updateInstall(): Promise<AppUpdateState>;
+  onUpdateState(handler: (state: AppUpdateState) => void): () => void;
 
   /** Resolve and proxy the official io.modelcontextprotocol/ui extension.
    *  The main process owns MCP transports; untrusted Views never receive

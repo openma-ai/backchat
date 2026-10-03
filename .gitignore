@@ -10,6 +10,7 @@ out
 .tsbuildinfo
 release/
 /build/bundled-npm-runtime.asar
+/build/update-metadata.json
 test-results/
 playwright-report/
 *.bak

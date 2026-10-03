@@ -70,6 +70,9 @@ describe("github ci", () => {
     expect(dmg).toContain("verify-packaged-first-prompt.mjs");
     expect(dmg).toContain("Backchat-arm64.dmg");
     expect(dmg).toContain("gh release create");
+    expect(dmg).toContain("write-update-metadata.mjs");
+    expect(dmg).toContain("write-update-manifest.mjs");
+    expect(dmg).toContain("Backchat-mac-arm64-update.json");
     expect(dmg).not.toContain("continue-on-error");
   });
 });
