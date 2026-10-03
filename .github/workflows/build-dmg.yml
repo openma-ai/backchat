@@ -150,7 +150,13 @@ jobs:
           test "$(printf '%s\n' "$yml" | grep -c .)" -eq 1
           zip=$(find release -type f -name 'Backchat-*.zip' -print)
           test "$(printf '%s\n' "$zip" | grep -c .)" -eq 1
-          gh release create "${GITHUB_REF_NAME}" "$versioned" "$stable" "$zip" "$yml" --generate-notes --verify-tag
+          dmg_blockmap="${versioned}.blockmap"
+          zip_blockmap="${zip}.blockmap"
+          test -f "$dmg_blockmap"
+          test -f "$zip_blockmap"
+          gh release create "${GITHUB_REF_NAME}" \
+            "$versioned" "$stable" "$zip" "$yml" "$dmg_blockmap" "$zip_blockmap" \
+            --generate-notes --verify-tag
 
       - name: Upload packaged first-prompt screenshot
         if: always()

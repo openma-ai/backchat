@@ -73,6 +73,7 @@ describe("github ci", () => {
     expect(dmg).toContain("run-mac-builder.mjs");
     expect(dmg).toContain("preview-mac.yml");
     expect(dmg).toContain("latest-mac.yml");
+    expect(dmg).toContain(".blockmap");
     expect(dmg).toContain("BACKCHAT_REQUIRE_DEVELOPER_ID");
     expect(dmg).toContain("codesign --verify --deep --strict");
     expect(dmg).toContain("spctl -a -vv");
