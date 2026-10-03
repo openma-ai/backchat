@@ -36,7 +36,7 @@ describe("external client work sessions", () => {
       title: "CLI thread",
     });
     setSessionExternalClient("sess-cli", "cursor killer");
-    appendEvent("sess-cli", "user_prompt", JSON.stringify({ text: "hello from cli" }));
+    appendEvent("sess-cli", "user_prompt", { text: "hello from cli" });
 
     const facts = externalClientWorkFacts(projectId, "cursor killer");
     expect(facts.sessions.map((session) => session.id)).toEqual(["sess-cli"]);

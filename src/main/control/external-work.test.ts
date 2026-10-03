@@ -122,7 +122,9 @@ describe("external coordinator work", () => {
     });
     setSessionExternalClient("sess-kept", "cursor killer");
     const sessions = await api.call("session.list", { project_id: project.id }, "cursor killer") as Array<{ id: string }>;
-    expect(sessions.map((session) => session.id)).toEqual(["sess-kept"]);
+    expect(sessions.map((session) => session.id).sort()).toEqual(
+      ["sess-cli-work-view", "sess-kept"].sort(),
+    );
     expect(getSession("sess-kept")?.title).toBe("EVIDENCE_HELLO");
 
     await expect(api.call("work.submit", {
