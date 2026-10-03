@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { CursorCloudSseEvent } from "@openma/common/protocol/cursor-cloud";
 
 export class CursorCloudRequestError extends Error {
@@ -66,8 +65,9 @@ export function cursorCloudRoot(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
 }
 
+/** In-process lookup only. Not a password digest; the key never leaves this process. */
 function cacheKey(baseUrl: string, apiKey: string): string {
-  return createHash("sha256").update(`${cursorCloudRoot(baseUrl)}\n${apiKey}`).digest("hex");
+  return `${cursorCloudRoot(baseUrl)}\n${apiKey}`;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
