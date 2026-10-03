@@ -1071,6 +1071,24 @@ describe("SessionStore history windows", () => {
       `replay-${sessionId}-4`,
     ]);
   });
+
+  test("materializes SQL prompts when a running live turn has no prompt yet", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-cli",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn("live-cli-turn", sessionId, "");
+    store.replayHistoryWindow(sessionId, [
+      { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "from cli" }), ts: 1000 },
+    ], { hasMore: false });
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      promptText: "from cli",
+    });
+  });
 });
 
 describe("SessionStore performance invariants", () => {
@@ -2293,6 +2311,33 @@ describe("SessionStore event reducers", () => {
     expect(turn?.assistantText).toBe("Done");
   });
 
+  test("session.error without turn_id stops the active turn timer", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-error-timer",
+      acp_session_id: "acp-error-timer",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn("turn-error-timer", "sess-error-timer", "hello");
+
+    store.apply({
+      type: "session.error",
+      session_id: "sess-error-timer",
+      message: "Provider disconnected",
+    });
+
+    expect(store.get("sess-error-timer")).toMatchObject({
+      activeTurnId: undefined,
+      status: "ready",
+    });
+    expect(store.turnsFor("sess-error-timer")[0]).toMatchObject({
+      status: "error",
+      errorMessage: "Provider disconnected",
+    });
+  });
+
   test("auth_required settles the live turn without locking the composer", () => {
     const store = new SessionStore();
     store.apply({
@@ -3248,6 +3293,49 @@ describe("SessionStore side chats and native subagents", () => {
     });
     expect(store.activeSideTab()?.type).toBe("chat");
     expect(store.sideActiveId()).toBe(childId);
+  });
+
+  test("turnsFor includes inherited parent turns for a session fork", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "parent-session",
+      acp_session_id: "parent-acp",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+      supports_session_fork: true,
+      fork_support: {
+        level: "session",
+        reason: "message-fork-not-advertised",
+        message: "session fork",
+      },
+    });
+    store.registerTurn("parent-turn", "parent-session", "shared context");
+    store.apply({
+      type: "session.event",
+      session_id: "parent-session",
+      turn_id: "parent-turn",
+      event: { type: "agent.message_chunk", delta: "parent reply" },
+    });
+
+    const forkId = store.newMainForkDraft("parent-session");
+    expect(forkId).toBeTruthy();
+    store.apply({
+      type: "session.ready",
+      session_id: forkId!,
+      acp_session_id: "child-acp",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+
+    const turns = store.turnsFor(forkId!);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({
+      promptText: "shared context",
+      inherited: true,
+      assistantText: "parent reply",
+    });
+    expect(turns[0]!.id).toMatch(/^inherited-/);
   });
 
   test("creates an independent main draft that lazily forks the parent context", () => {

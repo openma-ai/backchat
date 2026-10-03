@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { ProjectWorkCommand, ProjectWorkGoalInput } from "../../shared/project-work.js";
+import type {
+  ProjectWorkCommand,
+  ProjectWorkGoalInput,
+  ProjectWorkView,
+} from "../../shared/project-work.js";
 import { deleteProject } from "../sql-store.js";
 import {
   appendExternalTaskNote,
@@ -28,6 +32,7 @@ import {
   saveProjectCommand,
   showProjectRecord,
 } from "../project-commands.js";
+import { mergeExternalClientSessionsIntoWorkView } from "./external-client-work-sessions.js";
 import { ControlStream, subscribeControlLiveEvents } from "./live-bus.js";
 import { sessionTurnSummary, transcriptFromHistory } from "./transcript.js";
 
@@ -157,12 +162,18 @@ export function createControlApi(deps: ControlApiDeps = {}) {
           }
           const projectId = requiredString(params, "project_id", "Project id");
           if (!getProject(projectId)) throw new ControlError("not_found", `Project not found: ${projectId}`);
-          const view = withExternalWork(projectId, await requireWork(deps.work).view(projectId));
+          const view = withExternalWork(
+            projectId,
+            await requireWork(deps.work).view(projectId),
+          ) as ProjectWorkView;
           const caller = clientName(params, client);
-          if (!caller) return view;
+          const merged = caller
+            ? mergeExternalClientSessionsIntoWorkView(projectId, caller, view)
+            : view;
+          if (!caller) return merged;
           return {
-            ...view,
-            external_tasks: (view.external_tasks ?? []).filter((task) => task.coordinator_name === caller),
+            ...merged,
+            external_tasks: (merged.external_tasks ?? []).filter((task) => task.coordinator_name === caller),
           };
         }
         case "work.goal":

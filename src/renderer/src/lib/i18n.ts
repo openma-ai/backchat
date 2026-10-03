@@ -767,6 +767,7 @@ const en = {
 
   "sideChat.fileHint": "Browse project files",
   "sideChat.forkHint": "Fork the current context",
+  "sideChat.freshHint": "Start a separate side thread",
   "sideChat.browserHint": "Open a website",
   "sideChat.terminal": "Terminal",
   "sideChat.terminalHint": "Start an interactive shell",
@@ -1560,6 +1561,7 @@ const zhCN: Partial<Record<TranslationKey, string>> = {
 
   "sideChat.fileHint": "浏览项目文件",
   "sideChat.forkHint": "继承当前上下文",
+  "sideChat.freshHint": "开启独立侧对话",
   "sideChat.browserHint": "打开网站",
   "sideChat.terminal": "终端",
   "sideChat.terminalHint": "启动交互式 Shell",

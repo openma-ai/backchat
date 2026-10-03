@@ -41,6 +41,7 @@ import {
   messageForkEnabled,
   wholeSessionForkEnabled,
 } from "./fork-support.js";
+import { forkPointsByTurn } from "./fork-point.js";
 import { sessionUsesManagedWorkspace } from "./fork-workspace";
 import {
   createOpenMAEvent,
@@ -493,6 +494,48 @@ export class SessionStore {
       : null;
   }
 
+  #forkLineageParent(session: SessionRow | undefined): string | undefined {
+    if (!session) return undefined;
+    return session.parentSessionId
+      ?? session.forkParent?.parentSessionId
+      ?? (session.sideParent?.inheritance === "fork"
+        ? session.sideParent.parentSessionId
+        : undefined);
+  }
+
+  #ownTurnsFor(sessionId: string): Turn[] {
+    return [...this.#turns.values()].filter(
+      (t) => t.sessionId === sessionId && !t.inherited,
+    );
+  }
+
+  #parentTurnsIncludedInFork(
+    parentTurns: Turn[],
+    forkKind: SessionRow["forkKind"],
+    forkPoint?: AcpForkPoint,
+  ): Turn[] {
+    if (forkKind !== "message" || !forkPoint) return parentTurns;
+    const points = forkPointsByTurn(parentTurns);
+    for (let index = 0; index < parentTurns.length; index += 1) {
+      const point = points.get(parentTurns[index]!.id);
+      if (point?.messageId === forkPoint.messageId) {
+        return parentTurns.slice(0, index + 1);
+      }
+    }
+    return parentTurns;
+  }
+
+  #cloneInheritedTurn(childId: string, turn: Turn): Turn {
+    return {
+      ...turn,
+      id: `inherited-${childId}-${turn.id}`,
+      sessionId: childId,
+      inherited: true,
+      status: turn.status === "running" ? "complete" : turn.status,
+      events: turn.events.map((event) => ({ ...event })),
+    };
+  }
+
   turnsFor(sessionId: string): Turn[] {
     // Registration order, which is what this Map already holds: replayed turns
     // are built from persisted rows in stored sequence, and live turns are
@@ -503,7 +546,20 @@ export class SessionStore {
     // turns whose clock disagreed with their sequence — a turn synthesized from
     // its first event can stamp itself after a turn that started before it —
     // and rendered a newly sent prompt inside an earlier turn's output.
-    return [...this.#turns.values()].filter((t) => t.sessionId === sessionId);
+    const own = this.#ownTurnsFor(sessionId);
+    const session = this.#sessions.get(sessionId);
+    const parentId = this.#forkLineageParent(session);
+    if (!parentId) return own;
+    const parentTurns = this.#parentTurnsIncludedInFork(
+      this.#ownTurnsFor(parentId),
+      session?.forkKind
+        ?? (session?.forkParent?.point ? "message" : "session"),
+      session?.forkPoint ?? session?.forkParent?.point,
+    );
+    const inherited = parentTurns.map((turn) =>
+      this.#cloneInheritedTurn(sessionId, turn),
+    );
+    return [...inherited, ...own];
   }
 
   subagentsFor(parentSessionId: string): SubagentActivity[] {
@@ -3031,7 +3087,8 @@ export class SessionStore {
     opts: { hasMore: boolean },
   ): void {
     this.#historyPending.delete(sessionId);
-    if (this.#hasSessionTurns(sessionId)) { this.#emit(); return; }
+    if (!this.#shouldMaterializeHistoryFromSql(sessionId)) { this.#emit(); return; }
+    this.#clearMaterializableTurns(sessionId);
     this.#history.set(sessionId, { rows: [...rows], hasMore: opts.hasMore, loading: false });
     this.#replayRows(sessionId, rows, { partialHead: opts.hasMore, notices: true });
   }
@@ -3101,6 +3158,28 @@ export class SessionStore {
     return false;
   }
 
+  /** Live turns win over SQL replay. Placeholder replay heads (and inherited
+   *  parent rows) must not block materializing persisted user prompts — e.g.
+   *  a CLI-started thread whose GUI resume races ahead of history fetch. */
+  #shouldMaterializeHistoryFromSql(sessionId: string): boolean {
+    const replayPrefix = `replay-${sessionId}-`;
+    for (const turn of this.#turns.values()) {
+      if (turn.sessionId !== sessionId || turn.inherited) continue;
+      if (turn.promptText?.trim()) return false;
+      if (
+        turn.id.startsWith(replayPrefix)
+        || turn.id.startsWith("inherited-")
+      ) {
+        continue;
+      }
+      // Resume can register a running turn before SQL history lands; still
+      // materialize the persisted user prompt when the live row is empty.
+      if (turn.status === "running" && !turn.promptText?.trim()) continue;
+      return false;
+    }
+    return true;
+  }
+
   /** Replay persisted events into a turn structure so the chat view can
    *  render history. `events` rows come from sessions.loadHistory; we
    *  collapse them into one Turn per user_prompt boundary so the visual
@@ -3113,9 +3192,18 @@ export class SessionStore {
     // guard, wiping and re-creating turns from SQL kills the user's
     // currently-streaming bubble.
     this.#historyPending.delete(sessionId);
-    if (this.#hasSessionTurns(sessionId)) { this.#emit(); return; }
+    if (!this.#shouldMaterializeHistoryFromSql(sessionId)) { this.#emit(); return; }
+    this.#clearMaterializableTurns(sessionId);
     this.#history.delete(sessionId);
     this.#replayRows(sessionId, rows, { partialHead: false, notices: true });
+  }
+
+  #clearMaterializableTurns(sessionId: string): void {
+    for (const [id, turn] of this.#turns) {
+      if (turn.sessionId === sessionId && !turn.inherited) {
+        this.#turns.delete(id);
+      }
+    }
   }
 
   #replayRows(
@@ -3596,6 +3684,7 @@ export class SessionStore {
                 : s.sideParent?.inheritance === "fork"
                   ? (s.sideParent.point ? "message" : "session")
                   : undefined),
+            forkPoint: s.forkPoint ?? s.forkParent?.point ?? s.sideParent?.point,
             forkParent: undefined,
             acp_session_id: ev.acp_session_id,
             agent_id: ev.agent_id,
@@ -4305,7 +4394,7 @@ export class SessionStore {
           || isAuthenticationFailureMessage(ev.message);
         const message = sanitizeAuthenticationMessage(ev.message);
         const turnId = ev.turn_id
-          ?? (authRequired ? this.#sessions.get(ev.session_id)?.activeTurnId : undefined);
+          ?? this.#sessions.get(ev.session_id)?.activeTurnId;
         if (turnId) {
           const projectedTurnId = this.#settleSteeringProjection(
             ev.session_id,
@@ -4332,8 +4421,8 @@ export class SessionStore {
           // Auth is recoverable from this chat. Other session-wide errors
           // (unknown agent, missing binary, handshake refused) still lock.
           status: authRequired
-            ? (s.activeTurnId ? "running" : "ready")
-            : ev.turn_id ? s.status : "errored",
+            ? "ready"
+            : turnId ? s.status : "errored",
           lastError: authRequired ? undefined : message,
           authRequired: authRequired ? true : s.authRequired,
           auth: ev.auth ?? (authRequired

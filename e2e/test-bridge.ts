@@ -15,6 +15,9 @@ export type SessionRowFixture = {
   /** Negotiated capabilities a real session would report on session.ready.
    *  Controls that only render when they can act need these to be declared. */
   supports_steering?: boolean;
+  external_client?: string;
+  supports_session_fork?: boolean;
+  fork_support?: import("@openma/common/acp-runtime").AcpForkSupport;
 };
 
 export type PersistedSessionFixture = {

@@ -62,6 +62,8 @@ export interface SessionRow {
   parentSessionId?: string;
   /** `session` forks the whole session. `message` forks from one reply. */
   forkKind?: "session" | "message";
+  /** Inclusive message fork point kept after `session.ready`. */
+  forkPoint?: AcpForkPoint;
   /** Parent-child task metadata for side subagents. The optional ACP parent
    *  id is only used for fork-based context seeding; task progress is tracked
    *  in Backchat's own store. */
@@ -429,6 +431,8 @@ export interface Turn {
   errorMessage?: string;
   startedAt: number;
   endedAt?: number;
+  /** Read-only parent transcript mounted into a forked child session. */
+  inherited?: boolean;
 }
 
 export interface TurnDeliveryMeta {

@@ -28,6 +28,7 @@ export function RightPanelLauncher({
   onPickProcess,
   onOpenSchedule,
   canStartSideChat,
+  canForkSideChat = false,
   browserEnabled,
   artifacts,
   subagents,
@@ -41,6 +42,8 @@ export function RightPanelLauncher({
   onPickProcess: (process: AcpTerminalInfo) => void;
   onOpenSchedule: (schedule: ScheduleInfo) => void;
   canStartSideChat: boolean;
+  /** When false, side chat starts fresh — do not promise fork inheritance. */
+  canForkSideChat?: boolean;
   browserEnabled: boolean;
   artifacts: WorkspaceArtifacts;
   subagents: SubagentActivity[];
@@ -101,7 +104,7 @@ export function RightPanelLauncher({
         <NewAction
           type="chat"
           label={t("sideChat.title")}
-          hint={t("sideChat.forkHint")}
+          hint={canForkSideChat ? t("sideChat.forkHint") : t("sideChat.freshHint")}
           icon={<MessageSquareIcon className="size-4" />}
           disabled={!canStartSideChat}
           onClick={() => onPick("chat")}

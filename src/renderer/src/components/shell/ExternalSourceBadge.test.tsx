@@ -18,7 +18,7 @@ describe("external source badge", () => {
       <ExternalSourceBadge client="cursor killer" />,
     );
     expect(html).toContain('data-testid="external-source-badge"');
-    expect(html).toContain('title="Started by cursor killer"');
+    expect(html).toContain('aria-label="Started by cursor killer"');
     expect(html).not.toContain("External ·");
   });
 });

@@ -51,7 +51,7 @@ import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
+import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionExternalClient, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
 import type { PersistedSession } from "./sql-store.js";
 import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
@@ -1246,6 +1246,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
           cwd: string;
           acp_session_id?: string;
           supports_steering?: boolean;
+          external_client?: string;
+          supports_session_fork?: boolean;
+          fork_support?: import("@openma/common/acp-runtime").AcpForkSupport;
         },
       ) => {
         // Canonical enrichment persists session.ready before broadcasting it.
@@ -1257,6 +1260,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
           acp_session_id: p.acp_session_id ?? `acp-${p.session_id}`,
           last_used_at: Date.now(),
         });
+        if (p.external_client?.trim()) {
+          setSessionExternalClient(p.session_id, p.external_client.trim());
+        }
         send({
           type: "session.ready",
           session_id: p.session_id,
@@ -1269,6 +1275,13 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
           ...(p.supports_steering === undefined
             ? {}
             : { supports_steering: p.supports_steering }),
+          ...(p.external_client?.trim()
+            ? { external_client: p.external_client.trim() }
+            : {}),
+          ...(p.supports_session_fork === undefined
+            ? {}
+            : { supports_session_fork: p.supports_session_fork }),
+          ...(p.fork_support ? { fork_support: p.fork_support } : {}),
         });
       },
     );
