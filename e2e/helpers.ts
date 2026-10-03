@@ -26,6 +26,7 @@ import {
   TestBridge,
   type ExportSessionFilesResult,
   type PersistedSessionFixture,
+  type SessionRowFixture,
 } from "./test-bridge";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -302,6 +303,9 @@ export async function injectSession(
     agentId?: string;
     cwd?: string;
     supportsSteering?: boolean;
+    externalClient?: string;
+    supportsSessionFork?: boolean;
+    forkSupport?: SessionRowFixture["fork_support"];
   } = {},
 ): Promise<string> {
   // A reload can finish before React subscribes to the push bridge.
@@ -317,6 +321,11 @@ export async function injectSession(
     ...(opts.supportsSteering === undefined
       ? {}
       : { supports_steering: opts.supportsSteering }),
+    ...(opts.externalClient ? { external_client: opts.externalClient } : {}),
+    ...(opts.supportsSessionFork === undefined
+      ? {}
+      : { supports_session_fork: opts.supportsSessionFork }),
+    ...(opts.forkSupport ? { fork_support: opts.forkSupport } : {}),
   });
   const sessionButton = page.getByRole("button", {
     name: `${agentId} · ${sessionId.slice(0, 6)}`,

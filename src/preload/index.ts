@@ -642,6 +642,9 @@ if (process.env["BACKCHAT_TEST_HOOKS"] === "1") {
       cwd: string;
       acp_session_id?: string;
       supports_steering?: boolean;
+      external_client?: string;
+      supports_session_fork?: boolean;
+      fork_support?: import("@openma/common/acp-runtime").AcpForkSupport;
     }) => ipcRenderer.invoke(InvokeChannel.TestInjectSessionRow, p),
     injectSessionEvent: (msg: unknown) =>
       ipcRenderer.invoke(InvokeChannel.TestInjectSessionEvent, msg),
