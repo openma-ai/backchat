@@ -22,6 +22,8 @@ interface SessionMetaFile {
   pinnedAt: number | null;
   pairId: string | null;
   additionalDirectories: string[] | null;
+  parentSessionId: string | null;
+  forkKind: "session" | "message" | null;
   metadataPath: string;
   transcriptPath: string;
 }
@@ -75,6 +77,13 @@ export function rebuildSessionIndexFromTranscriptFiles(
       .map((column) => column.name),
   );
   const supportsWorkspaceRoots = sessionColumns.has("additional_directories_json");
+  const supportsForkLineage = sessionColumns.has("parent_session_id")
+    && sessionColumns.has("fork_kind");
+  const updateForkLineage = supportsForkLineage
+    ? db.prepare(
+      `UPDATE sessions SET parent_session_id = ?, fork_kind = ? WHERE id = ?`,
+    )
+    : null;
   const insertSession = db.prepare(supportsWorkspaceRoots ? `
     INSERT OR IGNORE INTO sessions (
       id, agent_id, cwd, acp_session_id, title, last_used_at, created_at,
@@ -137,7 +146,12 @@ export function rebuildSessionIndexFromTranscriptFiles(
             ]
           : sessionValues
       ));
-      if (!alreadyHadSession) sessionsImported += 1;
+      if (!alreadyHadSession) {
+        sessionsImported += 1;
+        if (updateForkLineage && (meta.parentSessionId || meta.forkKind)) {
+          updateForkLineage.run(meta.parentSessionId, meta.forkKind, meta.sessionId);
+        }
+      }
 
       const existingEvents = eventCount.get(meta.sessionId) as { count: number };
       if (Number(existingEvents.count) > 0) continue;
@@ -231,6 +245,10 @@ function readSessionMeta(
     pinnedAt: null,
     pairId: stringField(raw, "pair_id") || null,
     additionalDirectories: stringArrayField(raw, "additional_directories"),
+    parentSessionId: stringField(raw, "parent_session_id") || null,
+    forkKind: raw["fork_kind"] === "session" || raw["fork_kind"] === "message"
+      ? raw["fork_kind"]
+      : null,
     metadataPath,
     transcriptPath,
   };

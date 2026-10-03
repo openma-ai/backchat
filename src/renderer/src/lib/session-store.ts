@@ -41,6 +41,7 @@ import {
   messageForkEnabled,
   wholeSessionForkEnabled,
 } from "./fork-support.js";
+import { sessionUsesManagedWorkspace } from "./fork-workspace";
 import {
   createOpenMAEvent,
   reduceWorkItems,
@@ -1896,21 +1897,33 @@ export class SessionStore {
     const parent = opts?.parentSessionId
       ? this.#sessions.get(opts.parentSessionId)
       : undefined;
+    const managedParent = parent ? sessionUsesManagedWorkspace(parent) : false;
+    const inheritedCwd = (opts?.cwd ?? parent?.cwd ?? "").trim();
     this.#sessions.set(id, {
       id,
       agent_id: opts?.agentId ?? parent?.agent_id ?? "",
-      cwd: opts?.cwd ?? parent?.cwd ?? "",
+      cwd: inheritedCwd,
       acp_session_id: "",
       label: "",
       kind: "side",
       sideKind: "chat",
       status: "draft",
       createdAt: Date.now(),
-      projectId: parent?.projectId,
-      additionalDirectories: parent?.additionalDirectories
-        ? [...parent.additionalDirectories]
+      chosenCwd: parent && !managedParent
+        ? (parent.chosenCwd?.trim() || inheritedCwd || undefined)
         : undefined,
-      projectScope: parent?.projectScope,
+      projectId: managedParent ? undefined : parent?.projectId,
+      additionalDirectories: managedParent
+        ? undefined
+        : parent?.additionalDirectories
+          ? [...parent.additionalDirectories]
+          : undefined,
+      workspaceId: managedParent ? undefined : parent?.workspaceId,
+      projectScope: parent ? (managedParent ? "none" : "project") : undefined,
+      // A side draft already inherited its parent workspace. Leaving this
+      // unset lets the project chip replace a managed folder with the last
+      // project the user opened.
+      projectSelectionExplicit: !!parent,
       configOptions: parent?.configOptions?.map((option) => ({ ...option })),
       currentModeId: parent?.currentModeId,
       availableCommands: parent?.availableCommands?.map((command) => ({
@@ -1946,22 +1959,29 @@ export class SessionStore {
     }
     if (point && !messageForkEnabled(parent.forkSupport)) return null;
     const id = `fork-${Math.random().toString(36).slice(2, 10)}`;
+    const managedParent = sessionUsesManagedWorkspace(parent);
+    const projectCwd = (parent.chosenCwd || parent.cwd || "").trim() || undefined;
     this.#sessions.set(id, {
       id,
       agent_id: parent.agent_id,
-      cwd: parent.cwd,
+      cwd: managedParent ? parent.cwd : (projectCwd ?? parent.cwd),
       acp_session_id: "",
       label: "",
       kind: "main",
       status: "draft",
       createdAt: Date.now(),
-      projectId: parent.projectId,
-      additionalDirectories: parent.additionalDirectories
-        ? [...parent.additionalDirectories]
-        : undefined,
-      // "Continue in new chat" keeps working on the same checkout set.
-      workspaceId: parent.workspaceId,
-      projectScope: parent.projectScope,
+      chosenCwd: managedParent ? undefined : projectCwd,
+      projectId: managedParent ? undefined : parent.projectId,
+      additionalDirectories: managedParent
+        ? undefined
+        : parent.additionalDirectories
+          ? [...parent.additionalDirectories]
+          : undefined,
+      // A project fork stays on the same checkout set. A managed fork must
+      // not inherit that private folder as if it were a project.
+      workspaceId: managedParent ? undefined : parent.workspaceId,
+      projectScope: managedParent ? "none" : "project",
+      projectSelectionExplicit: true,
       configOptions: parent.configOptions?.map((option) => ({ ...option })),
       currentModeId: parent.currentModeId,
       availableCommands: parent.availableCommands?.map((command) => ({
@@ -2905,6 +2925,8 @@ export class SessionStore {
       additional_directories?: string[];
       workspace_id?: string | null;
       external_client?: string | null;
+      parent_session_id?: string | null;
+      fork_kind?: "session" | "message" | null;
     }>,
   ): void {
     for (const r of rows) {
@@ -2930,6 +2952,10 @@ export class SessionStore {
             r.additional_directories ?? s.additionalDirectories,
           workspaceId: r.workspace_id ?? s.workspaceId,
           externalClient: r.external_client ?? s.externalClient,
+          parentSessionId: r.parent_session_id || s.parentSessionId,
+          forkKind: r.fork_kind === "session" || r.fork_kind === "message"
+            ? r.fork_kind
+            : s.forkKind,
           acp_session_id: r.acp_session_id || s.acp_session_id,
           label: r.title || s.label,
           titleManuallySet: r.title_manually_set === 1 || s.titleManuallySet,
@@ -2949,6 +2975,10 @@ export class SessionStore {
         additionalDirectories: r.additional_directories,
         workspaceId: r.workspace_id ?? undefined,
         externalClient: r.external_client || undefined,
+        parentSessionId: r.parent_session_id || undefined,
+        forkKind: r.fork_kind === "session" || r.fork_kind === "message"
+          ? r.fork_kind
+          : undefined,
         acp_session_id: r.acp_session_id,
         label: r.title || "New chat",
         titleManuallySet: r.title_manually_set === 1,
@@ -3555,6 +3585,17 @@ export class SessionStore {
         if (existing) {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
+            parentSessionId: s.parentSessionId
+              ?? s.forkParent?.parentSessionId
+              ?? (s.sideParent?.inheritance === "fork"
+                ? s.sideParent.parentSessionId
+                : undefined),
+            forkKind: s.forkKind
+              ?? (s.forkParent
+                ? (s.forkParent.point ? "message" : "session")
+                : s.sideParent?.inheritance === "fork"
+                  ? (s.sideParent.point ? "message" : "session")
+                  : undefined),
             forkParent: undefined,
             acp_session_id: ev.acp_session_id,
             agent_id: ev.agent_id,

@@ -31,6 +31,7 @@ import { buildComposerSubmitText, canSubmitComposer, resolveComposerKeyAction } 
 import {
   HOST_PLAN_COMMAND,
   hostSessionStateAction,
+  isBareHostForkText,
   isHostForkSlashCommand,
   isSkillSlashCommand,
   pendingArgumentCommand,
@@ -623,10 +624,19 @@ export function Composer({
     );
   };
 
+  /** `/fork` navigates away immediately. The draft-store write has to happen
+   *  before that, outside a setState updater: unmounting drops the updater
+   *  and leaves `/fork` plus the command menu on the source session. */
+  const clearHostForkComposer = () => {
+    composerTextBySession.write(composerTextKey, "");
+    setTextState("");
+    reportComposerContent("");
+    clearDismissal();
+  };
+
   const pickCommand = (cmd: AcpAvailableCommand) => {
     if (isHostForkSlashCommand(cmd)) {
-      setText("");
-      clearDismissal();
+      clearHostForkComposer();
       onFork?.();
       return;
     }
@@ -804,6 +814,11 @@ export function Composer({
     // A bare session-state command (`/plan`) is a config switch even when
     // the picker was dismissed or never opened — it must not leave the app
     // as a prompt.
+    if (bare && canFork && isBareHostForkText(promptText)) {
+      clearHostForkComposer();
+      onFork?.();
+      return;
+    }
     if (bare && !isRemote) {
       const stateCommand =
         composerAvailableCommands.find(

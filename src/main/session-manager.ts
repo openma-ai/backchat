@@ -964,6 +964,11 @@ export class SessionManager {
       // can later derive it from the first user prompt or let the user
       // rename. ACP session id is captured so we can pass it back as
       // resume.acp_session_id on next launch.
+      const forkKind = p.fork_kind === "session" || p.fork_kind === "message"
+        ? p.fork_kind
+        : p.fork?.acp_session_id
+          ? (p.fork.point ? "message" : "session")
+          : null;
       upsertSession({
         id: p.session_id,
         agent_id: agent.id,
@@ -973,6 +978,8 @@ export class SessionManager {
         project_id: projectId || null,
         additional_directories: additionalDirectories,
         workspace_id: workspaceId,
+        parent_session_id: p.parent_session_id?.trim() || null,
+        fork_kind: forkKind,
       });
       if (p.external_client?.trim()) {
         setSessionExternalClient(p.session_id, p.external_client);

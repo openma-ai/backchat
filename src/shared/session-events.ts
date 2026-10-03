@@ -59,6 +59,11 @@ export interface SessionStartParams {
    *  The main process passes it as `SessionOptions.forkPoint` and does not
    *  build `_meta` itself. */
   fork?: { acp_session_id: string; point?: AcpForkPoint };
+  /** Backchat session that this fork was created from. Persisted with the
+   *  child so the lineage survives `session.ready` clearing the live link. */
+  parent_session_id?: string;
+  /** `session` is a whole-session fork. `message` keeps an inclusive point. */
+  fork_kind?: "session" | "message";
 }
 
 export type SessionStartResult =

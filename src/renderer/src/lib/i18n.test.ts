@@ -141,4 +141,41 @@ describe("i18n", () => {
     expect(sidebar).toContain('data-testid="new-chat-button"');
     expect(e2eHelpers).toContain('getByTestId("new-chat-button")');
   });
+
+  it("translates fork actions and does not surface the English capability reason", async () => {
+    const { translate } = await loadI18n();
+    expect(translate?.("zh-CN", "chat.forkFromHere")).toBe("从这里分支");
+    expect(translate?.("zh-CN", "chat.continueInNewChat")).toBe("在新对话中继续");
+    expect(translate?.("en", "chat.forkFromHere")).toBe("Fork from here");
+    expect(translate?.("en", "chat.continueInNewChat")).toBe("Continue in new chat");
+
+    const reasons = [
+      "This agent has not reported whether it can fork a session.",
+      "This agent does not support forking a session.",
+      "This agent can fork the whole session but not from a specific message.",
+      "This agent advertised a message fork capability this client does not recognize.",
+      "This agent can fork from a specific message.",
+    ];
+    for (const relative of [
+      "../components/chat/ChatTurn.tsx",
+      "../components/chat/ChatView.tsx",
+      "../components/chat/Composer.tsx",
+      "../components/chat/ComposerSlashCommandMenu.tsx",
+    ]) {
+      const source = readFileSync(resolve(__dirname, relative), "utf8");
+      for (const reason of reasons) expect(source).not.toContain(reason);
+    }
+    const chatTurn = readFileSync(
+      resolve(__dirname, "../components/chat/ChatTurn.tsx"),
+      "utf8",
+    );
+    const chatView = readFileSync(
+      resolve(__dirname, "../components/chat/ChatView.tsx"),
+      "utf8",
+    );
+    expect(chatTurn).toContain('t("chat.continueInNewChat")');
+    expect(chatTurn).toContain("aria-label={forkTitle}");
+    expect(chatTurn).not.toContain("disabled=");
+    expect(chatView).toContain('t("chat.forkFromHere")');
+  });
 });

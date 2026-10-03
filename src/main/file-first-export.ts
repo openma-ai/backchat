@@ -41,6 +41,8 @@ export async function exportSessionFiles(
       "sessions",
       "additional_directories_json",
     );
+    const hasForkLineage = columnExists(db, "sessions", "parent_session_id")
+      && columnExists(db, "sessions", "fork_kind");
     const sessions = db.prepare(`
       SELECT
         id,
@@ -55,7 +57,10 @@ export async function exportSessionFiles(
         pair_id,
         ${hasWorkspaceRoots
           ? "additional_directories_json"
-          : "NULL AS additional_directories_json"}
+          : "NULL AS additional_directories_json"},
+        ${hasForkLineage
+          ? "parent_session_id, fork_kind"
+          : "NULL AS parent_session_id, NULL AS fork_kind"}
       FROM sessions
       ORDER BY created_at ASC, id ASC
     `).all() as unknown as PersistedSessionRow[];
@@ -130,6 +135,8 @@ export async function exportSessionFiles(
             created_at: session.created_at,
             last_used_at: session.last_used_at,
             pair_id: session.pair_id ?? "",
+            parent_session_id: session.parent_session_id ?? "",
+            fork_kind: session.fork_kind ?? "",
             workdir: session.cwd,
             ...(additionalDirectories !== null
               ? { additional_directories: additionalDirectories }
@@ -201,6 +208,8 @@ interface PersistedSessionRow {
   pinned_at: number | null;
   pair_id: string | null;
   additional_directories_json: string | null;
+  parent_session_id: string | null;
+  fork_kind: string | null;
 }
 
 interface PersistedEventRow {

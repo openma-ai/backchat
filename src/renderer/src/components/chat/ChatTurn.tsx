@@ -64,8 +64,6 @@ export const TurnBlock = memo(function TurnBlock({
 }: {
   turn: Turn;
   onFork?: () => void;
-  /** Visible name for the single fork button. Session fork keeps the
-   *  continue-in-new-chat label; message fork passes "Fork from here". */
   forkLabel?: string;
 }) {
   const { t } = useI18n();

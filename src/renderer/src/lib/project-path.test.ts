@@ -11,6 +11,9 @@ describe("isPerSessionFolderPath", () => {
         String.raw`C:\Users\mini\.oma\sessions\sess-rfwr779u`,
       ),
     ).toBe(true);
+    expect(
+      isPerSessionFolderPath("/Users/minimax/.oma/sessions/fork-ab12cd34"),
+    ).toBe(true);
   });
 
   it("keeps ordinary project folders", () => {

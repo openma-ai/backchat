@@ -226,6 +226,11 @@ export function isHostForkSlashCommand(
   return command.kind === "host-fork" && command.name === "fork";
 }
 
+/** Typed `/fork` with the picker closed is still the host action. */
+export function isBareHostForkText(text: string): boolean {
+  return text.trim().toLowerCase() === "/fork";
+}
+
 export function matchesSlashCommand(
   commandName: string,
   query: string,

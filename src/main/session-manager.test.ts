@@ -358,6 +358,7 @@ describe("SessionManager prompt queue", () => {
       title_manually_set: 1, created_at: 1, last_used_at: 2,
       archived_at: null, pinned_at: null, project_id: "project-original",
       additional_directories: [PROJECT_ROOT], workspace_id: null, pair_id: null,
+      parent_session_id: null, fork_kind: null,
     });
     const send = vi.fn();
     const manager = new SessionManager({
@@ -384,6 +385,7 @@ describe("SessionManager prompt queue", () => {
       title_manually_set: 1, created_at: 1, last_used_at: 2,
       archived_at: null, pinned_at: null, project_id: null,
       additional_directories: [], workspace_id: null, pair_id: null,
+      parent_session_id: null, fork_kind: null,
     });
     const send = vi.fn();
     const manager = new SessionManager({
@@ -1298,6 +1300,57 @@ describe("SessionManager prompt queue", () => {
         id: "sess-multi-root",
         cwd: PROJECT_ROOT,
         project_id: "proj-workspace",
+      }),
+    );
+  });
+
+  it("persists fork lineage and ignores a requested project cwd for a managed fork", async () => {
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ cwd: "/default-project" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-fork-child",
+      agent_id: "codex-acp",
+      workspace_mode: "managed",
+      cwd: "/last-project",
+      project_id: "proj-last",
+      parent_session_id: "sess-parent",
+      fork_kind: "message",
+      fork: {
+        acp_session_id: "acp-parent",
+        point: {
+          messageId: "assistant-1",
+          messageText: "Hello",
+          messageOccurrence: 1,
+        },
+      },
+    });
+
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({ cwd: "/tmp/backchat-test" }),
+        forkFromAcpSessionId: "acp-parent",
+        forkPoint: {
+          messageId: "assistant-1",
+          messageText: "Hello",
+          messageOccurrence: 1,
+        },
+      }),
+    );
+    expect(vi.mocked(upsertSession)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "sess-fork-child",
+        cwd: "/tmp/backchat-test",
+        parent_session_id: "sess-parent",
+        fork_kind: "message",
       }),
     );
   });

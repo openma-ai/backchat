@@ -177,6 +177,10 @@ export interface PersistedSessionInfo {
   workspace_id: string | null;
   /** External coordinator that created the session, when started from the CLI. */
   external_client?: string | null;
+  /** Backchat session this row was forked from. Null for ordinary chats. */
+  parent_session_id: string | null;
+  /** `session` or `message` when this row was created by a fork. */
+  fork_kind: "session" | "message" | null;
 }
 
 /** Public shape of one persisted event. `data` is JSON-encoded text — the

@@ -3284,6 +3284,139 @@ describe("SessionStore side chats and native subagents", () => {
     expect(store.newMainForkDraft("missing-session")).toBeNull();
   });
 
+  test("a managed fork stays unmanaged and keeps its parent after ready", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-managed",
+      acp_session_id: "acp-managed",
+      agent_id: "pi-acp",
+      cwd: "/Users/mini/.oma/sessions/sess-managed",
+      supports_session_fork: true,
+      fork_support: {
+        level: "message",
+        reason: "message-fork-advertised",
+        message: "This agent can fork from a specific message.",
+      },
+    });
+    const parent = store.get("sess-managed");
+    if (parent) parent.projectScope = "none";
+
+    const sideId = store.newSideDraft({
+      parentSessionId: "sess-managed",
+      parentAcpSessionId: "acp-managed",
+      inheritance: "fork",
+      cwd: "/Users/mini/.oma/sessions/sess-managed",
+    });
+    expect(store.get(sideId)).toMatchObject({
+      projectScope: "none",
+      projectSelectionExplicit: true,
+      chosenCwd: undefined,
+      projectId: undefined,
+      cwd: "/Users/mini/.oma/sessions/sess-managed",
+    });
+
+    const point = {
+      messageId: "assistant-1",
+      messageText: "Hello",
+      messageOccurrence: 1,
+    };
+    const forkId = store.newMainForkDraft("sess-managed", point);
+
+    expect(store.get(forkId!)).toMatchObject({
+      projectScope: "none",
+      projectSelectionExplicit: true,
+      chosenCwd: undefined,
+      projectId: undefined,
+      forkParent: {
+        parentSessionId: "sess-managed",
+        inheritance: "fork",
+        point,
+      },
+    });
+
+    store.apply({
+      type: "session.ready",
+      session_id: forkId!,
+      acp_session_id: "acp-fork",
+      agent_id: "pi-acp",
+      cwd: "/Users/mini/.oma/sessions/fork-child",
+    });
+    expect(store.get(forkId!)).toMatchObject({
+      forkParent: undefined,
+      parentSessionId: "sess-managed",
+      forkKind: "message",
+      cwd: "/Users/mini/.oma/sessions/fork-child",
+      projectScope: "none",
+    });
+  });
+
+  test("a project fork copies the same project and records a session fork", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-project",
+      acp_session_id: "acp-project",
+      agent_id: "pi-acp",
+      cwd: "/work/app",
+      project_id: "proj-app",
+      supports_session_fork: true,
+      fork_support: {
+        level: "session",
+        reason: "message-fork-not-advertised",
+        message: "This agent can fork the whole session but not from a specific message.",
+      },
+    });
+    const parent = store.get("sess-project");
+    if (parent) {
+      parent.projectScope = "project";
+      parent.chosenCwd = "/work/app";
+      parent.projectId = "proj-app";
+    }
+
+    const forkId = store.newMainForkDraft("sess-project");
+    expect(store.get(forkId!)).toMatchObject({
+      projectScope: "project",
+      projectSelectionExplicit: true,
+      chosenCwd: "/work/app",
+      projectId: "proj-app",
+      cwd: "/work/app",
+    });
+
+    store.apply({
+      type: "session.ready",
+      session_id: forkId!,
+      acp_session_id: "acp-fork",
+      agent_id: "pi-acp",
+      cwd: "/work/app",
+      project_id: "proj-app",
+    });
+    expect(store.get(forkId!)).toMatchObject({
+      parentSessionId: "sess-project",
+      forkKind: "session",
+      projectId: "proj-app",
+    });
+  });
+
+  test("restores fork lineage when a persisted row is seeded", () => {
+    const store = new SessionStore();
+    store.seedPersisted([{
+      id: "fork-child",
+      agent_id: "pi-acp",
+      cwd: "/Users/mini/.oma/sessions/fork-child",
+      acp_session_id: "acp-fork",
+      title: "Forked",
+      last_used_at: 2,
+      created_at: 1,
+      parent_session_id: "sess-managed",
+      fork_kind: "session",
+    }]);
+    expect(store.get("fork-child")).toMatchObject({
+      parentSessionId: "sess-managed",
+      forkKind: "session",
+    });
+  });
+
   test("promotes a side chat into an independent fork", () => {
     const store = new SessionStore();
     store.apply({

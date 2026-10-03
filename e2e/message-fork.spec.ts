@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -171,5 +172,114 @@ test.describe("message fork with the local fake ACP agent", () => {
     };
     expect(request._meta?.jetbrains?.air?.fork?.messageId).toBe("fake-assistant-1");
     await capture("fork-point-not-found.png", "fork point was not found");
+  });
+
+  test("fork keeps a managed cwd and the same project cwd", async ({ page, capture }) => {
+    test.setTimeout(120_000);
+    const projectDir = await mkdtemp(join(tmpdir(), "backchat-fork-project-"));
+    await page.evaluate(async (dir) => {
+      await window.backchat.projectSave({
+        project_id: "fork-kept-project",
+        name: "Kept project",
+        primary_folder: dir,
+        source_folders: [dir],
+      });
+      await window.backchat.projectSave({
+        project_id: "fork-decoy-project",
+        name: "Decoy project",
+        primary_folder: `${dir}-decoy`,
+        source_folders: [`${dir}-decoy`],
+      });
+    }, projectDir);
+    await useFakeAgent(page, "session", "/tmp/backchat-fork-cwd.jsonl");
+    await page.evaluate((dir) => {
+      localStorage.setItem("backchat:last-project-directory:v1", `${dir}-decoy`);
+    }, projectDir);
+
+    await sendPrompt(page, "fork-managed-source");
+    const parent = await page.evaluate(async () => {
+      const sessions = await window.backchat.sessionsList();
+      return sessions.find((session) => session.title === "fork-managed-source") ?? null;
+    });
+    expect(parent?.project_id ?? null).toBeNull();
+    expect(parent?.cwd ?? "").toContain("/sessions/");
+
+    await page.locator("[data-turn-fork-action='true']").click();
+    const chip = page.locator('[data-composer-footer-control="project"]');
+    await expect(page.locator(".new-chat-page")).toBeVisible();
+    await chip.click();
+    await expect(page.getByRole("option", { name: /Decoy project/ })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(chip).toContainText("Choose project");
+    await expect(chip).not.toContainText("Decoy project");
+    await capture("fork-managed-cwd.png", "managed fork does not adopt the last project");
+
+    const managedDraft = page.locator(".new-chat-page textarea").last();
+    await managedDraft.fill("fork-managed-child");
+    await managedDraft.press("Enter");
+    await expect(page.getByText("Fake response saved for fork-managed-child.").last()).toBeVisible({
+      timeout: 20_000,
+    });
+    const managedChild = await page.evaluate(async (parentId) => {
+      const sessions = await window.backchat.sessionsList();
+      return sessions.find((session) => session.parent_session_id === parentId) ?? null;
+    }, parent!.id);
+    expect(managedChild?.fork_kind).toBe("session");
+    expect(managedChild?.project_id ?? null).toBeNull();
+    expect(managedChild?.cwd ?? "").toContain("/sessions/");
+    expect(managedChild?.cwd).not.toBe(parent!.cwd);
+    expect(managedChild?.cwd).not.toContain("decoy");
+
+    await page.getByTestId("new-chat-button").click();
+    await expect(page.locator(".new-chat-page")).toBeVisible();
+    await chip.click();
+    await page.getByRole("option", { name: /Kept project/ }).click();
+    await expect(chip).toContainText("Kept project");
+    await sendPrompt(page, "fork-project-source");
+    const projectParent = await page.evaluate(async () => {
+      const sessions = await window.backchat.sessionsList();
+      return sessions.find((session) => session.title === "fork-project-source") ?? null;
+    });
+    expect(projectParent?.cwd).toBe(projectDir);
+
+    await page.locator("[data-turn-fork-action='true']").click();
+    await expect(page.locator(".new-chat-page")).toBeVisible();
+    await expect(chip).toContainText("Kept project");
+    await expect(chip).not.toContainText("Decoy project");
+    await capture("fork-project-cwd.png", "project fork keeps the same project");
+
+    const projectDraft = page.locator(".new-chat-page textarea").last();
+    await projectDraft.fill("fork-project-child");
+    await projectDraft.press("Enter");
+    await expect(page.getByText("Fake response saved for fork-project-child.").last()).toBeVisible({
+      timeout: 20_000,
+    });
+    const projectChild = await page.evaluate(async (parentId) => {
+      const sessions = await window.backchat.sessionsList();
+      return sessions.find((session) => session.parent_session_id === parentId) ?? null;
+    }, projectParent!.id);
+    expect(projectChild?.fork_kind).toBe("session");
+    expect(projectChild?.parent_session_id).toBe(projectParent!.id);
+    expect(projectChild?.cwd).toBe(projectDir);
+  });
+
+  test("clears the source composer after /fork", async ({ page, capture }) => {
+    test.setTimeout(90_000);
+    await useFakeAgent(page, "session", "/tmp/backchat-fork-slash.jsonl");
+    await sendPrompt(page, "fork-slash-source");
+
+    const source = page.locator('[data-chat-surface="main"] textarea').last();
+    await source.pressSequentially("/fork");
+    const menu = page.getByRole("listbox", { name: "Slash commands" });
+    await expect(menu).toBeVisible();
+    await source.press("Enter");
+
+    await expect(page.locator(".new-chat-page textarea").last()).toBeVisible();
+    await page.getByRole("button", { name: "fork-slash-source" }).click();
+    const returned = page.locator('[data-chat-surface="main"] textarea').last();
+    await expect(returned).toBeVisible();
+    await expect(returned).toHaveValue("");
+    await expect(page.getByRole("listbox", { name: "Slash commands" })).toHaveCount(0);
+    await capture("fork-slash-cleared.png", "source composer cleared after /fork");
   });
 });

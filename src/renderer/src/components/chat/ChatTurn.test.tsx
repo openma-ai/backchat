@@ -190,6 +190,8 @@ describe("TurnBlock", () => {
     expect(html).toContain("lucide-arrow-right-from-line");
     expect(html).not.toContain("data-turn-message-fork");
     expect(html).not.toContain("disabled");
+    expect(html).not.toContain("This agent can fork");
+    expect(html).not.toContain("does not support");
   });
 
   it("does not render the response fork action without an eligible callback", () => {
