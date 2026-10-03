@@ -109,6 +109,34 @@ describe("SessionManager prompt queue", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("stopForRemoval cancels the active turn before disposing the agent", async () => {
+    const order: string[] = [];
+    const fake = createControllableAcpSession({ abortRejects: true });
+    const prompt = fake.session.prompt.bind(fake.session);
+    fake.session.prompt = (input, options) => {
+      options?.abortSignal?.addEventListener("abort", () => order.push("cancel"), { once: true });
+      return prompt(input, options);
+    };
+    fake.session.dispose = async () => {
+      order.push("dispose");
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({ session_id: "stop-removal", agent_id: "codex-acp", cwd: "/repo" });
+    const running = manager.prompt({ session_id: "stop-removal", turn_id: "turn-stop", text: "sleep" });
+    await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+    await manager.stopForRemoval("stop-removal");
+    await running.catch(() => undefined);
+    expect(order).toEqual(["cancel", "dispose"]);
+    expect(manager.sessionCount()).toBe(0);
+  });
+
   it("rejects a new session start after shutdown disposal begins", async () => {
     mocks.runtimeStart.mockClear();
     const manager = new SessionManager({

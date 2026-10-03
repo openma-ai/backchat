@@ -120,12 +120,12 @@ picker offers it.
 
 `project create` with the same name and the same source directories returns
 the existing project (`created: false`). A source directory that does not
-exist is exit `5`. `project remove` deletes the project record. It first stops and archives
-every chat that belongs to the project, including the agent process, so a
-removed project does not leave sessions `running` against a deleted
-directory. Managed workspaces are removed with it, and a dirty checkout is
-refused unless `--force` is set. Creating or removing a project refreshes
-the sidebar.
+exist is exit `5`. `project remove` deletes the project record. It checks every
+managed workspace first. A dirty checkout is refused (exit `5`) unless
+`--force` is set, and that refusal does not stop any chat. After the checks
+pass it cancels each chat the way `session cancel` does, so shells the agent
+started are stopped, then archives the chat and removes the managed
+workspaces. Creating or removing a project refreshes the sidebar.
 
 A managed workspace is one git worktree per source repository, all on the same
 branch name. If that branch already exists, the worktree checks it out.
@@ -143,11 +143,12 @@ a parent, startup fails with that agent's error. The same fallback is used
 when a session is started from the GUI.
 
 `workspace show` returns each repository's worktree path, branch, HEAD sha, and
-dirty state. `workspace remove` deletes the managed worktrees and refuses when
-they have uncommitted changes unless `--force` is set. It deletes a branch only
-when this workspace created that branch; a branch that already existed and was
-checked out is left in the repository. The live project checkout is never
-deleted.
+dirty state. `workspace remove` checks the checkout first. Uncommitted changes
+are refused unless `--force` is set, and that refusal does not stop chats.
+After the check passes it cancels the workspace's chats the same way, then
+deletes the managed worktrees. It deletes a branch only when this workspace
+created that branch; a branch that already existed and was checked out is left
+in the repository. The live project checkout is never deleted.
 
 `session start --approve auto-read` auto-approves only tool calls whose ACP
 kind is `read`, `search`, or `think`. `edit`, `write`, `delete`, `move`,

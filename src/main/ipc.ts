@@ -60,7 +60,7 @@ import type { WorkspaceCreateParams, WorkspaceInfo } from "../shared/workspaces.
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
 import { openmaRoot } from "./storage-root.js";
 import { controlSocketPath } from "../shared/control-socket.js";
-import { createControlApi, disposeProjectSessions } from "./control/handlers.js";
+import { createControlApi, disposeProjectSessions, removeWorkspaceStoppingSessions } from "./control/handlers.js";
 import { publishControlLiveEvent, streamEventsFromSession } from "./control/live-bus.js";
 import {
   ensureExternalCoordinator,
@@ -970,7 +970,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   ipcMain.handle(
     InvokeChannel.WorkspaceDelete,
-    (_e, p: { workspace_id: string }): Promise<void> => workspaceService.delete(p.workspace_id),
+    (_e, p: { workspace_id: string }): Promise<void> => {
+      return removeWorkspaceStoppingSessions(workspaceService, sessionManager, p.workspace_id).then(() => undefined);
+    },
   );
   // Checkout sets created per session before workspaces existed become
   // workspaces of their own; nothing on disk moves.

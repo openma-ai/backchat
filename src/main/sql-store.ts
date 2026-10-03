@@ -1161,6 +1161,11 @@ export function listSessionsForSidebar(): PersistedSession[] {
 
 /** Non-archived sessions that belong to a project, including pair members.
  *  Workspace membership covers a session whose project id was already cleared. */
+export function listSessionsByWorkspace(workspaceId: string): PersistedSession[] {
+  return (stmts().listByWorkspace.all(workspaceId) as unknown as PersistedSessionRow[])
+    .map(decodeSessionRow);
+}
+
 export function listSessionsForProjectRemoval(
   projectId: string,
   workspaceIds: readonly string[] = [],

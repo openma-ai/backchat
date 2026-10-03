@@ -12,6 +12,7 @@ import {
   listExternalTaskNotes,
   listExternalTasks,
   listSessions,
+  listSessionsByWorkspace,
   listSessionsForProjectRemoval,
   loadHistory,
   setExternalTaskStatus,
@@ -109,8 +110,13 @@ export function createControlApi(deps: ControlApiDeps = {}) {
           const id = requiredString(params, "id", "Workspace id");
           const existing = await workspaces.resolve(id);
           if (!existing) throw new ControlError("not_found", `Workspace not found: ${id}`);
-          await workspaces.delete(id, { force: params.force === true });
-          return { id, removed: true };
+          const disposedSessions = await removeWorkspaceStoppingSessions(
+            workspaces,
+            deps.sessions,
+            id,
+            { force: params.force === true },
+          );
+          return { id, removed: true, disposed_sessions: disposedSessions };
         }
         case "session.list":
           return listSessionRecords(params, client);
@@ -568,24 +574,56 @@ function goalInput(params: Record<string, unknown>): ProjectWorkGoalInput {
 }
 
 /** Stop every chat that belongs to the project before its worktrees disappear.
- *  dispose kills the ACP child and archives the row, so the session leaves the
- *  global list and does not stay `running` against a deleted directory. */
+ *  The stop matches session cancel, so shells the agent started die with the
+ *  turn, then the agent process is killed and the row is archived. */
 export async function disposeProjectSessions(
   sessions: SessionManager | undefined,
   projectId: string,
   workspaceIds: readonly string[] = [],
 ): Promise<string[]> {
-  const owned = listSessionsForProjectRemoval(projectId, workspaceIds);
+  return stopListedSessions(
+    sessions,
+    listSessionsForProjectRemoval(projectId, workspaceIds),
+    projectId,
+  );
+}
+
+/** Checks first. A dirty refusal must not cancel or archive any session. */
+export async function removeWorkspaceStoppingSessions(
+  workspaces: WorkspaceService,
+  sessions: SessionManager | undefined,
+  id: string,
+  options?: { force?: boolean },
+): Promise<string[]> {
+  await workspaces.assertRemovable(id, options);
+  const disposed = await stopListedSessions(
+    sessions,
+    listSessionsByWorkspace(id),
+    id,
+  );
+  await workspaces.delete(id, options);
+  return disposed;
+}
+
+async function stopListedSessions(
+  sessions: SessionManager | undefined,
+  owned: ReturnType<typeof listSessionsByWorkspace>,
+  label: string,
+): Promise<string[]> {
   if (owned.length === 0) return [];
   if (!sessions) {
     throw new ControlError(
       "error",
-      `Cannot remove project ${projectId} while ${owned.length} session(s) are still attached. Stop them first.`,
+      `Cannot remove ${label} while ${owned.length} session(s) are still attached. Stop them first.`,
     );
   }
   const disposed: string[] = [];
   for (const session of owned) {
-    await sessions.dispose(session.id);
+    if (typeof sessions.stopForRemoval === "function") {
+      await sessions.stopForRemoval(session.id);
+    } else {
+      await sessions.dispose(session.id);
+    }
     disposed.push(session.id);
   }
   return disposed;
@@ -600,6 +638,11 @@ async function removeProject(
   const id = requiredString(params, "id", "Project id");
   if (!getProject(id)) throw new ControlError("not_found", `Project not found: ${id}`);
   const workspacesForProject = await workspaces.list(id);
+  const force = params.force === true;
+  for (const workspace of workspacesForProject) {
+    if (workspace.kind !== "managed") continue;
+    await workspaces.assertRemovable(workspace.id, { force });
+  }
   const disposedSessions = await disposeProjectSessions(
     sessions,
     id,
@@ -607,7 +650,7 @@ async function removeProject(
   );
   for (const workspace of workspacesForProject) {
     if (workspace.kind !== "managed") continue;
-    await workspaces.delete(workspace.id, { force: params.force === true });
+    await workspaces.delete(workspace.id, { force });
   }
   deleteProject(id);
   onProjectsChanged?.();

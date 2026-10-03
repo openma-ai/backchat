@@ -2088,6 +2088,24 @@ export class SessionManager {
     });
   }
 
+  /**
+   * Stop a session the way `session cancel` does, then tear it down.
+   *
+   * Cancel is delivered and the live turn is allowed to finish before the
+   * agent process is killed. Killing the process first orphans shells the
+   * agent already started; cancel gives the agent the same chance it has
+   * when the user cancels a turn.
+   */
+  async stopForRemoval(sessionId: string): Promise<void> {
+    const turnIds = this.activeTurnIds(sessionId);
+    if (turnIds.length > 0) {
+      const finished = this.#waitForTurnsToLeave(sessionId, turnIds, 3_000);
+      for (const turnId of turnIds) this.cancel(sessionId, turnId);
+      await finished;
+    }
+    await this.dispose(sessionId);
+  }
+
   async dispose(session_id: string, opts?: { removeCwd?: boolean }): Promise<void> {
     const starting = this.#starting.get(session_id);
     if (starting) {
@@ -2118,6 +2136,22 @@ export class SessionManager {
       ...starting,
       ...ids.map((id) => this.#killChild(id)),
     ]);
+  }
+
+  async #waitForTurnsToLeave(
+    sessionId: string,
+    turnIds: readonly string[],
+    timeoutMs: number,
+  ): Promise<void> {
+    const started = Date.now();
+    const left = () => {
+      const live = new Set(this.activeTurnIds(sessionId));
+      return turnIds.every((turnId) => !live.has(turnId));
+    };
+    while (!left()) {
+      if (Date.now() - started >= timeoutMs) return;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
   }
 
   async #killChild(session_id: string): Promise<void> {

@@ -1,8 +1,13 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createControlApi } from "./handlers.js";
+import { ManagedWorktreeStore } from "../worktree-manager.js";
+import { WorkspaceService } from "../workspace-service.js";
 import {
   closeSessionDb,
   getSession,
@@ -13,6 +18,7 @@ import {
   upsertSession,
 } from "../sql-store.js";
 
+const execFile = promisify(execFileCallback);
 const roots: string[] = [];
 
 afterEach(async () => {
@@ -170,6 +176,102 @@ describe("external coordinator work", () => {
     expect(getSession("sess-running")?.archived_at).toEqual(expect.any(Number));
   });
 
+  it("project remove stops sessions before deleting worktrees", async () => {
+    const fixture = await createRemovalFixture();
+    let checkoutExisted = false;
+    const api = createControlApi({
+      workspaces: fixture.workspaces,
+      sessions: {
+        stopForRemoval: async (id: string) => {
+          checkoutExisted = existsSync(fixture.worktreePath);
+          archiveSession(id);
+        },
+        dispose: async () => {
+          throw new Error("dispose should not be called directly");
+        },
+      } as never,
+    });
+    upsertSession({
+      id: "sess-running",
+      agent_id: "cursor",
+      cwd: fixture.worktreePath,
+      project_id: fixture.projectId,
+      workspace_id: fixture.workspaceId,
+      title: "still running",
+    });
+
+    const removed = await api.call("project.remove", {
+      id: fixture.projectId,
+      force: true,
+    }) as { disposed_sessions: string[] };
+
+    expect(removed.disposed_sessions).toEqual(["sess-running"]);
+    expect(checkoutExisted).toBe(true);
+    expect(existsSync(fixture.worktreePath)).toBe(false);
+  });
+
+  it("does not stop sessions when project remove is refused for uncommitted changes", async () => {
+    const fixture = await createRemovalFixture();
+    await writeFile(join(fixture.worktreePath, "dirty.txt"), "wip\n");
+    const stopped: string[] = [];
+    const api = createControlApi({
+      workspaces: fixture.workspaces,
+      sessions: {
+        stopForRemoval: async (id: string) => {
+          stopped.push(id);
+        },
+      } as never,
+    });
+    upsertSession({
+      id: "sess-running",
+      agent_id: "cursor",
+      cwd: fixture.worktreePath,
+      project_id: fixture.projectId,
+      workspace_id: fixture.workspaceId,
+      title: "still running",
+    });
+
+    await expect(api.call("project.remove", { id: fixture.projectId })).rejects.toThrow(/uncommitted changes/);
+    expect(stopped).toEqual([]);
+    expect(listSessions(20).map((session) => session.id)).toEqual(["sess-running"]);
+    expect(existsSync(fixture.worktreePath)).toBe(true);
+  });
+
+  it("stops workspace sessions before deleting the checkout and skips them when removal is refused", async () => {
+    const fixture = await createRemovalFixture();
+    await writeFile(join(fixture.worktreePath, "dirty.txt"), "wip\n");
+    const stopped: string[] = [];
+    const api = createControlApi({
+      workspaces: fixture.workspaces,
+      sessions: {
+        stopForRemoval: async (id: string) => {
+          stopped.push(`${id}:${existsSync(fixture.worktreePath)}`);
+          archiveSession(id);
+        },
+      } as never,
+    });
+    upsertSession({
+      id: "sess-ws",
+      agent_id: "cursor",
+      cwd: fixture.worktreePath,
+      project_id: fixture.projectId,
+      workspace_id: fixture.workspaceId,
+      title: "in workspace",
+    });
+
+    await expect(api.call("workspace.remove", { id: fixture.workspaceId })).rejects.toThrow(/uncommitted changes/);
+    expect(stopped).toEqual([]);
+    expect(listSessions(20).map((session) => session.id)).toEqual(["sess-ws"]);
+
+    const removed = await api.call("workspace.remove", {
+      id: fixture.workspaceId,
+      force: true,
+    }) as { disposed_sessions: string[] };
+    expect(removed.disposed_sessions).toEqual(["sess-ws"]);
+    expect(stopped).toEqual(["sess-ws:true"]);
+    expect(existsSync(fixture.worktreePath)).toBe(false);
+  });
+
   it("reports an unknown agent as invalid arguments", async () => {
     const api = createControlApi({
       sessions: {
@@ -186,3 +288,43 @@ describe("external coordinator work", () => {
     })).rejects.toMatchObject({ code: "invalid_args" });
   });
 });
+
+async function createRemovalFixture(): Promise<{
+  projectId: string;
+  workspaceId: string;
+  worktreePath: string;
+  workspaces: WorkspaceService;
+}> {
+  const root = await mkdtemp(join(tmpdir(), "backchat-removal-"));
+  roots.push(root);
+  openSessionDb(join(root, "sessions.db"));
+  const repo = join(root, "src");
+  await mkdir(repo, { recursive: true });
+  await git(repo, "init", "--initial-branch=main");
+  await git(repo, "config", "user.name", "Backchat Test");
+  await git(repo, "config", "user.email", "backchat@example.test");
+  await writeFile(join(repo, "README.md"), "app\n");
+  await git(repo, "add", ".");
+  await git(repo, "commit", "-m", "fixture");
+  const workspaces = new WorkspaceService(new ManagedWorktreeStore(join(root, "worktrees")));
+  const api = createControlApi({ workspaces });
+  const project = await api.call("project.create", {
+    name: "Remove me",
+    sources: [repo],
+  }) as { id: string };
+  const workspace = await api.call("workspace.create", {
+    project_id: project.id,
+    branch: "feature/removal",
+  }) as { id: string; worktrees: Array<{ path: string }> };
+  return {
+    projectId: project.id,
+    workspaceId: workspace.id,
+    worktreePath: workspace.worktrees[0]!.path,
+    workspaces,
+  };
+}
+
+async function git(cwd: string, ...args: string[]): Promise<string> {
+  const result = await execFile("git", ["-C", cwd, ...args], { encoding: "utf8" });
+  return result.stdout;
+}
