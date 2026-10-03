@@ -80,6 +80,43 @@ describe("reduceTurn ACP event compatibility", () => {
     }]);
   });
 
+  test("projects a rejected shell as denied instead of a failed run", () => {
+    const command = "echo PR28R2-REJECT-ME > pr28r2-shell-reject.txt";
+    const events = [{
+      payload: {
+        schema: "oma.event.v1",
+        event_id: "tool-denied",
+        type: "tool.failed",
+        session_id: "sess-deny",
+        turn_id: "turn-deny",
+        data: {
+          tool_call_id: "shell-deny",
+          title: command,
+          kind: "execute",
+          status: "failed",
+          outcome: "denied",
+          reason: "denied",
+        },
+      },
+      receivedAt: 1,
+    }];
+    const out = reduceTurn(events);
+
+    expect(out.tools).toEqual([
+      expect.objectContaining({
+        toolCallId: "shell-deny",
+        kind: "execute",
+        title: command,
+        status: "denied",
+        meta: expect.objectContaining({ permissionOutcome: "denied" }),
+      }),
+    ]);
+    expect(out.tools[0]?.rawOutput).toBeUndefined();
+    expect(out.timeline).toEqual([
+      expect.objectContaining({ kind: "tool", toolCallId: "shell-deny" }),
+    ]);
+  });
+
   test("routes the Codex skill-context warning away from assistant text", () => {
     const warning =
       "Warning: Skill descriptions were shortened to fit the 2% skills context budget. " +

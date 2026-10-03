@@ -65,6 +65,9 @@ export interface KnownAgentEntry {
   /** Native ACP CLI supplied by the user's system PATH. Registry-managed
    *  shims are resolved from Backchat's managed ACP bin directory first. */
   systemPath?: boolean;
+  /** PATH command used when the managed registry shim is not installed.
+   *  `spec.args` are passed to this command. */
+  systemCommand?: string;
   /** Public ACP registry id. Used for app-managed installs. */
   registryId?: string;
   /** Exact distribution from the registry snapshot used to render this entry.
@@ -159,8 +162,11 @@ export const OVERLAY_AGENTS: KnownAgentEntry[] = [
     id: "cursor",
     label: "Cursor",
     spec: { command: registryShimName("cursor"), args: ["acp"] },
+    systemPath: true,
+    systemCommand: "cursor-agent",
     registryId: "cursor",
     installSource: "registry",
+    installHint: "Install the Cursor CLI so `cursor-agent` is on PATH (https://cursor.com/docs/cli/acp)",
     homepage: "https://cursor.com/docs/cli/acp",
   },
   {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
@@ -6,6 +7,7 @@ import { tmpdir } from "node:os";
 const PROJECT_ROOT = process.cwd();
 import { join } from "node:path";
 import type { AcpSession, SessionOptions } from "@open-managed-agents-desktop/acp";
+import { streamEventsFromSession } from "./control/live-bus.js";
 import { acpEventUiRoute, SessionManager } from "./session-manager";
 import { configureAppLog, flushAppLog } from "./app-log.js";
 import {
@@ -77,6 +79,8 @@ vi.mock("./sql-store.js", () => ({
   getSession: vi.fn(),
   setSessionTitle: vi.fn(),
   setSessionTitleIfEmpty: vi.fn(),
+  setSessionExternalClient: vi.fn(),
+  setSessionPermissionPolicy: vi.fn(),
   touchSession: vi.fn(),
   upsertSession: vi.fn(),
 }));
@@ -103,6 +107,34 @@ describe("SessionManager prompt queue", () => {
     expect(fake.prompts).toHaveLength(1);
     expect(manager.sessionCount()).toBe(0);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("stopForRemoval cancels the active turn before disposing the agent", async () => {
+    const order: string[] = [];
+    const fake = createControllableAcpSession({ abortRejects: true });
+    const prompt = fake.session.prompt.bind(fake.session);
+    fake.session.prompt = (input, options) => {
+      options?.abortSignal?.addEventListener("abort", () => order.push("cancel"), { once: true });
+      return prompt(input, options);
+    };
+    fake.session.dispose = async () => {
+      order.push("dispose");
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({ session_id: "stop-removal", agent_id: "codex-acp", cwd: "/repo" });
+    const running = manager.prompt({ session_id: "stop-removal", turn_id: "turn-stop", text: "sleep" });
+    await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+    await manager.stopForRemoval("stop-removal");
+    await running.catch(() => undefined);
+    expect(order).toEqual(["cancel", "dispose"]);
+    expect(manager.sessionCount()).toBe(0);
   });
 
   it("rejects a new session start after shutdown disposal begins", async () => {
@@ -1382,7 +1414,7 @@ describe("SessionManager prompt queue", () => {
     const removeWorktreeWorkspace = vi.fn(async () => undefined);
     mocks.runtimeStart.mockClear();
     mocks.runtimeStart.mockRejectedValueOnce(
-      new Error("ACP agent does not support additional workspace directories"),
+      new Error("agent process exited during startup"),
     );
     const manager = new SessionManager({
       send: vi.fn(),
@@ -1404,13 +1436,57 @@ describe("SessionManager prompt queue", () => {
 
     expect(result).toMatchObject({
       status: "error",
-      message: "ACP agent does not support additional workspace directories",
+      message: "agent process exited during startup",
     });
     // Only a checkout set created for this start is rolled back, by its id.
     expect(removeWorktreeWorkspace).toHaveBeenCalledWith("ws-sess-worktree-fail-ab12");
     expect(upsertSession).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: "sess-worktree-fail" }),
     );
+  });
+
+  it("retries in the shared parent when the agent rejects additional directories", async () => {
+    const prepareWorktreeWorkspace = vi.fn(async () => ({
+      workspaceId: "ws-collapse",
+      projectId: "proj-collapse",
+      cwd: "/managed/worktrees/ws-collapse/01-app",
+      additionalDirectories: ["/managed/worktrees/ws-collapse/02-docs"],
+      created: true,
+    }));
+    const removeWorktreeWorkspace = vi.fn(async () => undefined);
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart
+      .mockRejectedValueOnce(new Error("ACP agent does not support additional workspace directories"))
+      .mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+      prepareWorktreeWorkspace,
+      removeWorktreeWorkspace,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-collapse",
+      agent_id: "codex-acp",
+      workspace_mode: "worktree",
+      cwd: "/source/app",
+      additional_directories: ["/source/docs"],
+    });
+
+    expect(result).toMatchObject({
+      status: "ready",
+      cwd: "/managed/worktrees/ws-collapse",
+      additional_directories: [],
+    });
+    expect(removeWorktreeWorkspace).not.toHaveBeenCalled();
+    expect(mocks.runtimeStart).toHaveBeenLastCalledWith(expect.objectContaining({
+      additionalDirectories: [],
+      agent: expect.objectContaining({ cwd: "/managed/worktrees/ws-collapse" }),
+    }));
   });
 
   it("rejects a multi-root project before ACP startup when a secondary root is missing", async () => {
@@ -1495,6 +1571,7 @@ describe("SessionManager prompt queue", () => {
       session_id: "sess-cursor-extensions",
       agent_id: "cursor",
       cwd: "/repo",
+      permission_policy: "auto-all",
     });
 
     const startOptions = mocks.runtimeStart.mock.calls.at(-1)?.[0] as
@@ -2028,6 +2105,7 @@ describe("SessionManager prompt queue", () => {
       session_id: "sess-managed-shim-args",
       agent_id: "cursor",
       cwd: "/repo",
+      permission_policy: "auto-all",
     });
 
     expect(mocks.runtimeStart).toHaveBeenCalledWith(
@@ -3783,7 +3861,209 @@ describe("SessionManager prompt queue", () => {
     }));
   });
 
+  it("switches an approval-required Cursor session to ask mode before it can edit", async () => {
+    const fake = createControllableAcpSession({ modes: cursorWriteModes() });
+    const setMode = vi.spyOn(fake.session, "setMode");
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (message) => events.push(message),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ permissionMode: "ask" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-cursor-ask",
+      agent_id: "cursor",
+      cwd: "/repo",
+      permission_policy: "auto-read",
+    });
+
+    expect(result).toMatchObject({ status: "ready" });
+    expect(setMode).toHaveBeenCalledWith("ask");
+    expect(result.status === "ready" && result.modes?.currentModeId).toBe("ask");
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.event",
+      event: { sessionUpdate: "current_mode_update", currentModeId: "ask" },
+    }));
+  });
+
+  it("leaves Cursor in agent mode only for an explicit auto-edit opt-in", async () => {
+    const fake = createControllableAcpSession({ modes: cursorWriteModes() });
+    const setMode = vi.spyOn(fake.session, "setMode");
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ permissionMode: "ask" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-cursor-auto",
+      agent_id: "cursor",
+      cwd: "/repo",
+      permission_policy: "auto-all",
+    });
+
+    expect(result).toMatchObject({ status: "ready" });
+    expect(setMode).not.toHaveBeenCalled();
+    expect(result.status === "ready" && result.modes?.currentModeId).toBe("agent");
+  });
+
+  it("uses plan mode when Cursor does not advertise ask", async () => {
+    const fake = createControllableAcpSession({
+      modes: {
+        currentModeId: "agent",
+        availableModes: [
+          { id: "agent", name: "Agent" },
+          { id: "plan", name: "Plan" },
+        ],
+      },
+    });
+    const setMode = vi.spyOn(fake.session, "setMode");
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-cursor-plan",
+      agent_id: "cursor",
+      cwd: "/repo",
+    });
+
+    expect(setMode).toHaveBeenCalledWith("plan");
+    expect(result.status === "ready" && result.modes?.currentModeId).toBe("plan");
+  });
+
+  it("does not start Cursor, and does not write cli.json, when no read-only mode is advertised", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-cursor-gate-"));
+    const fake = createControllableAcpSession();
+    const dispose = vi.spyOn(fake.session, "dispose");
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ permissionMode: "read_only" }),
+      resolveAgentOverride: () => undefined,
+    });
+
+    const result = await manager.start({
+      session_id: "sess-cursor-blocked",
+      agent_id: "cursor",
+      cwd: root,
+      permission_policy: "auto-all",
+    });
+
+    expect(result).toMatchObject({
+      status: "error",
+      message: expect.stringContaining("did not advertise plan or ask"),
+    });
+    expect(dispose).toHaveBeenCalled();
+    expect(manager.sessionCount()).toBe(0);
+    expect(existsSync(join(root, ".cursor", "cli.json"))).toBe(false);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("cancels a Cursor edit that still starts without approval", async () => {
+    const fake = createControllableAcpSession({
+      modes: cursorWriteModes(),
+      promptEvents: [{
+        sessionUpdate: "tool_call",
+        toolCallId: "edit-1",
+        title: "Edit file",
+        kind: "edit",
+        status: "in_progress",
+        rawInput: {},
+      }],
+    });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = new SessionManager({
+      send: (message) => events.push(message),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({
+      session_id: "sess-cursor-backstop",
+      agent_id: "cursor",
+      cwd: "/repo",
+      permission_policy: "ask",
+    });
+
+    const prompting = manager.prompt({
+      session_id: "sess-cursor-backstop",
+      turn_id: "turn-edit",
+      text: "create the file",
+    });
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: "session.error",
+      message: expect.stringContaining("Stopped the turn"),
+    })));
+    const toolIndex = events.findIndex((event) =>
+      event != null
+      && typeof event === "object"
+      && (event as { type?: string }).type === "session.event"
+    );
+    const endIndex = events.findIndex((event) =>
+      event != null
+      && typeof event === "object"
+      && (event as { type?: string }).type === "session.tool_cancelled"
+    );
+    const errorIndex = events.findIndex((event) =>
+      event != null
+      && typeof event === "object"
+      && (event as { type?: string }).type === "session.error"
+    );
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    expect(endIndex).toBeGreaterThan(toolIndex);
+    expect(errorIndex).toBeGreaterThan(endIndex);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.tool_cancelled",
+      tool_call_id: "edit-1",
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.cancel_requested",
+      turn_id: "turn-edit",
+      suppress_result: true,
+    }));
+    const streamed = events.flatMap((event) =>
+      streamEventsFromSession(event as Parameters<typeof streamEventsFromSession>[0]),
+    ).filter((event) => event.type === "tool_call" || event.type === "result");
+    expect(streamed.map((event) =>
+      event.type === "result" ? event.status : `${event.status}:${event.outcome ?? ""}`,
+    )).toEqual([
+      "start:",
+      "end:cancelled",
+      "error",
+    ]);
+    fake.releaseNext();
+    await prompting;
+  });
+
 });
+
+function cursorWriteModes(): NonNullable<AcpSession["modes"]> {
+  return {
+    currentModeId: "agent",
+    availableModes: [
+      { id: "agent", name: "Agent" },
+      { id: "plan", name: "Plan" },
+      { id: "ask", name: "Ask" },
+    ],
+  };
+}
 
 function createControllableAcpSession(opts: {
   protocolVersion?: AcpSession["protocolVersion"];
@@ -3885,14 +4165,16 @@ function createControllableAcpSession(opts: {
       pendingEvents = [];
       return events;
     },
-    async setConfigOption() {
-      return [];
+    async setConfigOption(configId: string, value: string | boolean) {
+      const option = session.configOptions.find((entry) => entry.id === configId);
+      if (option) (option as { currentValue: string | boolean }).currentValue = value;
+      return session.configOptions;
     },
     async authenticate() {
       return;
     },
-    async setMode() {
-      return;
+    async setMode(modeId: string) {
+      if (session.modes) (session.modes as { currentModeId: string }).currentModeId = modeId;
     },
     promptCapabilities: opts.promptCapabilities ?? {},
     supportsSessionFork: opts.supportsSessionFork ?? false,
@@ -4018,14 +4300,16 @@ function createStreamingAcpSession(events: unknown[]): {
     drainPendingEvents() {
       return [];
     },
-    async setConfigOption() {
-      return [];
+    async setConfigOption(configId: string, value: string | boolean) {
+      const option = session.configOptions.find((entry) => entry.id === configId);
+      if (option) (option as { currentValue: string | boolean }).currentValue = value;
+      return session.configOptions;
     },
     async authenticate() {
       return;
     },
-    async setMode() {
-      return;
+    async setMode(modeId: string) {
+      if (session.modes) (session.modes as { currentModeId: string }).currentModeId = modeId;
     },
     promptCapabilities: {},
     supportsSessionFork: false,

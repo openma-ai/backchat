@@ -58,6 +58,8 @@ export type ControlStreamEvent = {
   title?: string;
   kind?: string;
   status?: string;
+  /** Success is `ok`. Wire status `completed` is `finished` when no result or permission says otherwise. */
+  outcome?: "ok" | "denied" | "failed" | "cancelled" | "finished";
   request_id?: string;
   options?: Array<{ optionId: string; name: string; kind: string }>;
   message?: string;

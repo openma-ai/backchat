@@ -39,6 +39,7 @@ import {
   type SessionRow,
 } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
+import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { AnimatedCollapse } from "@/components/ui/animated-collapse";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSidebarCollapse } from "@/components/shell/AppShell";
@@ -1380,6 +1381,7 @@ function ProjectCoordinatorRow({
     "aria-label": `${t(hasCoordinator ? "project.openCoordinator" : "project.setupCoordinator")}: ${group.label}`,
     "aria-current": active ? "page" as const : undefined,
     "data-project-coordinator": group.key,
+    "data-testid": "project-coordinator-row",
     "data-configured": hasCoordinator,
     className: cn("sidebar-coordinator-row", active && "app-selected-surface"),
   };
@@ -1722,7 +1724,7 @@ function SessionRow({
           <button
             type="button"
             onClick={onSelect}
-            title={row.lastError ?? row.agent_id}
+            title={row.lastError ?? row.label}
             aria-label={row.label}
             className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
@@ -1731,7 +1733,8 @@ function SessionRow({
                 <AgentIcon agentId={row.agent_id} iconUrl={agentIconUrl} className="size-3.5" title={row.agent_id} />
               ) : null}
             </span>
-            <span className={cn("flex-1 truncate text-left", labelCls)}>{row.label}</span>
+            <span className={cn("min-w-0 flex-1 truncate text-left", labelCls)}>{row.label}</span>
+            {row.externalClient ? <ExternalSourceBadge client={row.externalClient} /> : null}
           </button>
 
           <span className="sidebar-row-trailing">

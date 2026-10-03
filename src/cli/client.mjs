@@ -22,7 +22,7 @@ export function controlSocketPath(env = process.env, platform = process.platform
   return join("/tmp", `backchat-${hash}.sock`);
 }
 
-export function callControl({ socketPath, method, params, client }) {
+export function callControl({ socketPath, method, params, client, onEvent }) {
   const payload = JSON.stringify({
     method,
     params: params ?? {},
@@ -39,9 +39,46 @@ export function callControl({ socketPath, method, params, client }) {
       },
     }, (res) => {
       const chunks = [];
+      let buffer = "";
+      const events = [];
+      const streaming = () => String(res.headers["content-type"] ?? "").includes("ndjson");
       res.setEncoding("utf8");
-      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("data", (chunk) => {
+        if (!streaming()) {
+          chunks.push(chunk);
+          return;
+        }
+        buffer += chunk;
+        let newline = buffer.indexOf("\n");
+        while (newline !== -1) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          newline = buffer.indexOf("\n");
+          if (!line.trim()) continue;
+          const event = JSON.parse(line);
+          events.push(event);
+          onEvent?.(event);
+        }
+      });
       res.on("end", () => {
+        if (streaming()) {
+          if (buffer.trim()) {
+            const event = JSON.parse(buffer);
+            events.push(event);
+            onEvent?.(event);
+          }
+          const last = events.at(-1);
+          if (last?.status === "timeout" || last?.type === "result" && last?.status === "timeout") {
+            reject(Object.assign(new Error("Timed out"), { code: "timeout", result: { events } }));
+            return;
+          }
+          if (last?.type === "result" && last?.status === "error") {
+            reject(Object.assign(new Error(last.message || "Session error"), { code: "error", result: { events } }));
+            return;
+          }
+          resolve({ events });
+          return;
+        }
         const text = chunks.join("");
         let body;
         try {

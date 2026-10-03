@@ -1,5 +1,7 @@
 import type { SessionEventOut } from "../shared/session-events.js";
 import { attachOpenMAEvent } from "../shared/openma-event.js";
+import { rememberedPermissionDecision } from "./permission-policy.js";
+import { toolCallOutcome } from "../shared/tool-outcome.js";
 
 export function hasOpenMAEventSchema(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -65,6 +67,45 @@ export function shouldPersistSessionEvent(
   return true;
 }
 
+function stampPermissionOutcome(message: SessionEventOut): SessionEventOut {
+  const event = message.openma_event;
+  if (!event) return message;
+  if (event.type !== "tool.completed" && event.type !== "tool.failed" && event.type !== "tool.cancelled") {
+    return message;
+  }
+  const data = event.data && typeof event.data === "object" && !Array.isArray(event.data)
+    ? event.data as Record<string, unknown>
+    : {};
+  const toolCallId = typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
+  const decision = rememberedPermissionDecision(message.session_id, toolCallId);
+  if (!decision) return message;
+  const outcome = toolCallOutcome({
+    status: typeof data.status === "string"
+      ? data.status
+      : event.type === "tool.cancelled" ? "cancelled" : "completed",
+    rawOutput: data.raw_output,
+    content: data.content,
+    error: data.error,
+    permission_outcome: decision.outcome,
+    option_kind: decision.optionKind,
+    option_id: decision.optionId,
+  });
+  if (!outcome || outcome === "ok" || outcome === "finished") return message;
+  return {
+    ...message,
+    openma_event: {
+      ...event,
+      type: outcome === "cancelled" ? "tool.cancelled" : "tool.failed",
+      data: {
+        ...data,
+        outcome,
+        status: outcome === "cancelled" ? "cancelled" : "failed",
+        ...(outcome === "denied" ? { reason: data.reason ?? "denied" } : {}),
+      },
+    },
+  };
+}
+
 export function createSessionEventEnricher(
   now: () => string,
   initialSequenceForSession: (sessionId: string) => number = () => 0,
@@ -95,7 +136,7 @@ export function createSessionEventEnricher(
           harness: harnessBySessionId.get(message.session_id),
           adapter: "acp",
         });
-    const enriched = attached.openma_event
+    const sequenced = attached.openma_event
       ? {
           ...attached,
           openma_event: {
@@ -107,6 +148,7 @@ export function createSessionEventEnricher(
           },
         }
       : attached;
+    const enriched = stampPermissionOutcome(sequenced);
 
     if (message.type === "session.disposed") {
       harnessBySessionId.delete(message.session_id);

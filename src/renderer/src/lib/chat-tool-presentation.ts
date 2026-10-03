@@ -21,6 +21,7 @@ export interface ChatToolPresentationInput {
   kind?: string;
   status?: string;
   title?: string;
+  meta?: Record<string, unknown>;
   locations?: Array<{ path?: string }>;
   content?: Array<{
     type: string;
@@ -33,6 +34,17 @@ export interface ChatToolPresentationInput {
   rawInput?: unknown;
 }
 
+/** A permission refusal is not a failed run. Stream and transcript both say
+ * `denied`; the row uses the same word instead of a red failure. */
+export function toolWasDenied(tool: {
+  status?: string;
+  meta?: Record<string, unknown>;
+}): boolean {
+  if (tool.status === "denied") return true;
+  const outcome = tool.meta?.permissionOutcome ?? tool.meta?.permission_outcome;
+  return outcome === "denied";
+}
+
 /** The i18n key for what a tool call is doing, or did.
  *
  * These used to be Chinese literals returned straight into JSX, which made the
@@ -43,6 +55,8 @@ export function toolVerbKey(
   kind: string | undefined,
   status: string | undefined,
 ): TranslationKey {
+  // The command never started. This stays ahead of the execute "ran" verbs.
+  if (status === "denied") return "tool.notRun";
   // A call the agent never finished reporting on. ACP v1's ToolCallStatus is
   // only pending/in_progress/completed/failed, so an interrupted call has no
   // wire status of its own — the host settles it for presentation rather than
@@ -145,6 +159,7 @@ export function detectSkillName(
 export function toolActivityVerbKey(
   tool: ChatToolPresentationInput,
 ): TranslationKey {
+  if (toolWasDenied(tool)) return "tool.notRun";
   if (tool.status === INTERRUPTED_TOOL_STATUS) {
     return toolVerbKey(tool.kind, tool.status);
   }

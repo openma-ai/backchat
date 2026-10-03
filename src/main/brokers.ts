@@ -26,6 +26,16 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { PushChannel, InvokeChannel } from "../shared/ipc-channels.js";
+import {
+  firstAllowOption,
+  noteToolApproval,
+  rememberPermissionDecision,
+  runtimePermissionPolicy,
+  shouldAutoApproveTool,
+  toolCallIdOf,
+} from "./permission-policy.js";
+import { appendEvent } from "./sql-store.js";
+import { publishControlLiveEvent } from "./control/live-bus.js";
 import type {
   AcpTerminalInfo,
   AcpTerminalSnapshot,
@@ -91,6 +101,14 @@ function makeRequestId(prefix: string): string {
   return `${prefix}-${nextRequestId++}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function rememberBrokerEvent(sessionId: string, type: string, data: unknown): void {
+  try {
+    appendEvent(sessionId, type, data);
+  } catch {
+    // Headless tests and a closed database still answer the permission.
+  }
+}
+
 function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send(channel, payload);
@@ -123,6 +141,15 @@ export function requestPermission(
     options: Array<{ optionId: string; name: string; kind: string }>;
     toolCall: unknown;
   };
+  const policy = runtimePermissionPolicy(sessionId);
+  const allow = firstAllowOption(p.options ?? []);
+  const auto = shouldAutoApproveTool(policy, p.toolCall);
+  if (auto && allow) {
+    noteToolApproval(sessionId, toolCallIdOf(p.toolCall));
+    return Promise.resolve({
+      outcome: { outcome: "selected", optionId: allow.optionId },
+    });
+  }
   return new Promise((resolve) => {
     const requestId = makeRequestId("perm");
     const ask: PermissionAskInfo = {
@@ -136,6 +163,22 @@ export function requestPermission(
       sessionId,
       ask,
       resolve: (d) => resolve(d),
+    });
+    rememberBrokerEvent(sessionId, "permission_request", {
+      request_id: requestId,
+      tool_call_id: toolCallIdOf(p.toolCall),
+      title: ask.presentation.title,
+      kind: ask.presentation.kind,
+      options: ask.options,
+    });
+    publishControlLiveEvent({
+      type: "permission",
+      session_id: sessionId,
+      request_id: requestId,
+      timestamp: new Date().toISOString(),
+      title: ask.presentation.title,
+      kind: ask.presentation.kind,
+      options: ask.options,
     });
     broadcast(PushChannel.PermissionRequest, ask);
   });
@@ -210,8 +253,11 @@ export function writeTextFile(
   const p = params as { path: string; content: string };
   const roots = typeof sessionRoots === "string" ? [sessionRoots] : sessionRoots;
   const insideCwd = roots.some((root) => isInsideCwd(p.path, root));
+  const policy = runtimePermissionPolicy(sessionId);
+  const autoAll = policy === "auto-all" || policy === "auto-edit";
+  const gateWrites = policy === "ask" || policy === "auto-read";
   return new Promise(async (resolve, reject) => {
-    if (insideCwd) {
+    if ((insideCwd && !gateWrites) || autoAll) {
       try {
         await mkdir(dirname(p.path), { recursive: true });
         await writeFile(p.path, p.content, "utf-8");
@@ -239,6 +285,25 @@ export function writeTextFile(
       content: p.content,
       resolve: (v) => resolve(v),
       reject,
+    });
+    const options = [
+      { optionId: "allow", name: "Allow", kind: "allow_once" },
+      { optionId: "reject", name: "Reject", kind: "reject_once" },
+    ];
+    rememberBrokerEvent(sessionId, "permission_request", {
+      request_id: requestId,
+      title: p.path,
+      kind: "write",
+      options,
+    });
+    publishControlLiveEvent({
+      type: "permission",
+      session_id: sessionId,
+      request_id: requestId,
+      timestamp: new Date().toISOString(),
+      title: p.path,
+      kind: "write",
+      options,
     });
     broadcast(PushChannel.FsWriteApproval, ask);
   });
@@ -517,6 +582,153 @@ export function cancelPendingFor(sessionId: string): void {
   }
 }
 
+export interface ListedBrokerAsk {
+  id: string;
+  session_id: string;
+  kind: "permission" | "elicitation" | "fs_write";
+  title?: string;
+  message?: string;
+  path?: string;
+  options?: Array<{ optionId: string; name: string; kind: string }>;
+}
+
+export function listPendingAsks(sessionId?: string): ListedBrokerAsk[] {
+  const match = (id: string) => !sessionId || id === sessionId;
+  return [
+    ...[...pendingPermission.values()]
+      .filter((pending) => match(pending.sessionId))
+      .map((pending) => ({
+        id: pending.ask.requestId,
+        session_id: pending.sessionId,
+        kind: "permission" as const,
+        title: pending.ask.presentation.title,
+        options: pending.ask.options,
+      })),
+    ...[...pendingElicitation.values()]
+      .filter((pending) => match(pending.sessionId))
+      .map((pending) => ({
+        id: pending.ask.requestId,
+        session_id: pending.sessionId,
+        kind: "elicitation" as const,
+        message: pending.ask.message,
+      })),
+    ...[...pendingFsWrite.values()]
+      .filter((pending) => match(pending.sessionId))
+      .map((pending) => ({
+        id: pending.ask.requestId,
+        session_id: pending.sessionId,
+        kind: "fs_write" as const,
+        path: pending.path,
+        title: pending.path,
+        options: [
+          { optionId: "allow", name: "Allow", kind: "allow_once" },
+          { optionId: "reject", name: "Reject", kind: "reject_once" },
+        ],
+      })),
+  ];
+}
+
+export function respondPermission(requestId: string, optionId: string | null | undefined): boolean {
+  const pending = pendingPermission.get(requestId);
+  if (!pending) return false;
+  pendingPermission.delete(requestId);
+  const option = optionId == null
+    ? undefined
+    : pending.ask.options.find((entry) => entry.optionId === optionId);
+  const allows = option?.kind === "allow_once" || option?.kind === "allow_always";
+  const rejects = option?.kind === "reject_once" || option?.kind === "reject_always";
+  const toolCallId = toolCallIdOf(pending.ask.toolCall);
+  const outcome = optionId == null ? "cancelled" : rejects ? "rejected" : "selected";
+  if (allows) noteToolApproval(pending.sessionId, toolCallId);
+  rememberPermissionDecision(pending.sessionId, toolCallId, {
+    outcome,
+    optionKind: option?.kind,
+    optionId: optionId ?? undefined,
+  });
+  rememberBrokerEvent(pending.sessionId, "permission_response", {
+    request_id: requestId,
+    tool_call_id: toolCallId,
+    option_id: optionId,
+    option_kind: option?.kind,
+    outcome,
+    title: pending.ask.presentation.title,
+  });
+  brokerSessionEventSink?.({
+    type: "session.permission_response",
+    session_id: pending.sessionId,
+    request_id: requestId,
+    option_id: optionId,
+    outcome,
+  });
+  if (optionId == null) {
+    pending.resolve({ outcome: { outcome: "cancelled" } });
+  } else {
+    pending.resolve({
+      outcome: { outcome: "selected", optionId },
+    });
+  }
+  return true;
+}
+
+/** CLI answer for a pending permission, elicitation, or filesystem ask. */
+export async function respondToBrokerAsk(
+  sessionId: string,
+  requestId: string,
+  option: string,
+): Promise<void> {
+  const permission = pendingPermission.get(requestId);
+  if (permission) {
+    if (permission.sessionId !== sessionId) {
+      throw new Error(`Request ${requestId} does not belong to session ${sessionId}`);
+    }
+    const cancelled = option === "cancel" || option === "reject";
+    if (!respondPermission(requestId, cancelled ? null : option)) {
+      throw new Error(`Permission request not found: ${requestId}`);
+    }
+    return;
+  }
+  const fsWrite = pendingFsWrite.get(requestId);
+  if (fsWrite) {
+    if (fsWrite.sessionId !== sessionId) {
+      throw new Error(`Request ${requestId} does not belong to session ${sessionId}`);
+    }
+    pendingFsWrite.delete(requestId);
+    const approved = option === "allow" || option === "approve" || option === "allow_once";
+    rememberBrokerEvent(sessionId, "permission_response", {
+      request_id: requestId,
+      option_id: approved ? option : null,
+      outcome: approved ? "selected" : "cancelled",
+      title: fsWrite.path,
+    });
+    if (!approved) {
+      fsWrite.reject(new Error("user denied write"));
+      return;
+    }
+    await mkdir(dirname(fsWrite.path), { recursive: true });
+    await writeFile(fsWrite.path, fsWrite.content, "utf-8");
+    fsWrite.resolve({});
+    return;
+  }
+  const elicitation = pendingElicitation.get(requestId);
+  if (elicitation) {
+    if (elicitation.sessionId !== sessionId) {
+      throw new Error(`Request ${requestId} does not belong to session ${sessionId}`);
+    }
+    pendingElicitation.delete(requestId);
+    if (elicitation.ask.mode === "url") {
+      elicitation.resolve(option === "accept"
+        ? { action: "accept" }
+        : option === "cancel"
+          ? { action: "cancel" }
+          : { action: "decline" });
+    } else {
+      elicitation.resolve({ action: option === "cancel" ? "cancel" : "decline" });
+    }
+    return;
+  }
+  throw new Error(`Request not found: ${requestId}`);
+}
+
 // -------------------- IPC registration -------------------------
 
 export function registerBrokers(): void {
@@ -538,23 +750,7 @@ export function registerBrokers(): void {
     ],
   );
   ipcMain.handle(InvokeChannel.PermissionRespond, (_e, decision: PermissionDecision) => {
-    const pending = pendingPermission.get(decision.requestId);
-    if (!pending) return;
-    pendingPermission.delete(decision.requestId);
-    brokerSessionEventSink?.({
-      type: "session.permission_response",
-      session_id: pending.sessionId,
-      request_id: decision.requestId,
-      option_id: decision.optionId,
-      outcome: decision.optionId == null ? "cancelled" : "selected",
-    });
-    if (decision.optionId == null) {
-      pending.resolve({ outcome: { outcome: "cancelled" } });
-    } else {
-      pending.resolve({
-        outcome: { outcome: "selected", optionId: decision.optionId },
-      });
-    }
+    respondPermission(decision.requestId, decision.optionId);
   });
   ipcMain.handle(InvokeChannel.ElicitationRespond, async (_e, decision: ElicitationDecision) => {
     const pending = pendingElicitation.get(decision.requestId);

@@ -26,6 +26,9 @@ const api: BackchatApi = {
   projectWorkSave: config => ipcRenderer.invoke(InvokeChannel.ProjectWorkSave, config),
   projectWorkSubmit: input => ipcRenderer.invoke(InvokeChannel.ProjectWorkSubmit, input),
   projectWorkGoal: input => ipcRenderer.invoke(InvokeChannel.ProjectWorkGoal, input),
+  externalCoordinatorsList: () => ipcRenderer.invoke(InvokeChannel.ExternalCoordinatorsList),
+  externalCoordinatorCreate: (input) => ipcRenderer.invoke(InvokeChannel.ExternalCoordinatorCreate, input),
+  externalCoordinatorRemove: (input) => ipcRenderer.invoke(InvokeChannel.ExternalCoordinatorRemove, input),
   openmaRemoveDirect: (id) => ipcRenderer.invoke(InvokeChannel.OpenmaRemoveDirect, id),
   openmaConnectDirect: (input) => ipcRenderer.invoke(InvokeChannel.OpenmaConnectDirect, input),
   openmaAccountState: () => ipcRenderer.invoke(InvokeChannel.OpenmaAccountState),
@@ -137,6 +140,11 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.ProjectsList) as Promise<
       import("../shared/projects.js").ProjectInfo[]
     >,
+  onProjectsChanged: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on(PushChannel.ProjectsChanged, listener);
+    return () => ipcRenderer.removeListener(PushChannel.ProjectsChanged, listener);
+  },
   projectSave: (p) =>
     ipcRenderer.invoke(InvokeChannel.ProjectSave, p) as Promise<
       import("../shared/projects.js").ProjectInfo

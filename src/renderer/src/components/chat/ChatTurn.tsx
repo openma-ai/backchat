@@ -348,6 +348,7 @@ function projectedToolPresentation(tool: AgentUIToolItem) {
     kind: tool.toolKind,
     status: tool.status,
     title: tool.title,
+    meta: tool.adapterMeta,
     locations: tool.locations,
     content: tool.content as
       | Array<{

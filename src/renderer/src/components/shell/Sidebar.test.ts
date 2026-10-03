@@ -140,6 +140,21 @@ describe("legacy project promotion", () => {
 });
 
 describe("groupSidebarSessions", () => {
+  it("keeps a CLI session in the project list and still hides the built-in coordinator session", () => {
+    const project = savedProject("proj-1", "/work/hilo");
+    const builtin = row({ id: "coordinator", projectId: "proj-1", label: "Coordinator session" });
+    const external = row({ id: "external", projectId: "proj-1", label: "EVIDENCE_HELLO", externalClient: "cursor killer" });
+    const ordinary = row({ id: "ordinary", projectId: "proj-1", label: "Project chat" });
+    const grouped = groupSidebarSessions(
+      [builtin, external, ordinary],
+      [project],
+      [],
+      [],
+      new Set(["coordinator"]),
+    );
+    expect(grouped.projects[0]?.sessions.map((session) => session.id)).toEqual(["external", "ordinary"]);
+  });
+
   it("keeps durable coordinator sessions out of ordinary and pinned chat entries", () => {
     const coordinator = row({ id: "coordinator", pinnedAt: 1, projectId: "proj-1" });
     const ordinary = row({ id: "ordinary", label: "Project coordinator", projectScope: "none" });

@@ -60,7 +60,17 @@ import type { WorkspaceCreateParams, WorkspaceInfo } from "../shared/workspaces.
 import { exportSessionFiles as exportSessionFilesToDisk } from "./file-first-export.js";
 import { openmaRoot } from "./storage-root.js";
 import { controlSocketPath } from "../shared/control-socket.js";
-import { createControlApi } from "./control/handlers.js";
+import { createControlApi, disposeProjectSessions, removeWorkspaceStoppingSessions } from "./control/handlers.js";
+import { publishControlLiveEvent, streamEventsFromSession } from "./control/live-bus.js";
+import {
+  ensureExternalCoordinator,
+  getExternalCoordinator,
+  listExternalCoordinators,
+  listExternalTasks,
+  listSessionsForExternalCoordinator,
+  removeExternalCoordinator,
+} from "./sql-store.js";
+import { withExternalWork } from "./control/handlers.js";
 import { startControlServer, type ControlServer } from "./control/server.js";
 import { installBackchatCli } from "./control/cli-install.js";
 import { saveProjectCommand } from "./project-commands.js";
@@ -460,6 +470,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   let projectAgents: ProjectAgentBridge | undefined;
   let projectMcp: ProjectMcpBridge | undefined;
   const send = (msg: SessionEventOut) => {
+    for (const event of streamEventsFromSession(msg)) publishControlLiveEvent(event);
     deps.sessionActivitySink?.(msg);
     const enriched = enrichSessionEvent(msg);
     if (enriched.openma_event) projectAgents?.observe(enriched.openma_event as ProjectAgentEvent);
@@ -576,7 +587,33 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   await projectMcp.start();
   projectWork.start();
   const projectRouter = new ProjectCloudRouter(projectWork, scope => { if(!deps.openmaAccount) throw new Error("OpenMA login required"); return deps.openmaAccount.connection(scope); }, getProject, process.env.BACKCHAT_PROJECT_WORKER_URL);
-  ipcMain.handle(InvokeChannel.ProjectWorkView, (_e, id: string) => projectRouter.view(id));
+  ipcMain.handle(InvokeChannel.ProjectWorkView, async (_e, id: string) =>
+    withExternalWork(id, await projectRouter.view(id)));
+  ipcMain.handle(InvokeChannel.ExternalCoordinatorsList, () => ({
+    coordinators: listExternalCoordinators(),
+    tasks: listExternalTasks(),
+  }));
+  ipcMain.handle(InvokeChannel.ExternalCoordinatorCreate, (_e, input: { project_id: string; name: string }) => {
+    if (!input?.project_id?.trim() || !input?.name?.trim()) {
+      throw new Error("Project id and name are required");
+    }
+    if (!getProject(input.project_id.trim())) throw new Error("Project not found");
+    return ensureExternalCoordinator(input.project_id.trim(), input.name);
+  });
+  ipcMain.handle(InvokeChannel.ExternalCoordinatorRemove, async (_e, input: { id: string; delete_threads?: boolean }) => {
+    const coordinator = getExternalCoordinator(input?.id ?? "");
+    if (!coordinator) throw new Error("External coordinator not found");
+    if (input.delete_threads) {
+      for (const session of listSessionsForExternalCoordinator(coordinator)) {
+        try {
+          await sessionManager.dispose(session.id);
+        } catch {
+          // Already stopped.
+        }
+      }
+    }
+    return removeExternalCoordinator(coordinator.id, input.delete_threads === true);
+  });
   ipcMain.handle(InvokeChannel.ProjectWorkSave, (_e, config) => projectRouter.save(config));
   ipcMain.handle(InvokeChannel.ProjectWorkSubmit, (_e, input) => projectRouter.submit(input));
   ipcMain.handle(InvokeChannel.ProjectWorkGoal, (_e, input) => projectRouter.goal(input));
@@ -908,7 +945,12 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   ipcMain.handle(
     InvokeChannel.ProjectDelete,
-    async (_e, p: { project_id: string }): Promise<void> => { await projectRouter.remove(p.project_id); deleteProject(p.project_id); },
+    async (_e, p: { project_id: string }): Promise<void> => {
+      const listed = await workspaceService.list(p.project_id);
+      await disposeProjectSessions(sessionManager, p.project_id, listed.map((workspace) => workspace.id));
+      await projectRouter.remove(p.project_id);
+      deleteProject(p.project_id);
+    },
   );
   ipcMain.handle(
     InvokeChannel.WorkspacesList,
@@ -928,7 +970,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
   ipcMain.handle(
     InvokeChannel.WorkspaceDelete,
-    (_e, p: { workspace_id: string }): Promise<void> => workspaceService.delete(p.workspace_id),
+    (_e, p: { workspace_id: string }): Promise<void> => {
+      return removeWorkspaceStoppingSessions(workspaceService, sessionManager, p.workspace_id).then(() => undefined);
+    },
   );
   // Checkout sets created per session before workspaces existed become
   // workspaces of their own; nothing on disk moves.
@@ -938,7 +982,19 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     try {
       controlServer = await startControlServer({
         socketPath,
-        api: createControlApi(),
+        api: createControlApi({
+          sessions: sessionManager,
+          onProjectsChanged: () => {
+            for (const window of BrowserWindow.getAllWindows()) {
+              if (!window.isDestroyed()) window.webContents.send(PushChannel.ProjectsChanged, {});
+            }
+          },
+          work: {
+            submit: (input) => projectRouter.submit(input),
+            view: async (id) => withExternalWork(id, await projectRouter.view(id)),
+            goal: (input) => projectRouter.goal(input),
+          },
+        }),
       });
     } catch (error) {
       console.warn("[control] failed to start; the GUI will keep running", error);

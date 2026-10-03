@@ -8,4 +8,5 @@ export function callControl(input: {
   method: string;
   params?: unknown;
   client?: string;
+  onEvent?: (event: { type?: string; status?: string; text?: string; message?: string }) => void;
 }): Promise<unknown>;

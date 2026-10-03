@@ -71,6 +71,26 @@ describe("backchat CLI parsing", () => {
     });
   });
 
+  it("parses work steer for a client task", () => {
+    expect(parseArgs([
+      "work",
+      "steer",
+      "--project",
+      "project-1",
+      "--task",
+      "task-1",
+      "--text",
+      "narrow the diff",
+      "--client",
+      "cursor killer",
+    ])).toMatchObject({
+      client: "cursor killer",
+      group: "work",
+      action: "steer",
+      flags: { project: "project-1", task: "task-1", text: "narrow the diff" },
+    });
+  });
+
   it("rejects a flag with no value", () => {
     expect(() => parseArgs(["project", "create", "--name"])).toThrow(ParseError);
   });

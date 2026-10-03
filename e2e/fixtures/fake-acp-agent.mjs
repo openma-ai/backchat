@@ -39,6 +39,7 @@ class FakeAcpAgent {
     this.connection = connection;
     this.sessions = new Map();
     this.directories = new Map();
+    this.modes = new Map();
     /** sessionId -> resolver for a deliberately stalled turn. */
     this.pendingStalls = new Map();
   }
@@ -69,7 +70,13 @@ class FakeAcpAgent {
     this.sessions.set(sessionId, params.mcpServers ?? []);
     this.directories.set(sessionId, params.cwd);
     await recordAuthEvent({ method: "session/new", sessionId });
-    return { sessionId };
+    if (process.env.BACKCHAT_FAKE_CURSOR !== "1") return { sessionId };
+    this.modes.set(sessionId, "agent");
+    return {
+      sessionId,
+      modes: cursorModes("agent"),
+      configOptions: cursorConfigOptions("agent"),
+    };
   }
 
   async loadSession(params) {
@@ -98,6 +105,9 @@ class FakeAcpAgent {
       .map((block) => block.text)
       .join("\n");
     await recordAuthEvent({ method: "session/prompt", sessionId: params.sessionId, text: promptText });
+    if (await this.runCursorProbe(params.sessionId, promptText)) {
+      return { stopReason: "end_turn" };
+    }
     if (authStatePath && await authState() !== "recovered" && promptText.includes("expire-codex-auth-e2e")) {
       await writeFile(authStatePath, "expired");
       // codex-acp 1.12 emits assistant text, then rejects the prompt with this
@@ -152,17 +162,120 @@ class FakeAcpAgent {
     if (promptText === "cursor-plan-merge-e2e") {
       await this.runCursorPlanMerge();
     }
+    const reply = process.env.BACKCHAT_FAKE_SHORT_REPLY === "1"
+      ? `[fake agent] ok: ${promptText.trim().slice(0, 40)}`
+      : `Fake response saved for ${promptText}.`;
     await this.connection.sessionUpdate({
       sessionId: params.sessionId,
       update: {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: `Fake response saved for ${promptText}.`,
+          text: reply,
         },
       },
     });
     return { stopReason: "end_turn" };
+  }
+
+  async runCursorProbe(sessionId, promptText) {
+    if (process.env.BACKCHAT_FAKE_CURSOR !== "1") return false;
+    const cwd = this.directories.get(sessionId);
+    const mode = this.modes.get(sessionId) ?? "agent";
+    if (promptText === "cursor-direct-edit") {
+      if (mode === "agent") {
+        await writeFile(join(cwd, "CURSOR_DIRECT_EDIT.md"), "written by the edit tool\n");
+        await this.connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "edit-1",
+            title: "Edit file",
+            kind: "edit",
+            status: "in_progress",
+            rawInput: {},
+          },
+        });
+        await this.connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "edit-1",
+            title: "Edit file",
+            kind: "edit",
+            status: "completed",
+            rawInput: { path: "CURSOR_DIRECT_EDIT.md" },
+            rawOutput: { path: "CURSOR_DIRECT_EDIT.md" },
+          },
+        });
+        await this.say(sessionId, "edited");
+        return true;
+      }
+      if (mode === "plan") {
+        await this.connection.extMethod("cursor/create_plan", {
+          toolCallId: "plan-1",
+          name: "Edit plan",
+          overview: "Would edit the file",
+          plan: "# Edit\n\nDo not write yet.",
+          todos: [{ id: "todo-1", content: "Edit the file", status: "pending" }],
+        });
+        await this.say(sessionId, "plan only");
+        return true;
+      }
+      await this.say(sessionId, "ask mode refuses writes");
+      return true;
+    }
+    if (promptText === "cursor-reject-shell") {
+      const response = await this.connection.requestPermission({
+        sessionId,
+        toolCall: {
+          toolCallId: "shell-1",
+          title: "echo",
+          kind: "execute",
+          status: "pending",
+        },
+        options: [
+          { optionId: "allow-once", name: "Allow", kind: "allow_once" },
+          { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+        ],
+      });
+      const allowed = response?.outcome?.outcome === "selected"
+        && response.outcome.optionId === "allow-once";
+      await this.connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "shell-1",
+          title: "echo",
+          kind: "execute",
+          status: "in_progress",
+        },
+      });
+      await this.connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "shell-1",
+          title: "echo",
+          kind: "execute",
+          status: "completed",
+          ...(allowed ? { rawOutput: "echo ok" } : {}),
+        },
+      });
+      await this.say(sessionId, allowed ? "shell ok" : "shell denied");
+      return true;
+    }
+    return false;
+  }
+
+  async say(sessionId, text) {
+    await this.connection.sessionUpdate({
+      sessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text },
+      },
+    });
   }
 
   async runCursorPlanMerge() {
@@ -273,8 +386,19 @@ class FakeAcpAgent {
     return {};
   }
 
-  async setSessionMode() {
+  async setSessionMode(params) {
+    if (params?.sessionId && typeof params.modeId === "string") {
+      this.modes.set(params.sessionId, params.modeId);
+    }
     return {};
+  }
+
+  async setSessionConfigOption(params) {
+    const mode = params?.configId === "mode" && typeof params.value === "string"
+      ? params.value
+      : this.modes.get(params?.sessionId) ?? "agent";
+    if (params?.sessionId) this.modes.set(params.sessionId, mode);
+    return { configOptions: cursorConfigOptions(mode) };
   }
 
   async cancel(params) {
@@ -287,6 +411,35 @@ class FakeAcpAgent {
     }
     return;
   }
+}
+
+function cursorModeIds() {
+  return (process.env.BACKCHAT_FAKE_CURSOR_MODES ?? "agent,plan,ask")
+    .split(",")
+    .map((mode) => mode.trim())
+    .filter(Boolean);
+}
+
+function cursorModes(current) {
+  const ids = cursorModeIds();
+  const currentModeId = ids.includes(current) ? current : ids[0] ?? "agent";
+  return {
+    currentModeId,
+    availableModes: ids.map((id) => ({ id, name: id })),
+  };
+}
+
+function cursorConfigOptions(current) {
+  const ids = cursorModeIds();
+  const currentValue = ids.includes(current) ? current : ids[0] ?? "agent";
+  return [{
+    id: "mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue,
+    options: ids.map((id) => ({ value: id, name: id })),
+  }];
 }
 
 const input = Writable.toWeb(process.stdout);

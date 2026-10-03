@@ -99,10 +99,19 @@ import {
   setSessionTitle,
   setSessionTitleIfEmpty,
   touchSession,
+  setSessionExternalClient,
+  setSessionPermissionPolicy,
   upsertSession,
 } from "./sql-store.js";
 import { composePromptContext } from "./session-prompt-context.js";
 import { desktopCliPath } from "./cli-path.js";
+import { collapseUnsupportedWorkspaceRoots } from "./workspace-roots.js";
+import { restrictCursorEdits } from "./cursor-edit-gate.js";
+import { isReadOnlyToolCall, rememberedPermissionDecision, toolWasApproved } from "./permission-policy.js";
+import {
+  isSessionPermissionPolicy,
+  setRuntimePermissionPolicy,
+} from "./permission-policy.js";
 import { logAppEvent } from "./app-log.js";
 import { extensionRequestHandlerForHarness } from "./acp-extension-adapters.js";
 import { elicitationCallbackForSession } from "./acp-client-callback-adapters.js";
@@ -129,6 +138,7 @@ interface ActiveSession {
   /** Managed/external workspace the session runs in; null for live. */
   workspaceId: string | null;
   startParams: SessionStartParams;
+  externalClient?: string;
   /** Live turns keyed by turn_id. abort() cancels the ACP request and unwinds
    *  the prompt() async iterator. */
   turns: Map<string, AbortController>;
@@ -149,6 +159,10 @@ interface ActiveSession {
   /** Latest complete ACP slash-command catalog for renderer re-announcement.
    * Session-scoped only: never restored from SQLite across process restarts. */
   latestAvailableCommandsUpdate: unknown | null;
+  /** Prepended to the next prompt when extra workspace roots were collapsed. */
+  pendingDirectoryNote?: string;
+  /** Cursor was switched out of agent mode. A non-read tool that still starts without approval cancels the turn. */
+  failClosedWrites?: boolean;
 }
 
 interface OutOfBandSteeringTurn {
@@ -311,7 +325,7 @@ export class SessionManager {
     session_id: string,
     sess: Pick<
       ActiveSession,
-      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "workspaceId" | "acp" | "auth"
+      "acpSessionId" | "agentId" | "cwd" | "additionalDirectories" | "projectId" | "workspaceId" | "acp" | "auth" | "externalClient"
     >,
   ): SessionStartResult {
     this.#transition(session_id, {
@@ -355,6 +369,8 @@ export class SessionManager {
       cwd: result.cwd,
       additional_directories: result.additional_directories,
       project_id: result.project_id,
+      workspace_id: result.workspace_id,
+      ...(sess.externalClient ? { external_client: sess.externalClient } : {}),
       config_options: result.config_options,
       modes: result.modes,
       protocol_version: result.protocol_version,
@@ -462,6 +478,11 @@ export class SessionManager {
           }
         : {}),
     });
+  }
+
+  activeTurnIds(sessionId: string): string[] {
+    const sess = this.#sessions.get(sessionId);
+    return sess ? [...sess.turns.keys()] : [];
   }
 
   has(id: string): boolean {
@@ -676,7 +697,17 @@ export class SessionManager {
         );
       }
       sessionCwd = preparedWorktrees.cwd;
-      requestedAdditionalDirectories = preparedWorktrees.additionalDirectories;
+      const workspaceDirectories = new Set([
+        preparedWorktrees.cwd,
+        ...preparedWorktrees.additionalDirectories,
+      ]);
+      requestedAdditionalDirectories = [
+        ...preparedWorktrees.additionalDirectories,
+        ...(p.extra_directories ?? []).filter((dir) => {
+          const trimmed = dir.trim();
+          return trimmed.length > 0 && !workspaceDirectories.has(trimmed);
+        }),
+      ];
     } else if (
       p.workspace_mode === "project"
       || p.workspace_mode === "inherited"
@@ -711,7 +742,8 @@ export class SessionManager {
       agent.id,
       agentEnv,
     );
-    const additionalDirectories: string[] = [];
+    let additionalDirectories: string[] = [];
+    let pendingDirectoryNote: string | undefined;
     const seenDirectories = new Set([sessionCwd]);
     for (const rawDirectory of requestedAdditionalDirectories) {
       const directory = rawDirectory.trim();
@@ -792,13 +824,14 @@ export class SessionManager {
           ? { forkFrom: { acpSessionId: p.fork.acp_session_id } }
           : {}),
       });
-      const acpSession = await this.#runtime.start({
+      const mcpServers = await this.#resolveMcpServers(agent.id, p.session_id) as never;
+      const startInput = {
         agent: {
           command,
           args,
           cwd: sessionCwd,
           env: runtimeAgentEnv,
-          onDiagnosticLine: (line) => {
+          onDiagnosticLine: (line: string) => {
             logAppEvent("acp.process.diagnostic", {
               session_id: p.session_id,
               agent_id: agent.id,
@@ -806,7 +839,7 @@ export class SessionManager {
             });
           },
         },
-        mcpServers: await this.#resolveMcpServers(agent.id, p.session_id) as never,
+        mcpServers,
         additionalDirectories,
         ...(sessionRequestMetaForHarness(agent.id)
           ? { sessionRequestMeta: sessionRequestMetaForHarness(agent.id) }
@@ -826,20 +859,53 @@ export class SessionManager {
             }
           : {}),
         clientCallbacks: runtimeCallbacks,
-        onOutOfBandSessionUpdate: (update) => {
+        onOutOfBandSessionUpdate: (update: unknown) => {
           if (activeForOutOfBandUpdates) {
             this.#handleOutOfBandSessionUpdate(activeForOutOfBandUpdates, update);
           } else {
             pendingOutOfBandUpdates.push(update);
           }
         },
-      });
+      };
+      let acpSession;
+      try {
+        acpSession = await this.#runtime.start(startInput);
+      } catch (error) {
+        const collapsed = collapseUnsupportedWorkspaceRoots(error, sessionCwd, additionalDirectories);
+        if (!collapsed) throw error;
+        sessionCwd = collapsed.cwd;
+        additionalDirectories = [];
+        pendingDirectoryNote = collapsed.note;
+        acpSession = await this.#runtime.start({
+          ...startInput,
+          additionalDirectories,
+          agent: { ...startInput.agent, cwd: sessionCwd },
+        });
+      }
       if (this.#cancelledStarts.has(p.session_id)) {
         await Promise.resolve(acpSession.dispose()).catch(() => undefined);
         if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
           await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
         }
         return { status: "cancelled", session_id: p.session_id };
+      }
+      const storedPolicy = getSession(p.session_id)?.permission_policy;
+      const permissionPolicy = isSessionPermissionPolicy(p.permission_policy)
+        ? p.permission_policy
+        : isSessionPermissionPolicy(storedPolicy)
+          ? storedPolicy
+          : undefined;
+      const cursorGate = await restrictCursorEdits(acpSession, {
+        agentId: agent.id,
+        policy: permissionPolicy,
+        permissionMode: defaults.permissionMode,
+      });
+      if (cursorGate.action === "blocked") {
+        await Promise.resolve(acpSession.dispose()).catch(() => undefined);
+        if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
+          await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
+        }
+        return this.#errorResult(p.session_id, cursorGate.message, { agentId: agent.id });
       }
       const workspaceId = preparedWorktrees?.workspaceId ?? null;
       const projectId = preparedWorktrees?.projectId ?? (p.project_id?.trim() || undefined);
@@ -854,6 +920,7 @@ export class SessionManager {
         workspaceId,
         startParams: {
           ...p,
+          ...(permissionPolicy ? { permission_policy: permissionPolicy } : {}),
           project_id: projectId || undefined,
           cwd: sessionCwd,
           additional_directories: additionalDirectories,
@@ -873,6 +940,9 @@ export class SessionManager {
         promptQueueEnabled: defaults.promptQueueEnabled !== false,
         readyAt: Date.now(),
         latestAvailableCommandsUpdate: null,
+        ...(p.external_client?.trim() ? { externalClient: p.external_client.trim() } : {}),
+        ...(pendingDirectoryNote ? { pendingDirectoryNote } : {}),
+        ...(cursorGate.action === "restricted" ? { failClosedWrites: true } : {}),
       };
       activeForOutOfBandUpdates = activeSession;
       this.#sessions.set(p.session_id, activeSession);
@@ -893,7 +963,25 @@ export class SessionManager {
         additional_directories: additionalDirectories,
         workspace_id: workspaceId,
       });
+      if (p.external_client?.trim()) {
+        setSessionExternalClient(p.session_id, p.external_client);
+      }
+      if (permissionPolicy) {
+        setSessionPermissionPolicy(p.session_id, permissionPolicy);
+        setRuntimePermissionPolicy(p.session_id, permissionPolicy);
+      }
       const result = this.#readyResult(p.session_id, this.#sessions.get(p.session_id)!);
+      if (cursorGate.action === "restricted") {
+        this.#send({
+          type: "session.event",
+          session_id: p.session_id,
+          turn_id: "",
+          event: {
+            sessionUpdate: "current_mode_update",
+            currentModeId: cursorGate.mode,
+          },
+        });
+      }
       this.#sendConfigOptions(p.session_id, acpSession.configOptions);
       await this.#observeConfiguredAuth(agent.id);
       await this.#observeLiveSessionConfig(agent.id, {
@@ -1494,6 +1582,40 @@ export class SessionManager {
     }
     this.#trackOpenToolCall(sess, turnId, event);
     this.#sendAcpSessionEvent(sess, turnId, event);
+    this.#stopUnapprovedCursorTool(sess, turnId, event);
+  }
+
+  /** Cursor ask/plan must not run a shell or edit that never asked. The tool
+   *  event is already on the stream; then the call is settled and the turn
+   *  stops with one error result, not a cancel result that races ahead of it. */
+  #stopUnapprovedCursorTool(
+    sess: ActiveSession,
+    turnId: string,
+    event: unknown,
+  ): void {
+    if (!turnId || !sess.failClosedWrites) return;
+    if (sessionUpdateType(event) !== "tool_call") return;
+    const inner = sessionUpdateInner(event);
+    const toolCallId =
+      typeof inner.toolCallId === "string"
+        ? inner.toolCallId
+        : typeof inner.tool_call_id === "string"
+          ? inner.tool_call_id
+          : typeof inner.id === "string"
+            ? inner.id
+            : undefined;
+    if (!toolCallId || isReadOnlyToolCall(inner) || toolWasApproved(sess.id, toolCallId)) return;
+    // A shell the user already accepted or rejected came through
+    // session/request_permission. Do not treat that later tool_call as an
+    // unapproved start; the permission decision owns the outcome.
+    if (rememberedPermissionDecision(sess.id, toolCallId)) return;
+    this.cancel(sess.id, turnId, { suppressStreamResult: true });
+    this.#send({
+      type: "session.error",
+      session_id: sess.id,
+      turn_id: turnId,
+      message: "Stopped the turn. Cursor started a non-read tool without approval. A completed tool status does not mean the edit was allowed.",
+    });
   }
 
   #trackOpenToolCall(
@@ -1634,12 +1756,21 @@ export class SessionManager {
       // for reload-restored sessions fall back to "agent · slug" and look
       // identical to each other. derivePromptLabel matches the renderer's
       // logic in ChatView.deriveLabel.
-      setSessionTitleIfEmpty(p.session_id, derivePromptLabel(displayText));
+      const title = derivePromptLabel(displayText);
+      if (setSessionTitleIfEmpty(p.session_id, title)) {
+        this.#send({ type: "session.retitled", session_id: p.session_id, title });
+      }
     }
     touchSession(p.session_id);
 
     try {
-      const promptBlocks = buildAcpPromptBlocks(p, sess.acp.promptCapabilities);
+      let agentPrompt = p;
+      if (sess.pendingDirectoryNote) {
+        const note = sess.pendingDirectoryNote;
+        sess.pendingDirectoryNote = undefined;
+        agentPrompt = { ...p, text: `${note}\n\n${p.text}` };
+      }
+      const promptBlocks = buildAcpPromptBlocks(agentPrompt, sess.acp.promptCapabilities);
       for await (const ev of sess.acp.prompt(promptBlocks, { abortSignal: ctrl.signal })) {
         if (sess.orchestration.disposed) break;
         const t = (ev as { type?: string } | null | undefined)?.type;
@@ -1699,6 +1830,7 @@ export class SessionManager {
           }
         }
         this.#sendAcpSessionEvent(sess, p.turn_id, ev);
+        this.#stopUnapprovedCursorTool(sess, p.turn_id, ev);
       }
       const stopReason = typeof promptResponse?.stopReason === "string"
         ? promptResponse.stopReason
@@ -1887,7 +2019,11 @@ export class SessionManager {
     });
   }
 
-  cancel(session_id: string, turn_id: string): void {
+  cancel(
+    session_id: string,
+    turn_id: string,
+    options?: { suppressStreamResult?: boolean },
+  ): void {
     const sess = this.#sessions.get(session_id);
     if (!sess) return;
     const turn = sess.turns.get(turn_id);
@@ -1904,6 +2040,7 @@ export class SessionManager {
         type: "session.cancel_requested",
         session_id,
         turn_id,
+        ...(options?.suppressStreamResult ? { suppress_result: true } : {}),
       });
       this.#preemptivelyCancelOpenTools(sess, turn_id);
       void sess.acp.cancelCurrentTurn().catch(() => {});
@@ -1914,6 +2051,7 @@ export class SessionManager {
       type: "session.cancel_requested",
       session_id,
       turn_id,
+      ...(options?.suppressStreamResult ? { suppress_result: true } : {}),
     });
     this.#preemptivelyCancelOpenTools(sess, turn_id);
     turn.abort();
@@ -1950,6 +2088,24 @@ export class SessionManager {
     });
   }
 
+  /**
+   * Stop a session the way `session cancel` does, then tear it down.
+   *
+   * Cancel is delivered and the live turn is allowed to finish before the
+   * agent process is killed. Killing the process first orphans shells the
+   * agent already started; cancel gives the agent the same chance it has
+   * when the user cancels a turn.
+   */
+  async stopForRemoval(sessionId: string): Promise<void> {
+    const turnIds = this.activeTurnIds(sessionId);
+    if (turnIds.length > 0) {
+      const finished = this.#waitForTurnsToLeave(sessionId, turnIds, 3_000);
+      for (const turnId of turnIds) this.cancel(sessionId, turnId);
+      await finished;
+    }
+    await this.dispose(sessionId);
+  }
+
   async dispose(session_id: string, opts?: { removeCwd?: boolean }): Promise<void> {
     const starting = this.#starting.get(session_id);
     if (starting) {
@@ -1980,6 +2136,22 @@ export class SessionManager {
       ...starting,
       ...ids.map((id) => this.#killChild(id)),
     ]);
+  }
+
+  async #waitForTurnsToLeave(
+    sessionId: string,
+    turnIds: readonly string[],
+    timeoutMs: number,
+  ): Promise<void> {
+    const started = Date.now();
+    const left = () => {
+      const live = new Set(this.activeTurnIds(sessionId));
+      return turnIds.every((turnId) => !live.has(turnId));
+    };
+    while (!left()) {
+      if (Date.now() - started >= timeoutMs) return;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
   }
 
   async #killChild(session_id: string): Promise<void> {

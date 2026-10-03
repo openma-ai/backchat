@@ -27,6 +27,8 @@ export interface SessionRow {
   /** UI label. Phase 3 derives from agent + short id; Phase 4 lets the user
    *  rename, persisting to SQLite. */
   label: string;
+  /** External coordinator that created this session. */
+  externalClient?: string;
   /** True after the user explicitly renames the session. */
   titleManuallySet?: boolean;
   /** Which surface owns this session.

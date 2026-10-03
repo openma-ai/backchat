@@ -133,6 +133,15 @@ export class WorkspaceService {
         created_by_session_id: null,
       }));
     }
+    if (project && input.branch?.trim()) {
+      const branchName = input.branch.trim();
+      const existing = listWorkspaceRows(project.id).find((row) =>
+        row.kind === "managed" && row.branch === branchName
+      );
+      if (existing) {
+        throw new Error(`Workspace already exists for branch ${branchName}: ${existing.id}`);
+      }
+    }
     const slug = safeName(name).toLowerCase().slice(0, 40);
     const suffix = randomBytes(2).toString("hex");
     const id = `ws-${slug}-${suffix}`;
@@ -227,7 +236,9 @@ export class WorkspaceService {
     return managedInfo(row);
   }
 
-  async delete(id: string, options?: { force?: boolean }): Promise<void> {
+  /** Refusal checks only. Call this before stopping sessions so a rejected
+   *  remove has no side effects. */
+  async assertRemovable(id: string, options?: { force?: boolean }): Promise<void> {
     if (isLiveWorkspaceId(id)) throw new Error("The live workspace cannot be deleted");
     if (isExternalWorkspaceId(id)) {
       throw new Error("External worktrees are not managed by Backchat; remove them with git");
@@ -246,6 +257,12 @@ export class WorkspaceService {
         }
       }
     }
+  }
+
+  async delete(id: string, options?: { force?: boolean }): Promise<void> {
+    await this.assertRemovable(id, options);
+    const row = getWorkspaceRow(id);
+    if (!row) return;
     if (row.kind !== "linked") await this.#store.removeDir(row.root_dir);
     deleteWorkspaceRow(id);
   }

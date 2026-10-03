@@ -2471,6 +2471,32 @@ header:not(.app-drag-region) .app-drag-region {
   color: var(--fg);
 }
 
+/* Common paints .chat-reasoning-trigger with the bubble color, so
+   "已工作 N 秒" reads as a gray chip. Keep it plain text. Hover may
+   pick up a light wash; the resting row does not. */
+[data-session-turn-response] .chat-reasoning-trigger {
+  width: 100% !important;
+  padding: 0 !important;
+  padding-inline-start: var(--chat-activity-row-leading-space, 0px) !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+[data-session-turn-response] .chat-reasoning-trigger:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent) !important;
+  color: var(--fg);
+}
+
+/* e79568f put margin-left: auto on the status label, and 800cf88 put the
+   same auto margin on .activity-disclosure-chevron. Both are on main, not
+   from #27/#28. Two auto margins split the free space, so the label hangs
+   between the command and the chevron. The label and chevron now share one
+   trailing cluster; the command truncates in the space before it. */
+[data-session-turn-response] .activity-disclosure-chevron {
+  margin-left: 0;
+}
+
 /* Expanded thought text lines up with the row label, not the icon. */
 [data-session-turn-response] [data-thought-stream-body] {
   margin-left: calc(var(--chat-activity-icon-size) + 6px);

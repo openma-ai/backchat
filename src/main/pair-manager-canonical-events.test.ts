@@ -9,6 +9,7 @@ vi.mock("./sql-store.js", () => ({
   setPairTitleIfEmpty: vi.fn(),
   touchPairSession: vi.fn(),
   upsertPairSession: vi.fn(),
+  getSession: vi.fn(),
   upsertSession: vi.fn(),
 }));
 

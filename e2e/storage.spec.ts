@@ -414,7 +414,7 @@ test.describe("user-visible storage persistence", () => {
                 enabled: true,
                 command_override: nodePath,
                 args_override: [fakeAcpAgentPath],
-                env: [],
+                env: [{ name: "BACKCHAT_FAKE_CURSOR", value: "1" }],
               },
             ],
           });

@@ -1,5 +1,6 @@
 import { useProjects } from "@/lib/projects-query";
 import { useI18n } from "@/lib/i18n";
+import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { defaultCoordinatorConfig as defaults } from "@/lib/project-coordinator";
 import { PageTopbar } from "@/components/shell/PageTopbar";
 import type { PromptAttachment } from "@shared/session-events";
@@ -1186,8 +1187,8 @@ function ProjectWorkspace({
                   <div className="project-work-list">
                     <div className="project-panel-summary">
                       <span>
-                        {workers.length
-                          ? `${workers.length} ${t("project.threads").toLowerCase()}`
+                        {workers.length + (view.external_tasks?.length ?? 0)
+                          ? `${workers.length + (view.external_tasks?.length ?? 0)} ${t("project.threads").toLowerCase()}`
                           : t("project.noTasks")}
                       </span>
                       {config?.controls.includes("delegate") ? (
@@ -1202,7 +1203,7 @@ function ProjectWorkspace({
                         </Button>
                       ) : null}
                     </div>
-                    {!workers.length ? (
+                    {!workers.length && !(view.external_tasks?.length) ? (
                       <div className="project-workers-empty">
                         <h3>{t("project.tasksAppearHere")}</h3>
                         <p>{t("project.tasksEmptyHint")}</p>
@@ -1266,6 +1267,9 @@ function ProjectWorkspace({
                                   >
                                     {workerId}
                                   </button>
+                                  <p className="project-worker-attribution" data-testid="task-attribution">
+                                    {t("project.builtInAttribution")}
+                                  </p>
                                   <p className="project-worker-preview">
                                     {projectResponseText(
                                       facts.agentEvents.filter(
@@ -1349,6 +1353,17 @@ function ProjectWorkspace({
                         </section>
                       );
                     })}
+                    {(view.external_tasks ?? []).map((task) => (
+                      <article className="project-worker" key={task.id} data-testid="external-task">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <p className="project-worker-title min-w-0 flex-1 truncate">{task.text}</p>
+                          {task.status === "cancelled" ? (
+                            <span className="shrink-0 text-[11px] text-fg-subtle">Cancelled</span>
+                          ) : null}
+                          <ExternalSourceBadge client={task.coordinator_name} />
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 ) : (
                   <div className="project-work-list">

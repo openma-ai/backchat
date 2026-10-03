@@ -41,6 +41,12 @@ export interface SessionStartParams {
    *  shared/workspaces.ts). Implies worktree mode; `cwd` and
    *  `additional_directories` are then resolved from the workspace roots. */
   workspace_id?: string;
+  /** External coordinator that created this session, shown in the GUI. */
+  external_client?: string;
+  /** Permission policy for this session. Writes stay pending under auto-read. */
+  permission_policy?: "ask" | "auto-read" | "auto-edit" | "auto-all";
+  /** Directories to add after a workspace has supplied its own roots. */
+  extra_directories?: string[];
   /** Provide an existing ACP-side session id to resume conversation history.
    *  The runtime tries `session/resume`, then `session/load`, then
    *  `session/new`, according to the agent's advertised capabilities. */
@@ -381,6 +387,8 @@ export type SessionEventOut = (
       project_id?: string;
       /** Managed/external workspace the session runs in; absent for live. */
       workspace_id?: string | null;
+      /** External coordinator that started this session. */
+      external_client?: string;
       /** ACP `NewSessionResponse.configOptions` /
        *  `LoadSessionResponse.configOptions`, if the agent supports
        *  runtime session configuration. Kept as unknown at the shared
@@ -432,7 +440,7 @@ export type SessionEventOut = (
       session_id: string;
       request_id: string;
       option_id?: string | null;
-      outcome: "selected" | "cancelled";
+      outcome: "selected" | "rejected" | "cancelled";
     }
   | {
       /** User's decision for an out-of-workspace ACP filesystem write.
@@ -524,6 +532,8 @@ export type SessionEventOut = (
       type: "session.cancel_requested";
       session_id: string;
       turn_id: string;
+      /** Host-only. A fail-closed stop already published the error result. */
+      suppress_result?: boolean;
     }
   | {
       /** ACP-client projection required by the cancellation contract. This is
@@ -589,6 +599,12 @@ export type SessionEventOut = (
       auth?: SessionAuthState;
     }
   | { type: "session.disposed"; session_id: string }
+  | {
+      /** First prompt became the sidebar title. The external badge stays separate. */
+      type: "session.retitled";
+      session_id: string;
+      title: string;
+    }
 ) & {
   /** Canonical OpenMA event produced at the main-process adapter boundary.
    *  `event` remains the legacy ACP payload during migration; consumers should

@@ -538,11 +538,24 @@ async function rollbackCreatedWorktrees(
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
-  const result = await execFile("git", ["-C", cwd, ...args], {
-    encoding: "utf8",
-    maxBuffer: 4 * 1024 * 1024,
-  });
-  return result.stdout;
+  try {
+    const result = await execFile("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return result.stdout;
+  } catch (error) {
+    const stderr = error && typeof error === "object" && "stderr" in error
+      ? String((error as { stderr?: unknown }).stderr ?? "")
+      : "";
+    const message = error instanceof Error ? error.message : String(error);
+    const detail = stderr.trim() || message;
+    const fatal = detail.split(/\r?\n/).map((line) => line.trim()).find((line) => /^(fatal|error):/i.test(line));
+    const cleaned = (fatal ?? detail.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("Command failed:")).pop() ?? "Git command failed")
+      .replace(/^(fatal|error):\s*/i, "")
+      .trim();
+    throw new Error(cleaned || "Git command failed");
+  }
 }
 
 async function resolveBaseCommit(repo: string, ref: string, callerSupplied: boolean): Promise<string> {

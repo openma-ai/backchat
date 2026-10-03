@@ -4,6 +4,7 @@ import { createConnection, type Socket } from "node:net";
 import { dirname } from "node:path";
 import type { ControlErrorCode } from "../../shared/control-protocol.js";
 import { ControlError, asControlError } from "./errors.js";
+import { ControlStream } from "./live-bus.js";
 import type { ControlApi } from "./handlers.js";
 
 const MAX_BODY = 1024 * 1024;
@@ -118,7 +119,16 @@ async function handle(
     return;
   }
   try {
-    const result = await api.call(method, record.params ?? {});
+    const client = typeof record.client === "string" ? record.client : undefined;
+    const result = await api.call(method, record.params ?? {}, client);
+    if (result instanceof ControlStream) {
+      res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8" });
+      for await (const event of result.events) {
+        res.write(`${JSON.stringify(event)}\n`);
+      }
+      res.end();
+      return;
+    }
     writeJson(res, 200, { ok: true, result });
   } catch (error) {
     const control = asControlError(error);

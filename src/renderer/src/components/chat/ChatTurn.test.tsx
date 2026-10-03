@@ -1110,6 +1110,57 @@ describe("Codex thinking while a tool runs", () => {
   });
 });
 
+describe("shell permission presentation", () => {
+  it("renders a rejected shell as denied, not as a failed run", () => {
+    const command = "echo PR28R2-REJECT-ME > pr28r2-shell-reject.txt";
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          id: "turn-deny",
+          status: "complete",
+          assistantText: "REJECTED",
+          events: [
+            {
+              payload: {
+                schema: "oma.event.v1",
+                event_id: "tool-denied",
+                type: "tool.failed",
+                session_id: "session-1",
+                turn_id: "turn-deny",
+                data: {
+                  tool_call_id: "shell-deny",
+                  title: command,
+                  kind: "execute",
+                  status: "failed",
+                  outcome: "denied",
+                  reason: "denied",
+                },
+              },
+              receivedAt: 1,
+            },
+            {
+              payload: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "REJECTED" },
+              },
+              receivedAt: 2,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-tool-call-id="shell-deny"');
+    expect(html).toContain('data-tool-status="denied"');
+    expect(html).toContain("tool.notRun");
+    expect(html).toContain("tool.denied");
+    expect(html).toContain("echo PR28R2-REJECT-ME &gt; pr28r2-shell-reject.txt");
+    expect(html).not.toContain("tool.ran");
+    expect(html).not.toContain(">Failed<");
+    expect(html).not.toContain("text-danger");
+  });
+});
+
 describe("scheduled task message bars", () => {
   it("renders a created scheduled-task bar with an Open control", () => {
     const html = renderToStaticMarkup(

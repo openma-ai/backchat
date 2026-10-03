@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { rememberPermissionDecision } from "./permission-policy.js";
 import {
   createSessionEventEnricher,
   shouldPersistSessionEvent,
@@ -298,6 +299,30 @@ describe("session event canonical enricher", () => {
 
     expect(result.openma_event).toMatchObject({
       source: { kind: "harness", harness: "unknown", adapter: "acp" },
+    });
+  });
+
+  it("records a rejected shell that completed on the wire as denied", () => {
+    rememberPermissionDecision("sess-denied", "shell-1", {
+      outcome: "rejected",
+      optionKind: "reject_once",
+      optionId: "reject-once",
+    });
+    const enrich = createSessionEventEnricher(() => "2026-08-05T00:00:00.000Z");
+    const result = enrich({
+      type: "session.event",
+      session_id: "sess-denied",
+      turn_id: "turn-denied",
+      event: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "shell-1",
+        kind: "execute",
+        status: "completed",
+      },
+    });
+    expect(result.openma_event).toMatchObject({
+      type: "tool.failed",
+      data: { tool_call_id: "shell-1", outcome: "denied", status: "failed", reason: "denied" },
     });
   });
 });

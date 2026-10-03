@@ -101,6 +101,22 @@ describe("interrupted tool calls", () => {
     expect(settleInterruptedToolStatus("failed")).toBe("failed");
   });
 
+  it("labels a denied shell as not run, even when the wire status is failed", () => {
+    expect(toolVerbKey("execute", "denied")).toBe("tool.notRun");
+    expect(toolActivityVerbKey({
+      kind: "execute",
+      status: "failed",
+      meta: { permissionOutcome: "denied" },
+    })).toBe("tool.notRun");
+    expect(toolActivityVerbKey({
+      kind: "execute",
+      status: "cancelled",
+      meta: { permissionOutcome: "denied" },
+    })).toBe("tool.notRun");
+    expect(toolVerbKey("execute", "failed")).toBe("tool.ran");
+    expect(settleInterruptedToolStatus("denied")).toBe("denied");
+  });
+
   it("never labels an interrupted call as running or as having run", () => {
     expect(toolVerbKey("execute", "cancelled")).toBe("tool.interrupted");
     expect(toolVerbKey("read", "cancelled")).toBe("tool.interrupted");

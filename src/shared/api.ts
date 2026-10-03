@@ -175,6 +175,8 @@ export interface PersistedSessionInfo {
   /** Managed/external workspace id, or null when the session works in the
    *  project's own source folders. */
   workspace_id: string | null;
+  /** External coordinator that created the session, when started from the CLI. */
+  external_client?: string | null;
 }
 
 /** Public shape of one persisted event. `data` is JSON-encoded text — the
@@ -513,7 +515,18 @@ export interface BackchatApi extends OpenmaAccountApi {
   projectWorkSave(config: import("./project-work.js").ProjectWorkConfig): Promise<import("./project-work.js").ProjectWorkConfig>;
   projectWorkSubmit(input: import("./project-work.js").ProjectWorkCommand): Promise<void>;
   projectWorkGoal(input: import("./project-work.js").ProjectWorkGoalInput): Promise<import("./project-work.js").ProjectWorkOutcome | null>;
+  externalCoordinatorsList(): Promise<{
+    coordinators: import("./external-coordinator.js").ExternalCoordinatorInfo[];
+    tasks: import("./external-coordinator.js").ExternalTaskInfo[];
+  }>;
+  externalCoordinatorCreate(input: { project_id: string; name: string }): Promise<
+    import("./external-coordinator.js").ExternalCoordinatorInfo & { created: boolean }
+  >;
+  externalCoordinatorRemove(input: { id: string; delete_threads?: boolean }): Promise<
+    import("./external-coordinator.js").ExternalCoordinatorRemoveResult
+  >;
   projectsList(): Promise<ProjectInfo[]>;
+  onProjectsChanged(handler: () => void): () => void;
   projectSave(p: ProjectSaveParams): Promise<ProjectInfo>;
   projectDelete(p: { project_id: string }): Promise<void>;
   /** Project → Workspace → Worktree. Lists live + managed + external
