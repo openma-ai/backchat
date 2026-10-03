@@ -113,3 +113,78 @@ it("defaults a project thread to its git remote and queues a follow-up until the
   expect(tasks.snapshot(created.task.id).task.title).toBe("Local title");
   expect(posts).toHaveLength(2);
 });
+
+it("sends a queued follow-up after interrupt even if the terminal event arrives during cancel", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "backchat-cursor-interrupt-"));
+  const posts: string[] = [];
+  const streams: Array<{ enqueue: (text: string) => void }> = [];
+  let agent: { id: string; status: string; latestRunId?: string } | null = null;
+  const runs = new Map<string, { id: string; status: string }>();
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const path = url.pathname;
+    const method = init?.method ?? "GET";
+    if (method === "GET" && /^\/v1\/agents\/bc-[^/]+$/.test(path)) {
+      return agent && path.endsWith(`/${agent.id}`) ? Response.json(agent) : new Response("missing", { status: 404 });
+    }
+    if (path.endsWith("/conversation")) return new Response("missing", { status: 404 });
+    if (path.endsWith("/runs") && method === "GET") return Response.json({ items: [...runs.values()] });
+    if (path === "/v1/agents" && method === "POST") {
+      const body = JSON.parse(String(init?.body)) as { agentId: string; prompt: { text: string } };
+      posts.push(`create:${body.prompt.text}`);
+      const run = { id: "run-1", status: "RUNNING" };
+      runs.set(run.id, run);
+      agent = { id: body.agentId, status: "ACTIVE", latestRunId: run.id };
+      return Response.json({ agent, run: { id: run.id, status: "CREATING" } });
+    }
+    if (path.endsWith("/runs") && method === "POST") {
+      const body = JSON.parse(String(init?.body)) as { prompt: { text: string } };
+      if ([...runs.values()].some((run) => run.status === "RUNNING")) {
+        return Response.json({ error: { code: "agent_busy", message: "running" } }, { status: 409 });
+      }
+      const run = { id: "run-2", status: "RUNNING" };
+      runs.set(run.id, run);
+      agent = { ...(agent ?? { id: "", status: "ACTIVE" }), status: "ACTIVE", latestRunId: run.id };
+      posts.push(`follow:${body.prompt.text}`);
+      return Response.json({ run: { id: run.id, status: "CREATING" } });
+    }
+    if (path.endsWith("/cancel") && method === "POST") {
+      posts.push("cancel");
+      const run = runs.get("run-1");
+      if (run) run.status = "CANCELLED";
+      if (agent) agent.status = "IDLE";
+      streams.at(-1)?.enqueue('event: result\ndata: {"runId":"run-1","status":"CANCELLED","text":"Stopped."}\n\n');
+      streams.at(-1)?.enqueue("event: done\ndata: {}\n\n");
+      return Response.json({ id: "run-1" });
+    }
+    if (path.endsWith("/stream")) {
+      return new Response(new ReadableStream({
+        start(controller) {
+          streams.push({ enqueue: (text) => controller.enqueue(new TextEncoder().encode(text)) });
+          init?.signal?.addEventListener("abort", () => { try { controller.close(); } catch { /* already closed */ } });
+        },
+      }), { headers: { "content-type": "text/event-stream" } });
+    }
+    if (path.includes("/runs/")) return Response.json(runs.get(path.split("/").at(-1)!) ?? { id: "run-1", status: "RUNNING" });
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  const account = new OpenmaAccount({ directory });
+  await account.connectDirect({ provider: "cursor-cloud", baseUrl: "https://api.cursor.com", apiKey: "cursor-key", name: "Cursor" });
+  const connection = account.connection();
+  const tasks = new OpenmaTasks({
+    directory, account, fetchImpl, reconnectMs: 20,
+    catalog: async () => ({ runners: [], cloudAgents: [{ id: "default", name: "Default" }], environments: [{ id: "cloud", name: "Cursor Cloud", type: "cloud", runtimeId: null }] }),
+  });
+  cleanups.push(async () => { tasks.close(); await rm(directory, { recursive: true, force: true }); });
+  const created = await tasks.create({
+    ...connection, kind: "cloud", agentId: "default", agentName: "Default", environmentId: "cloud", environmentName: "Cursor Cloud", runtimeId: null, runtimeName: "Cloud",
+  }, "Read me");
+  tasks.open(created.task.id, "view");
+  await tasks.send(created.task.id, "first", "Read the README");
+  await tasks.send(created.task.id, "second", "Also summarize it");
+  await vi.waitFor(() => expect(streams.length).toBeGreaterThan(0));
+  await tasks.interrupt(created.task.id);
+  await vi.waitFor(() => expect(posts).toContain("follow:Also summarize it"));
+  expect(posts.filter((post) => post.startsWith("follow:"))).toEqual(["follow:Also summarize it"]);
+  expect(posts).toContain("cancel");
+});

@@ -365,7 +365,7 @@ export class OpenmaTasks {
       const result = await this.#client(this.options.account.connection(task)).sendEvent(task.sessionId, event, operationId);
       if (!this.#closed) {
         this.#store.settleOperation(id, operationId, "accepted");
-        if (cursorTask && result && "runId" in result) this.#rememberCursorRun(id, result.runId);
+        if (cursorTask && event.type === "user.message" && result && "runId" in result) this.#rememberCursorRun(id, result.runId);
       }
     } catch (error) {
       if (!this.#closed) {
@@ -381,6 +381,10 @@ export class OpenmaTasks {
     } finally {
       if (cursorTask) this.#cursorSending.delete(id);
       this.#publish(id);
+      // A terminal stream event can arrive while cancel is still in flight.
+      // Flushing only from that event would see the in-flight send and drop
+      // the desktop queue, so try again once this send has released it.
+      if (cursorTask) void this.#flushCursorQueue(id);
     }
   }
   async send(id: string, operationId: string, text: string): Promise<void> {
