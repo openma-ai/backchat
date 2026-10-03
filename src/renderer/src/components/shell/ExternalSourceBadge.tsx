@@ -6,16 +6,25 @@ import { useI18n } from "@/lib/i18n";
 export function ExternalSourceBadge({ client }: { client: string }) {
   const { t } = useI18n();
   const label = t("session.startedBy", { client });
-  const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
+  const [tip, setTip] = useState<{
+    x: number;
+    y: number;
+    placement: "above" | "below";
+  } | null>(null);
   return (
     <span
       data-testid="external-source-badge"
-      title={label}
       aria-label={label}
       className="inline-flex size-3.5 shrink-0 items-center justify-center text-fg-subtle"
       onMouseEnter={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
-        setTip({ x: rect.left + rect.width / 2, y: rect.top });
+        const aboveTop = rect.top - 6;
+        const placement = aboveTop < 32 ? "below" : "above";
+        setTip({
+          x: rect.left + rect.width / 2,
+          y: placement === "above" ? rect.top : rect.bottom,
+          placement,
+        });
       }}
       onMouseLeave={() => setTip(null)}
     >
@@ -26,8 +35,16 @@ export function ExternalSourceBadge({ client }: { client: string }) {
       {tip ? createPortal(
         <span
           role="tooltip"
-          className="pointer-events-none fixed z-[80] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-border bg-bg-surface px-1.5 py-0.5 text-[11px] leading-4 text-fg shadow-md"
-          style={{ left: tip.x, top: tip.y - 6 }}
+          className={[
+            "pointer-events-none fixed z-[200] max-w-[min(20rem,calc(100vw-1rem))] -translate-x-1/2 rounded-md border border-border bg-bg-surface px-1.5 py-0.5 text-center text-[11px] leading-4 text-fg shadow-md",
+            tip.placement === "above"
+              ? "-translate-y-full"
+              : "translate-y-1",
+          ].join(" ")}
+          style={{
+            left: tip.x,
+            top: tip.y,
+          }}
         >
           {label}
         </span>,

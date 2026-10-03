@@ -525,6 +525,7 @@ export function SideChatPanel() {
             onPickSubagent={openSubagent}
             onPickProcess={openProcess}
             canStartSideChat={canStartSideChat}
+            canForkSideChat={canForkSideChat}
             browserEnabled={browserEnabled}
             artifacts={artifacts}
             subagents={subagents}

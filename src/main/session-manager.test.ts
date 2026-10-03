@@ -10,6 +10,7 @@ import type { AcpSession, SessionOptions } from "@open-managed-agents-desktop/ac
 import { streamEventsFromSession } from "./control/live-bus.js";
 import { forkSupport } from "@openma/common/acp-runtime";
 import { acpEventUiRoute, SessionManager } from "./session-manager";
+import * as cursorEditGate from "./cursor-edit-gate.js";
 import { configureAppLog, flushAppLog } from "./app-log.js";
 import {
   appendEvent,
@@ -136,6 +137,31 @@ describe("SessionManager prompt queue", () => {
     await running.catch(() => undefined);
     expect(order).toEqual(["cancel", "dispose"]);
     expect(manager.sessionCount()).toBe(0);
+  });
+
+  it("disposes a spawned ACP child when start fails before the session is registered", async () => {
+    const dispose = vi.fn(async () => undefined);
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce({ ...fake.session, dispose });
+    vi.spyOn(cursorEditGate, "restrictCursorEdits").mockRejectedValueOnce(
+      new Error("gate failed"),
+    );
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    const result = await manager.start({
+      session_id: "orphan-spawn",
+      agent_id: "codex-acp",
+      cwd: "/repo",
+    });
+    expect(result.status).toBe("error");
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(manager.sessionCount()).toBe(0);
+    vi.mocked(cursorEditGate.restrictCursorEdits).mockRestore();
   });
 
   it("rejects a new session start after shutdown disposal begins", async () => {

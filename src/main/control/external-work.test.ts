@@ -99,6 +99,20 @@ describe("external coordinator work", () => {
       { text: "Review the branch", coordinator_name: "cursor killer" },
     ]);
 
+    const cliSessionId = "sess-cli-work-view";
+    upsertSession({
+      id: cliSessionId,
+      agent_id: "fake-cli",
+      cwd: source,
+      project_id: project.id,
+      title: "CLI-only session",
+    });
+    setSessionExternalClient(cliSessionId, "cursor killer");
+    const clientView = await api.call("work.view", { project_id: project.id }, "cursor killer") as {
+      facts: { sessions: Array<{ id: string }>; turns: Array<{ sessionId: string }> };
+    };
+    expect(clientView.facts.sessions.map((session) => session.id)).toContain(cliSessionId);
+
     upsertSession({
       id: "sess-kept",
       agent_id: "fake-cli",

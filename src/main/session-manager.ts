@@ -774,6 +774,7 @@ export class SessionManager {
       );
     }
 
+    let spawnedAcp: { dispose(): Promise<void> } | null = null;
     try {
       if (this.#cancelledStarts.has(p.session_id)) {
         if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
@@ -893,6 +894,7 @@ export class SessionManager {
           agent: { ...startInput.agent, cwd: sessionCwd },
         });
       }
+      spawnedAcp = acpSession;
       if (this.#cancelledStarts.has(p.session_id)) {
         await Promise.resolve(acpSession.dispose()).catch(() => undefined);
         if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
@@ -957,6 +959,7 @@ export class SessionManager {
       };
       activeForOutOfBandUpdates = activeSession;
       this.#sessions.set(p.session_id, activeSession);
+      spawnedAcp = null;
       for (const update of pendingOutOfBandUpdates) {
         this.#handleOutOfBandSessionUpdate(activeSession, update);
       }
@@ -1030,6 +1033,9 @@ export class SessionManager {
       }
       return result;
     } catch (e) {
+      if (spawnedAcp && !this.#sessions.has(p.session_id)) {
+        await Promise.resolve(spawnedAcp.dispose()).catch(() => undefined);
+      }
       if (preparedWorktrees?.created && preparedWorktrees.workspaceId) {
         await this.#removeWorktreeWorkspace(preparedWorktrees.workspaceId).catch(() => undefined);
       }

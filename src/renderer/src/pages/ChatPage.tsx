@@ -65,12 +65,16 @@ export function ChatPage() {
     // replayed them. (Live session.event continues to layer on top via
     // sessionStore.apply.) Only the newest page is fetched here; the chat
     // view pages older rows in as the user scrolls up.
-    if (!HISTORY_LOADED.has(params.sessionId)) {
-      HISTORY_LOADED.add(params.sessionId);
-      lastLoadedRef.current = params.sessionId;
-      void openHistoryWindow(params.sessionId).catch((error) => {
-        toast.error(error instanceof Error ? error.message : "Couldn't load history");
-      });
+    const sessionId = params.sessionId;
+    if (!HISTORY_LOADED.has(sessionId)) {
+      lastLoadedRef.current = sessionId;
+      void openHistoryWindow(sessionId)
+        .then(() => {
+          HISTORY_LOADED.add(sessionId);
+        })
+        .catch((error) => {
+          toast.error(error instanceof Error ? error.message : "Couldn't load history");
+        });
     }
     if (!PREWARMED.has(params.sessionId) && prewarmSessionOnOpen(row)) {
       PREWARMED.add(params.sessionId);

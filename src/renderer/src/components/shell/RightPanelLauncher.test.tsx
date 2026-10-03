@@ -483,4 +483,25 @@ describe("RightPanelLauncher", () => {
     expect(markup).not.toContain('data-resource-category="outputs"');
     expect(markup).toContain('data-resource-category="sources"');
   });
+
+  it("shows a fresh side-chat hint when fork inheritance is unavailable", () => {
+    const props = {
+      onPick: vi.fn(),
+      onPickSubagent: vi.fn(),
+      onPickProcess: vi.fn(),
+      onOpenSchedule: vi.fn(),
+      canStartSideChat: true,
+      canForkSideChat: false,
+      browserEnabled: false,
+      artifacts: { files: [], services: [], sources: [] },
+      subagents: [],
+      processes: [],
+      schedules: [],
+      sourceAttachments: [],
+    } as React.ComponentProps<typeof RightPanelLauncher>;
+
+    const markup = renderToStaticMarkup(<RightPanelLauncher {...props} />);
+    expect(markup).toContain("sideChat.freshHint");
+    expect(markup).not.toContain("sideChat.forkHint");
+  });
 });
