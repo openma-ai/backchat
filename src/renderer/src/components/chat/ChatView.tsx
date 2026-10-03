@@ -595,35 +595,33 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
           }
           renderTurn={({ turn }) => {
             const sourceTurn = turnsById.get(turn.id);
-            const messagePoint = sourceTurn
-              ? messageForkPoints.get(sourceTurn.id)
-              : undefined;
-            const showMessageFork = !!sourceTurn
-              && !isSide
-              && sourceTurn.status === "complete"
-              && sourceTurn.assistantText.trim().length > 0
-              && !!active?.forkSupport
-              && active.status !== "draft";
-            return sourceTurn ? (
+            if (!sourceTurn) return null;
+            const messagePoint = messageForkPoints.get(sourceTurn.id);
+            const completedAnswer = sourceTurn.status === "complete"
+              && sourceTurn.assistantText.trim().length > 0;
+            // One button. Message fork wins on every completed reply,
+            // including the last one. Session fork stays on the last reply.
+            const forkFromMessage = !isSide
+              && canForkFromMessage
+              && completedAnswer
+              && !!messagePoint;
+            const forkWholeSession = !isSide
+              && !canForkFromMessage
+              && completedAnswer
+              && sourceTurn.id === latestForkableTurnId;
+            return (
               <TurnBlock
                 turn={sourceTurn}
-                onFork={sourceTurn.id === latestForkableTurnId
-                  ? continueInNewChat
-                  : undefined}
-                messageFork={showMessageFork ? {
-                  enabled: canForkFromMessage && !!messagePoint,
-                  label: t("chat.forkFromHere"),
-                  tooltip: canForkFromMessage
-                    ? (messagePoint
-                      ? t("chat.forkFromHere")
-                      : t("chat.forkPointMissing"))
-                    : active.forkSupport?.message ?? t("chat.forkPointMissing"),
-                  onFork: canForkFromMessage && messagePoint
+                onFork={
+                  forkFromMessage
                     ? () => forkFromTurn(sourceTurn.id)
-                    : undefined,
-                } : undefined}
+                    : forkWholeSession
+                      ? continueInNewChat
+                      : undefined
+                }
+                forkLabel={forkFromMessage ? t("chat.forkFromHere") : undefined}
               />
-            ) : null;
+            );
           }}
           slots={{
             empty: (

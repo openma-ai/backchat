@@ -4,7 +4,6 @@ import { memo, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRightFromLineIcon,
-  GitBranchIcon,
   AtSignIcon,
   CalendarClockIcon,
   CheckIcon,
@@ -61,16 +60,13 @@ import { BACKCHAT_COLLAPSIBLE_PRIMITIVES } from "@/components/ai-elements/reason
 export const TurnBlock = memo(function TurnBlock({
   turn,
   onFork,
-  messageFork,
+  forkLabel,
 }: {
   turn: Turn;
   onFork?: () => void;
-  messageFork?: {
-    enabled: boolean;
-    label: string;
-    tooltip: string;
-    onFork?: () => void;
-  };
+  /** Visible name for the single fork button. Session fork keeps the
+   *  continue-in-new-chat label; message fork passes "Fork from here". */
+  forkLabel?: string;
 }) {
   const { t } = useI18n();
   const rendered = useMemo(() => reduceTurn(turn.events), [turn.events]);
@@ -346,7 +342,7 @@ export const TurnBlock = memo(function TurnBlock({
             turn={turn}
             isStreaming={isStreaming}
             onFork={onFork}
-            messageFork={messageFork}
+            forkLabel={forkLabel}
           />
         ),
       }}
@@ -664,22 +660,18 @@ function TurnFooter({
   turn,
   isStreaming,
   onFork,
-  messageFork,
+  forkLabel,
 }: {
   turn: Turn;
   isStreaming: boolean;
   onFork?: () => void;
-  messageFork?: {
-    enabled: boolean;
-    label: string;
-    tooltip: string;
-    onFork?: () => void;
-  };
+  forkLabel?: string;
 }) {
   const { t } = useI18n();
   const answer = turn.assistantText.trim();
   const canFork =
     Boolean(onFork) && turn.status === "complete" && answer.length > 0;
+  const forkTitle = forkLabel ?? t("chat.continueInNewChat");
   const endedAt = turn.status === "running" ? undefined : turn.endedAt;
   const layer =
     "col-start-1 row-start-1 flex min-w-0 items-center transition-opacity duration-[var(--dur-slow)] ease-[var(--ease-soft)]";
@@ -709,26 +701,13 @@ function TurnFooter({
         aria-hidden={isStreaming ? true : undefined}
       >
         <TurnMetaActions timestamp={endedAt} copyText={answer} align="start">
-          {messageFork && answer.length > 0 && turn.status === "complete" && (
-            <button
-              type="button"
-              data-turn-message-fork="true"
-              data-message-fork-state={messageFork.enabled ? "enabled" : "disabled"}
-              aria-label={messageFork.tooltip}
-              title={messageFork.tooltip}
-              disabled={!messageFork.enabled}
-              onClick={messageFork.enabled ? messageFork.onFork : undefined}
-              className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle"
-            >
-              <GitBranchIcon className="size-4" aria-hidden="true" />
-            </button>
-          )}
           {canFork && (
             <button
               type="button"
               data-turn-fork-action="true"
-              aria-label={t("chat.continueInNewChat")}
-              title={t("chat.continueInNewChat")}
+              data-fork-kind={forkLabel ? "message" : "session"}
+              aria-label={forkTitle}
+              title={forkTitle}
               onClick={onFork}
               className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >

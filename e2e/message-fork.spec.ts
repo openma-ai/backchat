@@ -3,7 +3,6 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { forkSupport } from "@openma/common/acp-runtime";
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
@@ -16,22 +15,6 @@ const fakeAcpAgentPath = join(
 );
 
 type ForkLevel = "none" | "session" | "message";
-
-function supportFor(level: ForkLevel) {
-  return forkSupport({
-    agentInfo: { name: "fake-acp-agent", version: "0.0.0-e2e" },
-    agentCapabilities: {
-      loadSession: true,
-      sessionCapabilities: {
-        resume: {},
-        ...(level === "none" ? {} : { fork: {} }),
-      },
-      ...(level === "message"
-        ? { _meta: { jetbrains: { air: { fork: { version: 1, inclusive: true } } } } }
-        : {}),
-    },
-  });
-}
 
 async function useFakeAgent(
   page: Page,
@@ -78,30 +61,27 @@ async function sendPrompt(page: Page, text: string) {
 }
 
 test.describe("message fork with the local fake ACP agent", () => {
-  test("hides whole-session fork and disables message fork when the agent advertises neither", async ({ page, capture }) => {
+  test("shows no fork button when the agent advertises neither", async ({ page, capture }) => {
     await useFakeAgent(page, "none", "/tmp/backchat-fork-none.jsonl");
     await sendPrompt(page, "fork-none");
 
     await expect(page.locator("[data-fork-support='none']")).toBeVisible();
-    const messageFork = page.locator("[data-turn-message-fork='true']");
-    await expect(messageFork).toHaveCount(1);
-    await expect(messageFork).toBeDisabled();
-    await expect(messageFork).toHaveAttribute("title", supportFor("none").message);
     await expect(page.locator("[data-turn-fork-action='true']")).toHaveCount(0);
+    await expect(page.locator("[data-turn-footer='true']")).toHaveCount(1);
     await capture("fork-level-none.png", "fork level none");
   });
 
-  test("disables message fork and keeps whole-session fork when only session fork is advertised", async ({ page, capture }) => {
+  test("shows one whole-session fork button on the last reply", async ({ page, capture }) => {
     await useFakeAgent(page, "session", "/tmp/backchat-fork-session.jsonl");
     await sendPrompt(page, "fork-session");
 
     await expect(page.locator("[data-fork-support='session']")).toBeVisible();
-    const messageFork = page.locator("[data-turn-message-fork='true']");
-    await expect(messageFork).toHaveCount(1);
-    await expect(messageFork).toBeDisabled();
-    await expect(messageFork).toHaveAttribute("title", supportFor("session").message);
-    await expect(page.locator("[data-turn-fork-action='true']")).toHaveCount(1);
-    await capture("fork-level-session.png", "fork level session");
+    const forks = page.locator("[data-turn-fork-action='true']");
+    await expect(forks).toHaveCount(1);
+    await expect(forks).toHaveAttribute("data-fork-kind", "session");
+    await expect(forks).toHaveAttribute("title", "Continue in new chat");
+    await expect(page.locator("[data-turn-footer='true']").locator("[data-turn-fork-action='true']")).toHaveCount(1);
+    await capture("fork-level-session.png", "one whole-session fork button");
   });
 
   test("forks from an earlier reply and sends jetbrains.air.fork", async ({ page, capture }, testInfo) => {
@@ -113,15 +93,19 @@ test.describe("message fork with the local fake ACP agent", () => {
     await sendPrompt(page, "fork-beta");
 
     await expect(page.locator("[data-fork-support='message']")).toBeVisible();
-    const messageForks = page.locator("[data-turn-message-fork='true']");
-    await expect(messageForks).toHaveCount(2);
-    await expect(messageForks.nth(0)).toBeEnabled();
-    await expect(messageForks.nth(1)).toBeEnabled();
-    await expect(messageForks.nth(0)).toHaveAttribute("title", "Fork from here");
-    await expect(page.locator("[data-turn-fork-action='true']")).toHaveCount(1);
-    await capture("fork-level-message.png", "fork from here on each completed turn");
+    const forks = page.locator("[data-turn-fork-action='true']");
+    await expect(forks).toHaveCount(2);
+    await expect(forks.nth(0)).toHaveAttribute("data-fork-kind", "message");
+    await expect(forks.nth(1)).toHaveAttribute("data-fork-kind", "message");
+    await expect(forks.nth(0)).toHaveAttribute("title", "Fork from here");
+    await expect(forks.nth(1)).toHaveAttribute("title", "Fork from here");
+    const footers = page.locator("[data-turn-footer='true']");
+    await expect(footers).toHaveCount(2);
+    await expect(footers.nth(0).locator("[data-turn-fork-action='true']")).toHaveCount(1);
+    await expect(footers.nth(1).locator("[data-turn-fork-action='true']")).toHaveCount(1);
+    await capture("fork-level-message.png", "one fork button on each reply, including the last");
 
-    await messageForks.nth(0).click();
+    await forks.nth(0).click();
     const draft = page.locator(".new-chat-page textarea").last();
     await expect(draft).toBeVisible();
     await draft.fill("fork-followup");
@@ -171,7 +155,7 @@ test.describe("message fork with the local fake ACP agent", () => {
     await useFakeAgent(page, "message", logPath, true);
     await sendPrompt(page, "fork-reject");
 
-    await page.locator("[data-turn-message-fork='true']").click();
+    await page.locator("[data-turn-fork-action='true']").click();
     const draft = page.locator(".new-chat-page textarea").last();
     await expect(draft).toBeVisible();
     await draft.fill("fork-should-fail");

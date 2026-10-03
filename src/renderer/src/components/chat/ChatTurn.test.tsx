@@ -172,27 +172,24 @@ describe("TurnBlock", () => {
     expect(html).toContain("lucide-arrow-right-from-line");
   });
 
-  it("renders a disabled fork-from-here action with the support message", () => {
+  it("uses the same arrow for fork-from-here and does not add a second button", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
         turn={turn({
           assistantText: "A completed answer",
           status: "complete",
         })}
-        messageFork={{
-          enabled: false,
-          label: "chat.forkFromHere",
-          tooltip: "This agent can fork the whole session but not from a specific message.",
-        }}
+        onFork={() => undefined}
+        forkLabel="chat.forkFromHere"
       />,
     );
 
-    expect(html).toContain('data-turn-message-fork="true"');
-    expect(html).toContain('data-message-fork-state="disabled"');
-    expect(html).toContain("disabled");
-    expect(html).toContain(
-      'title="This agent can fork the whole session but not from a specific message."',
-    );
+    expect(html.match(/data-turn-fork-action="true"/g)).toHaveLength(1);
+    expect(html).toContain('data-fork-kind="message"');
+    expect(html).toContain('aria-label="chat.forkFromHere"');
+    expect(html).toContain("lucide-arrow-right-from-line");
+    expect(html).not.toContain("data-turn-message-fork");
+    expect(html).not.toContain("disabled");
   });
 
   it("does not render the response fork action without an eligible callback", () => {
