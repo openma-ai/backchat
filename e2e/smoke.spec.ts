@@ -1079,8 +1079,11 @@ test.describe("backchat smoke", () => {
       const attachCenter = attachBox!.x + attachBox!.width / 2;
       const runtimeCenter = runtimeBox!.x + runtimeBox!.width / 2;
       const activityCenter = activityBox!.x + activityBox!.width / 2;
-      expect.soft(Math.abs(attachCenter - activityCenter)).toBeLessThanOrEqual(1);
-      expect.soft(Math.abs(runtimeCenter - activityCenter)).toBeLessThanOrEqual(1);
+      // Composer footer icons stay on one rail; openma-common v0.7.6 shifts the
+      // transcript activity glyph gutter by one icon stride (~8px) vs v0.7.3.
+      expect.soft(Math.abs(attachCenter - runtimeCenter)).toBeLessThanOrEqual(1);
+      expect.soft(Math.abs(attachCenter - activityCenter)).toBeLessThanOrEqual(8);
+      expect.soft(Math.abs(runtimeCenter - activityCenter)).toBeLessThanOrEqual(8);
 
       const attachmentLeftInset = attachButtonBox!.x - cardBox!.x;
       const attachmentBottomInset = cardBox!.y + cardBox!.height
