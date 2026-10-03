@@ -7,11 +7,6 @@ type TurnPhase = "running" | "complete";
 /** Resting process header row: full width, no bubble fill (openma-common v0.7.6+). */
 const TRANSPARENT_IDLE = "rgba(0, 0, 0, 0)";
 
-const HOVER_WASH: Record<ThemeMode, string> = {
-  light: "color(srgb 0.0784314 0.0784314 0.0784314 / 0.08)",
-  dark: "color(srgb 0.921569 0.913725 0.882353 / 0.08)",
-};
-
 async function setTheme(page: import("@playwright/test").Page, theme: ThemeMode) {
   await page.evaluate(async (next) => {
     const current = await window.backchat.settingsGet();
@@ -43,7 +38,62 @@ async function focusTriggerViaKeyboard(
     const focused = await trigger.evaluate((node) => node === document.activeElement);
     if (focused) return;
   }
-  throw new Error("reasoning trigger did not receive keyboard focus");
+  throw new Error("disclosure trigger did not receive keyboard focus");
+}
+
+async function expectTextLeftAlignedWithAssistantBody(
+  turn: import("@playwright/test").Locator,
+  trigger: import("@playwright/test").Locator,
+) {
+  const answerBody = turn.locator('[data-session-turn-answer="true"] .chat-markdown').first();
+  await expect(answerBody).toBeVisible();
+  const icon = trigger.locator(".chat-activity-icon").first();
+  const summary = trigger.locator(".chat-transcript-disclosure-summary").first();
+  const rowAnchor = (await icon.count()) > 0 ? icon : summary;
+  const delta = await rowAnchor.evaluate((anchorEl) => {
+    const firstGlyphLeftEdge = (target: Element) => {
+      const range = document.createRange();
+      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node && !node.textContent?.trim()) {
+        node = walker.nextNode();
+      }
+      if (!node || !node.textContent?.trim()) {
+        return target.getBoundingClientRect().left;
+      }
+      const trimOffset = node.textContent.length - node.textContent.trimStart().length;
+      const end = Math.min(node.textContent.length, trimOffset + 1);
+      range.setStart(node, trimOffset);
+      range.setEnd(node, end);
+      return range.getBoundingClientRect().left;
+    };
+    const answerEl = anchorEl
+      .closest("[data-turn-id]")
+      ?.querySelector('[data-session-turn-answer="true"] .chat-markdown');
+    if (!answerEl) return Number.POSITIVE_INFINITY;
+    const anchorEdge =
+      anchorEl.classList.contains("chat-activity-icon")
+        ? anchorEl.getBoundingClientRect().left
+        : firstGlyphLeftEdge(anchorEl);
+    return Math.abs(anchorEdge - firstGlyphLeftEdge(answerEl));
+  });
+  expect(delta).toBeLessThanOrEqual(1);
+}
+
+async function expectHoverDarkensTextWithoutBackground(
+  page: import("@playwright/test").Page,
+  trigger: import("@playwright/test").Locator,
+) {
+  const summary = trigger.locator(".chat-transcript-disclosure-summary").first();
+  const restingColor = await summary.evaluate((el) => getComputedStyle(el).color);
+
+  await page.mouse.move(0, 0);
+  await expect(trigger).toHaveCSS("background-color", TRANSPARENT_IDLE);
+
+  await hoverTrigger(page, trigger);
+  await expect(trigger).toHaveCSS("background-color", TRANSPARENT_IDLE);
+  const hoverColor = await summary.evaluate((el) => getComputedStyle(el).color);
+  expect(hoverColor).not.toBe(restingColor);
 }
 
 async function seedCompleteExchange(
@@ -186,11 +236,11 @@ test("chat reasoning trigger uses plain full-width row styling", async ({ page }
         await expect(trigger).toBeDisabled();
       }
 
-      await page.mouse.move(0, 0);
-      await expect(trigger).toHaveCSS("background-color", TRANSPARENT_IDLE);
+      await expectHoverDarkensTextWithoutBackground(page, trigger);
 
-      await hoverTrigger(page, trigger);
-      await expect(trigger).toHaveCSS("background-color", HOVER_WASH[theme]);
+      if (phase === "complete") {
+        await expectTextLeftAlignedWithAssistantBody(turn, trigger);
+      }
 
       const turnWidth = (await turn.boundingBox())?.width ?? 0;
       const triggerWidth = (await trigger.boundingBox())?.width ?? 0;
@@ -216,11 +266,16 @@ test("chat reasoning trigger uses plain full-width row styling", async ({ page }
       const focusTrigger = focusTurn.locator('[data-chat-reasoning-trigger="true"]');
       const activityTrigger = focusTurn
         .locator('[data-chat-activity-disclosure-trigger="true"]')
-        .first();
+        .filter({ hasText: "运行一些命令" });
       await expect(focusTurn).toBeVisible();
       await expect(focusTrigger).toContainText("已工作");
-      await expect(activityTrigger).toBeVisible();
       await focusTurn.scrollIntoViewIfNeeded();
+      await expectTextLeftAlignedWithAssistantBody(focusTurn, focusTrigger);
+      await focusTrigger.click();
+      await expect(focusTrigger).toHaveAttribute("aria-expanded", "true");
+      await expect(activityTrigger).toBeVisible();
+      await expectTextLeftAlignedWithAssistantBody(focusTurn, activityTrigger);
+      await expectHoverDarkensTextWithoutBackground(page, activityTrigger);
 
       await page.mouse.move(0, 0);
       await page.screenshot({
@@ -235,18 +290,20 @@ test("chat reasoning trigger uses plain full-width row styling", async ({ page }
       });
 
       await page.mouse.move(0, 0);
-      await focusTrigger.click();
-      await expect(focusTrigger).toHaveAttribute("aria-expanded", "true");
+      await activityTrigger.click();
+      await expect(activityTrigger).toHaveAttribute("aria-expanded", "true");
       await page.mouse.move(0, 0);
-      await expect(focusTrigger).toHaveCSS("background-color", TRANSPARENT_IDLE);
-      await expect(focusTrigger).toHaveCSS("box-shadow", "none");
+      await expect(activityTrigger).toHaveCSS("background-color", TRANSPARENT_IDLE);
+      await expect(activityTrigger).toHaveCSS("box-shadow", "none");
       await page.screenshot({
         path: `${shotRoot}/window-${theme}-expanded-blur.png`,
         fullPage: false,
       });
 
-      await focusTriggerViaKeyboard(page, focusTrigger);
-      const outlineWidth = await focusTrigger.evaluate((node) =>
+      await activityTrigger.click();
+      await expect(activityTrigger).toHaveAttribute("aria-expanded", "false");
+      await focusTriggerViaKeyboard(page, activityTrigger);
+      const outlineWidth = await activityTrigger.evaluate((node) =>
         Number.parseFloat(getComputedStyle(node).outlineWidth),
       );
       expect(outlineWidth).toBeGreaterThanOrEqual(1);
@@ -254,6 +311,8 @@ test("chat reasoning trigger uses plain full-width row styling", async ({ page }
         path: `${shotRoot}/window-${theme}-focus-visible.png`,
         fullPage: false,
       });
+      await page.keyboard.press("Enter");
+      await expect(activityTrigger).toHaveAttribute("aria-expanded", "true");
     }
   }
 });

@@ -53,7 +53,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@open-managed-agents-desktop/acp": "workspace:*",
     "@open-managed-agents-desktop/acp-agent-setup": "workspace:*",
-    "@openma/common": "github:openma-ai/openma-common#v0.7.7",
+    "@openma/common": "github:openma-ai/openma-common#v0.7.8",
     "@openma/sdk": "workspace:*",
     "@openmatter/agent": "github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent",
     "@openmatter/agent-claude": "github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-claude",
