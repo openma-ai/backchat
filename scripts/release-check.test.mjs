@@ -321,15 +321,29 @@ process.exit(1);
   spawnSync("git", ["config", "user.email", "release-check@example.com"], { cwd: root });
   spawnSync("git", ["config", "user.name", "release-check"], { cwd: root });
   spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: root });
+  const env = { ...process.env };
+  // GitHub Actions sets these for the pull request. Tests that need them set
+  // the values explicitly; inheriting them makes a local git repo look like
+  // the PR base and changes the notice text.
+  for (const key of [
+    "GITHUB_ACTIONS",
+    "GITHUB_EVENT_NAME",
+    "GITHUB_BASE_REF",
+    "GITHUB_REF",
+    "GITHUB_REF_NAME",
+    "GITHUB_HEAD_REF",
+    "BASE_REF",
+    "RELEASE_LABELS",
+  ]) {
+    delete env[key];
+  }
+  env.PATH = `${bin}:${process.env.PATH}`;
+  env.GH_LOG = ghLog;
+  env.GITHUB_REPOSITORY = "openma-ai/backchat";
   try {
     await run({
       root,
-      env: {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH}`,
-        GH_LOG: ghLog,
-        GITHUB_REPOSITORY: "openma-ai/backchat",
-      },
+      env,
       ghLog,
     });
   } finally {
