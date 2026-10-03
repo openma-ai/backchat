@@ -3,11 +3,11 @@ import { turnStopNotice } from "@/lib/turn-stop-reason";
 import { memo, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ArrowRightFromLineIcon,
   AtSignIcon,
   CalendarClockIcon,
   CheckIcon,
   CopyIcon,
+  GitBranchIcon,
   ListChecksIcon,
   Loader2Icon,
   TargetIcon,
@@ -709,7 +709,7 @@ function TurnFooter({
               onClick={onFork}
               className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ArrowRightFromLineIcon className="size-4" aria-hidden="true" />
+              <GitBranchIcon className="size-4" aria-hidden="true" />
             </button>
           )}
         </TurnMetaActions>

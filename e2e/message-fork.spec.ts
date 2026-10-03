@@ -81,6 +81,8 @@ test.describe("message fork with the local fake ACP agent", () => {
     await expect(forks).toHaveCount(1);
     await expect(forks).toHaveAttribute("data-fork-kind", "session");
     await expect(forks).toHaveAttribute("title", "Continue in new chat");
+    await expect(forks.locator('[data-backchat-icon="branch"]')).toHaveCount(1);
+    await expect(forks.locator(".lucide-arrow-right-from-line")).toHaveCount(0);
     await expect(page.locator("[data-turn-footer='true']").locator("[data-turn-fork-action='true']")).toHaveCount(1);
     await capture("fork-level-session.png", "one whole-session fork button");
   });
@@ -100,6 +102,8 @@ test.describe("message fork with the local fake ACP agent", () => {
     await expect(forks.nth(1)).toHaveAttribute("data-fork-kind", "message");
     await expect(forks.nth(0)).toHaveAttribute("title", "Fork from here");
     await expect(forks.nth(1)).toHaveAttribute("title", "Fork from here");
+    await expect(forks.locator('[data-backchat-icon="branch"]')).toHaveCount(2);
+    await expect(page.locator("[data-turn-fork-action='true'] .lucide-arrow-right-from-line")).toHaveCount(0);
     const footers = page.locator("[data-turn-footer='true']");
     await expect(footers).toHaveCount(2);
     await expect(footers.nth(0).locator("[data-turn-fork-action='true']")).toHaveCount(1);
