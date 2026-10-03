@@ -57,8 +57,8 @@ export async function writeUpdateMetadata({
   cwd,
 }) {
   const pkg = JSON.parse(await readFile(packageJsonPath, "utf8"));
-  if (typeof pkg.version !== "string" || !/^\d+\.\d+\.\d+$/.test(pkg.version)) {
-    throw new Error(`package.json version must be x.y.z, got ${String(pkg.version)}`);
+  if (typeof pkg.version !== "string" || !/^\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(pkg.version)) {
+    throw new Error(`package.json version must be x.y.z or x.y.z-preview.N, got ${String(pkg.version)}`);
   }
   const metadata = {
     schema: 1,
@@ -66,6 +66,7 @@ export async function writeUpdateMetadata({
     version: pkg.version,
     build: buildNumberFromEnv(env),
     commit: commitFromEnv(env, cwd),
+    signed: env.BACKCHAT_MAC_SIGNING === "developer-id",
   };
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(metadata, null, 2)}\n`);

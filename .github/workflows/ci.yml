@@ -57,9 +57,6 @@ jobs:
       - name: Setup Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Install an older bundle and apply a local update
-        run: pnpm exec tsx scripts/macos-update-e2e.ts
-
       - name: Run fast Electron e2e
         run: pnpm run test:e2e:fast
 

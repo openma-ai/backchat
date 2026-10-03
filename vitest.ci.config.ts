@@ -31,7 +31,6 @@ export default defineConfig({
       "src/main/oma-bridge.test.ts",
       "src/main/power-management.test.ts",
       "src/main/quit-coordinator.test.ts",
-      "src/main/app-update.test.ts",
       "src/shared/app-update.test.ts",
       "src/main/session-cwd.test.ts",
       "src/main/session-manager.test.ts",

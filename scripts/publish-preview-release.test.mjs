@@ -16,21 +16,9 @@ async function makeFixture({ releaseExists = false } = {}) {
   const ghLog = resolve(root, "gh.log");
   await mkdir(releaseDir, { recursive: true });
   await mkdir(binDir, { recursive: true });
-  await writeFile(resolve(releaseDir, "Backchat-0.1.0-arm64.dmg"), "dmg bytes");
-  await writeFile(resolve(root, "release", "Backchat-preview-arm64.zip"), "zip bytes");
-  await writeFile(
-    resolve(root, "release", "Backchat-mac-arm64-update.json"),
-    `${JSON.stringify({
-      schema: 1,
-      channel: "preview",
-      version: "0.1.0",
-      build: 1001,
-      commit: "0123456789abcdef0123456789abcdef01234567",
-      zipName: "Backchat-preview-arm64.zip",
-      sha256: "abc",
-      size: 9,
-    })}\n`,
-  );
+  await writeFile(resolve(releaseDir, "Backchat-0.1.0-preview.1001-arm64.dmg"), "dmg bytes");
+  await writeFile(resolve(releaseDir, "Backchat-0.1.0-preview.1001-mac.zip"), "zip bytes");
+  await writeFile(resolve(releaseDir, "preview-mac.yml"), "version: 0.1.0-preview.1001\n");
 
   const fakeGh = resolve(binDir, "gh");
   await writeFile(
@@ -82,8 +70,8 @@ test("creates the stable preview release and asset when it does not exist", asyn
       "create",
       "preview",
       resolve(fixture.releaseRoot, "Backchat-preview-arm64.dmg"),
-      resolve(fixture.releaseRoot, "Backchat-preview-arm64.zip"),
-      resolve(fixture.releaseRoot, "Backchat-mac-arm64-update.json"),
+      resolve(fixture.releaseRoot, "0.1.0", "Backchat-0.1.0-preview.1001-mac.zip"),
+      resolve(fixture.releaseRoot, "0.1.0", "preview-mac.yml"),
       "--prerelease",
       "--title",
       "Backchat Preview",
@@ -110,8 +98,8 @@ test("replaces the stable asset when the preview release already exists", async 
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    const zipAsset = resolve(fixture.releaseRoot, "Backchat-preview-arm64.zip");
-    const manifestAsset = resolve(fixture.releaseRoot, "Backchat-mac-arm64-update.json");
+    const zipAsset = resolve(fixture.releaseRoot, "0.1.0", "Backchat-0.1.0-preview.1001-mac.zip");
+    const manifestAsset = resolve(fixture.releaseRoot, "0.1.0", "preview-mac.yml");
     assert.deepEqual(calls, [
       ["release", "view", "preview"],
       ["release", "upload", "preview", previewAsset, zipAsset, manifestAsset, "--clobber"],

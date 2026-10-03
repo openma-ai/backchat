@@ -11,9 +11,9 @@ const channelKey: Record<UpdateChannel, TranslationKey> = {
 };
 
 /**
- * Settings → About. The version comes from the packaged app and the build
- * metadata written at release time. "Restart and update" asks the main
- * process to quit through the normal shutdown barrier and swap Backchat.app.
+ * Settings → About. The version comes from app.getVersion() and the build
+ * metadata. "Restart and update" asks electron-updater to quit through the
+ * normal shutdown barrier; Squirrel.Mac then replaces the signed app.
  */
 export function SettingsAbout() {
   const { t } = useI18n();
@@ -127,8 +127,8 @@ function statusMessage(
       main = t("update.restarting");
       break;
     case "error":
-      main = state.errorCode === "sha256"
-        ? t("update.errorSha256")
+      main = state.errorCode === "checksum"
+        ? t("update.errorChecksum")
         : state.errorCode === "manifest"
           ? t("update.errorManifest")
           : state.errorCode === "install"
@@ -138,9 +138,8 @@ function statusMessage(
     default:
       main = t("update.idle");
   }
-  if (state.installBlock === "location") {
-    return `${main} ${t("update.locationBlocked")}`;
-  }
+  if (state.installBlock === "unsigned") return `${main} ${t("update.unsignedBlocked")}`;
+  if (state.installBlock === "location") return `${main} ${t("update.locationBlocked")}`;
   return main;
 }
 

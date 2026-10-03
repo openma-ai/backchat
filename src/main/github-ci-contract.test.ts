@@ -70,9 +70,11 @@ describe("github ci", () => {
     expect(dmg).toContain("verify-packaged-first-prompt.mjs");
     expect(dmg).toContain("Backchat-arm64.dmg");
     expect(dmg).toContain("gh release create");
-    expect(dmg).toContain("write-update-metadata.mjs");
-    expect(dmg).toContain("write-update-manifest.mjs");
-    expect(dmg).toContain("Backchat-mac-arm64-update.json");
+    expect(dmg).toContain("run-mac-builder.mjs");
+    expect(dmg).toContain("preview-mac.yml");
+    expect(dmg).toContain("latest-mac.yml");
+    expect(dmg).toContain("BACKCHAT_REQUIRE_DEVELOPER_ID");
+    expect(dmg).not.toContain("apply-mac-update");
     expect(dmg).not.toContain("continue-on-error");
   });
 });

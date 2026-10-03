@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { copyFile, readFile, readdir, stat } from "node:fs/promises";
+import { copyFile, readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,8 +9,7 @@ const previewTag = "preview";
 const previewTitle = "Backchat Preview";
 const previewNotes = "Latest successful build from the main branch.";
 const previewAssetName = "Backchat-preview-arm64.dmg";
-const previewZipName = "Backchat-preview-arm64.zip";
-const manifestName = "Backchat-mac-arm64-update.json";
+const previewMacYml = "preview-mac.yml";
 
 async function findArm64Dmgs(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -42,28 +41,30 @@ function runGh(args, { allowFailure = false } = {}) {
   return result.status === 0;
 }
 
+async function findFiles(directory, accept) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const matches = [];
+  for (const entry of entries) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) matches.push(...await findFiles(path, accept));
+    else if (entry.isFile() && accept(entry.name)) matches.push(path);
+  }
+  return matches;
+}
+
 async function previewUpdateAssets(releaseRoot) {
-  const manifestPath = resolve(releaseRoot, manifestName);
-  let manifest;
-  try {
-    manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  } catch (error) {
-    const code = error && typeof error === "object" && "code" in error ? error.code : "";
-    if (code === "ENOENT") {
-      throw new Error(`Missing ${manifestName}. Run write-update-manifest.mjs before publishing.`);
-    }
-    throw error;
+  const zips = await findFiles(
+    releaseRoot,
+    (name) => name.startsWith("Backchat-") && name.endsWith(".zip"),
+  );
+  const manifests = await findFiles(releaseRoot, (name) => name === previewMacYml);
+  if (zips.length !== 1) {
+    throw new Error(`Expected one Backchat zip under ${releaseRoot}; found ${zips.length}`);
   }
-  if (manifest.channel !== "preview" || manifest.zipName !== previewZipName) {
-    throw new Error(`Preview manifest must name ${previewZipName}`);
+  if (manifests.length !== 1) {
+    throw new Error(`Expected one ${previewMacYml} under ${releaseRoot}; found ${manifests.length}`);
   }
-  const zipPath = resolve(releaseRoot, previewZipName);
-  try {
-    await stat(zipPath);
-  } catch {
-    throw new Error(`Missing ${previewZipName} next to the preview manifest`);
-  }
-  return { zipPath, manifestPath };
+  return { zipPath: zips[0], manifestPath: manifests[0] };
 }
 
 export async function publishPreviewRelease(releaseDirectory) {
