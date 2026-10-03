@@ -27,7 +27,7 @@ minimumReleaseAgeExclude:
 overrides:
   # Security patches for transitive dependencies outside our direct manifests.
   '@ai-sdk/provider-utils@4.0.27': 4.0.33
-  '@openma/common': 'github:openma-ai/openma-common#v0.7.7'
+  '@openma/common': 'github:openma-ai/openma-common#v0.7.8'
   '@openmatter/agent': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent'
   '@openmatter/agent-claude': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-claude'
   '@openmatter/agent-mock': 'github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-mock'
