@@ -209,6 +209,16 @@ function withProjectDirectories(session: PersistedSession): PersistedSessionInfo
   };
 }
 
+let openmaPromptQueue: {
+  owns(sessionId: string): boolean;
+  updatePromptQueue(command: SessionPromptQueueCommandParams): void;
+} | null = null;
+
+/** Cursor Cloud follow-ups reuse the desktop prompt queue. Registered after OpenMA tasks exist. */
+export function attachOpenmaPromptQueue(queue: NonNullable<typeof openmaPromptQueue> | null): void {
+  openmaPromptQueue = queue;
+}
+
 export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRuntime> {
   const isLocalSession = (id: string) => !deps.isRunnerSession?.(id);
   const assertLocalSession = (id: string): void => {
@@ -767,7 +777,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   });
   handleLocalSession(
     InvokeChannel.SessionUpdatePromptQueue,
-    (_e, p: SessionPromptQueueCommandParams) => sessionManager.updatePromptQueue(p),
+    (_e, p: SessionPromptQueueCommandParams) => {
+      if (openmaPromptQueue?.owns(p.session_id)) return openmaPromptQueue.updatePromptQueue(p);
+      return sessionManager.updatePromptQueue(p);
+    },
   );
   handleLocalSession(
     InvokeChannel.SessionRunCommand,

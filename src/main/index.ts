@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, nativeImage, net, protocol, shell, powerSav
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { registerIpc } from "./ipc.js";
+import { attachOpenmaPromptQueue, registerIpc } from "./ipc.js";
 import { registerOpenmaIpc, registerOpenmaRunnerIpc, registerOpenmaProjectIpc, registerOpenmaTaskIpc } from "./openma-ipc.js";
 import { QuitCoordinator } from "./quit-coordinator.js";
 import { DesktopPowerManagement } from "./power-management.js";
@@ -535,6 +535,7 @@ if (!gotLock) {
     });
     resumeTaskObservers = () => openmaTasks.resume();
     registerOpenmaTaskIpc(openmaTasks);
+    attachOpenmaPromptQueue(openmaTasks);
     await openmaRunner.restore();
     logStartupStage("runner_restored");
     disposeSessionsForShutdown = async () => {

@@ -159,5 +159,14 @@ function projectDirectTask(snapshot: OpenmaTaskSnapshot): { row: SessionRow; tur
   }
   shell.row.openma = snapshot.task;
   shell.row.activeTurnId = turns.findLast(t => t.status === "running")?.id;
+  if (snapshot.task.provider === "cursor-cloud") {
+    const queued = snapshot.operations.filter((operation) => operation.state === "pending" && operation.event.type === "user.message");
+    // Cursor rejects a follow-up while a run is active, so the desktop queue
+    // holds it and ComposerProgress is the only place it is shown.
+    shell.row.supportsSteering = false;
+    shell.row.queuedPrompts = queued.length
+      ? queued.map((operation) => ({ turn_id: operation.id, text: openmaText(operation.event.content), created_at: operation.createdAt }))
+      : undefined;
+  }
   return { row: shell.row, turns };
 }

@@ -23,7 +23,15 @@ export function RuntimeLocationControl({ title, className, session }: { title?: 
   const { data: catalog, isFetching, error, refetch } = useOpenmaCatalog(scope);
   const choices = scope && catalog ? openmaTargets(scope, catalog) : [];
   const Icon = target?.kind === "cloud" ? CloudIcon : target ? ServerIcon : MonitorIcon;
-  const select = (next: OpenmaExecutionTarget | undefined) => { if (row && !locked) sessionStore.setExecutionTarget(row.id, next); };
+  const select = (next: OpenmaExecutionTarget | undefined) => {
+    if (!row || locked) return;
+    if (!next) { sessionStore.setExecutionTarget(row.id, undefined); return; }
+    const provider = account?.workspaces.find((workspace) => workspace.id === next.workspaceId)?.provider;
+    const sourcePath = row.chosenCwd || row.cwd || undefined;
+    sessionStore.setExecutionTarget(row.id, provider === "cursor-cloud"
+      ? { ...next, cursor: { ...next.cursor, ...(sourcePath ? { sourcePath } : {}) } }
+      : next);
+  };
   return (
     <DropdownMenu onOpenChange={(open) => { if (open && account?.status === "signed_in") void refetch(); }}>
       <DropdownMenuTrigger asChild>

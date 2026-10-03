@@ -128,7 +128,7 @@ pnpm dev
 ```
 
 The shared `@openma/common` dependency is pinned to the immutable Git tag
-`v0.7.2`; no sibling checkout or local link is required. The OpenMA SDK and daemon
+`v0.7.3`; no sibling checkout or local link is required. The OpenMA SDK and daemon
 connection snapshots live under `packages/` with their upstream provenance.
 
 On first launch, open **Settings → Agents** to install or point Backchat at an

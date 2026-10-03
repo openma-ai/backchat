@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { Composer } from "@/components/chat/Composer";
+import { CursorCloudBinding } from "@/components/chat/CursorCloudBinding";
 import { ComposerAuthSetup } from "@/components/chat/ComposerAuthSetup";
 import { ProjectChipRow } from "@/components/chat/ComposerProjectControls";
 import {
@@ -168,6 +169,7 @@ export function NewChatPage() {
           onSubmit={onSubmit}
           onCancel={cancelActiveTurn}
         />
+        <CursorCloudBinding session={draft} />
         <ProjectChipRow
           isDraft={true}
           activeCwd={draftProjectCwd}

@@ -179,6 +179,8 @@ export const InvokeChannel = {
    *  repo or the read fails. Used by the composer's branch chip. */
   UiFsRepositoryImage: "uiFs:repositoryImage",
   UiFsGitBranch: "uiFs:gitBranch",
+  /** Remote URL and current branch for a project folder, used to default a Cursor Cloud thread. */
+  UiFsGitUpstream: "uiFs:gitUpstream",
   UiFsGitCompare: "uiFs:gitCompare",
   BrowserList: "browser:list",
   BrowserGet: "browser:get",

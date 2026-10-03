@@ -461,6 +461,8 @@ const api: BackchatApi = {
   uiFsRepositoryImage: (p) => ipcRenderer.invoke(InvokeChannel.UiFsRepositoryImage, p) as Promise<string | null>,
   uiFsGitBranch: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsGitBranch, p) as Promise<string | null>,
+  uiFsGitUpstream: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsGitUpstream, p) as Promise<{ remote: string | null; branch: string | null; repositoryUrl: string | null }>,
   uiFsGitCompare: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsGitCompare, p) as Promise<import("../shared/workspaces.js").GitComparison>,
 

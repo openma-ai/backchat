@@ -8,6 +8,7 @@ export class OpenmaTaskFiles {
       const client = this.client;
       return client.request(async () => {
         const files: OpenmaTaskFile[] = [];
+        if (client.options.provider === "cursor-cloud") return files;
         if (client.options.provider === "openai-agents") {
           for await (const file of client.openai.beta.agents.sessions.artifacts.list(this.sessionId)) files.push({ id: file.id, name: file.path.split("/").at(-1) || file.id, path: file.path, size: file.size_bytes });
         } else {

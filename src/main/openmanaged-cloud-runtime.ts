@@ -8,7 +8,14 @@ export interface OpenManagedCloudRuntimeOptions {
   fetchImpl?: typeof fetch;
   onUnauthorized?: () => void;
 }
-export interface CloudSessionCreateInput { agentId: string; environmentId: string; title?: string; metadata?: Record<string, string> }
+export interface CloudSessionCreateInput {
+  agentId: string;
+  environmentId: string;
+  title?: string;
+  metadata?: Record<string, string>;
+  /** Cursor Cloud only. Creation is deferred until the first user message. */
+  cursor?: import("../shared/openma.js").CursorCloudBinding;
+}
 export interface CloudSessionCreateResult { sessionId: string }
 export type OpenmaRemoteEvent = Record<string, unknown> & { type: string; id?: string; seq?: number };
 

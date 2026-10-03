@@ -1,4 +1,6 @@
 import { readRepositoryImage } from "./repository-image.js";
+import { readGitEnvironment } from "./git-environment.js";
+import { cursorRepositoryUrl } from "./cursor-cloud-git.js";
 /**
  * UI fs broker — readonly directory listing for the side-panel file
  * tree. Distinct from `brokers.ts` fs methods which serve ACP children
@@ -495,6 +497,15 @@ ipcMain.handle(
 );
 
 
+
+ipcMain.handle(InvokeChannel.UiFsGitUpstream, async (_e, p: { path: string }) => {
+  if (!p || typeof p.path !== "string" || !p.path.trim() || p.path.length > 4096) {
+    return { remote: null, branch: null, repositoryUrl: null };
+  }
+  const git = await readGitEnvironment(p.path);
+  const remote = git?.remote ?? null;
+  return { remote, branch: git?.branch ?? null, repositoryUrl: remote ? cursorRepositoryUrl(remote) : null };
+});
 
 ipcMain.handle(
   InvokeChannel.UiFsGitCompare,

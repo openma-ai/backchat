@@ -9,8 +9,26 @@ import type { OpenmaRunner } from "./openma-runner.js";
 import type { OpenmaProjectService } from "./openma-project-service.js";
 import type { OpenmaProjectBinding } from "../shared/openma.js";
 import { OpenmaTasks } from "./openma-tasks.js";
-import type { OpenmaExecutionTarget, OpenmaScope } from "../shared/openma.js";
+import type { CursorCloudBinding, OpenmaExecutionTarget, OpenmaScope } from "../shared/openma.js";
 import type { OpenmaTaskResponse, OpenmaTaskUpdate } from "../shared/openma.js";
+
+function cursorBinding(value: unknown): CursorCloudBinding | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Cursor Cloud repository");
+  const binding = value as Record<string, unknown>;
+  if (Object.keys(binding).some((key) => !["repoUrl", "startingRef", "sourcePath"].includes(key))) throw new Error("Invalid Cursor Cloud repository");
+  const field = (key: string, max: number): string | undefined => {
+    const item = binding[key];
+    if (item === undefined) return undefined;
+    if (typeof item !== "string" || item.length > max) throw new Error("Invalid Cursor Cloud repository");
+    return item;
+  };
+  const repoUrl = field("repoUrl", 2048);
+  const startingRef = field("startingRef", 255);
+  const sourcePath = field("sourcePath", 4096);
+  if (repoUrl === undefined && startingRef === undefined && sourcePath === undefined) return undefined;
+  return { ...(repoUrl !== undefined ? { repoUrl } : {}), ...(startingRef !== undefined ? { startingRef } : {}), ...(sourcePath !== undefined ? { sourcePath } : {}) };
+}
 
 function scope(value: unknown): OpenmaScope | undefined {
   if (value === undefined) return undefined;
@@ -59,7 +77,8 @@ export function registerOpenmaTaskIpc(tasks: OpenmaTasks): void {
   ipcMain.handle(InvokeChannel.OpenmaTaskCreate, (_event, value: unknown, title: unknown) => {
     const target = value as Partial<OpenmaExecutionTarget> | null;
     if (!target || !["cloud", "runner"].includes(target.kind ?? "") || ![target.baseUrl, target.userId, target.workspaceId, target.agentId, target.environmentId].every((s) => typeof s === "string" && !!s) || !(target.runtimeId === null || typeof target.runtimeId === "string")) throw new Error("Choose an execution location");
-    return tasks.create(target as OpenmaExecutionTarget, text(title).slice(0, 200));
+    const cursor = cursorBinding(target.cursor);
+    return tasks.create({ ...(target as OpenmaExecutionTarget), ...(cursor ? { cursor } : { cursor: undefined }) }, text(title).slice(0, 200));
   });
   ipcMain.handle(InvokeChannel.OpenmaTaskOpen, (event, id: unknown, subscriptionId: unknown) => {
     const owner = ownerKey(event.sender, subscriptionId);
