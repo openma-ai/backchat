@@ -72,11 +72,12 @@ test.describe("message fork with the local fake ACP agent", () => {
     await capture("fork-level-none.png", "fork level none");
   });
 
-  test("session fork shows inherited parent turns before the first child prompt", async ({ page }) => {
+  test("session fork shows inherited parent turns before the first child prompt", async ({ page, capture }) => {
     await useFakeAgent(page, "session", "/tmp/backchat-fork-inherit.jsonl");
     await sendPrompt(page, "inherit-parent-turn");
     await page.locator("[data-turn-fork-action='true']").click();
     await expect(page.getByText("inherit-parent-turn")).toBeVisible();
+    await capture("gui-bugfix-fork-inherited.png", "fork draft shows parent prompt");
   });
 
   test("shows one whole-session fork button on the last reply", async ({ page, capture }) => {
