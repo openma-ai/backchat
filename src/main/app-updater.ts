@@ -7,6 +7,7 @@ import {
   appBundlePathFromExecutable,
   buildFromVersion,
   canInstallUpdate,
+  electronUpdaterFeedOptions,
   feedForChannel,
   parseUpdateIdentity,
   shouldAutoAcceptUpdate,
@@ -83,7 +84,7 @@ export async function startAppUpdater(quit: UpdateQuit): Promise<() => void> {
     };
   }
   if (feed) {
-    autoUpdater.setFeedURL({ provider: "generic", url: feed.url });
+    autoUpdater.setFeedURL(electronUpdaterFeedOptions(feed));
     autoUpdater.channel = feed.channel;
     autoUpdater.allowDowngrade = false;
     autoUpdater.allowPrerelease = feed.allowPrerelease;

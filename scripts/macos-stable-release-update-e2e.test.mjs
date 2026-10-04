@@ -45,6 +45,17 @@ test("require_differential parses truthy values", () => {
   assert.equal(parseRequireDifferential("false"), false);
 });
 
+test("built-client proof config requires target version only", () => {
+  const config = parseStableUpdateConfig({
+    BACKCHAT_STABLE_BUILT_START_VERSION: "0.0.15",
+    BACKCHAT_STABLE_TO_VERSION: "0.0.16",
+    BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL: "true",
+  });
+  assert.equal(config.builtStartVersion, "0.0.15");
+  assert.equal(config.builtClientProof, true);
+  assert.equal(config.requireDifferential, true);
+});
+
 test("parseHumanDataSize understands electron-updater KB formatting", () => {
   assert.equal(parseHumanDataSize("12,615.63 KB"), Math.round(12615.63 * 1024));
 });

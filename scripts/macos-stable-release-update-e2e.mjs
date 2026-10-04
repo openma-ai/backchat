@@ -22,8 +22,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join, resolve, dirname } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   UPDATE_E2E_EVIDENCE_PATH,
   assertInstalledUpdate,
@@ -31,6 +31,7 @@ import {
 
 const transcriptPath = resolve("test-results/macos-stable-release-update-e2e.txt");
 const GITHUB_REPO = process.env.GITHUB_REPOSITORY ?? "openma-ai/backchat";
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export function parseFromTag(value) {
   const tag = value.trim();
@@ -67,13 +68,33 @@ export function parseStableUpdateConfig(env = process.env) {
   const requireDifferential = parseRequireDifferential(env.BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL);
   const viaReleaseTagRaw = env.BACKCHAT_STABLE_VIA_RELEASE_TAG?.trim();
   const viaReleaseTag = viaReleaseTagRaw ? parseFromTag(viaReleaseTagRaw) : viaVersion ? `v${viaVersion}` : "";
+  const builtStartVersion = parseToVersion(env.BACKCHAT_STABLE_BUILT_START_VERSION ?? "");
 
   let hop1Target = viaVersion || toVersion;
+  if (!hop1Target && !builtStartVersion) {
+    throw new Error("set BACKCHAT_STABLE_VIA_VERSION and/or BACKCHAT_STABLE_TO_VERSION");
+  }
+  if (builtStartVersion && !toVersion) {
+    throw new Error("BACKCHAT_STABLE_BUILT_START_VERSION requires BACKCHAT_STABLE_TO_VERSION");
+  }
+  if (
+    builtStartVersion &&
+    (env.BACKCHAT_STABLE_VIA_VERSION?.trim() ||
+      env.BACKCHAT_STABLE_VIA_RELEASE_TAG?.trim() ||
+      env.BACKCHAT_STABLE_FROM_TAG?.trim())
+  ) {
+    throw new Error("BACKCHAT_STABLE_BUILT_START_VERSION cannot combine with from/via release hops");
+  }
+
+  if (!hop1Target && builtStartVersion) {
+    hop1Target = builtStartVersion;
+  }
   if (!hop1Target) {
     throw new Error("set BACKCHAT_STABLE_VIA_VERSION and/or BACKCHAT_STABLE_TO_VERSION");
   }
 
   const twoHop = Boolean(viaVersion && toVersion && viaVersion !== toVersion);
+  const builtClientProof = Boolean(builtStartVersion && toVersion);
   const hop1FeedTag =
     twoHop && viaReleaseTag
       ? viaReleaseTag
@@ -88,7 +109,9 @@ export function parseStableUpdateConfig(env = process.env) {
     twoHop,
     hop1FeedTag,
     hop1FeedUrl: hop1FeedTag ? releaseDownloadFeedUrl(hop1FeedTag) : "",
-    requireDifferential: twoHop && requireDifferential,
+    requireDifferential: (twoHop || builtClientProof) && requireDifferential,
+    builtStartVersion,
+    builtClientProof,
   };
 }
 
@@ -414,6 +437,123 @@ function releaseMacZipSizeBytes(releaseTag) {
   return size;
 }
 
+function buildSignedStableMacZip(version) {
+  log(`building signed stable mac zip for ${version} from ${projectRoot}`);
+  let result = run("pnpm", ["exec", "electron-vite", "build"], { cwd: projectRoot });
+  if (result.status !== 0) throw new Error("electron-vite build failed");
+  result = run("pnpm", ["run", "runtime:prepare"], { cwd: projectRoot });
+  if (result.status !== 0) throw new Error("runtime:prepare failed");
+  result = run("node", ["scripts/run-mac-builder.mjs", "--mac", "zip"], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      BACKCHAT_UPDATE_CHANNEL: "stable",
+      BACKCHAT_PACKAGED_VERSION: version,
+    },
+  });
+  if (result.status !== 0) throw new Error("run-mac-builder failed");
+  const releaseDir = resolve(projectRoot, "release", version);
+  const zipList = spawnSync("find", [releaseDir, "-name", "Backchat-*-mac.zip", "-type", "f"], { encoding: "utf8" });
+  const zips = (zipList.stdout ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+  if (zips.length !== 1) {
+    throw new Error(`expected one mac zip under ${releaseDir}, found ${zips.join(", ") || "(none)"}`);
+  }
+  return zips[0];
+}
+
+async function runBuiltClientDifferentialProof(config) {
+  const installed = "/Applications/Backchat.app";
+  const socketPath = join(homedir(), ".oma", "control.sock");
+  const workDir = join(tmpdir(), "backchat-stable-update-src");
+  const extractDir = join(tmpdir(), "backchat-stable-update-extract");
+  rmSync(workDir, { recursive: true, force: true });
+  rmSync(extractDir, { recursive: true, force: true });
+
+  const fromTag = process.env.BACKCHAT_STABLE_SEED_FROM_TAG?.trim() || "v0.0.14";
+  parseFromTag(fromTag);
+
+  const zipPath = downloadReleaseZip(fromTag, workDir);
+  log(`seed hop zip=${zipPath}`);
+  mkdirSync(extractDir, { recursive: true });
+  const unzip = run("/usr/bin/ditto", ["-x", "-k", zipPath, extractDir]);
+  if (unzip.status !== 0) throw new Error(`ditto extract failed for ${zipPath}`);
+
+  const sourceApp = findBackchatApp(extractDir);
+  requireDeveloperId(sourceApp);
+  placeApp(sourceApp, installed);
+
+  const hop1Feed = releaseDownloadFeedUrl(`v${config.builtStartVersion}`);
+  const hop1Log = resolve("test-results/stable-release-hop1.log");
+  rmSync(UPDATE_E2E_EVIDENCE_PATH, { force: true });
+  const hop1Pid = launchStable(installed, hop1Log, hop1Feed);
+  await waitForInstalledUpdate({
+    installed,
+    oldVersion: fromTag.slice(1),
+    newVersion: config.builtStartVersion,
+    oldPid: hop1Pid,
+    logPath: hop1Log,
+    socketPath,
+  });
+  writeFileSync(resolve("test-results/stable-release-hop1-updater.log"), readFileSync(hop1Log, "utf8"));
+  assertSquirrelCachePresent("after hop1 seed");
+
+  await stopAllBackchat(socketPath);
+
+  const builtExtract = join(tmpdir(), "backchat-stable-built-extract");
+  rmSync(builtExtract, { recursive: true, force: true });
+  const builtZip = buildSignedStableMacZip(config.builtStartVersion);
+  log(`built zip=${builtZip}`);
+  mkdirSync(builtExtract, { recursive: true });
+  const builtUnzip = run("/usr/bin/ditto", ["-x", "-k", builtZip, builtExtract]);
+  if (builtUnzip.status !== 0) throw new Error(`ditto extract failed for ${builtZip}`);
+  const builtApp = findBackchatApp(builtExtract);
+  if (bundleVersion(builtApp) !== config.builtStartVersion) {
+    throw new Error(`expected ${config.builtStartVersion}, bundle has ${bundleVersion(builtApp)}`);
+  }
+  requireDeveloperId(builtApp);
+  placeApp(builtApp, installed);
+  log(`replaced /Applications/Backchat.app with built ${config.builtStartVersion} (contains updater fix)`);
+
+  const hop2FullZipBytes = releaseMacZipSizeBytes(`v${config.toVersion}`);
+  log(`hop2 target zip full size=${hop2FullZipBytes} bytes (v${config.toVersion})`);
+
+  rmSync(UPDATE_E2E_EVIDENCE_PATH, { force: true });
+  const hop2Log = resolve("test-results/stable-release-hop2.log");
+  const hop2Pid = launchStable(installed, hop2Log, undefined);
+  const hop2 = await waitForInstalledUpdate({
+    installed,
+    oldVersion: config.builtStartVersion,
+    newVersion: config.toVersion,
+    oldPid: hop2Pid,
+    logPath: hop2Log,
+    socketPath,
+  });
+  writeFileSync(resolve("test-results/stable-release-hop2-updater.log"), hop2.logText);
+
+  const diff = assertDifferentialUpdate(hop2.logText, hop2FullZipBytes);
+  log(
+    `hop2 download analysis: ${JSON.stringify({
+      ...diff.analysis,
+      fullPackageBytes: hop2FullZipBytes,
+      ratio: diff.analysis.downloadedBytes == null ? null : diff.analysis.downloadedBytes / hop2FullZipBytes,
+    })}`,
+  );
+  writeFileSync(
+    resolve("test-results/stable-release-hop2-download.json"),
+    `${JSON.stringify({ ...diff.analysis, fullPackageBytes: hop2FullZipBytes }, null, 2)}\n`,
+  );
+
+  if (config.requireDifferential && diff.errors.length) {
+    throw new Error(diff.errors.join("\n"));
+  }
+  if (!config.requireDifferential && diff.errors.length) {
+    log(`hop2 differential warnings (require_differential=false): ${diff.errors.join("; ")}`);
+  }
+
+  writeFileSync(resolve("test-results/backchat-update-evidence.log"), readFileSync(UPDATE_E2E_EVIDENCE_PATH, "utf8"));
+  log(`built-client stable update ${config.builtStartVersion} -> ${config.toVersion} succeeded`);
+}
+
 async function waitForInstalledUpdate({
   installed,
   oldVersion,
@@ -463,6 +603,11 @@ async function main() {
 
   const config = parseStableUpdateConfig();
   log(`config ${JSON.stringify(config)}`);
+
+  if (config.builtClientProof) {
+    await runBuiltClientDifferentialProof(config);
+    return;
+  }
 
   const workDir = join(tmpdir(), "backchat-stable-update-src");
   const extractDir = join(tmpdir(), "backchat-stable-update-extract");
