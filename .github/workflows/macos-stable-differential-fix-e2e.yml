@@ -8,6 +8,7 @@ on:
       - src/shared/app-update.ts
       - scripts/macos-stable-release-update-e2e.mjs
       - scripts/run-mac-builder.mjs
+      - scripts/resolve-stable-differential-e2e-versions.mjs
       - .github/workflows/macos-stable-differential-fix-e2e.yml
 
 concurrency:
@@ -29,9 +30,16 @@ jobs:
         uses: ./.github/actions/setup-node-pnpm
 
       - name: Test the stable release update harness
-        run: node --test scripts/macos-stable-release-update-e2e.test.mjs
+        run: |
+          node --test scripts/macos-stable-release-update-e2e.test.mjs
+          node --test scripts/resolve-stable-differential-e2e-versions.test.mjs
 
-      - name: Build signed client and prove differential against live v0.0.16
+      - name: Resolve live stable differential proof versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/resolve-stable-differential-e2e-versions.mjs --format github-env >> "$GITHUB_ENV"
+
+      - name: Build signed client and prove differential against latest stable
         env:
           GH_TOKEN: ${{ github.token }}
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -41,8 +49,6 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_FOR_PULL_REQUEST: "true"
-          BACKCHAT_STABLE_BUILT_START_VERSION: "0.0.15"
-          BACKCHAT_STABLE_TO_VERSION: "0.0.16"
           BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL: "true"
         shell: bash
         run: |
@@ -53,6 +59,7 @@ jobs:
               exit 1
             fi
           done
+          echo "resolved to=${BACKCHAT_STABLE_TO_VERSION} built=${BACKCHAT_STABLE_BUILT_START_VERSION} seed=${BACKCHAT_STABLE_SEED_FROM_TAG}"
           node scripts/macos-stable-release-update-e2e.mjs
 
       - name: Upload differential proof artifacts
@@ -62,6 +69,8 @@ jobs:
           name: macos-stable-differential-fix-e2e
           path: |
             test-results/macos-stable-release-update-e2e.txt
+            test-results/stable-release-hop1.log
+            test-results/stable-release-hop1-updater.log
             test-results/stable-release-hop2.log
             test-results/stable-release-hop2-updater.log
             test-results/stable-release-hop2-download.json

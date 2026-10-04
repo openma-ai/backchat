@@ -106,8 +106,9 @@ describe("github ci", () => {
       "utf8",
     );
     expect(differential).toContain("pull_request:");
-    expect(differential).toContain("BACKCHAT_STABLE_BUILT_START_VERSION");
     expect(differential).toContain("BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL");
+    expect(differential).toContain("resolve-stable-differential-e2e-versions.mjs");
+    expect(differential).not.toMatch(/BACKCHAT_STABLE_TO_VERSION:\s*["']0\.0\.\d+["']/);
     expect(differential).toContain("node scripts/macos-stable-release-update-e2e.mjs");
   });
 });
