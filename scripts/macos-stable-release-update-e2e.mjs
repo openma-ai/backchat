@@ -464,21 +464,55 @@ function buildSignedStableMacZip(version) {
 async function runBuiltClientDifferentialProof(config) {
   const installed = "/Applications/Backchat.app";
   const socketPath = join(homedir(), ".oma", "control.sock");
-  const extractDir = join(tmpdir(), "backchat-stable-built-extract");
+  const workDir = join(tmpdir(), "backchat-stable-update-src");
+  const extractDir = join(tmpdir(), "backchat-stable-update-extract");
+  rmSync(workDir, { recursive: true, force: true });
   rmSync(extractDir, { recursive: true, force: true });
 
-  const zipPath = buildSignedStableMacZip(config.builtStartVersion);
-  log(`built zip=${zipPath}`);
+  const fromTag = process.env.BACKCHAT_STABLE_SEED_FROM_TAG?.trim() || "v0.0.14";
+  parseFromTag(fromTag);
+
+  const zipPath = downloadReleaseZip(fromTag, workDir);
+  log(`seed hop zip=${zipPath}`);
   mkdirSync(extractDir, { recursive: true });
   const unzip = run("/usr/bin/ditto", ["-x", "-k", zipPath, extractDir]);
   if (unzip.status !== 0) throw new Error(`ditto extract failed for ${zipPath}`);
 
   const sourceApp = findBackchatApp(extractDir);
-  if (bundleVersion(sourceApp) !== config.builtStartVersion) {
-    throw new Error(`expected ${config.builtStartVersion}, bundle has ${bundleVersion(sourceApp)}`);
-  }
   requireDeveloperId(sourceApp);
   placeApp(sourceApp, installed);
+
+  const hop1Feed = releaseDownloadFeedUrl(`v${config.builtStartVersion}`);
+  const hop1Log = resolve("test-results/stable-release-hop1.log");
+  rmSync(UPDATE_E2E_EVIDENCE_PATH, { force: true });
+  const hop1Pid = launchStable(installed, hop1Log, hop1Feed);
+  await waitForInstalledUpdate({
+    installed,
+    oldVersion: fromTag.slice(1),
+    newVersion: config.builtStartVersion,
+    oldPid: hop1Pid,
+    logPath: hop1Log,
+    socketPath,
+  });
+  writeFileSync(resolve("test-results/stable-release-hop1-updater.log"), readFileSync(hop1Log, "utf8"));
+  assertSquirrelCachePresent("after hop1 seed");
+
+  await stopAllBackchat(socketPath);
+
+  const builtExtract = join(tmpdir(), "backchat-stable-built-extract");
+  rmSync(builtExtract, { recursive: true, force: true });
+  const builtZip = buildSignedStableMacZip(config.builtStartVersion);
+  log(`built zip=${builtZip}`);
+  mkdirSync(builtExtract, { recursive: true });
+  const builtUnzip = run("/usr/bin/ditto", ["-x", "-k", builtZip, builtExtract]);
+  if (builtUnzip.status !== 0) throw new Error(`ditto extract failed for ${builtZip}`);
+  const builtApp = findBackchatApp(builtExtract);
+  if (bundleVersion(builtApp) !== config.builtStartVersion) {
+    throw new Error(`expected ${config.builtStartVersion}, bundle has ${bundleVersion(builtApp)}`);
+  }
+  requireDeveloperId(builtApp);
+  placeApp(builtApp, installed);
+  log(`replaced /Applications/Backchat.app with built ${config.builtStartVersion} (contains updater fix)`);
 
   const hop2FullZipBytes = releaseMacZipSizeBytes(`v${config.toVersion}`);
   log(`hop2 target zip full size=${hop2FullZipBytes} bytes (v${config.toVersion})`);
