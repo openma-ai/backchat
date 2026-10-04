@@ -1,0 +1,55 @@
+name: macOS stable release update e2e
+
+# Proves a real GitHub stable release auto-update (e.g. v0.0.13 → latest 0.0.14).
+# Does not publish artifacts.
+on:
+  workflow_dispatch:
+    inputs:
+      from_tag:
+        description: Installed release tag (signed zip from GitHub Releases)
+        required: true
+        default: v0.0.13
+      to_version:
+        description: Expected CFBundleShortVersionString after update
+        required: true
+        default: 0.0.14
+
+concurrency:
+  group: macos-stable-release-update-e2e
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  stable-update:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Test the stable release update harness
+        run: node --test scripts/macos-stable-release-update-e2e.test.mjs
+
+      - name: Install older stable release and update via GitHub latest feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKCHAT_STABLE_FROM_TAG: ${{ inputs.from_tag }}
+          BACKCHAT_STABLE_TO_VERSION: ${{ inputs.to_version }}
+        run: node scripts/macos-stable-release-update-e2e.mjs
+
+      - name: Upload update evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-stable-release-update-e2e
+          path: |
+            test-results/macos-stable-release-update-e2e.txt
+            test-results/stable-release-installed-app.log
+            test-results/stable-release-updater.log
+            test-results/backchat-update-evidence.log
+          if-no-files-found: ignore
