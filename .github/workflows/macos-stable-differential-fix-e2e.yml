@@ -40,6 +40,7 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_FOR_PULL_REQUEST: "true"
           BACKCHAT_STABLE_BUILT_START_VERSION: "0.0.15"
           BACKCHAT_STABLE_TO_VERSION: "0.0.16"
           BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL: "true"
