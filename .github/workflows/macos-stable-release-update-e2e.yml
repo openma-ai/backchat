@@ -1,18 +1,30 @@
 name: macOS stable release update e2e
 
-# Proves a real GitHub stable release auto-update (e.g. v0.0.13 → latest 0.0.14).
-# Does not publish artifacts.
+# Real stable release auto-update proof (single- or two-hop). Does not publish.
 on:
   workflow_dispatch:
     inputs:
       from_tag:
-        description: Installed release tag (signed zip from GitHub Releases)
+        description: Release tag for the manually installed starting zip
         required: true
         default: v0.0.13
+      via_version:
+        description: Middle version after the first updater hop (x.y.z)
+        required: false
+        default: "0.0.14"
       to_version:
-        description: Expected CFBundleShortVersionString after update
-        required: true
-        default: 0.0.14
+        description: Final version after restart + second hop (empty = hop1 + cache check only)
+        required: false
+        default: ""
+      via_release_tag:
+        description: Pin hop1 feed when latest is newer than via_version
+        required: false
+        default: v0.0.14
+      require_differential:
+        description: Fail hop2 unless blockmap differential download succeeded
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: macos-stable-release-update-e2e
@@ -35,11 +47,14 @@ jobs:
       - name: Test the stable release update harness
         run: node --test scripts/macos-stable-release-update-e2e.test.mjs
 
-      - name: Install older stable release and update via GitHub latest feed
+      - name: Run stable release update scenario
         env:
           GH_TOKEN: ${{ github.token }}
           BACKCHAT_STABLE_FROM_TAG: ${{ inputs.from_tag }}
+          BACKCHAT_STABLE_VIA_VERSION: ${{ inputs.via_version }}
           BACKCHAT_STABLE_TO_VERSION: ${{ inputs.to_version }}
+          BACKCHAT_STABLE_VIA_RELEASE_TAG: ${{ inputs.via_release_tag }}
+          BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL: ${{ inputs.require_differential }}
         run: node scripts/macos-stable-release-update-e2e.mjs
 
       - name: Upload update evidence
@@ -49,7 +64,11 @@ jobs:
           name: macos-stable-release-update-e2e
           path: |
             test-results/macos-stable-release-update-e2e.txt
-            test-results/stable-release-installed-app.log
-            test-results/stable-release-updater.log
+            test-results/stable-release-hop1.log
+            test-results/stable-release-hop1-updater.log
+            test-results/stable-release-hop2.log
+            test-results/stable-release-hop2-updater.log
+            test-results/stable-release-hop2-download.json
+            test-results/squirrel-cache-summary.json
             test-results/backchat-update-evidence.log
           if-no-files-found: ignore

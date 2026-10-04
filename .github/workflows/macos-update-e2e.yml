@@ -12,6 +12,27 @@ on:
           - stable
           - preview
           - all
+      from_tag:
+        description: Stable e2e starting release tag
+        required: false
+        default: v0.0.13
+      via_version:
+        description: Stable e2e first hop version (x.y.z)
+        required: false
+        default: "0.0.14"
+      to_version:
+        description: Stable e2e second hop (empty = hop1 + cache only)
+        required: false
+        default: ""
+      via_release_tag:
+        description: Pin hop1 feed when latest is newer than via_version
+        required: false
+        default: v0.0.14
+      require_differential:
+        description: Require blockmap differential on hop2
+        type: boolean
+        required: false
+        default: false
   push:
     branches:
       - cursor/macos-auto-update-9d8b
@@ -88,11 +109,14 @@ jobs:
       - name: Test the stable release update harness
         run: node --test scripts/macos-stable-release-update-e2e.test.mjs
 
-      - name: Install v0.0.13 and update to latest stable via GitHub feed
+      - name: Run stable release update scenario
         env:
           GH_TOKEN: ${{ github.token }}
-          BACKCHAT_STABLE_FROM_TAG: v0.0.13
-          BACKCHAT_STABLE_TO_VERSION: 0.0.14
+          BACKCHAT_STABLE_FROM_TAG: ${{ github.event.inputs.from_tag || 'v0.0.13' }}
+          BACKCHAT_STABLE_VIA_VERSION: ${{ github.event.inputs.via_version || '0.0.14' }}
+          BACKCHAT_STABLE_TO_VERSION: ${{ github.event.inputs.to_version || '' }}
+          BACKCHAT_STABLE_VIA_RELEASE_TAG: ${{ github.event.inputs.via_release_tag || 'v0.0.14' }}
+          BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL: ${{ github.event.inputs.require_differential || 'false' }}
         run: node scripts/macos-stable-release-update-e2e.mjs
 
       - name: Upload stable release update evidence
@@ -102,7 +126,11 @@ jobs:
           name: macos-stable-release-update-e2e
           path: |
             test-results/macos-stable-release-update-e2e.txt
-            test-results/stable-release-installed-app.log
-            test-results/stable-release-updater.log
+            test-results/stable-release-hop1.log
+            test-results/stable-release-hop1-updater.log
+            test-results/stable-release-hop2.log
+            test-results/stable-release-hop2-updater.log
+            test-results/stable-release-hop2-download.json
+            test-results/squirrel-cache-summary.json
             test-results/backchat-update-evidence.log
           if-no-files-found: ignore
