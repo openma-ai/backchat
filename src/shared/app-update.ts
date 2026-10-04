@@ -65,6 +65,22 @@ export interface UpdateFeed {
   allowPrerelease: boolean;
 }
 
+/** `setFeedURL` payload for our generic GitHub release directory feeds. */
+export interface ElectronUpdaterFeedOptions {
+  provider: "generic";
+  url: string;
+  /** GitHub Releases CDN returns 501 for multipart Range; use sequential single-range fetches. */
+  useMultipleRangeRequest: false;
+}
+
+export function electronUpdaterFeedOptions(feed: UpdateFeed): ElectronUpdaterFeedOptions {
+  return {
+    provider: "generic",
+    url: feed.url,
+    useMultipleRangeRequest: false,
+  };
+}
+
 interface ParsedAppVersion {
   major: number;
   minor: number;

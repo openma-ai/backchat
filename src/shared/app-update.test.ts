@@ -7,6 +7,7 @@ import {
   appBundlePathFromExecutable,
   canInstallUpdate,
   compareAppVersions,
+  electronUpdaterFeedOptions,
   feedForChannel,
   isNewerRelease,
   parseUpdateIdentity,
@@ -85,6 +86,16 @@ describe("channel selection", () => {
       allowPrerelease: false,
     });
     expect(feedForChannel("dev", {})).toBeNull();
+  });
+
+  it("disables multipart range requests for GitHub generic feeds", () => {
+    const feed = feedForChannel("stable", {});
+    expect(feed).not.toBeNull();
+    expect(electronUpdaterFeedOptions(feed!)).toEqual({
+      provider: "generic",
+      url: feed!.url,
+      useMultipleRangeRequest: false,
+    });
   });
 
   it("auto-accepts an update only for the e2e hook, and keeps the evidence path off the settings UI", () => {

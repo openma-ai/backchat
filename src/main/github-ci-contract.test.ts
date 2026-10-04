@@ -99,4 +99,15 @@ describe("github ci", () => {
     expect(update).not.toContain("publish-preview-release");
     expect(update).not.toContain("contents: write");
   });
+
+  it("proves GitHub differential fix on pull requests with a built client", () => {
+    const differential = readFileSync(
+      resolve(".github/workflows/macos-stable-differential-fix-e2e.yml"),
+      "utf8",
+    );
+    expect(differential).toContain("pull_request:");
+    expect(differential).toContain("BACKCHAT_STABLE_BUILT_START_VERSION");
+    expect(differential).toContain("BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL");
+    expect(differential).toContain("node scripts/macos-stable-release-update-e2e.mjs");
+  });
 });

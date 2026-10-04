@@ -80,7 +80,8 @@ async function main() {
   let keyPath = "";
   try {
     const pkg = JSON.parse(original);
-    const packaged = packagedVersion(pkg.version, channel, build);
+    const baseVersion = process.env.BACKCHAT_PACKAGED_VERSION?.trim() || pkg.version;
+    const packaged = packagedVersion(baseVersion, channel, build);
     const edited = applyMacPackaging({ ...pkg, version: packaged }, plan);
     const updateChannel = edited.build?.publish?.channel ?? "latest";
     console.log(`mac update info: ${updateChannel}-mac.yml`);

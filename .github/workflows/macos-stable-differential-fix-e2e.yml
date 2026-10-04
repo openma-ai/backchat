@@ -1,0 +1,68 @@
+name: macOS stable differential fix e2e
+
+# Prove GitHub differential downloads with useMultipleRangeRequest disabled (PR only).
+on:
+  pull_request:
+    paths:
+      - src/main/app-updater.ts
+      - src/shared/app-update.ts
+      - scripts/macos-stable-release-update-e2e.mjs
+      - scripts/run-mac-builder.mjs
+      - .github/workflows/macos-stable-differential-fix-e2e.yml
+
+concurrency:
+  group: macos-stable-differential-fix-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  built-client-differential:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Test the stable release update harness
+        run: node --test scripts/macos-stable-release-update-e2e.test.mjs
+
+      - name: Build signed client and prove differential against live v0.0.16
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BACKCHAT_STABLE_BUILT_START_VERSION: "0.0.15"
+          BACKCHAT_STABLE_TO_VERSION: "0.0.16"
+          BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "missing ${name}"
+              exit 1
+            fi
+          done
+          node scripts/macos-stable-release-update-e2e.mjs
+
+      - name: Upload differential proof artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-stable-differential-fix-e2e
+          path: |
+            test-results/macos-stable-release-update-e2e.txt
+            test-results/stable-release-hop2.log
+            test-results/stable-release-hop2-updater.log
+            test-results/stable-release-hop2-download.json
+            test-results/backchat-update-evidence.log
+          if-no-files-found: ignore
