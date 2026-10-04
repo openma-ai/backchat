@@ -92,19 +92,49 @@ export function parseStableUpdateConfig(env = process.env) {
   };
 }
 
-/** Inspect one updater log segment (not the combined transcript). */
-export function analyzeUpdaterDownload(logText) {
+/** electron-updater 6.8.x DifferentialDownloader.doDownload (DifferentialDownloader.js:58) */
+const DIFFERENTIAL_PLAN_RE =
+  /Full:\s*[^,\n]+,\s*To download:\s*[^(\n]+\(\s*(\d+)\s*%\s*\)/i;
+
+export function parseHumanDataSize(text) {
+  const match = /^([\d,]+(?:\.\d+)?)\s*(KB|MB|GB|B)?$/i.exec(text.trim());
+  if (!match) return null;
+  const amount = Number(match[1].replaceAll(",", ""));
+  if (!Number.isFinite(amount)) return null;
+  const unit = (match[2] ?? "B").toUpperCase();
+  if (unit === "GB") return Math.round(amount * 1024 ** 3);
+  if (unit === "MB") return Math.round(amount * 1024 ** 2);
+  if (unit === "KB") return Math.round(amount * 1024);
+  return Math.round(amount);
+}
+
+/** Bytes fetched over the network for a differential update (not assembled zip size). */
+export function parseDifferentialDownloadBytes(logText, fullPackageBytes = 0) {
   const text = logText ?? "";
-  let downloadedBytes = null;
+  const plan = DIFFERENTIAL_PLAN_RE.exec(text);
+  if (plan?.[1]) {
+    const percent = Number(plan[1]);
+    if (Number.isFinite(percent) && fullPackageBytes > 0) {
+      return Math.round((fullPackageBytes * percent) / 100);
+    }
+  }
+  const toDownload = /To download:\s*([\d,]+(?:\.\d+)?\s*(?:KB|MB|GB|B))/i.exec(text);
+  if (toDownload?.[1]) {
+    const parsed = parseHumanDataSize(toDownload[1]);
+    if (parsed != null) return parsed;
+  }
+  let fromProgress = null;
   for (const match of text.matchAll(/transferred[^0-9]*(\d+)[^0-9]+(\d+)/gi)) {
-    downloadedBytes = Math.max(downloadedBytes ?? 0, Number(match[1]));
+    fromProgress = Math.max(fromProgress ?? 0, Number(match[1]));
   }
-  for (const match of text.matchAll(/(\d+)\s*\/\s*(\d+)/g)) {
-    const left = Number(match[1]);
-    const right = Number(match[2]);
-    if (right > 1_000_000 && left <= right) downloadedBytes = Math.max(downloadedBytes ?? 0, left);
-  }
-  return { downloadedBytes };
+  return fromProgress;
+}
+
+/** Inspect one updater log segment (not the combined transcript). */
+export function analyzeUpdaterDownload(logText, fullPackageBytes = 0) {
+  return {
+    downloadedBytes: parseDifferentialDownloadBytes(logText, fullPackageBytes),
+  };
 }
 
 const DIFFERENTIAL_FAILURE_PATTERNS = [
@@ -119,31 +149,21 @@ export function differentialFailureReasons(logText) {
   return DIFFERENTIAL_FAILURE_PATTERNS.filter(({ re }) => re.test(text)).map(({ label }) => label);
 }
 
-export function extractPendingDownloadBytes(logText) {
-  const match = /downloaded to (.+?\.zip)/i.exec(logText ?? "");
-  if (!match?.[1]) return null;
-  try {
-    return statSync(match[1].trim()).size;
-  } catch {
-    return null;
-  }
-}
-
-export function assertDifferentialUpdate(logText, fullPackageBytes, measuredBytes = null) {
-  const analysis = analyzeUpdaterDownload(logText);
+export function assertDifferentialUpdate(logText, fullPackageBytes) {
+  const analysis = analyzeUpdaterDownload(logText, fullPackageBytes);
   const errors = [];
   for (const reason of differentialFailureReasons(logText)) {
     errors.push(`updater log indicates failed differential: ${reason}`);
   }
-  const downloadedBytes = measuredBytes ?? analysis.downloadedBytes;
+  const downloadedBytes = analysis.downloadedBytes;
   if (downloadedBytes == null) {
-    errors.push("could not determine downloaded bytes from updater log or pending artifact");
+    errors.push("could not determine differential download bytes from updater log");
   } else if (fullPackageBytes > 0 && downloadedBytes >= fullPackageBytes * 0.9) {
     errors.push(
       `downloaded bytes ${downloadedBytes} are not smaller than 90% of full zip ${fullPackageBytes}`,
     );
   }
-  return { errors, analysis: { ...analysis, downloadedBytes } };
+  return { errors, analysis: { downloadedBytes } };
 }
 
 export function squirrelCacheSummary() {
@@ -504,8 +524,7 @@ async function main() {
   });
   writeFileSync(resolve("test-results/stable-release-hop2-updater.log"), hop2.logText);
 
-  const measuredBytes = extractPendingDownloadBytes(hop2.logText);
-  const diff = assertDifferentialUpdate(hop2.logText, hop2FullZipBytes, measuredBytes);
+  const diff = assertDifferentialUpdate(hop2.logText, hop2FullZipBytes);
   log(
     `hop2 download analysis: ${JSON.stringify({
       ...diff.analysis,
