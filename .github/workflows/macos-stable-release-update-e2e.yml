@@ -50,10 +50,10 @@ jobs:
       - name: Run stable release update scenario
         env:
           GH_TOKEN: ${{ github.token }}
-          BACKCHAT_STABLE_FROM_TAG: ${{ inputs.from_tag }}
-          BACKCHAT_STABLE_VIA_VERSION: ${{ inputs.via_version }}
-          BACKCHAT_STABLE_TO_VERSION: ${{ inputs.to_version }}
-          BACKCHAT_STABLE_VIA_RELEASE_TAG: ${{ inputs.via_release_tag }}
+          BACKCHAT_STABLE_FROM_TAG: ${{ inputs.from_tag || 'v0.0.13' }}
+          BACKCHAT_STABLE_VIA_VERSION: ${{ inputs.via_version || '0.0.14' }}
+          BACKCHAT_STABLE_TO_VERSION: ${{ inputs.to_version || '' }}
+          BACKCHAT_STABLE_VIA_RELEASE_TAG: ${{ inputs.via_release_tag || 'v0.0.14' }}
           BACKCHAT_STABLE_REQUIRE_DIFFERENTIAL: ${{ inputs.require_differential }}
         run: node scripts/macos-stable-release-update-e2e.mjs
 
