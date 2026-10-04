@@ -94,7 +94,7 @@ export function parseStableUpdateConfig(env = process.env) {
 
 /** electron-updater 6.8.x DifferentialDownloader.doDownload (DifferentialDownloader.js:58) */
 const DIFFERENTIAL_PLAN_RE =
-  /Full:\s*[^,\n]+,\s*To download:\s*[^(\n]+\(\s*(\d+)\s*%\s*\)/i;
+  /Full:\s*.+?,\s*To download:\s*[^(\n]+\(\s*(\d+)\s*%\s*\)/is;
 
 export function parseHumanDataSize(text) {
   const match = /^([\d,]+(?:\.\d+)?)\s*(KB|MB|GB|B)?$/i.exec(text.trim());
