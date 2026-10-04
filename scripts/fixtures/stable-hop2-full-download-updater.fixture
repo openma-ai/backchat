@@ -1,0 +1,7 @@
+[updater] Checking for update
+[updater] Found version 0.0.15 (url: Backchat-0.0.15-arm64-mac.zip, Backchat-0.0.15-arm64.dmg)
+[updater] Downloading update from Backchat-0.0.15-arm64-mac.zip, Backchat-0.0.15-arm64.dmg
+[updater] Download block maps (old: "https://github.com/openma-ai/backchat/releases/latest/download/Backchat-0.0.14-arm64-mac.zip.blockmap", new: https://github.com/openma-ai/backchat/releases/latest/download/Backchat-0.0.15-arm64-mac.zip.blockmap)
+[updater] No cached blockmap for the old installer, downloading it from "https://github.com/openma-ai/backchat/releases/latest/download/Backchat-0.0.14-arm64-mac.zip.blockmap"
+[updater] Cannot download differentially, fallback to full download: Error: Cannot download "https://github.com/openma-ai/backchat/releases/download/v0.0.15/Backchat-0.0.14-arm64-mac.zip.blockmap", status 404: 
+[updater] New version 0.0.15 has been downloaded to /Users/runner/Library/Caches/backchat-updater/pending/Backchat-0.0.15-arm64-mac.zip
