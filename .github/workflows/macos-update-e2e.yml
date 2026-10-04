@@ -3,6 +3,15 @@ name: macOS update e2e
 # One signed update proof for this branch. It never publishes.
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Which update proof to run
+        type: choice
+        default: stable
+        options:
+          - stable
+          - preview
+          - all
   push:
     branches:
       - cursor/macos-auto-update-9d8b
@@ -16,6 +25,7 @@ permissions:
 
 jobs:
   update:
+    if: github.event_name != 'push' && (github.event.inputs.mode == 'preview' || github.event.inputs.mode == 'all')
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -62,4 +72,37 @@ jobs:
             test-results/backchat-update-evidence.log
             test-results/outside-app.log
             test-results/installed-app.log
+          if-no-files-found: ignore
+
+  stable-release-update:
+    if: github.event_name == 'push' || github.event.inputs.mode == 'stable' || github.event.inputs.mode == 'all'
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Test the stable release update harness
+        run: node --test scripts/macos-stable-release-update-e2e.test.mjs
+
+      - name: Install v0.0.13 and update to latest stable via GitHub feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKCHAT_STABLE_FROM_TAG: v0.0.13
+          BACKCHAT_STABLE_TO_VERSION: 0.0.14
+        run: node scripts/macos-stable-release-update-e2e.mjs
+
+      - name: Upload stable release update evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-stable-release-update-e2e
+          path: |
+            test-results/macos-stable-release-update-e2e.txt
+            test-results/stable-release-installed-app.log
+            test-results/stable-release-updater.log
+            test-results/backchat-update-evidence.log
           if-no-files-found: ignore
