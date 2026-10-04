@@ -95,9 +95,6 @@ export function parseStableUpdateConfig(env = process.env) {
 /** Inspect one updater log segment (not the combined transcript). */
 export function analyzeUpdaterDownload(logText) {
   const text = logText ?? "";
-  const fullFallback = /falling back to full download/i.test(text);
-  const missingPrevious = /Unable to locate previous update\.zip/i.test(text);
-  const blockMaps = /Download block maps|downloading block/i.test(text);
   let downloadedBytes = null;
   for (const match of text.matchAll(/transferred[^0-9]*(\d+)[^0-9]+(\d+)/gi)) {
     downloadedBytes = Math.max(downloadedBytes ?? 0, Number(match[1]));
@@ -107,25 +104,46 @@ export function analyzeUpdaterDownload(logText) {
     const right = Number(match[2]);
     if (right > 1_000_000 && left <= right) downloadedBytes = Math.max(downloadedBytes ?? 0, left);
   }
-  return { fullFallback, missingPrevious, blockMaps, downloadedBytes };
+  return { downloadedBytes };
 }
 
-export function assertDifferentialUpdate(logText, fullPackageBytes) {
+const DIFFERENTIAL_FAILURE_PATTERNS = [
+  { label: "Cannot download differentially", re: /Cannot download differentially/i },
+  { label: "fallback to full download", re: /fallback to full download/i },
+  { label: "falling back to full download", re: /falling back to full download/i },
+  { label: "Unable to locate previous update.zip", re: /Unable to locate previous update\.zip/i },
+];
+
+export function differentialFailureReasons(logText) {
+  const text = logText ?? "";
+  return DIFFERENTIAL_FAILURE_PATTERNS.filter(({ re }) => re.test(text)).map(({ label }) => label);
+}
+
+export function extractPendingDownloadBytes(logText) {
+  const match = /downloaded to (.+?\.zip)/i.exec(logText ?? "");
+  if (!match?.[1]) return null;
+  try {
+    return statSync(match[1].trim()).size;
+  } catch {
+    return null;
+  }
+}
+
+export function assertDifferentialUpdate(logText, fullPackageBytes, measuredBytes = null) {
   const analysis = analyzeUpdaterDownload(logText);
   const errors = [];
-  if (analysis.fullFallback) errors.push("updater log contains falling back to full download");
-  if (analysis.missingPrevious) errors.push("updater could not locate previous update.zip");
-  if (!analysis.blockMaps) errors.push("updater log does not mention block map download");
-  if (
-    analysis.downloadedBytes != null
-    && fullPackageBytes > 0
-    && analysis.downloadedBytes >= fullPackageBytes * 0.9
-  ) {
+  for (const reason of differentialFailureReasons(logText)) {
+    errors.push(`updater log indicates failed differential: ${reason}`);
+  }
+  const downloadedBytes = measuredBytes ?? analysis.downloadedBytes;
+  if (downloadedBytes == null) {
+    errors.push("could not determine downloaded bytes from updater log or pending artifact");
+  } else if (fullPackageBytes > 0 && downloadedBytes >= fullPackageBytes * 0.9) {
     errors.push(
-      `downloaded bytes ${analysis.downloadedBytes} are not smaller than ~90% of full zip ${fullPackageBytes}`,
+      `downloaded bytes ${downloadedBytes} are not smaller than 90% of full zip ${fullPackageBytes}`,
     );
   }
-  return { errors, analysis };
+  return { errors, analysis: { ...analysis, downloadedBytes } };
 }
 
 export function squirrelCacheSummary() {
@@ -486,7 +504,8 @@ async function main() {
   });
   writeFileSync(resolve("test-results/stable-release-hop2-updater.log"), hop2.logText);
 
-  const diff = assertDifferentialUpdate(hop2.logText, hop2FullZipBytes);
+  const measuredBytes = extractPendingDownloadBytes(hop2.logText);
+  const diff = assertDifferentialUpdate(hop2.logText, hop2FullZipBytes, measuredBytes);
   log(
     `hop2 download analysis: ${JSON.stringify({
       ...diff.analysis,
@@ -504,7 +523,7 @@ async function main() {
   if (config.requireDifferential && diff.errors.length) {
     throw new Error(diff.errors.join("\n"));
   }
-  if (config.requireDifferential === false && diff.errors.length) {
+  if (!config.requireDifferential && diff.errors.length) {
     log(`hop2 differential warnings (require_differential=false): ${diff.errors.join("; ")}`);
   }
 

@@ -137,6 +137,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/publish-preview-release.mjs release
 
+      - name: Prepare previous stable blockmap for differential updates
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/prepare-stable-release-assets.mjs release
+
       - name: Upload tagged GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -154,8 +160,16 @@ jobs:
           zip_blockmap="${zip}.blockmap"
           test -f "$dmg_blockmap"
           test -f "$zip_blockmap"
+          extra_assets=()
+          if [ -f release/previous-stable-blockmap.json ]; then
+            prev_path=$(jq -r '.path // empty' release/previous-stable-blockmap.json)
+            if [ -n "$prev_path" ] && [ -f "$prev_path" ]; then
+              extra_assets+=("$prev_path")
+            fi
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             "$versioned" "$stable" "$zip" "$yml" "$dmg_blockmap" "$zip_blockmap" \
+            "${extra_assets[@]}" \
             --generate-notes --verify-tag
 
       - name: Upload packaged first-prompt screenshot

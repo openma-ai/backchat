@@ -33,9 +33,6 @@ on:
         type: boolean
         required: false
         default: false
-  push:
-    branches:
-      - cursor/macos-auto-update-9d8b
 
 concurrency:
   group: macos-update-e2e-${{ github.ref }}
@@ -46,7 +43,7 @@ permissions:
 
 jobs:
   update:
-    if: github.event_name != 'push' && (github.event.inputs.mode == 'preview' || github.event.inputs.mode == 'all')
+    if: github.event.inputs.mode == 'preview' || github.event.inputs.mode == 'all'
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -96,7 +93,7 @@ jobs:
           if-no-files-found: ignore
 
   stable-release-update:
-    if: github.event_name == 'push' || github.event.inputs.mode == 'stable' || github.event.inputs.mode == 'all'
+    if: github.event.inputs.mode == 'stable' || github.event.inputs.mode == 'all'
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
