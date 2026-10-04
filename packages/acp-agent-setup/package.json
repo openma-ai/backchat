@@ -16,7 +16,8 @@
     "src/index.ts"
   ],
   "dependencies": {
-    "@open-managed-agents-desktop/acp": "workspace:*"
+    "@open-managed-agents-desktop/acp": "workspace:*",
+    "@openma/common": "github:openma-ai/openma-common#v0.7.9"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

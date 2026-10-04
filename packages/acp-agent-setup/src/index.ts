@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, delimiter, dirname, join } from "node:path";
 import {
   detectEntry,
@@ -11,11 +11,16 @@ import {
 import {
   installAcpRegistryAgent,
   installManagedAdapter,
-  readAcpRegistryInstallMetadata,
   repairRelocatedAcpRegistryShim,
   uninstallAcpRegistryAgent,
   uninstallManagedAdapter,
 } from "@open-managed-agents-desktop/acp/installer";
+import {
+  latestNpmPackageVersion,
+  npmPackageNameFromSpec,
+  readAcpHarnessInstallState,
+  usesOpenMaNpmLatestSource,
+} from "@openma/common/acp-harnesses/installer";
 import {
   authenticateAgent,
   disposeAllAcpSetupProcesses,
@@ -407,13 +412,8 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   async installAgent(id: string): Promise<AcpAgentSetupInfo[]> {
     await this.refreshRegistry({ refresh: true });
     const entry = this.requireEntry(id);
-    const npmPackageName = !entry.version && entry.registryDistribution?.npx
-      ? npmPackageNameFromSpec(entry.registryDistribution.npx.package)
-      : undefined;
-    const npmLatestVersion = npmPackageName
-      ? await this.latestNpmPackageVersion(npmPackageName)
-      : undefined;
-    await this.installEntry(entry, npmLatestVersion);
+    const targetVersion = await this.resolveManagedInstallTargetVersion(entry);
+    await this.installEntry(entry, targetVersion);
     return this.collectAgentSnapshot({
       trigger: "install",
       refreshRegistry: false,
@@ -429,7 +429,11 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     if (!installInfo.installed) {
       throw new Error(`${entry.label} is not installed by ${this.managedByName()}`);
     }
-    await this.installEntry(entry, installInfo.latestVersion);
+    const targetVersion = await this.resolveManagedInstallTargetVersion(
+      entry,
+      installInfo.latestVersion,
+    );
+    await this.installEntry(entry, targetVersion);
     return this.collectAgentSnapshot({
       trigger: "update",
       refreshRegistry: false,
@@ -640,107 +644,32 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return await detectEntry(entry, this.resolveOptions()) as SetupAgentEntry | null;
   }
 
-  private async managedInstallInfo(entry: KnownAgentEntry): Promise<{
-    installed: boolean;
-    installedVersion?: string;
-    latestVersion?: string;
-    updateAvailable?: boolean;
-  }> {
-    const registryLatestVersion = entry.version;
-    if (!entry.installSource) {
-      return {
-        installed: false,
-        ...(registryLatestVersion ? { latestVersion: registryLatestVersion } : {}),
-      };
-    }
-    const shimPath = join(this.deps.acpBinDir, basename(entry.spec.command));
-    const installed = await access(shimPath).then(() => true, () => false);
-    if (!installed) {
-      return {
-        installed: false,
-        ...(registryLatestVersion ? { latestVersion: registryLatestVersion } : {}),
-      };
-    }
-    const npmPackageName = entry.registryDistribution?.npx?.package
-      ? npmPackageNameFromSpec(entry.registryDistribution.npx.package)
-      : undefined;
-    const [metadata, installedNpmVersion, npmLatestVersion] = await Promise.all([
-      entry.installSource === "registry" && entry.registryId
-        ? readAcpRegistryInstallMetadata({
-            registryId: entry.registryId,
-            binDir: this.deps.acpBinDir,
-            installRoot: this.deps.acpInstallRoot,
-          })
-        : Promise.resolve(null),
-      npmPackageName
-        ? this.installedNpmPackageVersion(shimPath, npmPackageName)
-        : Promise.resolve(undefined),
-      !registryLatestVersion && npmPackageName
-        ? this.latestNpmPackageVersion(npmPackageName)
-        : Promise.resolve(undefined),
-    ]);
-    const installedVersion = installedNpmVersion ?? metadata?.version;
-    const latestVersion = registryLatestVersion ?? npmLatestVersion;
-    const updateAvailable = entry.installSource === "registry"
-      && Boolean(latestVersion)
-      && (!installedVersion || isStrictlyNewerVersion(latestVersion, installedVersion));
-    return {
-      installed: true,
-      ...(installedVersion ? { installedVersion } : {}),
-      ...(latestVersion ? { latestVersion } : {}),
-      ...(updateAvailable ? { updateAvailable: true } : {}),
-    };
+  private async managedInstallInfo(entry: KnownAgentEntry) {
+    return readAcpHarnessInstallState({
+      entry,
+      binDir: this.deps.acpBinDir,
+      installRoot: this.deps.acpInstallRoot,
+      fetchImpl: this.deps.fetchImpl,
+      npmRegistryUrls: this.deps.npmRegistryUrls,
+    });
   }
 
-  private async installedNpmPackageVersion(
-    shimPath: string,
-    packageName: string,
+  private async resolveManagedInstallTargetVersion(
+    entry: KnownAgentEntry,
+    registryLatestVersion?: string,
   ): Promise<string | undefined> {
-    try {
-      const shim = await readFile(shimPath, "utf8");
-      const commandPath = shim.match(/^exec\s+'([^']+)'(?:\s|$)/m)?.[1];
-      if (!commandPath) return undefined;
-      const normalized = commandPath.replaceAll("\\", "/");
-      const marker = "/node_modules/.bin/";
-      const markerIndex = normalized.lastIndexOf(marker);
-      if (markerIndex < 0) return undefined;
-      const installDir = normalized.slice(0, markerIndex);
-      const parsed = JSON.parse(await readFile(join(
-        installDir,
-        "node_modules",
-        ...packageName.split("/"),
-        "package.json",
-      ), "utf8")) as { version?: unknown };
-      return typeof parsed.version === "string" && parsed.version.length > 0
-        ? parsed.version
-        : undefined;
-    } catch {
-      return undefined;
+    if (usesOpenMaNpmLatestSource(entry) && entry.registryDistribution?.npx) {
+      const packageName = npmPackageNameFromSpec(entry.registryDistribution.npx.package);
+      const latest = await latestNpmPackageVersion(packageName, {
+        fetchImpl: this.deps.fetchImpl,
+        npmRegistryUrls: this.deps.npmRegistryUrls,
+      });
+      if (!latest) {
+        throw new Error(`Could not resolve npm latest version for ${packageName}`);
+      }
+      return latest;
     }
-  }
-
-  private async latestNpmPackageVersion(
-    packageName: string,
-  ): Promise<string | undefined> {
-    try {
-      const response = await (this.deps.fetchImpl ?? fetch)(
-        `https://registry.npmjs.org/${encodeURIComponent(packageName)}`,
-        {
-          headers: { accept: "application/vnd.npm.install-v1+json" },
-          signal: AbortSignal.timeout(5_000),
-        },
-      );
-      if (!response.ok) return undefined;
-      const parsed = await response.json() as {
-        "dist-tags"?: { latest?: unknown };
-      };
-      const latest = parsed["dist-tags"]?.latest;
-      return typeof latest === "string" && latest.length > 0
-        ? latest
-        : undefined;
-    } catch {
-      return undefined;
-    }
+    return registryLatestVersion ?? entry.version;
   }
 
   private async probeAuth(entry: KnownAgentEntry): Promise<AcpAgentSetupAuth | undefined> {
@@ -822,72 +751,6 @@ interface CachedAgentProbe {
   session_modes?: unknown;
   auth?: AcpAgentSetupAuth;
   updated_at: string;
-}
-
-function npmPackageNameFromSpec(packageSpec: string): string {
-  if (packageSpec.startsWith("@")) {
-    const versionIndex = packageSpec.indexOf("@", 1);
-    return versionIndex > 0 ? packageSpec.slice(0, versionIndex) : packageSpec;
-  }
-  const versionIndex = packageSpec.lastIndexOf("@");
-  return versionIndex > 0 ? packageSpec.slice(0, versionIndex) : packageSpec;
-}
-
-type ParsedSemver = {
-  core: readonly [number, number, number];
-  prerelease: readonly string[];
-};
-
-function isStrictlyNewerVersion(candidate?: string, current?: string): boolean {
-  if (!candidate || !current) return false;
-  const parsedCandidate = parseSemver(candidate);
-  const parsedCurrent = parseSemver(current);
-  if (!parsedCandidate || !parsedCurrent) return false;
-  return compareSemver(parsedCandidate, parsedCurrent) > 0;
-}
-
-function parseSemver(version: string): ParsedSemver | null {
-  const match = version.trim().match(
-    /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
-  );
-  if (!match) return null;
-  const core = match.slice(1, 4).map(Number);
-  if (core.some((part) => !Number.isSafeInteger(part))) return null;
-  return {
-    core: core as [number, number, number],
-    prerelease: match[4]?.split(".") ?? [],
-  };
-}
-
-function compareSemver(left: ParsedSemver, right: ParsedSemver): number {
-  for (let index = 0; index < left.core.length; index += 1) {
-    const difference = left.core[index]! - right.core[index]!;
-    if (difference !== 0) return difference;
-  }
-  if (left.prerelease.length === 0 || right.prerelease.length === 0) {
-    return right.prerelease.length - left.prerelease.length;
-  }
-  const length = Math.max(left.prerelease.length, right.prerelease.length);
-  for (let index = 0; index < length; index += 1) {
-    const leftPart = left.prerelease[index];
-    const rightPart = right.prerelease[index];
-    if (leftPart === undefined) return -1;
-    if (rightPart === undefined) return 1;
-    if (leftPart === rightPart) continue;
-    const leftIsNumeric = /^\d+$/.test(leftPart);
-    const rightIsNumeric = /^\d+$/.test(rightPart);
-    if (leftIsNumeric && rightIsNumeric) {
-      const normalizedLeft = leftPart.replace(/^0+(?=\d)/, "");
-      const normalizedRight = rightPart.replace(/^0+(?=\d)/, "");
-      if (normalizedLeft.length !== normalizedRight.length) {
-        return normalizedLeft.length - normalizedRight.length;
-      }
-      return normalizedLeft < normalizedRight ? -1 : 1;
-    }
-    if (leftIsNumeric !== rightIsNumeric) return leftIsNumeric ? -1 : 1;
-    return leftPart < rightPart ? -1 : 1;
-  }
-  return 0;
 }
 
 function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {
