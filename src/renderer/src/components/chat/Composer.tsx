@@ -107,6 +107,7 @@ export function Composer({
   disabled,
   running,
   placeholder,
+  inputLabel,
   availableCommands,
   attachmentDefaultPath,
   lockedAgentId,
@@ -136,6 +137,8 @@ export function Composer({
   disabled: boolean;
   running: boolean | undefined;
   placeholder: string;
+  /** Accessible name when this composer is bound to a project coordinator. */
+  inputLabel?: string;
   availableCommands?: AcpAvailableCommand[];
   attachmentDefaultPath?: string;
   lockedAgentId: string | null;
@@ -1024,6 +1027,7 @@ export function Composer({
               )}
               <ComposerInput
               ref={taRef}
+              aria-label={inputLabel}
               value={text}
               onChange={(e) => {
               const nextText = e.target.value;

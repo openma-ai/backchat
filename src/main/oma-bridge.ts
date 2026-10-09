@@ -379,6 +379,7 @@ export class OmaBridgeClient {
         break;
       case "session.native_subagent":
       case "session.queue_update":
+      case "session.prompt_accepted":
         break;
     }
     if (lifecycleEvent) {

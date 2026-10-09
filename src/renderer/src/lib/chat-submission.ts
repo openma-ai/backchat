@@ -15,9 +15,11 @@ import {
 } from "./composer-prompt";
 import type { AcpForkPoint } from "@openma/common/acp-runtime";
 import { sessionUsesManagedWorkspace } from "./fork-workspace";
+import type { OptimisticUserEcho } from "./optimistic-user-echo";
 import type {
   SessionRow,
   SideSessionParentLink,
+  Turn,
   TurnDeliveryMeta,
 } from "./session-store";
 import {
@@ -204,16 +206,32 @@ export function chatIdleDeliveryMeta(
   };
 }
 
+export interface ChatDelivery {
+  sessionId: string;
+  turnId: string;
+  text: string;
+  attachments: PromptAttachment[];
+}
+
 export function useChatSubmission({
   isSide,
   pickedAgentId,
   pickedCwd,
   onSuggestionSubmitted,
+  onOptimisticEcho,
+  boundSessionId,
+  deliver,
 }: {
   isSide: boolean;
   pickedAgentId: string | null;
   pickedCwd: string | null;
   onSuggestionSubmitted: () => void;
+  /** Paint the user message before session start or session prompt IPC. */
+  onOptimisticEcho?: (echo: OptimisticUserEcho) => void;
+  /** Read this session instead of the sidebar's active chat. */
+  boundSessionId?: string;
+  /** Coordinator sends stay on this pipeline and only swap the transport. */
+  deliver?: (input: ChatDelivery) => Promise<void>;
 }) {
   const navigate = useNavigate();
 
@@ -251,7 +269,9 @@ export function useChatSubmission({
   ) => {
     // Resolve from the live store so a fast submit after navigation cannot
     // reuse the previous session captured by a render closure.
-    let target = isSide ? sessionStore.sideActive() : sessionStore.active();
+    let target = boundSessionId
+      ? sessionStore.get(boundSessionId)
+      : isSide ? sessionStore.sideActive() : sessionStore.active();
     if (target?.executionTarget || target?.openma) {
       if (isSide) return;
       if (attachments.length || annotations.length || sessionReferences.length) {
@@ -276,7 +296,7 @@ export function useChatSubmission({
       return;
     }
     const draftAgentId = resolveChatSubmitAgentId({
-      target,
+      target: target ?? null,
       selectedAgentId,
       pickedAgentId,
     });
@@ -291,6 +311,7 @@ export function useChatSubmission({
       return;
     }
     if (!target) {
+      if (boundSessionId) return;
       const sessionId = isSide ? newSideDraftSession() : newDraftSession();
       target = sessionStore.get(sessionId)!;
       if (!isSide && pickedCwd?.trim()) {
@@ -322,6 +343,12 @@ export function useChatSubmission({
       annotations.length,
       sessionReferences.length,
     );
+    onOptimisticEcho?.({
+      clientId: turnId,
+      text: displayText,
+      createdAt: Date.now(),
+      state: "pending",
+    });
     sessionStore.registerTurn(
       turnId,
       target.id,
@@ -332,83 +359,194 @@ export function useChatSubmission({
       annotations,
     );
 
-    if (target.status === "draft") {
-      sessionStore.promoteDraft(
-        target.id,
-        draftAgentId,
-        deriveChatLabel(displayText),
-      );
-      if (!isSide) {
-        void navigate({
-          to: "/chat/$sessionId",
-          params: { sessionId: target.id },
+    if (deliver) {
+      try {
+        await deliver({
+          sessionId: target.id,
+          turnId,
+          text,
+          attachments,
         });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        sessionStore.failSend(turnId, message);
+        toast.error(message);
       }
-      const parentLink = target.forkParent ?? target.sideParent ?? target.subagent;
-      const workspace = resolveDraftStartWorkspace({
-        target,
-        isSide,
-        pickedCwd,
-      });
-      const startResult = await window.backchat.sessionStart({
+      return;
+    }
+
+    try {
+      if (target.status === "draft") {
+        sessionStore.promoteDraft(
+          target.id,
+          draftAgentId,
+          deriveChatLabel(displayText),
+        );
+        if (!isSide) {
+          void navigate({
+            to: "/chat/$sessionId",
+            params: { sessionId: target.id },
+          });
+        }
+        const parentLink = target.forkParent ?? target.sideParent ?? target.subagent;
+        const workspace = resolveDraftStartWorkspace({
+          target,
+          isSide,
+          pickedCwd,
+        });
+        const startResult = await window.backchat.sessionStart({
+          session_id: target.id,
+          agent_id: draftAgentId,
+          workspace_mode: workspace.workspace_mode,
+          cwd: workspace.cwd,
+          additional_directories: workspace.additional_directories,
+          project_id: workspace.project_id,
+          workspace_id: workspace.workspace_id,
+          fork: resolveChatFork(parentLink),
+          parent_session_id: workspace.parent_session_id,
+          fork_kind: workspace.fork_kind,
+        });
+        if (startResult.status !== "ready") {
+          const message = startResult.status === "error"
+            ? startResult.message
+            : "Couldn't start the session";
+          if (startResult.status === "error" && parentLink?.inheritance === "fork") {
+            toast.error(startResult.message);
+          }
+          sessionStore.failSend(turnId, message);
+          return;
+        }
+
+        for (const [config_id, value] of Object.entries(configOverrides)) {
+          try {
+            await window.backchat.sessionSetConfigOption({
+              session_id: target.id,
+              config_id,
+              value,
+            });
+          } catch (error) {
+            toast.error("Couldn't switch model", {
+              description:
+                error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      } else if (target.status === "ready" && !target.activeTurnId) {
+        const startResult = await window.backchat.sessionStart({
+          session_id: target.id,
+          agent_id: target.agent_id,
+          cwd: target.cwd || undefined,
+          additional_directories: target.additionalDirectories,
+          project_id: target.projectId,
+          workspace_id: target.workspaceId ?? undefined,
+          resume: target.acp_session_id
+            ? { acp_session_id: target.acp_session_id }
+            : undefined,
+        });
+        if (startResult.status !== "ready") {
+          sessionStore.failSend(
+            turnId,
+            startResult.status === "error" ? startResult.message : "Couldn't start the session",
+          );
+          return;
+        }
+      }
+
+      await window.backchat.sessionPrompt({
         session_id: target.id,
-        agent_id: draftAgentId,
+        turn_id: turnId,
+        text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+        ...(annotations.length > 0 ? { annotations } : {}),
+        ...(sessionReferences.length > 0 ? { session_references: sessionReferences } : {}),
+        prompt_intent: delivery.intent,
+        requested_delivery: delivery.requestedDelivery,
+        effective_delivery: delivery.effectiveDelivery,
+        delivery_degraded: delivery.degraded,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sessionStore.failSend(turnId, message);
+      toast.error(message);
+    }
+  };
+}
+
+/** Resubmit a bound send through the same transport the first attempt used. */
+export async function retryBoundChatSend(
+  turn: Turn,
+  deliver: (input: ChatDelivery) => Promise<void>,
+): Promise<void> {
+  sessionStore.reopenSend(turn.id);
+  try {
+    await deliver({
+      sessionId: turn.sessionId,
+      turnId: turn.id,
+      text: turn.promptText,
+      attachments: turn.attachments ?? [],
+    });
+  } catch (error) {
+    sessionStore.failSend(
+      turn.id,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+/** Resubmit a send that failed before the host accepted it, using the same turn id. */
+export async function retryFailedChatSend(turn: Turn): Promise<void> {
+  const session = sessionStore.get(turn.sessionId);
+  if (!session || session.sideKind === "subagent") return;
+  const canPrompt = (session.status === "ready" || session.status === "running")
+    && !!session.acp_session_id;
+  sessionStore.reopenSend(turn.id);
+  try {
+    if (!canPrompt) {
+      const workspace = resolveDraftStartWorkspace({
+        target: session,
+        isSide: session.kind === "side",
+        pickedCwd: session.chosenCwd,
+      });
+      const parentLink = session.forkParent ?? session.sideParent ?? session.subagent;
+      const started = await window.backchat.sessionStart({
+        session_id: session.id,
+        agent_id: session.agent_id,
         workspace_mode: workspace.workspace_mode,
-        cwd: workspace.cwd,
-        additional_directories: workspace.additional_directories,
-        project_id: workspace.project_id,
-        workspace_id: workspace.workspace_id,
+        cwd: (workspace.cwd ?? session.cwd) || undefined,
+        additional_directories: workspace.additional_directories ?? session.additionalDirectories,
+        project_id: workspace.project_id ?? session.projectId,
+        workspace_id: workspace.workspace_id ?? session.workspaceId ?? undefined,
         fork: resolveChatFork(parentLink),
         parent_session_id: workspace.parent_session_id,
         fork_kind: workspace.fork_kind,
-      });
-      if (startResult.status !== "ready") {
-        if (startResult.status === "error" && parentLink?.inheritance === "fork") {
-          toast.error(startResult.message);
-        }
-        return;
-      }
-
-      for (const [config_id, value] of Object.entries(configOverrides)) {
-        try {
-          await window.backchat.sessionSetConfigOption({
-            session_id: target.id,
-            config_id,
-            value,
-          });
-        } catch (error) {
-          toast.error("Couldn't switch model", {
-            description:
-              error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    } else if (target.status === "ready" && !target.activeTurnId) {
-      const startResult = await window.backchat.sessionStart({
-        session_id: target.id,
-        agent_id: target.agent_id,
-        cwd: target.cwd || undefined,
-        additional_directories: target.additionalDirectories,
-        project_id: target.projectId,
-        workspace_id: target.workspaceId ?? undefined,
-        resume: target.acp_session_id
-          ? { acp_session_id: target.acp_session_id }
+        resume: session.acp_session_id
+          ? { acp_session_id: session.acp_session_id }
           : undefined,
       });
-      if (startResult.status !== "ready") return;
+      if (started.status !== "ready") {
+        sessionStore.failSend(
+          turn.id,
+          started.status === "error" ? started.message : "Couldn't start the session",
+        );
+        return;
+      }
     }
-
     await window.backchat.sessionPrompt({
-      session_id: target.id,
-      turn_id: turnId,
-      text,
-      ...(attachments.length > 0 ? { attachments } : {}),
-      ...(annotations.length > 0 ? { annotations } : {}),
-      ...(sessionReferences.length > 0 ? { session_references: sessionReferences } : {}),
-      prompt_intent: delivery.intent,
-      requested_delivery: delivery.requestedDelivery,
-      effective_delivery: delivery.effectiveDelivery,
-      delivery_degraded: delivery.degraded,
+      session_id: turn.sessionId,
+      turn_id: turn.id,
+      text: turn.promptText,
+      ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
+      ...(turn.annotations?.length ? { annotations: turn.annotations } : {}),
+      ...(turn.sessionReferences?.length ? { session_references: turn.sessionReferences } : {}),
+      prompt_intent: turn.promptIntent,
+      requested_delivery: turn.requestedDelivery,
+      effective_delivery: turn.effectiveDelivery,
+      delivery_degraded: turn.deliveryDegraded,
     });
-  };
+  } catch (error) {
+    sessionStore.failSend(
+      turn.id,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }

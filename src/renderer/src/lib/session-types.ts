@@ -43,6 +43,8 @@ export interface SessionRow {
    *             pair row is the user-facing entry point.
    */
   kind?: "main" | "side" | "pair";
+  /** Bound project placeholder. Not a sidebar chat. */
+  listHidden?: boolean;
   /** Side-session subtype. Side chats are subordinate sessions attached
    *  to the active main session; native subagents are provider-created
    *  activity and are not user-created from the GUI. */
@@ -403,6 +405,11 @@ export interface Turn {
   id: string;
   sessionId: string;
   promptText: string;
+  /** Client id shared with the persisted user event. Live session turns use `id`. */
+  clientId?: string;
+  /** Optimistic send that has not been accepted yet, or that failed before the agent started. */
+  sendState?: "pending" | "failed";
+  sendError?: string;
   /** User-provided files/images are task sources. Persist metadata only so
    * the Task tab can restore them without duplicating inline image data. */
   attachments?: PromptAttachment[];

@@ -238,6 +238,7 @@ export class ProjectAgentBridge {
             self.#listeners.set(input.turnId, push);
             const memory = input.session.raw as
               { memoryDirectory?: string } | undefined;
+            const userPrompt = projectUserPrompt(input.context.items);
             const prompt = [
               "You are the " +
                 role +
@@ -267,6 +268,8 @@ export class ProjectAgentBridge {
                 session_id: input.sessionId,
                 turn_id: input.turnId,
                 text: prompt,
+                ...(userPrompt.text ? { display_text: userPrompt.text } : {}),
+                ...(userPrompt.clientId ? { client_id: userPrompt.clientId } : {}),
                 attachments,
               })
               .catch((error) => {
@@ -338,4 +341,27 @@ export class ProjectAgentBridge {
         }),
     };
   }
+}
+
+/** The user's own words, split from the instructions this bridge adds. */
+function projectUserPrompt(
+  items: readonly { kind: string; value: unknown }[],
+): { text?: string; clientId?: string } {
+  for (const item of items) {
+    if (item.kind !== "event" || !item.value || typeof item.value !== "object") continue;
+    const event = item.value as {
+      id?: string;
+      type?: string;
+      payload?: { text?: string };
+    };
+    const id = event.id ?? "";
+    const marker = ":message:";
+    const index = id.lastIndexOf(marker);
+    if (event.type !== "project.message" && index < 0) continue;
+    return {
+      text: typeof event.payload?.text === "string" ? event.payload.text : undefined,
+      clientId: index >= 0 ? id.slice(index + marker.length) : undefined,
+    };
+  }
+  return {};
 }

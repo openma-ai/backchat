@@ -2125,6 +2125,10 @@ export class SessionStore {
         : waitsForSteeringBoundary
           ? "complete"
           : "running",
+      clientId: turnId,
+      // The bubble is visible immediately. "Working" waits until the host
+      // accepts the prompt (the first turn event, or a terminal boundary).
+      sendState: isQueued || waitsForSteeringBoundary ? undefined : "pending",
       promptIntent: delivery?.intent,
       requestedDelivery: delivery?.requestedDelivery,
       effectiveDelivery: delivery?.effectiveDelivery,
@@ -2150,8 +2154,162 @@ export class SessionStore {
     if (!turnId) return;
     const turn = this.#turns.get(turnId);
     if (turn?.status === "queued") {
-      this.#turns.set(turnId, { ...turn, status: "running" });
+      this.#turns.set(turnId, {
+        ...turn,
+        status: "running",
+        sendState: turn.sendState === "failed" ? "failed" : "pending",
+      });
     }
+  }
+
+  /** Bind a host turn id onto the optimistic bubble that used `clientId`. */
+  #adoptOptimisticTurn(
+    sessionId: string,
+    clientId: string,
+    hostTurnId: string,
+    text: string,
+  ): void {
+    const optimistic = [...this.#turns.values()].find((turn) =>
+      turn.clientId === clientId && (turn.sessionId === sessionId || turn.id === clientId),
+    );
+    if (!optimistic) {
+      this.#acceptOptimisticSend(hostTurnId);
+      return;
+    }
+    if (optimistic.id === hostTurnId && optimistic.sessionId === sessionId) {
+      this.#turns.set(hostTurnId, {
+        ...optimistic,
+        promptText: text || optimistic.promptText,
+        sendState: undefined,
+        sendError: undefined,
+      });
+      return;
+    }
+    const host = this.#turns.get(hostTurnId);
+    this.#turns.delete(optimistic.id);
+    this.#turns.set(hostTurnId, host
+      ? {
+          ...host,
+          sessionId,
+          clientId,
+          promptText: text || optimistic.promptText || host.promptText,
+          attachments: host.attachments ?? optimistic.attachments,
+          sendState: undefined,
+          sendError: undefined,
+        }
+      : {
+          ...optimistic,
+          id: hostTurnId,
+          sessionId,
+          clientId,
+          promptText: text || optimistic.promptText,
+          sendState: undefined,
+          sendError: undefined,
+        });
+    if (this.#sessions.has(sessionId)) {
+      this.#mutateSession(sessionId, (session) => ({
+        ...session,
+        activeTurnId: session.activeTurnId === optimistic.id ? hostTurnId : session.activeTurnId,
+        queuedTurnIds: session.queuedTurnIds?.map((id) => id === optimistic.id ? hostTurnId : id),
+      }));
+    }
+    if (optimistic.sessionId !== sessionId && this.#sessions.has(optimistic.sessionId)) {
+      this.#mutateSession(optimistic.sessionId, (session) => ({
+        ...session,
+        activeTurnId: session.activeTurnId === optimistic.id ? undefined : session.activeTurnId,
+        status: session.activeTurnId === optimistic.id ? "ready" : session.status,
+      }));
+    }
+  }
+
+  /** A project page binds a session the sidebar does not activate. */
+  ensureBoundSession(input: {
+    id: string;
+    agentId: string;
+    cwd: string;
+    label: string;
+    projectId?: string;
+  }): void {
+    if (this.#sessions.has(input.id)) return;
+    this.#sessions.set(input.id, {
+      id: input.id,
+      agent_id: input.agentId,
+      cwd: input.cwd,
+      acp_session_id: "",
+      label: input.label,
+      status: "ready",
+      createdAt: Date.now(),
+      projectId: input.projectId,
+      listHidden: true,
+    });
+    this.#emit();
+  }
+
+  /** Move a placeholder coordinator session onto the host session id. */
+  rebindSession(fromId: string, toId: string): void {
+    if (!fromId || fromId === toId) return;
+    const from = this.#sessions.get(fromId);
+    const hasTurns = [...this.#turns.values()].some((turn) => turn.sessionId === fromId);
+    if (!from && !hasTurns) return;
+    if (from && !this.#sessions.has(toId)) {
+      this.#sessions.set(toId, { ...from, id: toId });
+    }
+    if (from) this.#sessions.delete(fromId);
+    for (const [id, turn] of this.#turns) {
+      if (turn.sessionId === fromId) {
+        this.#turns.set(id, { ...turn, sessionId: toId });
+      }
+    }
+    this.#emit();
+  }
+
+  /** The host has the prompt. The running indicator may take over from "Sending…". */
+  #acceptOptimisticSend(turnId: string | undefined): void {
+    if (!turnId) return;
+    const turn = this.#turns.get(turnId);
+    if (turn?.sendState !== "pending") return;
+    this.#turns.set(turnId, {
+      ...turn,
+      sendState: undefined,
+      sendError: undefined,
+    });
+  }
+
+  /** The send never reached an accepted prompt. Keep the bubble and offer retry. */
+  failSend(turnId: string, message: string): void {
+    const turn = this.#turns.get(turnId);
+    if (!turn) return;
+    this.#turns.set(turnId, {
+      ...turn,
+      status: "error",
+      errorMessage: message,
+      sendState: "failed",
+      sendError: message,
+      endedAt: Date.now(),
+    });
+    this.#advanceAfterTurn(turn.sessionId, turnId);
+    this.#emit();
+  }
+
+  /** Put a failed send back into the pending bubble and resubmit that same turn. */
+  reopenSend(turnId: string): void {
+    const turn = this.#turns.get(turnId);
+    if (!turn) return;
+    this.#turns.set(turnId, {
+      ...turn,
+      status: "running",
+      errorMessage: undefined,
+      sendState: "pending",
+      sendError: undefined,
+      endedAt: undefined,
+    });
+    this.#mutateSession(turn.sessionId, (session) => ({
+      ...session,
+      activeTurnId: turnId,
+      status: "running",
+      lastError: undefined,
+    }));
+    this.#emit();
   }
 
   #acceptSteeringTurn(
@@ -3325,6 +3483,9 @@ export class SessionStore {
             const next: Turn = {
               id: tid,
               sessionId,
+              clientId: typeof input.client_id === "string" && input.client_id
+                ? input.client_id
+                : undefined,
               promptText: typeof input.text === "string" ? input.text : "",
               annotations: Array.isArray(input.annotations) ? input.annotations as PromptAnnotation[] : undefined,
               attachments: Array.isArray(input.attachments)
@@ -3502,10 +3663,14 @@ export class SessionStore {
         // Flush the previous turn, start a new one.
         if (current) this.#turns.set(current.id, current);
         const tid = `replay-${sessionId}-${r.seq}`;
+        const promptRecord = data as { text?: string; client_id?: string };
         current = {
           id: tid,
           sessionId,
-          promptText: (data as { text?: string })?.text ?? "",
+          clientId: typeof promptRecord.client_id === "string" && promptRecord.client_id
+            ? promptRecord.client_id
+            : undefined,
+          promptText: promptRecord.text ?? "",
           annotations: (data as { annotations?: PromptAnnotation[] })?.annotations,
           attachments: (
             data as { attachments?: PromptAttachment[] }
@@ -4038,6 +4203,7 @@ export class SessionStore {
               this.#emit();
             }
             if (ev.openma_event) this.#emit();
+            this.#acceptOptimisticSend(eventTurnId);
             return;
           }
         }
@@ -4285,6 +4451,15 @@ export class SessionStore {
         this.#advanceAfterTurn(ev.session_id, ev.turn_id);
         break;
       }
+      case "session.prompt_accepted": {
+        this.#adoptOptimisticTurn(
+          ev.session_id,
+          ev.client_id,
+          ev.turn_id,
+          ev.text,
+        );
+        break;
+      }
       case "session.complete": {
         const projectedTurnId = this.#settleSteeringProjection(
           ev.session_id,
@@ -4402,10 +4577,13 @@ export class SessionStore {
           );
           const turn = this.#turns.get(projectedTurnId);
           if (turn) {
+            const sendFailed = turn.sendState === "pending" && turn.events.length === 0;
             this.#turns.set(projectedTurnId, {
               ...turn,
               status: "error",
               errorMessage: message,
+              sendState: sendFailed ? "failed" : undefined,
+              sendError: sendFailed ? message : undefined,
               endedAt: Date.now(),
             });
           }
@@ -4487,6 +4665,14 @@ export class SessionStore {
         }
         break;
       }
+    }
+    if (
+      ev.type === "session.event"
+      || ev.type === "session.complete"
+      || ev.type === "session.cancelled"
+      || ev.type === "session.steering"
+    ) {
+      this.#acceptOptimisticSend(ev.turn_id);
     }
     this.#emit();
   }

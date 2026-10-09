@@ -244,6 +244,10 @@ export interface SessionPromptParams {
    *  back to the right turn in the UI. */
   turn_id: string;
   text: string;
+  /** User-visible text when `text` includes host-added coordinator instructions. */
+  display_text?: string;
+  /** Renderer turn id to reconcile with this prompt. Defaults to `turn_id`. */
+  client_id?: string;
   attachments?: PromptAttachment[];
   annotations?: PromptAnnotation[];
   session_references?: PromptSessionReference[];
@@ -529,6 +533,14 @@ export type SessionEventOut = (
       signal?: string | null;
       error?: string;
       reason?: string;
+    }
+  | {
+      /** The host accepted a prompt and bound it to `turn_id`. */
+      type: "session.prompt_accepted";
+      session_id: string;
+      turn_id: string;
+      client_id: string;
+      text: string;
     }
   | {
       type: "session.complete";

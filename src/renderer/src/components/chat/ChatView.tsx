@@ -44,7 +44,15 @@ import {
   EmptyStateIntro,
   HomeSuggestionSelect,
 } from "./HomeSuggestions";
-import { useChatSubmission } from "@/lib/chat-submission";
+import { retryBoundChatSend, retryFailedChatSend, useChatSubmission, type ChatDelivery } from "@/lib/chat-submission";
+import { openHistoryWindow } from "@/lib/history-paging";
+import {
+  insertOptimisticEcho,
+  mergeOptimisticEchoes,
+  persistedClientIds,
+  reconcileOptimisticEchoes,
+  type OptimisticUserEcho,
+} from "@/lib/optimistic-user-echo";
 import { forkPointsByTurn } from "@/lib/fork-point";
 import {
   messageForkEnabled,
@@ -161,7 +169,27 @@ export function resolveComposerAgentBinding(
  * drafts (kind: "side"), and does not navigate on submit (side
  * sessions don't have URLs — the rail owns their lifecycle).
  */
-export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
+/** Coordinator-only facts. The chat shell, composer, and turn pipeline stay ChatView's. */
+export interface CoordinatorChatBinding {
+  projectId: string;
+  runId?: string;
+  sessionId: string;
+  agentId: string;
+  cwd: string;
+  label: string;
+  placeholder: string;
+  inputLabel: string;
+  loadHistory: boolean;
+  deliver: (input: ChatDelivery) => Promise<void>;
+}
+
+export function ChatView({
+  mode = "main",
+  binding,
+}: {
+  mode?: "main" | "side";
+  binding?: CoordinatorChatBinding;
+} = {}) {
   const { locale, t } = useI18n();
   const { themeId, effective } = useTheme();
   const themePlugin = getThemePlugin(themeId, effective);
@@ -171,9 +199,35 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     locale,
     t("chat.askAnything"),
   );
-  const isSide = mode === "side";
-  const activeSelector = isSide ? selectSideActive : selectActive;
+  const isSide = mode === "side" && !binding;
+  const boundSessionId = binding?.sessionId;
+  const activeSelector = useMemo(() => {
+    if (boundSessionId) {
+      return (store: typeof sessionStore) => store.get(boundSessionId);
+    }
+    return isSide ? selectSideActive : selectActive;
+  }, [boundSessionId, isSide]);
   const active = useSessionStore(activeSelector);
+  useEffect(() => {
+    if (!binding) return;
+    sessionStore.ensureBoundSession({
+      id: binding.sessionId,
+      agentId: binding.agentId,
+      cwd: binding.cwd,
+      label: binding.label,
+      projectId: binding.projectId,
+    });
+    if (binding.loadHistory) void openHistoryWindow(binding.sessionId);
+    // Primitives only: the binding object is rebuilt by the project page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    binding?.sessionId,
+    binding?.agentId,
+    binding?.cwd,
+    binding?.label,
+    binding?.projectId,
+    binding?.loadHistory,
+  ]);
   const turnsSelector = useMemo(
     () =>
       active
@@ -192,19 +246,31 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     [active?.id],
   );
   const openmaEvents = useSessionStore(openmaEventsSelector);
+  const [echoes, setEchoes] = useState<readonly OptimisticUserEcho[]>([]);
+  const visibleEchoes = useMemo(
+    () => reconcileOptimisticEchoes(echoes, persistedClientIds(turns)),
+    [echoes, turns],
+  );
+  const echoedTurns = useMemo(
+    () => mergeOptimisticEchoes(turns, visibleEchoes, active?.id),
+    [active?.id, turns, visibleEchoes],
+  );
   const transcriptTurns = useMemo(
-    () => filterQueuedTurns(turns),
-    [turns],
+    () => filterQueuedTurns(echoedTurns),
+    [echoedTurns],
   );
   const historyPendingSelector = useMemo(
     () => (s: typeof sessionStore) => (active?.id ? s.isHistoryPending(active.id) : false),
     [active?.id],
   );
   const historyPending = useSessionStore(historyPendingSelector);
-  const chatSurfaceTurns = useMemo(() => projectChatSurfaceTurns(turns), [turns]);
+  const chatSurfaceTurns = useMemo(
+    () => projectChatSurfaceTurns(echoedTurns),
+    [echoedTurns],
+  );
   const turnsById = useMemo(
-    () => new Map(turns.map((turn) => [turn.id, turn] as const)),
-    [turns],
+    () => new Map(echoedTurns.map((turn) => [turn.id, turn] as const)),
+    [echoedTurns],
   );
   const settings = useSettings();
   const navigate = useNavigate();
@@ -293,10 +359,30 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
 
   const onSubmit = useChatSubmission({
     isSide,
-    pickedAgentId,
+    pickedAgentId: binding ? binding.agentId : pickedAgentId,
     pickedCwd,
     onSuggestionSubmitted: consumeSuggestionDraft,
+    boundSessionId: binding?.sessionId,
+    deliver: binding?.deliver,
+    onOptimisticEcho: (echo) => {
+      setEchoes((current) => insertOptimisticEcho(current, echo));
+    },
   });
+  const retrySend = (turn: Turn) => {
+    if (turn.id.startsWith("echo:") && turn.clientId) {
+      setEchoes((current) => current.filter((echo) => echo.clientId !== turn.clientId));
+      void onSubmit(turn.promptText, turn.attachments ?? []);
+      return;
+    }
+    if (binding?.deliver) {
+      void retryBoundChatSend(turn, binding.deliver);
+      return;
+    }
+    void retryFailedChatSend(turn);
+  };
+  useEffect(() => {
+    if (visibleEchoes !== echoes) setEchoes(visibleEchoes);
+  }, [echoes, visibleEchoes]);
   const {
     askInSideChat,
     cancelActiveTurn,
@@ -353,7 +439,9 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       configOptions={active?.configOptions}
       onSetConfigOption={setSessionConfigOption}
       onResolveAsk={resolveAsk}
+      inputLabel={binding?.inputLabel}
       placeholder={
+        binding?.placeholder ?? (
         isNativeSubagent
           ? t("chat.nativeSubagentManaged")
           : !active || active.status === "draft"
@@ -371,6 +459,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
                 : isEmpty
                   ? homeComposerPlaceholder
                 : t("chat.reply")
+        )
       }
       onSubmit={onSubmit}
       onCancel={cancelActiveTurn}
@@ -563,6 +652,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
       className="relative flex h-full min-h-0 flex-col"
       aria-busy={loadingFirstScreen}
       data-fork-support={active?.forkSupport?.level ?? "unknown"}
+      data-chat-binding={binding ? "coordinator" : mode}
     >
       {loadingFirstScreen && (
         <div className="absolute inset-0 z-10 flex items-center justify-center app-canvas-surface"
@@ -613,6 +703,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             return (
               <TurnBlock
                 turn={sourceTurn}
+                onRetrySend={retrySend}
                 onFork={
                   forkFromMessage
                     ? () => forkFromTurn(sourceTurn.id)
@@ -625,7 +716,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             );
           }}
           slots={{
-            empty: (
+            empty: binding ? null : (
               <EmptyStateIntro
                 hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
                 selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}
@@ -642,7 +733,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
               />
             ),
             homeBeforeComposer:
-              homeSuggestionPhase === "choosing" &&
+              binding ? null : homeSuggestionPhase === "choosing" &&
               homeSuggestionSelection &&
               !isSide ? (
                 <HomeSuggestionSelect
@@ -680,13 +771,13 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
               />
             ) : null,
             conversationOverlay:
-              !isSide && active ? (
+              !isSide && (active || binding) ? (
                 <>
-                  <HistoryPager sessionId={active.id} />
+                  <HistoryPager sessionId={(binding?.sessionId ?? active?.id)!} />
                   <ConversationTimeline turns={transcriptTurns} />
                 </>
               ) : null,
-            emptyAfter: !isSide ? (
+            emptyAfter: !isSide && !binding ? (
               <div className="home-corner-decoration" aria-hidden="true" />
             ) : null,
           }}

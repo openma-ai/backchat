@@ -156,6 +156,8 @@ export class PairManager {
         });
         return;
       }
+      case "session.prompt_accepted":
+        return;
       case "session.disposed":
         // One member died. We don't auto-dispose the whole pair —
         // user might still want to interact with surviving members.

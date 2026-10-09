@@ -24,6 +24,7 @@ test("project coordinator uses the ordinary chat surface", async ({ page }) => {
   const project = page.locator('[data-sidebar-project="project:shared-chat-surface"]');
   await project.getByRole("button", { name: "Expand project: Shared chat surface" }).click();
   await project.locator("..").getByRole("link").click();
-  await expect(page.locator('[data-chat-surface="project"]')).toBeVisible();
+  await expect(page.locator('[data-chat-binding="coordinator"] [data-chat-surface="main"]')).toBeVisible();
   await expect(page.getByLabel("Message coordinator", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-chat-binding="coordinator"] [data-composer-submit="true"]')).toBeVisible();
 });

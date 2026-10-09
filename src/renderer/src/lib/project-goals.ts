@@ -1,6 +1,7 @@
 import type { ThreadGoal } from "@openmatter/project-host";
 import type { ProjectWorkView } from "@shared/project-work";
 import { projectResponseText } from "@shared/project-transcript";
+import { projectMessageClientId } from "./optimistic-user-echo";
 import type { Turn as ChatTurn } from "./session-types";
 
 type Session = ProjectWorkView["facts"]["sessions"][number];
@@ -30,7 +31,10 @@ export function projectCoordinatorTurns(view: ProjectWorkView, runId?: string): 
     .map((turn) => {
       const events = view.facts.agentEvents.filter((event) => event.turn_id === turn.id);
       const trigger = view.facts.events.find((event) => event.id === turn.triggerEventId);
-      const prompt = (trigger?.payload as { text?: string } | undefined)?.text;
+      const payload = trigger?.payload as { text?: string; client_id?: string; clientId?: string } | undefined;
+      const prompt = payload?.text;
+      const clientId = projectMessageClientId(view.project.id, trigger?.id)
+        ?? (payload?.client_id || payload?.clientId || undefined);
       const status = ({
         queued: "queued", running: "running", completed: "complete",
         failed: "error", cancelled: "cancelled",
@@ -41,6 +45,7 @@ export function projectCoordinatorTurns(view: ProjectWorkView, runId?: string): 
       return {
         id: turn.id,
         sessionId: turn.sessionId,
+        ...(clientId ? { clientId } : {}),
         status,
         promptText: prompt ?? "",
         assistantText: projectResponseText(events),

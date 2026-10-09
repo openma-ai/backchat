@@ -61,7 +61,7 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
     await page.getByRole("link", { name: "Projects", exact: true }).click();
     await page.locator(".project-card").filter({ hasText: "Auth recovery project" }).click();
     const composer = page.getByLabel("Message coordinator", { exact: true });
-    const send = page.getByRole("button", { name: "Send message", exact: true });
+    const send = page.getByRole("button", { name: "Send (Enter)", exact: true });
     const signIn = page.getByRole("button", { name: "Sign in", exact: true });
     const checkSignIn = page.getByRole("button", { name: "Check sign-in", exact: true });
     const view = () => page.evaluate((id) => window.backchat.projectWorkView(id), projectId);
