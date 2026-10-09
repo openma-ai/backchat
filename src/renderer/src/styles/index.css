@@ -1724,6 +1724,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      already part of the main-stage geometry. */
   --bottom-bar-gap-y: 6px;
   --composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);
+  /* Upward footer pickers (project / workspace / host): menu bottom ↔ trigger top */
+  --composer-picker-popover-gap: calc(var(--composer-footer-gap) / 2);
   --composer-card-footer-gap: var(--composer-footer-gap);
   --composer-body-min-height: 48px;
   --composer-resting-height: calc(

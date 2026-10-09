@@ -15,6 +15,10 @@ primitive. Features only supply data and host chrome (popover vs dropdown).
 
 Styles: `.grouped-command-menu` in `src/renderer/src/styles/index.css`.
 
+Upward footer menus (`side="top"` on project / workspace popovers and host
+dropdown) use Radix `sideOffset` from `useComposerPickerUpwardSideOffset()`,
+which reads `--composer-picker-popover-gap` (`calc(var(--composer-footer-gap) / 2)`).
+
 ## `components/composer/` — thin adapters
 
 | Module | Responsibility |

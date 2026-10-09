@@ -22,6 +22,7 @@ import {
   groupedCommandMenuPopoverShellClassName,
   groupedCommandMenuPresets,
 } from "@/components/ui/grouped-command-menu";
+import { useComposerPickerUpwardSideOffset } from "@/components/ui/use-composer-picker-upward-side-offset";
 import {
   GroupedCommandMenuIconSlot,
   GroupedCommandMenuLabelSlot,
@@ -118,6 +119,7 @@ export function ProjectChipRow({
 
   const cwdLabel = selectedProject?.name ?? (activeCwd ? folderName(activeCwd) : t("chat.chooseProject"));
   const noProjectCommandValue = `${t("chat.noProject")} no project`;
+  const upwardPickerSideOffset = useComposerPickerUpwardSideOffset();
 
   return (
     <div
@@ -158,7 +160,7 @@ export function ProjectChipRow({
           <PopoverContent
             side="top"
             align="start"
-            sideOffset={0}
+            sideOffset={upwardPickerSideOffset}
             className={groupedCommandMenuPopoverShellClassName()}
           >
             <GroupedCommandMenu
@@ -370,6 +372,7 @@ function WorkspaceChip({
   const explicitChoices = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const upwardPickerSideOffset = useComposerPickerUpwardSideOffset();
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -481,7 +484,7 @@ function WorkspaceChip({
           {isDraft && <ChevronDownIcon data-control-chevron />}
         </Button>
       </PopoverTrigger>
-      {isDraft && <PopoverContent side="top" align="start" sideOffset={0}
+      {isDraft && <PopoverContent side="top" align="start" sideOffset={upwardPickerSideOffset}
         className={`${view === "create" ? "w-[360px]" : "w-[var(--composer-menu-width)]"} max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0`}>
         {view === "choose" ? (
           <GroupedCommandMenu

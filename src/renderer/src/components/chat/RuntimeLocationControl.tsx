@@ -31,6 +31,7 @@ import {
   GroupedCommandMenuLabelSlot,
 } from "@/components/ui/grouped-command-menu-slots";
 import { composerFooterTriggerClass } from "@/components/ui/composer-footer-trigger";
+import { useComposerPickerUpwardSideOffset } from "@/components/ui/use-composer-picker-upward-side-offset";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useMemo, useState } from "react";
@@ -64,6 +65,7 @@ export function RuntimeLocationControl({
   const choices = scope && catalog ? openmaTargets(scope, catalog) : [];
   const Icon = target?.kind === "cloud" ? CloudIcon : target ? ServerIcon : MonitorIcon;
   const [menuOpen, setMenuOpen] = useState(false);
+  const upwardPickerSideOffset = useComposerPickerUpwardSideOffset();
 
   const select = (next: OpenmaExecutionTarget | undefined) => {
     if (!row || locked) return;
@@ -255,7 +257,7 @@ export function RuntimeLocationControl({
       <DropdownMenuContent
         side="top"
         align="start"
-        sideOffset={0}
+        sideOffset={upwardPickerSideOffset}
         className={groupedCommandMenuDropdownShellClassName()}
       >
         <GroupedCommandMenu
