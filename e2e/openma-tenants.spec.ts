@@ -46,7 +46,13 @@ test("tenant groups start collapsed above local and route new and continued sess
     await expect(alpha).toHaveAttribute("aria-expanded", "false");
     await expect(beta).toHaveAttribute("aria-expanded", "false");
     await expect(nav.getByRole("button", { name: "Local", exact: true })).toHaveAttribute("aria-expanded", "true");
-    expect(await nav.locator(':scope > section > div > button[aria-expanded]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")).slice(0, 3))).toEqual(["Alpha", "Beta", "Local"]);
+    expect(
+      await nav
+        .locator("section.sidebar-section .sidebar-section-header button[aria-expanded]")
+        .evaluateAll((buttons) =>
+          buttons.map((b) => b.getAttribute("aria-label")).slice(0, 3),
+        ),
+    ).toEqual(["Alpha", "Beta", "Local"]);
     await mkdir("artifacts/tenant-sidebar", { recursive: true });
     await page.screenshot({ path: "artifacts/tenant-sidebar/collapsed.png" });
     await beta.click();

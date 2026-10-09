@@ -197,6 +197,33 @@ export async function enableAgent(page: Page, agentId: string): Promise<void> {
   if (changed) await reloadRenderer(page);
 }
 
+/** Runtime / host picker (`RuntimeLocationControl`) uses `GroupedCommandMenu`. */
+export function hostPickerPanel(page: Page) {
+  return page.getByTestId("composer-host-picker-panel");
+}
+
+export async function openRuntimeLocationPicker(page: Page): Promise<void> {
+  await page.locator('[data-session-runtime-location="true"]').first().click();
+  await expect(hostPickerPanel(page)).toBeVisible({ timeout: 10_000 });
+}
+
+export async function clickHostPickerOption(
+  page: Page,
+  name: string | RegExp,
+): Promise<void> {
+  await hostPickerPanel(page)
+    .getByRole("option", { name })
+    .click({ force: true });
+}
+
+export async function pickRuntimeLocationOption(
+  page: Page,
+  name: string | RegExp,
+): Promise<void> {
+  await openRuntimeLocationPicker(page);
+  await clickHostPickerOption(page, name);
+}
+
 /** Electron can occasionally create its first window before the renderer has
  * mounted after a DB rebuild. One bounded reload keeps startup assertions
  * deterministic while still failing when the renderer cannot boot. */

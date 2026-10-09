@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from "node:http";
 import { expect, test } from "./fixtures";
-import { closeApp, launchAppWithHome } from "./helpers";
+import { closeApp, launchAppWithHome, pickRuntimeLocationOption } from "./helpers";
 
 test("cloud chat survives complete desktop exit and restores without resending input", async ({ app, page, home }, testInfo) => {
   const events: Array<Record<string, unknown>> = [];
@@ -86,14 +86,12 @@ test("cloud chat survives complete desktop exit and restores without resending i
       shell.openExternal = async (url: string) => { await fetch(url); };
     });
     await page.evaluate(() => window.backchat.settingsPatch({ agents: [] }));
-    await page.locator('[data-session-runtime-location="true"]').first().click();
-    await page.getByRole("menuitem", { name: "Sign in to OpenMA", exact: true }).click();
+    await pickRuntimeLocationOption(page, "Sign in to OpenMA");
     await page.getByLabel("OpenMA server").fill(`http://127.0.0.1:${port}`);
     await page.getByRole("button", { name: "Sign in to OpenMA", exact: true }).click();
     await expect(page.getByText("cloud@example.com", { exact: true })).toBeVisible();
     await page.reload();
-    await page.locator('[data-session-runtime-location="true"]').first().click();
-    await page.getByRole("menuitem", { name: /Cloud · Cloud project.*Cloud helper/ }).click();
+    await pickRuntimeLocationOption(page, /Cloud · Cloud project.*Cloud helper/);
     await page.locator("textarea").fill("Run cloud test");
     await page.locator("textarea").press("Enter");
     await page.getByRole("button", { name: "Allow once", exact: true }).click();
