@@ -2125,6 +2125,10 @@ export class SessionStore {
         : waitsForSteeringBoundary
           ? "complete"
           : "running",
+      clientId: turnId,
+      // The bubble is visible immediately. "Working" waits until the host
+      // accepts the prompt (the first turn event, or a terminal boundary).
+      sendState: isQueued || waitsForSteeringBoundary ? undefined : "pending",
       promptIntent: delivery?.intent,
       requestedDelivery: delivery?.requestedDelivery,
       effectiveDelivery: delivery?.effectiveDelivery,
@@ -2150,8 +2154,61 @@ export class SessionStore {
     if (!turnId) return;
     const turn = this.#turns.get(turnId);
     if (turn?.status === "queued") {
-      this.#turns.set(turnId, { ...turn, status: "running" });
+      this.#turns.set(turnId, {
+        ...turn,
+        status: "running",
+        sendState: turn.sendState === "failed" ? "failed" : "pending",
+      });
     }
+  }
+
+  /** The host has the prompt. The running indicator may take over from "Sending…". */
+  #acceptOptimisticSend(turnId: string | undefined): void {
+    if (!turnId) return;
+    const turn = this.#turns.get(turnId);
+    if (turn?.sendState !== "pending") return;
+    this.#turns.set(turnId, {
+      ...turn,
+      sendState: undefined,
+      sendError: undefined,
+    });
+  }
+
+  /** The send never reached an accepted prompt. Keep the bubble and offer retry. */
+  failSend(turnId: string, message: string): void {
+    const turn = this.#turns.get(turnId);
+    if (!turn) return;
+    this.#turns.set(turnId, {
+      ...turn,
+      status: "error",
+      errorMessage: message,
+      sendState: "failed",
+      sendError: message,
+      endedAt: Date.now(),
+    });
+    this.#advanceAfterTurn(turn.sessionId, turnId);
+    this.#emit();
+  }
+
+  /** Put a failed send back into the pending bubble and resubmit that same turn. */
+  reopenSend(turnId: string): void {
+    const turn = this.#turns.get(turnId);
+    if (!turn) return;
+    this.#turns.set(turnId, {
+      ...turn,
+      status: "running",
+      errorMessage: undefined,
+      sendState: "pending",
+      sendError: undefined,
+      endedAt: undefined,
+    });
+    this.#mutateSession(turn.sessionId, (session) => ({
+      ...session,
+      activeTurnId: turnId,
+      status: "running",
+      lastError: undefined,
+    }));
+    this.#emit();
   }
 
   #acceptSteeringTurn(
@@ -3325,6 +3382,9 @@ export class SessionStore {
             const next: Turn = {
               id: tid,
               sessionId,
+              clientId: typeof input.client_id === "string" && input.client_id
+                ? input.client_id
+                : undefined,
               promptText: typeof input.text === "string" ? input.text : "",
               annotations: Array.isArray(input.annotations) ? input.annotations as PromptAnnotation[] : undefined,
               attachments: Array.isArray(input.attachments)
@@ -3502,10 +3562,14 @@ export class SessionStore {
         // Flush the previous turn, start a new one.
         if (current) this.#turns.set(current.id, current);
         const tid = `replay-${sessionId}-${r.seq}`;
+        const promptRecord = data as { text?: string; client_id?: string };
         current = {
           id: tid,
           sessionId,
-          promptText: (data as { text?: string })?.text ?? "",
+          clientId: typeof promptRecord.client_id === "string" && promptRecord.client_id
+            ? promptRecord.client_id
+            : undefined,
+          promptText: promptRecord.text ?? "",
           annotations: (data as { annotations?: PromptAnnotation[] })?.annotations,
           attachments: (
             data as { attachments?: PromptAttachment[] }
@@ -4038,6 +4102,7 @@ export class SessionStore {
               this.#emit();
             }
             if (ev.openma_event) this.#emit();
+            this.#acceptOptimisticSend(eventTurnId);
             return;
           }
         }
@@ -4402,10 +4467,13 @@ export class SessionStore {
           );
           const turn = this.#turns.get(projectedTurnId);
           if (turn) {
+            const sendFailed = turn.sendState === "pending" && turn.events.length === 0;
             this.#turns.set(projectedTurnId, {
               ...turn,
               status: "error",
               errorMessage: message,
+              sendState: sendFailed ? "failed" : undefined,
+              sendError: sendFailed ? message : undefined,
               endedAt: Date.now(),
             });
           }
@@ -4487,6 +4555,14 @@ export class SessionStore {
         }
         break;
       }
+    }
+    if (
+      ev.type === "session.event"
+      || ev.type === "session.complete"
+      || ev.type === "session.cancelled"
+      || ev.type === "session.steering"
+    ) {
+      this.#acceptOptimisticSend(ev.turn_id);
     }
     this.#emit();
   }

@@ -12,11 +12,13 @@ export function ProjectConversation({
   cwd,
   composer,
   promptPayloads,
+  onRetrySend,
 }: {
   turns: readonly Turn[];
   cwd: string | null;
   composer: ReactNode;
   promptPayloads?: ReadonlyMap<string, unknown>;
+  onRetrySend?: (turn: Turn) => void;
 }) {
   const chatTurns: AgentUITurnState[] = turns.map((turn) => ({
     id: turn.id,
@@ -36,7 +38,7 @@ export function ProjectConversation({
         return source ? (
           <>
             <ProjectMessageAttachments payload={promptPayloads?.get(turn.id)} />
-            <TurnBlock turn={source} />
+            <TurnBlock turn={source} onRetrySend={onRetrySend} />
           </>
         ) : null;
       }}

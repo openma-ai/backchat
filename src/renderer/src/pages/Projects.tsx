@@ -6,7 +6,7 @@ import { PageTopbar } from "@/components/shell/PageTopbar";
 import type { PromptAttachment } from "@shared/session-events";
 import { ProjectMessageAttachments } from "@/components/chat/ProjectMessageAttachments";
 import { projectResponseText } from "@shared/project-transcript";
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -51,6 +51,15 @@ import {
 } from "@/lib/project-goals";
 import { ProjectComposer } from "@/components/chat/ProjectComposer";
 import { ProjectConversation } from "@/components/chat/ProjectConversation";
+import {
+  failOptimisticEcho,
+  insertOptimisticEcho,
+  mergeOptimisticEchoes,
+  persistedClientIds,
+  reconcileOptimisticEchoes,
+  reopenOptimisticEcho,
+  type OptimisticUserEcho,
+} from "@/lib/optimistic-user-echo";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Select,
@@ -839,6 +848,7 @@ function ProjectWorkspace({
     fingerprint: string;
     id: string;
   } | null>(null);
+  const [echoes, setEchoes] = useState<readonly OptimisticUserEcho[]>([]);
   const sessions = facts.sessions.filter(
     (s) =>
       config?.continuity !== "per-run" ||
@@ -873,6 +883,36 @@ function ProjectWorkspace({
       setBusy(false);
     }
   };
+  const deliver = async (
+    clientId: string,
+    type: ProjectWorkCommand["type"],
+    message: string,
+    workerId?: string,
+    attachments?: PromptAttachment[],
+  ) => {
+    try {
+      await window.backchat.projectWorkSubmit({
+        projectId: project.id,
+        commandId: clientId,
+        type,
+        text: message,
+        attachments,
+        ...(workerId ? { workerId } : {}),
+        ...(config?.continuity === "per-run" ? { runId } : {}),
+      });
+      if (type !== "message") uncertainSubmission.current = null;
+      await refresh();
+      return true;
+    } catch (e) {
+      const messageText = errorText(e);
+      if (type === "message") {
+        setEchoes((current) => failOptimisticEcho(current, clientId, messageText));
+        return true;
+      }
+      setError(messageText);
+      return false;
+    }
+  };
   const submit = async (
     type: ProjectWorkCommand["type"],
     message: string,
@@ -888,24 +928,32 @@ function ProjectWorkspace({
       runId,
       attachments,
     ]);
-    if (uncertainSubmission.current?.fingerprint !== fingerprint)
-      uncertainSubmission.current = { fingerprint, id: crypto.randomUUID() };
-    try {
-      await window.backchat.projectWorkSubmit({
-        projectId: project.id,
-        commandId: uncertainSubmission.current!.id,
-        type,
+    const clientId = type === "message"
+      ? crypto.randomUUID()
+      : (uncertainSubmission.current?.fingerprint === fingerprint
+        ? uncertainSubmission.current.id
+        : crypto.randomUUID());
+    if (type !== "message") uncertainSubmission.current = { fingerprint, id: clientId };
+    if (type === "message") {
+      setEchoes((current) => insertOptimisticEcho(current, {
+        clientId,
         text: message,
-        attachments,
-        ...(workerId ? { workerId } : {}),
-        ...(config?.continuity === "per-run" ? { runId } : {}),
-      });
-      uncertainSubmission.current = null;
-      await refresh();
-      return true;
-    } catch (e) {
-      setError(errorText(e));
-      return false;
+        createdAt: Date.now(),
+        state: "pending",
+      }));
+    }
+    try {
+      return await deliver(clientId, type, message, workerId, attachments);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const retryMessage = async (clientId: string, text: string) => {
+    setEchoes((current) => reopenOptimisticEcho(current, clientId));
+    setBusy(true);
+    setError("");
+    try {
+      await deliver(clientId, "message", text);
     } finally {
       setBusy(false);
     }
@@ -913,6 +961,17 @@ function ProjectWorkspace({
   const coordinatorChatTurns = projectCoordinatorTurns(
     view, config?.continuity === "per-run" ? runId : undefined,
   );
+  const visibleEchoes = useMemo(
+    () => reconcileOptimisticEchoes(echoes, persistedClientIds(coordinatorChatTurns)),
+    [coordinatorChatTurns, echoes],
+  );
+  const conversationTurns = useMemo(
+    () => mergeOptimisticEchoes(coordinatorChatTurns, visibleEchoes),
+    [coordinatorChatTurns, visibleEchoes],
+  );
+  useEffect(() => {
+    if (visibleEchoes !== echoes) setEchoes(visibleEchoes);
+  }, [echoes, visibleEchoes]);
   const promptPayloads = new Map(selectedTurns.map((turn) => [
     turn.id,
     facts.events.find((event) => event.id === turn.triggerEventId)?.payload,
@@ -1004,9 +1063,12 @@ function ProjectWorkspace({
           ) : (
             <>
               <ProjectConversation
-                turns={coordinatorChatTurns}
+                turns={conversationTurns}
                 cwd={project.primary_folder || null}
                 promptPayloads={promptPayloads}
+                onRetrySend={(turn) => {
+                  if (turn.clientId) void retryMessage(turn.clientId, turn.promptText);
+                }}
                 composer={
                   <ProjectComposer
                       key={`${project.id}:${runId}`}

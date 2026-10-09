@@ -20,6 +20,13 @@ describe("chat submission decisions", () => {
     expect(source.indexOf("await window.backchat.sessionStart({")).toBeLessThan(
       source.indexOf("await window.backchat.sessionPrompt({"),
     );
+    expect(source.indexOf("onOptimisticEcho?.(")).toBeGreaterThan(0);
+    expect(source.indexOf("onOptimisticEcho?.(")).toBeLessThan(
+      source.indexOf("sessionStore.registerTurn("),
+    );
+    expect(source.indexOf("onOptimisticEcho?.(")).toBeLessThan(
+      source.indexOf("await window.backchat.sessionStart({"),
+    );
   });
 
   it("uses selected and picked agents only for draft targets", () => {

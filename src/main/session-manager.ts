@@ -1114,6 +1114,7 @@ export class SessionManager {
   ) {
     const steeringData = {
       text: displayText,
+      client_id: p.turn_id,
       attachments: stripAttachmentData(p.attachments),
       annotations: p.annotations,
       session_references: p.session_references,
@@ -1745,12 +1746,13 @@ export class SessionManager {
       p.session_references?.length ?? 0,
     );
     if (options.persistUserPrompt !== false) {
-      const promptData = {
-        text: displayText,
-        attachments: stripAttachmentData(p.attachments),
-        annotations: p.annotations,
-        session_references: p.session_references,
-      };
+    const promptData = {
+      text: displayText,
+      client_id: p.turn_id,
+      attachments: stripAttachmentData(p.attachments),
+      annotations: p.annotations,
+      session_references: p.session_references,
+    };
       appendEvent(p.session_id, "user_prompt", promptData);
       appendEvent(
         p.session_id,

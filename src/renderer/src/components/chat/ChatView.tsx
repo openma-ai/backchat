@@ -44,7 +44,14 @@ import {
   EmptyStateIntro,
   HomeSuggestionSelect,
 } from "./HomeSuggestions";
-import { useChatSubmission } from "@/lib/chat-submission";
+import { retryFailedChatSend, useChatSubmission } from "@/lib/chat-submission";
+import {
+  insertOptimisticEcho,
+  mergeOptimisticEchoes,
+  persistedClientIds,
+  reconcileOptimisticEchoes,
+  type OptimisticUserEcho,
+} from "@/lib/optimistic-user-echo";
 import { forkPointsByTurn } from "@/lib/fork-point";
 import {
   messageForkEnabled,
@@ -192,19 +199,31 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     [active?.id],
   );
   const openmaEvents = useSessionStore(openmaEventsSelector);
+  const [echoes, setEchoes] = useState<readonly OptimisticUserEcho[]>([]);
+  const visibleEchoes = useMemo(
+    () => reconcileOptimisticEchoes(echoes, persistedClientIds(turns)),
+    [echoes, turns],
+  );
+  const echoedTurns = useMemo(
+    () => mergeOptimisticEchoes(turns, visibleEchoes, active?.id),
+    [active?.id, turns, visibleEchoes],
+  );
   const transcriptTurns = useMemo(
-    () => filterQueuedTurns(turns),
-    [turns],
+    () => filterQueuedTurns(echoedTurns),
+    [echoedTurns],
   );
   const historyPendingSelector = useMemo(
     () => (s: typeof sessionStore) => (active?.id ? s.isHistoryPending(active.id) : false),
     [active?.id],
   );
   const historyPending = useSessionStore(historyPendingSelector);
-  const chatSurfaceTurns = useMemo(() => projectChatSurfaceTurns(turns), [turns]);
+  const chatSurfaceTurns = useMemo(
+    () => projectChatSurfaceTurns(echoedTurns),
+    [echoedTurns],
+  );
   const turnsById = useMemo(
-    () => new Map(turns.map((turn) => [turn.id, turn] as const)),
-    [turns],
+    () => new Map(echoedTurns.map((turn) => [turn.id, turn] as const)),
+    [echoedTurns],
   );
   const settings = useSettings();
   const navigate = useNavigate();
@@ -296,7 +315,21 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
     pickedAgentId,
     pickedCwd,
     onSuggestionSubmitted: consumeSuggestionDraft,
+    onOptimisticEcho: (echo) => {
+      setEchoes((current) => insertOptimisticEcho(current, echo));
+    },
   });
+  const retrySend = (turn: Turn) => {
+    if (turn.id.startsWith("echo:") && turn.clientId) {
+      setEchoes((current) => current.filter((echo) => echo.clientId !== turn.clientId));
+      void onSubmit(turn.promptText, turn.attachments ?? []);
+      return;
+    }
+    void retryFailedChatSend(turn);
+  };
+  useEffect(() => {
+    if (visibleEchoes !== echoes) setEchoes(visibleEchoes);
+  }, [echoes, visibleEchoes]);
   const {
     askInSideChat,
     cancelActiveTurn,
@@ -613,6 +646,7 @@ export function ChatView({ mode = "main" }: { mode?: "main" | "side" } = {}) {
             return (
               <TurnBlock
                 turn={sourceTurn}
+                onRetrySend={retrySend}
                 onFork={
                   forkFromMessage
                     ? () => forkFromTurn(sourceTurn.id)

@@ -403,6 +403,11 @@ export interface Turn {
   id: string;
   sessionId: string;
   promptText: string;
+  /** Client id shared with the persisted user event. Live session turns use `id`. */
+  clientId?: string;
+  /** Optimistic send that has not been accepted yet, or that failed before the agent started. */
+  sendState?: "pending" | "failed";
+  sendError?: string;
   /** User-provided files/images are task sources. Persist metadata only so
    * the Task tab can restore them without duplicating inline image data. */
   attachments?: PromptAttachment[];
