@@ -1,7 +1,11 @@
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AgentInfo } from "@shared/api.js";
 import { AGENTS_QUERY_KEY } from "./agent-query";
+
+/** After this many ms, composer auth probe UI should signal a slow but still-active check. */
+export const SLOW_HARNESS_PROBE_MS = 12_000;
 
 export const composerHarnessLiveAuthKey = (agentId: string) =>
   ["agents", "live-probe", agentId] as const;
@@ -24,10 +28,27 @@ export function useComposerHarnessLiveAuth(agentId: string, enabled = true) {
     retry: false,
   });
 
+  const liveProbePending = query.fetchStatus === "fetching";
+  const slowAuthProbe = useSlowHarnessProbe(liveProbePending);
+
   return {
     liveAuth: query.data,
-    liveProbePending: query.fetchStatus === "fetching",
+    liveProbePending,
+    slowAuthProbe,
   };
+}
+
+function useSlowHarnessProbe(liveProbePending: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!liveProbePending) {
+      setSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setSlow(true), SLOW_HARNESS_PROBE_MS);
+    return () => window.clearTimeout(timer);
+  }, [liveProbePending]);
+  return slow;
 }
 
 function mergeAgentInventory(

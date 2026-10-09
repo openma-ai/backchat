@@ -17,6 +17,8 @@ describe("composer harness live auth", () => {
     expect(source).toContain("stripAuth");
     expect(composer).toContain("useComposerHarnessLiveAuth");
     expect(composer).toContain("authChecking");
+    expect(source).toContain("SLOW_HARNESS_PROBE_MS");
+    expect(source).toContain("slowAuthProbe");
     expect(composer).not.toContain("useAgentsLiveProbePending");
   });
 });

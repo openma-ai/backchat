@@ -162,6 +162,7 @@ export function SessionRunChip({
   onResetConfigOptions,
   authNeeded = false,
   authChecking = false,
+  authProbeSlow = false,
 }: {
   disabled: boolean;
   locked: boolean;
@@ -175,6 +176,7 @@ export function SessionRunChip({
   onResetConfigOptions?: () => void;
   authNeeded?: boolean;
   authChecking?: boolean;
+  authProbeSlow?: boolean;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -235,7 +237,12 @@ export function SessionRunChip({
               {authChecking ? (
                 <Loader2Icon
                   className="size-3.5 shrink-0 animate-spin text-fg-subtle"
-                  aria-hidden="true"
+                  aria-hidden={!authProbeSlow}
+                  title={
+                    authProbeSlow
+                      ? "Still checking harness authentication…"
+                      : undefined
+                  }
                 />
               ) : (
                 <AgentIcon

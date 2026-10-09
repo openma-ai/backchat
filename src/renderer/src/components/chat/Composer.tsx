@@ -323,7 +323,7 @@ export function Composer({
   const primaryIntent = isRemote ? "submit" : localIntent;
   const primaryRunningAction = isRemote ? (running ? describeRunningMessageAction({ agentId: "openma-remote", intent: "submit" }) : null) : localRunningAction;
   const queryClient = useQueryClient();
-  const { liveAuth, liveProbePending } = useComposerHarnessLiveAuth(
+  const { liveAuth, liveProbePending, slowAuthProbe } = useComposerHarnessLiveAuth(
     currentAgentId,
     !isRemote && !!currentAgentId,
   );
@@ -1296,6 +1296,7 @@ export function Composer({
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}
               authChecking={authChecking}
+              authProbeSlow={slowAuthProbe}
               agents={enabledAgents}
               currentAgentId={currentAgentId}
               currentAgentLabel={currentEnabledAgent?.label ?? currentAgent?.label}

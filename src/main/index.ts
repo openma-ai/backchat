@@ -29,6 +29,7 @@ import {
   resolveBundledNpmCliPath,
 } from "./bundled-node-runtime.js";
 import { configureAppLog, logAppEvent } from "./app-log.js";
+import { logRendererCrash } from "./renderer-crash-log.js";
 import { startAppUpdater } from "./app-updater.js";
 import { resolveRemoteDebugging } from "./remote-debugging.js";
 
@@ -253,6 +254,21 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
   });
   windows.add(win);
   win.on("closed", () => windows.delete(win));
+
+  win.webContents.on("render-process-gone", (_event, details) => {
+    logRendererCrash({
+      source: "render-process-gone",
+      message: `Renderer process exited (${details.reason})`,
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  });
+  win.webContents.on("unresponsive", () => {
+    logRendererCrash({
+      source: "unresponsive",
+      message: "Renderer became unresponsive",
+    });
+  });
 
   // Electron resets a pre-navigation zoom assignment on the first load, so
   // apply the default once the renderer exists. Later reloads retain the

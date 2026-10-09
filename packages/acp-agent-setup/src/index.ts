@@ -115,6 +115,7 @@ export interface AcpAgentSetupServiceDeps {
   agentOverrides?: () => readonly AcpAgentSetupOverride[];
   getEnabledAgentIds?: () => readonly string[];
   managedByName?: string;
+  onSetupOperationLog?: (fields: AcpAgentSetupOperationLog) => void;
 }
 
 export interface AcpAgentSetupService {
@@ -160,6 +161,16 @@ type AgentSnapshotPlan = {
   capabilities:
     | { target: "detected" }
     | { target: "ids"; ids: readonly string[] };
+};
+
+export type AcpAgentSetupOperationLog = {
+  operationId: string;
+  trigger: AgentSnapshotPlan["trigger"];
+  scope: "auth" | "full" | "snapshot";
+  agentId: string;
+  outcome: string;
+  durationMs: number;
+  detail?: string;
 };
 
 const NO_LIVE_PROBE_PLAN: AgentSnapshotPlan = {
@@ -338,7 +349,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         const startedAt = Date.now();
         let outcome = "settled";
         let errorDetail: string | undefined;
-        logSetupOperation({
+        this.logSetupOperation({
           operationId,
           trigger: plan.trigger,
           scope: "full",
@@ -370,7 +381,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           });
           // Keep the last confirmed state across a transient probe failure.
         } finally {
-          logSetupOperation({
+          this.logSetupOperation({
             operationId,
             trigger: plan.trigger,
             scope: "full",
@@ -383,7 +394,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       } else if (detectedEntry && shouldProbeAuth) {
         const startedAt = Date.now();
         let outcome = "settled";
-        logSetupOperation({
+        this.logSetupOperation({
           operationId,
           trigger: plan.trigger,
           scope: "auth",
@@ -402,7 +413,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           outcome = "degraded";
           // Keep the last confirmed state across a transient probe failure.
         } finally {
-          logSetupOperation({
+          this.logSetupOperation({
             operationId,
             trigger: plan.trigger,
             scope: "auth",
@@ -477,7 +488,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           : {}),
       } satisfies AcpAgentSetupInfo;
     }));
-    logSetupOperation({
+    this.logSetupOperation({
       operationId,
       trigger: plan.trigger,
       scope: "snapshot",
@@ -486,6 +497,18 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       durationMs: Date.now() - operationStartedAt,
     });
     return result;
+  }
+
+  private logSetupOperation(fields: AcpAgentSetupOperationLog): void {
+    if (process.env.NODE_ENV !== "test") {
+      const detail = fields.detail
+        ? ` error=${JSON.stringify(fields.detail.replace(/\s+/g, " ").slice(0, 500))}`
+        : "";
+      process.stderr.write(
+        `[agent-lifecycle] op=${fields.operationId} trigger=${fields.trigger} scope=${fields.scope} agent=${fields.agentId} outcome=${fields.outcome} total_ms=${fields.durationMs}${detail}\n`,
+      );
+    }
+    this.deps.onSetupOperationLog?.(fields);
   }
 
   async installAgent(id: string): Promise<AcpAgentSetupInfo[]> {
@@ -1012,24 +1035,6 @@ function setupAuthBlocksCapabilities(
   auth: AcpAgentSetupAuth | undefined,
 ): boolean {
   return auth?.status === "needs-auth" || auth?.status === "unknown";
-}
-
-function logSetupOperation(fields: {
-  operationId: string;
-  trigger: AgentSnapshotPlan["trigger"];
-  scope: "auth" | "full" | "snapshot";
-  agentId: string;
-  outcome: string;
-  durationMs: number;
-  detail?: string;
-}): void {
-  if (process.env.NODE_ENV === "test") return;
-  const detail = fields.detail
-    ? ` error=${JSON.stringify(fields.detail.replace(/\s+/g, " ").slice(0, 500))}`
-    : "";
-  process.stderr.write(
-    `[agent-lifecycle] op=${fields.operationId} trigger=${fields.trigger} scope=${fields.scope} agent=${fields.agentId} outcome=${fields.outcome} total_ms=${fields.durationMs}${detail}\n`,
-  );
 }
 
 function errorMessage(error: unknown): string {

@@ -81,6 +81,8 @@ import {
   latestPersistedOpenMAEventSequence,
 } from "./session-event-enricher.js";
 import { logAppEvent } from "./app-log.js";
+import { logRendererCrash } from "./renderer-crash-log.js";
+import type { RendererCrashReport } from "../shared/renderer-crash.js";
 import { recordUpdateEvidence } from "./update-evidence.js";
 import { deliverSessionEvent } from "./session-event-delivery.js";
 import { join } from "node:path";
@@ -254,6 +256,18 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     getEnabledAgentIds: () => settingsStore.get().agents
       .filter((agent) => agent.enabled)
       .map((agent) => agent.id),
+    onSetupOperationLog: (fields) => {
+      if (fields.outcome === "started") return;
+      logAppEvent("app.harness_probe", {
+        agent_id: fields.agentId,
+        trigger: fields.trigger,
+        scope: fields.scope,
+        outcome: fields.outcome,
+        duration_ms: fields.durationMs,
+        operation_id: fields.operationId,
+        ...(fields.detail ? { detail: fields.detail } : {}),
+      });
+    },
   });
   const pluginRuntime = new CodexPluginRuntime(
     deps.pluginRoots ?? [join(openmaRoot(), "plugins")],
@@ -669,6 +683,13 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     process.stdout.write(`[ipc-ping] ${reply}\n`);
     return reply;
   });
+
+  ipcMain.handle(
+    InvokeChannel.AppRendererCrashLog,
+    (_e, report: RendererCrashReport) => {
+      logRendererCrash(report);
+    },
+  );
 
   ipcMain.handle(
     InvokeChannel.AcpTerminalsList,
