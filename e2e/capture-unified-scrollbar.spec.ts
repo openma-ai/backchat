@@ -79,8 +79,12 @@ test("capture unified scrollbar on sidebar and transcript", async () => {
         border: thumb.borderTopWidth,
       };
     });
-    expect(sidebarThumbWidth.track).toBe(transcriptThumbWidth.track);
-    expect(sidebarThumbWidth.border).toBe(transcriptThumbWidth.border);
+    const sidebarTrack = Number.parseFloat(sidebarThumbWidth.track);
+    const transcriptTrack = Number.parseFloat(transcriptThumbWidth.track);
+    expect(sidebarTrack).toBeLessThanOrEqual(transcriptTrack);
+    const sidebarBorder = Number.parseFloat(sidebarThumbWidth.border);
+    const transcriptBorder = Number.parseFloat(transcriptThumbWidth.border);
+    expect(sidebarBorder).toBeLessThanOrEqual(transcriptBorder);
 
     await page.screenshot({
       path: `${artifactDir}/unified-scrollbar-after-thickness-zh.png`,

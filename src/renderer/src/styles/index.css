@@ -1634,10 +1634,14 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --sidebar-row-action-size: 16px;
   --sidebar-row-action-icon-size: var(--control-icon-size);
   --sidebar-row-action-radius: calc(var(--sidebar-row-action-size) / 2);
-  /* Transcript is the reference geometry; sidebar padding tracks size deltas. */
+  /* Transcript track is canonical; sidebar may match or be thinner, never wider. */
   --oma-scrollbar-reference-size: 10px;
-  --oma-scrollbar-size: 12px;
-  --oma-scrollbar-thumb-border: 2px;
+  --oma-scrollbar-transcript-track-size: 10px;
+  --oma-scrollbar-transcript-thumb-border: 3px;
+  --oma-scrollbar-sidebar-track-size: 10px;
+  --oma-scrollbar-sidebar-thumb-border: 3px;
+  --oma-scrollbar-size: var(--oma-scrollbar-transcript-track-size);
+  --oma-scrollbar-thumb-border: var(--oma-scrollbar-transcript-thumb-border);
   --oma-scrollbar-thumb: color-mix(
     in srgb,
     var(--chat-fg, var(--fg)) 30%,
@@ -2064,8 +2068,8 @@ body,
 .app-scrollbar::-webkit-scrollbar,
 .chat-scrollbar::-webkit-scrollbar,
 [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
-  width: var(--oma-scrollbar-size);
-  height: var(--oma-scrollbar-size);
+  width: var(--oma-scrollbar-transcript-track-size);
+  height: var(--oma-scrollbar-transcript-track-size);
 }
 .oma-scrollbar::-webkit-scrollbar-track,
 .app-scrollbar::-webkit-scrollbar-track,
@@ -2079,7 +2083,7 @@ body,
 [data-slot="scroll-area-viewport"]::-webkit-scrollbar-thumb {
   min-height: 40px;
   max-height: 50%;
-  border: var(--oma-scrollbar-thumb-border) solid transparent;
+  border: var(--oma-scrollbar-transcript-thumb-border) solid transparent;
   border-radius: 9999px;
   background: transparent;
   background-clip: padding-box;
@@ -2100,10 +2104,34 @@ body,
   background-clip: padding-box;
 }
 
+.sidebar-scroll-area [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
+  width: min(
+    var(--oma-scrollbar-sidebar-track-size),
+    var(--oma-scrollbar-transcript-track-size)
+  );
+  height: min(
+    var(--oma-scrollbar-sidebar-track-size),
+    var(--oma-scrollbar-transcript-track-size)
+  );
+}
+.sidebar-scroll-area [data-slot="scroll-area-viewport"]::-webkit-scrollbar-thumb {
+  border-width: min(
+    var(--oma-scrollbar-sidebar-thumb-border),
+    var(--oma-scrollbar-transcript-thumb-border)
+  );
+}
+
 .sidebar-scroll-content {
   padding-left: 8px;
   padding-right: calc(
-    8px + max(0px, var(--oma-scrollbar-size) - var(--oma-scrollbar-reference-size))
+    8px +
+      max(
+        0px,
+        min(
+            var(--oma-scrollbar-sidebar-track-size),
+            var(--oma-scrollbar-transcript-track-size)
+          ) - var(--oma-scrollbar-reference-size)
+      )
   );
   padding-top: 1px;
 }
