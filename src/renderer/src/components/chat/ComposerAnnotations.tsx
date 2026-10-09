@@ -11,7 +11,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { COMPOSER_MENU_SIDE_OFFSET_PX } from "@/components/ui/use-composer-picker-upward-side-offset";
+import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import { cn } from "@/lib/utils";
 import { numberPromptAnnotations } from "@/lib/prompt-annotations";
 
@@ -47,7 +47,7 @@ export function ComposerAnnotationStrip({
       <PopoverContent
         align="start"
         side="top"
-        sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX}
+        sideOffset={GAP_ADJACENT_PX}
         aria-label={t("annotation.listLabel")}
         className="w-[min(420px,calc(100vw-24px))] gap-0 p-3"
       >

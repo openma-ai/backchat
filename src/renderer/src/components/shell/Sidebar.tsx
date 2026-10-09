@@ -41,6 +41,7 @@ import {
 import { AgentIcon } from "@/components/AgentIcon";
 import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { AnimatedCollapse } from "@/components/ui/animated-collapse";
+import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSidebarCollapse } from "@/components/shell/AppShell";
 import {
@@ -1361,7 +1362,7 @@ function ProjectSidebarRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            sideOffset={4}
+            sideOffset={GAP_ADJACENT_PX}
             className="w-fit min-w-[160px]"
           >
             {group.projectId && <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/projects/$projectId", params: { projectId: group.projectId! } })} className="flex items-center gap-2 py-1 text-ui">
@@ -1517,7 +1518,7 @@ function WorkspaceSidebarRow({
           <HoverCardContent
             side="right"
             align="start"
-            sideOffset={4}
+            sideOffset={GAP_ADJACENT_PX}
             className="w-auto max-w-[360px] p-2 text-ui"
           >
             <div className="mb-1 flex items-center gap-2 text-fg">
@@ -1575,7 +1576,7 @@ function WorkspaceSidebarRow({
               <MoreHorizontalIcon aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[180px]">
+          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[180px]">
             <DropdownMenuItem
               onSelect={() =>
                 primaryPath ? void window.backchat.uiFsOpenPath({ path: primaryPath }) : undefined
@@ -1688,7 +1689,7 @@ function PairSidebarRow({
               <MoreHorizontalIcon aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
+          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[140px]">
             <DropdownMenuItem
               onSelect={onRename}
               className="flex items-center gap-2 py-1 text-ui"
@@ -1863,7 +1864,7 @@ function SessionRow({
                         <MoreHorizontalIcon aria-hidden="true" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
+                    <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[140px]">
                       <DropdownMenuItem
                         onSelect={onRename}
                         className="flex items-center gap-2 py-1 text-ui"

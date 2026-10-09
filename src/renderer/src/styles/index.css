@@ -253,7 +253,7 @@
 .sidebar-navigation .mt-0\.5 {
   margin-top: 1px;
 }
-/* --gap-adjacent: twin rounded hover/selected washes that would otherwise touch. */
+/* --gap-adjacent (sidebar): twin rounded hover/selected washes that would touch. */
 .sidebar-section:has(> .sidebar-section-header:is(:hover, :focus-within))
   > .animated-collapse[data-state="open"]
   > :where(ul, div)
@@ -272,6 +272,22 @@
   > li:has(> .sidebar-grid-row:is(:hover, .app-selected-surface))
   + li:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
   margin-top: var(--gap-adjacent);
+}
+[data-composer-footer-controls="true"] {
+  gap: var(--control-gap-compact);
+}
+[data-composer-footer-controls="true"]:has(
+  .app-compact-control:is(:hover, [data-state="open"], [aria-expanded="true"])
+) {
+  gap: var(--gap-adjacent);
+}
+.composer-toolbar-chip-row {
+  gap: var(--control-gap-compact);
+}
+.composer-toolbar-chip-row:has(
+  :is([data-state="open"], [aria-expanded="true"]):is(.app-compact-control, button, [role="button"])
+) {
+  gap: var(--gap-adjacent);
 }
 .sidebar-section + .sidebar-section {
   margin-top: 1px;
@@ -548,8 +564,8 @@
 }
 
 .slash-command-section + .slash-command-section {
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: var(--gap-adjacent);
+  padding-top: var(--gap-adjacent);
 }
 
 .slash-command-section-label {
@@ -1721,7 +1737,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   );
   --composer-card-border-width: 1px;
   --composer-card-padding-block: 10px;
-  /* Touching rounded/highlighted neighbors only (sidebar twin rows, menu ↔ trigger). */
+  /* When adjacent rounded/highlighted surfaces would touch: menus ↔ triggers,
+     sidebar parent/child washes, stacked footer chips, etc. Not list rhythm. */
   --gap-adjacent: 6px;
   --composer-section-gap: 6px;
   --composer-card-padding-inline: var(--composer-card-padding-block);

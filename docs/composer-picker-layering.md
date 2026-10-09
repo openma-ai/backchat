@@ -12,7 +12,7 @@ primitive. Features only supply data and host chrome (popover vs dropdown).
 | `use-grouped-command-roving-highlight.ts` | Suppress false cmdk `data-selected` wash until keyboard roving |
 | `composer-footer-trigger.ts` | Footer chip trigger class; open wash + outline in `index.css` `.app-compact-control` |
 | `grouped-command-field.tsx` | Form/settings select: flush trigger + menu chrome, wraps `GroupedCommandMenu` |
-| `gap-adjacent.ts` | Documents `--gap-adjacent` (CSS-only twin hover/selected row separation in sidebar) |
+| `gap-adjacent.ts` | `--gap-adjacent` for touching rounded/highlighted neighbors (see `docs/gap-adjacent.md`) |
 
 Styles: `.grouped-command-menu` in `src/renderer/src/styles/index.css`.
 

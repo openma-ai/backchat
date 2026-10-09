@@ -1,9 +1,9 @@
 import { useLayoutEffect, useState } from "react";
 
 /**
- * Tiny separation only where adjacent rounded surfaces would touch:
- * twin hover/selected sidebar rows, popover/dropdown vs trigger chip, etc.
- * Not general list/section spacing.
+ * `--gap-adjacent`: wherever adjacent rounded/highlighted surfaces would
+ * touch (menus vs triggers, sidebar parent/child washes, stacked pills).
+ * See `docs/gap-adjacent.md`. Not general list/section spacing.
  */
 export const GAP_ADJACENT_CSS_VAR = "--gap-adjacent";
 

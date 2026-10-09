@@ -1204,7 +1204,7 @@ export function Composer({
             surviving right edge read as a stray background behind the button.
             The negative margin keeps the row where it was while the padding
             gives the clip box room for the ring. */}
-        <div className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden p-1">
+        <div className="composer-toolbar-chip-row -m-1 flex min-w-0 flex-1 items-center overflow-hidden p-1">
           {!isRemote && <button
             type="button"
             aria-label={t("chat.attachFiles")}

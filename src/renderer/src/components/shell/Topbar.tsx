@@ -17,6 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import {
   selectActive,
   sessionStore,
@@ -97,7 +98,7 @@ export function Topbar(_props: { onCancel: () => void }) {
             <MoreHorizontalIcon className="size-4" />
           </button>
         </DropdownMenuTrigger>
-         <DropdownMenuContent align="start" sideOffset={6} className="min-w-[164px]">
+         <DropdownMenuContent align="start" sideOffset={GAP_ADJACENT_PX} className="min-w-[164px]">
           <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
             <span>{t("sidebar.rename")}</span>
           </DropdownMenuItem>
