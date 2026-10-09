@@ -288,6 +288,13 @@
   width: 12px;
   justify-content: center;
 }
+.sidebar-section-header-trailing {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  padding-inline-end: var(--sidebar-content-padding-inline-start);
+}
 /* Section headers and first child rows each paint their own rounded hover/
    selection surfaces; keep the same 2px rhythm as space-y-0.5 between rows. */
 .sidebar-section > .sidebar-section-header + .animated-collapse[data-state="open"] {
@@ -1644,6 +1651,17 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --oma-scrollbar-sidebar-track-size: var(--oma-scrollbar-track-size);
   --oma-scrollbar-sidebar-thumb-border: var(--oma-scrollbar-thumb-border);
   --oma-scrollbar-size: var(--oma-scrollbar-track-size);
+  --sidebar-content-padding-inline-start: 8px;
+  --sidebar-content-padding-inline-end: calc(
+    8px +
+      max(
+        0px,
+        min(
+            var(--oma-scrollbar-sidebar-track-size),
+            var(--oma-scrollbar-transcript-track-size)
+          ) - var(--oma-scrollbar-reference-size)
+      )
+  );
   --oma-scrollbar-thumb: color-mix(
     in srgb,
     var(--chat-fg, var(--fg)) 30%,
@@ -2124,17 +2142,8 @@ body,
 }
 
 .sidebar-scroll-content {
-  padding-left: 8px;
-  padding-right: calc(
-    8px +
-      max(
-        0px,
-        min(
-            var(--oma-scrollbar-sidebar-track-size),
-            var(--oma-scrollbar-transcript-track-size)
-          ) - var(--oma-scrollbar-reference-size)
-      )
-  );
+  padding-inline-start: var(--sidebar-content-padding-inline-start);
+  padding-inline-end: var(--sidebar-content-padding-inline-end);
   padding-top: 1px;
 }
 

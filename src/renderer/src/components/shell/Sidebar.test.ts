@@ -539,6 +539,27 @@ describe("groupSidebarSessions", () => {
     expect(source).not.toContain('"inline-flex size-4 shrink-0');
   });
 
+  it("aligns section header trailing actions with row content inset tokens", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const styles = readFileSync(
+      resolve(__dirname, "../../styles/index.css"),
+      "utf8",
+    );
+    const section = source.slice(
+      source.indexOf("function SidebarSection"),
+      source.indexOf("function ProjectSidebarRow"),
+    );
+
+    expect(styles).toContain("--sidebar-content-padding-inline-start");
+    expect(styles).toContain("--sidebar-content-padding-inline-end");
+    expect(styles).toContain(".sidebar-section-header-trailing");
+    expect(styles).toContain(
+      "padding-inline-end: var(--sidebar-content-padding-inline-start)",
+    );
+    expect(section).toContain("sidebar-section-header-trailing");
+    expect(section).not.toContain("mr-1 shrink-0");
+  });
+
   it("puts the running spinner in the same reserved trailing slot as the schedule clock", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const styles = readFileSync(

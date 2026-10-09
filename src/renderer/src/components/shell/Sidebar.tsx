@@ -724,9 +724,8 @@ export function Sidebar() {
           </span>
           <span className={labelCls}>{t("sidebar.scheduled")}</span>
         </Link>
-      </div>
 
-        <nav className="app-no-drag px-2 pt-5 pb-2">
+        <nav className="app-no-drag pt-5 pb-2">
         {openmaAccount?.user && openmaAccount.workspaces.map((workspace) => {
           const scope = openmaWorkspaceScope(openmaAccount, workspace.id);
           const rows = sessions.filter((row) => row.openma && sameOpenmaScope(row.openma, scope));
@@ -1026,6 +1025,7 @@ export function Sidebar() {
         </div>
         </SidebarSection>
         </nav>
+      </div>
       </ScrollArea>
 
       {/* Footer navigation and update affordance are independent hit targets.
@@ -1221,11 +1221,13 @@ function SidebarSection({
             />
           </span>
         </button>
-        <span className={cn("mr-1 shrink-0", labelCls)}>
-          <span className="inline-flex opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100">
-            {action}
+        {action ? (
+          <span className={cn("sidebar-section-header-trailing shrink-0", labelCls)}>
+            <span className="inline-flex opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100">
+              {action}
+            </span>
           </span>
-        </span>
+        ) : null}
       </div>
       <AnimatedCollapse open={open}>{children}</AnimatedCollapse>
     </section>
