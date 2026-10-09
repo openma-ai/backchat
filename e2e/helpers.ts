@@ -13,6 +13,7 @@
  */
 import {
   _electron as electron,
+  expect,
   type ElectronApplication,
   type Locator,
   type Page,
@@ -285,11 +286,29 @@ export async function openBrowserPanel(page: Page): Promise<void> {
   await webview.waitFor({ state: "visible" });
 }
 
+/** Composer typing is allowed during harness auth probes, but submit stays
+ *  blocked until the live probe settles. Wait on the run-chip spinner. */
+export async function waitForComposerHarnessAuthProbe(page: Page): Promise<void> {
+  const spinner = page.locator('[data-composer-run-harness="true"] svg.animate-spin');
+  await expect
+    .poll(async () => {
+      if ((await spinner.count()) === 0) return true;
+      return !(await spinner.isVisible());
+    }, { timeout: 60_000 })
+    .toBe(true);
+}
+
+export async function waitForComposerSubmitReady(page: Page): Promise<void> {
+  const submit = page.locator('[data-composer-submit="true"]').first();
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+}
+
 export async function waitForRunnableHarness(page: Page): Promise<Locator> {
   const runButton = page.getByRole("button", {
     name: /Run on Local with .* using/,
   });
   await runButton.waitFor({ state: "visible", timeout: 15_000 });
+  await waitForComposerHarnessAuthProbe(page);
   return runButton;
 }
 
