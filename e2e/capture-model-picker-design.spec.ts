@@ -54,15 +54,6 @@ async function seedModelConfig(page: import("@playwright/test").Page) {
       ],
     },
   });
-  await page.evaluate(() => {
-    const payload = {
-      configByAgent: {},
-      recentModelsByAgent: {
-        "codex-acp": ["devin-1", "anthropic-proxy-0", "minimax-m31-0"],
-      },
-    };
-    localStorage.setItem("openma.recent-run-preferences.v1", JSON.stringify(payload));
-  });
 }
 
 test("capture model picker design states (light + dark)", async () => {

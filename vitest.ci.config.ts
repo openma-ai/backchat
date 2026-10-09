@@ -56,7 +56,6 @@ export default defineConfig({
       "src/renderer/src/components/shell/Sidebar.test.ts",
       "src/renderer/src/lib/searchable-select-filter.test.ts",
       "src/renderer/src/lib/composer-select-menu-layout.test.ts",
-      "src/renderer/src/lib/recent-model-picks.test.ts",
       "src/renderer/src/components/chat/ComposerSearchableSelectMenu.test.tsx",
       "src/main/schedule-*.test.ts",
       "src/main/scheduled-task-executor.test.ts",

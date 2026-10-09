@@ -23,7 +23,7 @@ import {
   RefreshCwIcon,
   type LucideIcon,
 } from "@/components/Icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   DropdownMenu,
@@ -59,10 +59,9 @@ import {
 } from "@/components/chat/ComposerSearchableSelectMenu";
 import { shouldUseProviderSubmenu } from "@/lib/composer-select-menu-layout";
 import {
-  recentModelPicksForAgent,
-  recordRecentModelPick,
-} from "@/lib/recent-model-picks";
-import { readRecentRunPreferences } from "@/lib/recent-run-preferences";
+  SelectMenuGridRow,
+  SidebarGridCell,
+} from "@/components/chat/SelectMenuGridRow";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -298,7 +297,6 @@ export function SessionRunChip({
               section.options.map((option) => (
                 <SessionConfigSubmenu
                   key={option.id}
-                  agentId={currentAgentId}
                   option={option}
                   onSetConfigOption={onSetConfigOption}
                 />
@@ -407,26 +405,13 @@ function SessionAgentSubmenu({
 }
 
 function SessionConfigSubmenu({
-  agentId,
   option,
   onSetConfigOption,
 }: {
-  agentId: string;
   option: AcpSessionConfigOption;
   onSetConfigOption: (configId: string, value: string | boolean) => void;
 }) {
   const { t } = useI18n();
-  const [recentModelValues, setRecentModelValues] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (option.category !== "model" || !agentId) {
-      setRecentModelValues([]);
-      return;
-    }
-    setRecentModelValues(
-      recentModelPicksForAgent(readRecentRunPreferences(), agentId),
-    );
-  }, [agentId, option.category]);
   const Icon = configOptionIcon(option);
   const label =
     option.category === "model"
@@ -450,23 +435,6 @@ function SessionConfigSubmenu({
         }))
       : [];
   const wideSelectMenu = shouldUseProviderSubmenu(selectMenuItems);
-  const recentMenuItems =
-    option.category === "model" && option.type === "select"
-      ? recentModelValues
-          .map((value) => selectMenuItems.find((item) => item.value === value))
-          .filter((item): item is NonNullable<typeof item> => Boolean(item))
-          .filter((item) => item.value !== option.currentValue)
-      : [];
-
-  const handleSelect = (value: string) => {
-    onSetConfigOption(option.id, value);
-    if (option.category === "model" && agentId) {
-      setRecentModelValues(
-        recentModelPicksForAgent(recordRecentModelPick(agentId, value), agentId),
-      );
-    }
-  };
-
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
@@ -486,10 +454,7 @@ function SessionConfigSubmenu({
             activeValue={option.currentValue}
             searchPlaceholder={t("chat.searchOptions")}
             emptyMessage={t("chat.noMatchingOptions")}
-            recentItems={recentMenuItems}
-            recentSectionLabel={t("chat.recentModels")}
-            providerUnavailableLabel={t("chat.providerUnavailable")}
-            onSelect={handleSelect}
+            onSelect={(value) => onSetConfigOption(option.id, value)}
             renderItem={(item, { highlighted }) => (
               <SessionRunItem
                 icon={
@@ -501,7 +466,7 @@ function SessionConfigSubmenu({
                 hint={item.hint}
                 active={item.active}
                 highlighted={highlighted}
-                onSelect={() => handleSelect(item.value)}
+                onSelect={() => onSetConfigOption(option.id, item.value)}
               />
             )}
           />
@@ -1032,33 +997,33 @@ function SessionRunItem({
       onSelect={onSelect}
       onFocus={() => undefined}
       className={cn(
-        "flex items-start gap-2 px-2 py-1.5 text-xs",
+        "rounded-md p-0 text-xs focus:text-accent-foreground",
         highlighted && "bg-accent text-accent-foreground",
         active && "text-fg",
       )}
     >
-      {agentId ? (
-        <span aria-hidden="true" className="mt-0.5 shrink-0">
-          <AgentIcon
-            agentId={agentId}
-            iconUrl={agentIconUrl}
-            className="size-3.5 text-fg-subtle"
-          />
-        </span>
-      ) : Icon ? (
-        <Icon className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" />
-      ) : null}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{label}</span>
-        {hint && (
-          <span className="block truncate text-[11px] text-fg-subtle">
-            {hint}
-          </span>
-        )}
-      </span>
-      {active && (
-        <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-fg-muted" />
-      )}
+      <SelectMenuGridRow className="w-full">
+        <SidebarGridCell slot="icon" className="self-start pt-0.5">
+          {agentId ? (
+            <AgentIcon
+              agentId={agentId}
+              iconUrl={agentIconUrl}
+              className="size-3.5 text-fg-subtle"
+            />
+          ) : Icon ? (
+            <Icon className="size-3.5 text-fg-subtle" />
+          ) : null}
+        </SidebarGridCell>
+        <SidebarGridCell slot="label" className="min-w-0 flex-col items-start gap-0">
+          <span className="w-full truncate">{label}</span>
+          {hint ? (
+            <span className="w-full truncate text-[11px] text-fg-subtle">{hint}</span>
+          ) : null}
+        </SidebarGridCell>
+        <SidebarGridCell slot="trailing" className="self-start pt-0.5">
+          {active ? <CheckIcon className="size-3.5 text-fg-muted" aria-hidden="true" /> : null}
+        </SidebarGridCell>
+      </SelectMenuGridRow>
     </DropdownMenuItem>
   );
 }
