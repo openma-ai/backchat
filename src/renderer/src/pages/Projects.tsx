@@ -21,7 +21,10 @@ import {
   CheckIcon,
   CirclePauseIcon,
   CirclePlayIcon,
+  CloudIcon,
+  MonitorIcon,
 } from "@/components/Icons";
+import { AgentIcon } from "@/components/AgentIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,7 +42,7 @@ import type {
   ProjectWorkCommand,
   ProjectWorkView,
 } from "@shared/project-work";
-import { Combobox } from "@/components/ui/combobox";
+import { GroupedCommandField } from "@/components/ui/grouped-command-field";
 import { useSettings } from "@/lib/settings-store";
 import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
 import {
@@ -51,13 +54,6 @@ import {
 import { ProjectComposer } from "@/components/chat/ProjectComposer";
 import { ProjectConversation } from "@/components/chat/ProjectConversation";
 import { FormDialog } from "@/components/ui/form-dialog";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -456,8 +452,9 @@ export function ProjectEditor({
                 Advanced
               </summary>
               <div className="mt-4 space-y-5">
-                <ProjectChoice
+                <GroupedCommandField
                   label="Conversation continuity"
+                  searchThreshold={99}
                   value={draft.continuity}
                   onChange={(value) =>
                     field(
@@ -618,15 +615,21 @@ export function ProjectEditor({
             </label>
           </TabsContent>
           <TabsContent value="agents" className="space-y-5">
-            <ProjectChoice
+            <GroupedCommandField
               label="Execution location"
               value={cloud ? "cloud" : "local"}
               disabled={!!config?.coordinatorAgent}
+              searchThreshold={99}
               options={[
-                { value: "local", label: "This computer" },
+                {
+                  value: "local",
+                  label: "This computer",
+                  leading: <MonitorIcon className="size-3.5" />,
+                },
                 {
                   value: "cloud",
                   label: "Cloud",
+                  leading: <CloudIcon className="size-3.5" />,
                   disabled:
                     account.data?.status !== "signed_in" ||
                     !!account.data.provider,
@@ -665,30 +668,31 @@ export function ProjectEditor({
                 ? "Runs through your Projects worker, even when Backchat is closed."
                 : "Backchat needs to stay open while agents work."}
             </p>
-            <Combobox
+            <GroupedCommandField
               searchPlaceholder="Search agents…"
               emptyMessage="No agents are ready. Set up an agent in Manage agents."
               label="Coordinator agent"
               value={draft.coordinatorAgent}
               placeholder={t("project.chooseAgent")}
               onChange={(value) => field("coordinatorAgent", value)}
-              options={agentOptions(available)}
+              options={agentFieldOptions(available)}
             />
-            <Combobox
+            <GroupedCommandField
               searchPlaceholder="Search agents…"
               emptyMessage="No agents are ready. Set up an agent in Manage agents."
               label="Worker agent"
               value={draft.workerAgent}
               placeholder={t("project.chooseAgent")}
               onChange={(value) => field("workerAgent", value)}
-              options={agentOptions(available)}
+              options={agentFieldOptions(available)}
             />
             {cloud ? (
               <>
                 {(["coordinatorEnvironment", "workerEnvironment"] as const).map(
                   (key, index) => (
-                    <ProjectChoice
+                    <GroupedCommandField
                       key={key}
+                      searchThreshold={99}
                       label={
                         index === 0
                           ? "Coordinator environment"
@@ -722,48 +726,22 @@ export function ProjectEditor({
     </FormDialog>
   );
 }
-function agentOptions(agents: { id: string; label: string }[] | undefined) {
+function agentFieldOptions(
+  agents: { id: string; label: string; icon?: string }[] | undefined,
+) {
   return (agents ?? []).map((agent) => ({
     value: agent.id,
     label: agent.label,
+    keywords: [agent.label, agent.id],
+    leading: (
+      <AgentIcon
+        agentId={agent.id}
+        iconUrl={agent.icon}
+        title={agent.label}
+        className="size-3.5"
+      />
+    ),
   }));
-}
-function ProjectChoice({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-  disabled,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string; disabled?: boolean }[];
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="grid gap-2">
-      <span className="text-sm font-medium">{label}</span>
-      <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger aria-label={label} className="w-full">
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent position="popper">
-          {options.map((option) => (
-            <SelectItem
-              key={option.value}
-              value={option.value}
-              disabled={option.disabled}
-            >
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
 }
 
 function ProjectOutcomeBar({

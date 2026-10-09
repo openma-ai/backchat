@@ -11,6 +11,7 @@ primitive. Features only supply data and host chrome (popover vs dropdown).
 | `grouped-command-menu-slots.tsx` | Icon / label grid columns (sidebar mesh) |
 | `use-grouped-command-roving-highlight.ts` | Suppress false cmdk `data-selected` wash until keyboard roving |
 | `composer-footer-trigger.ts` | Footer chip trigger class; open wash + outline in `index.css` `.app-compact-control` |
+| `grouped-command-field.tsx` | Form/settings select: flush trigger + menu chrome, wraps `GroupedCommandMenu` |
 
 Styles: `.grouped-command-menu` in `src/renderer/src/styles/index.css`.
 
@@ -36,5 +37,8 @@ Styles: `.grouped-command-menu` in `src/renderer/src/styles/index.css`.
 | Workspace | `Popover` + `GroupedCommandMenu` | `WorkspaceChip` builds `groups` + `listHeader` |
 | Host (本机) | `DropdownMenu` + `GroupedCommandMenu` | `RuntimeLocationControl` builds `groups` |
 | Model | `DropdownMenuSub` + `ComposerSearchableSelectMenu` | Session controls build `items` |
+| Coordinator settings | `GroupedCommandField` | `Projects.tsx` passes options + `AgentIcon` leading |
+
+Styles: `.grouped-command-field-*` for attached trigger/menu corners in `index.css`.
 
 Do not reimplement list scrolling, highlight rules, or grid mesh in feature code.

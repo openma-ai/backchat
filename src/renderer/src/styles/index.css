@@ -2239,6 +2239,65 @@ body,
   justify-self: end;
 }
 
+/* Settings / form selects sharing GroupedCommandMenu (coordinator settings, etc.). */
+.grouped-command-field-trigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height-compact);
+  align-items: center;
+  gap: var(--sidebar-grid-column-gap);
+  padding-inline: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--composer-radius);
+  background: var(--surface-panel);
+  color: var(--control-fg-rest);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line-height);
+  outline: none;
+  transition:
+    border-color var(--dur-quick) var(--ease-snap),
+    background-color var(--dur-quick) var(--ease-snap);
+}
+
+.grouped-command-field-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--border) 70%, var(--fg));
+}
+
+.grouped-command-field-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.grouped-command-field[data-open="true"] .grouped-command-field-trigger {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-color: var(--border-strong);
+  outline: 2px solid var(--fg);
+  outline-offset: 0;
+}
+
+.grouped-command-field-trigger-leading {
+  display: flex;
+  width: var(--sidebar-grid-icon-track);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-subtle);
+}
+
+.grouped-command-field-popover {
+  overflow: visible;
+  border: none;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.grouped-command-field-popover .grouped-command-menu {
+  border-radius: 0 0 var(--composer-radius) var(--composer-radius);
+}
+
 /* Grouped command menus (project / workspace / host / model): icon | label | check mesh. */
 .grouped-command-menu {
   --grouped-command-padding-inline: 8px;

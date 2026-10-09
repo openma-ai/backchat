@@ -94,6 +94,7 @@ export function groupedCommandMenuDropdownShellClassName(className?: string) {
 export function GroupedCommandMenu({
   groups,
   searchPlaceholder,
+  searchInputAriaLabel,
   emptyMessage,
   initialHighlightValue = "",
   showSearch = true,
@@ -112,6 +113,7 @@ export function GroupedCommandMenu({
 }: {
   groups: readonly GroupedCommandMenuGroup[];
   searchPlaceholder: string;
+  searchInputAriaLabel?: string;
   emptyMessage: string;
   initialHighlightValue?: string;
   showSearch?: boolean;
@@ -179,6 +181,7 @@ export function GroupedCommandMenu({
           <CommandInput
             autoFocus={autoFocus}
             placeholder={searchPlaceholder}
+            aria-label={searchInputAriaLabel ?? searchPlaceholder}
             onKeyDown={mergeRovingKeyDown}
           />
         ) : null}
