@@ -31,6 +31,8 @@ describe("RendererCrashPage", () => {
 
     expect(html).toContain('data-renderer-crash-page="true"');
     expect(html).toContain('data-backchat-crash-mark="true"');
+    expect(html).not.toContain("brand-loader-dot");
+    expect(html).not.toMatch(/>\[</);
     expect(html).toContain("app-canvas-surface");
     expect(html).toContain("app-drag-region");
     expect(html).toContain("home-empty-intro");
