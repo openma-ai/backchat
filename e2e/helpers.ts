@@ -211,17 +211,37 @@ export async function clickHostPickerOption(
   page: Page,
   name: string | RegExp,
 ): Promise<void> {
-  await hostPickerPanel(page)
-    .getByRole("option", { name })
-    .click({ force: true });
+  const option = hostPickerPanel(page).getByRole("option", { name });
+  await expect(option).toBeVisible({ timeout: 15_000 });
+  await option.click();
+  if (await hostPickerPanel(page).isVisible().catch(() => false)) {
+    await page.keyboard.press("Escape");
+  }
 }
 
 export async function pickRuntimeLocationOption(
   page: Page,
   name: string | RegExp,
 ): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await openRuntimeLocationPicker(page);
+    const option = hostPickerPanel(page).getByRole("option", { name });
+    if (await option.isVisible().catch(() => false)) {
+      await clickHostPickerOption(page, name);
+      return;
+    }
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+  }
   await openRuntimeLocationPicker(page);
   await clickHostPickerOption(page, name);
+}
+
+/** Primary allow action in `ComposerBrokerAsk` permission sheets. */
+export async function clickPermissionAllowOnce(page: Page): Promise<void> {
+  const allow = page.locator('[data-permission-primary-action="true"]');
+  await expect(allow).toBeVisible({ timeout: 60_000 });
+  await allow.click();
 }
 
 /** Electron can occasionally create its first window before the renderer has
