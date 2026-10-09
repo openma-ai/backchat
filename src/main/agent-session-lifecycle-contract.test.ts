@@ -29,7 +29,7 @@ describe("agent and session lifecycle contract", () => {
     expect(listHandler).toContain("await agentWarmup");
     expect(gate).toContain('readiness: "ready"');
     expect(gate).toContain('readiness: "snapshot"');
-    expect(gate).toContain("{children}");
+    expect(gate).toContain("return children");
     expect(gate).not.toContain("useAgentsLiveProbePending");
   });
 
