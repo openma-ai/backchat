@@ -1739,20 +1739,22 @@ export class SessionManager {
     const observedEventTypes = new Set<string>();
     // Persist the user prompt up front — even if the turn errors halfway,
     // we want the user's message in the log for replay.
-    const displayText = derivePromptDisplayText(
-      p.text,
-      p.attachments,
-      p.annotations?.length ?? 0,
-      p.session_references?.length ?? 0,
-    );
+    const displayText = p.display_text?.trim()
+      || derivePromptDisplayText(
+        p.text,
+        p.attachments,
+        p.annotations?.length ?? 0,
+        p.session_references?.length ?? 0,
+      );
+    const clientId = p.client_id?.trim() || p.turn_id;
     if (options.persistUserPrompt !== false) {
-    const promptData = {
-      text: displayText,
-      client_id: p.turn_id,
-      attachments: stripAttachmentData(p.attachments),
-      annotations: p.annotations,
-      session_references: p.session_references,
-    };
+      const promptData = {
+        text: displayText,
+        client_id: clientId,
+        attachments: stripAttachmentData(p.attachments),
+        annotations: p.annotations,
+        session_references: p.session_references,
+      };
       appendEvent(p.session_id, "user_prompt", promptData);
       appendEvent(
         p.session_id,
@@ -1788,6 +1790,13 @@ export class SessionManager {
       }
     }
     touchSession(p.session_id);
+    this.#send({
+      type: "session.prompt_accepted",
+      session_id: p.session_id,
+      turn_id: p.turn_id,
+      client_id: clientId,
+      text: displayText,
+    });
 
     try {
       let agentPrompt = p;

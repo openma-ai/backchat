@@ -206,12 +206,21 @@ export function chatIdleDeliveryMeta(
   };
 }
 
+export interface ChatDelivery {
+  sessionId: string;
+  turnId: string;
+  text: string;
+  attachments: PromptAttachment[];
+}
+
 export function useChatSubmission({
   isSide,
   pickedAgentId,
   pickedCwd,
   onSuggestionSubmitted,
   onOptimisticEcho,
+  boundSessionId,
+  deliver,
 }: {
   isSide: boolean;
   pickedAgentId: string | null;
@@ -219,6 +228,10 @@ export function useChatSubmission({
   onSuggestionSubmitted: () => void;
   /** Paint the user message before session start or session prompt IPC. */
   onOptimisticEcho?: (echo: OptimisticUserEcho) => void;
+  /** Read this session instead of the sidebar's active chat. */
+  boundSessionId?: string;
+  /** Coordinator sends stay on this pipeline and only swap the transport. */
+  deliver?: (input: ChatDelivery) => Promise<void>;
 }) {
   const navigate = useNavigate();
 
@@ -256,7 +269,9 @@ export function useChatSubmission({
   ) => {
     // Resolve from the live store so a fast submit after navigation cannot
     // reuse the previous session captured by a render closure.
-    let target = isSide ? sessionStore.sideActive() : sessionStore.active();
+    let target = boundSessionId
+      ? sessionStore.get(boundSessionId)
+      : isSide ? sessionStore.sideActive() : sessionStore.active();
     if (target?.executionTarget || target?.openma) {
       if (isSide) return;
       if (attachments.length || annotations.length || sessionReferences.length) {
@@ -281,7 +296,7 @@ export function useChatSubmission({
       return;
     }
     const draftAgentId = resolveChatSubmitAgentId({
-      target,
+      target: target ?? null,
       selectedAgentId,
       pickedAgentId,
     });
@@ -296,6 +311,7 @@ export function useChatSubmission({
       return;
     }
     if (!target) {
+      if (boundSessionId) return;
       const sessionId = isSide ? newSideDraftSession() : newDraftSession();
       target = sessionStore.get(sessionId)!;
       if (!isSide && pickedCwd?.trim()) {
@@ -342,6 +358,22 @@ export function useChatSubmission({
       attachments,
       annotations,
     );
+
+    if (deliver) {
+      try {
+        await deliver({
+          sessionId: target.id,
+          turnId,
+          text,
+          attachments,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        sessionStore.failSend(turnId, message);
+        toast.error(message);
+      }
+      return;
+    }
 
     try {
       if (target.status === "draft") {
@@ -438,6 +470,27 @@ export function useChatSubmission({
       toast.error(message);
     }
   };
+}
+
+/** Resubmit a bound send through the same transport the first attempt used. */
+export async function retryBoundChatSend(
+  turn: Turn,
+  deliver: (input: ChatDelivery) => Promise<void>,
+): Promise<void> {
+  sessionStore.reopenSend(turn.id);
+  try {
+    await deliver({
+      sessionId: turn.sessionId,
+      turnId: turn.id,
+      text: turn.promptText,
+      attachments: turn.attachments ?? [],
+    });
+  } catch (error) {
+    sessionStore.failSend(
+      turn.id,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 /** Resubmit a send that failed before the host accepted it, using the same turn id. */

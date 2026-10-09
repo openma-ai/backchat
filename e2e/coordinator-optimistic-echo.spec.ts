@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures";
+import { persistSessionFixture } from "./helpers";
 
 test("coordinator chat shows the user message before the host accepts it", async ({ page, capture, app }) => {
   await page.evaluate(async () => {
@@ -21,6 +22,8 @@ test("coordinator chat shows the user message before the host accepts it", async
     });
   });
   await page.reload();
+  await expect(page.getByPlaceholder("Ask anything…")).toBeVisible();
+  await capture("normal-chat.png", "Normal chat composer");
   const project = page.locator('[data-sidebar-project="project:optimistic-coordinator"]');
   await project.getByRole("button", { name: "Expand project: Optimistic coordinator" }).click();
   await project.locator("..").getByRole("link").click();
@@ -59,6 +62,7 @@ test("coordinator chat shows the user message before the host accepts it", async
   await page.keyboard.press("Enter");
   const pending = page.locator('[data-user-echo="pending"]');
   await expect(pending).toContainText(message);
+  await expect(composer).toHaveValue("");
   const timing = await page.evaluate(() => (
     window as unknown as { __echoTrace: { enterAt: number; shownAt: number } }
   ).__echoTrace);
@@ -71,4 +75,28 @@ test("coordinator chat shows the user message before the host accepts it", async
   console.log(`coordinator optimistic echo visible in ${elapsed.toFixed(1)}ms`);
   await capture("coordinator-optimistic-pending.png", "User message is visible while the send is still pending");
   await expect(page.getByText(message, { exact: true })).toHaveCount(1);
+
+  await persistSessionFixture(page, {
+    sessionId: "normal-echo-chat",
+    title: "Normal echo chat",
+    agentId: "codex-acp",
+    cwd: "",
+    acpSessionId: "",
+    events: [
+      { type: "user_prompt", data: { text: message } },
+      {
+        type: "agent_message_chunk",
+        data: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Same transcript chrome." },
+        },
+      },
+    ],
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Normal echo chat", exact: true }).click();
+  await expect(page.getByText(message, { exact: true })).toBeVisible();
+  await expect(page.getByText("Same transcript chrome.", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-chat-surface="main"]')).toBeVisible();
+  await capture("normal-chat-message.png", "Normal chat uses the same transcript surface");
 });

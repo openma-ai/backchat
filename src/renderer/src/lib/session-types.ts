@@ -43,6 +43,8 @@ export interface SessionRow {
    *             pair row is the user-facing entry point.
    */
   kind?: "main" | "side" | "pair";
+  /** Bound project placeholder. Not a sidebar chat. */
+  listHidden?: boolean;
   /** Side-session subtype. Side chats are subordinate sessions attached
    *  to the active main session; native subagents are provider-created
    *  activity and are not user-created from the GUI. */

@@ -6,7 +6,7 @@ import { PageTopbar } from "@/components/shell/PageTopbar";
 import type { PromptAttachment } from "@shared/session-events";
 import { ProjectMessageAttachments } from "@/components/chat/ProjectMessageAttachments";
 import { projectResponseText } from "@shared/project-transcript";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -47,19 +47,11 @@ import {
   projectGoalPresentation,
   projectOutcomeLabel,
   projectThreads,
-  projectCoordinatorTurns,
 } from "@/lib/project-goals";
+import { ChatView } from "@/components/chat/ChatView";
 import { ProjectComposer } from "@/components/chat/ProjectComposer";
-import { ProjectConversation } from "@/components/chat/ProjectConversation";
-import {
-  failOptimisticEcho,
-  insertOptimisticEcho,
-  mergeOptimisticEchoes,
-  persistedClientIds,
-  reconcileOptimisticEchoes,
-  reopenOptimisticEcho,
-  type OptimisticUserEcho,
-} from "@/lib/optimistic-user-echo";
+import { openHistoryWindow } from "@/lib/history-paging";
+import { sessionStore } from "@/lib/session-store";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Select,
@@ -848,7 +840,6 @@ function ProjectWorkspace({
     fingerprint: string;
     id: string;
   } | null>(null);
-  const [echoes, setEchoes] = useState<readonly OptimisticUserEcho[]>([]);
   const sessions = facts.sessions.filter(
     (s) =>
       config?.continuity !== "per-run" ||
@@ -856,9 +847,6 @@ function ProjectWorkspace({
   );
   const coordinator = sessions.filter((s) => s.agentId === "coordinator");
   const workers = sessions.filter((s) => s.agentId === "worker");
-  const selectedTurns = facts.turns.filter((t) =>
-    coordinator.some((s) => s.id === t.sessionId),
-  );
   const projectThreadView = projectThreads(
     view,
     config?.continuity === "per-run" ? runId : undefined,
@@ -883,36 +871,6 @@ function ProjectWorkspace({
       setBusy(false);
     }
   };
-  const deliver = async (
-    clientId: string,
-    type: ProjectWorkCommand["type"],
-    message: string,
-    workerId?: string,
-    attachments?: PromptAttachment[],
-  ) => {
-    try {
-      await window.backchat.projectWorkSubmit({
-        projectId: project.id,
-        commandId: clientId,
-        type,
-        text: message,
-        attachments,
-        ...(workerId ? { workerId } : {}),
-        ...(config?.continuity === "per-run" ? { runId } : {}),
-      });
-      if (type !== "message") uncertainSubmission.current = null;
-      await refresh();
-      return true;
-    } catch (e) {
-      const messageText = errorText(e);
-      if (type === "message") {
-        setEchoes((current) => failOptimisticEcho(current, clientId, messageText));
-        return true;
-      }
-      setError(messageText);
-      return false;
-    }
-  };
   const submit = async (
     type: ProjectWorkCommand["type"],
     message: string,
@@ -928,54 +886,50 @@ function ProjectWorkspace({
       runId,
       attachments,
     ]);
-    const clientId = type === "message"
-      ? crypto.randomUUID()
-      : (uncertainSubmission.current?.fingerprint === fingerprint
-        ? uncertainSubmission.current.id
-        : crypto.randomUUID());
-    if (type !== "message") uncertainSubmission.current = { fingerprint, id: clientId };
-    if (type === "message") {
-      setEchoes((current) => insertOptimisticEcho(current, {
-        clientId,
+    if (uncertainSubmission.current?.fingerprint !== fingerprint) {
+      uncertainSubmission.current = { fingerprint, id: crypto.randomUUID() };
+    }
+    try {
+      await window.backchat.projectWorkSubmit({
+        projectId: project.id,
+        commandId: uncertainSubmission.current!.id,
+        type,
         text: message,
-        createdAt: Date.now(),
-        state: "pending",
-      }));
-    }
-    try {
-      return await deliver(clientId, type, message, workerId, attachments);
+        attachments,
+        ...(workerId ? { workerId } : {}),
+        ...(config?.continuity === "per-run" ? { runId } : {}),
+      });
+      uncertainSubmission.current = null;
+      await refresh();
+      return true;
+    } catch (e) {
+      setError(errorText(e));
+      return false;
     } finally {
       setBusy(false);
     }
   };
-  const retryMessage = async (clientId: string, text: string) => {
-    setEchoes((current) => reopenOptimisticEcho(current, clientId));
-    setBusy(true);
-    setError("");
-    try {
-      await deliver(clientId, "message", text);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const coordinatorChatTurns = projectCoordinatorTurns(
-    view, config?.continuity === "per-run" ? runId : undefined,
-  );
-  const visibleEchoes = useMemo(
-    () => reconcileOptimisticEchoes(echoes, persistedClientIds(coordinatorChatTurns)),
-    [coordinatorChatTurns, echoes],
-  );
-  const conversationTurns = useMemo(
-    () => mergeOptimisticEchoes(coordinatorChatTurns, visibleEchoes),
-    [coordinatorChatTurns, visibleEchoes],
-  );
+  const placeholderSessionId = `coordinator:${project.id}:${config?.continuity === "per-run" ? runId : "scope"}`;
+  const coordinatorSessionId = coordinator.at(-1)?.id;
   useEffect(() => {
-    if (visibleEchoes !== echoes) setEchoes(visibleEchoes);
-  }, [echoes, visibleEchoes]);
-  const promptPayloads = new Map(selectedTurns.map((turn) => [
-    turn.id,
-    facts.events.find((event) => event.id === turn.triggerEventId)?.payload,
-  ] as const));
+    if (!config?.coordinatorAgent || !coordinatorSessionId) return;
+    sessionStore.rebindSession(placeholderSessionId, coordinatorSessionId);
+    sessionStore.ensureBoundSession({
+      id: coordinatorSessionId,
+      agentId: config.coordinatorAgent,
+      cwd: project.primary_folder || "",
+      label: project.name,
+      projectId: project.id,
+    });
+    void openHistoryWindow(coordinatorSessionId);
+  }, [
+    config?.coordinatorAgent,
+    coordinatorSessionId,
+    placeholderSessionId,
+    project.id,
+    project.name,
+    project.primary_folder,
+  ]);
   const runs = [
     ...new Set(
       facts.events
@@ -1061,31 +1015,32 @@ function ProjectWorkspace({
               <Button onClick={edit}>Set up coordinator</Button>
             </div>
           ) : (
-            <>
-              <ProjectConversation
-                turns={conversationTurns}
-                cwd={project.primary_folder || null}
-                promptPayloads={promptPayloads}
-                onRetrySend={(turn) => {
-                  if (turn.clientId) void retryMessage(turn.clientId, turn.promptText);
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ChatView
+                binding={{
+                  projectId: project.id,
+                  runId: config.continuity === "per-run" ? runId : undefined,
+                  sessionId: coordinatorSessionId ?? placeholderSessionId,
+                  agentId: config.coordinatorAgent,
+                  cwd: project.primary_folder || "",
+                  label: project.name,
+                  placeholder: `Message ${project.name}…`,
+                  inputLabel: "Message coordinator",
+                  loadHistory: !!coordinatorSessionId,
+                  deliver: async ({ turnId, text, attachments }) => {
+                    await window.backchat.projectWorkSubmit({
+                      projectId: project.id,
+                      commandId: turnId,
+                      type: "message",
+                      text,
+                      attachments,
+                      ...(config.continuity === "per-run" ? { runId } : {}),
+                    });
+                    await refresh();
+                  },
                 }}
-                composer={
-                  <ProjectComposer
-                      key={`${project.id}:${runId}`}
-                      agentId={config.coordinatorAgent}
-                      sessionId={selectedTurns.at(-1)?.sessionId ?? coordinator.at(-1)?.id}
-                      localAuth={config.execution?.kind !== "cloud"}
-                      authRequired={facts.agentEvents.some(event => event.turn_id === selectedTurns.at(-1)?.id && event.type === "session.error" && (event.data as { code?: string }).code === "auth_required")}
-                      placeholder={`Message ${project.name}…`}
-                      busy={busy}
-                      onSubmit={(message, attachments) =>
-                        submit("message", message, undefined, attachments)
-                      }
-                      onEditAgents={edit}
-                  />
-                }
               />
-            </>
+            </div>
           )}
           {error || view.error ? (
             <p role="alert" className="project-error">

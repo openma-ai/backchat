@@ -146,6 +146,35 @@ describe("session store optimistic send", () => {
     });
   });
 
+  it("moves a coordinator placeholder bubble onto the host turn id", () => {
+    const store = new SessionStore();
+    store.ensureBoundSession({
+      id: "coordinator:p:scope",
+      agentId: "codex-acp",
+      cwd: "/tmp/p",
+      label: "P",
+      projectId: "p",
+    });
+    store.registerTurn("turn-client", "coordinator:p:scope", "Ship it");
+    store.rebindSession("coordinator:p:scope", "host-session");
+    store.apply({
+      type: "session.prompt_accepted",
+      session_id: "host-session",
+      turn_id: "host-turn",
+      client_id: "turn-client",
+      text: "Ship it",
+    });
+    const turns = store.turnsFor("host-session");
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({
+      id: "host-turn",
+      clientId: "turn-client",
+      promptText: "Ship it",
+      sendState: undefined,
+    });
+    expect(store.turnsFor("coordinator:p:scope")).toEqual([]);
+  });
+
   it("turns a prompt error with no agent output into a failed send", () => {
     const store = new SessionStore();
     store.registerStarting("sess-fail", "codex-acp", "Echo");

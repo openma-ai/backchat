@@ -2162,6 +2162,107 @@ export class SessionStore {
     }
   }
 
+  /** Bind a host turn id onto the optimistic bubble that used `clientId`. */
+  #adoptOptimisticTurn(
+    sessionId: string,
+    clientId: string,
+    hostTurnId: string,
+    text: string,
+  ): void {
+    const optimistic = [...this.#turns.values()].find((turn) =>
+      turn.clientId === clientId && (turn.sessionId === sessionId || turn.id === clientId),
+    );
+    if (!optimistic) {
+      this.#acceptOptimisticSend(hostTurnId);
+      return;
+    }
+    if (optimistic.id === hostTurnId && optimistic.sessionId === sessionId) {
+      this.#turns.set(hostTurnId, {
+        ...optimistic,
+        promptText: text || optimistic.promptText,
+        sendState: undefined,
+        sendError: undefined,
+      });
+      return;
+    }
+    const host = this.#turns.get(hostTurnId);
+    this.#turns.delete(optimistic.id);
+    this.#turns.set(hostTurnId, host
+      ? {
+          ...host,
+          sessionId,
+          clientId,
+          promptText: text || optimistic.promptText || host.promptText,
+          attachments: host.attachments ?? optimistic.attachments,
+          sendState: undefined,
+          sendError: undefined,
+        }
+      : {
+          ...optimistic,
+          id: hostTurnId,
+          sessionId,
+          clientId,
+          promptText: text || optimistic.promptText,
+          sendState: undefined,
+          sendError: undefined,
+        });
+    if (this.#sessions.has(sessionId)) {
+      this.#mutateSession(sessionId, (session) => ({
+        ...session,
+        activeTurnId: session.activeTurnId === optimistic.id ? hostTurnId : session.activeTurnId,
+        queuedTurnIds: session.queuedTurnIds?.map((id) => id === optimistic.id ? hostTurnId : id),
+      }));
+    }
+    if (optimistic.sessionId !== sessionId && this.#sessions.has(optimistic.sessionId)) {
+      this.#mutateSession(optimistic.sessionId, (session) => ({
+        ...session,
+        activeTurnId: session.activeTurnId === optimistic.id ? undefined : session.activeTurnId,
+        status: session.activeTurnId === optimistic.id ? "ready" : session.status,
+      }));
+    }
+  }
+
+  /** A project page binds a session the sidebar does not activate. */
+  ensureBoundSession(input: {
+    id: string;
+    agentId: string;
+    cwd: string;
+    label: string;
+    projectId?: string;
+  }): void {
+    if (this.#sessions.has(input.id)) return;
+    this.#sessions.set(input.id, {
+      id: input.id,
+      agent_id: input.agentId,
+      cwd: input.cwd,
+      acp_session_id: "",
+      label: input.label,
+      status: "ready",
+      createdAt: Date.now(),
+      projectId: input.projectId,
+      listHidden: true,
+    });
+    this.#emit();
+  }
+
+  /** Move a placeholder coordinator session onto the host session id. */
+  rebindSession(fromId: string, toId: string): void {
+    if (!fromId || fromId === toId) return;
+    const from = this.#sessions.get(fromId);
+    const hasTurns = [...this.#turns.values()].some((turn) => turn.sessionId === fromId);
+    if (!from && !hasTurns) return;
+    if (from && !this.#sessions.has(toId)) {
+      this.#sessions.set(toId, { ...from, id: toId });
+    }
+    if (from) this.#sessions.delete(fromId);
+    for (const [id, turn] of this.#turns) {
+      if (turn.sessionId === fromId) {
+        this.#turns.set(id, { ...turn, sessionId: toId });
+      }
+    }
+    this.#emit();
+  }
+
   /** The host has the prompt. The running indicator may take over from "Sending…". */
   #acceptOptimisticSend(turnId: string | undefined): void {
     if (!turnId) return;
@@ -4348,6 +4449,15 @@ export class SessionStore {
           });
         }
         this.#advanceAfterTurn(ev.session_id, ev.turn_id);
+        break;
+      }
+      case "session.prompt_accepted": {
+        this.#adoptOptimisticTurn(
+          ev.session_id,
+          ev.client_id,
+          ev.turn_id,
+          ev.text,
+        );
         break;
       }
       case "session.complete": {

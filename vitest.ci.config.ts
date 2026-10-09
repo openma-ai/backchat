@@ -40,6 +40,7 @@ export default defineConfig({
       "src/renderer/src/lib/optimistic-user-echo.test.ts",
       "src/renderer/src/lib/project-goals.test.ts",
       "src/renderer/src/lib/chat-submission.test.ts",
+      "src/renderer/src/components/chat/ChatView.alignment.test.tsx",
       "src/main/project-work.test.ts",
       "src/main/workspace-roots.test.ts",
       "src/main/control/external-work.test.ts",

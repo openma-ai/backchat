@@ -238,7 +238,7 @@ export function groupSidebarSessions(
   }
 
   for (const session of sessions) {
-    if (coordinatorSessionIds.has(session.id)) continue;
+    if (coordinatorSessionIds.has(session.id) || session.listHidden) continue;
     if (session.pinnedAt != null) {
       pinned.push(session);
       continue;
