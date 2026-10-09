@@ -726,6 +726,9 @@ const en = {
   "permission.codexFull": "Full access",
   "permission.codexFullHint":
     "Unrestricted access to the internet and any file on your computer",
+  "permission.workspaceAccess": "Workspace access",
+  "permission.workspaceAccessHint":
+    "Edit files inside the workspace; ask before changes elsewhere",
   "permission.approvalRequired": "Approval required",
   "permission.allowThisAction": "Allow this action?",
   "permission.moreOptions": "More approval options",
@@ -1569,6 +1572,8 @@ const zhCN: Partial<Record<TranslationKey, string>> = {
   "ask.allowWrite": "允许写入",
   "ask.dismiss": "关闭",
   "permission.codexFullHint": "不受限制地访问互联网及电脑上的任意文件",
+  "permission.workspaceAccess": "工作区访问",
+  "permission.workspaceAccessHint": "可编辑工作区内的文件；更改工作区外内容前会询问",
   "chat.toolCallCount": "{count} 个工具调用",
   "sideChat.title": "上下文分支",
   "sideChat.file": "文件",

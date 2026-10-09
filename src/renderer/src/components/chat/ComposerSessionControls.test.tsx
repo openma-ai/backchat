@@ -46,6 +46,7 @@ import {
   ComposerAuthControls,
   ComposerSessionStateSlot,
   InlineComposerOptionControls,
+  PermissionModeChip,
   SessionRunChip,
 } from "./ComposerSessionControls";
 
@@ -256,6 +257,37 @@ describe("SessionRunChip", () => {
 
     expect(html).toContain("text-danger");
     expect(html).toContain("GPT-5.3-Codex-Spark");
+  });
+});
+
+describe("PermissionModeChip", () => {
+  it("hides workspace access for Codex and localizes the three approval modes", () => {
+    const html = renderToStaticMarkup(
+      <PermissionModeChip
+        disabled={false}
+        agentId="codex-acp"
+        configOptions={[
+          {
+            id: "mode",
+            name: "Session mode",
+            category: "mode",
+            type: "select",
+            currentValue: "agent",
+            options: [
+              { value: "read-only", name: "Ask for approval" },
+              { value: "agent", name: "Approve for me" },
+              { value: "agent-full-access", name: "Full access" },
+              { value: "workspace-access", name: "Workspace access" },
+            ],
+          },
+        ]}
+        onSetConfigOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("permission.codexApprove");
+    expect(html).not.toContain("Workspace access");
+    expect(html).not.toContain("workspace-access");
   });
 });
 

@@ -4,8 +4,11 @@ import {
   buildComposerConfigOptions,
   buildRunMenuConfigOptionSections,
   configModeOptionPresentation,
+  filterPermissionModeSelectOptions,
   findModeConfigOption,
+  findPermissionModeConfigOption,
   flattenSelectOptions,
+  isWorkspaceAccessPermissionMode,
   isFastModeConfigOption,
   isAgentPresetConfigOption,
   selectedConfigOptionLabel,
@@ -152,6 +155,7 @@ describe("session config options", () => {
     ];
 
     expect(findModeConfigOption(options)).toEqual(modeOption);
+    expect(findPermissionModeConfigOption(options)).toEqual(modeOption);
     expect(isFastModeConfigOption(options[2]!)).toBe(true);
     expect(isFastModeConfigOption(options[3]!)).toBe(true);
     expect(isAgentPresetConfigOption({
@@ -182,6 +186,64 @@ describe("session config options", () => {
     expect(buildComposerConfigOptions(options).map((option) => option.id)).toEqual([
       "telemetry",
     ]);
+  });
+
+  test("prefers sandbox mode over collaboration_mode for the permission chip", () => {
+    const sandboxMode: AcpSessionConfigOption = {
+      id: "collaboration_mode",
+      name: "Mode",
+      category: "mode",
+      type: "select",
+      currentValue: "default",
+      options: [
+        { value: "default", name: "Default" },
+        { value: "plan", name: "Plan" },
+      ],
+    };
+    const permissionMode: AcpSessionConfigOption = {
+      id: "mode",
+      name: "Session mode",
+      category: "mode",
+      type: "select",
+      currentValue: "agent",
+      options: [
+        { value: "read-only", name: "Ask for approval" },
+        { value: "agent", name: "Approve for me" },
+        { value: "agent-full-access", name: "Full access" },
+        { value: "workspace-access", name: "Workspace access" },
+      ],
+    };
+
+    expect(findModeConfigOption([sandboxMode, permissionMode])).toEqual(sandboxMode);
+    expect(findPermissionModeConfigOption([sandboxMode, permissionMode])).toEqual(
+      permissionMode,
+    );
+  });
+
+  test("filters Codex permission modes and workspace access by harness", () => {
+    const options = [
+      { value: "read-only", name: "Ask for approval" },
+      { value: "agent", name: "Approve for me" },
+      { value: "agent-full-access", name: "Full access" },
+      { value: "workspace-access", name: "Workspace access" },
+    ];
+
+    expect(filterPermissionModeSelectOptions("codex-acp", options).map((o) => o.value)).toEqual([
+      "read-only",
+      "agent",
+      "agent-full-access",
+    ]);
+    expect(filterPermissionModeSelectOptions("cursor", options).map((o) => o.value)).toEqual([
+      "read-only",
+      "agent",
+      "agent-full-access",
+      "workspace-access",
+    ]);
+    expect(isWorkspaceAccessPermissionMode("workspace-access")).toBe(true);
+    expect(configModeOptionPresentation("cursor", {
+      value: "workspace-access",
+      name: "Workspace access",
+    }).label).toBe("Workspace access");
   });
 
   test("uses Codex's official approval semantics for probed session modes", () => {

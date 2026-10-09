@@ -45,8 +45,10 @@ import {
   buildComposerConfigOptions,
   buildRunMenuConfigOptionSections,
   configModeOptionPresentation,
-  findModeConfigOption,
+  filterPermissionModeSelectOptions,
+  findPermissionModeConfigOption,
   flattenSelectOptions,
+  isWorkspaceAccessPermissionMode,
   isAgentPresetConfigOption,
   isFastModeConfigOption,
   selectedConfigOptionLabel,
@@ -509,7 +511,7 @@ export function PermissionModeChip({
 }) {
   const { t } = useI18n();
   const settings = useSettings();
-  const sessionMode = findModeConfigOption(configOptions);
+  const sessionMode = findPermissionModeConfigOption(configOptions);
   if (sessionMode) {
     return (
       <SessionModeControl
@@ -585,6 +587,11 @@ export function PermissionModeChip({
   );
 }
 
+const WORKSPACE_MODE_TRANSLATIONS = {
+  label: "permission.workspaceAccess" as TranslationKey,
+  hint: "permission.workspaceAccessHint" as TranslationKey,
+};
+
 const CODEX_MODE_TRANSLATIONS: Record<
   string,
   { label: TranslationKey; hint: TranslationKey }
@@ -619,7 +626,10 @@ function SessionModeControl({
 }) {
   const { t } = useI18n();
   const settings = useSettings();
-  const values = flattenSelectOptions(option);
+  const values = filterPermissionModeSelectOptions(
+    agentId,
+    flattenSelectOptions(option),
+  );
   const selected =
     values.find((item) => item.value === option.currentValue) ?? values[0];
   if (!selected) return null;
@@ -708,7 +718,9 @@ function localizedSessionModePresentation(
   const translation =
     agentId === "codex-acp"
       ? CODEX_MODE_TRANSLATIONS[option.value]
-      : undefined;
+      : isWorkspaceAccessPermissionMode(option.value)
+        ? WORKSPACE_MODE_TRANSLATIONS
+        : undefined;
   return translation
     ? {
         ...presentation,

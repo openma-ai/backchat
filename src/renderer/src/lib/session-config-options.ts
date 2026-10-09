@@ -285,6 +285,74 @@ export function findModeConfigOption(
   );
 }
 
+const NON_PERMISSION_MODE_CONFIG_IDS = new Set(["collaboration_mode"]);
+
+const CODEX_PERMISSION_MODE_VALUES = new Set([
+  "read-only",
+  "agent",
+  "agent-full-access",
+]);
+
+export function isCursorHarness(agentId: string): boolean {
+  const normalized = agentId.trim().toLowerCase();
+  return (
+    normalized === "cursor"
+    || normalized === "cursor-acp"
+    || normalized.includes("cursor")
+  );
+}
+
+/** ACP session mode value for Cursor's workspace-scoped permission tier. */
+export function isWorkspaceAccessPermissionMode(value: string): boolean {
+  const normalized = value.trim().toLowerCase().replaceAll("_", "-");
+  return normalized === "workspace" || normalized === "workspace-access";
+}
+
+function looksLikePermissionModeSelect(
+  option: AcpSessionConfigOption & { type: "select" },
+): boolean {
+  const values = flattenSelectOptions(option).map((item) => item.value);
+  return values.some(
+    (value) =>
+      CODEX_PERMISSION_MODE_VALUES.has(value)
+      || isWorkspaceAccessPermissionMode(value)
+      || value === "ask"
+      || value === "plan",
+  );
+}
+
+/** Composer permission chip: sandbox / approval modes, not plan collaboration_mode. */
+export function findPermissionModeConfigOption(
+  options: readonly AcpSessionConfigOption[] | undefined,
+): (AcpSessionConfigOption & { type: "select" }) | undefined {
+  const candidates = (options ?? []).filter(
+    (option): option is AcpSessionConfigOption & { type: "select" } =>
+      option.type === "select"
+      && !NON_PERMISSION_MODE_CONFIG_IDS.has(option.id)
+      && (option.id === "mode" || option.category === "mode"),
+  );
+  if (candidates.length === 0) return undefined;
+  const explicitMode = candidates.find((option) => option.id === "mode");
+  if (explicitMode) return explicitMode;
+  const permissionLike = candidates.find(looksLikePermissionModeSelect);
+  return permissionLike ?? candidates[0];
+}
+
+export function filterPermissionModeSelectOptions(
+  agentId: string,
+  options: readonly AcpSessionConfigSelectOption[],
+): AcpSessionConfigSelectOption[] {
+  return options.filter((item) => {
+    if (isWorkspaceAccessPermissionMode(item.value)) {
+      return isCursorHarness(agentId);
+    }
+    if (agentId === "codex-acp") {
+      return CODEX_PERMISSION_MODE_VALUES.has(item.value);
+    }
+    return true;
+  });
+}
+
 export function findSelectConfigOption(
   options: readonly AcpSessionConfigOption[] | undefined,
   id: string,
@@ -327,6 +395,13 @@ export function configModeOptionPresentation(
         tone: "warning",
       };
     }
+  }
+  if (isCursorHarness(agentId) && isWorkspaceAccessPermissionMode(option.value)) {
+    return {
+      label: "Workspace access",
+      hint: "Edit files inside the workspace; ask before changes elsewhere",
+      tone: "neutral",
+    };
   }
   return {
     label: option.name,
