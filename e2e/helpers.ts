@@ -81,7 +81,8 @@ export async function launchAppWithHome(
       BACKCHAT_TEST_HOOKS: "1",
       // Live ACP capability probes are useful in production, but they make
       // relaunch/persistence E2Es depend on a configured agent process.
-      BACKCHAT_E2E_SKIP_AGENT_WARMUP: "1",
+      BACKCHAT_E2E_SKIP_AGENT_WARMUP:
+        options.env?.BACKCHAT_E2E_SKIP_AGENT_WARMUP ?? "1",
       BACKCHAT_HOME: home,
       // `openmaRoot()` honours BACKCHAT_HOME whenever BACKCHAT_TEST_HOOKS is set,
       // so the SQLite store opens under this per-test home. Nothing here reads or
@@ -295,7 +296,9 @@ export async function openBrowserPanel(page: Page): Promise<void> {
 /** Composer typing is allowed during harness auth probes, but submit stays
  *  blocked until the live probe settles. Wait on the run-chip spinner. */
 export async function waitForComposerHarnessAuthProbe(page: Page): Promise<void> {
-  const spinner = page.locator('[data-composer-run-harness="true"] svg.animate-spin');
+  const spinner = page.locator(
+    '[data-composer-harness-probe="true"], [data-composer-run-harness="true"] svg.animate-spin',
+  );
   await expect
     .poll(async () => {
       if ((await spinner.count()) === 0) return true;

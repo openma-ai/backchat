@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { ChevronDownIcon, CircleAlertIcon } from "@/components/Icons";
+import { BackchatCrashMark } from "@/components/BackchatCrashMark";
+import { ChevronDownIcon } from "@/components/Icons";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -62,10 +63,10 @@ export function RendererCrashPage({
             data-renderer-crash-card="true"
           >
             <div
-              className="mx-auto mb-5 flex size-12 items-center justify-center rounded-full bg-muted"
-              aria-hidden="true"
+              className="renderer-crash-mark-slot mx-auto mb-3 flex items-center justify-center"
+              data-renderer-crash-mark-slot="true"
             >
-              <CircleAlertIcon className="size-6 text-fg-muted" />
+              <BackchatCrashMark />
             </div>
             <div className="home-hero-copy">
               <h1 className="home-hero-title text-2xl leading-tight text-fg">

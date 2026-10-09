@@ -859,6 +859,12 @@ html[data-theme-asset-empty-state="true"]
   display: none;
 }
 
+.renderer-crash-mark-slot {
+  width: 96px;
+  height: 88px;
+  color: var(--fg-subtle);
+}
+
 .openma-home-mark {
   display: block;
   width: 68px;

@@ -4,13 +4,12 @@ import { launchApp } from "./helpers";
 
 const artifactDir = "/opt/cursor/artifacts/screenshots";
 
-test("capture renderer crash page before and after", async () => {
-  test.setTimeout(180_000);
+test("capture renderer crash page (en + zh)", async () => {
+  test.setTimeout(120_000);
   await mkdir(artifactDir, { recursive: true });
 
   const capture = async (
     filename: string,
-    env: Record<string, string>,
     language?: "en" | "zh-CN",
   ) => {
     const { app, page, cleanup } = await launchApp({
@@ -19,7 +18,6 @@ test("capture renderer crash page before and after", async () => {
       env: {
         BACKCHAT_DEMO_RENDERER_CRASH: "1",
         BACKCHAT_E2E_VISIBLE: "1",
-        ...env,
       },
     });
     try {
@@ -32,7 +30,7 @@ test("capture renderer crash page before and after", async () => {
         });
         await page.reload({ waitUntil: "domcontentloaded" });
       }
-      await page.waitForSelector('[data-renderer-error-fallback="true"]', {
+      await page.waitForSelector('[data-backchat-crash-mark="true"]', {
         timeout: 30_000,
       });
       await page.waitForTimeout(400);
@@ -45,9 +43,6 @@ test("capture renderer crash page before and after", async () => {
     }
   };
 
-  await capture("renderer-crash-fallback-before.png", {
-    BACKCHAT_DEMO_RENDERER_CRASH_VARIANT: "legacy",
-  });
-  await capture("renderer-crash-fallback-after-en.png", {});
-  await capture("renderer-crash-fallback-after-zh.png", {}, "zh-CN");
+  await capture("renderer-crash-fallback-after-en.png");
+  await capture("renderer-crash-fallback-after-zh.png", "zh-CN");
 });

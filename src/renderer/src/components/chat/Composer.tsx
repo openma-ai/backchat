@@ -44,6 +44,7 @@ import { composerPasteRouter } from "@/lib/composer-paste-router";
 import { collectTransferFiles, shouldConsumePaste } from "@/lib/composer-transfer";
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
 import { ComposerAuthControls, ComposerSessionStateSlot, InlineComposerOptionControls, PermissionModeChip, SessionRunChip } from "./ComposerSessionControls";
+import { ComposerHarnessProbeStatus } from "./ComposerHarnessProbeStatus";
 import {
   armedCommandSessionStatePresentation,
   armedCommandStillPending,
@@ -1185,6 +1186,17 @@ export function Composer({
         )}
       </div>
 
+      {!isRemote && authChecking && currentAgentId && (
+        <div className="composer-control-row-inset w-full pb-1">
+          <ComposerHarnessProbeStatus
+            agentId={currentAgentId}
+            agentLabel={currentEnabledAgent?.label ?? currentAgent?.label ?? currentAgentId}
+            iconUrl={currentEnabledAgent?.icon ?? currentAgent?.icon}
+            slow={slowAuthProbe}
+          />
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2">
         {/* The row clips so a long chip truncates instead of spilling. It was
             exactly as tall as its controls, so a focused control's outline —
@@ -1296,7 +1308,6 @@ export function Composer({
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}
               authChecking={authChecking}
-              authProbeSlow={slowAuthProbe}
               agents={enabledAgents}
               currentAgentId={currentAgentId}
               currentAgentLabel={currentEnabledAgent?.label ?? currentAgent?.label}

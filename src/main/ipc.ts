@@ -337,11 +337,26 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     watch.close();
     inlineVisualizationWatches.delete(watchId);
   };
-  const skipE2eAgentProbes =
+  const skipE2eAgentWarmup =
     testHooksEnabled && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1";
+  const skipE2eLiveHarnessProbe =
+    testHooksEnabled && (
+      process.env["BACKCHAT_E2E_SKIP_LIVE_HARNESS_PROBE"] === "1"
+      || (
+        process.env["BACKCHAT_E2E_SKIP_LIVE_HARNESS_PROBE"] === undefined
+        && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1"
+      )
+    );
+  const runComposerLiveHarnessProbe = async (agentId: string): Promise<AgentInfo[]> => {
+    const slowMs = Number(process.env["BACKCHAT_TEST_SLOW_LIVE_PROBE_MS"] ?? 0);
+    if (Number.isFinite(slowMs) && slowMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, slowMs));
+    }
+    return agentSetup.probeComposerHarness(agentId);
+  };
   const agentWarmupStartedAt = performance.now();
   const agentWarmup =
-    skipE2eAgentProbes
+    skipE2eAgentWarmup
       ? Promise.resolve()
       : agentSetup.warmup().then(() => {
           logAppEvent("app.agent_warmup", { outcome: "ready", duration_ms: Math.round(performance.now() - agentWarmupStartedAt) });
@@ -707,14 +722,17 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   ipcMain.handle(
     InvokeChannel.AgentsList,
     async (_e, options?: AgentListOptions): Promise<AgentInfo[]> => {
+      const liveProbeAgentId = options?.liveProbeAgentId?.trim();
       if (testAgentSetupFixture) {
         recordTestAgentSetupCall({ type: "list" });
+        if (liveProbeAgentId && !skipE2eLiveHarnessProbe) {
+          await runComposerLiveHarnessProbe(liveProbeAgentId).catch(() => undefined);
+        }
         return testAgentSetupFixture.agents;
       }
-      const liveProbeAgentId = options?.liveProbeAgentId?.trim();
       if (options?.readiness === "snapshot" && !options.refresh) {
-        if (liveProbeAgentId && !skipE2eAgentProbes) {
-          return agentSetup.probeComposerHarness(liveProbeAgentId);
+        if (liveProbeAgentId && !skipE2eLiveHarnessProbe) {
+          return runComposerLiveHarnessProbe(liveProbeAgentId);
         }
         return agentSetup.listAgents();
       }
@@ -722,8 +740,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       if (options?.refresh) {
         await agentSetup.refreshEnabledAgents();
       }
-      if (liveProbeAgentId && !skipE2eAgentProbes) {
-        return agentSetup.probeComposerHarness(liveProbeAgentId);
+      if (liveProbeAgentId && !skipE2eLiveHarnessProbe) {
+        return runComposerLiveHarnessProbe(liveProbeAgentId);
       }
       return agentSetup.listAgents();
     },

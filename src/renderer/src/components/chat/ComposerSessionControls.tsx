@@ -162,7 +162,6 @@ export function SessionRunChip({
   onResetConfigOptions,
   authNeeded = false,
   authChecking = false,
-  authProbeSlow = false,
 }: {
   disabled: boolean;
   locked: boolean;
@@ -176,7 +175,6 @@ export function SessionRunChip({
   onResetConfigOptions?: () => void;
   authNeeded?: boolean;
   authChecking?: boolean;
-  authProbeSlow?: boolean;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -234,24 +232,23 @@ export function SessionRunChip({
               data-composer-run-harness="true"
               className={cn("flex shrink-0 items-center", authNeeded && "text-danger")}
             >
-              {authChecking ? (
-                <Loader2Icon
-                  className="size-3.5 shrink-0 animate-spin text-fg-subtle"
-                  aria-hidden={!authProbeSlow}
-                  title={
-                    authProbeSlow
-                      ? "Still checking harness authentication…"
-                      : undefined
-                  }
-                />
-              ) : (
+              <span className="relative flex size-3.5 shrink-0 items-center justify-center">
                 <AgentIcon
                   agentId={currentAgentId}
                   iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
-                  className="size-3.5 shrink-0"
+                  className={cn(
+                    "size-3.5 shrink-0",
+                    authChecking && "opacity-80",
+                  )}
                   title={agentLabel}
                 />
-              )}
+                {authChecking && (
+                  <RefreshCwIcon
+                    className="absolute -right-1 -bottom-1 size-2.5 animate-spin text-info"
+                    aria-hidden="true"
+                  />
+                )}
+              </span>
             </span>
             <TooltipProvider>
               <Tooltip>
