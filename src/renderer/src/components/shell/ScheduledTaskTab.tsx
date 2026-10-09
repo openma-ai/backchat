@@ -18,7 +18,7 @@ export function ScheduledTaskTab({
   }).data ?? [];
 
   return (
-    <div className="h-full overflow-y-auto px-4 pb-6 pt-3">
+    <div className="oma-scrollbar h-full overflow-y-auto px-4 pb-6 pt-3">
       <div className="flex min-w-0 items-start gap-3 border-b border-border/55 pb-4">
         <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-bg-surface text-fg-muted">
           <CalendarClockIcon className="size-4" />

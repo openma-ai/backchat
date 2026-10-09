@@ -1153,7 +1153,7 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
             <PlusIcon className="size-3.5" /><span className={labelCls}>{t("sidebar.newChat")}</span>
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">
+        <DropdownMenuContent align="start" className="oma-scrollbar max-h-[60vh] w-72 overflow-y-auto">
           {choices.map(({ target, offline }) => <DropdownMenuItem key={`${target.environmentId}:${target.agentId}`} disabled={offline} onSelect={() => {
             const id = sessionStore.newDraft(); sessionStore.setExecutionTarget(id, target); void navigate({ to: "/" });
           }}>

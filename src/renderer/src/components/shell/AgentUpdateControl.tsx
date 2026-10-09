@@ -128,7 +128,7 @@ export function AgentUpdateError({
       </summary>
       <div className="mt-1.5 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-[10px] leading-4">
         <p className="text-destructive">{message}</p>
-        <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] leading-3.5 text-muted-foreground">
+        <pre className="oma-scrollbar mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] leading-3.5 text-muted-foreground">
           {error}
         </pre>
       </div>
@@ -275,7 +275,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
           </p>
         )}
 
-        <div className="max-h-[min(300px,var(--radix-popover-content-available-height))] space-y-1 overflow-y-auto">
+        <div className="oma-scrollbar max-h-[min(300px,var(--radix-popover-content-available-height))] space-y-1 overflow-y-auto">
           {availableAgents.map((agent) => {
             const updating = activeIds.has(agent.id);
             const error = errors[agent.id];

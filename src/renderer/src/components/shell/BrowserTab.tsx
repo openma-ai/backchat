@@ -1169,7 +1169,7 @@ function BrowserStyleFields({
           <RotateCwIcon className="size-3.5" />
         </button>
       </div>
-      <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+      <div className="oma-scrollbar max-h-60 space-y-2 overflow-y-auto pr-1">
         {(Object.keys(BROWSER_STYLE_LABELS) as BrowserStyleProperty[]).map((property) => (
           <label
             key={property}

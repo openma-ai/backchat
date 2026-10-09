@@ -91,7 +91,7 @@ export function BrowserDataDialog({
                 Saved credentials stay in the main process and are only filled after you choose them.
               </DialogDescription>
             </DialogHeader>
-            <div className="max-h-72 overflow-y-auto p-3">
+            <div className="oma-scrollbar max-h-72 overflow-y-auto p-3">
               {credentials.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border/70 p-5 text-center text-xs text-fg-muted">
                   No saved passwords in this browser profile.
@@ -135,7 +135,7 @@ export function BrowserDataDialog({
               <DialogTitle>Downloads</DialogTitle>
               <DialogDescription>Files downloaded by the in-app browser.</DialogDescription>
             </DialogHeader>
-            <div className="max-h-72 overflow-y-auto p-3">
+            <div className="oma-scrollbar max-h-72 overflow-y-auto p-3">
               {downloads.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border/70 p-5 text-center text-xs text-fg-muted">
                   No downloads yet.
