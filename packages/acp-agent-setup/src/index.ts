@@ -21,6 +21,7 @@ import {
   readAcpHarnessInstallState,
   usesOpenMaNpmLatestSource,
 } from "@openma/common/acp-harnesses/installer";
+import { computeAuthProbeInputsKey } from "./auth-probe-inputs.js";
 import {
   authenticateAgent,
   disposeAllAcpSetupProcesses,
@@ -338,9 +339,15 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         }
       }
       const cachedProbe = detectedEntry ? probeCache[entry.id] : undefined;
+      const authInputsKey = detectedEntry
+        ? await computeAuthProbeInputsKey(detectedEntry, this.deps.probeCwd)
+        : undefined;
       if (!auth && cachedProbe?.auth) {
-        auth = cachedProbe.auth;
-        this.authCache.set(entry.id, auth);
+        const cachedKey = cachedProbe.auth_inputs_key;
+        if (!cachedKey || cachedKey === authInputsKey) {
+          auth = cachedProbe.auth;
+          this.authCache.set(entry.id, auth);
+        }
       }
       const usableSessionConfig =
         sessionConfig && !setupAuthBlocksCapabilities(auth)
@@ -354,9 +361,13 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
             ? { session_modes: usableSessionConfig.modes }
             : {}),
           ...(auth ? { auth } : {}),
+          ...(authInputsKey ? { auth_inputs_key: authInputsKey } : {}),
         });
       } else if (auth && (shouldProbeAuth || shouldProbeCapabilities)) {
-        await this.persistProbe(entry.id, { auth });
+        await this.persistProbe(entry.id, {
+          auth,
+          ...(authInputsKey ? { auth_inputs_key: authInputsKey } : {}),
+        });
       }
       const configOptions =
         usableSessionConfig?.configOptions ??
@@ -561,7 +572,10 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         ...(existing?.methods ? { methods: existing.methods } : {}),
       };
       this.authCache.set(id, auth);
-      await this.persistProbe(id, { auth });
+      await this.persistProbe(id, {
+        auth,
+        ...(await this.authInputsKeyPatch(id)),
+      });
     }
     // Authentication is an explicit lifecycle of its own. Do not follow it
     // with another disposable ACP probe; the next real session is the source
@@ -579,7 +593,10 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   ): Promise<AcpAgentSetupAuth> {
     const auth = mergeObservedAuth(this.authCache.get(id), observation);
     this.authCache.set(id, auth);
-    await this.persistProbe(id, { auth });
+    await this.persistProbe(id, {
+      auth,
+      ...(await this.authInputsKeyPatch(id)),
+    });
     return auth;
   }
 
@@ -672,6 +689,18 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return registryLatestVersion ?? entry.version;
   }
 
+  private async authInputsKeyPatch(
+    id: string,
+  ): Promise<{ auth_inputs_key: string } | Record<string, never>> {
+    const entry = await this.detectCatalogEntry(id);
+    if (!entry) return {};
+    const auth_inputs_key = await computeAuthProbeInputsKey(
+      entry,
+      this.deps.probeCwd,
+    );
+    return { auth_inputs_key };
+  }
+
   private async probeAuth(entry: KnownAgentEntry): Promise<AcpAgentSetupAuth | undefined> {
     const status = await probeAgentAuthStatus({
       agent: entry.spec,
@@ -713,6 +742,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       available_commands?: unknown[];
       session_modes?: unknown;
       auth?: AcpAgentSetupAuth;
+      auth_inputs_key?: string;
     },
   ): Promise<void> {
     const cache = await this.loadProbeCache();
@@ -726,6 +756,11 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           ? { session_modes: prev.session_modes }
           : {}),
       ...(patch.auth ? { auth: patch.auth } : prev?.auth ? { auth: prev.auth } : {}),
+      ...(patch.auth_inputs_key
+        ? { auth_inputs_key: patch.auth_inputs_key }
+        : prev?.auth_inputs_key
+          ? { auth_inputs_key: prev.auth_inputs_key }
+          : {}),
       updated_at: new Date().toISOString(),
     };
     const path = this.probeCachePath();
@@ -750,6 +785,7 @@ interface CachedAgentProbe {
   available_commands: unknown[];
   session_modes?: unknown;
   auth?: AcpAgentSetupAuth;
+  auth_inputs_key?: string;
   updated_at: string;
 }
 
@@ -769,6 +805,9 @@ function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {
             available_commands: value.available_commands,
             ...(value.session_modes ? { session_modes: value.session_modes } : {}),
             ...(value.auth ? { auth: value.auth } : {}),
+            ...(typeof value.auth_inputs_key === "string"
+              ? { auth_inputs_key: value.auth_inputs_key }
+              : {}),
             updated_at: typeof value.updated_at === "string" ? value.updated_at : "",
           } satisfies CachedAgentProbe]]
         : value.auth
@@ -779,6 +818,9 @@ function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {
               : [],
             ...(value.session_modes ? { session_modes: value.session_modes } : {}),
             auth: value.auth,
+            ...(typeof value.auth_inputs_key === "string"
+              ? { auth_inputs_key: value.auth_inputs_key }
+              : {}),
             updated_at: typeof value.updated_at === "string" ? value.updated_at : "",
           } satisfies CachedAgentProbe]]
         : [],

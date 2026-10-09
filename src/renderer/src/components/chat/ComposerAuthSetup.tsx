@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AgentInfo } from "@shared/api";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
+import { useAgentsLiveProbePending } from "@/components/AppStartupGate";
 import {
   composerAuthNeeded,
   deriveComposerHarnessState,
@@ -34,6 +35,7 @@ export function ComposerAuthSetup({
 }) {
   const settings = useSettings();
   const queryClient = useQueryClient();
+  const agentsLiveProbePending = useAgentsLiveProbePending();
   const [selectedMethodId, setSelectedMethodId] = useState<string | undefined>();
   const [waitingForAuth, setWaitingForAuth] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
@@ -108,7 +110,9 @@ export function ComposerAuthSetup({
     !open
     || !settings
     || !agent
-    || !composerAuthNeeded(agent, { authRequired, auth: sessionAuth })
+    || !composerAuthNeeded(agent, { authRequired, auth: sessionAuth }, {
+      agentsLiveProbePending,
+    })
   ) {
     return null;
   }

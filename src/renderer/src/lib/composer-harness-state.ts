@@ -42,10 +42,32 @@ export function composerAuthNeeded(
     authRequired?: boolean;
     auth?: { status?: string; message?: string };
   } | null,
+  options?: { agentsLiveProbePending?: boolean },
 ): boolean {
   if (session?.auth?.status === "configured") return false;
   if (session?.authRequired) return true;
   const status = session?.auth?.status ?? agent?.auth?.status;
+  if (status === "unknown") return false;
+  if (status === "needs-auth") {
+    if (options?.agentsLiveProbePending && !session?.auth && !session?.authRequired) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+export function composerAuthChecking(
+  agent?: { auth?: { status?: string } } | null,
+  session?: {
+    authRequired?: boolean;
+    auth?: { status?: string };
+  } | null,
+  options?: { agentsLiveProbePending?: boolean },
+): boolean {
+  if (!options?.agentsLiveProbePending) return false;
+  if (session?.authRequired || session?.auth?.status === "needs-auth") return false;
+  const status = agent?.auth?.status;
   return status === "needs-auth" || status === "unknown";
 }
 

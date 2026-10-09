@@ -1055,4 +1055,41 @@ describe("acp agent setup sdk", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
     await rm(root, { recursive: true, force: true });
   });
+
+  it("drops stale cached auth when agent auth inputs change", async () => {
+    const root = join(tmpdir(), `openma-acp-auth-inputs-${process.pid}-${Date.now()}`);
+    const probeCachePath = join(root, "probe-cache.json");
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(probeCachePath, JSON.stringify({
+      version: 1,
+      agents: {
+        "fake-agent": {
+          config_options: [],
+          available_commands: [],
+          auth: {
+            status: "needs-auth",
+            message: "Authentication required",
+          },
+          auth_inputs_key: "stale-inputs",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    }, null, 2), "utf8");
+
+    const service = createAcpAgentSetupService({
+      acpBinDir: join(root, "bin"),
+      acpInstallRoot: join(root, "acp"),
+      registryCachePath: join(root, "registry.json"),
+      probeCachePath,
+      agentOverrides: () => [{
+        id: "fake-agent",
+        env: [{ name: "OPENAI_API_KEY", value: "sk-current" }],
+      }],
+    });
+
+    const agents = await service.listAgents();
+
+    expect(agents[0]?.auth).toBeUndefined();
+    await rm(root, { recursive: true, force: true });
+  });
 });

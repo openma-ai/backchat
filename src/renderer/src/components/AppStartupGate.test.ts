@@ -20,7 +20,10 @@ describe("app cold-start readiness gate", () => {
     expect(gate).not.toContain("queryFn: () => window.backchat.agentsList()");
     expect(gate).not.toMatch(/if \(query\.isPending\)\s*\{\s*return/);
     expect(gate).not.toContain("<OpenmaStartupLoader");
-    expect(gate).toContain("return children;");
+    expect(gate).toContain("{children}");
+    expect(gate).toContain("AgentsLiveProbeContext");
+    expect(gate).toContain("useAgentsLiveProbePending");
+    expect(gate).toContain(".finally(() => {");
     expect(main).toContain("<AppStartupGate>");
     expect(main).toContain("</AppStartupGate>");
   });

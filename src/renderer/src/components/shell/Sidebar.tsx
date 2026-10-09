@@ -625,19 +625,9 @@ export function Sidebar() {
   };
   const sectionRowProps = { sections: customSections, onMoveToSection: moveSessionToSection };
 
-  // Single class for every collapsible text label in the sidebar — fades
-  // out before the column width starts shrinking and fades in after the
-  // column finishes growing, so labels never paint into a half-width
-  // column (which reads as text being "swept off the edge").
-  const labelCls = cn(
-    "transition-opacity",
-    collapsed
-      ? "opacity-0 pointer-events-none"
-      : "opacity-100",
-    // The truncate keeps text from briefly wrapping during the column
-    // resize that follows the opacity transition.
-    "truncate",
-  );
+  // Hide labels while collapsed; AppShell overflow-hidden clips during expand
+  // so icons and labels appear together with the rail width animation.
+  const labelCls = cn(collapsed && "hidden", "truncate");
 
   const newConversationAction = (
     <button type="button" aria-label={t("sidebar.newConversation")}

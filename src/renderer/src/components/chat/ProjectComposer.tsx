@@ -13,6 +13,7 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { resolveComposerKeyAction } from "@/lib/composer-prompt";
 import { sessionStore, useSessionStore } from "@/lib/session-store";
+import { useAgentsLiveProbePending } from "@/components/AppStartupGate";
 import { composerAuthNeeded } from "@/lib/composer-harness-state";
 import { reconnectAuthenticatedSession } from "@/lib/session-auth-recovery";
 import { useI18n } from "@/lib/i18n";
@@ -51,6 +52,7 @@ export function ProjectComposer({
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const agentsLiveProbePending = useAgentsLiveProbePending();
   const [authOpen, setAuthOpen] = useState(false);
   const session = useSessionStore(useMemo(() =>
     (store: typeof sessionStore) => sessionId ? store.get(sessionId) : undefined,
@@ -96,7 +98,7 @@ export function ProjectComposer({
   const needsAuth = localAuth && composerAuthNeeded(agent, {
     authRequired: session?.authRequired || authRequired,
     auth: session?.auth,
-  });
+  }, { agentsLiveProbePending });
   const reconnect = useMutation({
     mutationFn: async () => {
       const next = await window.backchat.agentsList({ refresh: true });

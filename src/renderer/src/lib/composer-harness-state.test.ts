@@ -5,6 +5,7 @@ import type { Settings } from "@shared/settings.js";
 import {
   deriveComposerHarnessState,
   composerActionDisabled,
+  composerAuthChecking,
   composerAuthNeeded,
 } from "./composer-harness-state";
 
@@ -141,6 +142,41 @@ describe("composerAuthNeeded", () => {
       { auth: { status: "needs-auth", message: "Authentication required" } },
       { auth: { status: "configured", message: "ok" } },
     )).toBe(false);
+  });
+
+  it("does not block on unknown agent auth", () => {
+    expect(composerAuthNeeded(
+      { auth: { status: "unknown", message: "Could not verify auth." } },
+    )).toBe(false);
+  });
+
+  it("ignores stale cached needs-auth while the live startup probe is pending", () => {
+    const agent = { auth: { status: "needs-auth", message: "Authentication required" } };
+    expect(composerAuthNeeded(agent, undefined, { agentsLiveProbePending: true })).toBe(false);
+    expect(composerAuthNeeded(agent, undefined, { agentsLiveProbePending: false })).toBe(true);
+    expect(composerAuthNeeded(
+      agent,
+      { authRequired: true },
+      { agentsLiveProbePending: true },
+    )).toBe(true);
+    expect(composerAuthNeeded(
+      agent,
+      { auth: { status: "needs-auth", message: "Session needs auth" } },
+      { agentsLiveProbePending: true },
+    )).toBe(true);
+  });
+});
+
+describe("composerAuthChecking", () => {
+  it("marks cached auth as checking only during the live startup probe", () => {
+    const agent = { auth: { status: "needs-auth" } };
+    expect(composerAuthChecking(agent, undefined, { agentsLiveProbePending: true })).toBe(true);
+    expect(composerAuthChecking(agent, undefined, { agentsLiveProbePending: false })).toBe(false);
+    expect(composerAuthChecking(
+      { auth: { status: "unknown" } },
+      undefined,
+      { agentsLiveProbePending: true },
+    )).toBe(true);
   });
 });
 

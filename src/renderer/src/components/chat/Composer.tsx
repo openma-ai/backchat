@@ -63,6 +63,7 @@ import {
 } from "./ComposerContentParts";
 import { ComposerSlashCommandMenu } from "./ComposerSlashCommandMenu";
 import { useComposerSuggestionState } from "@/lib/composer-suggestion-state";
+import { useAgentsLiveProbePending } from "@/components/AppStartupGate";
 import { useComposerHarnessState, composerActionDisabled, composerAuthNeeded } from "@/lib/composer-harness-state";
 import { reconnectAuthenticatedSession } from "@/lib/session-auth-recovery";
 import { useComposerSlashState } from "@/lib/composer-slash-state";
@@ -317,10 +318,11 @@ export function Composer({
   const primaryIntent = isRemote ? "submit" : localIntent;
   const primaryRunningAction = isRemote ? (running ? describeRunningMessageAction({ agentId: "openma-remote", intent: "submit" }) : null) : localRunningAction;
   const queryClient = useQueryClient();
+  const agentsLiveProbePending = useAgentsLiveProbePending();
   const authNeeded = !isRemote && composerAuthNeeded(currentAgent, {
     authRequired: sessionAuthRequired,
     auth: sessionAuth,
-  });
+  }, { agentsLiveProbePending });
   const actionDisabled = composerActionDisabled({
     runningActionDisabled: primaryRunningAction?.disabled,
     hasHarnessSetup,

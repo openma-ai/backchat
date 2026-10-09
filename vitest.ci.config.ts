@@ -49,6 +49,8 @@ export default defineConfig({
       "src/main/control/fake-acp.integration.test.ts",
       "packages/acp/src/registry.test.ts",
       "packages/acp-agent-setup/src/index.test.ts",
+      "packages/acp-agent-setup/src/auth-probe-inputs.test.ts",
+      "src/renderer/src/components/AppStartupGate.test.ts",
       "src/renderer/src/pages/settings/agent-catalog-state.test.ts",
       "src/renderer/src/pages/settings/agent-setup-lifecycle.test.ts",
       "src/renderer/src/components/shell/Sidebar.test.ts",
