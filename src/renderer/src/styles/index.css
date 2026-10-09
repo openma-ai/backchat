@@ -2173,6 +2173,9 @@ body,
 .sidebar-grid-row[data-sidebar-depth="2"] {
   --sidebar-grid-depth-inset: calc(2 * var(--sidebar-grid-nest-step));
 }
+.sidebar-grid-row[data-sidebar-depth="3"] {
+  --sidebar-grid-depth-inset: calc(3 * var(--sidebar-grid-nest-step));
+}
 .sidebar-grid-row[data-sidebar-trailing-track="double"] {
   --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track-double);
 }

@@ -54,6 +54,8 @@ export default defineConfig({
       "src/renderer/src/pages/settings/agent-catalog-state.test.ts",
       "src/renderer/src/pages/settings/agent-setup-lifecycle.test.ts",
       "src/renderer/src/components/shell/Sidebar.test.ts",
+      "src/renderer/src/lib/searchable-select-filter.test.ts",
+      "src/renderer/src/components/chat/ComposerSearchableSelectMenu.test.tsx",
       "src/main/schedule-*.test.ts",
       "src/main/scheduled-task-executor.test.ts",
       "src/main/ipc-schedule-cleanup.test.ts",

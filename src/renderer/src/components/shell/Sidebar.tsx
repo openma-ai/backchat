@@ -1584,7 +1584,7 @@ function WorkspaceSidebarRow({
               className="flex items-center gap-2 py-1 text-ui"
             >
               <FolderOpenIcon className="size-3.5" />
-              <span>{t("sidebar.reveal")}</span>
+              <span>{t("workspace.reveal")}</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
             <DropdownMenuItem

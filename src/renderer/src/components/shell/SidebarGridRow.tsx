@@ -1,7 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export type SidebarGridDepth = 0 | 1 | 2;
+export type SidebarGridDepth = 0 | 1 | 2 | 3;
 export type SidebarGridTrailingTrack = "single" | "double" | "host";
 
 export function sidebarGridRowClassName({

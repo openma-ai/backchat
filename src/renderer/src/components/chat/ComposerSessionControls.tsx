@@ -53,6 +53,10 @@ import {
   type AcpSessionConfigOption,
 } from "@/lib/session-config-options";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import {
+  ComposerSearchableSelectMenu,
+  composerSelectMenuShellClassName,
+} from "@/components/chat/ComposerSearchableSelectMenu";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -343,27 +347,53 @@ function SessionAgentSubmenu({
           {currentAgentLabel}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
-        {agents.length > 0 ? (
-          agents.map((agent) => (
+      <DropdownMenuSubContent sideOffset={6} className={composerSelectMenuShellClassName()}>
+        <ComposerSearchableSelectMenu
+          items={
+            agents.length > 0
+              ? agents.map((agent) => ({
+                  value: agent.id,
+                  label: agent.label,
+                  searchText: agent.id,
+                  active: agent.id === currentAgentId,
+                  disabled: locked,
+                }))
+              : [
+                  {
+                    value: "__settings__",
+                    label: t("chat.noHarness"),
+                    hint: "Open Settings to install and enable",
+                  },
+                ]
+          }
+          activeValue={currentAgentId}
+          searchPlaceholder={t("chat.searchOptions")}
+          emptyMessage={t("chat.noMatchingOptions")}
+          onSelect={(value) => {
+            if (value === "__settings__") onOpenSettings();
+            else onPickAgent(value);
+          }}
+          renderItem={(item, { highlighted }) => (
             <SessionRunItem
-              key={agent.id}
-              agentId={agent.id}
-              agentIconUrl={agent.icon}
-              label={agent.label}
-              active={agent.id === currentAgentId}
-              disabled={locked}
-              onSelect={() => onPickAgent(agent.id)}
+              agentId={item.value === "__settings__" ? undefined : item.value}
+              agentIconUrl={
+                item.value === "__settings__"
+                  ? undefined
+                  : agents.find((agent) => agent.id === item.value)?.icon
+              }
+              icon={item.value === "__settings__" ? TerminalIcon : undefined}
+              label={item.label}
+              hint={item.hint}
+              active={item.active}
+              disabled={item.disabled}
+              highlighted={highlighted}
+              onSelect={() => {
+                if (item.value === "__settings__") onOpenSettings();
+                else onPickAgent(item.value);
+              }}
             />
-          ))
-        ) : (
-          <SessionRunItem
-            icon={TerminalIcon}
-            label={t("chat.noHarness")}
-            hint="Open Settings to install and enable"
-            onSelect={onOpenSettings}
-          />
-        )}
+          )}
+        />
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   );
@@ -395,41 +425,48 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
+      <DropdownMenuSubContent sideOffset={6} className={composerSelectMenuShellClassName()}>
         {option.type === "select" ? (
-          flattenSelectOptions(option).map((item) => (
-            <SessionRunItem
-              key={`${option.id}:${item.value}`}
-              icon={
-                isAgentPresetConfigOption(option)
-                  ? agentPresetIcon(item.value)
-                  : Icon
-              }
-              label={item.name}
-              hint={
-                isAgentPresetConfigOption(option)
-                  ? undefined
-                  : item.groupName ??
-                    item.description ??
-                    option.description ??
-                    option.name
-              }
-              active={item.value === option.currentValue}
-              onSelect={() => onSetConfigOption(option.id, item.value)}
-            />
-          ))
-        ) : (
-          <SessionRunItem
-            icon={Icon}
-            label={option.name}
-            hint={
-              option.description ?? (option.currentValue ? "On" : "Off")
-            }
-            active={option.currentValue}
-            onSelect={() =>
-              onSetConfigOption(option.id, !option.currentValue)
-            }
+          <ComposerSearchableSelectMenu
+            items={flattenSelectOptions(option).map((item) => ({
+              value: item.value,
+              label: item.name,
+              groupName: item.groupName,
+              hint: isAgentPresetConfigOption(option)
+                ? undefined
+                : item.description ?? option.description ?? option.name,
+              searchText: [item.groupName, item.value].filter(Boolean).join(" "),
+              active: item.value === option.currentValue,
+            }))}
+            activeValue={option.currentValue}
+            searchPlaceholder={t("chat.searchOptions")}
+            emptyMessage={t("chat.noMatchingOptions")}
+            onSelect={(value) => onSetConfigOption(option.id, value)}
+            renderItem={(item, { highlighted }) => (
+              <SessionRunItem
+                icon={
+                  isAgentPresetConfigOption(option)
+                    ? agentPresetIcon(item.value)
+                    : Icon
+                }
+                label={item.label}
+                hint={item.hint}
+                active={item.active}
+                highlighted={highlighted}
+                onSelect={() => onSetConfigOption(option.id, item.value)}
+              />
+            )}
           />
+        ) : (
+          <div className="p-1">
+            <SessionRunItem
+              icon={Icon}
+              label={option.name}
+              hint={option.description ?? (option.currentValue ? "On" : "Off")}
+              active={option.currentValue}
+              onSelect={() => onSetConfigOption(option.id, !option.currentValue)}
+            />
+          </div>
         )}
       </DropdownMenuSubContent>
     </DropdownMenuSub>
@@ -779,6 +816,7 @@ function InlineComposerOptionControl({
     value: string | boolean,
   ) => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   if (option.type === "boolean") {
     return (
       <button
@@ -818,21 +856,35 @@ function InlineComposerOptionControl({
         <DropdownMenuContent
           align="start"
           sideOffset={6}
-          className="w-[var(--composer-menu-width)] p-1"
+          collisionPadding={8}
+          className={composerSelectMenuShellClassName()}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          {flattenSelectOptions(option).map((item) => {
-            const ItemIcon = agentPresetIcon(item.value);
-            return (
-              <SessionRunItem
-                key={item.value}
-                icon={ItemIcon}
-                label={item.name}
-                active={item.value === option.currentValue}
-                onSelect={() => onSetConfigOption?.(option.id, item.value)}
-              />
-            );
-          })}
+          <ComposerSearchableSelectMenu
+            items={flattenSelectOptions(option).map((item) => ({
+              value: item.value,
+              label: item.name,
+              groupName: item.groupName,
+              searchText: item.value,
+              active: item.value === option.currentValue,
+            }))}
+            activeValue={option.currentValue}
+            searchPlaceholder={t("chat.searchOptions")}
+            emptyMessage={t("chat.noMatchingOptions")}
+            onSelect={(value) => onSetConfigOption?.(option.id, value)}
+            renderItem={(item, { highlighted }) => {
+              const ItemIcon = agentPresetIcon(item.value);
+              return (
+                <SessionRunItem
+                  icon={ItemIcon}
+                  label={item.label}
+                  active={item.active}
+                  highlighted={highlighted}
+                  onSelect={() => onSetConfigOption?.(option.id, item.value)}
+                />
+              );
+            }}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -856,18 +908,33 @@ function InlineComposerOptionControl({
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="w-[260px]"
+        collisionPadding={8}
+        className={composerSelectMenuShellClassName("w-[260px]")}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        {flattenSelectOptions(option).map((item) => (
-          <SessionRunItem
-            key={item.value}
-            label={item.name}
-            hint={item.description ?? option.description ?? option.name}
-            active={item.value === option.currentValue}
-            onSelect={() => onSetConfigOption?.(option.id, item.value)}
-          />
-        ))}
+        <ComposerSearchableSelectMenu
+          items={flattenSelectOptions(option).map((item) => ({
+            value: item.value,
+            label: item.name,
+            groupName: item.groupName,
+            hint: item.description ?? option.description ?? option.name,
+            searchText: [item.groupName, item.value].filter(Boolean).join(" "),
+            active: item.value === option.currentValue,
+          }))}
+          activeValue={option.currentValue}
+          searchPlaceholder={t("chat.searchOptions")}
+          emptyMessage={t("chat.noMatchingOptions")}
+          onSelect={(value) => onSetConfigOption?.(option.id, value)}
+          renderItem={(item, { highlighted }) => (
+            <SessionRunItem
+              label={item.label}
+              hint={item.hint}
+              active={item.active}
+              highlighted={highlighted}
+              onSelect={() => onSetConfigOption?.(option.id, item.value)}
+            />
+          )}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -881,6 +948,7 @@ function SessionRunItem({
   hint,
   active,
   disabled,
+  highlighted,
   onSelect,
 }: {
   icon?: LucideIcon | DshPresetIcon;
@@ -890,14 +958,17 @@ function SessionRunItem({
   hint?: string;
   active?: boolean;
   disabled?: boolean;
+  highlighted?: boolean;
   onSelect: () => void;
 }) {
   return (
     <DropdownMenuItem
       disabled={disabled}
       onSelect={onSelect}
+      onFocus={() => undefined}
       className={cn(
         "flex items-start gap-2 px-2 py-1.5 text-xs",
+        highlighted && "bg-accent text-accent-foreground",
         active && "text-fg",
       )}
     >
