@@ -2256,16 +2256,51 @@ body,
   min-width: 0;
 }
 
-.grouped-command-picker [data-slot="command-list"] {
-  height: var(--grouped-command-list-height) !important;
-  min-height: var(--grouped-command-list-height) !important;
-  max-height: var(--grouped-command-list-height) !important;
+.grouped-command-picker-scroll {
   flex: 1 1 auto;
+  height: var(--grouped-command-list-height);
+  min-height: var(--grouped-command-list-height);
+  max-height: var(--grouped-command-list-height);
+}
+
+.grouped-command-picker-scroll [data-slot="scroll-area-viewport"] {
+  height: 100%;
+  scrollbar-gutter: auto;
+}
+
+.grouped-command-picker [data-slot="command-list"] {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
   transition: none;
 }
 
 .grouped-command-picker [cmdk-list-sizer] {
-  min-height: 100%;
+  min-height: min(100%, var(--grouped-command-list-height));
+}
+
+/* Checked row: trailing check only — no selection wash. */
+.grouped-command-picker [data-slot="command-item"][data-checked="true"],
+.grouped-command-picker .app-select-item[data-checked="true"] {
+  background: transparent !important;
+  color: var(--control-fg-rest);
+}
+
+/* cmdk seeds data-selected on open; show hover wash only for hover or after ArrowUp/Down. */
+.grouped-command-picker:not([data-roving-active="true"])
+  [data-slot="command-item"][data-selected="true"]:not(:hover),
+.grouped-command-picker:not([data-roving-active="true"])
+  .app-select-focus[data-selected="true"]:not(:hover) {
+  background: transparent !important;
+  color: var(--control-fg-rest);
+}
+
+.grouped-command-picker [data-slot="command-item"]:hover,
+.grouped-command-picker[data-roving-active="true"]
+  [data-slot="command-item"][data-selected="true"] {
+  background: var(--control-bg-hover) !important;
+  color: var(--control-fg-active);
 }
 
 .grouped-command-picker [data-slot="command-group"] {

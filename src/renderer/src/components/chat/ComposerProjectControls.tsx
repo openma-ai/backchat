@@ -1,7 +1,7 @@
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { useProjects } from "@/lib/projects-query";
 import { useRemovedProjectPaths } from "@/lib/removed-projects";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   CircleAlertIcon,
   ArrowLeftIcon,
@@ -36,11 +36,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { selectRecentProjectPaths } from "@/lib/composer-project-paths";
+import { useGroupedCommandRovingHighlight } from "@/components/chat/useGroupedCommandRovingHighlight";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { folderName } from "@/lib/project-path";
@@ -177,6 +179,7 @@ export function ProjectChipRow({
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}
               initialHighlightValue={projectPickerValue || activeCwd || noProjectCommandValue}
+              menuResetKey={projectPickerOpen ? "open" : "closed"}
               groups={[
                 ...(savedProjects.length > 0
                   ? [
@@ -370,6 +373,8 @@ function WorkspaceChip({
   const explicitChoices = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const { commandRovingProps, onKeyDown: onRovingKeyDown } =
+    useGroupedCommandRovingHighlight(open && view === "choose" ? "open" : "closed");
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -483,9 +488,20 @@ function WorkspaceChip({
       </PopoverTrigger>
       {isDraft && <PopoverContent side="top" align="start" sideOffset={0}
         className={`${view === "create" ? "w-[360px]" : "w-[var(--composer-menu-width)]"} max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0`}>
-        {view === "choose" ? <Command defaultValue={selected?.id ?? "local"}>
-          <CommandInput autoFocus placeholder={t("workspace.search")} />
-          <CommandList>
+        {view === "choose" ? <Command
+          defaultValue={selected?.id ?? "local"}
+          className="grouped-command-picker app-select-content rounded-xl! bg-popover p-0 text-popover-foreground shadow-none ring-0"
+          style={{ "--grouped-command-list-height": "288px" } as CSSProperties}
+          {...commandRovingProps}
+          onKeyDown={onRovingKeyDown}
+        >
+          <CommandInput
+            autoFocus
+            placeholder={t("workspace.search")}
+            onKeyDown={onRovingKeyDown}
+          />
+          <ScrollArea className="grouped-command-picker-scroll sidebar-scroll-area w-full min-h-0">
+          <CommandList className="max-h-none overflow-visible scroll-py-1 p-0 outline-none">
             <div className="relative" data-workspace-create-row>
               <CommandItem forceMount value="new-workspace" keywords={[t("workspace.new")]} onSelect={beginCreate} className="pr-10 text-xs">
                 <PlusIcon className="size-3.5" />
@@ -530,6 +546,7 @@ function WorkspaceChip({
               <span className="text-fg-subtle">{ws.worktrees.length} {t("workspace.repositories")}</span>
             </CommandItem>)}
           </CommandList>
+          </ScrollArea>
         </Command> : <form className="app-select-content max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl p-3" onSubmit={event => { event.preventDefault(); void create(); }}>
           <div className="mb-3 flex items-center gap-2">
             <Button type="button" variant="ghost" size="icon" className="size-6" disabled={creating} aria-label={t("workspace.back")} onClick={() => setView("choose")}><ArrowLeftIcon className="size-3.5" /></Button>

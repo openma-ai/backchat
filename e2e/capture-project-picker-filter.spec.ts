@@ -45,6 +45,13 @@ test("capture project picker alignment and stable height while filtering", async
     const search = panel.locator('[data-slot="command-input"]');
     await expect(search).toBeFocused();
 
+    const firstItem = panel.locator('[data-slot="command-item"]').first();
+    await expect(firstItem).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    const checked = panel.locator('[data-slot="command-item"][data-checked="true"]');
+    if ((await checked.count()) > 0) {
+      await expect(checked.first()).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    }
+
     const queries = ["", "a", "alpha", "zzznomatch"];
     const heights: number[] = [];
 
@@ -62,5 +69,21 @@ test("capture project picker alignment and stable height while filtering", async
     }
 
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(2);
+
+    await search.fill("");
+    const viewport = panel.locator('[data-slot="scroll-area-viewport"]');
+    await viewport.evaluate((element) => {
+      element.scrollTop = 120;
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await page.screenshot({
+      path: join(artifactDir, `${theme}-scrollbar-overlay-scroll.png`),
+      animations: "disabled",
+    });
+    const labelBox = await firstItem.locator('[data-grouped-command-grid="label"]').first().boundingBox();
+    const panelBox = await panel.boundingBox();
+    expect(labelBox).not.toBeNull();
+    expect(panelBox).not.toBeNull();
+    expect(labelBox!.x).toBeLessThan(panelBox!.x + panelBox!.width - 28);
   }
 });
