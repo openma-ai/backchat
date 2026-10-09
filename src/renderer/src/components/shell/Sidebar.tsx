@@ -1032,18 +1032,14 @@ export function Sidebar() {
           Opening the update popover never changes route or paints Settings as
           hovered; the fixed inset still matches the scrolling rows. */}
       <div
-        className="py-[var(--bottom-bar-gap-y)]"
-        style={{
-          paddingLeft: "8px",
-          paddingRight: "8px",
-        }}
+        className="flex shrink-0 items-center gap-1 px-2 pb-2 pt-[var(--bottom-bar-gap-y)]"
+        data-sidebar-footer-actions="true"
       >
-        <div className="flex w-full items-stretch overflow-hidden rounded-md" data-sidebar-footer-actions="true">
           <Link
             to="/settings/activity"
             aria-label={t("sidebar.settings")}
             className={cn(
-              "app-no-drag flex min-w-0 flex-1 items-center gap-2 px-2 text-ui",
+              "app-no-drag flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-ui transition-colors",
               settingsActive
                 ? "app-selected-surface text-fg"
                 : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
@@ -1056,7 +1052,6 @@ export function Sidebar() {
             <span className={labelCls}>{t("sidebar.settings")}</span>
           </Link>
           <AgentUpdateControl agents={agents} />
-        </div>
       </div>
       <Dialog open={projectAction !== null} onOpenChange={open => { if (!open && !projectActionBusy) setProjectAction(null); }}>
         <DialogContent className="sm:max-w-md">
