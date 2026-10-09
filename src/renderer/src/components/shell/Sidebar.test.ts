@@ -304,9 +304,8 @@ describe("groupSidebarSessions", () => {
     expect(projectRow).toContain('t("sidebar.startProjectChat")');
     expect(projectRow).toContain("group-hover:opacity-100");
     expect(projectRow).toContain("<DropdownMenu");
-    expect(projectRow).toContain(
-      'className={cn(\n          labelCls,\n          "ml-auto inline-flex shrink-0',
-    );
+    expect(projectRow).toContain('slot="trailing"');
+    expect(projectRow).toContain("group-hover:opacity-100");
   });
 
   it("keeps project folders stateless and leaves activity on child sessions", () => {
@@ -381,7 +380,7 @@ describe("groupSidebarSessions", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const sessionRow = source.slice(
       source.indexOf("function SessionRow"),
-      source.indexOf("function PairChatLauncher"),
+      source.length,
     );
     const pairRow = source.slice(
       source.indexOf("function PairSidebarRow"),
@@ -406,7 +405,7 @@ describe("groupSidebarSessions", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const sessionRow = source.slice(
       source.indexOf("function SessionRow"),
-      source.indexOf("function PairChatLauncher"),
+      source.length,
     );
 
     expect(sessionRow).toContain('data-sidebar-schedule-indicator="true"');
@@ -429,7 +428,7 @@ describe("groupSidebarSessions", () => {
     );
     const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
 
-    expect(footer).toContain('className="flex shrink-0 items-center gap-1 px-2 pb-2 pt-[var(--bottom-bar-gap-y)]"');
+    expect(footer).toContain('className="sidebar-footer-chrome shrink-0 pb-2 pt-[var(--bottom-bar-gap-y)]"');
     expect(styles).toContain("--bottom-bar-gap-y: 6px;");
     expect(styles).toContain(
       "--composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);",
@@ -442,11 +441,15 @@ describe("groupSidebarSessions", () => {
       resolve(__dirname, "AgentUpdateControl.tsx"),
       "utf8",
     );
-    const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
+    const footerStart = source.indexOf("{/* Footer navigation and update affordance");
+    const footer = source.slice(
+      footerStart,
+      source.indexOf("<Dialog open={projectAction", footerStart),
+    );
 
     expect(footer).toContain('to="/settings/activity"');
     expect(footer).toContain("<AgentUpdateControl agents={agents} />");
-    expect(footer).toContain("rounded-md px-2 text-ui transition-colors");
+    expect(footer).toContain("SidebarGridRow trailingTrack=\"host\"");
     expect(footer).not.toContain("overflow-hidden rounded-md");
     expect(footer.indexOf("<AgentUpdateControl")).toBeGreaterThan(
       footer.indexOf("</Link>"),
@@ -518,6 +521,34 @@ describe("groupSidebarSessions", () => {
     );
   });
 
+  it("routes every sidebar row type through the shared grid mesh", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const styles = readFileSync(
+      resolve(__dirname, "../../styles/index.css"),
+      "utf8",
+    );
+
+    expect(styles).toContain("--sidebar-grid-icon-track:");
+    expect(styles).toContain("grid-template-columns:");
+    for (const component of [
+      "function SidebarSection",
+      "function ProjectSidebarRow",
+      "function ProjectCoordinatorRow",
+      "function WorkspaceSidebarRow",
+      "function PairSidebarRow",
+      "function SessionRow",
+    ]) {
+      const start = source.indexOf(component);
+      expect(start).toBeGreaterThan(-1);
+      const block = source.slice(start, start + 3200);
+      expect(
+        block.includes("SidebarGridRow") || block.includes("sidebar-grid-row"),
+      ).toBe(true);
+    }
+    expect(source).toContain("sidebar-host-chrome");
+    expect(source).toContain("sidebar-footer-chrome");
+  });
+
   it("keeps every row icon on one shared 16px rail", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const styles = readFileSync(
@@ -552,11 +583,12 @@ describe("groupSidebarSessions", () => {
 
     expect(styles).toContain("--sidebar-content-padding-inline-start");
     expect(styles).toContain("--sidebar-content-padding-inline-end");
-    expect(styles).toContain(".sidebar-section-header .sidebar-row-trailing");
-    expect(section).toContain("sidebar-row-trailing");
+    expect(styles).toContain(".sidebar-grid-row");
+    expect(styles).toContain('[data-sidebar-grid="trailing"]');
     expect(section).toContain('data-sidebar-section-header-action="true"');
-    expect(section).toContain("sidebar-section-header group/section flex");
-    expect(section).toContain("items-center rounded-md px-2");
+    expect(section).toContain("sidebar-section-header group/section");
+    expect(section).toContain("SidebarGridRow");
+    expect(section).toContain('slot="trailing"');
     expect(section).not.toContain("mr-1 shrink-0");
     expect(section).not.toContain("sidebar-section-header-trailing");
     expect(styles).toContain(".sidebar-section-header .sidebar-row-action > svg");
@@ -570,12 +602,13 @@ describe("groupSidebarSessions", () => {
     );
     const sessionRow = source.slice(
       source.indexOf("function SessionRow"),
-      source.indexOf("function PairChatLauncher"),
+      source.length,
     );
-    const trailing = sessionRow.slice(sessionRow.indexOf("sidebar-row-trailing"));
+    const trailing = sessionRow.slice(sessionRow.indexOf('slot="trailing"'));
 
     expect(styles).toContain(".sidebar-row-trailing {");
     expect(styles).toContain("width: var(--sidebar-row-action-size);");
+    expect(sessionRow).toContain('SidebarGridCell slot="trailing"');
     expect(sessionRow).toContain("sidebar-row-trailing");
     expect(trailing.split("sidebar-row-trailing").length - 1).toBe(1);
     expect(trailing).toContain("{running ?");

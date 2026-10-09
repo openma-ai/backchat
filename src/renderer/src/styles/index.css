@@ -177,8 +177,8 @@
 
 /* Keep the project row highlighted while its menu is open. Actions use the
    same compact circular hover/open treatment as session and pair rows. */
-.sidebar-project-surface:hover,
-.sidebar-project-row[data-menu-open="true"] > .sidebar-project-surface {
+.sidebar-project-row.sidebar-project-surface:hover,
+.sidebar-project-row[data-menu-open="true"] {
   color: var(--control-fg-active);
   background: var(--control-bg-hover);
 }
@@ -187,14 +187,6 @@
   outline-offset: -2px;
 }
 .sidebar-coordinator-row {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  height: var(--sidebar-row-h);
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  border-radius: 6px;
   color: var(--control-fg-rest);
   text-align: left;
   font-size: var(--type-ui-size);
@@ -280,16 +272,14 @@
 .sidebar-section-header .sidebar-row-action:is(:hover, :focus-visible, [data-state="open"], [aria-expanded="true"]) {
   background: transparent;
 }
-.sidebar-scroll-area nav .sidebar-section .sidebar-section > .animated-collapse {
-  padding-left: 20px;
-}
+/* Nested conversation sections indent via sidebar grid depth, not ad-hoc padding. */
 .sidebar-section-header > button > span:last-child {
   display: inline-flex;
   width: 12px;
   justify-content: center;
 }
-.sidebar-section-header .sidebar-row-trailing {
-  margin-left: 0;
+.sidebar-section-header [data-sidebar-grid="trailing"] {
+  justify-content: center;
 }
 .sidebar-section-header [data-sidebar-section-header-action="true"] .sidebar-row-action {
   width: 100%;
@@ -1666,6 +1656,14 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
           ) - var(--oma-scrollbar-reference-size)
       )
   );
+  --sidebar-grid-icon-track: 16px;
+  --sidebar-grid-column-gap: 8px;
+  --sidebar-grid-nest-step: 16px;
+  --sidebar-grid-trailing-track: var(--sidebar-row-action-size);
+  --sidebar-grid-trailing-track-double: calc(
+    2 * var(--sidebar-row-action-size) + 4px
+  );
+  --sidebar-grid-trailing-track-host: max-content;
   --oma-scrollbar-thumb: color-mix(
     in srgb,
     var(--chat-fg, var(--fg)) 30%,
@@ -2146,9 +2144,69 @@ body,
 }
 
 .sidebar-scroll-content {
-  padding-inline-start: var(--sidebar-content-padding-inline-start);
-  padding-inline-end: var(--sidebar-content-padding-inline-end);
   padding-top: 1px;
+}
+
+/* One mesh for every sidebar row: icon | label | trailing action. */
+.sidebar-grid-row {
+  --sidebar-grid-depth-inset: 0px;
+  --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track);
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  height: var(--sidebar-row-h);
+  align-items: center;
+  column-gap: var(--sidebar-grid-column-gap);
+  padding-inline-start: calc(
+    var(--sidebar-content-padding-inline-start) + var(--sidebar-grid-depth-inset)
+  );
+  padding-inline-end: var(--sidebar-content-padding-inline-end);
+  grid-template-columns:
+    var(--sidebar-grid-icon-track)
+    minmax(0, 1fr)
+    var(--sidebar-grid-trailing-effective);
+}
+.sidebar-grid-row[data-sidebar-depth="1"] {
+  --sidebar-grid-depth-inset: var(--sidebar-grid-nest-step);
+}
+.sidebar-grid-row[data-sidebar-depth="2"] {
+  --sidebar-grid-depth-inset: calc(2 * var(--sidebar-grid-nest-step));
+}
+.sidebar-grid-row[data-sidebar-trailing-track="double"] {
+  --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track-double);
+}
+.sidebar-grid-row[data-sidebar-trailing-track="host"] {
+  --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track-host);
+}
+.sidebar-grid-cell-icon,
+[data-sidebar-grid="icon"] {
+  grid-column: 1;
+  display: flex;
+  width: var(--sidebar-grid-icon-track);
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-grid-cell-label,
+[data-sidebar-grid="label"] {
+  grid-column: 2;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+.sidebar-grid-cell-trailing,
+[data-sidebar-grid="trailing"] {
+  grid-column: 3;
+  display: flex;
+  width: 100%;
+  max-width: var(--sidebar-grid-trailing-effective);
+  align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
+}
+.sidebar-host-chrome,
+.sidebar-footer-chrome {
+  padding-inline-start: 0;
+  padding-inline-end: 0;
 }
 
 .sidebar-scroll-boundary {

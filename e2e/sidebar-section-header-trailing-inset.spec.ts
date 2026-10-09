@@ -62,11 +62,11 @@ test("section header and row trailing icons share one column", async () => {
     await expect(chatsAction).toBeVisible();
 
     const sessionRow = page
-      .locator('[data-sidebar-scroll-area="true"] div[style*="--sidebar-row-h"]')
+      .locator('[data-sidebar-scroll-area="true"] .sidebar-grid-row')
       .filter({ hasText: "codex-acp" })
       .first();
     await sessionRow.hover();
-    const chatRowAction = sessionRow.locator(".sidebar-row-trailing .sidebar-row-action").first();
+    const chatRowAction = sessionRow.locator('[data-sidebar-grid="trailing"] .sidebar-row-action').first();
     await expect(chatRowAction).toBeVisible({ timeout: 10_000 });
 
     const plusCenter = await iconCenter(projectsAction);
@@ -82,14 +82,14 @@ test("section header and row trailing icons share one column", async () => {
     expect(await rowVerticalCenterDelta(".sidebar-section-header", chatsAction)).toBeLessThanOrEqual(
       0.75,
     );
-    expect(await rowVerticalCenterDelta('[style*="--sidebar-row-h"]', chatRowAction)).toBeLessThanOrEqual(
+    expect(await rowVerticalCenterDelta(".sidebar-grid-row", chatRowAction)).toBeLessThanOrEqual(
       0.75,
     );
 
     const coordinatorRow = page.locator('[data-testid="project-coordinator-row"]').first();
     if (await coordinatorRow.count()) {
       await coordinatorRow.hover();
-      const coordinatorIcon = coordinatorRow.locator(".sidebar-row-trailing svg");
+      const coordinatorIcon = coordinatorRow.locator('[data-sidebar-grid="trailing"] svg');
       if (await coordinatorIcon.count()) {
         const coordinatorCenter = await iconCenter(coordinatorIcon);
         expect(Math.abs(plusCenter.x - coordinatorCenter.x)).toBeLessThanOrEqual(0.75);
