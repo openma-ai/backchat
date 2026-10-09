@@ -23,7 +23,7 @@ import {
   RefreshCwIcon,
   type LucideIcon,
 } from "@/components/Icons";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   DropdownMenu,
@@ -58,6 +58,11 @@ import {
   composerSelectMenuShellClassName,
 } from "@/components/chat/ComposerSearchableSelectMenu";
 import { shouldUseProviderSubmenu } from "@/lib/composer-select-menu-layout";
+import {
+  recentModelPicksForAgent,
+  recordRecentModelPick,
+} from "@/lib/recent-model-picks";
+import { readRecentRunPreferences } from "@/lib/recent-run-preferences";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -293,6 +298,7 @@ export function SessionRunChip({
               section.options.map((option) => (
                 <SessionConfigSubmenu
                   key={option.id}
+                  agentId={currentAgentId}
                   option={option}
                   onSetConfigOption={onSetConfigOption}
                 />
@@ -401,13 +407,26 @@ function SessionAgentSubmenu({
 }
 
 function SessionConfigSubmenu({
+  agentId,
   option,
   onSetConfigOption,
 }: {
+  agentId: string;
   option: AcpSessionConfigOption;
   onSetConfigOption: (configId: string, value: string | boolean) => void;
 }) {
   const { t } = useI18n();
+  const [recentModelValues, setRecentModelValues] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (option.category !== "model" || !agentId) {
+      setRecentModelValues([]);
+      return;
+    }
+    setRecentModelValues(
+      recentModelPicksForAgent(readRecentRunPreferences(), agentId),
+    );
+  }, [agentId, option.category]);
   const Icon = configOptionIcon(option);
   const label =
     option.category === "model"
@@ -431,6 +450,23 @@ function SessionConfigSubmenu({
         }))
       : [];
   const wideSelectMenu = shouldUseProviderSubmenu(selectMenuItems);
+  const recentMenuItems =
+    option.category === "model" && option.type === "select"
+      ? recentModelValues
+          .map((value) => selectMenuItems.find((item) => item.value === value))
+          .filter((item): item is NonNullable<typeof item> => Boolean(item))
+          .filter((item) => item.value !== option.currentValue)
+      : [];
+
+  const handleSelect = (value: string) => {
+    onSetConfigOption(option.id, value);
+    if (option.category === "model" && agentId) {
+      setRecentModelValues(
+        recentModelPicksForAgent(recordRecentModelPick(agentId, value), agentId),
+      );
+    }
+  };
+
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
@@ -450,7 +486,10 @@ function SessionConfigSubmenu({
             activeValue={option.currentValue}
             searchPlaceholder={t("chat.searchOptions")}
             emptyMessage={t("chat.noMatchingOptions")}
-            onSelect={(value) => onSetConfigOption(option.id, value)}
+            recentItems={recentMenuItems}
+            recentSectionLabel={t("chat.recentModels")}
+            providerUnavailableLabel={t("chat.providerUnavailable")}
+            onSelect={handleSelect}
             renderItem={(item, { highlighted }) => (
               <SessionRunItem
                 icon={
@@ -462,7 +501,7 @@ function SessionConfigSubmenu({
                 hint={item.hint}
                 active={item.active}
                 highlighted={highlighted}
-                onSelect={() => onSetConfigOption(option.id, item.value)}
+                onSelect={() => handleSelect(item.value)}
               />
             )}
           />

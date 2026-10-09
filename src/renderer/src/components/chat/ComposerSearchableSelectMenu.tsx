@@ -73,6 +73,31 @@ function groupEntries(items: readonly ComposerSelectMenuEntry[]) {
 
 type MenuPane = "providers" | "models";
 
+function SelectMenuSectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="px-2 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
+      {children}
+    </div>
+  );
+}
+
+function ProviderMark({ name }: { name: string }) {
+  const initials = name
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+  return (
+    <span
+      className="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-[var(--control-bg-hover)] text-[9px] font-semibold leading-none text-fg-subtle"
+      aria-hidden="true"
+    >
+      {initials || "?"}
+    </span>
+  );
+}
+
 export function ComposerSearchableSelectMenu({
   items,
   activeValue,
@@ -80,6 +105,9 @@ export function ComposerSearchableSelectMenu({
   searchPlaceholder = "Search…",
   emptyMessage = "No matches.",
   searchThreshold = COMPOSER_SELECT_MENU_SEARCH_THRESHOLD,
+  recentItems,
+  recentSectionLabel = "Recent",
+  providerUnavailableLabel = "Unavailable",
   renderItem,
 }: {
   items: readonly ComposerSelectMenuEntry[];
@@ -88,6 +116,9 @@ export function ComposerSearchableSelectMenu({
   searchPlaceholder?: string;
   emptyMessage?: string;
   searchThreshold?: number;
+  recentItems?: readonly ComposerSelectMenuEntry[];
+  recentSectionLabel?: string;
+  providerUnavailableLabel?: string;
   renderItem?: (item: ComposerSelectMenuEntry, state: { highlighted: boolean }) => ReactNode;
 }) {
   const listId = useId();
@@ -382,10 +413,19 @@ export function ComposerSearchableSelectMenu({
       )}
 
       {useProviderMenu ? (
-        <div
-          className="flex min-h-0 flex-1 divide-x divide-border/50"
-          style={{ maxHeight: "min(420px, var(--radix-dropdown-menu-content-available-height))" }}
-        >
+        <>
+          {recentItems && recentItems.length > 0 ? (
+            <div className="shrink-0 border-b border-border/50 p-1">
+              <SelectMenuSectionLabel>{recentSectionLabel}</SelectMenuSectionLabel>
+              {recentItems.map((item, index) =>
+                renderModelRow(item, index, false, item.groupName),
+              )}
+            </div>
+          ) : null}
+          <div
+            className="flex min-h-0 flex-1 divide-x divide-border/50"
+            style={{ maxHeight: "min(420px, var(--radix-dropdown-menu-content-available-height))" }}
+          >
           <div
             id={listId}
             ref={listRef}
@@ -399,19 +439,25 @@ export function ComposerSearchableSelectMenu({
               const highlighted = pane === "providers" && providerHighlight === index;
               const active = provider.name === activeProvider;
               const open = openProvider === provider.name;
+              const unavailable =
+                provider.items.length > 0
+                && provider.items.every((item) => item.disabled);
               return (
                 <DropdownMenuItem
                   key={provider.name}
+                  disabled={unavailable}
                   data-composer-provider-row="true"
                   data-composer-provider-index={index}
                   aria-selected={open}
                   className={cn(
-                    "flex min-h-10 cursor-default items-center gap-1 rounded-md px-2 py-1.5 text-xs",
+                    "flex min-h-10 cursor-default items-center gap-1.5 rounded-md px-2 py-1.5 text-xs",
                     highlighted && "bg-accent text-accent-foreground",
                     open && "bg-[var(--control-bg-hover)]",
+                    unavailable && "opacity-50",
                   )}
                   onSelect={(event) => {
                     event.preventDefault();
+                    if (unavailable) return;
                     openProviderPane(provider.name);
                   }}
                   onFocus={() => {
@@ -425,10 +471,17 @@ export function ComposerSearchableSelectMenu({
                     setOpenProvider(provider.name);
                   }}
                 >
+                  <ProviderMark name={provider.name} />
                   <span className="min-w-0 flex-1 truncate font-medium">{provider.name}</span>
-                  <span className="shrink-0 tabular-nums text-fg-subtle">
-                    {provider.items.length}
-                  </span>
+                  {unavailable ? (
+                    <span className="shrink-0 text-[10px] text-fg-subtle">
+                      {providerUnavailableLabel}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 tabular-nums text-fg-subtle">
+                      {provider.items.length}
+                    </span>
+                  )}
                   {active ? (
                     <CheckIcon className="size-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
                   ) : null}
@@ -450,8 +503,11 @@ export function ComposerSearchableSelectMenu({
           >
             {openProvider ? (
               <>
-                <div className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
-                  {openProvider}
+                <div className="flex items-center gap-1.5 px-2 pb-1 pt-0.5">
+                  <ProviderMark name={openProvider} />
+                  <span className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
+                    {openProvider}
+                  </span>
                 </div>
                 {openProviderModels.map((item, index) =>
                   renderModelRow(item, index, pane === "models" && modelHighlight === index),
@@ -460,6 +516,7 @@ export function ComposerSearchableSelectMenu({
             ) : null}
           </div>
         </div>
+        </>
       ) : (
         <div
           id={listId}
@@ -469,7 +526,10 @@ export function ComposerSearchableSelectMenu({
           className="oma-scrollbar min-h-0 flex-1 overflow-y-auto p-1"
         >
           {flatFiltered.length === 0 ? (
-            <p className="px-2 py-3 text-center text-xs text-fg-subtle" role="status">
+            <p
+              className="px-3 py-6 text-center text-xs leading-relaxed text-fg-subtle"
+              role="status"
+            >
               {emptyMessage}
             </p>
           ) : (

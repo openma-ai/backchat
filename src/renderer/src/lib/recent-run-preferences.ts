@@ -11,6 +11,8 @@ export type RunConfigValue = string | boolean;
 export interface RecentRunPreferences {
   agentId?: string;
   configByAgent: Record<string, Record<string, RunConfigValue>>;
+  /** Last-used model config values per harness (MRU, display-only). */
+  recentModelsByAgent?: Record<string, string[]>;
 }
 
 type PreferenceStorage = Pick<Storage, "getItem" | "setItem">;
@@ -34,6 +36,16 @@ export function parseRecentRunPreferences(
         ? candidate.agentId.trim()
         : undefined;
     const configByAgent: RecentRunPreferences["configByAgent"] = {};
+    const recentModelsByAgent: RecentRunPreferences["recentModelsByAgent"] = {};
+    if (candidate.recentModelsByAgent && typeof candidate.recentModelsByAgent === "object") {
+      for (const [id, rawList] of Object.entries(
+        candidate.recentModelsByAgent as Record<string, unknown>,
+      )) {
+        if (!Array.isArray(rawList)) continue;
+        const values = rawList.filter((entry): entry is string => typeof entry === "string");
+        if (values.length > 0) recentModelsByAgent[id] = values;
+      }
+    }
     if (candidate.configByAgent && typeof candidate.configByAgent === "object") {
       for (const [id, rawValues] of Object.entries(
         candidate.configByAgent as Record<string, unknown>,
@@ -53,6 +65,9 @@ export function parseRecentRunPreferences(
     return {
       ...(agentId ? { agentId } : {}),
       configByAgent,
+      ...(Object.keys(recentModelsByAgent).length > 0
+        ? { recentModelsByAgent }
+        : {}),
     };
   } catch {
     return { ...EMPTY_PREFERENCES };
