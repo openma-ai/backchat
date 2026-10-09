@@ -355,15 +355,28 @@
   background: transparent;
 }
 
-.app-select-focus:is(:focus, [data-highlighted], [data-selected="true"]) {
+.app-select-focus:is(:focus, [data-highlighted], [data-selected="true"]):not(
+    [data-checked="true"],
+    [data-state="checked"]
+  ) {
   color: var(--control-fg-active);
   background: var(--control-bg-hover);
 }
 
+/* Current value: trailing check only — never a selection wash. */
 .app-select-item[data-state="checked"],
-.app-select-item[data-checked="true"] {
-  color: var(--control-fg-active);
-  background: var(--control-bg-open);
+.app-select-item[data-checked="true"],
+.app-select-item[data-state="checked"]:hover,
+.app-select-item[data-checked="true"]:hover,
+.app-select-focus[data-state="checked"]:is(:focus, [data-highlighted], [data-selected="true"]),
+.app-select-focus[data-checked="true"]:is(:focus, [data-highlighted], [data-selected="true"]) {
+  color: var(--control-fg-rest);
+  background: transparent !important;
+}
+
+.app-select-item[data-slot="dropdown-menu-item"][data-checked="true"]:focus,
+.app-select-item[data-slot="dropdown-menu-item"][data-state="checked"]:focus {
+  background: transparent !important;
 }
 
 /* One wash at a time: while the cursor rests on another row, the current
@@ -2280,25 +2293,31 @@ body,
   min-height: min(100%, var(--grouped-command-list-height));
 }
 
-/* Checked row: trailing check only — no selection wash. */
+/* Current value: checkmark only — never the gray hover/keyboard wash. */
 .grouped-command-picker [data-slot="command-item"][data-checked="true"],
-.grouped-command-picker .app-select-item[data-checked="true"] {
+.grouped-command-picker [data-slot="command-item"][data-checked="true"]:hover,
+.grouped-command-picker [data-slot="command-item"][data-checked="true"][data-selected="true"],
+.grouped-command-picker .app-select-item[data-checked="true"],
+.grouped-command-picker .app-select-item[data-checked="true"]:hover,
+.grouped-command-picker .app-select-focus[data-checked="true"],
+.grouped-command-picker .app-select-focus[data-checked="true"]:hover {
   background: transparent !important;
   color: var(--control-fg-rest);
 }
 
-/* cmdk seeds data-selected on open; show hover wash only for hover or after ArrowUp/Down. */
+/* cmdk seeds data-selected on open; wash only for hover or keyboard roving on other rows. */
 .grouped-command-picker:not([data-roving-active="true"])
-  [data-slot="command-item"][data-selected="true"]:not(:hover),
+  [data-slot="command-item"][data-selected="true"]:not(:hover):not([data-checked="true"]),
 .grouped-command-picker:not([data-roving-active="true"])
-  .app-select-focus[data-selected="true"]:not(:hover) {
+  .app-select-focus[data-selected="true"]:not(:hover):not([data-checked="true"]) {
   background: transparent !important;
   color: var(--control-fg-rest);
 }
 
-.grouped-command-picker [data-slot="command-item"]:hover,
+.grouped-command-picker
+  [data-slot="command-item"]:hover:not([data-checked="true"]),
 .grouped-command-picker[data-roving-active="true"]
-  [data-slot="command-item"][data-selected="true"] {
+  [data-slot="command-item"][data-selected="true"]:not([data-checked="true"]) {
   background: var(--control-bg-hover) !important;
   color: var(--control-fg-active);
 }

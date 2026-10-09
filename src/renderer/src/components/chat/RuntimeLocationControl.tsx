@@ -45,12 +45,29 @@ export function RuntimeLocationControl({ title, className, session }: { title?: 
         <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/openma" })}>{t(account?.status === "signed_in" ? "openma.account" : "openma.signIn")}</DropdownMenuItem>
         <DropdownMenuSeparator />
         {locked ? <DropdownMenuLabel className="text-xs font-normal">{t("openma.fixedLocation")}</DropdownMenuLabel> : !target ? (
-          <DropdownMenuItem onSelect={() => select(undefined)} className="flex items-center gap-2 text-xs">
-            <MonitorIcon className="size-3.5" /><span className="flex-1">{t("chat.local")}</span>{!target && <CheckIcon className="size-3.5" />}
+          <DropdownMenuItem
+            data-checked={!target ? true : undefined}
+            onSelect={() => select(undefined)}
+            className="flex items-center gap-2 text-xs"
+          >
+            <MonitorIcon className="size-3.5" />
+            <span className="flex-1">{t("chat.local")}</span>
+            {!target && <CheckIcon className="size-3.5" />}
           </DropdownMenuItem>
         ) : null}
         {!locked && choices.map(({ target: choice, offline }) => (
-          <DropdownMenuItem key={`${choice.environmentId}:${choice.agentId}`} disabled={offline} onSelect={() => select(choice)} className="flex items-start gap-2 text-xs">
+          <DropdownMenuItem
+            key={`${choice.environmentId}:${choice.agentId}`}
+            disabled={offline}
+            data-checked={
+              choice.agentId === target?.agentId &&
+              choice.environmentId === target.environmentId
+                ? true
+                : undefined
+            }
+            onSelect={() => select(choice)}
+            className="flex items-start gap-2 text-xs"
+          >
             {choice.kind === "cloud" ? <CloudIcon className="mt-0.5 size-3.5" /> : <ServerIcon className="mt-0.5 size-3.5" />}
             <div className="min-w-0 flex-1"><div>{choice.runtimeName} · {choice.environmentName}</div><div className="text-fg-subtle">{choice.agentName}{offline ? ` · ${t("openma.offline")}` : ""}</div></div>
             {choice.agentId === target?.agentId && choice.environmentId === target.environmentId && <CheckIcon className="size-3.5" />}
