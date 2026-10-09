@@ -29,7 +29,8 @@ describe("agent and session lifecycle contract", () => {
     expect(listHandler).toContain("await agentWarmup");
     expect(gate).toContain('readiness: "ready"');
     expect(gate).toContain('readiness: "snapshot"');
-    expect(gate).toContain("return children;");
+    expect(gate).toContain("AgentsLiveProbeContext");
+    expect(gate).toContain("{children}");
   });
 
   it("allows full probes only for manual refresh and post-install/update", () => {
