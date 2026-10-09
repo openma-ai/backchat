@@ -323,9 +323,11 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     watch.close();
     inlineVisualizationWatches.delete(watchId);
   };
+  const skipE2eAgentProbes =
+    testHooksEnabled && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1";
   const agentWarmupStartedAt = performance.now();
   const agentWarmup =
-    testHooksEnabled && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1"
+    skipE2eAgentProbes
       ? Promise.resolve()
       : agentSetup.warmup().then(() => {
           logAppEvent("app.agent_warmup", { outcome: "ready", duration_ms: Math.round(performance.now() - agentWarmupStartedAt) });
@@ -690,7 +692,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       }
       const liveProbeAgentId = options?.liveProbeAgentId?.trim();
       if (options?.readiness === "snapshot" && !options.refresh) {
-        if (liveProbeAgentId) {
+        if (liveProbeAgentId && !skipE2eAgentProbes) {
           return agentSetup.probeComposerHarness(liveProbeAgentId);
         }
         return agentSetup.listAgents();
@@ -699,7 +701,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       if (options?.refresh) {
         await agentSetup.refreshEnabledAgents();
       }
-      if (liveProbeAgentId) {
+      if (liveProbeAgentId && !skipE2eAgentProbes) {
         return agentSetup.probeComposerHarness(liveProbeAgentId);
       }
       return agentSetup.listAgents();
