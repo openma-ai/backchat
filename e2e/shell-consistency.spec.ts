@@ -41,10 +41,10 @@ test("scheduled tasks and settings share the application shell and page scrollba
       thumbBorder: thumb.borderTopWidth,
     };
   });
-  expect(scrollbar.width).toBe("10px");
+  expect(scrollbar.width).toBe("9px");
   expect(scrollbar.thumbRadius).toBe("9999px");
   // Electron reports borders after the app zoom factor is applied.
-  expect(Number.parseFloat(scrollbar.thumbBorder)).toBeGreaterThan(2);
+  expect(Number.parseFloat(scrollbar.thumbBorder)).toBeGreaterThan(1);
 
   await settingsSurface.evaluate((element) => element.scrollTo({ top: 48 }));
   await expect.poll(() =>

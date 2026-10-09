@@ -1634,14 +1634,16 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --sidebar-row-action-size: 16px;
   --sidebar-row-action-icon-size: var(--control-icon-size);
   --sidebar-row-action-radius: calc(var(--sidebar-row-action-size) / 2);
-  /* Transcript track is canonical; sidebar may match or be thinner, never wider. */
+  /* Converged track (transcript nudged down, sidebar nudged up via thumb
+     inset). Transcript colors/reveal stay canonical; sidebar ≤ transcript. */
   --oma-scrollbar-reference-size: 10px;
-  --oma-scrollbar-transcript-track-size: 10px;
-  --oma-scrollbar-transcript-thumb-border: 3px;
-  --oma-scrollbar-sidebar-track-size: 10px;
-  --oma-scrollbar-sidebar-thumb-border: 3px;
-  --oma-scrollbar-size: var(--oma-scrollbar-transcript-track-size);
-  --oma-scrollbar-thumb-border: var(--oma-scrollbar-transcript-thumb-border);
+  --oma-scrollbar-track-size: 9px;
+  --oma-scrollbar-thumb-border: 2px;
+  --oma-scrollbar-transcript-track-size: var(--oma-scrollbar-track-size);
+  --oma-scrollbar-transcript-thumb-border: var(--oma-scrollbar-thumb-border);
+  --oma-scrollbar-sidebar-track-size: var(--oma-scrollbar-track-size);
+  --oma-scrollbar-sidebar-thumb-border: var(--oma-scrollbar-thumb-border);
+  --oma-scrollbar-size: var(--oma-scrollbar-track-size);
   --oma-scrollbar-thumb: color-mix(
     in srgb,
     var(--chat-fg, var(--fg)) 30%,

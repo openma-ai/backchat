@@ -82,9 +82,11 @@ test("capture unified scrollbar on sidebar and transcript", async () => {
     const sidebarTrack = Number.parseFloat(sidebarThumbWidth.track);
     const transcriptTrack = Number.parseFloat(transcriptThumbWidth.track);
     expect(sidebarTrack).toBeLessThanOrEqual(transcriptTrack);
+    expect(sidebarTrack).toBe(transcriptTrack);
     const sidebarBorder = Number.parseFloat(sidebarThumbWidth.border);
     const transcriptBorder = Number.parseFloat(transcriptThumbWidth.border);
     expect(sidebarBorder).toBeLessThanOrEqual(transcriptBorder);
+    expect(sidebarBorder).toBe(transcriptBorder);
 
     await page.screenshot({
       path: `${artifactDir}/unified-scrollbar-after-thickness-zh.png`,
