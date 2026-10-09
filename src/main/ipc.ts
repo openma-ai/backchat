@@ -688,13 +688,24 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         recordTestAgentSetupCall({ type: "list" });
         return testAgentSetupFixture.agents;
       }
+      const liveProbeAgentId = options?.liveProbeAgentId?.trim();
+      if (liveProbeAgentId) {
+        agentSetup.setStartupPriorityAgent(liveProbeAgentId);
+      }
       if (options?.readiness === "snapshot" && !options.refresh) {
+        if (liveProbeAgentId) {
+          return agentSetup.probeComposerHarness(liveProbeAgentId);
+        }
         return agentSetup.listAgents();
       }
       await agentWarmup;
-      return options?.refresh
-        ? agentSetup.refreshEnabledAgents()
-        : agentSetup.listAgents();
+      if (options?.refresh) {
+        await agentSetup.refreshEnabledAgents();
+      }
+      if (liveProbeAgentId) {
+        return agentSetup.probeComposerHarness(liveProbeAgentId);
+      }
+      return agentSetup.listAgents();
     },
   );
   ipcMain.handle(InvokeChannel.AgentInstall, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {

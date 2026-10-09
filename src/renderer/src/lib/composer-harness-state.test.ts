@@ -5,8 +5,8 @@ import type { Settings } from "@shared/settings.js";
 import {
   deriveComposerHarnessState,
   composerActionDisabled,
-  composerAuthChecking,
   composerAuthNeeded,
+  composerHarnessAuthChecking,
 } from "./composer-harness-state";
 
 const settings: Settings = {
@@ -127,64 +127,61 @@ describe("composer harness state", () => {
 });
 
 describe("composerAuthNeeded", () => {
-  it("shows setup when the selected harness or live session needs auth", () => {
+  it("shows setup only after a live probe reports needs-auth", () => {
     expect(composerAuthNeeded(
-      { auth: { status: "configured", message: "ok" } },
+      { status: "configured", message: "ok" },
     )).toBe(false);
     expect(composerAuthNeeded(
-      { auth: { status: "needs-auth", message: "Authentication required" } },
+      { status: "needs-auth", message: "Authentication required" },
     )).toBe(true);
     expect(composerAuthNeeded(
-      { auth: { status: "configured", message: "ok" } },
+      { status: "configured", message: "ok" },
       { authRequired: true },
     )).toBe(true);
     expect(composerAuthNeeded(
-      { auth: { status: "needs-auth", message: "Authentication required" } },
+      { status: "needs-auth", message: "Authentication required" },
       { auth: { status: "configured", message: "ok" } },
     )).toBe(false);
   });
 
-  it("does not block on unknown agent auth", () => {
+  it("never treats stale cached needs-auth as blocking while the live probe is pending", () => {
     expect(composerAuthNeeded(
-      { auth: { status: "unknown", message: "Could not verify auth." } },
+      { status: "needs-auth", message: "Authentication required" },
+      undefined,
+      { liveProbePending: true },
     )).toBe(false);
+    expect(composerAuthNeeded(
+      { status: "needs-auth", message: "Authentication required" },
+      undefined,
+      { liveProbePending: false },
+    )).toBe(true);
   });
 
-  it("ignores stale cached needs-auth while the live startup probe is pending", () => {
-    const agent = { auth: { status: "needs-auth", message: "Authentication required" } };
-    expect(composerAuthNeeded(agent, undefined, { agentsLiveProbePending: true })).toBe(false);
-    expect(composerAuthNeeded(agent, undefined, { agentsLiveProbePending: false })).toBe(true);
+  it("ignores unknown live auth", () => {
     expect(composerAuthNeeded(
-      agent,
-      { authRequired: true },
-      { agentsLiveProbePending: true },
-    )).toBe(true);
-    expect(composerAuthNeeded(
-      agent,
-      { auth: { status: "needs-auth", message: "Session needs auth" } },
-      { agentsLiveProbePending: true },
-    )).toBe(true);
+      { status: "unknown", message: "Could not verify auth." },
+    )).toBe(false);
   });
 });
 
-describe("composerAuthChecking", () => {
-  it("marks cached auth as checking only during the live startup probe", () => {
-    const agent = { auth: { status: "needs-auth" } };
-    expect(composerAuthChecking(agent, undefined, { agentsLiveProbePending: true })).toBe(true);
-    expect(composerAuthChecking(agent, undefined, { agentsLiveProbePending: false })).toBe(false);
-    expect(composerAuthChecking(
-      { auth: { status: "unknown" } },
-      undefined,
-      { agentsLiveProbePending: true },
-    )).toBe(true);
+describe("composerHarnessAuthChecking", () => {
+  it("marks the composer loading until the harness live probe settles", () => {
+    expect(composerHarnessAuthChecking(true)).toBe(true);
+    expect(composerHarnessAuthChecking(false)).toBe(false);
+    expect(composerHarnessAuthChecking(true, { authRequired: true })).toBe(false);
   });
 });
 
 describe("composerActionDisabled", () => {
-  it("blocks send when the probed harness still needs sign-in", () => {
+  it("blocks send when the harness is checking or still needs sign-in", () => {
     expect(composerActionDisabled({
       hasHarnessSetup: true,
       authNeeded: true,
+    })).toBe(true);
+    expect(composerActionDisabled({
+      hasHarnessSetup: true,
+      authNeeded: false,
+      authChecking: true,
     })).toBe(true);
     expect(composerActionDisabled({
       hasHarnessSetup: true,

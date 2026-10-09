@@ -119,6 +119,10 @@ export interface AcpAgentSetupServiceDeps {
 
 export interface AcpAgentSetupService {
   warmup(): Promise<void>;
+  /** Prefer this harness during cold-start warmup when set before warmup runs. */
+  setStartupPriorityAgent(agentId: string): void;
+  /** Live auth + capability probe for one harness; never reads cached auth. */
+  probeComposerHarness(agentId: string): Promise<AcpAgentSetupInfo[]>;
   refreshEnabledAgents(): Promise<AcpAgentSetupInfo[]>;
   listAgents(): Promise<AcpAgentSetupInfo[]>;
   installAgent(id: string): Promise<AcpAgentSetupInfo[]>;
@@ -176,6 +180,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   private probeCachePromise: Promise<Record<string, CachedAgentProbe>> | null = null;
   private probeCacheWrite: Promise<void> = Promise.resolve();
   private readonly authCache = new Map<string, AcpAgentSetupAuth>();
+  private startupPriorityAgentId?: string;
   private readonly capabilityInspections =
     new Map<string, AcpAgentCapabilityInspection>();
 
@@ -185,11 +190,46 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return disposeAllAcpSetupProcesses();
   }
 
+  setStartupPriorityAgent(agentId: string): void {
+    if (!agentId.trim()) return;
+    this.startupPriorityAgentId = agentId.trim();
+  }
+
+  async probeComposerHarness(agentId: string): Promise<AcpAgentSetupInfo[]> {
+    const id = agentId.trim();
+    if (!id) return this.listAgents();
+    await this.collectAgentSnapshot({
+      trigger: "manual",
+      refreshRegistry: false,
+      auth: { target: "ids", ids: [id] },
+      capabilities: { target: "ids", ids: [id] },
+    });
+    return this.listAgentsWithLiveAuth(id);
+  }
+
+  private listAgentsWithLiveAuth(agentId: string): Promise<AcpAgentSetupInfo[]> {
+    const liveAuth = this.authCache.get(agentId);
+    return this.listAgents().then((listed) =>
+      listed.map((agent) =>
+        agent.id === agentId && liveAuth ? { ...agent, auth: liveAuth } : agent,
+      ),
+    );
+  }
+
   async warmup(): Promise<void> {
     await this.repairRelocatedRegistryShims();
+    const priority = this.startupPriorityAgentId;
+    if (priority) {
+      await this.collectAgentSnapshot({
+        trigger: "startup",
+        refreshRegistry: true,
+        auth: { target: "ids", ids: [priority] },
+        capabilities: { target: "ids", ids: [priority] },
+      });
+    }
     await this.collectAgentSnapshot({
       trigger: "startup",
-      refreshRegistry: true,
+      refreshRegistry: !priority,
       auth: { target: "ids", ids: [] },
       capabilities: { target: "detected" },
     });
@@ -253,7 +293,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       const detectedEntry = detectedById.get(entry.id);
       const shouldProbeAuth = Boolean(detectedEntry) &&
         (plan.auth.target === "detected" || authAgentIds.has(entry.id));
-      let auth = detectedEntry ? this.authCache.get(entry.id) : undefined;
+      let auth: AcpAgentSetupAuth | undefined;
       const shouldProbeCapabilities = Boolean(detectedEntry) &&
         (
           plan.capabilities.target === "detected"
@@ -342,13 +382,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       const authInputsKey = detectedEntry
         ? await computeAuthProbeInputsKey(detectedEntry, this.deps.probeCwd)
         : undefined;
-      if (!auth && cachedProbe?.auth) {
-        const cachedKey = cachedProbe.auth_inputs_key;
-        if (!cachedKey || cachedKey === authInputsKey) {
-          auth = cachedProbe.auth;
-          this.authCache.set(entry.id, auth);
-        }
-      }
+      const publishAuth = shouldProbeAuth || shouldProbeCapabilities;
       const usableSessionConfig =
         sessionConfig && !setupAuthBlocksCapabilities(auth)
           ? sessionConfig
@@ -397,7 +431,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         installable: !entry.custom && Boolean(entry.installSource || entry.downloadUrl || entry.install),
         ...(entry.installSource ? { installSource: entry.installSource } : {}),
         ...(entry.custom ? { custom: true } : {}),
-        ...(auth ? { auth } : {}),
+        ...(publishAuth && auth ? { auth } : {}),
         ...(configOptions ? { config_options: configOptions } : {}),
         ...(availableCommands ? { available_commands: availableCommands } : {}),
         ...(sessionModes ? { session_modes: sessionModes } : {}),
@@ -580,7 +614,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     // Authentication is an explicit lifecycle of its own. Do not follow it
     // with another disposable ACP probe; the next real session is the source
     // of truth if a browser/terminal flow is still finishing.
-    return this.listAgents();
+    return this.listAgentsWithLiveAuth(id);
   }
 
   async observeAuth(

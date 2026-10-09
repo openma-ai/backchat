@@ -18,6 +18,7 @@ import {
   WrenchIcon,
   XIcon,
   ZapIcon,
+  Loader2Icon,
   LogInIcon,
   RefreshCwIcon,
   type LucideIcon,
@@ -160,6 +161,7 @@ export function SessionRunChip({
   onSetConfigOption,
   onResetConfigOptions,
   authNeeded = false,
+  authChecking = false,
 }: {
   disabled: boolean;
   locked: boolean;
@@ -172,6 +174,7 @@ export function SessionRunChip({
   onSetConfigOption: (configId: string, value: string | boolean) => void;
   onResetConfigOptions?: () => void;
   authNeeded?: boolean;
+  authChecking?: boolean;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -207,7 +210,7 @@ export function SessionRunChip({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        disabled={disabled}
+        disabled={disabled || authChecking}
         data-composer-run-trigger="true"
         className={cn(
           "app-compact-control group/model-selector inline-flex max-w-[250px] items-center pl-[var(--control-padding-inline)] text-xs",
@@ -229,12 +232,19 @@ export function SessionRunChip({
               data-composer-run-harness="true"
               className={cn("flex shrink-0 items-center", authNeeded && "text-danger")}
             >
-              <AgentIcon
-                agentId={currentAgentId}
-                iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
-                className="size-3.5 shrink-0"
-                title={agentLabel}
-              />
+              {authChecking ? (
+                <Loader2Icon
+                  className="size-3.5 shrink-0 animate-spin text-fg-subtle"
+                  aria-hidden="true"
+                />
+              ) : (
+                <AgentIcon
+                  agentId={currentAgentId}
+                  iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
+                  className="size-3.5 shrink-0"
+                  title={agentLabel}
+                />
+              )}
             </span>
             <TooltipProvider>
               <Tooltip>

@@ -153,6 +153,8 @@ export interface AgentListOptions {
   /** `snapshot` returns inventory plus persisted facts immediately. `ready`
    * waits for the cold-start barrier and is required for run selection. */
   readiness?: "snapshot" | "ready";
+  /** Live auth + capability probe for the composer-selected harness only. */
+  liveProbeAgentId?: string;
 }
 
 /** Public shape of a persisted session row. Mirrors PersistedSession in

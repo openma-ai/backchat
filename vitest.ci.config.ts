@@ -62,6 +62,7 @@ export default defineConfig({
       "src/renderer/src/lib/chat-tool-presentation.test.ts",
       "src/renderer/src/components/chat/ToolPresentation.test.tsx",
       "src/renderer/src/lib/composer-harness-state.test.ts",
+      "src/renderer/src/lib/composer-harness-live-auth.test.ts",
       "src/shared/auth-errors.test.ts",
     ],
     exclude: [

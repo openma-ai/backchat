@@ -1,17 +1,10 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 
-const AgentsLiveProbeContext = createContext({ pending: true });
-
-export function useAgentsLiveProbePending(): boolean {
-  return useContext(AgentsLiveProbeContext).pending;
-}
-
 export function AppStartupGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const [agentsLiveProbePending, setAgentsLiveProbePending] = useState(true);
-  const query = useQuery({
+  useQuery({
     queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList({ readiness: "snapshot" }),
     staleTime: 60_000,
@@ -19,22 +12,37 @@ export function AppStartupGate({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (query.isPending) return;
     let cancelled = false;
-    setAgentsLiveProbePending(true);
     void window.backchat.agentsList({ readiness: "ready" }).then((agents) => {
-      if (!cancelled) queryClient.setQueryData(AGENTS_QUERY_KEY, agents);
+      if (!cancelled) {
+        queryClient.setQueryData(
+          AGENTS_QUERY_KEY,
+          (current: typeof agents | undefined) =>
+            mergeAgentsWithoutAuth(current ?? [], agents),
+        );
+      }
     }).catch((error) => {
-      console.error("Agent startup probe failed", error);
-    }).finally(() => {
-      if (!cancelled) setAgentsLiveProbePending(false);
+      console.error("Agent startup warmup failed", error);
     });
     return () => { cancelled = true; };
-  }, [query.isPending, queryClient]);
+  }, [queryClient]);
 
-  return (
-    <AgentsLiveProbeContext.Provider value={{ pending: agentsLiveProbePending }}>
-      {children}
-    </AgentsLiveProbeContext.Provider>
-  );
+  return children;
+}
+
+/** Background warmup may attach auth; the composer ignores it until live probe. */
+function mergeAgentsWithoutAuth(
+  current: Awaited<ReturnType<typeof window.backchat.agentsList>>,
+  warmed: Awaited<ReturnType<typeof window.backchat.agentsList>>,
+): typeof warmed {
+  if (current.length === 0) {
+    return warmed.map(({ auth: _auth, ...agent }) => agent);
+  }
+  const warmedById = new Map(warmed.map((agent) => [agent.id, agent]));
+  return current.map((agent) => {
+    const next = warmedById.get(agent.id);
+    if (!next) return agent;
+    const { auth: _auth, ...rest } = next;
+    return { ...agent, ...rest };
+  });
 }

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AgentInfo } from "@shared/api";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
-import { useAgentsLiveProbePending } from "@/components/AppStartupGate";
+import { useComposerHarnessLiveAuth } from "@/lib/composer-harness-live-auth";
 import {
   composerAuthNeeded,
   deriveComposerHarnessState,
@@ -35,7 +35,6 @@ export function ComposerAuthSetup({
 }) {
   const settings = useSettings();
   const queryClient = useQueryClient();
-  const agentsLiveProbePending = useAgentsLiveProbePending();
   const [selectedMethodId, setSelectedMethodId] = useState<string | undefined>();
   const [waitingForAuth, setWaitingForAuth] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
@@ -52,6 +51,10 @@ export function ComposerAuthSetup({
     pickedAgentId,
     recentAgentId: readRecentRunPreferences().agentId,
   });
+  const { liveAuth, liveProbePending } = useComposerHarnessLiveAuth(
+    harness.currentAgentId,
+    !!harness.currentAgentId,
+  );
   const agent = overlayAgentAuth(harness.currentAgent, sessionAuth);
   const finishAuthentication = async () => {
     setReconnecting(true);
@@ -110,8 +113,8 @@ export function ComposerAuthSetup({
     !open
     || !settings
     || !agent
-    || !composerAuthNeeded(agent, { authRequired, auth: sessionAuth }, {
-      agentsLiveProbePending,
+    || !composerAuthNeeded(liveAuth, { authRequired, auth: sessionAuth }, {
+      liveProbePending,
     })
   ) {
     return null;
