@@ -3,10 +3,19 @@ import type { SettingsAgentOverride } from "../shared/settings.js";
 import {
   createAcpAgentSetupService,
   launchTerminalAuth as launchAcpTerminalAuth,
+  startOpenMaNpmHarnessAutoUpdater,
   type AcpAgentSetupOverride,
   type AcpAgentSetupService,
   type AcpAgentSetupServiceDeps,
   type TerminalAuthLaunchOptions,
+} from "@open-managed-agents-desktop/acp-agent-setup";
+
+export {
+  OPENMA_NPM_HARNESS_UPGRADE_CHECK_INTERVAL_MS,
+  runOpenMaNpmHarnessUpgradeCheck,
+  startOpenMaNpmHarnessAutoUpdater,
+  type OpenMaHarnessUpgradeLogEvent,
+  type OpenMaHarnessUpgradeOutcome,
 } from "@open-managed-agents-desktop/acp-agent-setup";
 
 export interface AgentSetupServiceDeps extends Omit<

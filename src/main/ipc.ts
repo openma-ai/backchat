@@ -47,7 +47,7 @@ import type {
 } from "../shared/pair-events.js";
 import type { Settings, SettingsMcpServer } from "../shared/settings.js";
 import type { CreateScheduleInput, UpdateScheduleInput } from "../shared/schedules.js";
-import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
+import { createAgentSetupService, launchTerminalAuth, startOpenMaNpmHarnessAutoUpdater } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
@@ -267,6 +267,39 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         operation_id: fields.operationId,
         ...(fields.detail ? { detail: fields.detail } : {}),
       });
+    },
+  });
+  const stopOpenMaHarnessAutoUpdater = startOpenMaNpmHarnessAutoUpdater(agentSetup, {
+    acpBinDir: deps.acpBinDir,
+    acpInstallRoot: deps.acpInstallRoot,
+    npmRegistryUrls: deps.npmRegistryUrls,
+    disabled:
+      testHooksEnabled
+      || process.env["BACKCHAT_DISABLE_OPENMA_HARNESS_AUTO_UPGRADE"] === "1",
+    onEvent: (event) => {
+      if (event.kind === "version-changed") {
+        logAppEvent("app.harness_upgrade", {
+          agent_id: event.agentId,
+          trigger: event.trigger,
+          from_version: event.fromVersion,
+          to_version: event.toVersion,
+        });
+        return;
+      }
+      if (event.kind === "check-settled") {
+        for (const outcome of event.outcomes) {
+          if (outcome.action === "failed") {
+            logAppEvent("app.harness_upgrade", {
+              agent_id: outcome.agentId,
+              trigger: event.trigger,
+              outcome: "error",
+              message: outcome.error,
+              ...(outcome.fromVersion ? { from_version: outcome.fromVersion } : {}),
+              ...(outcome.toVersion ? { to_version: outcome.toVersion } : {}),
+            });
+          }
+        }
+      }
     },
   });
   const pluginRuntime = new CodexPluginRuntime(
@@ -1485,6 +1518,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       void mcpAppRuntime.close();
     },
     async dispose() {
+      stopOpenMaHarnessAutoUpdater();
       scheduleEngine.stop();
       projectWork.stop();
       stopBrowserPluginState();

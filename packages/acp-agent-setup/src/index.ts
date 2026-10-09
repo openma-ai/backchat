@@ -1109,3 +1109,14 @@ function terminalAuthShellCommand(options: TerminalAuthLaunchOptions, returnInst
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
+
+export {
+  OPENMA_NPM_HARNESS_UPGRADE_CHECK_INTERVAL_MS,
+  runOpenMaNpmHarnessUpgradeCheck,
+  startOpenMaNpmHarnessAutoUpdater,
+  type OpenMaHarnessUpgradeLogEvent,
+  type OpenMaHarnessUpgradeOutcome,
+  type OpenMaHarnessUpgradeTrigger,
+  type OpenMaNpmHarnessUpgradeDeps,
+  type StartOpenMaNpmHarnessAutoUpdaterOptions,
+} from "./openma-npm-harness-updater.js";
