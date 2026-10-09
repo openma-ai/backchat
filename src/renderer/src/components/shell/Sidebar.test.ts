@@ -429,7 +429,7 @@ describe("groupSidebarSessions", () => {
     );
     const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
 
-    expect(footer).toContain('className="py-[var(--bottom-bar-gap-y)]"');
+    expect(footer).toContain('className="flex shrink-0 items-center gap-1 px-2 pb-2 pt-[var(--bottom-bar-gap-y)]"');
     expect(styles).toContain("--bottom-bar-gap-y: 6px;");
     expect(styles).toContain(
       "--composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);",
@@ -446,9 +446,8 @@ describe("groupSidebarSessions", () => {
 
     expect(footer).toContain('to="/settings/activity"');
     expect(footer).toContain("<AgentUpdateControl agents={agents} />");
-    expect(footer).toContain(
-      'className="flex w-full items-stretch overflow-hidden rounded-md"',
-    );
+    expect(footer).toContain("rounded-md px-2 text-ui transition-colors");
+    expect(footer).not.toContain("overflow-hidden rounded-md");
     expect(footer.indexOf("<AgentUpdateControl")).toBeGreaterThan(
       footer.indexOf("</Link>"),
     );
