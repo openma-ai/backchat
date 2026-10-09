@@ -289,11 +289,20 @@
   justify-content: center;
 }
 .sidebar-section-header-trailing {
-  display: inline-flex;
+  display: flex;
+  height: 100%;
   flex: 0 0 auto;
+  align-self: stretch;
   align-items: center;
   justify-content: flex-end;
   padding-inline-end: var(--sidebar-content-padding-inline-start);
+}
+.sidebar-section-header-trailing [data-sidebar-section-header-action="true"] {
+  min-height: var(--sidebar-row-action-size);
+}
+.sidebar-section-header .sidebar-row-action > svg {
+  width: var(--sidebar-row-action-icon-size);
+  height: var(--sidebar-row-action-icon-size);
 }
 /* Section headers and first child rows each paint their own rounded hover/
    selection surfaces; keep the same 2px rhythm as space-y-0.5 between rows. */

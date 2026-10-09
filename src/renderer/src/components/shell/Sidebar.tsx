@@ -1222,8 +1222,16 @@ function SidebarSection({
           </span>
         </button>
         {action ? (
-          <span className={cn("sidebar-section-header-trailing shrink-0", labelCls)}>
-            <span className="inline-flex opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100">
+          <span
+            className={cn(
+              "sidebar-section-header-trailing shrink-0",
+              labelCls.split(/\s+/).includes("hidden") && "hidden",
+            )}
+          >
+            <span
+              data-sidebar-section-header-action="true"
+              className="flex h-full items-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100"
+            >
               {action}
             </span>
           </span>
