@@ -288,6 +288,11 @@
   width: 12px;
   justify-content: center;
 }
+/* Section headers and first child rows each paint their own rounded hover/
+   selection surfaces; keep the same 2px rhythm as space-y-0.5 between rows. */
+.sidebar-section > .sidebar-section-header + .animated-collapse[data-state="open"] {
+  margin-top: 2px;
+}
 
 /* Every sidebar row centers its 16px glyph inside one 16px box, so icon
    edges and label starts stay on the same two rails from the nav rows at
