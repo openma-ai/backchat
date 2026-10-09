@@ -86,13 +86,11 @@ test("model picker opens provider submenu with bounded scroll", async ({ page, b
   const panel = modelPickerPanel(page);
   await expect(panel).toBeVisible({ timeout: 10_000 });
 
-  const openaiProvider = panel.locator('[data-composer-provider-sub="true"]').filter({
-    hasText: "openai-codex",
-  });
-  await expect(openaiProvider).toBeVisible();
-  await expect(openaiProvider).toContainText("openai-codex model 2");
-
-  await expect(panel.locator('[data-composer-provider-sub="true"]')).toHaveCount(3);
+  await expect(panel.getByText("openai-codex", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByRole("option", { name: /openai-codex model 2/ }),
+  ).toBeVisible();
+  await expect(panel.locator('[data-slot="command-group"]')).toHaveCount(3);
 
   const box = await panel.boundingBox();
   const viewport = page.viewportSize();

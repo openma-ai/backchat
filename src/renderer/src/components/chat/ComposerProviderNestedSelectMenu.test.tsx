@@ -1,42 +1,27 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-vi.mock("@/components/ui/dropdown-menu", () => ({
-  DropdownMenuSub: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DropdownMenuSubTrigger: ({
-    children,
-    ...props
-  }: {
-    children: React.ReactNode;
-  } & Record<string, unknown>) => <div {...props}>{children}</div>,
-  DropdownMenuSubContent: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
+import { ComposerSearchableSelectMenu } from "./ComposerSearchableSelectMenu";
 
-import { ComposerProviderNestedSelectMenu } from "./ComposerProviderNestedSelectMenu";
-
-describe("ComposerProviderNestedSelectMenu", () => {
-  it("renders provider submenu triggers for large multi-provider lists", () => {
+describe("ComposerSearchableSelectMenu (grouped command)", () => {
+  it("renders provider command groups for large multi-provider lists", () => {
     const items = Array.from({ length: 10 }, (_, index) => ({
       value: `model-${index}`,
       label: `Model ${index}`,
       groupName: index % 2 === 0 ? "anthropic-proxy" : "openai-codex",
     }));
     const html = renderToStaticMarkup(
-      <ComposerProviderNestedSelectMenu
+      <ComposerSearchableSelectMenu
         items={items}
         activeValue="model-3"
         onSelect={() => {}}
         searchPlaceholder="Search"
         emptyMessage="None"
-        providerIcon={<span>icon</span>}
-        renderItem={(item) => <span>{item.label}</span>}
       />,
     );
-    expect(html).toContain('data-composer-provider-sub="true"');
+    expect(html).toContain('data-slot="command-group"');
     expect(html).toContain("anthropic-proxy");
     expect(html).toContain("openai-codex");
+    expect(html).toContain("Model 0");
   });
 });

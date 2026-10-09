@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
-import { ComposerSelectCommandMenu } from "@/components/chat/ComposerSelectCommandMenu";
+import { useMemo, type ReactNode } from "react";
+import { ComposerGroupedCommandPicker } from "@/components/chat/ComposerGroupedCommandPicker";
+import { menuEntriesToCommandGroups } from "@/components/chat/composer-menu-command-groups";
 import { cn } from "@/lib/utils";
 import type { SearchableSelectFields } from "@/lib/searchable-select-filter";
 
@@ -46,15 +47,25 @@ export function ComposerSearchableSelectMenu({
   searchThreshold?: number;
   renderItem?: (item: ComposerSelectMenuEntry, state: { highlighted: boolean }) => ReactNode;
 }) {
+  const showSearch =
+    items.length >= searchThreshold || items.some((item) => item.groupName);
+  const activeItem = useMemo(
+    () => items.find((item) => item.value === activeValue || item.active),
+    [activeValue, items],
+  );
+  const groups = useMemo(
+    () => menuEntriesToCommandGroups(items, { activeValue, onSelect, renderItem }),
+    [activeValue, items, onSelect, renderItem],
+  );
+
   return (
-    <ComposerSelectCommandMenu
-      items={items}
-      activeValue={activeValue}
-      onSelect={onSelect}
+    <ComposerGroupedCommandPicker
+      groups={groups}
       searchPlaceholder={searchPlaceholder}
       emptyMessage={emptyMessage}
-      searchThreshold={searchThreshold}
-      renderItem={renderItem}
+      showSearch={showSearch}
+      initialHighlightValue={activeItem?.value ?? ""}
+      insideDropdownMenu
     />
   );
 }

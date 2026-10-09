@@ -252,7 +252,7 @@ test.describe("composer configuration", () => {
     await submenuTrigger.hover();
     const panel = page.getByTestId("composer-select-menu-panel");
     await expect(panel).toBeVisible({ timeout: 10_000 });
-    const target = page.getByRole("menuitem", { name: "GPT-5 Model", exact: true });
+    const target = panel.getByRole("option", { name: "GPT-5 Model", exact: true });
     await expect(target).toBeVisible();
     const from = await submenuTrigger.boundingBox();
     const to = await target.boundingBox();

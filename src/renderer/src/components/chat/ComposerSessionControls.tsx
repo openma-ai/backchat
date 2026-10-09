@@ -53,12 +53,10 @@ import {
   type AcpSessionConfigOption,
 } from "@/lib/session-config-options";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
-import { ComposerProviderNestedSelectMenu } from "@/components/chat/ComposerProviderNestedSelectMenu";
 import {
   ComposerSearchableSelectMenu,
   composerSelectMenuShellClassName,
 } from "@/components/chat/ComposerSearchableSelectMenu";
-import { shouldUseProviderSubmenu } from "@/lib/composer-select-menu-layout";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -377,6 +375,7 @@ function SessionAgentSubmenu({
           }}
           renderItem={(item, { highlighted }) => (
             <SessionRunItem
+              presentation="command"
               agentId={item.value === "__settings__" ? undefined : item.value}
               agentIconUrl={
                 item.value === "__settings__"
@@ -389,10 +388,6 @@ function SessionAgentSubmenu({
               active={item.active}
               disabled={item.disabled}
               highlighted={highlighted}
-              onSelect={() => {
-                if (item.value === "__settings__") onOpenSettings();
-                else onPickAgent(item.value);
-              }}
             />
           )}
         />
@@ -431,7 +426,6 @@ function SessionConfigSubmenu({
           active: item.value === option.currentValue,
         }))
       : [];
-  const nestedProviders = shouldUseProviderSubmenu(selectMenuItems);
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
@@ -443,30 +437,6 @@ function SessionConfigSubmenu({
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent sideOffset={6} className={composerSelectMenuShellClassName()}>
         {option.type === "select" ? (
-          nestedProviders ? (
-            <ComposerProviderNestedSelectMenu
-              items={selectMenuItems}
-              activeValue={option.currentValue}
-              searchPlaceholder={t("chat.searchOptions")}
-              emptyMessage={t("chat.noMatchingOptions")}
-              providerIcon={<Icon className="size-3.5 text-fg-subtle" />}
-              onSelect={(value) => onSetConfigOption(option.id, value)}
-              renderItem={(item, { highlighted }) => (
-                <SessionRunItem
-                  icon={
-                    isAgentPresetConfigOption(option)
-                      ? agentPresetIcon(item.value)
-                      : Icon
-                  }
-                  label={item.label}
-                  hint={item.hint}
-                  active={item.active}
-                  highlighted={highlighted}
-                  onSelect={() => onSetConfigOption(option.id, item.value)}
-                />
-              )}
-            />
-          ) : (
             <ComposerSearchableSelectMenu
               items={selectMenuItems}
               activeValue={option.currentValue}
@@ -475,6 +445,7 @@ function SessionConfigSubmenu({
               onSelect={(value) => onSetConfigOption(option.id, value)}
               renderItem={(item, { highlighted }) => (
                 <SessionRunItem
+                  presentation="command"
                   icon={
                     isAgentPresetConfigOption(option)
                       ? agentPresetIcon(item.value)
@@ -484,11 +455,9 @@ function SessionConfigSubmenu({
                   hint={item.hint}
                   active={item.active}
                   highlighted={highlighted}
-                  onSelect={() => onSetConfigOption(option.id, item.value)}
                 />
               )}
             />
-          )
         ) : (
           <div className="p-1">
             <SessionRunItem
@@ -908,11 +877,11 @@ function InlineComposerOptionControl({
               const ItemIcon = agentPresetIcon(item.value);
               return (
                 <SessionRunItem
+                  presentation="command"
                   icon={ItemIcon}
                   label={item.label}
                   active={item.active}
                   highlighted={highlighted}
-                  onSelect={() => onSetConfigOption?.(option.id, item.value)}
                 />
               );
             }}
@@ -959,11 +928,11 @@ function InlineComposerOptionControl({
           onSelect={(value) => onSetConfigOption?.(option.id, value)}
           renderItem={(item, { highlighted }) => (
             <SessionRunItem
+              presentation="command"
               label={item.label}
               hint={item.hint}
               active={item.active}
               highlighted={highlighted}
-              onSelect={() => onSetConfigOption?.(option.id, item.value)}
             />
           )}
         />

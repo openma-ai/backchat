@@ -16,12 +16,12 @@ import type { ProjectInfo } from "@shared/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
+import { ComposerGroupedCommandPicker } from "@/components/chat/ComposerGroupedCommandPicker";
 import {
   Command,
   CommandInput,
   CommandItem,
   CommandList,
-  CommandGroup,
   CommandSeparator,
 } from "@/components/ui/command";
 import {
@@ -156,93 +156,135 @@ export function ProjectChipRow({
             sideOffset={0}
             className="w-[var(--composer-menu-width)] max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0"
           >
-            <Command
-              value={projectPickerValue}
-              onValueChange={setProjectPickerValue}
-            >
-              <CommandInput
-                autoFocus
-                placeholder={t("chat.chooseProject")}
-              />
-              <CommandList>
-                {savedProjects.length > 0 && <CommandGroup heading={t("sidebar.projects")}>
-                  {savedProjects.map(project => <CommandItem
-                    key={project.id} value={project.primary_folder} keywords={[project.name, ...project.source_folders]}
-                    data-checked={selectedProject?.id === project.id}
-                    onSelect={() => { onSetCwd(project.primary_folder); setProjectPickerOpen(false); }}
-                    className="text-xs" title={project.primary_folder}
-                  >
-                    <ProjectIcon identity={`project:${project.id}`} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} />
-                    <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                  </CommandItem>)}
-                </CommandGroup>}
-                {recents.length > 0 && <CommandGroup heading={t("chat.recentDirectories")}>
-                {recents.map((path) => (
-                  <CommandItem
-                    key={path}
-                    value={path}
-                    data-checked={path === activeCwd}
-                    onSelect={() => {
-                      onSetCwd(path);
-                      setProjectPickerOpen(false);
-                    }}
-                    className="text-xs"
-                    title={path}
-                  >
-                    <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-                    <span className="min-w-0 flex-1 truncate">
-                      {folderName(path)}
-                    </span>
-                  </CommandItem>
-                ))}
-                </CommandGroup>}
-                {(recents.length > 0 || savedProjects.length > 0) && <CommandSeparator />}
-                <CommandItem
-                  value={`${t("common.browse")} browse`}
-                  onSelect={() => {
-                    setProjectPickerOpen(false);
-                    void (async () => {
-                      try {
-                        const path = await onPickCwd();
-                        if (!path) return;
-                        // A deliberate folder choice is a saved project, so it
-                        // stays visible in both the sidebar and future drafts.
-                        const projects = await window.backchat.projectsList();
-                        if (!projects.some(project => project.primary_folder === path)) {
-                          const project = await window.backchat.projectSave({
-                            project_id: `proj-${crypto.randomUUID()}`,
-                            name: folderName(path), source_folders: [path], primary_folder: path,
-                          });
-                          projects.push(project);
-                        }
-                        queryClient.setQueryData<ProjectInfo[]>(["projects"], projects);
-                        onSetCwd(path);
-                      } catch (error) {
-                        toast.error(t("project.createFailed"), {
-                          description: error instanceof Error ? error.message : String(error),
-                        });
-                      }
-                    })();
-                  }}
-                  className="text-xs"
-                >
-                  <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-                  <span>{t("common.browse")}</span>
-                </CommandItem>
-                <CommandItem
-                  value={noProjectCommandValue}
-                  data-checked={!activeCwd}
-                  onSelect={() => {
-                    onClearCwd();
-                    setProjectPickerOpen(false);
-                  }}
-                  className="text-xs"
-                >
-                  <XIcon className="size-3.5 text-fg-subtle" />
-                  <span>{t("chat.noProject")}</span>
-                </CommandItem>
-              </CommandList>
-            </Command>
+            <ComposerGroupedCommandPicker
+              testId="composer-project-picker-panel"
+              menuMode="project-picker"
+              panelClassName="flex max-h-[min(420px,var(--radix-popover-content-available-height))] flex-col overflow-hidden"
+              commandClassName="rounded-xl! bg-popover p-1 text-popover-foreground shadow-none ring-0"
+              listClassName="max-h-72"
+              searchPlaceholder={t("chat.chooseProject")}
+              emptyMessage={t("chat.noMatchingOptions")}
+              initialHighlightValue={projectPickerValue || activeCwd || noProjectCommandValue}
+              groups={[
+                ...(savedProjects.length > 0
+                  ? [
+                      {
+                        heading: t("sidebar.projects"),
+                        items: savedProjects.map((project) => ({
+                          id: project.id,
+                          value: project.primary_folder,
+                          keywords: [project.name, ...project.source_folders],
+                          checked: selectedProject?.id === project.id,
+                          title: project.primary_folder,
+                          onSelect: () => {
+                            onSetCwd(project.primary_folder);
+                            setProjectPickerOpen(false);
+                          },
+                          children: (
+                            <>
+                              <ProjectIcon
+                                identity={`project:${project.id}`}
+                                sourceFolders={project.source_folders}
+                                primaryRoot={project.primary_folder}
+                              />
+                              <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                            </>
+                          ),
+                        })),
+                      },
+                    ]
+                  : []),
+                ...(recents.length > 0
+                  ? [
+                      {
+                        heading: t("chat.recentDirectories"),
+                        items: recents.map((path) => ({
+                          id: path,
+                          value: path,
+                          checked: path === activeCwd,
+                          title: path,
+                          onSelect: () => {
+                            onSetCwd(path);
+                            setProjectPickerOpen(false);
+                          },
+                          children: (
+                            <>
+                              <FolderOpenIcon className="size-3.5 text-fg-subtle" />
+                              <span className="min-w-0 flex-1 truncate">
+                                {folderName(path)}
+                              </span>
+                            </>
+                          ),
+                        })),
+                      },
+                    ]
+                  : []),
+                {
+                  items: [
+                    {
+                      id: "browse",
+                      value: `${t("common.browse")} browse`,
+                      onSelect: () => {
+                        setProjectPickerOpen(false);
+                        void (async () => {
+                          try {
+                            const path = await onPickCwd();
+                            if (!path) return;
+                            const projects = await window.backchat.projectsList();
+                            if (
+                              !projects.some(
+                                (project) => project.primary_folder === path,
+                              )
+                            ) {
+                              const project = await window.backchat.projectSave({
+                                project_id: `proj-${crypto.randomUUID()}`,
+                                name: folderName(path),
+                                source_folders: [path],
+                                primary_folder: path,
+                              });
+                              projects.push(project);
+                            }
+                            queryClient.setQueryData<ProjectInfo[]>(
+                              ["projects"],
+                              projects,
+                            );
+                            onSetCwd(path);
+                          } catch (error) {
+                            toast.error(t("project.createFailed"), {
+                              description:
+                                error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                            });
+                          }
+                        })();
+                      },
+                      children: (
+                        <>
+                          <FolderOpenIcon className="size-3.5 text-fg-subtle" />
+                          <span>{t("common.browse")}</span>
+                        </>
+                      ),
+                    },
+                    {
+                      id: "no-project",
+                      value: noProjectCommandValue,
+                      checked: !activeCwd,
+                      onSelect: () => {
+                        onClearCwd();
+                        setProjectPickerOpen(false);
+                      },
+                      children: (
+                        <>
+                          <XIcon className="size-3.5 text-fg-subtle" />
+                          <span>{t("chat.noProject")}</span>
+                        </>
+                      ),
+                    },
+                  ],
+                },
+              ]}
+            />
           </PopoverContent>
         )}
       </Popover>}

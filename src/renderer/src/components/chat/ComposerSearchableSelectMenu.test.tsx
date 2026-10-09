@@ -32,7 +32,7 @@ describe("ComposerSearchableSelectMenu", () => {
     );
     expect(html).toContain('cmdk-input=""');
     expect(html).toContain('data-slot="command-list"');
-    expect(html).toContain("height:360px");
+    expect(html).toContain('data-slot="command-group"');
     expect(html).toContain("anthropic-proxy");
     expect(html).toContain("Model 0");
   });

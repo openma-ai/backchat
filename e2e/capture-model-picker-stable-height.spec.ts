@@ -77,12 +77,6 @@ test("model picker panel height stays fixed while filtering (screenshots)", asyn
       for (let index = 0; index < queries.length; index++) {
         const query = queries[index];
         await search.fill(query);
-        if (query.length > 0) {
-          await expect(panel).toHaveAttribute(
-            "data-composer-select-menu-mode",
-            "command",
-          );
-        }
         const box = await panel.boundingBox();
         expect(box).not.toBeNull();
         heights.push(box!.height);
