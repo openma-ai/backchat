@@ -253,7 +253,7 @@
 .sidebar-navigation .mt-0\.5 {
   margin-top: 1px;
 }
-/* Twin rounded hover/selected washes that would otherwise read as one block. */
+/* --gap-adjacent: twin rounded hover/selected washes that would otherwise touch. */
 .sidebar-section:has(> .sidebar-section-header:is(:hover, :focus-within))
   > .animated-collapse[data-state="open"]
   > :where(ul, div)
@@ -1721,8 +1721,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   );
   --composer-card-border-width: 1px;
   --composer-card-padding-block: 10px;
-  /* Neighbor rows/chips both showing hover/selected wash (sidebar parent + child). */
-  --gap-adjacent: 2px;
+  /* Touching rounded/highlighted neighbors only (sidebar twin rows, menu ↔ trigger). */
+  --gap-adjacent: 6px;
   --composer-section-gap: 6px;
   --composer-card-padding-inline: var(--composer-card-padding-block);
   --composer-action-edge-inset: calc(
@@ -1740,8 +1740,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      already part of the main-stage geometry. */
   --bottom-bar-gap-y: 6px;
   --composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);
-  --composer-menu-side-offset: 6px;
-  --composer-picker-popover-gap: var(--composer-menu-side-offset);
+  --composer-menu-side-offset: var(--gap-adjacent);
+  --composer-picker-popover-gap: var(--gap-adjacent);
   --composer-card-footer-gap: var(--composer-footer-gap);
   --composer-body-min-height: 48px;
   --composer-resting-height: calc(

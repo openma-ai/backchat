@@ -1,56 +1,26 @@
-import { useLayoutEffect, useState } from "react";
+import {
+  GAP_ADJACENT_CSS_VAR,
+  GAP_ADJACENT_PX,
+  readGapAdjacentPx,
+  useGapAdjacentPx,
+} from "@/components/ui/gap-adjacent";
 
-export const COMPOSER_MENU_SIDE_OFFSET_CSS_VAR = "--composer-menu-side-offset";
+/** @deprecated Use `GAP_ADJACENT_CSS_VAR` */
+export const COMPOSER_MENU_SIDE_OFFSET_CSS_VAR = GAP_ADJACENT_CSS_VAR;
 
-export const COMPOSER_PICKER_UPWARD_SIDE_OFFSET_CSS_VAR =
-  "--composer-picker-popover-gap";
+/** @deprecated Use `GAP_ADJACENT_CSS_VAR` */
+export const COMPOSER_PICKER_UPWARD_SIDE_OFFSET_CSS_VAR = GAP_ADJACENT_CSS_VAR;
 
-/** Keep aligned with `--composer-menu-side-offset` in `styles/index.css`. */
-export const COMPOSER_MENU_SIDE_OFFSET_PX = 6;
+/** @deprecated Use `GAP_ADJACENT_PX` */
+export const COMPOSER_MENU_SIDE_OFFSET_PX = GAP_ADJACENT_PX;
 
-function readCssLengthTokenPx(
-  root: Element,
-  cssVar: string,
-): number | null {
-  const probe = document.createElement("div");
-  probe.style.position = "absolute";
-  probe.style.visibility = "hidden";
-  probe.style.pointerEvents = "none";
-  probe.style.marginTop = `var(${cssVar})`;
-  root.appendChild(probe);
-  const parsed = Number.parseFloat(getComputedStyle(probe).marginTop);
-  probe.remove();
-  if (Number.isFinite(parsed) && parsed >= 0) {
-    return parsed;
-  }
-  return null;
-}
+/** @deprecated Use `readGapAdjacentPx` */
+export const readComposerMenuSideOffsetPx = readGapAdjacentPx;
 
-export function readComposerMenuSideOffsetPx(
-  element: Element = document.documentElement,
-): number {
-  return (
-    readCssLengthTokenPx(element, COMPOSER_MENU_SIDE_OFFSET_CSS_VAR) ??
-    COMPOSER_MENU_SIDE_OFFSET_PX
-  );
-}
+/** @deprecated Use `readGapAdjacentPx` */
+export const readComposerPickerUpwardSideOffsetPx = readGapAdjacentPx;
 
-export function readComposerPickerUpwardSideOffsetPx(
-  element: Element = document.documentElement,
-): number {
-  return (
-    readCssLengthTokenPx(element, COMPOSER_PICKER_UPWARD_SIDE_OFFSET_CSS_VAR) ??
-    readComposerMenuSideOffsetPx(element)
-  );
-}
-
-/** Radix `sideOffset` for composer footer pickers that open upward (`side="top"`). */
+/** Radix `sideOffset` for composer menus/popovers separated from their trigger. */
 export function useComposerPickerUpwardSideOffset(): number {
-  const [sideOffset, setSideOffset] = useState(COMPOSER_MENU_SIDE_OFFSET_PX);
-
-  useLayoutEffect(() => {
-    setSideOffset(readComposerPickerUpwardSideOffsetPx());
-  }, []);
-
-  return sideOffset;
+  return useGapAdjacentPx();
 }

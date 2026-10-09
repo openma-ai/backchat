@@ -20,6 +20,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useGapAdjacentPx } from "@/components/ui/gap-adjacent";
 import { useI18n } from "@/lib/i18n";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 
@@ -137,6 +138,7 @@ export function AgentUpdateError({
 }
 
 export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
+  const gapAdjacent = useGapAdjacentPx();
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -239,7 +241,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
         data-sidebar-agent-update-popover="true"
         side="top"
         align="start"
-        sideOffset={8}
+        sideOffset={gapAdjacent}
         collisionPadding={8}
         style={{ width: "var(--agent-update-popover-width)" }}
         className="max-w-[var(--radix-popover-content-available-width)]"
