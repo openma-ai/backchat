@@ -47,6 +47,7 @@ export function ComposerSearchableSelectMenu({
 
   return (
     <GroupedCommandMenu
+      testId="composer-select-menu-panel"
       groups={groups}
       searchPlaceholder={searchPlaceholder}
       emptyMessage={emptyMessage}

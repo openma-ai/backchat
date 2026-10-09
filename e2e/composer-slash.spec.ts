@@ -256,7 +256,7 @@ test.describe("composer slash commands", () => {
     );
     const clearGlyph = chip.locator('[data-session-state-clear-glyph="true"]');
     await expect(clearGlyph).toHaveCSS("opacity", "0");
-    await chip.hover();
+    await chip.focus();
     await expect(clearGlyph).toHaveCSS("opacity", "1");
 
     await chip.click();

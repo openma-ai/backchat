@@ -112,9 +112,13 @@
   box-shadow: none;
 }
 
-/* Host chip stays visually quiet on hover; open uses the shared wash above. */
-.runtime-location-control:hover {
-  background: transparent;
+/* Host chip stays visually quiet on hover and while its menu is open. */
+.runtime-location-control:hover,
+.runtime-location-control[data-state="open"],
+.runtime-location-control[aria-expanded="true"] {
+  background: transparent !important;
+  outline: none;
+  box-shadow: none;
 }
 
 .app-compact-control:focus {
@@ -2177,21 +2181,49 @@ body,
   background-clip: padding-box;
 }
 
-.sidebar-scroll-area [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
-  width: min(
-    var(--oma-scrollbar-sidebar-track-size),
-    var(--oma-scrollbar-transcript-track-size)
-  );
-  height: min(
-    var(--oma-scrollbar-sidebar-track-size),
-    var(--oma-scrollbar-transcript-track-size)
-  );
+/* Product-owned sidebar scrollbar. Radix preserves native scrolling in the
+   viewport but hides the platform scrollbar; this overlay thumb therefore
+   has the same geometry on every OS and never contributes a layout gutter. */
+.sidebar-scroll-area [data-slot="scroll-area-viewport"] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.sidebar-scroll-area [data-slot="scroll-area-viewport"]::-webkit-scrollbar-thumb {
-  border-width: min(
-    var(--oma-scrollbar-sidebar-thumb-border),
-    var(--oma-scrollbar-transcript-thumb-border)
-  );
+.sidebar-scroll-area [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.sidebar-scroll-area
+  [data-slot="scroll-area-scrollbar"][data-orientation="vertical"] {
+  position: absolute;
+  z-index: 40;
+  inset-block: 0;
+  inset-inline-end: 0 !important;
+  width: 8px;
+  padding-block: 0;
+  padding-inline: 2px;
+  border: 0;
+  opacity: 0;
+  transition:
+    opacity var(--dur-base) var(--ease-soft),
+    padding-inline var(--dur-quick) var(--ease-snap);
+}
+.sidebar-scroll-area:hover [data-slot="scroll-area-scrollbar"],
+.sidebar-scroll-area:focus-within [data-slot="scroll-area-scrollbar"] {
+  opacity: 1;
+}
+.sidebar-scroll-area [data-slot="scroll-area-thumb"] {
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar-scroll-area [data-slot="scroll-area-scrollbar"]:hover,
+.sidebar-scroll-area
+  [data-slot="scroll-area-scrollbar"][data-state="visible"]:active {
+  padding-inline: 1px;
+}
+.sidebar-scroll-area [data-slot="scroll-area-thumb"]:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 .sidebar-scroll-content {
