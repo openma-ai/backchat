@@ -49,7 +49,7 @@ test("host menu: selected 本机 row has no gray highlight", async ({ page, home
   await expect(runtimeTrigger).toContainText("本机");
   await runtimeTrigger.click();
 
-  const localRow = page.getByRole("menuitem", { name: "本机", exact: true });
+  const localRow = page.getByRole("option", { name: "本机", exact: true });
   await expect(localRow).toBeVisible();
   await expect(localRow).toHaveAttribute("data-checked", "true");
   await expect(localRow).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");

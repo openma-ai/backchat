@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import type { ComposerGroupedCommandPickerGroup } from "@/components/chat/ComposerGroupedCommandPicker";
-import type { ComposerSelectMenuEntry } from "@/components/chat/ComposerSearchableSelectMenu";
+import type { ComposerSelectMenuEntry } from "@/components/composer/searchable-select-menu-adapter";
 import {
-  GroupedCommandPickerIconSlot,
-  GroupedCommandPickerLabelSlot,
-} from "@/components/chat/GroupedCommandPickerSlots";
+  GroupedCommandMenuIconSlot,
+  GroupedCommandMenuLabelSlot,
+} from "@/components/ui/grouped-command-menu-slots";
+import type { GroupedCommandMenuGroup } from "@/components/ui/grouped-command-menu";
 import { groupSelectMenuEntries } from "@/lib/composer-select-menu-layout";
 import { searchableSelectHaystack } from "@/lib/searchable-select-filter";
 
@@ -28,15 +28,15 @@ function mapEntryToCommandItem(
 
   const defaultRow = (
     <>
-      <GroupedCommandPickerIconSlot>
+      <GroupedCommandMenuIconSlot>
         {item.leading ?? <span className="size-3.5" aria-hidden="true" />}
-      </GroupedCommandPickerIconSlot>
-      <GroupedCommandPickerLabelSlot>
+      </GroupedCommandMenuIconSlot>
+      <GroupedCommandMenuLabelSlot>
         <span className="block truncate">{item.label}</span>
         {item.hint ? (
           <span className="block truncate text-[11px] text-fg-subtle">{item.hint}</span>
         ) : null}
-      </GroupedCommandPickerLabelSlot>
+      </GroupedCommandMenuLabelSlot>
     </>
   );
 
@@ -66,11 +66,11 @@ export function menuEntriesToCommandGroups(
       state: { highlighted: boolean },
     ) => ReactNode;
   },
-): ComposerGroupedCommandPickerGroup[] {
+): GroupedCommandMenuGroup[] {
   const named = groupSelectMenuEntries(items);
   const ungrouped = items.filter((item) => !item.groupName?.trim());
 
-  const groups: ComposerGroupedCommandPickerGroup[] = named.map((group) => ({
+  const groups: GroupedCommandMenuGroup[] = named.map((group) => ({
     heading: group.name,
     items: group.items.map((item) =>
       mapEntryToCommandItem(item, activeValue, onSelect, renderItem),
@@ -79,7 +79,6 @@ export function menuEntriesToCommandGroups(
 
   if (ungrouped.length > 0) {
     groups.push({
-      heading: groups.length > 0 ? undefined : undefined,
       items: ungrouped.map((item) =>
         mapEntryToCommandItem(item, activeValue, onSelect, renderItem),
       ),

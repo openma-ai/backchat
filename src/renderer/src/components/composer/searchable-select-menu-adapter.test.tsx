@@ -9,10 +9,12 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   }: {
     children: React.ReactNode;
     className?: string;
-  } & Record<string, unknown>) => <div className={className} {...props}>{children}</div>,
+  } & Record<string, unknown>) => (
+    <div className={className} {...props}>{children}</div>
+  ),
 }));
 
-import { ComposerSearchableSelectMenu } from "./ComposerSearchableSelectMenu";
+import { ComposerSearchableSelectMenu } from "./searchable-select-menu-adapter";
 
 describe("ComposerSearchableSelectMenu", () => {
   it("renders search and scroll for grouped lists", () => {
@@ -49,5 +51,24 @@ describe("ComposerSearchableSelectMenu", () => {
       />,
     );
     expect(html).toContain("Alpha");
+  });
+
+  it("renders provider command groups for large multi-provider lists", () => {
+    const items = Array.from({ length: 10 }, (_, index) => ({
+      value: `model-${index}`,
+      label: `Model ${index}`,
+      groupName: index % 2 === 0 ? "anthropic-proxy" : "openai-codex",
+    }));
+    const html = renderToStaticMarkup(
+      <ComposerSearchableSelectMenu
+        items={items}
+        activeValue="model-3"
+        onSelect={() => {}}
+        searchPlaceholder="Search"
+        emptyMessage="None"
+      />,
+    );
+    expect(html).toContain("anthropic-proxy");
+    expect(html).toContain("openai-codex");
   });
 });

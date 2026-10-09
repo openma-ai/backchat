@@ -1,11 +1,12 @@
 import { useMemo, type ReactNode } from "react";
-import { ComposerGroupedCommandPicker } from "@/components/chat/ComposerGroupedCommandPicker";
-import { menuEntriesToCommandGroups } from "@/components/chat/composer-menu-command-groups";
-import { cn } from "@/lib/utils";
+import {
+  GROUPED_COMMAND_MENU_DROPDOWN_LIST_HEIGHT_PX,
+  GroupedCommandMenu,
+  groupedCommandMenuPresets,
+} from "@/components/ui/grouped-command-menu";
+import { menuEntriesToCommandGroups } from "@/lib/composer-menu-entries";
 import type { SearchableSelectFields } from "@/lib/searchable-select-filter";
 
-export const COMPOSER_SELECT_MENU_MAX_HEIGHT_PX = 420;
-export const COMPOSER_SELECT_MENU_LIST_HEIGHT_PX = 360;
 export const COMPOSER_SELECT_MENU_SEARCH_THRESHOLD = 8;
 
 export type ComposerSelectMenuEntry = SearchableSelectFields & {
@@ -15,21 +16,7 @@ export type ComposerSelectMenuEntry = SearchableSelectFields & {
   leading?: ReactNode;
 };
 
-export function composerSelectMenuPanelClassName(className?: string) {
-  return cn(
-    "flex h-[min(420px,var(--radix-dropdown-menu-content-available-height))] min-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] flex-col overflow-hidden",
-    className,
-  );
-}
-
-export function composerSelectMenuShellClassName({
-  className,
-}: {
-  className?: string;
-} = {}) {
-  return cn("w-[var(--composer-menu-width)] overflow-hidden p-0", className);
-}
-
+/** Composer feature adapter: flat searchable entries → grouped command menu. */
 export function ComposerSearchableSelectMenu({
   items,
   activeValue,
@@ -59,14 +46,15 @@ export function ComposerSearchableSelectMenu({
   );
 
   return (
-    <ComposerGroupedCommandPicker
+    <GroupedCommandMenu
       groups={groups}
       searchPlaceholder={searchPlaceholder}
       emptyMessage={emptyMessage}
       showSearch={showSearch}
       initialHighlightValue={activeItem?.value ?? ""}
       insideDropdownMenu
-      listHeightPx={COMPOSER_SELECT_MENU_LIST_HEIGHT_PX}
+      listHeightPx={GROUPED_COMMAND_MENU_DROPDOWN_LIST_HEIGHT_PX}
+      panelHeightPx={groupedCommandMenuPresets.composerDropdown.panelHeightPx}
     />
   );
 }

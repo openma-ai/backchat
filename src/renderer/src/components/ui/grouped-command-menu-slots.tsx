@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /** Leading icon column — lines up with the search row magnifier (sidebar icon track). */
-export function GroupedCommandPickerIconSlot({
+export function GroupedCommandMenuIconSlot({
   children,
   className,
 }: {
@@ -23,7 +23,7 @@ export function GroupedCommandPickerIconSlot({
 }
 
 /** Primary label column (optional hint stacks under the title). */
-export function GroupedCommandPickerLabelSlot({
+export function GroupedCommandMenuLabelSlot({
   children,
   className,
 }: {

@@ -55,12 +55,12 @@ import {
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   ComposerSearchableSelectMenu,
-  composerSelectMenuShellClassName,
-} from "@/components/chat/ComposerSearchableSelectMenu";
+} from "@/components/composer/searchable-select-menu-adapter";
+import { groupedCommandMenuShellClassName } from "@/components/ui/grouped-command-menu";
 import {
-  GroupedCommandPickerIconSlot,
-  GroupedCommandPickerLabelSlot,
-} from "@/components/chat/GroupedCommandPickerSlots";
+  GroupedCommandMenuIconSlot,
+  GroupedCommandMenuLabelSlot,
+} from "@/components/ui/grouped-command-menu-slots";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -351,7 +351,7 @@ function SessionAgentSubmenu({
           {currentAgentLabel}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className={composerSelectMenuShellClassName()}>
+      <DropdownMenuSubContent sideOffset={6} className={groupedCommandMenuShellClassName()}>
         <ComposerSearchableSelectMenu
           items={
             agents.length > 0
@@ -439,7 +439,7 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className={composerSelectMenuShellClassName()}>
+      <DropdownMenuSubContent sideOffset={6} className={groupedCommandMenuShellClassName()}>
         {option.type === "select" ? (
             <ComposerSearchableSelectMenu
               items={selectMenuItems}
@@ -862,7 +862,7 @@ function InlineComposerOptionControl({
           align="start"
           sideOffset={6}
           collisionPadding={8}
-          className={composerSelectMenuShellClassName()}
+          className={groupedCommandMenuShellClassName()}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <ComposerSearchableSelectMenu
@@ -914,7 +914,7 @@ function InlineComposerOptionControl({
         align="start"
         sideOffset={6}
         collisionPadding={8}
-        className={composerSelectMenuShellClassName({ className: "w-[260px]" })}
+        className={groupedCommandMenuShellClassName("w-[260px]")}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <ComposerSearchableSelectMenu
@@ -996,7 +996,7 @@ function SessionRunItem({
   if (presentation === "command") {
     return (
       <>
-        <GroupedCommandPickerIconSlot>
+        <GroupedCommandMenuIconSlot>
           {agentId ? (
             <AgentIcon
               agentId={agentId}
@@ -1008,8 +1008,8 @@ function SessionRunItem({
           ) : (
             <span className="size-3.5" aria-hidden="true" />
           )}
-        </GroupedCommandPickerIconSlot>
-        <GroupedCommandPickerLabelSlot
+        </GroupedCommandMenuIconSlot>
+        <GroupedCommandMenuLabelSlot
           className={cn(
             "text-xs",
             highlighted && "text-accent-foreground",
@@ -1020,7 +1020,7 @@ function SessionRunItem({
           {hint ? (
             <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
           ) : null}
-        </GroupedCommandPickerLabelSlot>
+        </GroupedCommandMenuLabelSlot>
       </>
     );
   }

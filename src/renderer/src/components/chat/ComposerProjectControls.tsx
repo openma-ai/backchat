@@ -1,7 +1,7 @@
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { useProjects } from "@/lib/projects-query";
 import { useRemovedProjectPaths } from "@/lib/removed-projects";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CircleAlertIcon,
   ArrowLeftIcon,
@@ -17,37 +17,31 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
 import {
-  ComposerGroupedCommandPicker,
-  GROUPED_COMMAND_PANEL_HEIGHT_PX,
-} from "@/components/chat/ComposerGroupedCommandPicker";
+  GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX,
+  GroupedCommandMenu,
+  groupedCommandMenuPopoverShellClassName,
+  groupedCommandMenuPresets,
+} from "@/components/ui/grouped-command-menu";
 import {
-  GroupedCommandPickerIconSlot,
-  GroupedCommandPickerLabelSlot,
-} from "@/components/chat/GroupedCommandPickerSlots";
-import {
-  Command,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
+  GroupedCommandMenuIconSlot,
+  GroupedCommandMenuLabelSlot,
+} from "@/components/ui/grouped-command-menu-slots";
+import { CommandItem } from "@/components/ui/command";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { selectRecentProjectPaths } from "@/lib/composer-project-paths";
-import { useGroupedCommandRovingHighlight } from "@/components/chat/useGroupedCommandRovingHighlight";
+import { composerFooterTriggerClass } from "@/components/ui/composer-footer-trigger";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { folderName } from "@/lib/project-path";
 import { useSessionStore, selectActive } from "@/lib/session-store";
-import { composerFooterTriggerClass } from "@/components/chat/composer-footer-trigger";
 import { RuntimeLocationControl } from "./RuntimeLocationControl";
 
 const LAST_PROJECT_KEY = "backchat:last-project-directory:v1";
@@ -165,16 +159,18 @@ export function ProjectChipRow({
             side="top"
             align="start"
             sideOffset={0}
-            className="w-[var(--composer-menu-width)] max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0"
+            className={groupedCommandMenuPopoverShellClassName()}
           >
-            <ComposerGroupedCommandPicker
+            <GroupedCommandMenu
               testId="composer-project-picker-panel"
               menuMode="project-picker"
+              panelHeightPx={GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}
+              listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
               panelClassName={cn(
                 "flex flex-col overflow-hidden",
-                `h-[min(${GROUPED_COMMAND_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
-                `min-h-[min(${GROUPED_COMMAND_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
-                `max-h-[min(${GROUPED_COMMAND_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+                `h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+                `min-h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+                `max-h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
               )}
               commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
@@ -198,16 +194,16 @@ export function ProjectChipRow({
                           },
                           children: (
                             <>
-                              <GroupedCommandPickerIconSlot>
+                              <GroupedCommandMenuIconSlot>
                                 <ProjectIcon
                                   identity={`project:${project.id}`}
                                   sourceFolders={project.source_folders}
                                   primaryRoot={project.primary_folder}
                                 />
-                              </GroupedCommandPickerIconSlot>
-                              <GroupedCommandPickerLabelSlot>
+                              </GroupedCommandMenuIconSlot>
+                              <GroupedCommandMenuLabelSlot>
                                 <span className="truncate">{project.name}</span>
-                              </GroupedCommandPickerLabelSlot>
+                              </GroupedCommandMenuLabelSlot>
                             </>
                           ),
                         })),
@@ -229,12 +225,12 @@ export function ProjectChipRow({
                           },
                           children: (
                             <>
-                              <GroupedCommandPickerIconSlot>
+                              <GroupedCommandMenuIconSlot>
                                 <FolderOpenIcon />
-                              </GroupedCommandPickerIconSlot>
-                              <GroupedCommandPickerLabelSlot>
+                              </GroupedCommandMenuIconSlot>
+                              <GroupedCommandMenuLabelSlot>
                                 <span className="truncate">{folderName(path)}</span>
-                              </GroupedCommandPickerLabelSlot>
+                              </GroupedCommandMenuLabelSlot>
                             </>
                           ),
                         })),
@@ -283,12 +279,12 @@ export function ProjectChipRow({
                       },
                       children: (
                         <>
-                          <GroupedCommandPickerIconSlot>
+                          <GroupedCommandMenuIconSlot>
                             <FolderOpenIcon />
-                          </GroupedCommandPickerIconSlot>
-                          <GroupedCommandPickerLabelSlot>
+                          </GroupedCommandMenuIconSlot>
+                          <GroupedCommandMenuLabelSlot>
                             <span className="truncate">{t("common.browse")}</span>
-                          </GroupedCommandPickerLabelSlot>
+                          </GroupedCommandMenuLabelSlot>
                         </>
                       ),
                     },
@@ -302,12 +298,12 @@ export function ProjectChipRow({
                       },
                       children: (
                         <>
-                          <GroupedCommandPickerIconSlot>
+                          <GroupedCommandMenuIconSlot>
                             <XIcon />
-                          </GroupedCommandPickerIconSlot>
-                          <GroupedCommandPickerLabelSlot>
+                          </GroupedCommandMenuIconSlot>
+                          <GroupedCommandMenuLabelSlot>
                             <span className="truncate">{t("chat.noProject")}</span>
-                          </GroupedCommandPickerLabelSlot>
+                          </GroupedCommandMenuLabelSlot>
                         </>
                       ),
                     },
@@ -374,8 +370,6 @@ function WorkspaceChip({
   const explicitChoices = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
-  const { commandRovingProps, onKeyDown: onRovingKeyDown } =
-    useGroupedCommandRovingHighlight(open && view === "choose" ? "open" : "closed");
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -489,66 +483,153 @@ function WorkspaceChip({
       </PopoverTrigger>
       {isDraft && <PopoverContent side="top" align="start" sideOffset={0}
         className={`${view === "create" ? "w-[360px]" : "w-[var(--composer-menu-width)]"} max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0`}>
-        {view === "choose" ? <Command
-          defaultValue={selected?.id ?? "local"}
-          className="grouped-command-picker app-select-content rounded-xl! bg-popover p-0 text-popover-foreground shadow-none ring-0"
-          style={{ "--grouped-command-list-height": "288px" } as CSSProperties}
-          {...commandRovingProps}
-          onKeyDown={onRovingKeyDown}
-        >
-          <CommandInput
-            autoFocus
-            placeholder={t("workspace.search")}
-            onKeyDown={onRovingKeyDown}
+        {view === "choose" ? (
+          <GroupedCommandMenu
+            testId="composer-workspace-picker-panel"
+            menuMode="workspace-picker"
+            menuResetKey={open ? "open" : "closed"}
+            panelHeightPx={GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}
+            listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
+            panelClassName={cn(
+              "flex flex-col overflow-hidden",
+              `h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+              `min-h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+              `max-h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+            )}
+            commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
+            searchPlaceholder={t("workspace.search")}
+            emptyMessage={t("chat.noMatchingOptions")}
+            initialHighlightValue={selected?.id ?? "local"}
+            listHeader={
+              <div className="relative" data-workspace-create-row>
+                <CommandItem
+                  forceMount
+                  value="new-workspace"
+                  keywords={[t("workspace.new")]}
+                  onSelect={beginCreate}
+                  className="pr-10 text-xs"
+                >
+                  <GroupedCommandMenuIconSlot>
+                    <PlusIcon />
+                  </GroupedCommandMenuIconSlot>
+                  <GroupedCommandMenuLabelSlot>
+                    <span className="truncate">{t("workspace.new")}</span>
+                  </GroupedCommandMenuLabelSlot>
+                </CommandItem>
+                <Popover open={introOpen} onOpenChange={setIntroOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-2 top-1/2 size-6 -translate-y-1/2 text-fg-subtle hover:text-fg"
+                      aria-label={t("workspace.about")}
+                      title={t("workspace.about")}
+                    >
+                      <CircleAlertIcon className="size-3.5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="end"
+                    sideOffset={8}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    aria-label={t("workspace.introTitle")}
+                    className="app-select-content w-80 max-w-[var(--radix-popover-content-available-width)] gap-3 rounded-xl p-4"
+                    onOpenAutoFocus={(event) => event.preventDefault()}
+                    onCloseAutoFocus={(event) => event.preventDefault()}
+                  >
+                    <div className="flex items-center gap-2 text-fg">
+                      <CircleAlertIcon className="size-4 shrink-0 text-fg-muted" />
+                      <h3 className="text-sm font-medium">{t("workspace.introTitle")}</h3>
+                    </div>
+                    <p className="text-xs leading-relaxed text-fg-muted">{t("workspace.introBody")}</p>
+                    <p className="text-xs leading-relaxed text-fg-muted">{t("workspace.introOptions")}</p>
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setIntroOpen(false)}>
+                        {t("workspace.gotIt")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setIntroOpen(false);
+                          beginCreate();
+                          setOpen(true);
+                        }}
+                      >
+                        {t("workspace.create")}
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            }
+            groups={[
+              {
+                items: [
+                  {
+                    id: "local",
+                    value: "local",
+                    keywords: [t("workspace.local"), "main"],
+                    checked: !workspaceId || isLiveWorkspaceId(workspaceId),
+                    title: t("workspace.localHint"),
+                    onSelect: () => {
+                      onSetWorkspace(null);
+                      setOpen(false);
+                    },
+                    children: (
+                      <>
+                        <GroupedCommandMenuIconSlot>
+                          <GitBranchIcon />
+                        </GroupedCommandMenuIconSlot>
+                        <GroupedCommandMenuLabelSlot>
+                          <span className="truncate">{t("workspace.local")}</span>
+                          {liveBranch ? (
+                            <span className="text-fg-subtle">{liveBranch}</span>
+                          ) : null}
+                        </GroupedCommandMenuLabelSlot>
+                      </>
+                    ),
+                  },
+                  ...saved.map((ws) => ({
+                    id: ws.id,
+                    value: ws.id,
+                    keywords: [ws.name, ws.branch ?? ""],
+                    checked: ws.id === workspaceId,
+                    title: ws.roots
+                      .map((root) => `${folderName(root.sourcePath)} → ${root.effectivePath}`)
+                      .join("\n"),
+                    onSelect: () => {
+                      onSetWorkspace(ws.id);
+                      setOpen(false);
+                    },
+                    children: (
+                      <>
+                        <GroupedCommandMenuIconSlot>
+                          <GitBranchIcon />
+                        </GroupedCommandMenuIconSlot>
+                        <GroupedCommandMenuLabelSlot>
+                          <span className="truncate">{ws.name}</span>
+                          <span className="text-fg-subtle">
+                            {ws.worktrees.length} {t("workspace.repositories")}
+                          </span>
+                        </GroupedCommandMenuLabelSlot>
+                      </>
+                    ),
+                  })),
+                ],
+              },
+            ]}
           />
-          <ScrollArea className="grouped-command-picker-scroll sidebar-scroll-area w-full min-h-0">
-          <CommandList className="max-h-none overflow-visible scroll-py-1 p-0 outline-none">
-            <div className="relative" data-workspace-create-row>
-              <CommandItem forceMount value="new-workspace" keywords={[t("workspace.new")]} onSelect={beginCreate} className="pr-10 text-xs">
-                <PlusIcon className="size-3.5" />
-                <span className="flex-1">{t("workspace.new")}</span>
-              </CommandItem>
-              <Popover open={introOpen} onOpenChange={setIntroOpen}>
-                <PopoverTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon" className="absolute right-2 top-1/2 size-6 -translate-y-1/2 text-fg-subtle hover:text-fg" aria-label={t("workspace.about")} title={t("workspace.about")}>
-                    <CircleAlertIcon className="size-3.5" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent side="top" align="end" sideOffset={8}
-                  onKeyDown={event => event.stopPropagation()}
-                  aria-label={t("workspace.introTitle")}
-                  className="app-select-content w-80 max-w-[var(--radix-popover-content-available-width)] gap-3 rounded-xl p-4"
-                  onOpenAutoFocus={event => event.preventDefault()}
-                  onCloseAutoFocus={event => event.preventDefault()}>
-                  <div className="flex items-center gap-2 text-fg">
-                    <CircleAlertIcon className="size-4 shrink-0 text-fg-muted" />
-                    <h3 className="text-sm font-medium">{t("workspace.introTitle")}</h3>
-                  </div>
-                  <p className="text-xs leading-relaxed text-fg-muted">{t("workspace.introBody")}</p>
-                  <p className="text-xs leading-relaxed text-fg-muted">{t("workspace.introOptions")}</p>
-                  <div className="flex justify-end gap-2">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setIntroOpen(false)}>{t("workspace.gotIt")}</Button>
-                    <Button type="button" size="sm" onClick={() => { setIntroOpen(false); beginCreate(); setOpen(true); }}>{t("workspace.create")}</Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <CommandSeparator />
-            <CommandItem value="local" keywords={[t("workspace.local"), "main"]} data-checked={!workspaceId || isLiveWorkspaceId(workspaceId)} onSelect={() => { onSetWorkspace(null); setOpen(false); }} className="text-xs" title={t("workspace.localHint")}>
-              <GitBranchIcon className="size-3.5" />
-              <span className="flex-1">{t("workspace.local")}</span>
-              {liveBranch && <span className="text-fg-subtle">{liveBranch}</span>}
-            </CommandItem>
-            {saved.map(ws => <CommandItem key={ws.id} value={ws.id} keywords={[ws.name, ws.branch ?? ""]} data-checked={ws.id === workspaceId}
-              onSelect={() => { onSetWorkspace(ws.id); setOpen(false); }} className="text-xs"
-              title={ws.roots.map(root => `${folderName(root.sourcePath)} → ${root.effectivePath}`).join("\n")}>
-              <GitBranchIcon className="size-3.5" />
-              <span className="min-w-0 flex-1 truncate">{ws.name}</span>
-              <span className="text-fg-subtle">{ws.worktrees.length} {t("workspace.repositories")}</span>
-            </CommandItem>)}
-          </CommandList>
-          </ScrollArea>
-        </Command> : <form className="app-select-content max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl p-3" onSubmit={event => { event.preventDefault(); void create(); }}>
+        ) : (
+          <form
+            className="app-select-content max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void create();
+            }}
+          >
           <div className="mb-3 flex items-center gap-2">
             <Button type="button" variant="ghost" size="icon" className="size-6" disabled={creating} aria-label={t("workspace.back")} onClick={() => setView("choose")}><ArrowLeftIcon className="size-3.5" /></Button>
             <span className="text-sm font-medium">{t("workspace.create")}</span>
@@ -576,7 +657,8 @@ function WorkspaceChip({
           {mode === "new" && <p className="mt-3 text-xs leading-relaxed text-fg-muted">{t("workspace.creationNotice")}</p>}
           {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
           <div className="mt-3 flex justify-end"><Button type="submit" size="sm" disabled={!newName.trim() || creating}>{t(creating ? "workspace.creating" : "workspace.create")}</Button></div>
-        </form>}
+        </form>
+        )}
       </PopoverContent>}
     </Popover>
   );
