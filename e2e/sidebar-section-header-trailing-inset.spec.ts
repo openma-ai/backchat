@@ -46,6 +46,7 @@ test("section header and row trailing icons share one column", async () => {
       cwd: "",
     });
 
+    const hostRow = page.locator(".sidebar-host-chrome .sidebar-grid-row").first();
     const projectsHeader = page
       .getByRole("button", { name: "项目", exact: true })
       .locator('xpath=ancestor::*[contains(@class,"sidebar-section-header")][1]');
@@ -56,8 +57,10 @@ test("section header and row trailing icons share one column", async () => {
     await projectsHeader.hover();
     await chatsHeader.hover();
 
-    const projectsAction = projectsHeader.getByRole("button", { name: "创建项目" });
-    const chatsAction = chatsHeader.getByRole("button", { name: "新建会话" });
+    const projectsAction = projectsHeader.locator('[data-sidebar-grid-action="last"]');
+    const chatsAction = chatsHeader.locator('[data-sidebar-grid-action="penultimate"]');
+    const hostSearch = hostRow.locator('[data-sidebar-grid-action="penultimate"]');
+    const hostMenu = hostRow.locator('[data-sidebar-grid-action="last"]');
     await expect(projectsAction).toBeVisible();
     await expect(chatsAction).toBeVisible();
 
@@ -66,15 +69,19 @@ test("section header and row trailing icons share one column", async () => {
       .filter({ hasText: "codex-acp" })
       .first();
     await sessionRow.hover();
-    const chatRowAction = sessionRow.locator('[data-sidebar-grid="trailing"] .sidebar-row-action').first();
+    const chatRowAction = sessionRow.locator('[data-sidebar-grid-action="last"]').first();
     await expect(chatRowAction).toBeVisible({ timeout: 10_000 });
 
     const plusCenter = await iconCenter(projectsAction);
     const pencilCenter = await iconCenter(chatsAction);
     const rowCenter = await iconCenter(chatRowAction);
+    const searchCenter = await iconCenter(hostSearch);
+    const menuCenter = await iconCenter(hostMenu);
 
-    expect(Math.abs(plusCenter.x - pencilCenter.x)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(pencilCenter.x - searchCenter.x)).toBeLessThanOrEqual(0.75);
     expect(Math.abs(plusCenter.x - rowCenter.x)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(plusCenter.x - menuCenter.x)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(pencilCenter.x - plusCenter.x)).toBeGreaterThan(8);
 
     expect(await rowVerticalCenterDelta(".sidebar-section-header", projectsAction)).toBeLessThanOrEqual(
       0.75,

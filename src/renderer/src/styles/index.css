@@ -282,8 +282,8 @@
   justify-content: center;
 }
 .sidebar-section-header [data-sidebar-section-header-action="true"] .sidebar-row-action {
-  width: 100%;
-  height: 100%;
+  width: var(--sidebar-row-action-size);
+  height: var(--sidebar-row-action-size);
 }
 .sidebar-section-header .sidebar-row-action > svg {
   width: var(--sidebar-row-action-icon-size);
@@ -1659,9 +1659,10 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --sidebar-grid-icon-track: 16px;
   --sidebar-grid-column-gap: 8px;
   --sidebar-grid-nest-step: 16px;
+  --sidebar-grid-trailing-gap: 4px;
   --sidebar-grid-trailing-track: var(--sidebar-row-action-size);
   --sidebar-grid-trailing-track-double: calc(
-    2 * var(--sidebar-row-action-size) + 4px
+    2 * var(--sidebar-row-action-size) + var(--sidebar-grid-trailing-gap)
   );
   --sidebar-grid-trailing-track-host: max-content;
   --oma-scrollbar-thumb: color-mix(
@@ -2177,6 +2178,22 @@ body,
 }
 .sidebar-grid-row[data-sidebar-trailing-track="host"] {
   --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track-host);
+}
+.sidebar-grid-row[data-sidebar-trailing-track="double"] [data-sidebar-grid="trailing"] {
+  display: grid;
+  grid-template-columns: var(--sidebar-row-action-size) var(--sidebar-row-action-size);
+  gap: var(--sidebar-grid-trailing-gap);
+  justify-content: end;
+  align-items: center;
+}
+/* One trailing control lands in the penultimate or last action column. */
+.sidebar-grid-row[data-sidebar-trailing-track="double"] [data-sidebar-grid="trailing"] > :only-child {
+  grid-column: 2;
+}
+.sidebar-grid-row[data-sidebar-trailing-track="double"]
+  [data-sidebar-grid="trailing"]
+  > :only-child[data-sidebar-grid-action="penultimate"] {
+  grid-column: 1;
 }
 .sidebar-grid-cell-icon,
 [data-sidebar-grid="icon"] {

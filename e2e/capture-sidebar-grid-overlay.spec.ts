@@ -17,14 +17,24 @@ test("capture sidebar grid overlay (zh)", async () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await enableAgent(page, "codex-acp");
     const bridge = new TestBridge(page);
-    await bridge.injectSessionRow({
-      session_id: "grid-overlay-chat",
-      agent_id: "codex-acp",
-      cwd: "",
+    for (let index = 0; index < 20; index += 1) {
+      await bridge.injectSessionRow({
+        session_id: `grid-overlay-${index}`,
+        agent_id: "codex-acp",
+        cwd: "",
+      });
+    }
+
+    const sidebarViewport = page.locator(
+      '[data-sidebar-scroll-area="true"] [data-slot="scroll-area-viewport"]',
+    );
+    await sidebarViewport.evaluate((el) => {
+      el.scrollTop = Math.floor(el.scrollHeight / 4);
     });
 
+    await page.locator(".sidebar-host-chrome").hover();
     await page.locator(".sidebar-section-header").filter({
-      has: page.getByRole("button", { name: "项目", exact: true }),
+      has: page.getByRole("button", { name: "对话", exact: true }),
     }).hover();
 
     await page.addStyleTag({
@@ -42,8 +52,18 @@ test("capture sidebar grid overlay (zh)", async () => {
         .sidebar-navigation [data-sidebar-grid="trailing"] {
           background: oklch(0.7 0.1 145 / 0.14);
         }
+        .sidebar-navigation [data-sidebar-grid="trailing"] {
+          background-image: linear-gradient(
+            to right,
+            transparent calc(50% - 0.5px),
+            oklch(0.45 0.1 30 / 0.55) calc(50% - 0.5px),
+            oklch(0.45 0.1 30 / 0.55) calc(50% + 0.5px),
+            transparent calc(50% + 0.5px)
+          );
+        }
         .sidebar-navigation [data-sidebar-grid="icon"]::after,
-        .sidebar-navigation [data-sidebar-grid="trailing"]::after {
+        .sidebar-navigation [data-sidebar-grid-action="penultimate"]::after,
+        .sidebar-navigation [data-sidebar-grid-action="last"]::after {
           content: "";
           position: absolute;
           top: 0;
@@ -51,11 +71,12 @@ test("capture sidebar grid overlay (zh)", async () => {
           left: 50%;
           width: 1px;
           transform: translateX(-50%);
-          background: oklch(0.45 0.1 30 / 0.55);
+          background: oklch(0.45 0.1 30 / 0.75);
           pointer-events: none;
         }
         .sidebar-navigation [data-sidebar-grid="icon"],
-        .sidebar-navigation [data-sidebar-grid="trailing"] {
+        .sidebar-navigation [data-sidebar-grid-action="penultimate"],
+        .sidebar-navigation [data-sidebar-grid-action="last"] {
           position: relative;
         }
       `,

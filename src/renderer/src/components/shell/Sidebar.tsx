@@ -635,9 +635,14 @@ export function Sidebar() {
   const labelCls = cn(collapsed && "hidden", "truncate");
 
   const newConversationAction = (
-    <button type="button" aria-label={t("sidebar.newConversation")}
-      title={t("sidebar.newConversation")} className="sidebar-row-action app-no-drag"
-      onClick={goHome}>
+    <button
+      type="button"
+      aria-label={t("sidebar.newConversation")}
+      title={t("sidebar.newConversation")}
+      data-sidebar-grid-action="penultimate"
+      className="sidebar-row-action app-no-drag"
+      onClick={goHome}
+    >
       <SquarePenIcon aria-hidden="true" />
     </button>
   );
@@ -655,7 +660,7 @@ export function Sidebar() {
       {/* Header actions and conversation rows share one fixed 8px inset. The
           product-owned scrollbar overlays the viewport and reserves no gutter. */}
       <div className="sidebar-host-chrome shrink-0 pt-[var(--row-gap-y)]">
-        <SidebarGridRow trailingTrack="host" className="rounded-md">
+        <SidebarGridRow trailingTrack="double" className="rounded-md">
           <SidebarGridCell slot="icon">
             <span className="sidebar-row-icon">
               <SquarePenIcon className="size-3.5" />
@@ -676,21 +681,26 @@ export function Sidebar() {
               <span className={cn("min-w-0 truncate", labelCls)}>{t("sidebar.newChat")}</span>
             </button>
           </SidebarGridCell>
-          <SidebarGridCell slot="trailing" className="gap-1">
+          <SidebarGridCell slot="trailing">
             <button
               type="button"
               onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))}
               aria-label={t("sidebar.search")}
               title={`${t("sidebar.search")} (⌘K)`}
-              className="app-no-drag inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg hover:bg-[var(--control-bg-hover)]"
+              data-sidebar-grid-action="penultimate"
+              className="app-no-drag sidebar-row-action"
             >
-              <SearchIcon className="size-4" />
+              <SearchIcon aria-hidden="true" />
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" aria-label={t("sidebar.sidebarOptions")}
-                  className="app-no-drag inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg hover:bg-[var(--control-bg-hover)]">
-                  <MoreHorizontalIcon className="size-4" />
+                <button
+                  type="button"
+                  aria-label={t("sidebar.sidebarOptions")}
+                  data-sidebar-grid-action="last"
+                  className="app-no-drag sidebar-row-action"
+                >
+                  <MoreHorizontalIcon aria-hidden="true" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-40">
@@ -871,6 +881,7 @@ export function Sidebar() {
                       onClick={() => setCreateProjectOpen(true)}
                       aria-label={t("project.create")}
                       title={t("project.create")}
+                      data-sidebar-grid-action="last"
                       className="sidebar-row-action"
                     >
                       <PlusIcon aria-hidden="true" />
@@ -1222,6 +1233,7 @@ function SidebarSection({
     <section className="sidebar-section" data-state={open ? "open" : "closed"} data-sidebar-custom-section={customSectionId}>
       <SidebarGridRow
         depth={depth}
+        trailingTrack="double"
         className="sidebar-section-header group/section rounded-md transition-colors hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]"
       >
         <SidebarGridCell slot="icon">
@@ -1256,16 +1268,14 @@ function SidebarSection({
         </SidebarGridCell>
         <SidebarGridCell
           slot="trailing"
-          className={cn(labelCls.split(/\s+/).includes("hidden") && "hidden")}
+          className={cn(
+            labelCls.split(/\s+/).includes("hidden") && "hidden",
+            action &&
+              "opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100",
+          )}
+          data-sidebar-section-header-action={action ? "true" : undefined}
         >
-          {action ? (
-            <span
-              data-sidebar-section-header-action="true"
-              className="flex size-full items-center justify-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100"
-            >
-              {action}
-            </span>
-          ) : null}
+          {action}
         </SidebarGridCell>
       </SidebarGridRow>
       <AnimatedCollapse open={open}>{children}</AnimatedCollapse>
@@ -1322,7 +1332,7 @@ function ProjectSidebarRow({
       <SidebarGridCell
         slot="trailing"
         className={cn(
-          "gap-0.5 transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
+          "transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
           labelCls,
           menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
         )}
@@ -1331,6 +1341,7 @@ function ProjectSidebarRow({
           type="button"
           aria-label={t("sidebar.startProjectChat")}
           title={t("sidebar.startProjectChat")}
+          data-sidebar-grid-action="penultimate"
           onClick={onNewChat}
           className="sidebar-row-action"
         >
@@ -1342,6 +1353,7 @@ function ProjectSidebarRow({
               type="button"
               aria-label={t("sidebar.projectActions")}
               data-sidebar-row-action="true"
+              data-sidebar-grid-action="last"
               className="sidebar-row-action"
             >
               <MoreHorizontalIcon aria-hidden="true" />
@@ -1419,7 +1431,7 @@ function ProjectCoordinatorRow({
     "data-configured": hasCoordinator,
     className: cn("sidebar-grid-row", rowClassName),
     "data-sidebar-depth": "2",
-    "data-sidebar-trailing-track": "single",
+    "data-sidebar-trailing-track": "double",
   };
   const content = <>
     <SidebarGridCell slot="icon">
@@ -1536,17 +1548,28 @@ function WorkspaceSidebarRow({
       <SidebarGridCell
         slot="trailing"
         className={cn(
-          "gap-0.5 transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
+          "transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
           labelCls,
           menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
         )}
       >
+        <button
+          type="button"
+          aria-label={t("workspace.startChat")}
+          title={t("workspace.startChat")}
+          data-sidebar-grid-action="penultimate"
+          onClick={onNewChat}
+          className="sidebar-row-action"
+        >
+          <SquarePenIcon aria-hidden="true" />
+        </button>
         <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label={t("workspace.actions")}
               data-sidebar-row-action="true"
+              data-sidebar-grid-action="last"
               className="sidebar-row-action"
             >
               <MoreHorizontalIcon aria-hidden="true" />
@@ -1561,7 +1584,7 @@ function WorkspaceSidebarRow({
               className="flex items-center gap-2 py-1 text-ui"
             >
               <FolderOpenIcon className="size-3.5" />
-              <span>{t("workspace.reveal")}</span>
+              <span>{t("sidebar.reveal")}</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
             <DropdownMenuItem
@@ -1583,15 +1606,6 @@ function WorkspaceSidebarRow({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-        <button
-          type="button"
-          aria-label={t("workspace.startChat")}
-          title={t("workspace.startChat")}
-          onClick={onNewChat}
-          className="sidebar-row-action"
-        >
-          <SquarePenIcon aria-hidden="true" />
-        </button>
       </SidebarGridCell>
     </SidebarGridRow>
   );
@@ -1620,6 +1634,7 @@ function PairSidebarRow({
   return (
     <SidebarGridRow
       depth={depth}
+      trailingTrack="double"
       className={cn(
         "app-no-drag group rounded-md text-left text-ui",
         active
@@ -1648,16 +1663,18 @@ function PairSidebarRow({
       <SidebarGridCell
         slot="trailing"
         className={cn(
-          "gap-0.5 transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
+          "transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
           labelCls,
           menuOpen
             ? "opacity-100"
             : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
         )}
       >
-        {row.activeTurnId && (
-          <Loader2Icon className="size-3 shrink-0 animate-spin text-fg-subtle" />
-        )}
+        {row.activeTurnId ? (
+          <span className="sidebar-row-action pointer-events-none" aria-hidden="true" data-sidebar-grid-action="penultimate">
+            <Loader2Icon className="animate-spin" />
+          </span>
+        ) : null}
         <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
           <DropdownMenuTrigger asChild>
             <button
@@ -1665,6 +1682,7 @@ function PairSidebarRow({
               aria-label={t("sidebar.sessionActions")}
               onClick={(event) => event.stopPropagation()}
               data-sidebar-row-action="true"
+              data-sidebar-grid-action="last"
               className="sidebar-row-action"
             >
               <MoreHorizontalIcon aria-hidden="true" />
@@ -1767,6 +1785,7 @@ function SessionRow({
       <ContextMenu.Trigger asChild>
         <SidebarGridRow
           depth={depth}
+          trailingTrack="double"
           className={cn(
             "group relative rounded-md text-ui",
             errored && "text-danger",
@@ -1795,10 +1814,13 @@ function SessionRow({
               {row.externalClient ? <ExternalSourceBadge client={row.externalClient} /> : null}
             </button>
           </SidebarGridCell>
-          <SidebarGridCell slot="trailing" className="relative justify-center">
-            <span className="sidebar-row-trailing">
+          <SidebarGridCell slot="trailing" className="relative">
             {running ? (
-              <span className="sidebar-row-action pointer-events-none" aria-hidden="true">
+              <span
+                className="sidebar-row-action pointer-events-none"
+                data-sidebar-grid-action="last"
+                aria-hidden="true"
+              >
                 <Loader2Icon className="animate-spin" />
               </span>
             ) : (
@@ -1806,9 +1828,10 @@ function SessionRow({
                 {hasSchedule && (
                   <span
                     data-sidebar-schedule-indicator="true"
+                    data-sidebar-grid-action="penultimate"
                     aria-hidden="true"
                     className={cn(
-                      "sidebar-row-action pointer-events-none absolute inset-0",
+                      "sidebar-row-action pointer-events-none",
                       menuOpen
                         ? "opacity-0"
                         : "opacity-100 group-hover:opacity-0",
@@ -1818,7 +1841,10 @@ function SessionRow({
                   </span>
                 )}
                 {!hasSchedule && !active && row.unread ? (
-                  <span className="size-1.5 rounded-full" style={{ backgroundColor: "oklch(0.62 0.16 240)" }} />
+                  <span
+                    className="size-1.5 justify-self-center rounded-full"
+                    style={{ backgroundColor: "oklch(0.62 0.16 240)" }}
+                  />
                 ) : (
                   <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                     <DropdownMenuTrigger asChild>
@@ -1827,6 +1853,7 @@ function SessionRow({
                         aria-label={t("sidebar.sessionActions")}
                         onClick={(e) => e.stopPropagation()}
                         data-sidebar-row-action="true"
+                        data-sidebar-grid-action="last"
                         className={cn(
                           "sidebar-row-action transition-opacity",
                           menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
@@ -1874,7 +1901,6 @@ function SessionRow({
                 )}
               </>
             )}
-            </span>
           </SidebarGridCell>
         </SidebarGridRow>
       </ContextMenu.Trigger>

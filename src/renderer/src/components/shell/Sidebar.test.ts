@@ -585,7 +585,7 @@ describe("groupSidebarSessions", () => {
     expect(styles).toContain("--sidebar-content-padding-inline-end");
     expect(styles).toContain(".sidebar-grid-row");
     expect(styles).toContain('[data-sidebar-grid="trailing"]');
-    expect(section).toContain('data-sidebar-section-header-action="true"');
+    expect(section).toContain("data-sidebar-section-header-action");
     expect(section).toContain("sidebar-section-header group/section");
     expect(section).toContain("SidebarGridRow");
     expect(section).toContain('slot="trailing"');
@@ -606,13 +606,12 @@ describe("groupSidebarSessions", () => {
     );
     const trailing = sessionRow.slice(sessionRow.indexOf('slot="trailing"'));
 
-    expect(styles).toContain(".sidebar-row-trailing {");
-    expect(styles).toContain("width: var(--sidebar-row-action-size);");
+    expect(styles).toContain("--sidebar-grid-trailing-gap:");
+    expect(styles).toContain('data-sidebar-trailing-track="double"');
     expect(sessionRow).toContain('SidebarGridCell slot="trailing"');
-    expect(sessionRow).toContain("sidebar-row-trailing");
-    expect(trailing.split("sidebar-row-trailing").length - 1).toBe(1);
+    expect(sessionRow).toContain('data-sidebar-grid-action="last"');
     expect(trailing).toContain("{running ?");
-    expect(trailing.indexOf("Loader2Icon")).toBeGreaterThan(trailing.indexOf("sidebar-row-trailing"));
+    expect(trailing.indexOf("Loader2Icon")).toBeGreaterThan(trailing.indexOf('slot="trailing"'));
     expect(trailing.indexOf("data-sidebar-schedule-indicator")).toBeGreaterThan(
       trailing.indexOf("Loader2Icon"),
     );

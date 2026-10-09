@@ -12,12 +12,10 @@ async function gridColumnLeft(
   });
 }
 
-async function gridColumnCenterX(
-  row: import("@playwright/test").Locator,
-  slot: "icon" | "trailing",
-) {
-  return row.locator(`[data-sidebar-grid="${slot}"]`).evaluate((cell) => {
-    const box = cell.getBoundingClientRect();
+async function actionCenterX(action: import("@playwright/test").Locator) {
+  return action.evaluate((element) => {
+    const target = element.querySelector("svg") ?? element;
+    const box = target.getBoundingClientRect();
     return box.left + box.width / 2;
   });
 }
@@ -31,11 +29,13 @@ test("sidebar rows share icon and trailing column x-positions", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await enableAgent(page, "codex-acp");
     const bridge = new TestBridge(page);
-    await bridge.injectSessionRow({
-      session_id: "grid-track-chat",
-      agent_id: "codex-acp",
-      cwd: "",
-    });
+    for (let index = 0; index < 24; index += 1) {
+      await bridge.injectSessionRow({
+        session_id: `grid-track-${index}`,
+        agent_id: "codex-acp",
+        cwd: "",
+      });
+    }
 
     const hostRow = page.locator(".sidebar-host-chrome .sidebar-grid-row").first();
     const scheduledRow = page.locator('.sidebar-scroll-content a.sidebar-grid-row[href*="scheduled"]');
@@ -47,6 +47,14 @@ test("sidebar rows share icon and trailing column x-positions", async () => {
     });
     const footerRow = page.locator(".sidebar-footer-chrome .sidebar-grid-row").first();
 
+    const sidebarViewport = page.locator(
+      '[data-sidebar-scroll-area="true"] [data-slot="scroll-area-viewport"]',
+    );
+    await sidebarViewport.evaluate((el) => {
+      el.scrollTop = Math.floor(el.scrollHeight / 3);
+    });
+    await expect(sidebarViewport).toHaveAttribute("data-chat-scrolling", "true");
+
     await projectsHeader.hover();
     await chatsHeader.hover();
 
@@ -55,7 +63,7 @@ test("sidebar rows share icon and trailing column x-positions", async () => {
       .filter({ hasText: "codex-acp" })
       .first();
     await sessionRow.hover();
-    await expect(sessionRow.locator('[data-sidebar-grid="trailing"] .sidebar-row-action')).toBeVisible({
+    await expect(sessionRow.locator('[data-sidebar-grid-action="last"]')).toBeVisible({
       timeout: 10_000,
     });
 
@@ -81,23 +89,42 @@ test("sidebar rows share icon and trailing column x-positions", async () => {
     const sessionIcon = await gridColumnLeft(sessionRow, "icon");
     expect(Math.abs(sessionIcon - depth1Reference - 16)).toBeLessThanOrEqual(0.75);
 
-    const trailingCenters = await Promise.all([
-      gridColumnCenterX(projectsHeader, "trailing"),
-      gridColumnCenterX(chatsHeader, "trailing"),
-      gridColumnCenterX(sessionRow, "trailing"),
-    ]);
+    const hostSearch = hostRow.locator('[data-sidebar-grid-action="penultimate"]');
+    const hostMenu = hostRow.locator('[data-sidebar-grid-action="last"]');
+    const chatsPencil = chatsHeader.locator('[data-sidebar-grid-action="penultimate"]');
+    const projectsPlus = projectsHeader.locator('[data-sidebar-grid-action="last"]');
+    const sessionMenu = sessionRow.locator('[data-sidebar-grid-action="last"]');
 
-    const referenceTrailing = trailingCenters[0];
-    for (const center of trailingCenters) {
-      expect(Math.abs(center - referenceTrailing)).toBeLessThanOrEqual(0.75);
+    await expect(hostSearch).toBeVisible();
+    await expect(hostMenu).toBeVisible();
+    await expect(chatsPencil).toBeVisible();
+    await expect(projectsPlus).toBeVisible();
+
+    const searchCenter = await actionCenterX(hostSearch);
+    const pencilCenter = await actionCenterX(chatsPencil);
+    const hostMenuCenter = await actionCenterX(hostMenu);
+    const sessionMenuCenter = await actionCenterX(sessionMenu);
+    const projectsPlusCenter = await actionCenterX(projectsPlus);
+
+    expect(Math.abs(searchCenter - pencilCenter)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(hostMenuCenter - sessionMenuCenter)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(hostMenuCenter - projectsPlusCenter)).toBeLessThanOrEqual(0.75);
+
+    const projectRow = page.locator(".sidebar-project-row").first();
+    if (await projectRow.count()) {
+      await projectRow.hover();
+      const projectPencil = projectRow.locator('[data-sidebar-grid-action="penultimate"]');
+      const projectMenu = projectRow.locator('[data-sidebar-grid-action="last"]');
+      if (await projectPencil.count()) {
+        expect(Math.abs(searchCenter - await actionCenterX(projectPencil))).toBeLessThanOrEqual(0.75);
+        expect(Math.abs(hostMenuCenter - await actionCenterX(projectMenu))).toBeLessThanOrEqual(0.75);
+      }
     }
 
     const coordinatorRow = page.locator('[data-testid="project-coordinator-row"]').first();
     if (await coordinatorRow.count()) {
       const coordinatorIcon = await gridColumnLeft(coordinatorRow, "icon");
       expect(Math.abs(coordinatorIcon - sessionIcon)).toBeLessThanOrEqual(0.75);
-      const coordinatorTrailing = await gridColumnCenterX(coordinatorRow, "trailing");
-      expect(Math.abs(coordinatorTrailing - referenceTrailing)).toBeLessThanOrEqual(0.75);
     }
   } finally {
     await cleanup();
