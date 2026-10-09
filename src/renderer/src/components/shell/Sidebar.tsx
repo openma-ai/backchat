@@ -706,7 +706,7 @@ export function Sidebar() {
         data-sidebar-scroll-area="true"
         className="sidebar-scroll-area min-h-0 flex-1"
       >
-      <div className="px-2 pt-px">
+      <div className="sidebar-scroll-content">
 
         <Link
           to="/scheduled"

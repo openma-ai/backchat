@@ -2,6 +2,11 @@ import * as React from "react"
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import {
+  clearOmaScrollbarScrolling,
+  markOmaScrollbarScrolling,
+  OMA_SCROLLBAR_IDLE_MS,
+} from "@/lib/oma-scrollbar-activity"
 
 function ScrollArea({
   className,
@@ -12,6 +17,7 @@ function ScrollArea({
   showBoundaries?: boolean
 }) {
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
+  const scrollIdleTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const [boundaries, setBoundaries] = React.useState({ top: false, bottom: false })
 
   const updateBoundaries = React.useCallback(() => {
@@ -60,7 +66,18 @@ function ScrollArea({
         ref={viewportRef}
         data-slot="scroll-area-viewport"
         className="oma-scrollbar size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
-        onScroll={updateBoundaries}
+        onScroll={(event) => {
+          updateBoundaries()
+          const viewport = event.currentTarget
+          if (scrollIdleTimerRef.current !== null) {
+            clearTimeout(scrollIdleTimerRef.current)
+          }
+          markOmaScrollbarScrolling(viewport)
+          scrollIdleTimerRef.current = setTimeout(() => {
+            clearOmaScrollbarScrolling(viewport)
+            scrollIdleTimerRef.current = null
+          }, OMA_SCROLLBAR_IDLE_MS)
+        }}
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

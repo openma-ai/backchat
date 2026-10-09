@@ -50,15 +50,42 @@ test("capture unified scrollbar on sidebar and transcript", async () => {
     if (await expandSidebar.isVisible()) {
       await expandSidebar.click();
     }
-    await sidebarScroll.hover({ timeout: 5_000 }).catch(() => undefined);
+    const sidebarViewport = sidebarScroll.locator('[data-slot="scroll-area-viewport"]');
+    await sidebarViewport.evaluate((el) => {
+      el.scrollTop = Math.min(el.scrollTop + 1, el.scrollHeight);
+    });
     const chatScroller = page.locator(".chat-scrollbar").first();
     await expect(chatScroller).toBeVisible();
     await chatScroller.evaluate((el) => {
       el.scrollTop = Math.floor(el.scrollHeight / 3);
-      el.setAttribute("data-chat-scrolling", "true");
     });
-    await page.waitForTimeout(400);
+    await expect(sidebarViewport).toHaveAttribute("data-chat-scrolling", "true");
+    await expect(chatScroller).toHaveAttribute("data-chat-scrolling", "true");
+    await page.waitForTimeout(200);
 
+    const sidebarThumbWidth = await sidebarViewport.evaluate((el) => {
+      const thumb = getComputedStyle(el, "::-webkit-scrollbar-thumb");
+      const track = getComputedStyle(el, "::-webkit-scrollbar");
+      return {
+        track: track.width,
+        border: thumb.borderTopWidth,
+      };
+    });
+    const transcriptThumbWidth = await chatScroller.evaluate((el) => {
+      const thumb = getComputedStyle(el, "::-webkit-scrollbar-thumb");
+      const track = getComputedStyle(el, "::-webkit-scrollbar");
+      return {
+        track: track.width,
+        border: thumb.borderTopWidth,
+      };
+    });
+    expect(sidebarThumbWidth.track).toBe(transcriptThumbWidth.track);
+    expect(sidebarThumbWidth.border).toBe(transcriptThumbWidth.border);
+
+    await page.screenshot({
+      path: `${artifactDir}/unified-scrollbar-after-thickness-zh.png`,
+      fullPage: false,
+    });
     await page.screenshot({
       path: `${artifactDir}/unified-scrollbar-sidebar-and-transcript-zh.png`,
       fullPage: false,

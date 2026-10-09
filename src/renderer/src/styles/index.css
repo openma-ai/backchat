@@ -1634,9 +1634,20 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --sidebar-row-action-size: 16px;
   --sidebar-row-action-icon-size: var(--control-icon-size);
   --sidebar-row-action-radius: calc(var(--sidebar-row-action-size) / 2);
-  --oma-scrollbar-size: 10px;
-  --oma-scrollbar-thumb: color-mix(in srgb, var(--fg) 30%, transparent);
-  --oma-scrollbar-thumb-hover: color-mix(in srgb, var(--fg) 50%, transparent);
+  /* Transcript is the reference geometry; sidebar padding tracks size deltas. */
+  --oma-scrollbar-reference-size: 10px;
+  --oma-scrollbar-size: 12px;
+  --oma-scrollbar-thumb-border: 2px;
+  --oma-scrollbar-thumb: color-mix(
+    in srgb,
+    var(--chat-fg, var(--fg)) 30%,
+    transparent
+  );
+  --oma-scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--chat-fg, var(--fg)) 50%,
+    transparent
+  );
   --scroll-boundary-thickness: 0.5px;
   --scroll-boundary-color: color-mix(in srgb, var(--border) 72%, transparent);
 
@@ -2033,9 +2044,8 @@ body,
   }
 }
 
-/* Shared overlay scrollbar — matches the chat transcript pill (thin,
-   rounded, transparent track). Sidebar, settings, dialogs, and selects
-   all consume the same tokens in light and dark via --fg. */
+/* Shared overlay scrollbar — transcript owns reveal timing (scroll + idle
+   fade). Geometry and colors are tokenized once for every scroll surface. */
 .oma-scrollbar,
 .app-scrollbar,
 .chat-scrollbar,
@@ -2044,13 +2054,10 @@ body,
   scrollbar-color: transparent transparent;
   transition: scrollbar-color 160ms var(--ease-soft);
 }
-.oma-scrollbar:hover,
-.oma-scrollbar:focus-within,
-.app-scrollbar:hover,
-.app-scrollbar:focus-within,
-[data-slot="scroll-area-viewport"]:hover,
-[data-slot="scroll-area-viewport"]:focus-within,
-.chat-scrollbar[data-chat-scrolling="true"] {
+.oma-scrollbar[data-chat-scrolling="true"],
+.app-scrollbar[data-chat-scrolling="true"],
+.chat-scrollbar[data-chat-scrolling="true"],
+[data-slot="scroll-area-viewport"][data-chat-scrolling="true"] {
   scrollbar-color: var(--oma-scrollbar-thumb) transparent;
 }
 .oma-scrollbar::-webkit-scrollbar,
@@ -2072,31 +2079,33 @@ body,
 [data-slot="scroll-area-viewport"]::-webkit-scrollbar-thumb {
   min-height: 40px;
   max-height: 50%;
-  border: 3px solid transparent;
+  border: var(--oma-scrollbar-thumb-border) solid transparent;
   border-radius: 9999px;
   background: transparent;
   background-clip: padding-box;
   transition: background 160ms var(--ease-soft);
 }
-.oma-scrollbar:hover::-webkit-scrollbar-thumb,
-.oma-scrollbar:focus-within::-webkit-scrollbar-thumb,
-.app-scrollbar:hover::-webkit-scrollbar-thumb,
-.app-scrollbar:focus-within::-webkit-scrollbar-thumb,
-[data-slot="scroll-area-viewport"]:hover::-webkit-scrollbar-thumb,
-[data-slot="scroll-area-viewport"]:focus-within::-webkit-scrollbar-thumb,
-.chat-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb {
+.oma-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb,
+.app-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb,
+.chat-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb,
+[data-slot="scroll-area-viewport"][data-chat-scrolling="true"]::-webkit-scrollbar-thumb {
   background: var(--oma-scrollbar-thumb);
   background-clip: padding-box;
 }
-.oma-scrollbar:hover::-webkit-scrollbar-thumb:hover,
-.oma-scrollbar:focus-within::-webkit-scrollbar-thumb:hover,
-.app-scrollbar:hover::-webkit-scrollbar-thumb:hover,
-.app-scrollbar:focus-within::-webkit-scrollbar-thumb:hover,
-[data-slot="scroll-area-viewport"]:hover::-webkit-scrollbar-thumb:hover,
-[data-slot="scroll-area-viewport"]:focus-within::-webkit-scrollbar-thumb:hover,
-.chat-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover {
+.oma-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover,
+.app-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover,
+.chat-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover,
+[data-slot="scroll-area-viewport"][data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover {
   background: var(--oma-scrollbar-thumb-hover);
   background-clip: padding-box;
+}
+
+.sidebar-scroll-content {
+  padding-left: 8px;
+  padding-right: calc(
+    8px + max(0px, var(--oma-scrollbar-size) - var(--oma-scrollbar-reference-size))
+  );
+  padding-top: 1px;
 }
 
 .sidebar-scroll-boundary {
