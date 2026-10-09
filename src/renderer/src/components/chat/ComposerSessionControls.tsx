@@ -53,15 +53,12 @@ import {
   type AcpSessionConfigOption,
 } from "@/lib/session-config-options";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { ComposerProviderNestedSelectMenu } from "@/components/chat/ComposerProviderNestedSelectMenu";
 import {
   ComposerSearchableSelectMenu,
   composerSelectMenuShellClassName,
 } from "@/components/chat/ComposerSearchableSelectMenu";
 import { shouldUseProviderSubmenu } from "@/lib/composer-select-menu-layout";
-import {
-  SelectMenuGridRow,
-  SidebarGridCell,
-} from "@/components/chat/SelectMenuGridRow";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -434,7 +431,7 @@ function SessionConfigSubmenu({
           active: item.value === option.currentValue,
         }))
       : [];
-  const wideSelectMenu = shouldUseProviderSubmenu(selectMenuItems);
+  const nestedProviders = shouldUseProviderSubmenu(selectMenuItems);
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
@@ -444,32 +441,54 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent
-        sideOffset={6}
-        className={composerSelectMenuShellClassName({ wide: wideSelectMenu })}
-      >
+      <DropdownMenuSubContent sideOffset={6} className={composerSelectMenuShellClassName()}>
         {option.type === "select" ? (
-          <ComposerSearchableSelectMenu
-            items={selectMenuItems}
-            activeValue={option.currentValue}
-            searchPlaceholder={t("chat.searchOptions")}
-            emptyMessage={t("chat.noMatchingOptions")}
-            onSelect={(value) => onSetConfigOption(option.id, value)}
-            renderItem={(item, { highlighted }) => (
-              <SessionRunItem
-                icon={
-                  isAgentPresetConfigOption(option)
-                    ? agentPresetIcon(item.value)
-                    : Icon
-                }
-                label={item.label}
-                hint={item.hint}
-                active={item.active}
-                highlighted={highlighted}
-                onSelect={() => onSetConfigOption(option.id, item.value)}
-              />
-            )}
-          />
+          nestedProviders ? (
+            <ComposerProviderNestedSelectMenu
+              items={selectMenuItems}
+              activeValue={option.currentValue}
+              searchPlaceholder={t("chat.searchOptions")}
+              emptyMessage={t("chat.noMatchingOptions")}
+              providerIcon={<Icon className="size-3.5 text-fg-subtle" />}
+              onSelect={(value) => onSetConfigOption(option.id, value)}
+              renderItem={(item, { highlighted }) => (
+                <SessionRunItem
+                  icon={
+                    isAgentPresetConfigOption(option)
+                      ? agentPresetIcon(item.value)
+                      : Icon
+                  }
+                  label={item.label}
+                  hint={item.hint}
+                  active={item.active}
+                  highlighted={highlighted}
+                  onSelect={() => onSetConfigOption(option.id, item.value)}
+                />
+              )}
+            />
+          ) : (
+            <ComposerSearchableSelectMenu
+              items={selectMenuItems}
+              activeValue={option.currentValue}
+              searchPlaceholder={t("chat.searchOptions")}
+              emptyMessage={t("chat.noMatchingOptions")}
+              onSelect={(value) => onSetConfigOption(option.id, value)}
+              renderItem={(item, { highlighted }) => (
+                <SessionRunItem
+                  icon={
+                    isAgentPresetConfigOption(option)
+                      ? agentPresetIcon(item.value)
+                      : Icon
+                  }
+                  label={item.label}
+                  hint={item.hint}
+                  active={item.active}
+                  highlighted={highlighted}
+                  onSelect={() => onSetConfigOption(option.id, item.value)}
+                />
+              )}
+            />
+          )
         ) : (
           <div className="p-1">
             <SessionRunItem
@@ -870,15 +889,7 @@ function InlineComposerOptionControl({
           align="start"
           sideOffset={6}
           collisionPadding={8}
-          className={composerSelectMenuShellClassName({
-            wide: shouldUseProviderSubmenu(
-              flattenSelectOptions(option).map((item) => ({
-                value: item.value,
-                label: item.name,
-                groupName: item.groupName,
-              })),
-            ),
-          })}
+          className={composerSelectMenuShellClassName()}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <ComposerSearchableSelectMenu
@@ -930,16 +941,7 @@ function InlineComposerOptionControl({
         align="start"
         sideOffset={6}
         collisionPadding={8}
-        className={composerSelectMenuShellClassName({
-          wide: shouldUseProviderSubmenu(
-            flattenSelectOptions(option).map((item) => ({
-              value: item.value,
-              label: item.name,
-              groupName: item.groupName,
-            })),
-          ),
-          className: "w-[260px]",
-        })}
+        className={composerSelectMenuShellClassName({ className: "w-[260px]" })}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <ComposerSearchableSelectMenu
@@ -997,33 +999,31 @@ function SessionRunItem({
       onSelect={onSelect}
       onFocus={() => undefined}
       className={cn(
-        "rounded-md p-0 text-xs focus:text-accent-foreground",
+        "flex items-start gap-2 px-2 py-1.5 text-xs",
         highlighted && "bg-accent text-accent-foreground",
         active && "text-fg",
       )}
     >
-      <SelectMenuGridRow className="w-full">
-        <SidebarGridCell slot="icon" className="self-start pt-0.5">
-          {agentId ? (
-            <AgentIcon
-              agentId={agentId}
-              iconUrl={agentIconUrl}
-              className="size-3.5 text-fg-subtle"
-            />
-          ) : Icon ? (
-            <Icon className="size-3.5 text-fg-subtle" />
-          ) : null}
-        </SidebarGridCell>
-        <SidebarGridCell slot="label" className="min-w-0 flex-col items-start gap-0">
-          <span className="w-full truncate">{label}</span>
-          {hint ? (
-            <span className="w-full truncate text-[11px] text-fg-subtle">{hint}</span>
-          ) : null}
-        </SidebarGridCell>
-        <SidebarGridCell slot="trailing" className="self-start pt-0.5">
-          {active ? <CheckIcon className="size-3.5 text-fg-muted" aria-hidden="true" /> : null}
-        </SidebarGridCell>
-      </SelectMenuGridRow>
+      {agentId ? (
+        <span aria-hidden="true" className="mt-0.5 shrink-0">
+          <AgentIcon
+            agentId={agentId}
+            iconUrl={agentIconUrl}
+            className="size-3.5 text-fg-subtle"
+          />
+        </span>
+      ) : Icon ? (
+        <Icon className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" />
+      ) : null}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {hint && (
+          <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
+        )}
+      </span>
+      {active && (
+        <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-fg-muted" />
+      )}
     </DropdownMenuItem>
   );
 }

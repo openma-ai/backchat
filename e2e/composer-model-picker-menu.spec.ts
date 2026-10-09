@@ -78,17 +78,13 @@ test("model picker opens provider submenu with bounded scroll", async ({ page, b
   const panel = modelPickerPanel(page);
   await expect(panel).toBeVisible({ timeout: 10_000 });
 
-  const openaiProvider = panel.locator('[data-composer-provider-row="true"]').filter({
+  const openaiProvider = panel.locator('[data-composer-provider-sub="true"]').filter({
     hasText: "openai-codex",
   });
   await expect(openaiProvider).toBeVisible();
-  await expect(openaiProvider).toHaveAttribute("aria-selected", "true");
-  await expect(panel.getByTestId("composer-model-pane")).toContainText("openai-codex model 2");
+  await expect(openaiProvider).toContainText("openai-codex model 2");
 
-  const search = panel.getByRole("searchbox");
-  await search.press("ArrowDown");
-  await search.press("ArrowRight");
-  await expect(panel.getByTestId("composer-model-pane")).toContainText("devin model 0");
+  await expect(panel.locator('[data-composer-provider-sub="true"]')).toHaveCount(3);
 
   const box = await panel.boundingBox();
   const viewport = page.viewportSize();

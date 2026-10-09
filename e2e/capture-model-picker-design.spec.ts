@@ -79,17 +79,23 @@ test("capture model picker design states (light + dark)", async () => {
 
       await runTrigger.click();
       await page.getByRole("menuitem", { name: /^Model\b/ }).first().hover();
-      const panel = page.getByTestId("composer-select-menu-panel");
+      let panel = page.getByTestId("composer-select-menu-panel");
       await expect(panel).toBeVisible({ timeout: 10_000 });
       await page.screenshot({
         path: join(artifactDir, `${theme}-02-level1-providers.png`),
         animations: "disabled",
       });
 
+      await page.keyboard.press("Escape");
+      await runTrigger.click();
+      await page.getByRole("menuitem", { name: /^Model\b/ }).first().hover();
+      panel = page.getByTestId("composer-select-menu-panel");
+      await expect(panel).toBeVisible({ timeout: 10_000 });
       const search = panel.getByRole("searchbox");
-      await search.press("ArrowDown");
-      await search.press("ArrowRight");
-      await expect(panel.getByTestId("composer-model-pane")).toContainText("devin model");
+      await search.fill("openai-codex model 0");
+      await expect(panel.getByRole("listbox", { name: "Options" })).toContainText(
+        "openai-codex model 0",
+      );
       await page.screenshot({
         path: join(artifactDir, `${theme}-03-level2-models.png`),
         animations: "disabled",
