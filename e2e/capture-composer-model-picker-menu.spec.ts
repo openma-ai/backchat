@@ -5,7 +5,7 @@ import { enableAgent, injectEvent, injectSession, launchApp } from "./helpers";
 const artifactDir = "/opt/cursor/artifacts/screenshots";
 
 function groupedModelOptions(count: number) {
-  const providers = ["anthropic-proxy", "openai-codex", "devin"];
+  const providers = ["anthropic-proxy", "openai-codex", "devin", "minimax-m31"];
   return providers.map((provider) => ({
     group: provider,
     name: provider,
@@ -49,19 +49,16 @@ test("composer model picker stays within viewport with search", async () => {
 
     const runPicker = page.getByRole("button", { name: /Run on|运行位置/ }).first();
     await runPicker.click();
-    const modelSubmenu = page.getByRole("menuitem", { name: /模型|Model/ });
-    await modelSubmenu.hover();
+    await page.getByRole("menuitem", { name: /模型|Model/ }).first().hover();
+    const panel = page.getByTestId("composer-select-menu-panel");
+    await expect(panel).toBeVisible({ timeout: 10_000 });
 
-    const search = page.getByRole("searchbox");
-    await expect(search).toBeVisible();
-    await search.fill("devin 1");
+    const search = panel.getByRole("searchbox");
+    await search.fill("minimax-m31 0");
+    await expect(panel.getByRole("listbox", { name: "Options" })).toContainText(
+      "minimax-m31 model 0",
+    );
 
-    const listbox = page.getByRole("listbox", { name: "Options" });
-    await expect(listbox).toBeVisible();
-    await expect(page.getByText("devin model 1")).toBeVisible();
-    await expect(page.getByText("openai-codex model 1")).toHaveCount(0);
-
-    const panel = page.locator('[data-slot="dropdown-menu-sub-content"]').last();
     const box = await panel.boundingBox();
     const viewport = page.viewportSize();
     expect(box).not.toBeNull();

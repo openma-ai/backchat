@@ -15,7 +15,7 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 import { ComposerSearchableSelectMenu } from "./ComposerSearchableSelectMenu";
 
 describe("ComposerSearchableSelectMenu", () => {
-  it("renders grouped rows and a search field for long lists", () => {
+  it("renders provider rows for large multi-provider lists", () => {
     const items = Array.from({ length: 10 }, (_, index) => ({
       value: `model-${index}`,
       label: `Model ${index}`,
@@ -31,9 +31,24 @@ describe("ComposerSearchableSelectMenu", () => {
       />,
     );
     expect(html).toContain('type="search"');
+    expect(html).toContain('data-composer-provider-row="true"');
     expect(html).toContain("anthropic-proxy");
-    expect(html).toContain('data-composer-select-active="true"');
+    expect(html).toContain("openai-codex");
     expect(html).toContain("oma-scrollbar");
-    expect(html).toContain("max-h-[min(420px");
+  });
+
+  it("renders a flat list for small menus", () => {
+    const html = renderToStaticMarkup(
+      <ComposerSearchableSelectMenu
+        items={[
+          { value: "a", label: "Alpha", groupName: "devin" },
+          { value: "b", label: "Beta", groupName: "devin" },
+        ]}
+        activeValue="a"
+        onSelect={() => {}}
+      />,
+    );
+    expect(html).not.toContain('data-composer-provider-row="true"');
+    expect(html).toContain("Alpha");
   });
 });

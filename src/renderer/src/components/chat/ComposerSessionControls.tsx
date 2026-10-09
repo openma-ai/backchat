@@ -57,6 +57,7 @@ import {
   ComposerSearchableSelectMenu,
   composerSelectMenuShellClassName,
 } from "@/components/chat/ComposerSearchableSelectMenu";
+import { shouldUseProviderSubmenu } from "@/lib/composer-select-menu-layout";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -416,6 +417,20 @@ function SessionConfigSubmenu({
         : isFastModeConfigOption(option)
           ? t("chat.fast")
           : option.name;
+  const selectMenuItems =
+    option.type === "select"
+      ? flattenSelectOptions(option).map((item) => ({
+          value: item.value,
+          label: item.name,
+          groupName: item.groupName,
+          hint: isAgentPresetConfigOption(option)
+            ? undefined
+            : item.description ?? option.description ?? option.name,
+          searchText: [item.groupName, item.value].filter(Boolean).join(" "),
+          active: item.value === option.currentValue,
+        }))
+      : [];
+  const wideSelectMenu = shouldUseProviderSubmenu(selectMenuItems);
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
@@ -425,19 +440,13 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className={composerSelectMenuShellClassName()}>
+      <DropdownMenuSubContent
+        sideOffset={6}
+        className={composerSelectMenuShellClassName({ wide: wideSelectMenu })}
+      >
         {option.type === "select" ? (
           <ComposerSearchableSelectMenu
-            items={flattenSelectOptions(option).map((item) => ({
-              value: item.value,
-              label: item.name,
-              groupName: item.groupName,
-              hint: isAgentPresetConfigOption(option)
-                ? undefined
-                : item.description ?? option.description ?? option.name,
-              searchText: [item.groupName, item.value].filter(Boolean).join(" "),
-              active: item.value === option.currentValue,
-            }))}
+            items={selectMenuItems}
             activeValue={option.currentValue}
             searchPlaceholder={t("chat.searchOptions")}
             emptyMessage={t("chat.noMatchingOptions")}
@@ -857,7 +866,15 @@ function InlineComposerOptionControl({
           align="start"
           sideOffset={6}
           collisionPadding={8}
-          className={composerSelectMenuShellClassName()}
+          className={composerSelectMenuShellClassName({
+            wide: shouldUseProviderSubmenu(
+              flattenSelectOptions(option).map((item) => ({
+                value: item.value,
+                label: item.name,
+                groupName: item.groupName,
+              })),
+            ),
+          })}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <ComposerSearchableSelectMenu
@@ -909,7 +926,16 @@ function InlineComposerOptionControl({
         align="start"
         sideOffset={6}
         collisionPadding={8}
-        className={composerSelectMenuShellClassName("w-[260px]")}
+        className={composerSelectMenuShellClassName({
+          wide: shouldUseProviderSubmenu(
+            flattenSelectOptions(option).map((item) => ({
+              value: item.value,
+              label: item.name,
+              groupName: item.groupName,
+            })),
+          ),
+          className: "w-[260px]",
+        })}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <ComposerSearchableSelectMenu
