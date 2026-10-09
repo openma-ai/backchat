@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { folderName } from "@/lib/project-path";
 import { useSessionStore, selectActive } from "@/lib/session-store";
+import { composerFooterTriggerClass } from "@/components/chat/composer-footer-trigger";
 import { RuntimeLocationControl } from "./RuntimeLocationControl";
 
 const LAST_PROJECT_KEY = "backchat:last-project-directory:v1";
@@ -149,7 +150,7 @@ export function ProjectChipRow({
             size="sm"
             data-composer-footer-control="project"
             disabled={!isDraft}
-            className="app-compact-control min-w-0 bg-transparent"
+            className={composerFooterTriggerClass()}
             title={activeCwd || t("chat.chooseProjectFolder")}
           >
             <span data-control-icon>
@@ -479,7 +480,7 @@ function WorkspaceChip({
       <PopoverTrigger asChild>
         <Button type="button" variant="ghost" size="sm"
           data-composer-footer-control="workspace" data-workspace-id={workspaceId ?? ""}
-          disabled={!isDraft || isFetching} aria-busy={isFetching} className="app-compact-control min-w-0 bg-transparent"
+          disabled={!isDraft || isFetching} aria-busy={isFetching} className={composerFooterTriggerClass()}
           title={selected?.roots.map(root => root.effectivePath).join("\n") ?? t("workspace.localHint")}>
           <span data-control-icon>{isFetching ? <Spinner aria-label={t("workspace.loading")} /> : selected ? <GitBranchIcon /> : <GitBranchIcon />}</span>
           <span className="max-w-[160px] truncate">{label}</span>

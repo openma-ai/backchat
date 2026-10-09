@@ -104,14 +104,16 @@
 .app-compact-control[data-state="open"],
 .app-compact-control[aria-expanded="true"] {
   color: var(--control-fg-active);
-  background: var(--control-bg-open);
+  /* Button ghost utilities set bg-transparent / aria-expanded:bg-muted; open
+     must win on the first pointer click before focus moves into the menu. */
+  background: var(--control-bg-open) !important;
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
-/* Runtime is a location label, not a selected item. Opening its menu should
-   strengthen the foreground without painting a second active surface. */
-.runtime-location-control:hover,
-.runtime-location-control[data-state="open"],
-.runtime-location-control[aria-expanded="true"] {
+/* Host chip stays visually quiet on hover; open uses the shared wash above. */
+.runtime-location-control:hover {
   background: transparent;
 }
 

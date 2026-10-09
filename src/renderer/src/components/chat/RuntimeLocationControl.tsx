@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/lib/i18n";
+import { composerFooterTriggerClass } from "@/components/chat/composer-footer-trigger";
 import { cn } from "@/lib/utils";
 
 export function RuntimeLocationControl({ title, className, session }: { title?: string; className?: string; session?: SessionRow }) {
@@ -35,7 +36,7 @@ export function RuntimeLocationControl({ title, className, session }: { title?: 
   return (
     <DropdownMenu onOpenChange={(open) => { if (open && account?.status === "signed_in") void refetch(); }}>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" data-composer-footer-control="runtime" data-session-runtime-location="true" className={cn("app-compact-control runtime-location-control min-w-0 bg-transparent", className)} title={title ?? t("chat.whereRuns")}>
+        <Button type="button" variant="ghost" size="sm" data-composer-footer-control="runtime" data-session-runtime-location="true" className={cn(composerFooterTriggerClass("runtime-location-control"), className)} title={title ?? t("chat.whereRuns")}>
           <span data-control-icon><Icon /></span>
           <span className="truncate">{target ? `${target.runtimeName} · ${target.environmentName}` : t("chat.local")}</span>
           <ChevronDownIcon data-control-chevron />
