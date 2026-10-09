@@ -369,10 +369,10 @@ describe("acp agent setup sdk", () => {
     expect(agents[0]?.auth).toBeUndefined();
   });
 
-  it("probes the startup priority harness before other detected agents", async () => {
-    const order: string[] = [];
+  it("probes every detected harness concurrently during warmup", async () => {
+    const probed = new Set<string>();
     probeAgentSessionConfigMock.mockImplementation(async ({ agent }) => {
-      order.push(agent.command);
+      probed.add(agent.command);
       return {
         configOptions: [],
         availableCommands: [],
@@ -390,11 +390,9 @@ describe("acp agent setup sdk", () => {
         command: "/tmp/second-agent",
       }],
     });
-    service.setStartupPriorityAgent("fake-agent");
     await service.warmup();
 
-    expect(order[0]).toBe("/tmp/fake-agent");
-    expect(order).toContain("/tmp/second-agent");
+    expect(probed).toEqual(new Set(["/tmp/fake-agent", "/tmp/second-agent"]));
   });
 
   it("repairs a stale managed npx shim during cold start", async () => {
@@ -572,6 +570,11 @@ describe("acp agent setup sdk", () => {
     await probingService.warmup();
     const restartedService = createAcpAgentSetupService(deps);
     const restored = await restartedService.listAgents();
+    probeAgentAuthStatusMock.mockResolvedValue({
+      status: "needs-auth",
+      methodId: "terminal-login",
+      methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
+    });
     const live = await restartedService.probeComposerHarness("fake-agent");
 
     expect(restored[0]?.auth).toBeUndefined();

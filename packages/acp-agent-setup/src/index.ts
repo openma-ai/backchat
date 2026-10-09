@@ -119,9 +119,7 @@ export interface AcpAgentSetupServiceDeps {
 
 export interface AcpAgentSetupService {
   warmup(): Promise<void>;
-  /** Prefer this harness during cold-start warmup when set before warmup runs. */
-  setStartupPriorityAgent(agentId: string): void;
-  /** Live auth + capability probe for one harness; never reads cached auth. */
+  /** Live auth probe for one harness; never reads cached auth. */
   probeComposerHarness(agentId: string): Promise<AcpAgentSetupInfo[]>;
   refreshEnabledAgents(): Promise<AcpAgentSetupInfo[]>;
   listAgents(): Promise<AcpAgentSetupInfo[]>;
@@ -180,7 +178,8 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   private probeCachePromise: Promise<Record<string, CachedAgentProbe>> | null = null;
   private probeCacheWrite: Promise<void> = Promise.resolve();
   private readonly authCache = new Map<string, AcpAgentSetupAuth>();
-  private startupPriorityAgentId?: string;
+  private readonly inflightAgentProbes =
+    new Map<string, { promise: Promise<void>; probeCapabilities: boolean }>();
   private readonly capabilityInspections =
     new Map<string, AcpAgentCapabilityInspection>();
 
@@ -190,19 +189,12 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return disposeAllAcpSetupProcesses();
   }
 
-  setStartupPriorityAgent(agentId: string): void {
-    if (!agentId.trim()) return;
-    this.startupPriorityAgentId = agentId.trim();
-  }
-
   async probeComposerHarness(agentId: string): Promise<AcpAgentSetupInfo[]> {
     const id = agentId.trim();
     if (!id) return this.listAgents();
-    await this.collectAgentSnapshot({
+    await this.ensureAgentLiveProbe(id, {
       trigger: "manual",
-      refreshRegistry: false,
-      auth: { target: "ids", ids: [id] },
-      capabilities: { target: "ids", ids: [] },
+      probeCapabilities: false,
     });
     return this.listAgentsWithLiveAuth(id);
   }
@@ -218,21 +210,63 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
 
   async warmup(): Promise<void> {
     await this.repairRelocatedRegistryShims();
-    const priority = this.startupPriorityAgentId;
-    if (priority) {
-      await this.collectAgentSnapshot({
+    await this.refreshRegistry({ refresh: true });
+    const agentIds = await this.detectedAgentIds();
+    await Promise.all(agentIds.map((id) =>
+      this.ensureAgentLiveProbe(id, {
         trigger: "startup",
-        refreshRegistry: true,
-        auth: { target: "ids", ids: [priority] },
-        capabilities: { target: "ids", ids: [priority] },
-      });
+        probeCapabilities: true,
+      }),
+    ));
+  }
+
+  private async detectedAgentIds(): Promise<string[]> {
+    const entries = this.catalogEntries();
+    const detected = await Promise.all(
+      entries.map((entry) => detectEntry(entry, this.resolveOptions())),
+    );
+    return detected
+      .filter((entry): entry is SetupAgentEntry => entry !== null)
+      .map((entry) => entry.id);
+  }
+
+  private ensureAgentLiveProbe(
+    agentId: string,
+    options: {
+      trigger: AgentSnapshotPlan["trigger"];
+      probeCapabilities: boolean;
+    },
+  ): Promise<void> {
+    const inflight = this.inflightAgentProbes.get(agentId);
+    if (inflight) {
+      if (!options.probeCapabilities || inflight.probeCapabilities) {
+        return inflight.promise;
+      }
+      return inflight.promise.then(() =>
+        this.ensureAgentLiveProbe(agentId, {
+          ...options,
+          probeCapabilities: true,
+        }),
+      );
     }
-    await this.collectAgentSnapshot({
-      trigger: "startup",
-      refreshRegistry: !priority,
-      auth: { target: "ids", ids: [] },
-      capabilities: { target: "detected" },
+
+    const promise = this.collectAgentSnapshot({
+      trigger: options.trigger,
+      refreshRegistry: false,
+      auth: { target: "ids", ids: [agentId] },
+      capabilities: options.probeCapabilities
+        ? { target: "ids", ids: [agentId] }
+        : { target: "ids", ids: [] },
+    }).then(() => undefined).finally(() => {
+      if (this.inflightAgentProbes.get(agentId)?.promise === promise) {
+        this.inflightAgentProbes.delete(agentId);
+      }
     });
+    this.inflightAgentProbes.set(agentId, {
+      promise,
+      probeCapabilities: options.probeCapabilities,
+    });
+    return promise;
   }
 
   private async repairRelocatedRegistryShims(): Promise<void> {

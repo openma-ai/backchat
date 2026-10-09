@@ -689,9 +689,6 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         return testAgentSetupFixture.agents;
       }
       const liveProbeAgentId = options?.liveProbeAgentId?.trim();
-      if (liveProbeAgentId) {
-        agentSetup.setStartupPriorityAgent(liveProbeAgentId);
-      }
       if (options?.readiness === "snapshot" && !options.refresh) {
         if (liveProbeAgentId) {
           return agentSetup.probeComposerHarness(liveProbeAgentId);

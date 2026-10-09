@@ -33,7 +33,7 @@ describe("agent and session lifecycle contract", () => {
     expect(gate).not.toContain("useAgentsLiveProbePending");
   });
 
-  it("allows full probes only for manual refresh and post-install/update", () => {
+  it("probes harnesses concurrently at startup and on manual refresh or install", () => {
     const settings = source("../renderer/src/pages/settings/Agents.tsx");
     const setup = source("../../packages/acp-agent-setup/src/index.ts");
     const sharedApi = source("../shared/api.ts");
@@ -46,9 +46,11 @@ describe("agent and session lifecycle contract", () => {
     expect(settings).toContain("agentsList({ refresh: true })");
     expect(settings).toContain('agentsList({ readiness: "snapshot" })');
     expect(settings).not.toContain("probeAgentIds:");
+    expect(setup).toContain("async warmup()");
+    expect(setup).toContain("Promise.all(agentIds.map");
+    expect(setup).toContain("ensureAgentLiveProbe");
     expect(setup).toContain("async refreshEnabledAgents()");
     expect(settings).not.toContain("agentProbe(");
-    expect(setup).toContain('capabilities: { target: "detected" }');
     expect(setup).toContain('capabilities: { target: "ids", ids: enabledAgentIds }');
     expect(setup).toContain('capabilities: { target: "ids", ids: [id] }');
     expect(authBranch).not.toContain("capabilities:");
@@ -56,7 +58,7 @@ describe("agent and session lifecycle contract", () => {
     expect(sharedApi).not.toContain("probeConfigOptions");
     expect(sharedApi).toContain("liveProbeAgentId");
     expect(ipc).toContain("probeComposerHarness");
-    expect(ipc).toContain("setStartupPriorityAgent");
+    expect(ipc).not.toContain("setStartupPriorityAgent");
   });
 
   it("requires explicit recent-run selection instead of a static default", () => {
