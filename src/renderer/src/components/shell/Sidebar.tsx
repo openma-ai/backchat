@@ -1192,14 +1192,14 @@ function SidebarSection({
 }) {
   return (
     <section className="sidebar-section" data-state={open ? "open" : "closed"} data-sidebar-custom-section={customSectionId}>
-      <div className="sidebar-section-header group/section flex h-[var(--sidebar-row-h)] items-center rounded-md transition-colors hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]">
+      <div className="sidebar-section-header group/section flex h-[var(--sidebar-row-h)] items-center rounded-md px-2 transition-colors hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]">
         <button
           type="button"
           onClick={onToggle}
           aria-label={title}
           aria-expanded={open}
           className={cn(
-            "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 px-2 text-left",
+            "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 text-left",
             "text-ui font-normal text-fg-subtle",
             "hover:text-fg-muted",
             "transition-colors duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
@@ -1224,13 +1224,13 @@ function SidebarSection({
         {action ? (
           <span
             className={cn(
-              "sidebar-section-header-trailing shrink-0",
+              "sidebar-row-trailing",
               labelCls.split(/\s+/).includes("hidden") && "hidden",
             )}
           >
             <span
               data-sidebar-section-header-action="true"
-              className="flex h-full items-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100"
+              className="flex size-full items-center justify-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100"
             >
               {action}
             </span>
@@ -1388,7 +1388,9 @@ function ProjectCoordinatorRow({
     </span>
     <span className={cn("min-w-0 flex-1 truncate font-medium", labelCls)}>{label}</span>
     {hasCoordinator ? (
-      <WorkflowIcon className={cn("size-3.5 shrink-0 text-fg-muted", labelCls)} aria-hidden="true" />
+      <span className={cn("sidebar-row-trailing", labelCls)} aria-hidden="true">
+        <WorkflowIcon className="size-3.5 text-fg-muted" />
+      </span>
     ) : null}
   </>;
   return group.projectId ? (

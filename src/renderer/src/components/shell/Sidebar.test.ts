@@ -552,15 +552,13 @@ describe("groupSidebarSessions", () => {
 
     expect(styles).toContain("--sidebar-content-padding-inline-start");
     expect(styles).toContain("--sidebar-content-padding-inline-end");
-    expect(styles).toContain(".sidebar-section-header-trailing");
-    expect(styles).toContain(
-      "padding-inline-end: var(--sidebar-content-padding-inline-start)",
-    );
-    expect(section).toContain("sidebar-section-header-trailing");
+    expect(styles).toContain(".sidebar-section-header .sidebar-row-trailing");
+    expect(section).toContain("sidebar-row-trailing");
     expect(section).toContain('data-sidebar-section-header-action="true"');
-    expect(section).toContain("flex h-full items-center");
+    expect(section).toContain("sidebar-section-header group/section flex");
+    expect(section).toContain("items-center rounded-md px-2");
     expect(section).not.toContain("mr-1 shrink-0");
-    expect(styles).toContain("align-self: stretch");
+    expect(section).not.toContain("sidebar-section-header-trailing");
     expect(styles).toContain(".sidebar-section-header .sidebar-row-action > svg");
   });
 
