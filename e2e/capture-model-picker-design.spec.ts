@@ -91,9 +91,9 @@ test("capture model picker design states (light + dark)", async () => {
       await page.getByRole("menuitem", { name: /^Model\b/ }).first().hover();
       panel = page.getByTestId("composer-select-menu-panel");
       await expect(panel).toBeVisible({ timeout: 10_000 });
-      const search = panel.getByRole("searchbox");
+      const search = panel.locator('input[type="search"], input[cmdk-input]');
       await search.fill("openai-codex model 0");
-      await expect(panel.getByRole("listbox", { name: "Options" })).toContainText(
+      await expect(panel.locator('[data-slot="command-list"]')).toContainText(
         "openai-codex model 0",
       );
       await page.screenshot({
@@ -102,7 +102,7 @@ test("capture model picker design states (light + dark)", async () => {
       });
 
       await search.fill("minimax 1");
-      await expect(panel.getByRole("listbox", { name: "Options" })).toContainText(
+      await expect(panel.locator('[data-slot="command-list"]')).toContainText(
         "minimax-m31 model 1",
       );
       await page.screenshot({

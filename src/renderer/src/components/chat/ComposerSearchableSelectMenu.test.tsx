@@ -30,8 +30,10 @@ describe("ComposerSearchableSelectMenu", () => {
         emptyMessage="No matches"
       />,
     );
-    expect(html).toContain('type="search"');
-    expect(html).toContain("oma-scrollbar");
+    expect(html).toContain('cmdk-input=""');
+    expect(html).toContain('data-slot="command-list"');
+    expect(html).toContain("height:360px");
+    expect(html).toContain("anthropic-proxy");
     expect(html).toContain("Model 0");
   });
 

@@ -982,6 +982,7 @@ function SessionRunItem({
   disabled,
   highlighted,
   onSelect,
+  presentation = "menu",
 }: {
   icon?: LucideIcon | DshPresetIcon;
   agentId?: string;
@@ -991,19 +992,11 @@ function SessionRunItem({
   active?: boolean;
   disabled?: boolean;
   highlighted?: boolean;
-  onSelect: () => void;
+  onSelect?: () => void;
+  presentation?: "menu" | "command";
 }) {
-  return (
-    <DropdownMenuItem
-      disabled={disabled}
-      onSelect={onSelect}
-      onFocus={() => undefined}
-      className={cn(
-        "flex items-start gap-2 px-2 py-1.5 text-xs",
-        highlighted && "bg-accent text-accent-foreground",
-        active && "text-fg",
-      )}
-    >
+  const row = (
+    <>
       {agentId ? (
         <span aria-hidden="true" className="mt-0.5 shrink-0">
           <AgentIcon
@@ -1024,6 +1017,35 @@ function SessionRunItem({
       {active && (
         <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-fg-muted" />
       )}
+    </>
+  );
+
+  if (presentation === "command") {
+    return (
+      <span
+        className={cn(
+          "flex w-full items-start gap-2 text-xs",
+          highlighted && "text-accent-foreground",
+          active && "text-fg",
+        )}
+      >
+        {row}
+      </span>
+    );
+  }
+
+  return (
+    <DropdownMenuItem
+      disabled={disabled}
+      onSelect={onSelect}
+      onFocus={() => undefined}
+      className={cn(
+        "flex items-start gap-2 px-2 py-1.5 text-xs",
+        highlighted && "bg-accent text-accent-foreground",
+        active && "text-fg",
+      )}
+    >
+      {row}
     </DropdownMenuItem>
   );
 }

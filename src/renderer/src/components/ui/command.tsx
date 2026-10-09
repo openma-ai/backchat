@@ -130,10 +130,12 @@ function CommandSeparator({
 function CommandItem({
   className,
   children,
+  asChild,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Item>) {
   return (
     <CommandPrimitive.Item
+      asChild={asChild}
       data-slot="command-item"
       className={cn(
         "app-select-item app-select-focus group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-muted data-selected:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-foreground",
@@ -141,8 +143,14 @@ function CommandItem({
       )}
       {...props}
     >
-      {children}
-      <CheckIcon className="app-select-selected ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
+      {asChild ? (
+        children
+      ) : (
+        <>
+          {children}
+          <CheckIcon className="app-select-selected ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
+        </>
+      )}
     </CommandPrimitive.Item>
   )
 }

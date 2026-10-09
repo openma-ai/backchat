@@ -53,9 +53,9 @@ test("composer model picker stays within viewport with search", async () => {
     const panel = page.getByTestId("composer-select-menu-panel");
     await expect(panel).toBeVisible({ timeout: 10_000 });
 
-    const search = panel.getByRole("searchbox");
+    const search = panel.locator('input[type="search"], input[cmdk-input]');
     await search.fill("minimax-m31 0");
-    await expect(panel.getByRole("listbox", { name: "Options" })).toContainText(
+    await expect(panel.locator('[data-slot="command-list"]')).toContainText(
       "minimax-m31 model 0",
     );
 
