@@ -25,7 +25,7 @@ test("capture upward project picker gap above trigger", async ({ page, home }) =
   const panel = page.getByTestId("composer-project-picker-panel");
   await expect(panel).toBeVisible({ timeout: 10_000 });
 
-  const [footerGapPx, pickerGapPx, triggerBox, panelBox] = await page.evaluate(() => {
+  const [pickerGapPx, triggerBox, panelBox] = await page.evaluate(() => {
     const root = document.documentElement;
     const readLength = (cssVar: string) => {
       const probe = document.createElement("div");
@@ -37,7 +37,6 @@ test("capture upward project picker gap above trigger", async ({ page, home }) =
       probe.remove();
       return px;
     };
-    const footerGap = readLength("--composer-footer-gap");
     const pickerGap = readLength("--composer-picker-popover-gap");
     const triggerEl = document.querySelector(
       '[data-composer-footer-control="project"]',
@@ -48,7 +47,6 @@ test("capture upward project picker gap above trigger", async ({ page, home }) =
     const triggerRect = triggerEl?.getBoundingClientRect();
     const panelRect = panelEl?.getBoundingClientRect();
     return [
-      footerGap,
       pickerGap,
       triggerRect
         ? { top: triggerRect.top, bottom: triggerRect.bottom }
@@ -57,8 +55,7 @@ test("capture upward project picker gap above trigger", async ({ page, home }) =
     ];
   });
 
-  expect(footerGapPx).toBeGreaterThan(0);
-  expect(pickerGapPx).toBeCloseTo(footerGapPx / 2, 1);
+  expect(pickerGapPx).toBe(6);
   expect(triggerBox).not.toBeNull();
   expect(panelBox).not.toBeNull();
   const visualGap = triggerBox!.top - panelBox!.bottom;

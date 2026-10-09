@@ -17,7 +17,8 @@ Styles: `.grouped-command-menu` in `src/renderer/src/styles/index.css`.
 
 Upward footer menus (`side="top"` on project / workspace popovers and host
 dropdown) use Radix `sideOffset` from `useComposerPickerUpwardSideOffset()`,
-which reads `--composer-picker-popover-gap` (`calc(var(--composer-footer-gap) / 2)`).
+which reads `--composer-picker-popover-gap` (alias of `--composer-menu-side-offset`,
+`6px` — same gap as permission / Full access toolbar menus).
 
 ## `components/composer/` — thin adapters
 

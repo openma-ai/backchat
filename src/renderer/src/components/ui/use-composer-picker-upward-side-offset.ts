@@ -1,10 +1,14 @@
 import { useLayoutEffect, useState } from "react";
 
-/** Matches `--composer-picker-popover-gap` in `styles/index.css`. */
+/** Matches permission / Full access dropdowns and upward footer pickers. */
+export const COMPOSER_MENU_SIDE_OFFSET_CSS_VAR = "--composer-menu-side-offset";
+
+/** Alias for upward `side="top"` popovers; same resolved length as menu offset. */
 export const COMPOSER_PICKER_UPWARD_SIDE_OFFSET_CSS_VAR =
   "--composer-picker-popover-gap";
 
-const DEFAULT_COMPOSER_PICKER_UPWARD_SIDE_OFFSET_PX = 2.5;
+/** Keep aligned with `--composer-menu-side-offset` in `styles/index.css`. */
+export const COMPOSER_MENU_SIDE_OFFSET_PX = 6;
 
 function readCssLengthTokenPx(
   root: Element,
@@ -24,20 +28,27 @@ function readCssLengthTokenPx(
   return null;
 }
 
+export function readComposerMenuSideOffsetPx(
+  element: Element = document.documentElement,
+): number {
+  return (
+    readCssLengthTokenPx(element, COMPOSER_MENU_SIDE_OFFSET_CSS_VAR) ??
+    COMPOSER_MENU_SIDE_OFFSET_PX
+  );
+}
+
 export function readComposerPickerUpwardSideOffsetPx(
   element: Element = document.documentElement,
 ): number {
   return (
     readCssLengthTokenPx(element, COMPOSER_PICKER_UPWARD_SIDE_OFFSET_CSS_VAR) ??
-    DEFAULT_COMPOSER_PICKER_UPWARD_SIDE_OFFSET_PX
+    readComposerMenuSideOffsetPx(element)
   );
 }
 
 /** Radix `sideOffset` for composer footer pickers that open upward (`side="top"`). */
 export function useComposerPickerUpwardSideOffset(): number {
-  const [sideOffset, setSideOffset] = useState(
-    DEFAULT_COMPOSER_PICKER_UPWARD_SIDE_OFFSET_PX,
-  );
+  const [sideOffset, setSideOffset] = useState(COMPOSER_MENU_SIDE_OFFSET_PX);
 
   useLayoutEffect(() => {
     setSideOffset(readComposerPickerUpwardSideOffsetPx());

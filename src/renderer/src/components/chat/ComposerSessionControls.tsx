@@ -57,6 +57,7 @@ import {
   ComposerSearchableSelectMenu,
 } from "@/components/composer/searchable-select-menu-adapter";
 import { groupedCommandMenuShellClassName } from "@/components/ui/grouped-command-menu";
+import { COMPOSER_MENU_SIDE_OFFSET_PX } from "@/components/ui/use-composer-picker-upward-side-offset";
 import {
   GroupedCommandMenuIconSlot,
   GroupedCommandMenuLabelSlot,
@@ -278,7 +279,7 @@ export function SessionRunChip({
         )}
         <ChevronDownIcon className="size-3.5 shrink-0 text-current opacity-65 group-hover/model-selector:text-fg group-hover/model-selector:opacity-100" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="w-[var(--composer-menu-width)]">
+      <DropdownMenuContent align="end" sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX} className="w-[var(--composer-menu-width)]">
         <div className="border-b border-border/50 py-1">
           <SessionAgentSubmenu
             agents={agents}
@@ -351,7 +352,7 @@ function SessionAgentSubmenu({
           {currentAgentLabel}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className={groupedCommandMenuShellClassName()}>
+      <DropdownMenuSubContent sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX} className={groupedCommandMenuShellClassName()}>
         <ComposerSearchableSelectMenu
           items={
             agents.length > 0
@@ -439,7 +440,7 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className={groupedCommandMenuShellClassName()}>
+      <DropdownMenuSubContent sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX} className={groupedCommandMenuShellClassName()}>
         {option.type === "select" ? (
             <ComposerSearchableSelectMenu
               items={selectMenuItems}
@@ -545,7 +546,7 @@ export function PermissionModeChip({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        sideOffset={6}
+        sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX}
         className="w-[var(--composer-menu-width)]"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
@@ -658,7 +659,7 @@ function SessionModeControl({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        sideOffset={6}
+        sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX}
         className="w-[var(--composer-menu-width)] p-1"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
@@ -860,7 +861,7 @@ function InlineComposerOptionControl({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          sideOffset={6}
+          sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX}
           collisionPadding={8}
           className={groupedCommandMenuShellClassName()}
           onCloseAutoFocus={(event) => event.preventDefault()}
@@ -912,7 +913,7 @@ function InlineComposerOptionControl({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        sideOffset={6}
+        sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX}
         collisionPadding={8}
         className={groupedCommandMenuShellClassName("w-[260px]")}
         onCloseAutoFocus={(event) => event.preventDefault()}
