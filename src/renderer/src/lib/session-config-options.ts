@@ -287,16 +287,7 @@ export function findModeConfigOption(
 
 const NON_PERMISSION_MODE_CONFIG_IDS = new Set(["collaboration_mode"]);
 
-export function isCursorHarness(agentId: string): boolean {
-  const normalized = agentId.trim().toLowerCase();
-  return (
-    normalized === "cursor"
-    || normalized === "cursor-acp"
-    || normalized.includes("cursor")
-  );
-}
-
-/** ACP session mode value for Cursor's workspace-scoped permission tier. */
+/** ACP session mode value for workspace-scoped permission tiers (when advertised). */
 export function isWorkspaceAccessPermissionMode(value: string): boolean {
   const normalized = value.trim().toLowerCase().replaceAll("_", "-");
   return normalized === "workspace" || normalized === "workspace-access";
@@ -310,7 +301,9 @@ function looksLikePermissionModeSelect(
   return !values.every((value) => value === "default" || value === "plan");
 }
 
-function sessionModeIdsFromProbe(sessionModes: unknown): string[] {
+function sessionModeOptionsFromProbe(
+  sessionModes: unknown,
+): AcpSessionConfigSelectOption[] {
   if (!sessionModes || typeof sessionModes !== "object") return [];
   const availableModes = (sessionModes as { availableModes?: unknown })
     .availableModes;
@@ -318,8 +311,30 @@ function sessionModeIdsFromProbe(sessionModes: unknown): string[] {
   return availableModes.flatMap((mode) => {
     if (!mode || typeof mode !== "object") return [];
     const id = (mode as { id?: unknown }).id;
-    return typeof id === "string" && id.trim() ? [id] : [];
+    if (typeof id !== "string" || !id.trim()) return [];
+    const name = (mode as { name?: unknown }).name;
+    const description = (mode as { description?: unknown }).description;
+    return [{
+      value: id,
+      name: typeof name === "string" && name.trim() ? name : id,
+      ...(typeof description === "string" ? { description } : {}),
+    }];
   });
+}
+
+/** Permission mode rows from the harness ACP capability probe (cached on AgentInfo). */
+export function probedPermissionModeSelectOptions(
+  probe: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null | undefined,
+): readonly AcpSessionConfigSelectOption[] | undefined {
+  if (!probe) return undefined;
+  const probedConfig = normalizeAgentConfigOptions(probe.config_options);
+  const modeOption = findPermissionModeConfigOption(probedConfig);
+  if (modeOption) return flattenSelectOptions(modeOption);
+  const fromSessionModes = sessionModeOptionsFromProbe(probe.session_modes);
+  return fromSessionModes.length > 0 ? fromSessionModes : undefined;
 }
 
 /** Values advertised by the harness capability probe (config option + session modes). */
@@ -329,15 +344,39 @@ export function probedPermissionModeValues(
     session_modes?: unknown;
   } | null | undefined,
 ): ReadonlySet<string> | undefined {
-  if (!probe) return undefined;
-  const probedConfig = normalizeAgentConfigOptions(probe.config_options);
-  const modeOption = findPermissionModeConfigOption(probedConfig);
-  const fromConfig = modeOption
-    ? flattenSelectOptions(modeOption).map((item) => item.value)
-    : [];
-  const fromSessionModes = sessionModeIdsFromProbe(probe.session_modes);
-  const values = [...new Set([...fromConfig, ...fromSessionModes])];
-  return values.length > 0 ? new Set(values) : undefined;
+  const options = probedPermissionModeSelectOptions(probe);
+  return options && options.length > 0
+    ? new Set(options.map((item) => item.value))
+    : undefined;
+}
+
+/** Menu rows: probe catalog order, session labels when the live session has newer copy. */
+export function permissionModeMenuItems(
+  sessionOption: AcpSessionConfigOption & { type: "select" },
+  probe: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null | undefined,
+): AcpSessionConfigSelectOption[] {
+  const catalog = probedPermissionModeSelectOptions(probe);
+  const sessionItems = flattenSelectOptions(sessionOption);
+  if (!catalog?.length) return sessionItems;
+  const sessionByValue = new Map(
+    sessionItems.map((item) => [item.value, item]),
+  );
+  return catalog.map((item) => {
+    const live = sessionByValue.get(item.value);
+    if (!live) return item;
+    return {
+      ...item,
+      name: live.name.trim() ? live.name : item.name,
+      ...(live.description != null && live.description !== ""
+        ? { description: live.description }
+        : item.description != null
+          ? { description: item.description }
+          : {}),
+    };
+  });
 }
 
 /** Composer permission chip: sandbox / approval modes, not plan collaboration_mode. */
@@ -357,14 +396,6 @@ export function findPermissionModeConfigOption(
   return permissionLike ?? candidates[0];
 }
 
-export function filterPermissionModeSelectOptions(
-  options: readonly AcpSessionConfigSelectOption[],
-  probedValues: ReadonlySet<string> | undefined,
-): AcpSessionConfigSelectOption[] {
-  if (!probedValues || probedValues.size === 0) return [...options];
-  return options.filter((item) => probedValues.has(item.value));
-}
-
 export function findSelectConfigOption(
   options: readonly AcpSessionConfigOption[] | undefined,
   id: string,
@@ -382,43 +413,12 @@ export interface ConfigModeOptionPresentation {
 }
 
 export function configModeOptionPresentation(
-  agentId: string,
   option: AcpSessionConfigSelectOption,
 ): ConfigModeOptionPresentation {
-  if (agentId === "codex-acp") {
-    if (option.value === "read-only") {
-      return {
-        label: "Ask for approval",
-        hint: "Always ask to edit external files and use the internet",
-        tone: "neutral",
-      };
-    }
-    if (option.value === "agent") {
-      return {
-        label: "Approve for me",
-        hint: "Only ask for actions detected as potentially unsafe",
-        tone: "neutral",
-      };
-    }
-    if (option.value === "agent-full-access") {
-      return {
-        label: "Full access",
-        hint: "Unrestricted access to the internet and any file on your computer",
-        tone: "warning",
-      };
-    }
-  }
-  if (isCursorHarness(agentId) && isWorkspaceAccessPermissionMode(option.value)) {
-    return {
-      label: "Workspace access",
-      hint: "Edit files inside the workspace; ask before changes elsewhere",
-      tone: "neutral",
-    };
-  }
   return {
     label: option.name,
     ...(option.description ? { hint: option.description } : {}),
-    tone: "neutral",
+    tone: option.value === "agent-full-access" ? "warning" : "neutral",
   };
 }
 

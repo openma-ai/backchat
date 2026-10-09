@@ -4,12 +4,13 @@ import {
   buildComposerConfigOptions,
   buildRunMenuConfigOptionSections,
   configModeOptionPresentation,
-  filterPermissionModeSelectOptions,
   findModeConfigOption,
   findPermissionModeConfigOption,
   flattenSelectOptions,
   isWorkspaceAccessPermissionMode,
+  permissionModeMenuItems,
   probedPermissionModeValues,
+  probedPermissionModeSelectOptions,
   isFastModeConfigOption,
   isAgentPresetConfigOption,
   selectedConfigOptionLabel,
@@ -249,16 +250,49 @@ describe("session config options", () => {
       "agent-full-access",
     ]));
     expect(
-      filterPermissionModeSelectOptions(
-        sessionOptions,
-        probedPermissionModeValues(probe),
-      ).map((option) => option.value),
+      permissionModeMenuItems({
+        id: "mode",
+        name: "Session mode",
+        category: "mode",
+        type: "select",
+        currentValue: "agent",
+        options: sessionOptions,
+      }, probe).map((option) => option.value),
     ).toEqual(["read-only", "agent", "agent-full-access"]);
     expect(isWorkspaceAccessPermissionMode("workspace-access")).toBe(true);
-    expect(configModeOptionPresentation("cursor", {
+    expect(configModeOptionPresentation({
       value: "workspace-access",
       name: "Workspace access",
     }).label).toBe("Workspace access");
+  });
+
+  test("does not union session_modes into config_option mode probe catalog", () => {
+    const probe = {
+      config_options: [{
+        id: "mode",
+        name: "Session mode",
+        category: "mode",
+        type: "select",
+        currentValue: "agent",
+        options: [
+          { value: "read-only", name: "Ask for approval" },
+          { value: "agent", name: "Approve for me" },
+          { value: "agent-full-access", name: "Full access" },
+        ],
+      }],
+      session_modes: {
+        currentModeId: "workspace-access",
+        availableModes: [
+          { id: "workspace-access", name: "Workspace access" },
+        ],
+      },
+    };
+
+    expect(probedPermissionModeSelectOptions(probe)?.map((item) => item.value)).toEqual([
+      "read-only",
+      "agent",
+      "agent-full-access",
+    ]);
   });
 
   test("falls back to probed session_modes when config_options omit mode", () => {
@@ -275,38 +309,37 @@ describe("session config options", () => {
 
     expect(probedPermissionModeValues(probe)).toEqual(new Set(["agent", "plan", "ask"]));
     expect(
-      filterPermissionModeSelectOptions(
-        [
+      permissionModeMenuItems({
+        id: "mode",
+        name: "Mode",
+        category: "mode",
+        type: "select",
+        currentValue: "ask",
+        options: [
           { value: "agent", name: "Agent" },
           { value: "plan", name: "Plan" },
           { value: "ask", name: "Ask" },
           { value: "workspace-access", name: "Workspace access" },
         ],
-        probedPermissionModeValues(probe),
-      ).map((option) => option.value),
+      }, probe).map((option) => option.value),
     ).toEqual(["agent", "plan", "ask"]);
   });
 
-  test("uses Codex's official approval semantics for probed session modes", () => {
-    expect(configModeOptionPresentation("codex-acp", {
+  test("uses ACP option copy for mode presentation", () => {
+    expect(configModeOptionPresentation({
       value: "read-only",
       name: "Read-only",
       description: "Requires approval",
     })).toEqual({
-      label: "Ask for approval",
-      hint: "Always ask to edit external files and use the internet",
+      label: "Read-only",
+      hint: "Requires approval",
       tone: "neutral",
     });
-    expect(configModeOptionPresentation("codex-acp", {
-      value: "agent",
-      name: "Agent",
-    }).label).toBe("Approve for me");
-    expect(configModeOptionPresentation("codex-acp", {
+    expect(configModeOptionPresentation({
       value: "agent-full-access",
       name: "Agent (full access)",
     })).toEqual({
-      label: "Full access",
-      hint: "Unrestricted access to the internet and any file on your computer",
+      label: "Agent (full access)",
       tone: "warning",
     });
   });

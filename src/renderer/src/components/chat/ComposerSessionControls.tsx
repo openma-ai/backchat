@@ -45,11 +45,10 @@ import {
   buildComposerConfigOptions,
   buildRunMenuConfigOptionSections,
   configModeOptionPresentation,
-  filterPermissionModeSelectOptions,
   findPermissionModeConfigOption,
   flattenSelectOptions,
   isWorkspaceAccessPermissionMode,
-  probedPermissionModeValues,
+  permissionModeMenuItems,
   isAgentPresetConfigOption,
   isFastModeConfigOption,
   selectedConfigOptionLabel,
@@ -518,7 +517,6 @@ export function PermissionModeChip({
 }) {
   const { t } = useI18n();
   const settings = useSettings();
-  const allowedPermissionModeValues = probedPermissionModeValues(harnessProbe);
   const sessionMode = findPermissionModeConfigOption(configOptions);
   if (sessionMode) {
     return (
@@ -526,7 +524,7 @@ export function PermissionModeChip({
         disabled={disabled}
         agentId={agentId}
         option={sessionMode}
-        allowedPermissionModeValues={allowedPermissionModeValues}
+        harnessProbe={harnessProbe}
         onSetConfigOption={onSetConfigOption}
       />
     );
@@ -596,12 +594,7 @@ export function PermissionModeChip({
   );
 }
 
-const WORKSPACE_MODE_TRANSLATIONS = {
-  label: "permission.workspaceAccess" as TranslationKey,
-  hint: "permission.workspaceAccessHint" as TranslationKey,
-};
-
-const CODEX_MODE_TRANSLATIONS: Record<
+const PERMISSION_MODE_VALUE_I18N: Record<
   string,
   { label: TranslationKey; hint: TranslationKey }
 > = {
@@ -617,19 +610,30 @@ const CODEX_MODE_TRANSLATIONS: Record<
     label: "permission.codexFull",
     hint: "permission.codexFullHint",
   },
+  workspace: {
+    label: "permission.workspaceAccess",
+    hint: "permission.workspaceAccessHint",
+  },
+  "workspace-access": {
+    label: "permission.workspaceAccess",
+    hint: "permission.workspaceAccessHint",
+  },
 };
 
 function SessionModeControl({
   disabled,
   agentId,
   option,
-  allowedPermissionModeValues,
+  harnessProbe,
   onSetConfigOption,
 }: {
   disabled: boolean;
   agentId: string;
   option: AcpSessionConfigOption & { type: "select" };
-  allowedPermissionModeValues?: ReadonlySet<string>;
+  harnessProbe?: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null;
   onSetConfigOption?: (
     configId: string,
     value: string | boolean,
@@ -637,18 +641,11 @@ function SessionModeControl({
 }) {
   const { t } = useI18n();
   const settings = useSettings();
-  const values = filterPermissionModeSelectOptions(
-    flattenSelectOptions(option),
-    allowedPermissionModeValues,
-  );
+  const values = permissionModeMenuItems(option, harnessProbe);
   const selected =
     values.find((item) => item.value === option.currentValue) ?? values[0];
   if (!selected) return null;
-  const selectedPresentation = localizedSessionModePresentation(
-    t,
-    agentId,
-    selected,
-  );
+  const selectedPresentation = localizedSessionModePresentation(t, selected);
   const SelectedIcon = sessionModeIcon(selected.value);
 
   const pick = async (value: string) => {
@@ -685,11 +682,7 @@ function SessionModeControl({
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {values.map((item) => {
-          const presentation = localizedSessionModePresentation(
-            t,
-            agentId,
-            item,
-          );
+          const presentation = localizedSessionModePresentation(t, item);
           const ItemIcon = sessionModeIcon(item.value);
           return (
             <DropdownMenuItem
@@ -722,16 +715,14 @@ function SessionModeControl({
 
 function localizedSessionModePresentation(
   t: (key: TranslationKey) => string,
-  agentId: string,
   option: { value: string; name: string; description?: string | null },
 ) {
-  const presentation = configModeOptionPresentation(agentId, option);
+  const presentation = configModeOptionPresentation(option);
   const translation =
-    agentId === "codex-acp"
-      ? CODEX_MODE_TRANSLATIONS[option.value]
-      : isWorkspaceAccessPermissionMode(option.value)
-        ? WORKSPACE_MODE_TRANSLATIONS
-        : undefined;
+    PERMISSION_MODE_VALUE_I18N[option.value]
+    ?? (isWorkspaceAccessPermissionMode(option.value)
+      ? PERMISSION_MODE_VALUE_I18N["workspace-access"]
+      : undefined);
   return translation
     ? {
         ...presentation,
