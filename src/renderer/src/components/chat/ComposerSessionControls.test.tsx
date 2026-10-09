@@ -266,6 +266,20 @@ describe("PermissionModeChip", () => {
       <PermissionModeChip
         disabled={false}
         agentId="codex-acp"
+        harnessProbe={{
+          config_options: [{
+            id: "mode",
+            name: "Session mode",
+            category: "mode",
+            type: "select",
+            currentValue: "agent",
+            options: [
+              { value: "read-only", name: "Ask for approval" },
+              { value: "agent", name: "Approve for me" },
+              { value: "agent-full-access", name: "Full access" },
+            ],
+          }],
+        }}
         configOptions={[
           {
             id: "mode",

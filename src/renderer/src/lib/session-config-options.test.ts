@@ -9,6 +9,7 @@ import {
   findPermissionModeConfigOption,
   flattenSelectOptions,
   isWorkspaceAccessPermissionMode,
+  probedPermissionModeValues,
   isFastModeConfigOption,
   isAgentPresetConfigOption,
   selectedConfigOptionLabel,
@@ -220,30 +221,70 @@ describe("session config options", () => {
     );
   });
 
-  test("filters Codex permission modes and workspace access by harness", () => {
-    const options = [
+  test("caps permission mode menu items to harness probe config_options", () => {
+    const sessionOptions = [
       { value: "read-only", name: "Ask for approval" },
       { value: "agent", name: "Approve for me" },
       { value: "agent-full-access", name: "Full access" },
       { value: "workspace-access", name: "Workspace access" },
     ];
+    const probe = {
+      config_options: [{
+        id: "mode",
+        name: "Session mode",
+        category: "mode",
+        type: "select",
+        currentValue: "agent",
+        options: [
+          { value: "read-only", name: "Ask for approval" },
+          { value: "agent", name: "Approve for me" },
+          { value: "agent-full-access", name: "Full access" },
+        ],
+      }],
+    };
 
-    expect(filterPermissionModeSelectOptions("codex-acp", options).map((o) => o.value)).toEqual([
+    expect(probedPermissionModeValues(probe)).toEqual(new Set([
       "read-only",
       "agent",
       "agent-full-access",
-    ]);
-    expect(filterPermissionModeSelectOptions("cursor", options).map((o) => o.value)).toEqual([
-      "read-only",
-      "agent",
-      "agent-full-access",
-      "workspace-access",
-    ]);
+    ]));
+    expect(
+      filterPermissionModeSelectOptions(
+        sessionOptions,
+        probedPermissionModeValues(probe),
+      ).map((option) => option.value),
+    ).toEqual(["read-only", "agent", "agent-full-access"]);
     expect(isWorkspaceAccessPermissionMode("workspace-access")).toBe(true);
     expect(configModeOptionPresentation("cursor", {
       value: "workspace-access",
       name: "Workspace access",
     }).label).toBe("Workspace access");
+  });
+
+  test("falls back to probed session_modes when config_options omit mode", () => {
+    const probe = {
+      session_modes: {
+        currentModeId: "ask",
+        availableModes: [
+          { id: "agent", name: "Agent" },
+          { id: "plan", name: "Plan" },
+          { id: "ask", name: "Ask" },
+        ],
+      },
+    };
+
+    expect(probedPermissionModeValues(probe)).toEqual(new Set(["agent", "plan", "ask"]));
+    expect(
+      filterPermissionModeSelectOptions(
+        [
+          { value: "agent", name: "Agent" },
+          { value: "plan", name: "Plan" },
+          { value: "ask", name: "Ask" },
+          { value: "workspace-access", name: "Workspace access" },
+        ],
+        probedPermissionModeValues(probe),
+      ).map((option) => option.value),
+    ).toEqual(["agent", "plan", "ask"]);
   });
 
   test("uses Codex's official approval semantics for probed session modes", () => {

@@ -287,12 +287,6 @@ export function findModeConfigOption(
 
 const NON_PERMISSION_MODE_CONFIG_IDS = new Set(["collaboration_mode"]);
 
-const CODEX_PERMISSION_MODE_VALUES = new Set([
-  "read-only",
-  "agent",
-  "agent-full-access",
-]);
-
 export function isCursorHarness(agentId: string): boolean {
   const normalized = agentId.trim().toLowerCase();
   return (
@@ -312,13 +306,38 @@ function looksLikePermissionModeSelect(
   option: AcpSessionConfigOption & { type: "select" },
 ): boolean {
   const values = flattenSelectOptions(option).map((item) => item.value);
-  return values.some(
-    (value) =>
-      CODEX_PERMISSION_MODE_VALUES.has(value)
-      || isWorkspaceAccessPermissionMode(value)
-      || value === "ask"
-      || value === "plan",
-  );
+  if (values.length === 0) return false;
+  return !values.every((value) => value === "default" || value === "plan");
+}
+
+function sessionModeIdsFromProbe(sessionModes: unknown): string[] {
+  if (!sessionModes || typeof sessionModes !== "object") return [];
+  const availableModes = (sessionModes as { availableModes?: unknown })
+    .availableModes;
+  if (!Array.isArray(availableModes)) return [];
+  return availableModes.flatMap((mode) => {
+    if (!mode || typeof mode !== "object") return [];
+    const id = (mode as { id?: unknown }).id;
+    return typeof id === "string" && id.trim() ? [id] : [];
+  });
+}
+
+/** Values advertised by the harness capability probe (config option + session modes). */
+export function probedPermissionModeValues(
+  probe: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null | undefined,
+): ReadonlySet<string> | undefined {
+  if (!probe) return undefined;
+  const probedConfig = normalizeAgentConfigOptions(probe.config_options);
+  const modeOption = findPermissionModeConfigOption(probedConfig);
+  const fromConfig = modeOption
+    ? flattenSelectOptions(modeOption).map((item) => item.value)
+    : [];
+  const fromSessionModes = sessionModeIdsFromProbe(probe.session_modes);
+  const values = [...new Set([...fromConfig, ...fromSessionModes])];
+  return values.length > 0 ? new Set(values) : undefined;
 }
 
 /** Composer permission chip: sandbox / approval modes, not plan collaboration_mode. */
@@ -339,18 +358,11 @@ export function findPermissionModeConfigOption(
 }
 
 export function filterPermissionModeSelectOptions(
-  agentId: string,
   options: readonly AcpSessionConfigSelectOption[],
+  probedValues: ReadonlySet<string> | undefined,
 ): AcpSessionConfigSelectOption[] {
-  return options.filter((item) => {
-    if (isWorkspaceAccessPermissionMode(item.value)) {
-      return isCursorHarness(agentId);
-    }
-    if (agentId === "codex-acp") {
-      return CODEX_PERMISSION_MODE_VALUES.has(item.value);
-    }
-    return true;
-  });
+  if (!probedValues || probedValues.size === 0) return [...options];
+  return options.filter((item) => probedValues.has(item.value));
 }
 
 export function findSelectConfigOption(

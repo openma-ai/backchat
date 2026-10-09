@@ -1224,6 +1224,7 @@ export function Composer({
             disabled={!!running}
             agentId={currentAgentId}
             configOptions={effectiveConfigOptions}
+            harnessProbe={currentEnabledAgent}
             onSetConfigOption={(configId, value) => {
               if (lockedAgentId) return onSetConfigOption?.(configId, value);
               setDraftConfigValues((prev) => ({ ...prev, [configId]: value }));

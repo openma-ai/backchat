@@ -49,6 +49,7 @@ import {
   findPermissionModeConfigOption,
   flattenSelectOptions,
   isWorkspaceAccessPermissionMode,
+  probedPermissionModeValues,
   isAgentPresetConfigOption,
   isFastModeConfigOption,
   selectedConfigOptionLabel,
@@ -499,11 +500,17 @@ export function PermissionModeChip({
   disabled,
   agentId,
   configOptions,
+  harnessProbe,
   onSetConfigOption,
 }: {
   disabled: boolean;
   agentId: string;
   configOptions?: AcpSessionConfigOption[];
+  /** Cold-start / live harness probe facts used to cap permission mode choices. */
+  harnessProbe?: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null;
   onSetConfigOption?: (
     configId: string,
     value: string | boolean,
@@ -511,6 +518,7 @@ export function PermissionModeChip({
 }) {
   const { t } = useI18n();
   const settings = useSettings();
+  const allowedPermissionModeValues = probedPermissionModeValues(harnessProbe);
   const sessionMode = findPermissionModeConfigOption(configOptions);
   if (sessionMode) {
     return (
@@ -518,6 +526,7 @@ export function PermissionModeChip({
         disabled={disabled}
         agentId={agentId}
         option={sessionMode}
+        allowedPermissionModeValues={allowedPermissionModeValues}
         onSetConfigOption={onSetConfigOption}
       />
     );
@@ -614,11 +623,13 @@ function SessionModeControl({
   disabled,
   agentId,
   option,
+  allowedPermissionModeValues,
   onSetConfigOption,
 }: {
   disabled: boolean;
   agentId: string;
   option: AcpSessionConfigOption & { type: "select" };
+  allowedPermissionModeValues?: ReadonlySet<string>;
   onSetConfigOption?: (
     configId: string,
     value: string | boolean,
@@ -627,8 +638,8 @@ function SessionModeControl({
   const { t } = useI18n();
   const settings = useSettings();
   const values = filterPermissionModeSelectOptions(
-    agentId,
     flattenSelectOptions(option),
+    allowedPermissionModeValues,
   );
   const selected =
     values.find((item) => item.value === option.currentValue) ?? values[0];
