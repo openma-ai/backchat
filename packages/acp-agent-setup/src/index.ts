@@ -202,7 +202,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       trigger: "manual",
       refreshRegistry: false,
       auth: { target: "ids", ids: [id] },
-      capabilities: { target: "ids", ids: [id] },
+      capabilities: { target: "ids", ids: [] },
     });
     return this.listAgentsWithLiveAuth(id);
   }

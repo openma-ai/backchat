@@ -985,7 +985,7 @@ export function Composer({
             inputRef={suggestionSlotInputRef}
             template={suggestionTemplate}
             value={suggestionSlotValue}
-            disabled={!!disabled || authNeeded || authChecking}
+            disabled={!!disabled || authNeeded}
             onChange={(value) => {
               onUserInput(true);
               setSuggestionSlotValue(value);
@@ -1171,7 +1171,7 @@ export function Composer({
                     ? t("chat.signInToChat")
                     : placeholder
               }
-              disabled={!!disabled || authNeeded || authChecking}
+              disabled={!!disabled || authNeeded}
               rows={1}
               style={{ textIndent: skillIndent ? `${skillIndent}px` : undefined }}
               className={cn(

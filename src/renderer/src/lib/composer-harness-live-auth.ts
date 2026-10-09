@@ -26,7 +26,7 @@ export function useComposerHarnessLiveAuth(agentId: string, enabled = true) {
 
   return {
     liveAuth: query.data,
-    liveProbePending: query.isPending || query.isFetching,
+    liveProbePending: query.fetchStatus === "fetching",
   };
 }
 

@@ -165,7 +165,7 @@ describe("composerAuthNeeded", () => {
 });
 
 describe("composerHarnessAuthChecking", () => {
-  it("marks the composer loading until the harness live probe settles", () => {
+  it("marks run actions loading until the harness live probe settles", () => {
     expect(composerHarnessAuthChecking(true)).toBe(true);
     expect(composerHarnessAuthChecking(false)).toBe(false);
     expect(composerHarnessAuthChecking(true, { authRequired: true })).toBe(false);
