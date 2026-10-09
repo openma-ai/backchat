@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { RendererErrorFallback } from "@/components/RendererErrorFallback";
+import { RendererCrashPage } from "@/components/RendererCrashPage";
 import { reportRendererCrash } from "@/lib/renderer-crash-report";
 
 interface RendererErrorBoundaryProps {
@@ -36,7 +36,7 @@ export class RendererErrorBoundary extends Component<
     const { error, componentStack } = this.state;
     if (error) {
       return (
-        <RendererErrorFallback
+        <RendererCrashPage
           message={error.message || "Unknown error"}
           stack={error.stack}
           componentStack={componentStack ?? undefined}

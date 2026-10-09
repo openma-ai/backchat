@@ -31,6 +31,7 @@ describe("renderer crash IPC contract", () => {
     expect(main).toContain('source: "render-process-gone"');
     expect(main).toContain('source: "unresponsive"');
     expect(entry).toContain("RendererErrorBoundary");
+    expect(entry).toContain("RendererCrashPage");
     expect(entry).toContain("installRendererCrashHandlers");
   });
 });

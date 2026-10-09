@@ -336,10 +336,26 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
     void shell.openExternal(url);
   });
 
+  const demoCrash = process.env["BACKCHAT_DEMO_RENDERER_CRASH"] === "1";
+  const demoVariant = process.env["BACKCHAT_DEMO_RENDERER_CRASH_VARIANT"];
+  const demoQuery: Record<string, string> = demoCrash
+    ? {
+        demo: "renderer-crash",
+        ...(demoVariant ? { variant: demoVariant } : {}),
+      }
+    : {};
   if (process.env["ELECTRON_RENDERER_URL"]) {
-    void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+    const rendererUrl = process.env["ELECTRON_RENDERER_URL"];
+    const url = demoCrash
+      ? `${rendererUrl}${rendererUrl.includes("?") ? "&" : "?"}demo=renderer-crash${
+          demoVariant ? `&variant=${encodeURIComponent(demoVariant)}` : ""
+        }`
+      : rendererUrl;
+    void win.loadURL(url);
   } else {
-    void win.loadFile(join(mainDir, "../renderer/index.html"));
+    void win.loadFile(join(mainDir, "../renderer/index.html"), {
+      query: demoQuery,
+    });
   }
   return win;
 }

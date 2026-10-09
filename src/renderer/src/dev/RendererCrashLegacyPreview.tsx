@@ -1,19 +1,19 @@
+/**
+ * Pre-rewrite crash fallback — dev/demo screenshots only (`?demo=renderer-crash&variant=legacy`).
+ */
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatRendererCrashDetails } from "@/lib/renderer-crash-report";
 
-export interface RendererErrorFallbackProps {
-  message: string;
-  stack?: string;
-  componentStack?: string;
-}
-
-/** Full-window fallback when the React tree crashes. Clears the macOS titlebar band first. */
-export function RendererErrorFallback({
+export function RendererCrashLegacyPreview({
   message,
   stack,
   componentStack,
-}: RendererErrorFallbackProps) {
+}: {
+  message: string;
+  stack?: string;
+  componentStack?: string;
+}) {
   const [copyState, setCopyState] = useState<"idle" | "done" | "failed">("idle");
 
   const copyDetails = useCallback(async () => {

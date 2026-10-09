@@ -38,6 +38,8 @@ const repoRoot = process.env["BACKCHAT_E2E_APP_ROOT"]
 interface LaunchAppOptions {
   language?: "en" | "zh-CN";
   env?: Record<string, string>;
+  /** Skip waiting for the main shell (e.g. renderer crash demo entry). */
+  skipRendererReady?: boolean;
 }
 
 export async function launchApp(options: LaunchAppOptions = {}): Promise<{
@@ -102,15 +104,19 @@ export async function launchAppWithHome(
         }
       `,
     });
-    // Wait on a locale-independent marker, then force English for the legacy
-    // E2E suite unless a localization test explicitly requests Chinese.
-    await waitForRendererReady(page);
-    await page.evaluate(async (language) => {
-      const current = await window.backchat.settingsGet();
-      await window.backchat.settingsPatch({
-        appearance: { ...current.appearance, language },
-      });
-    }, options.language ?? "en");
+    if (options.skipRendererReady) {
+      await page.waitForLoadState("domcontentloaded");
+    } else {
+      // Wait on a locale-independent marker, then force English for the legacy
+      // E2E suite unless a localization test explicitly requests Chinese.
+      await waitForRendererReady(page);
+      await page.evaluate(async (language) => {
+        const current = await window.backchat.settingsGet();
+        await window.backchat.settingsPatch({
+          appearance: { ...current.appearance, language },
+        });
+      }, options.language ?? "en");
+    }
   } catch (e) {
     await closeApp(app).catch(() => undefined);
     throw e;
