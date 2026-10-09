@@ -41,7 +41,6 @@ import {
 import { AgentIcon } from "@/components/AgentIcon";
 import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { AnimatedCollapse } from "@/components/ui/animated-collapse";
-import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSidebarCollapse } from "@/components/shell/AppShell";
 import {
@@ -725,7 +724,7 @@ export function Sidebar() {
           to="/scheduled"
           aria-label={t("sidebar.scheduled")}
           className={cn(
-            "app-no-drag sidebar-grid-row sidebar-adjacent-stack-nested rounded-md text-ui",
+            "app-no-drag sidebar-grid-row mt-0.5 rounded-md text-ui",
             scheduledActive
               ? "app-selected-surface text-fg"
               : "text-fg hover:bg-[var(--control-bg-hover)]",
@@ -771,7 +770,7 @@ export function Sidebar() {
                     labelCls={labelCls}
                     depth={1}
                   >
-                    <ul className="m-0 list-none sidebar-adjacent-stack p-0">
+                    <ul className="m-0 list-none space-y-0.5 p-0">
                       {pinned.map((s) => (
                         <li key={s.id}>
                           <SessionRow
@@ -822,7 +821,7 @@ export function Sidebar() {
                       </DropdownMenuContent>
                     </DropdownMenu>}
                   >
-                    <ul className="m-0 list-none sidebar-adjacent-stack p-0">
+                    <ul className="m-0 list-none space-y-0.5 p-0">
                       {section.sessions.map((s) => <li key={s.id}>
                         <SessionRow row={s} {...sectionRowProps} currentSectionId={section.id}
                           depth={2}
@@ -847,7 +846,7 @@ export function Sidebar() {
                     labelCls={labelCls}
                     depth={1}
                   >
-                    <ul className="m-0 list-none sidebar-adjacent-stack p-0">
+                    <ul className="m-0 list-none space-y-0.5 p-0">
                       {pairs.map((p) => (
                         <li key={p.id}>
                           <PairSidebarRow
@@ -890,7 +889,7 @@ export function Sidebar() {
                   }
                 >
                   {projects.length > 0 && (
-                    <ul className="m-0 list-none sidebar-adjacent-stack p-0">
+                    <ul className="m-0 list-none space-y-0.5 p-0">
                       {projects.map((project) => {
                         const open = openProjectKeys.has(project.key);
                         const coordinator = project.projectId ? coordinatorsByProject.get(project.projectId) : undefined;
@@ -914,7 +913,7 @@ export function Sidebar() {
                               }
                             />
                             <AnimatedCollapse open={open}>
-                              <ul className="m-0 list-none sidebar-adjacent-stack sidebar-adjacent-stack-nested p-0">
+                              <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0">
                                 <li>
                                   <ProjectCoordinatorRow
                                     group={project}
@@ -980,7 +979,7 @@ export function Sidebar() {
                                         }
                                       />
                                       <AnimatedCollapse open={wsOpen}>
-                                        <ul className="m-0 list-none sidebar-adjacent-stack sidebar-adjacent-stack-nested p-0">
+                                        <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0">
                                           {ws.sessions.map((s) => (
                                             <li key={s.id}>
                                               <SessionRow
@@ -1025,7 +1024,7 @@ export function Sidebar() {
                     labelCls={labelCls}
                     depth={1}
                   >
-                    <ul className="m-0 list-none sidebar-adjacent-stack p-0">
+                    <ul className="m-0 list-none space-y-0.5 p-0">
                       {chats.map((s) => (
                         <li key={s.id}>
                           <SessionRow
@@ -1182,7 +1181,7 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
   const choices = catalog.data ? openmaTargets(scope, catalog.data) : [];
   const pinned = rows.filter((row) => row.pinnedAt != null);
   const chats = rows.filter((row) => row.pinnedAt == null);
-  const list = (items: SessionRow[]) => <ul className="m-0 list-none sidebar-adjacent-stack p-0">{items.map((row) => <li key={row.id}>{renderRow(row)}</li>)}</ul>;
+  const list = (items: SessionRow[]) => <ul className="m-0 list-none space-y-0.5 p-0">{items.map((row) => <li key={row.id}>{renderRow(row)}</li>)}</ul>;
   return <SidebarSection title={name} open={open} onToggle={() => setOpen(!open)} labelCls={labelCls}>
     <div className="pl-2">
       {enabled ? <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -1362,7 +1361,7 @@ function ProjectSidebarRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            sideOffset={GAP_ADJACENT_PX}
+            sideOffset={4}
             className="w-fit min-w-[160px]"
           >
             {group.projectId && <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/projects/$projectId", params: { projectId: group.projectId! } })} className="flex items-center gap-2 py-1 text-ui">
@@ -1518,7 +1517,7 @@ function WorkspaceSidebarRow({
           <HoverCardContent
             side="right"
             align="start"
-            sideOffset={GAP_ADJACENT_PX}
+            sideOffset={4}
             className="w-auto max-w-[360px] p-2 text-ui"
           >
             <div className="mb-1 flex items-center gap-2 text-fg">
@@ -1528,7 +1527,7 @@ function WorkspaceSidebarRow({
                 {workspace.kind === "external" ? t("workspace.external") : t("workspace.managed")}
               </span>
             </div>
-            <ul className="m-0 list-none sidebar-adjacent-stack p-0">
+            <ul className="m-0 list-none space-y-0.5 p-0">
               {(worktrees.length > 0
                 ? worktrees.map((w) => ({ path: w.path, name: folderName(w.repoRoot), branch: w.branch, head: w.head }))
                 : workspace.paths.map((path) => ({ path, name: folderName(path), branch: null, head: "" }))
@@ -1576,7 +1575,7 @@ function WorkspaceSidebarRow({
               <MoreHorizontalIcon aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[180px]">
+          <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[180px]">
             <DropdownMenuItem
               onSelect={() =>
                 primaryPath ? void window.backchat.uiFsOpenPath({ path: primaryPath }) : undefined
@@ -1689,7 +1688,7 @@ function PairSidebarRow({
               <MoreHorizontalIcon aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[140px]">
+          <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
             <DropdownMenuItem
               onSelect={onRename}
               className="flex items-center gap-2 py-1 text-ui"
@@ -1864,7 +1863,7 @@ function SessionRow({
                         <MoreHorizontalIcon aria-hidden="true" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[140px]">
+                    <DropdownMenuContent align="end" sideOffset={4} className="w-fit min-w-[140px]">
                       <DropdownMenuItem
                         onSelect={onRename}
                         className="flex items-center gap-2 py-1 text-ui"

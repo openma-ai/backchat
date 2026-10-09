@@ -247,10 +247,30 @@
 .sidebar-navigation .text-ui {
   font-weight: 500;
 }
-.sidebar-navigation .sidebar-adjacent-stack > :not([hidden]) ~ :not([hidden]) {
+.sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 1px;
+}
+.sidebar-navigation .mt-0\.5 {
+  margin-top: 1px;
+}
+/* Twin rounded hover/selected washes that would otherwise read as one block. */
+.sidebar-section:has(> .sidebar-section-header:is(:hover, :focus-within))
+  > .animated-collapse[data-state="open"]
+  > :where(ul, div)
+  > li:first-child:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
   margin-top: var(--gap-adjacent);
 }
-.sidebar-navigation .sidebar-adjacent-stack-nested {
+.sidebar-navigation
+  li:has(> .sidebar-grid-row.sidebar-project-row:is(:hover, [data-menu-open="true"]))
+  > .animated-collapse[data-state="open"]
+  > ul
+  > li:first-child:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
+  margin-top: var(--gap-adjacent);
+}
+.sidebar-navigation
+  .space-y-0\.5
+  > li:has(> .sidebar-grid-row:is(:hover, .app-selected-surface))
+  + li:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
   margin-top: var(--gap-adjacent);
 }
 .sidebar-section + .sidebar-section {
@@ -291,12 +311,6 @@
   width: var(--sidebar-row-action-icon-size);
   height: var(--sidebar-row-action-icon-size);
 }
-/* Section headers and first child rows each paint their own rounded hover/
-   selection surfaces. */
-.sidebar-section > .sidebar-section-header + .animated-collapse[data-state="open"] {
-  margin-top: var(--gap-adjacent);
-}
-
 /* Every sidebar row centers its 16px glyph inside one 16px box, so icon
    edges and label starts stay on the same two rails from the nav rows at
    the top through sessions, pairs, projects, and the footer. */
@@ -534,8 +548,8 @@
 }
 
 .slash-command-section + .slash-command-section {
-  margin-top: var(--gap-adjacent);
-  padding-top: var(--gap-adjacent);
+  margin-top: 6px;
+  padding-top: 6px;
 }
 
 .slash-command-section-label {
@@ -1707,8 +1721,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   );
   --composer-card-border-width: 1px;
   --composer-card-padding-block: 10px;
-  /* Hairline between adjacent rounded blocks (popover ↔ trigger, sidebar parent ↔ child). */
-  --gap-adjacent: 6px;
+  /* Neighbor rows/chips both showing hover/selected wash (sidebar parent + child). */
+  --gap-adjacent: 2px;
   --composer-section-gap: 6px;
   --composer-card-padding-inline: var(--composer-card-padding-block);
   --composer-action-edge-inset: calc(
@@ -1726,8 +1740,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      already part of the main-stage geometry. */
   --bottom-bar-gap-y: 6px;
   --composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);
-  --composer-menu-side-offset: var(--gap-adjacent);
-  --composer-picker-popover-gap: var(--gap-adjacent);
+  --composer-menu-side-offset: 6px;
+  --composer-picker-popover-gap: var(--composer-menu-side-offset);
   --composer-card-footer-gap: var(--composer-footer-gap);
   --composer-body-min-height: 48px;
   --composer-resting-height: calc(

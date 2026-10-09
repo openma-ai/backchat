@@ -12,12 +12,15 @@ primitive. Features only supply data and host chrome (popover vs dropdown).
 | `use-grouped-command-roving-highlight.ts` | Suppress false cmdk `data-selected` wash until keyboard roving |
 | `composer-footer-trigger.ts` | Footer chip trigger class; open wash + outline in `index.css` `.app-compact-control` |
 | `grouped-command-field.tsx` | Form/settings select: flush trigger + menu chrome, wraps `GroupedCommandMenu` |
+| `gap-adjacent.ts` | Documents `--gap-adjacent` (CSS-only twin hover/selected row separation in sidebar) |
 
 Styles: `.grouped-command-menu` in `src/renderer/src/styles/index.css`.
 
 Upward footer menus (`side="top"` on project / workspace popovers and host
-dropdown) use Radix `sideOffset` from `useGapAdjacentPx()` / `--gap-adjacent`
-(same token as permission / Full access menus and sidebar parent↔child rows).
+dropdown) use Radix `sideOffset` from `useComposerPickerUpwardSideOffset()`,
+which reads `--composer-picker-popover-gap` (`--composer-menu-side-offset`, 6px).
+That is separate from `--gap-adjacent` (2px hairline when two neighbor sidebar
+rows both paint a hover/selected wash).
 
 ## `components/composer/` — thin adapters
 

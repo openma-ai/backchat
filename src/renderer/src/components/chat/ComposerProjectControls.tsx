@@ -22,8 +22,10 @@ import {
   groupedCommandMenuPopoverShellClassName,
   groupedCommandMenuPresets,
 } from "@/components/ui/grouped-command-menu";
-import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
-import { useComposerPickerUpwardSideOffset } from "@/components/ui/use-composer-picker-upward-side-offset";
+import {
+  COMPOSER_MENU_SIDE_OFFSET_PX,
+  useComposerPickerUpwardSideOffset,
+} from "@/components/ui/use-composer-picker-upward-side-offset";
 import {
   GroupedCommandMenuIconSlot,
   GroupedCommandMenuLabelSlot,
@@ -536,7 +538,7 @@ function WorkspaceChip({
                   <PopoverContent
                     side="top"
                     align="end"
-                    sideOffset={GAP_ADJACENT_PX}
+                    sideOffset={COMPOSER_MENU_SIDE_OFFSET_PX}
                     onKeyDown={(event) => event.stopPropagation()}
                     aria-label={t("workspace.introTitle")}
                     className="app-select-content w-80 max-w-[var(--radix-popover-content-available-width)] gap-3 rounded-xl p-4"

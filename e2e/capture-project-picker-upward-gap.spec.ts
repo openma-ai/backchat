@@ -37,7 +37,7 @@ test("capture upward project picker gap above trigger", async ({ page, home }) =
       probe.remove();
       return px;
     };
-    const pickerGap = readLength("--gap-adjacent");
+    const pickerGap = readLength("--composer-picker-popover-gap");
     const triggerEl = document.querySelector(
       '[data-composer-footer-control="project"]',
     );
