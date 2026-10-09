@@ -58,7 +58,7 @@ test("model picker search filters by provider and model name", async ({ page, br
   await expect(panel.getByText("anthropic-proxy model 1")).toHaveCount(0);
 });
 
-test("model picker opens provider submenu with bounded scroll", async ({ page, bridge }) => {
+test("model picker shows provider command groups with bounded scroll", async ({ page, bridge }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await enableAgent(page, "codex-acp");
   const sessionId = await injectSession(page, { agentId: "codex-acp" });

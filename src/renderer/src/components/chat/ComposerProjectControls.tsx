@@ -16,7 +16,14 @@ import type { ProjectInfo } from "@shared/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
-import { ComposerGroupedCommandPicker } from "@/components/chat/ComposerGroupedCommandPicker";
+import {
+  ComposerGroupedCommandPicker,
+  GROUPED_COMMAND_PANEL_HEIGHT_PX,
+} from "@/components/chat/ComposerGroupedCommandPicker";
+import {
+  GroupedCommandPickerIconSlot,
+  GroupedCommandPickerLabelSlot,
+} from "@/components/chat/GroupedCommandPickerSlots";
 import {
   Command,
   CommandInput,
@@ -34,6 +41,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { selectRecentProjectPaths } from "@/lib/composer-project-paths";
+import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { folderName } from "@/lib/project-path";
 import { useSessionStore, selectActive } from "@/lib/session-store";
@@ -159,9 +167,13 @@ export function ProjectChipRow({
             <ComposerGroupedCommandPicker
               testId="composer-project-picker-panel"
               menuMode="project-picker"
-              panelClassName="flex max-h-[min(420px,var(--radix-popover-content-available-height))] flex-col overflow-hidden"
-              commandClassName="rounded-xl! bg-popover p-1 text-popover-foreground shadow-none ring-0"
-              listClassName="max-h-72"
+              panelClassName={cn(
+                "flex flex-col overflow-hidden",
+                `h-[min(${GROUPED_COMMAND_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+                `min-h-[min(${GROUPED_COMMAND_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+                `max-h-[min(${GROUPED_COMMAND_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
+              )}
+              commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}
               initialHighlightValue={projectPickerValue || activeCwd || noProjectCommandValue}
@@ -182,12 +194,16 @@ export function ProjectChipRow({
                           },
                           children: (
                             <>
-                              <ProjectIcon
-                                identity={`project:${project.id}`}
-                                sourceFolders={project.source_folders}
-                                primaryRoot={project.primary_folder}
-                              />
-                              <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                              <GroupedCommandPickerIconSlot>
+                                <ProjectIcon
+                                  identity={`project:${project.id}`}
+                                  sourceFolders={project.source_folders}
+                                  primaryRoot={project.primary_folder}
+                                />
+                              </GroupedCommandPickerIconSlot>
+                              <GroupedCommandPickerLabelSlot>
+                                <span className="truncate">{project.name}</span>
+                              </GroupedCommandPickerLabelSlot>
                             </>
                           ),
                         })),
@@ -209,10 +225,12 @@ export function ProjectChipRow({
                           },
                           children: (
                             <>
-                              <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-                              <span className="min-w-0 flex-1 truncate">
-                                {folderName(path)}
-                              </span>
+                              <GroupedCommandPickerIconSlot>
+                                <FolderOpenIcon />
+                              </GroupedCommandPickerIconSlot>
+                              <GroupedCommandPickerLabelSlot>
+                                <span className="truncate">{folderName(path)}</span>
+                              </GroupedCommandPickerLabelSlot>
                             </>
                           ),
                         })),
@@ -261,8 +279,12 @@ export function ProjectChipRow({
                       },
                       children: (
                         <>
-                          <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-                          <span>{t("common.browse")}</span>
+                          <GroupedCommandPickerIconSlot>
+                            <FolderOpenIcon />
+                          </GroupedCommandPickerIconSlot>
+                          <GroupedCommandPickerLabelSlot>
+                            <span className="truncate">{t("common.browse")}</span>
+                          </GroupedCommandPickerLabelSlot>
                         </>
                       ),
                     },
@@ -276,8 +298,12 @@ export function ProjectChipRow({
                       },
                       children: (
                         <>
-                          <XIcon className="size-3.5 text-fg-subtle" />
-                          <span>{t("chat.noProject")}</span>
+                          <GroupedCommandPickerIconSlot>
+                            <XIcon />
+                          </GroupedCommandPickerIconSlot>
+                          <GroupedCommandPickerLabelSlot>
+                            <span className="truncate">{t("chat.noProject")}</span>
+                          </GroupedCommandPickerLabelSlot>
                         </>
                       ),
                     },

@@ -66,6 +66,7 @@ export function ComposerSearchableSelectMenu({
       showSearch={showSearch}
       initialHighlightValue={activeItem?.value ?? ""}
       insideDropdownMenu
+      listHeightPx={COMPOSER_SELECT_MENU_LIST_HEIGHT_PX}
     />
   );
 }

@@ -2223,6 +2223,97 @@ body,
   justify-content: flex-end;
   justify-self: end;
 }
+
+/* Grouped command pickers (project + model): same icon | label | check mesh as sidebar rows. */
+.grouped-command-picker {
+  --grouped-command-padding-inline: 8px;
+  --grouped-command-icon-track: var(--sidebar-grid-icon-track);
+  --grouped-command-column-gap: var(--sidebar-grid-column-gap);
+  --grouped-command-trailing-track: var(--sidebar-grid-icon-track);
+  --grouped-command-list-height: 288px;
+}
+
+.grouped-command-picker [data-slot="command-input-wrapper"] {
+  display: grid;
+  height: var(--control-height-compact);
+  min-height: var(--control-height-compact);
+  align-items: center;
+  column-gap: var(--grouped-command-column-gap);
+  padding-inline: var(--grouped-command-padding-inline);
+  grid-template-columns:
+    var(--grouped-command-icon-track)
+    minmax(0, 1fr);
+  border-block-end: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.grouped-command-picker [data-slot="command-input-wrapper"] > svg {
+  grid-column: 1;
+  justify-self: center;
+}
+
+.grouped-command-picker [data-slot="command-input"] {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.grouped-command-picker [data-slot="command-list"] {
+  height: var(--grouped-command-list-height) !important;
+  min-height: var(--grouped-command-list-height) !important;
+  max-height: var(--grouped-command-list-height) !important;
+  flex: 1 1 auto;
+  transition: none;
+}
+
+.grouped-command-picker [cmdk-list-sizer] {
+  min-height: 100%;
+}
+
+.grouped-command-picker [data-slot="command-group"] {
+  padding-inline: 0;
+}
+
+.grouped-command-picker [cmdk-group-heading] {
+  padding-inline: calc(
+    var(--grouped-command-padding-inline) + var(--grouped-command-icon-track) +
+      var(--grouped-command-column-gap)
+  );
+  padding-block: 6px 4px;
+}
+
+.grouped-command-picker [data-slot="command-item"] {
+  display: grid;
+  align-items: center;
+  column-gap: var(--grouped-command-column-gap);
+  padding-inline: var(--grouped-command-padding-inline);
+  grid-template-columns:
+    var(--grouped-command-icon-track)
+    minmax(0, 1fr)
+    var(--grouped-command-trailing-track);
+}
+
+.grouped-command-picker [data-grouped-command-grid="icon"] {
+  grid-column: 1;
+  justify-self: center;
+}
+
+.grouped-command-picker [data-grouped-command-grid="label"] {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.grouped-command-picker [data-slot="command-item"] > .app-select-selected {
+  grid-column: 3;
+  margin-inline-start: 0;
+  justify-self: center;
+}
+
+.grouped-command-picker [data-slot="command-empty"] {
+  display: flex;
+  min-height: calc(var(--grouped-command-list-height) - 16px);
+  align-items: center;
+  justify-content: center;
+}
+
 .sidebar-host-chrome,
 .sidebar-footer-chrome {
   padding-inline-start: 0;

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { composerSelectMenuPanelClassName } from "@/components/chat/ComposerSearchableSelectMenu";
 import {
   Command,
@@ -9,6 +9,9 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+
+export const GROUPED_COMMAND_LIST_HEIGHT_PX = 288;
+export const GROUPED_COMMAND_PANEL_HEIGHT_PX = 336;
 
 export type ComposerGroupedCommandPickerGroup = {
   heading?: string;
@@ -38,6 +41,7 @@ export function ComposerGroupedCommandPicker({
   testId = "composer-select-menu-panel",
   menuMode = "grouped-command",
   insideDropdownMenu = false,
+  listHeightPx = GROUPED_COMMAND_LIST_HEIGHT_PX,
 }: {
   groups: readonly ComposerGroupedCommandPickerGroup[];
   searchPlaceholder: string;
@@ -51,6 +55,7 @@ export function ComposerGroupedCommandPicker({
   testId?: string;
   menuMode?: string;
   insideDropdownMenu?: boolean;
+  listHeightPx?: number;
 }) {
   const [commandValue, setCommandValue] = useState(initialHighlightValue);
 
@@ -58,17 +63,22 @@ export function ComposerGroupedCommandPicker({
     setCommandValue(initialHighlightValue);
   }, [initialHighlightValue]);
 
+  const listStyle = {
+    ["--grouped-command-list-height" as string]: `${listHeightPx}px`,
+  } as CSSProperties;
+
   return (
     <div
       data-testid={testId}
       data-composer-select-menu-mode={menuMode}
       className={panelClassName ?? composerSelectMenuPanelClassName()}
+      style={listStyle}
     >
       <Command
         value={commandValue}
         onValueChange={setCommandValue}
         className={cn(
-          "size-full overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
+          "grouped-command-picker size-full min-h-0 overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
           commandClassName,
         )}
       >
@@ -83,11 +93,11 @@ export function ComposerGroupedCommandPicker({
         ) : null}
         <CommandList
           className={cn(
-            "min-h-0 max-h-[min(360px,var(--radix-dropdown-menu-content-available-height))] flex-1",
+            "oma-scrollbar min-h-0 flex-1 overflow-y-auto scroll-py-1 outline-none max-h-none",
             listClassName,
           )}
         >
-          <CommandEmpty className="px-3 py-6 text-center text-xs leading-relaxed text-fg-subtle">
+          <CommandEmpty className="px-3 text-center text-xs leading-relaxed text-fg-subtle">
             {emptyMessage}
           </CommandEmpty>
           {groups.map((group, index) => (

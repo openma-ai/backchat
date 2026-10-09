@@ -57,6 +57,10 @@ import {
   ComposerSearchableSelectMenu,
   composerSelectMenuShellClassName,
 } from "@/components/chat/ComposerSearchableSelectMenu";
+import {
+  GroupedCommandPickerIconSlot,
+  GroupedCommandPickerLabelSlot,
+} from "@/components/chat/GroupedCommandPickerSlots";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -991,15 +995,33 @@ function SessionRunItem({
 
   if (presentation === "command") {
     return (
-      <span
-        className={cn(
-          "flex w-full items-start gap-2 text-xs",
-          highlighted && "text-accent-foreground",
-          active && "text-fg",
-        )}
-      >
-        {row}
-      </span>
+      <>
+        <GroupedCommandPickerIconSlot>
+          {agentId ? (
+            <AgentIcon
+              agentId={agentId}
+              iconUrl={agentIconUrl}
+              className="size-3.5 text-fg-subtle"
+            />
+          ) : Icon ? (
+            <Icon className="size-3.5 text-fg-subtle" />
+          ) : (
+            <span className="size-3.5" aria-hidden="true" />
+          )}
+        </GroupedCommandPickerIconSlot>
+        <GroupedCommandPickerLabelSlot
+          className={cn(
+            "text-xs",
+            highlighted && "text-accent-foreground",
+            active && "text-fg",
+          )}
+        >
+          <span className="block truncate">{label}</span>
+          {hint ? (
+            <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
+          ) : null}
+        </GroupedCommandPickerLabelSlot>
+      </>
     );
   }
 
