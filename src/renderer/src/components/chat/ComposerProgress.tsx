@@ -361,7 +361,7 @@ function ActivityDock({
         <PopoverContent
           align="center"
           side="top"
-          sideOffset={8}
+          sideOffset={GAP_ADJACENT_PX}
           aria-label={activityLabel}
           className="composer-action-panel app-overlay-surface composer-card w-[min(420px,calc(100vw-32px))]"
         >
