@@ -45,6 +45,35 @@ async function openComposerHostPicker(page: import("@playwright/test").Page): Pr
   await page.waitForTimeout(250);
 }
 
+async function screenshotOpenPickerSurface(
+  page: import("@playwright/test").Page,
+  path: string,
+  panelTestId?: string,
+): Promise<void> {
+  if (panelTestId) {
+    const panel = page.getByTestId(panelTestId);
+    if (await panel.count()) {
+      await expect(panel).toBeVisible({ timeout: 10_000 });
+      await panel.screenshot({ path, animations: "disabled" });
+      return;
+    }
+  }
+  const selectors = [
+    '[data-slot="dropdown-menu-sub-content"][data-state="open"]',
+    '[data-slot="popover-content"][data-state="open"]',
+    '[data-slot="dropdown-menu-content"][data-state="open"]',
+    '[data-slot="select-content"][data-state="open"]',
+  ];
+  for (const selector of selectors) {
+    const node = page.locator(selector).last();
+    if (await node.isVisible().catch(() => false)) {
+      await node.screenshot({ path, animations: "disabled" });
+      return;
+    }
+  }
+  throw new Error(`No open picker surface to capture at ${path}`);
+}
+
 async function screenshotHostDropdown(
   page: import("@playwright/test").Page,
   path: string,
@@ -52,9 +81,18 @@ async function screenshotHostDropdown(
   const panel = page.getByTestId("composer-host-picker-panel");
   if (await panel.count()) {
     await expect(panel).toBeVisible({ timeout: 10_000 });
-    await panel
-      .locator("xpath=ancestor::*[@data-slot='dropdown-menu-content'][1]")
-      .screenshot({ path, animations: "disabled" });
+    const dropdown = panel.locator(
+      "xpath=ancestor::*[@data-slot='dropdown-menu-content'][1]",
+    );
+    if (await dropdown.count()) {
+      const panelBox = await panel.boundingBox();
+      const dropBox = await dropdown.boundingBox();
+      if (dropBox && panelBox && dropBox.height > panelBox.height + 8) {
+        await dropdown.screenshot({ path, animations: "disabled" });
+        return;
+      }
+    }
+    await panel.screenshot({ path, animations: "disabled" });
     return;
   }
   const dropdown = page.locator('[data-slot="dropdown-menu-content"][data-state="open"]').first();
@@ -209,14 +247,15 @@ test.describe.serial("PR56 item 02 evidence", () => {
             animations: "disabled",
           });
       } else {
-        const legacy = page.getByRole("button", { name: /^Local$/i }).first();
-        await legacy.click();
-        await page.locator('[data-slot="dropdown-menu-content"][data-state="open"]')
-          .first()
-          .screenshot({
-            path: pr56Item02Shot("usage-runtime-sidebar.png"),
-            animations: "disabled",
-          });
+        // main: sidebar has no host picker / GroupedCommandMenu — capture Local section chrome.
+        const localHeader = page
+          .getByRole("button", { name: /^Local$|^本机$/ })
+          .first();
+        await expect(localHeader).toBeVisible({ timeout: 10_000 });
+        await localHeader.screenshot({
+          path: pr56Item02Shot("usage-runtime-sidebar.png"),
+          animations: "disabled",
+        });
       }
     } finally {
       await cleanup();
@@ -230,21 +269,12 @@ test.describe.serial("PR56 item 02 evidence", () => {
     await seedProjects(page, home);
     await page.getByRole("button", { name: "New chat", exact: true }).click();
     await page.locator('[data-composer-footer-control="project"]').click();
-    const panel = page.getByTestId("composer-project-picker-panel");
-    if (await panel.count()) {
-      await expect(panel).toBeVisible({ timeout: 10_000 });
-      await panel.screenshot({
-        path: pr56Item02Shot("usage-project-picker.png"),
-        animations: "disabled",
-      });
-    } else {
-      await page.locator('[data-slot="dropdown-menu-content"][data-state="open"]')
-        .first()
-        .screenshot({
-          path: pr56Item02Shot("usage-project-picker.png"),
-          animations: "disabled",
-        });
-    }
+    await page.waitForTimeout(200);
+    await screenshotOpenPickerSurface(
+      page,
+      pr56Item02Shot("usage-project-picker.png"),
+      "composer-project-picker-panel",
+    );
   });
 
   test("usage ComposerProjectControls workspace picker", async ({ page, home }) => {
@@ -262,21 +292,12 @@ test.describe.serial("PR56 item 02 evidence", () => {
       return;
     }
     await workspace.click();
-    const panel = page.getByTestId("composer-workspace-picker-panel");
-    if (await panel.count()) {
-      await expect(panel).toBeVisible({ timeout: 10_000 });
-      await panel.screenshot({
-        path: pr56Item02Shot("usage-workspace-picker.png"),
-        animations: "disabled",
-      });
-    } else {
-      await page.locator('[data-slot="dropdown-menu-content"][data-state="open"]')
-        .first()
-        .screenshot({
-          path: pr56Item02Shot("usage-workspace-picker.png"),
-          animations: "disabled",
-        });
-    }
+    await page.waitForTimeout(200);
+    await screenshotOpenPickerSurface(
+      page,
+      pr56Item02Shot("usage-workspace-picker.png"),
+      "composer-workspace-picker-panel",
+    );
   });
 
   test("usage ComposerSearchableSelectMenu model", async () => {
@@ -310,20 +331,12 @@ test.describe.serial("PR56 item 02 evidence", () => {
       });
       await page.locator('[data-composer-run-trigger="true"]').click();
       await page.getByRole("menuitem", { name: /模型|Model/ }).first().hover();
-      const panel = page.getByTestId("composer-select-menu-panel");
-      if (await panel.count()) {
-        await expect(panel).toBeVisible({ timeout: 10_000 });
-        await panel.screenshot({
-          path: pr56Item02Shot("usage-model-select-menu.png"),
-          animations: "disabled",
-        });
-      } else {
-        await page.waitForTimeout(400);
-        await page.screenshot({
-          path: pr56Item02Shot("usage-model-select-menu.png"),
-          animations: "disabled",
-        });
-      }
+      await page.waitForTimeout(300);
+      await screenshotOpenPickerSurface(
+        page,
+        pr56Item02Shot("usage-model-select-menu.png"),
+        "composer-select-menu-panel",
+      );
     } finally {
       await cleanup();
     }
@@ -372,10 +385,10 @@ test.describe.serial("PR56 item 02 evidence", () => {
     });
     await execution.click();
     await page.waitForTimeout(250);
-    const popover = page.locator('[data-slot="popover-content"][data-state="open"]').first();
-    await popover.screenshot({
-      path: pr56Item02Shot("usage-grouped-command-field.png"),
-      animations: "disabled",
-    });
+    await screenshotOpenPickerSurface(
+      page,
+      pr56Item02Shot("usage-grouped-command-field.png"),
+      "grouped-command-menu-panel",
+    );
   });
 });

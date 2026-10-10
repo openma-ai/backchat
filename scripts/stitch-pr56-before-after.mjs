@@ -29,22 +29,42 @@ async function main() {
     const after = sharp(afterPath);
     const beforeMeta = await before.metadata();
     const afterMeta = await after.metadata();
+    const colWidth = Math.max(beforeMeta.width ?? 0, afterMeta.width ?? 0);
     const height = Math.max(beforeMeta.height ?? 0, afterMeta.height ?? 0);
     const label = basename(file, ".png");
-    const totalWidth = (beforeMeta.width ?? 0) + (afterMeta.width ?? 0);
-    const split = beforeMeta.width ?? 0;
+    const totalWidth = colWidth * 2;
+    const split = colWidth;
+    const fitColumn = async (inputPath) =>
+      sharp({
+        create: {
+          width: colWidth,
+          height,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 1 },
+        },
+      })
+        .composite([
+          {
+            input: await sharp(inputPath)
+              .resize({ width: colWidth, height, fit: "inside" })
+              .toBuffer(),
+            gravity: "northwest",
+          },
+        ])
+        .png()
+        .toBuffer();
     const headerSvg = Buffer.from(
       `<svg width="${totalWidth}" height="28" xmlns="http://www.w3.org/2000/svg">
         <rect width="100%" height="100%" fill="#f4f4f5"/>
         <line x1="${split}" y1="0" x2="${split}" y2="28" stroke="#d4d4d8" stroke-width="1"/>
         <text x="${split / 2}" y="18" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${leftLabel}</text>
-        <text x="${split + (afterMeta.width ?? 0) / 2}" y="18" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${rightLabel}</text>
+        <text x="${split + colWidth / 2}" y="18" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${rightLabel}</text>
       </svg>`,
     );
     const header = await sharp(headerSvg).png().toBuffer();
     const row = await sharp({
       create: {
-        width: (beforeMeta.width ?? 0) + (afterMeta.width ?? 0),
+        width: totalWidth,
         height,
         channels: 4,
         background: { r: 255, g: 255, b: 255, alpha: 1 },
@@ -52,13 +72,13 @@ async function main() {
     })
       .composite([
         {
-          input: await before.resize({ height }).toBuffer(),
+          input: await fitColumn(beforePath),
           left: 0,
           top: 0,
         },
         {
-          input: await after.resize({ height }).toBuffer(),
-          left: beforeMeta.width ?? 0,
+          input: await fitColumn(afterPath),
+          left: colWidth,
           top: 0,
         },
       ])
@@ -67,7 +87,7 @@ async function main() {
     const out = join(compareDir, file.replace(/\.png$/, "-compare.png"));
     await sharp({
       create: {
-        width: (beforeMeta.width ?? 0) + (afterMeta.width ?? 0),
+        width: totalWidth,
         height: height + 28,
         channels: 4,
         background: { r: 255, g: 255, b: 255, alpha: 1 },
