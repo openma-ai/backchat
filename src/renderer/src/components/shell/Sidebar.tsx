@@ -769,7 +769,7 @@ export function Sidebar() {
                     open={openSectionKeys.has("pinned")}
                     onToggle={() => toggleSection("pinned")}
                     labelCls={labelCls}
-                    depth={1}
+                    depth={0}
                   >
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {pinned.map((s) => (
@@ -777,7 +777,7 @@ export function Sidebar() {
                           <SessionRow
                             row={s}
                             {...sectionRowProps}
-                            depth={2}
+                            depth={1}
                             agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             hasSchedule={scheduledSessionIds.has(s.id)}
@@ -801,7 +801,7 @@ export function Sidebar() {
                   const definition = customSections.find(item => item.id === section.id)!;
                   return <SidebarSection key={section.id} title={section.name}
                     customSectionId={section.id}
-                    depth={1}
+                    depth={0}
                     open={!closedCustomSectionIds.has(section.id)}
                     onToggle={() => setClosedCustomSectionIds(current => {
                       const next = new Set(current);
@@ -825,7 +825,7 @@ export function Sidebar() {
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {section.sessions.map((s) => <li key={s.id}>
                         <SessionRow row={s} {...sectionRowProps} currentSectionId={section.id}
-                          depth={2}
+                          depth={1}
                           agentIconUrl={agentIconUrls.get(s.agent_id)}
                           active={s.id === activeId && location.pathname.startsWith("/chat/")}
                           hasSchedule={scheduledSessionIds.has(s.id)} labelCls={labelCls}
@@ -845,14 +845,14 @@ export function Sidebar() {
                     open={openSectionKeys.has("pairs")}
                     onToggle={() => toggleSection("pairs")}
                     labelCls={labelCls}
-                    depth={1}
+                    depth={0}
                   >
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {pairs.map((p) => (
                         <li key={p.id}>
                           <PairSidebarRow
                             row={p}
-                            depth={2}
+                            depth={1}
                             active={p.id === activePairId}
                             labelCls={labelCls}
                             onSelect={() => onSelectPair(p.id)}
@@ -875,7 +875,7 @@ export function Sidebar() {
                   open={openSectionKeys.has("projects")}
                   onToggle={() => toggleSection("projects")}
                   labelCls={labelCls}
-                  depth={1}
+                  depth={0}
                   action={
                     <button
                       type="button"
@@ -932,7 +932,7 @@ export function Sidebar() {
                                     <SessionRow
                                       row={s}
                                       {...sectionRowProps}
-                                      depth={2}
+                                      depth={1}
                                       agentIconUrl={agentIconUrls.get(s.agent_id)}
                                       active={s.id === activeId && location.pathname.startsWith("/chat/")}
                                       hasSchedule={scheduledSessionIds.has(s.id)}
@@ -986,7 +986,7 @@ export function Sidebar() {
                                               <SessionRow
                                                 row={s}
                                                 {...sectionRowProps}
-                                                depth={3}
+                                                depth={2}
                                                 agentIconUrl={agentIconUrls.get(s.agent_id)}
                                                 active={s.id === activeId && location.pathname.startsWith("/chat/")}
                                                 hasSchedule={scheduledSessionIds.has(s.id)}
@@ -1023,7 +1023,7 @@ export function Sidebar() {
                     open={openSectionKeys.has("chats")}
                     onToggle={() => toggleSection("chats")}
                     labelCls={labelCls}
-                    depth={1}
+                    depth={0}
                   >
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {chats.map((s) => (
@@ -1031,7 +1031,7 @@ export function Sidebar() {
                           <SessionRow
                             row={s}
                             {...sectionRowProps}
-                            depth={2}
+                            depth={1}
                             agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             hasSchedule={scheduledSessionIds.has(s.id)}

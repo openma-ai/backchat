@@ -70,6 +70,8 @@ test("sidebar rows share icon and trailing column x-positions", async () => {
     const depth0IconLefts = await Promise.all([
       gridColumnLeft(hostRow, "icon"),
       gridColumnLeft(scheduledRow, "icon"),
+      gridColumnLeft(projectsHeader, "icon"),
+      gridColumnLeft(chatsHeader, "icon"),
       gridColumnLeft(footerRow, "icon"),
     ]);
     const depth0Reference = depth0IconLefts[0];
@@ -77,17 +79,8 @@ test("sidebar rows share icon and trailing column x-positions", async () => {
       expect(Math.abs(left - depth0Reference)).toBeLessThanOrEqual(0.75);
     }
 
-    const depth1IconLefts = await Promise.all([
-      gridColumnLeft(projectsHeader, "icon"),
-      gridColumnLeft(chatsHeader, "icon"),
-    ]);
-    const depth1Reference = depth1IconLefts[0];
-    for (const left of depth1IconLefts) {
-      expect(Math.abs(left - depth1Reference)).toBeLessThanOrEqual(0.75);
-    }
-
     const sessionIcon = await gridColumnLeft(sessionRow, "icon");
-    expect(Math.abs(sessionIcon - depth1Reference - 16)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(sessionIcon - depth0Reference - 16)).toBeLessThanOrEqual(0.75);
 
     const hostSearch = hostRow.locator('[data-sidebar-grid-action="penultimate"]');
     const hostMenu = hostRow.locator('[data-sidebar-grid-action="last"]');
