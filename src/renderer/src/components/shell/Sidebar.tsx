@@ -663,12 +663,10 @@ export function Sidebar() {
       <div className="sidebar-host-chrome shrink-0 pt-[var(--row-gap-y)]">
         <SidebarGridRow
           trailingTrack="double"
-          className="group/newchat rounded-md text-ui text-fg"
+          data-sidebar-row="new-chat"
+          className="rounded-md text-ui text-fg"
         >
-          <SidebarGridCell
-            slot="icon"
-            className="sidebar-new-chat-leading rounded-l-md transition-colors group-hover/newchat:bg-[var(--control-bg-hover)]"
-          >
+          <SidebarGridCell slot="icon">
             <span className="sidebar-row-icon">
               <SquarePenIcon className="size-3.5" />
             </span>
@@ -680,7 +678,7 @@ export function Sidebar() {
               onClick={goHome}
               aria-label={t("sidebar.newChat")}
               aria-current={newChatActive ? "page" : undefined}
-              className="sidebar-new-chat-leading app-no-drag flex h-full min-w-0 flex-1 items-center rounded-r-md text-left text-ui text-fg transition-colors group-hover/newchat:bg-[var(--control-bg-hover)]"
+              className="app-no-drag flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui text-fg"
             >
               <span className={cn("min-w-0 truncate", labelCls)}>{t("sidebar.newChat")}</span>
             </button>

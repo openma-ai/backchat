@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { applyGroupedCommandMenuSearch } from "@/components/ui/grouped-command-menu-search";
 import { useGroupedCommandRovingHighlight } from "@/components/ui/use-grouped-command-roving-highlight";
 import {
   Command,
@@ -45,9 +46,9 @@ export type GroupedCommandMenuGroup = {
   items: readonly GroupedCommandMenuItem[];
 };
 
-/** cmdk owns filter + best-match ranking for every mode (project order uses indexed values). */
+/** cmdk DOM sort crashes on grouped/listHeader markup — ranking is applied in React. */
 export function groupedCommandMenuShouldFilter(_menuMode?: string): boolean {
-  return true;
+  return false;
 }
 
 export const groupedCommandMenuPresets = {
@@ -195,6 +196,11 @@ export function GroupedCommandMenu({
     setSearchQuery("");
   }, [effectiveHighlightValue, menuResetKey]);
 
+  const displayedGroups = useMemo(
+    () => applyGroupedCommandMenuSearch(groups, searchQuery),
+    [groups, searchQuery],
+  );
+
   const panelStyle = {
     ["--grouped-command-list-height" as string]: `${listHeightPx}px`,
     ...(panelHeightPx
@@ -250,7 +256,13 @@ export function GroupedCommandMenu({
     if (bareListGroupItems && !group.heading) {
       return (
         <Fragment key={key}>
-          {group.separatorBefore ? <CommandSeparator /> : null}
+          {group.separatorBefore ? (
+            <CommandSeparator
+              className={
+                menuMode === "host-picker" ? "host-picker-command-separator" : undefined
+              }
+            />
+          ) : null}
           {items}
         </Fragment>
       );
@@ -258,7 +270,13 @@ export function GroupedCommandMenu({
     if (group.heading) {
       return (
         <Fragment key={key}>
-          {group.separatorBefore ? <CommandSeparator /> : null}
+          {group.separatorBefore ? (
+            <CommandSeparator
+              className={
+                menuMode === "host-picker" ? "host-picker-command-separator" : undefined
+              }
+            />
+          ) : null}
           <div className={bareListGroupItems ? "px-0 py-1" : "px-0"}>
             <div
               data-grouped-command-group-heading=""
@@ -273,7 +291,13 @@ export function GroupedCommandMenu({
     }
     return (
       <Fragment key={key}>
-        {group.separatorBefore ? <CommandSeparator /> : null}
+        {group.separatorBefore ? (
+          <CommandSeparator
+            className={
+              menuMode === "host-picker" ? "host-picker-command-separator" : undefined
+            }
+          />
+        ) : null}
         <CommandGroup>{items}</CommandGroup>
       </Fragment>
     );
@@ -317,6 +341,12 @@ export function GroupedCommandMenu({
             onKeyDown={mergeRovingKeyDown}
           />
         ) : null}
+        {listHeader}
+        {listHeader && listHeaderSeparator && groups.length > 0 ? (
+          <CommandSeparator
+            className={menuMode === "host-picker" ? "host-picker-command-separator" : undefined}
+          />
+        ) : null}
         {nativeListScroll ? (
           <CommandList
             className={cn(
@@ -331,11 +361,7 @@ export function GroupedCommandMenu({
             <CommandEmpty className="px-3 text-center text-xs leading-relaxed text-fg-subtle">
               {emptyMessage}
             </CommandEmpty>
-            {listHeader}
-            {listHeader && listHeaderSeparator && groups.length > 0 ? (
-              <CommandSeparator />
-            ) : null}
-            {groups.map(renderGroup)}
+            {displayedGroups.map(renderGroup)}
           </CommandList>
         ) : (
           <ScrollArea
@@ -349,11 +375,7 @@ export function GroupedCommandMenu({
               <CommandEmpty className="px-3 text-center text-xs leading-relaxed text-fg-subtle">
                 {emptyMessage}
               </CommandEmpty>
-              {listHeader}
-              {listHeader && listHeaderSeparator && groups.length > 0 ? (
-                <CommandSeparator />
-              ) : null}
-              {groups.map(renderGroup)}
+              {displayedGroups.map(renderGroup)}
             </CommandList>
           </ScrollArea>
         )}

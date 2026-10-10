@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import { groupedCommandMenuShouldFilter } from "./grouped-command-menu";
 
 describe("groupedCommandMenuShouldFilter", () => {
-  it("delegates filter and ranking to cmdk for every menu mode", () => {
-    expect(groupedCommandMenuShouldFilter("project-picker")).toBe(true);
-    expect(groupedCommandMenuShouldFilter("grouped-command")).toBe(true);
-    expect(groupedCommandMenuShouldFilter("host-picker")).toBe(true);
+  it("disables cmdk DOM filtering so React can rank safely", () => {
+    expect(groupedCommandMenuShouldFilter("project-picker")).toBe(false);
+    expect(groupedCommandMenuShouldFilter("workspace-picker")).toBe(false);
+    expect(groupedCommandMenuShouldFilter("grouped-command")).toBe(false);
   });
 });
 

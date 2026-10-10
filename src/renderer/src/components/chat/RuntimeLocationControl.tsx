@@ -283,7 +283,7 @@ export function RuntimeLocationControl({
       listClassName="host-picker-command-list"
       panelClassName="host-picker-panel flex h-auto w-full flex-col overflow-visible"
       listHeightPx={HOST_PICKER_LIST_MAX_HEIGHT_PX}
-      commandClassName="rounded-xl! bg-popover p-[5px]! text-popover-foreground shadow-none ring-0"
+      commandClassName="host-picker-command-surface rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
       groups={groups}
     />
   );
