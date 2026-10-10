@@ -129,22 +129,68 @@ export async function measureGroupedCommandMenuGrid(
   });
 }
 
+function parseGridLineEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export async function burnGroupedCommandGridLines(
   png: Buffer,
   iconLeft: number,
   textLeft: number,
+  options?: {
+    referenceIconLeft?: number;
+    referenceTextLeft?: number;
+  },
 ): Promise<Buffer> {
   const image = sharp(png);
   const meta = await image.metadata();
   const width = meta.width ?? 0;
   const height = meta.height ?? 0;
+  const refIcon = options?.referenceIconLeft;
+  const refText = options?.referenceTextLeft;
+  const referenceLines =
+    refIcon != null && refText != null
+      ? `<line x1="${refIcon + 0.5}" y1="0" x2="${refIcon + 0.5}" y2="${height}" stroke="#16a34a" stroke-width="2" stroke-dasharray="6 4"/>
+      <line x1="${refText + 0.5}" y1="0" x2="${refText + 0.5}" y2="${height}" stroke="#0d9488" stroke-width="2" stroke-dasharray="6 4"/>`
+      : "";
   const svg = Buffer.from(
     `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      ${referenceLines}
       <line x1="${iconLeft + 0.5}" y1="0" x2="${iconLeft + 0.5}" y2="${height}" stroke="#ef4444" stroke-width="3"/>
       <line x1="${textLeft + 0.5}" y1="0" x2="${textLeft + 0.5}" y2="${height}" stroke="#2563eb" stroke-width="3"/>
     </svg>`,
   );
   return image.composite([{ input: svg, top: 0, left: 0 }]).png().toBuffer();
+}
+
+export function groupedCommandGridLinePositions(
+  grid: GroupedCommandGridMetrics,
+): { iconLeft: number; textLeft: number } {
+  const iconRows = grid.rows.filter((row) => !row.id.startsWith("heading:"));
+  const projectRows = iconRows.filter(
+    (row) => row.id !== "search" && !row.id.startsWith("Browse"),
+  );
+  const measureFrom = projectRows.length > 0 ? projectRows : iconRows;
+  const iconLeft =
+    parseGridLineEnv("PR56_GRID_LINE_ICON_LEFT") ??
+    Math.min(...measureFrom.map((row) => row.iconLeft));
+  const textLeft =
+    parseGridLineEnv("PR56_GRID_LINE_TEXT_LEFT") ??
+    Math.min(...measureFrom.map((row) => row.textLeft));
+  return { iconLeft, textLeft };
+}
+
+export function groupedCommandGridReferenceLinePositions(): {
+  referenceIconLeft?: number;
+  referenceTextLeft?: number;
+} {
+  const referenceIconLeft = parseGridLineEnv("PR56_GRID_REFERENCE_ICON_LEFT");
+  const referenceTextLeft = parseGridLineEnv("PR56_GRID_REFERENCE_TEXT_LEFT");
+  if (referenceIconLeft == null || referenceTextLeft == null) return {};
+  return { referenceIconLeft, referenceTextLeft };
 }
 
 export async function screenshotGroupedCommandMenuGrid(
@@ -153,12 +199,15 @@ export async function screenshotGroupedCommandMenuGrid(
   grid: GroupedCommandGridMetrics,
   path: string,
 ): Promise<void> {
-  const iconRows = grid.rows.filter((row) => !row.id.startsWith("heading:"));
-  const iconLeft = Math.min(...iconRows.map((row) => row.iconLeft));
-  const textLeft = grid.textLeftMin;
+  const { iconLeft, textLeft } = groupedCommandGridLinePositions(grid);
   const shotTarget = await resolveGridScreenshotTarget(panel);
   const png = await shotTarget.screenshot({ animations: "disabled" });
-  const burned = await burnGroupedCommandGridLines(png, iconLeft, textLeft);
+  const burned = await burnGroupedCommandGridLines(
+    png,
+    iconLeft,
+    textLeft,
+    groupedCommandGridReferenceLinePositions(),
+  );
   await writeFile(path, burned);
 }
 
@@ -171,6 +220,19 @@ async function resolveGridScreenshotTarget(panel: Locator): Promise<Locator> {
     if (await popover.count()) return popover.first();
   }
   return panel;
+}
+
+export async function expectGroupedCommandOpensOnCurrentChoice(
+  panel: Locator,
+  options?: { requireChecked?: boolean },
+) {
+  const highlighted = panel.locator(
+    '[data-slot="command-item"][data-selected="true"]',
+  );
+  await expect(highlighted).toHaveCount(1);
+  if (options?.requireChecked) {
+    await expect(highlighted).toHaveAttribute("data-checked", "true");
+  }
 }
 
 export async function captureGroupedMenuGridEvidence(

@@ -138,18 +138,31 @@ export function GroupedCommandMenu({
   /** Scroll on `CommandList` (host picker — matches main dropdown `overflow-y-auto`). */
   nativeListScroll?: boolean;
 }) {
-  const [commandValue, setCommandValue] = useState(initialHighlightValue);
+  const highlightFromChecked = useMemo(() => {
+    for (const group of groups) {
+      for (const item of group.items) {
+        if (item.checked) return item.value;
+      }
+    }
+    return "";
+  }, [groups]);
+  const effectiveHighlightValue =
+    initialHighlightValue || highlightFromChecked;
+
+  const [commandValue, setCommandValue] = useState(effectiveHighlightValue);
   const [searchQuery, setSearchQuery] = useState("");
   const { commandRovingProps, onKeyDown: onRovingKeyDown } =
-    useGroupedCommandRovingHighlight(menuResetKey ?? initialHighlightValue);
+    useGroupedCommandRovingHighlight(
+      menuResetKey ?? effectiveHighlightValue,
+    );
 
   /** cmdk re-sorts by item `value`; project picker must keep `listProjects` order. */
   const preserveItemOrder = menuMode === "project-picker";
 
   useEffect(() => {
-    setCommandValue(initialHighlightValue);
+    setCommandValue(effectiveHighlightValue);
     if (preserveItemOrder) setSearchQuery("");
-  }, [initialHighlightValue, menuResetKey, preserveItemOrder]);
+  }, [effectiveHighlightValue, menuResetKey, preserveItemOrder]);
 
   const visibleGroups = useMemo(() => {
     if (!preserveItemOrder) return groups;
@@ -267,8 +280,8 @@ export function GroupedCommandMenu({
       style={panelStyle}
     >
       <Command
-        value={preserveItemOrder ? searchQuery : commandValue}
-        onValueChange={preserveItemOrder ? setSearchQuery : setCommandValue}
+        value={commandValue}
+        onValueChange={setCommandValue}
         shouldFilter={preserveItemOrder ? false : undefined}
         className={cn(
           "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
@@ -283,6 +296,8 @@ export function GroupedCommandMenu({
             autoFocus={autoFocus}
             placeholder={searchPlaceholder}
             aria-label={searchInputAriaLabel ?? searchPlaceholder}
+            value={preserveItemOrder ? searchQuery : undefined}
+            onValueChange={preserveItemOrder ? setSearchQuery : undefined}
             onKeyDown={mergeRovingKeyDown}
           />
         ) : null}

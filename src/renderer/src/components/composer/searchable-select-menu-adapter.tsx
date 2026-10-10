@@ -5,6 +5,7 @@ import {
   groupedCommandMenuPresets,
 } from "@/components/ui/grouped-command-menu";
 import { menuEntriesToCommandGroups } from "@/lib/composer-menu-entries";
+import { searchableSelectHaystack } from "@/lib/searchable-select-filter";
 import type { SearchableSelectFields } from "@/lib/searchable-select-filter";
 
 export const COMPOSER_SELECT_MENU_SEARCH_THRESHOLD = 8;
@@ -44,6 +45,14 @@ export function ComposerSearchableSelectMenu({
     () => menuEntriesToCommandGroups(items, { activeValue, onSelect, renderItem }),
     [activeValue, items, onSelect, renderItem],
   );
+  const initialHighlightValue = useMemo(() => {
+    for (const group of groups) {
+      for (const item of group.items) {
+        if (item.checked) return item.value;
+      }
+    }
+    return activeItem ? searchableSelectHaystack(activeItem) : "";
+  }, [groups, activeItem]);
 
   return (
     <GroupedCommandMenu
@@ -52,7 +61,7 @@ export function ComposerSearchableSelectMenu({
       searchPlaceholder={searchPlaceholder}
       emptyMessage={emptyMessage}
       showSearch={showSearch}
-      initialHighlightValue={activeItem?.value ?? ""}
+      initialHighlightValue={initialHighlightValue}
       insideDropdownMenu
       listHeightPx={GROUPED_COMMAND_MENU_DROPDOWN_LIST_HEIGHT_PX}
       panelHeightPx={groupedCommandMenuPresets.composerDropdown.panelHeightPx}
