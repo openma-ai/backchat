@@ -482,7 +482,7 @@ describe("settings surfaces render the shared box and row", () => {
   });
 
   it("renders the settings loading panel while the outlet is suspended", async () => {
-    let release = () => undefined;
+    let release: (value?: void) => void = () => undefined;
     harness.suspender = new Promise<void>((resolve) => {
       release = resolve;
     });
