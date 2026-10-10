@@ -124,7 +124,7 @@ export function ElicitationAskForm({
                 type="submit"
                 disabled={!otherValue.trim()}
                 aria-label={`Submit ${choiceOtherField.title}`}
-                className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-bg disabled:opacity-40"
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-bg disabled:text-fg-disabled"
               >
                 <ArrowRightIcon className="size-4" />
               </button>

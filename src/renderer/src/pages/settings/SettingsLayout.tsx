@@ -95,7 +95,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-ui font-medium text-fg">
+    <div className="flex h-full min-h-0 flex-col text-ui text-fg">
       <div className="app-drag-region h-[36px] shrink-0" />
       <div className="px-2 pt-[var(--row-gap-y)]">
         <button
@@ -144,8 +144,8 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
                           className={cn(
                             "flex h-[var(--sidebar-row-h)] items-center gap-2 rounded-md px-2 text-ui transition-colors",
                             active
-                              ? "app-selected-surface text-fg"
-                              : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
+                              ? "app-selected-surface font-semibold text-fg"
+                              : "font-normal text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
                           )}
                         >
                           <span className={iconSlotClass}>
@@ -163,7 +163,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
           {!!projects.data?.length && <div className="mb-4">
             <div className="mb-1.5 px-2 text-ui font-medium text-fg-subtle">{t("sidebar.projects")}</div>
             <ul className="space-y-0.5">{projects.data.filter(project => project.name.toLowerCase().includes(query.trim().toLowerCase())).map(project => <li key={project.id}>
-              <Link to="/settings/projects/$projectId" params={{ projectId: project.id }} className={cn("flex h-[var(--sidebar-row-h)] items-center gap-2 rounded-md px-2 text-ui", location.pathname === `/settings/projects/${project.id}` ? "app-selected-surface text-fg" : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg")}>
+              <Link to="/settings/projects/$projectId" params={{ projectId: project.id }} className={cn("flex h-[var(--sidebar-row-h)] items-center gap-2 rounded-md px-2 text-ui", location.pathname === `/settings/projects/${project.id}` ? "app-selected-surface font-semibold text-fg" : "font-normal text-fg-muted hover:bg-bg-surface/65 hover:text-fg")}>
                 <ProjectIcon identity={`project:${project.id}`} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} /><span className="truncate">{project.name}</span>
               </Link>
             </li>)}</ul>

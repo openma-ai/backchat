@@ -43,7 +43,7 @@ export function ComposerAction({
     <button
       type={type}
       className={cn(
-        "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5 text-fg-subtle hover:text-fg hover:bg-[var(--control-bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent transition-colors",
+        "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5 text-fg-subtle hover:text-fg hover:bg-[var(--control-bg-hover)] disabled:text-fg-disabled disabled:hover:bg-transparent transition-colors",
         className,
       )}
       {...props}

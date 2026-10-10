@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { cssFontFamily } from "@/lib/css-font";
+import { terminalTextOptions } from "@/lib/terminal-text-options";
 
 /**
  * TerminalTab — one xterm.js instance bound to one pty in main.
@@ -53,13 +54,9 @@ export function TerminalTab({
     const term = new Terminal({
       cols: initialCols,
       rows: initialRows,
-      // The system mono token. SF Mono, Cascadia, Consolas, and Liberation
-      // Mono all ship brackets and box drawing, so the terminal does not
-      // wait on a packaged face.
-      fontFamily: cssFontFamily("--font-mono"),
-      fontWeight: 400,
-      fontSize: 12,
-      lineHeight: 1.25,
+      // lineHeight 1 and customGlyphs keep box-drawing cells touching.
+      // A 1.25 line box leaves a gap between vertical rules.
+      ...terminalTextOptions(cssFontFamily("--font-mono")),
       cursorBlink: true,
       // Theme reads from CSS vars at construct time — xterm.js doesn't
       // pick up var() changes mid-session, so we resolve to concrete
@@ -73,14 +70,6 @@ export function TerminalTab({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
-    // Evidence runs set this flag so the panel paints box-drawing and a
-    // CJK cell with the configured mono face even when the host shell
-    // has not emitted a prompt yet.
-    if (document.documentElement.dataset.terminalDemo === "1") {
-      term.writeln("┌──┬──┐");
-      term.writeln("│中│AB│");
-      term.writeln("└──┴──┘");
-    }
 
     // WebGL renderer — the perf headline. Falls back gracefully on
     // context-create failure (xterm.js logs to console).

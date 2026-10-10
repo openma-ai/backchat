@@ -7,16 +7,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeController } from "@/components/ThemeController";
 import { AppStartupGate } from "@/components/AppStartupGate";
 import { router } from "@/router";
+import { applyRendererOs } from "@/lib/os";
 import { applyStoredTheme } from "@/lib/theme";
 import "@openma/common/chat-ui/styles.css";
 import "./styles/index.css";
 
-const userAgent = navigator.userAgent;
-document.documentElement.dataset.os = /Windows/.test(userAgent)
-  ? "windows"
-  : /Macintosh|Mac OS X/.test(userAgent)
-    ? "mac"
-    : "linux";
+applyRendererOs(document.documentElement, navigator.userAgent);
 
 /**
  * Renderer entry. TanStack Router owns the page layout via routeTree; the

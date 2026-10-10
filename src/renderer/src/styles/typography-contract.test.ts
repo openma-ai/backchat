@@ -90,6 +90,9 @@ describe("renderer typography contract", () => {
     expect(css).toContain('"Microsoft YaHei UI"');
     expect(css).toContain('"Backchat Sans"');
     expect(css).toContain('"Backchat Sans SC"');
+    expect(css).toContain('"Backchat PingFang"');
+    expect(css).toContain('local("PingFang SC Regular")');
+    expect(css).toContain('local("PingFang SC Semibold")');
     expect(css).toContain('"WenQuanYi Micro Hei Mono"');
     const defaultMono = css.slice(css.indexOf("--font-mono:"), css.indexOf("--font-chat:"));
     expect(defaultMono).toContain('"PingFang SC"');
@@ -109,10 +112,13 @@ describe("renderer typography contract", () => {
   it("sets the Codex UI weight and the mixed-script rhythm in one place", () => {
     expect(css).toContain("--font-ui-weight: 430;");
     expect(css).toContain("--font-weight-emphasis: 600;");
-    expect(css).toContain("--font-weight-medium: 600;");
+    expect(css).not.toContain("--font-weight-medium: 600;");
+    expect(css).not.toContain("--font-weight-semibold: 700;");
     expect(css).toContain("font-weight: var(--font-ui-weight);");
-    expect(css).toContain("font-synthesis: none;");
-    expect(css).toContain("font-synthesis: weight;");
+    expect(css).toContain("font-synthesis: style;");
+    expect(css).toContain("font-synthesis: weight style;");
+    expect(css).toContain("font-style: italic;");
+    expect(css).not.toContain("font-synthesis: none;");
     expect(css).not.toContain("font-weight: 500;");
     expect(css).toContain("letter-spacing: 0;");
     expect(css).toContain("text-autospace: normal;");
@@ -122,7 +128,7 @@ describe("renderer typography contract", () => {
     expect(css).toContain("--type-code-leading: 22px;");
     expect(css).toContain('html[lang|="zh"]');
     expect(css).toContain("text-autospace: no-autospace;");
-    expect(css).toContain("opacity: 0.4;");
+    expect(css).toContain("color: var(--fg-disabled);");
     expect(css).toContain("color: var(--fg-subtle);");
   });
 
@@ -137,7 +143,7 @@ describe("renderer typography contract", () => {
       const lines = source.split("\n");
       lines.forEach((line, index) => {
         const where = `${rel}:${index + 1}`;
-        const packagedFace = rel === "styles/index.css" && /font-family:\s*"Backchat Sans/.test(line);
+    const packagedFace = rel === "styles/index.css" && /font-family:\s*"Backchat /.test(line);
         if (/font-family\s*:/.test(line) && !/var\(--font-/.test(line) && !packagedFace) {
           violations.push(`${where} sets font-family outside the token`);
         }

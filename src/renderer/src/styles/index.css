@@ -134,7 +134,8 @@
 
 .app-compact-control:disabled {
   pointer-events: none;
-  opacity: 0.4;
+  color: var(--fg-disabled);
+  opacity: 1;
 }
 
 /* Every sidebar row uses the same compact overflow affordance. Keeping its
@@ -250,9 +251,9 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-.sidebar-navigation .text-ui {
-  font-weight: var(--font-weight-emphasis);
-  font-synthesis: weight;
+.sidebar-navigation .app-selected-surface {
+  font-weight: 600;
+  font-synthesis: weight style;
 }
 .sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
   margin-top: 1px;
@@ -273,7 +274,7 @@
 .sidebar-scroll-area nav > .sidebar-section > .sidebar-section-header > button {
   font-size: 12px;
   font-weight: var(--font-weight-emphasis);
-  font-synthesis: weight;
+  font-synthesis: weight style;
   color: var(--fg-muted);
 }
 .sidebar-section-header > button {
@@ -528,7 +529,7 @@
   color: var(--fg-subtle);
   font-size: 12px;
   font-weight: var(--font-weight-emphasis);
-  font-synthesis: weight;
+  font-synthesis: weight style;
   line-height: 18px;
 }
 
@@ -1375,7 +1376,7 @@ html[data-theme-asset-home-corner-decoration="true"]
   overflow: hidden;
   font-size: 12px;
   font-weight: var(--font-weight-emphasis);
-  font-synthesis: weight;
+  font-synthesis: weight style;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1861,11 +1862,27 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   );
 }
 
-/* Linux UI pair. Only the Latin variable file and two Simplified Chinese
-   weights are packaged (about 2.4MB of woff2). macOS and Windows never
-   reach these families for glyphs their own fonts already cover.
-   https://fonts.google.com/noto — Noto Sans + Noto Sans SC is the
-   Latin/Simplified Chinese pair Chrome OS and Android ship. */
+/* Linux UI pair. Only the upright Latin variable files and two Simplified
+   Chinese weights are packaged. macOS and Windows builds omit these files
+   (see package.json build.mac/win.files). Italic is synthesized; there is
+   no italic file. https://fonts.google.com/noto */
+/* PingFang SC ships Medium at 500. A request of 430 checks 500 before 400,
+   so Chinese would paint Medium while SF draws 430. These faces hide
+   Medium: 430 resolves to Regular, 600 to Semibold. */
+@font-face {
+  font-family: "Backchat PingFang";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local("PingFang SC Regular");
+}
+@font-face {
+  font-family: "Backchat PingFang";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local("PingFang SC Semibold");
+}
 @font-face {
   font-family: "Backchat Sans";
   font-style: normal;
@@ -1920,11 +1937,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      different family per distro. Backchat Sans / Sans SC
      are the packaged Linux pair (Noto Sans Latin variable + Noto Sans SC
      400/600) and only win after the OS faces miss. */
-  --font-weight-medium: 600;
-  --font-weight-semibold: 700;
   --font-sans:
     -apple-system-body, -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
-    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+    "Segoe UI", "Backchat PingFang", "Hiragino Sans GB", "Microsoft YaHei UI",
     "Microsoft YaHei", "Backchat Sans", "Backchat Sans SC", "Noto Sans CJK SC",
     "Source Han Sans SC", "WenQuanYi Micro Hei", ui-sans-serif, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
@@ -2024,10 +2039,10 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
 body {
   font-family: var(--font-sans);
   font-weight: var(--font-ui-weight);
-  /* Static faces (YaHei, Consolas) have no 430 stop. Synthesis would
-     fake a blurry bold; `none` snaps them to the nearest real weight
-     while variable SF / PingFang / Segoe UI Variable still draw 430. */
-  font-synthesis: none;
+  /* Weight stays real: 430 must not faux-bold. Style stays on so em,
+     blockquote, and .italic can oblique an upright face (Noto has no
+     italic file). */
+  font-synthesis: style;
   font-kerning: normal;
   letter-spacing: 0;
   /* Design tokens own interface sizing at 100% window zoom. */
@@ -2087,10 +2102,10 @@ html[data-os="windows"] {
 }
 
 /* Resting text stays on a real 400/430 face. Emphasis opts back into
-   synthesis so a family that only has regular still paints a heavier
-   stroke instead of matching 600 down to 400. */
+   weight synthesis so a family that only has regular still paints a
+   heavier stroke. Style stays on so italics inside those elements
+   do not snap upright. */
 :is(
-  .font-medium,
   .font-semibold,
   .font-bold,
   b,
@@ -2102,7 +2117,14 @@ html[data-os="windows"] {
   h5,
   h6
 ) {
-  font-synthesis: weight;
+  font-synthesis: weight style;
+}
+
+/* Upright-only families (packaged Noto, many Linux faces) need synthesis
+   or em / blockquote / an italic tab label paint upright. */
+:is(em, i, cite, dfn, blockquote, .italic) {
+  font-style: italic;
+  font-synthesis: style;
 }
 
 /* Code shows the characters the user wrote. Autospace would open a gap
@@ -2792,9 +2814,9 @@ textarea:disabled::selection {
   opacity: 1;
 }
 
-/* Disabled controls stay filled and fade as a whole. A near-tertiary
-   text color does not read as disabled, and clearing the fill makes a
-   primary button look enabled. Inactive UI is exempt from WCAG 1.4.3. */
+/* Disabled controls keep their fill and use the AA disabled text role.
+   Opacity washes the glyph below the role's contrast (about 2.5:1 on
+   the panel). Switches and checkboxes draw their own disabled chrome. */
 :is(
   button,
   input,
@@ -2808,5 +2830,6 @@ textarea:disabled::selection {
   [role="checkbox"],
   [data-disabled-hidden]
 ) {
-  opacity: 0.4;
+  color: var(--fg-disabled);
+  opacity: 1;
 }

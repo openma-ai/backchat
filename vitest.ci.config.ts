@@ -63,7 +63,10 @@ export default defineConfig({
       "src/renderer/src/lib/reduce-turn.test.ts",
       "src/renderer/src/lib/chat-tool-presentation.test.ts",
       "src/renderer/src/components/chat/ToolPresentation.test.tsx",
-      "src/renderer/src/lib/composer-harness-state.test.ts",
+      "src/renderer/src/lib/os.test.ts",
+      "src/renderer/src/lib/css-font.test.ts",
+      "src/renderer/src/lib/font-weight-match.test.ts",
+      "src/renderer/src/lib/terminal-text-options.test.ts",
       "src/shared/auth-errors.test.ts",
     ],
     exclude: [

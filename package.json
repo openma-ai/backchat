@@ -89,6 +89,7 @@
     "cron-parser": "^5.6.2",
     "cross-spawn": "7.0.6",
     "effect": "^3.22.1",
+    "electron-updater": "6.8.10",
     "eventsource": "3.0.7",
     "express": "5.2.1",
     "express-rate-limit": "8.5.2",
@@ -106,8 +107,7 @@
     "streamdown": "^2.5.0",
     "streaming-markdown": "^0.2.15",
     "use-stick-to-bottom": "^1.1.4",
-    "ws": "^8.21.1",
-    "electron-updater": "6.8.10"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.64.2",
@@ -123,6 +123,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "4.1.11",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",
@@ -174,7 +175,9 @@
       {
         "from": "src/cli",
         "to": "cli",
-        "filter": ["**/*.mjs"]
+        "filter": [
+          "**/*.mjs"
+        ]
       },
       {
         "from": "build/update-metadata.json",
@@ -185,6 +188,17 @@
       "**/*.node"
     ],
     "mac": {
+      "files": [
+        "out/**/*",
+        "!**/*noto-sans*.woff2",
+        {
+          "from": "build/packaged-dependencies/node_modules",
+          "to": "node_modules",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
       "identity": "-",
       "hardenedRuntime": false,
       "target": [
@@ -194,6 +208,17 @@
       "category": "public.app-category.developer-tools"
     },
     "win": {
+      "files": [
+        "out/**/*",
+        "!**/*noto-sans*.woff2",
+        {
+          "from": "build/packaged-dependencies/node_modules",
+          "to": "node_modules",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
       "target": [
         "nsis"
       ]
