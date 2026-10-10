@@ -1655,9 +1655,10 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      publish an explicit 430 face that points at Regular, so 430 does not
      climb to Medium while those faces load. macOS requests 400 instead
      (see html[data-os="mac"]): PingFang SC's 400 face is Regular, and a
-     430 request would select Medium if the local() names miss. macOS does
-     not pin a wght axis. An inherited axis would hold Latin at 430 on
-     every heavier element that forgot to clear it. */
+     430 request would select Medium if the local() names miss. The
+     renderer then sets a per-element wght of 430 only where the computed
+     weight is 400. That value is not inherited, so 500, 600, and 700 keep
+     their own Latin weight. */
   --font-ui-weight: 430;
   /* Selected text is 600. Medium stays 500. Linux Noto Sans SC and macOS
      PingFang publish a 500 face. Windows YaHei has no 500, so that request
@@ -2224,11 +2225,10 @@ html[data-os="windows"] {
 
 /* Resting weight on macOS is 400 so a skipped Backchat PingFang family
    lands on PingFang SC Regular. `font-weight: 430` would select Medium
-   (CSS Fonts checks 500 before 400). Resting Latin on macOS is therefore
-   400 as well. A `wght` axis on body would inherit, and any heavier
-   element left off a reset list would keep Latin at 430 while Chinese
-   followed font-weight. No axis is set, so 500, 600, 700, and an inline
-   weight all draw Latin at that weight. */
+   (CSS Fonts checks 500 before 400). Variable Latin at that same 400 is
+   drawn at 430 by mac-latin-axis.ts, on each element, and only when the
+   computed weight is 400. A stylesheet axis on body would inherit and pin
+   bold Latin at 430. */
 html[data-os="mac"] {
   --font-ui-weight: 400;
 }

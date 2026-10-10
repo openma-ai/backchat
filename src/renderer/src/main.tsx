@@ -7,12 +7,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeController } from "@/components/ThemeController";
 import { AppStartupGate } from "@/components/AppStartupGate";
 import { router } from "@/router";
+import { installMacLatinAxis } from "@/lib/mac-latin-axis";
 import { applyRendererOs } from "@/lib/os";
 import { applyStoredTheme } from "@/lib/theme";
 import "@openma/common/chat-ui/styles.css";
 import "./styles/index.css";
 
 applyRendererOs(document.documentElement, navigator.userAgent);
+installMacLatinAxis(document);
 
 /**
  * Renderer entry. TanStack Router owns the page layout via routeTree; the
