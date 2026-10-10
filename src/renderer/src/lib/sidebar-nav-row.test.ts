@@ -94,7 +94,10 @@ describe("sidebar nav row", () => {
       ),
       styles.indexOf(".sidebar-grid-row[data-sidebar-row=\"new-chat\"]"),
     );
-    expect(hoverRule).not.toContain(".app-selected-surface");
+    expect(hoverRule).not.toMatch(/:is\([^)]*\.app-selected-surface/);
+    expect(styles).toMatch(
+      /\.sidebar-navigation\s+\.sidebar-grid-row\.app-selected-surface:is\(:hover/,
+    );
     expect(styles).toMatch(
       /\.sidebar-navigation \.sidebar-grid-row\.app-selected-surface \{[^}]*--surface-selected/,
     );

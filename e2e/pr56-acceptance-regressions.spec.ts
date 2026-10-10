@@ -68,8 +68,9 @@ test("new chat row hover is a single leading wash that stops before trailing act
   expect(metrics.rowBg).toMatch(/rgba?\(0,\s*0,\s*0,\s*0\)|transparent/);
   expect(metrics.trailingBg).toMatch(/rgba?\(0,\s*0,\s*0,\s*0\)|transparent/);
   expect(metrics.wash).not.toMatch(/rgba?\(0,\s*0,\s*0,\s*0\)|transparent/);
-  expect(metrics.washWidth).toBeLessThan(metrics.rowWidth - 40);
-  expect(metrics.trailingLeft - metrics.rowLeft).toBeGreaterThan(metrics.washWidth - 4);
+  const washSpan = metrics.trailingLeft - metrics.rowLeft;
+  expect(washSpan).toBeGreaterThanOrEqual(150);
+  expect(washSpan).toBeLessThanOrEqual(165);
 });
 
 test("host picker draws separator after OpenMA account row", async ({ page }) => {
@@ -83,9 +84,11 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     await page.getByTestId("new-chat-button").click();
     await openRuntimeLocationPicker(page);
     const panel = hostPickerPanel(page);
+    const shell = page
+      .locator('[data-slot="dropdown-menu-content"]')
+      .filter({ has: panel });
     await expect(panel.locator('[data-slot="command-separator"]')).toHaveCount(1);
-    const commandRoot = panel.locator("[data-slot='command']");
-    const padding = await commandRoot.evaluate((el) => {
+    const padding = await shell.evaluate((el) => {
       const style = getComputedStyle(el);
       return {
         top: parseFloat(style.paddingTop),
@@ -106,25 +109,25 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
       return count;
     });
     expect(separatorsBeforeManage).toBe(0);
-    const panelBox = await panel.boundingBox();
-    expect(panelBox?.height ?? 0).toBeGreaterThanOrEqual(140);
-    expect(panelBox?.height ?? 0).toBeLessThanOrEqual(146);
-    const borderWidth = await commandRoot.evaluate((el) =>
+    const shellBox = await shell.boundingBox();
+    expect(shellBox?.height ?? 0).toBeGreaterThanOrEqual(140);
+    expect(shellBox?.height ?? 0).toBeLessThanOrEqual(146);
+    const borderWidth = await shell.evaluate((el) =>
       parseFloat(getComputedStyle(el).borderTopWidth),
     );
     expect(borderWidth).toBe(1);
     const separator = panel.locator('[data-slot="command-separator"]').first();
     const separatorBox = await separator.boundingBox();
-    const innerWidth = panelBox!.width - padding.top * 2 - borderWidth * 2;
+    const innerWidth = shellBox!.width - padding.top * 2 - borderWidth * 2;
     expect(separatorBox!.width).toBeGreaterThanOrEqual(innerWidth - 2);
     expect(separatorBox!.width).toBeLessThanOrEqual(innerWidth + 2);
     const firstRow = panel.locator('[cmdk-item]').first();
     const rowInset = await firstRow.evaluate((el) => {
-      const panelRect = el
-        .closest('[data-slot="command"]')!
+      const shellRect = el
+        .closest('[data-slot="dropdown-menu-content"]')!
         .getBoundingClientRect();
       const rowRect = el.getBoundingClientRect();
-      return rowRect.left - panelRect.left;
+      return rowRect.left - shellRect.left;
     });
     expect(rowInset).toBeGreaterThanOrEqual(4.5);
     expect(rowInset).toBeLessThanOrEqual(5.5);
@@ -182,6 +185,35 @@ test("model picker search hides empty provider headings", async ({ page }) => {
   await expect(panel.getByRole("option", { name: /devin model 1/ })).toBeVisible({
     timeout: 10_000,
   });
+});
+
+test("project picker keeps section heading while searching", async ({ page }) => {
+  await enableAgent(page, "codex-acp");
+  await page.getByTestId("new-chat-button").click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+  const panel = page.getByTestId("composer-project-picker-panel");
+  await panel.locator('input[type="search"], input[cmdk-input]').fill("a");
+  await expect(panel.getByText(/^Projects$|^项目$/)).toBeVisible();
+});
+
+test("selected session row stays opaque on hover", async ({ page }) => {
+  await enableAgent(page, "codex-acp");
+  await injectSession(page, {
+    agentId: "codex-acp",
+    cwd: "/tmp/backchat-selected-hover",
+  });
+  const row = page.locator(".sidebar-grid-row.app-selected-surface").first();
+  await row.hover();
+  const alpha = await row.evaluate((el) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = getComputedStyle(el).backgroundColor;
+    ctx.fillRect(0, 0, 1, 1);
+    return ctx.getImageData(0, 0, 1, 1).data[3];
+  });
+  expect(alpha).toBe(255);
 });
 
 test("project picker search keeps cmdk best-match order for re", async ({ page }) => {

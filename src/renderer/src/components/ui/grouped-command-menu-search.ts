@@ -25,8 +25,8 @@ export function scoreGroupedCommandMenuItem(
 }
 
 /**
- * Applies cmdk-compatible filter + global best-match ordering in React so cmdk
- * never DOM-sorts (workspace listHeader wrappers and grouped headings crash it).
+ * cmdk-compatible filter + per-group best-match ordering in React (no DOM sort).
+ * Headings stay with their group; empty groups drop out.
  */
 export function applyGroupedCommandMenuSearch(
   groups: readonly GroupedCommandMenuGroup[],
@@ -35,16 +35,20 @@ export function applyGroupedCommandMenuSearch(
   const query = rawQuery.trim();
   if (!query) return [...groups];
 
-  const ranked: { item: GroupedCommandMenuItem; score: number; order: number }[] =
-    [];
-  let order = 0;
-  for (const group of groups) {
-    for (const item of group.items) {
-      const score = scoreGroupedCommandMenuItem(item, query);
-      if (score > 0) ranked.push({ item, score, order: order++ });
-    }
-  }
-  ranked.sort((a, b) => b.score - a.score || a.order - b.order);
-  if (ranked.length === 0) return [];
-  return [{ items: ranked.map((entry) => entry.item) }];
+  return groups
+    .map((group) => {
+      const ranked = group.items
+        .map((item, index) => ({
+          item,
+          score: scoreGroupedCommandMenuItem(item, query),
+          index,
+        }))
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score || a.index - b.index);
+      return {
+        ...group,
+        items: ranked.map((entry) => entry.item),
+      };
+    })
+    .filter((group) => group.items.length > 0);
 }

@@ -283,7 +283,7 @@ export function RuntimeLocationControl({
       listClassName="host-picker-command-list"
       panelClassName="host-picker-panel flex h-auto w-full flex-col overflow-visible"
       listHeightPx={HOST_PICKER_LIST_MAX_HEIGHT_PX}
-      commandClassName="host-picker-command-surface rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
+      commandClassName="rounded-none! border-0 bg-transparent p-0 text-popover-foreground shadow-none ring-0"
       groups={groups}
     />
   );
@@ -348,7 +348,7 @@ export function RuntimeLocationControl({
         sideOffset={variant === "sidebar" ? 4 : upwardPickerSideOffset}
         className={cn(
           groupedCommandMenuShellClassName(),
-          "h-auto max-h-[60vh] min-w-[var(--composer-menu-width)] w-[var(--composer-menu-width)] gap-0 overflow-x-hidden overflow-y-auto bg-transparent p-0 shadow-none ring-0 oma-scrollbar",
+          "host-picker-dropdown-content h-auto max-h-[60vh] min-w-[var(--composer-menu-width)] w-[var(--composer-menu-width)] gap-0 overflow-x-hidden overflow-y-auto ring-0 oma-scrollbar",
         )}
       >
         {menu}

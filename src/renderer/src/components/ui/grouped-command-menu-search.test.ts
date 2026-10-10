@@ -32,10 +32,41 @@ describe("applyGroupedCommandMenuSearch", () => {
     expect(applyGroupedCommandMenuSearch(agentItems, "")).toEqual(agentItems);
   });
 
-  it("orders matches by cmdk defaultFilter score", () => {
+  it("orders matches by cmdk defaultFilter score within each group", () => {
     const result = applyGroupedCommandMenuSearch(agentItems, "an");
     expect(result).toHaveLength(1);
     expect(result[0]?.items.map((item) => item.id)).toEqual(["anti", "agor"]);
+  });
+
+  it("keeps separate groups and headings while filtering", () => {
+    const groups: GroupedCommandMenuGroup[] = [
+      {
+        heading: "Projects",
+        items: [
+          {
+            id: "a",
+            value: "alpha",
+            onSelect: () => {},
+            children: "a",
+          },
+        ],
+      },
+      {
+        heading: "Recent",
+        items: [
+          {
+            id: "b",
+            value: "beta",
+            onSelect: () => {},
+            children: "b",
+          },
+        ],
+      },
+    ];
+    const filtered = applyGroupedCommandMenuSearch(groups, "alpha");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.heading).toBe("Projects");
+    expect(filtered.map((group) => group.heading)).toEqual(["Projects"]);
   });
 
   it("scores indexed project values from the path segment after the index", () => {
