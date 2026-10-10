@@ -168,11 +168,8 @@ export function ProjectChipRow({
             <GroupedCommandMenu
               testId="composer-project-picker-panel"
               menuMode="project-picker"
-              panelHeightPx={GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}
-              listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
-              panelClassName={groupedCommandMenuPanelClassName({
-                maxHeightPx: GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX,
-              })}
+              shrinkToContent
+              panelClassName="flex h-auto w-full max-h-[min(336px,var(--radix-popover-content-available-height))] flex-col overflow-hidden"
               commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}

@@ -2537,6 +2537,40 @@ body,
   line-height: 16px !important;
 }
 
+/* Project picker: match main `Command` popover chrome (SearchField h-9, group p-1, heading py-1.5). */
+[data-composer-select-menu-mode="project-picker"]
+  [data-slot="command-input-wrapper"] {
+  display: flex !important;
+  height: 2.25rem !important;
+  min-height: 2.25rem !important;
+  align-items: center;
+  column-gap: 0.5rem;
+  padding-inline: 0.5rem;
+  grid-template-columns: unset;
+  border-block-end: none;
+}
+
+[data-composer-select-menu-mode="project-picker"]
+  [data-slot="command-input-wrapper"]
+  > svg {
+  grid-column: unset;
+  justify-self: unset;
+}
+
+[data-composer-select-menu-mode="project-picker"] [data-slot="command-input"] {
+  grid-column: unset;
+}
+
+[data-composer-select-menu-mode="project-picker"] [data-slot="command-group"] {
+  padding: 4px;
+}
+
+[data-composer-select-menu-mode="project-picker"] [cmdk-group-heading] {
+  padding-inline: 0.5rem !important;
+  padding-block: 0.375rem !important;
+  line-height: 1rem;
+}
+
 .sidebar-host-chrome,
 .sidebar-footer-chrome {
   padding-inline-start: 0;

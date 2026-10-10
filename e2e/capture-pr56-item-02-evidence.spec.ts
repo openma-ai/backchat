@@ -133,43 +133,15 @@ async function screenshotHostDropdown(
   path: string,
 ): Promise<void> {
   const panel = page.getByTestId("composer-host-picker-panel");
-  if (await panel.count()) {
-    await expect(panel).toBeVisible({ timeout: 10_000 });
-    const dropdown = panel.locator(
-      "xpath=ancestor::*[@data-slot='dropdown-menu-content'][1]",
-    );
-    if (await dropdown.count()) {
-      const panelBox = await panel.boundingBox();
-      const dropBox = await dropdown.boundingBox();
-      if (dropBox && panelBox && dropBox.height > panelBox.height + 8) {
-        await dropdown.screenshot({ path, animations: "disabled" });
-        return;
-      }
-    }
-    await panel.screenshot({ path, animations: "disabled" });
-    return;
-  }
-  const dropdown = page.locator('[data-slot="dropdown-menu-content"][data-state="open"]').first();
+  const dropdown = (await panel.count())
+    ? panel.locator("xpath=ancestor::*[@data-slot='dropdown-menu-content'][1]")
+    : page.locator('[data-slot="dropdown-menu-content"][data-state="open"]').first();
   await expect(dropdown).toBeVisible({ timeout: 10_000 });
   await dropdown.screenshot({ path, animations: "disabled" });
 }
 
-/** Match main composer many-host capture (~510px on 1221px scroll range in mock). */
-const HOST_MANY_SCROLL_FRACTION = 510 / 683;
-
-async function scrollHostPickerToFraction(
-  page: import("@playwright/test").Page,
-): Promise<void> {
-  await page.evaluate((fraction) => {
-    const dropdown = document.querySelector(
-      '[data-slot="dropdown-menu-content"][data-state="open"]',
-    ) as HTMLElement | null;
-    if (!dropdown) return;
-    const max = dropdown.scrollHeight - dropdown.clientHeight;
-    dropdown.scrollTop = Math.round(max * fraction);
-    dropdown.dispatchEvent(new Event("scroll", { bubbles: true }));
-  }, HOST_MANY_SCROLL_FRACTION);
-}
+/** Align the same catalog row at the top of the dropdown viewport (main + PR). */
+const HOST_MANY_SCROLL_ROW_LABEL = "Cloud project 12";
 
 async function scrollHostPickerToLabel(
   page: import("@playwright/test").Page,
@@ -188,20 +160,6 @@ async function scrollHostPickerToLabel(
           '[data-slot="dropdown-menu-content"][data-state="open"]',
         )) as HTMLElement | null;
       if (!dropdown) return;
-      const list = panel?.querySelector(
-        '[data-slot="command-list"]',
-      ) as HTMLElement | null;
-      const viewport = panel?.querySelector(
-        '[data-slot="scroll-area-viewport"]',
-      ) as HTMLElement | null;
-      const scroller =
-        (dropdown.scrollHeight > dropdown.clientHeight + 1 ? dropdown : null) ??
-        (list && list.scrollHeight > list.clientHeight + 1 ? list : null) ??
-        (viewport && viewport.scrollHeight > viewport.clientHeight + 1
-          ? viewport
-          : null) ??
-        list ??
-        dropdown;
       const rowSelector = panel
         ? '[data-slot="command-item"]'
         : '[data-slot="dropdown-menu-item"]';
@@ -210,21 +168,10 @@ async function scrollHostPickerToLabel(
         (row) => row.textContent?.includes(label),
       ) as HTMLElement | undefined;
       if (!target) return;
-      const scrollers = [dropdown, list, viewport].filter(Boolean) as HTMLElement[];
-      for (const node of scrollers) {
-        if (node.scrollHeight <= node.clientHeight + 1) continue;
-        let offset = 0;
-        let walk: HTMLElement | null = target;
-        while (walk && walk !== node) {
-          offset += walk.offsetTop;
-          walk = walk.offsetParent as HTMLElement | null;
-        }
-        if (walk === node) {
-          node.scrollTop = offset;
-          node.dispatchEvent(new Event("scroll", { bubbles: true }));
-          break;
-        }
-      }
+      const dropRect = dropdown.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      dropdown.scrollTop += targetRect.top - dropRect.top;
+      dropdown.dispatchEvent(new Event("scroll", { bubbles: true }));
     },
     { label, panelTestId },
   );
@@ -345,6 +292,14 @@ async function seedProjects(page: import("@playwright/test").Page, home: string)
   await fsMkdir(alphaDir, { recursive: true });
   await fsMkdir(betaDir, { recursive: true });
   await page.evaluate(async ({ alphaDir, betaDir }) => {
+    const pinIcon = (projectId: string, glyph: string, color: string) => {
+      localStorage.setItem(
+        `backchat.project-icon.v1:project:${projectId}`,
+        JSON.stringify({ kind: "icon", glyph, color }),
+      );
+    };
+    pinIcon("pr56-item02-a", "database", "#2563eb");
+    pinIcon("pr56-item02-b", "folder", "#e11d48");
     await window.backchat.projectSave({
       project_id: "pr56-item02-a",
       name: "Alpha workspace",
@@ -359,6 +314,68 @@ async function seedProjects(page: import("@playwright/test").Page, home: string)
     });
   }, { alphaDir, betaDir });
   await page.reload();
+}
+
+async function screenshotProjectPickerPopover(
+  page: import("@playwright/test").Page,
+  path: string,
+): Promise<void> {
+  const panel = page.getByTestId("composer-project-picker-panel");
+  const popover = (await panel.count())
+    ? panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]")
+    : page.locator('[data-slot="popover-content"][data-state="open"]').last();
+  await expect(popover).toBeVisible({ timeout: 10_000 });
+  await popover.screenshot({ path, animations: "disabled" });
+}
+
+async function measureProjectPickerPopover(
+  page: import("@playwright/test").Page,
+): Promise<{
+  popover: { width: number; height: number };
+  headings: string[];
+  rowHeights: number[];
+}> {
+  return page.evaluate(() => {
+    const panel = document.querySelector(
+      '[data-testid="composer-project-picker-panel"]',
+    );
+    const popover = (panel?.closest('[data-slot="popover-content"]') ??
+      document.querySelector('[data-slot="popover-content"][data-state="open"]')) as HTMLElement | null;
+    if (!popover) {
+      return { popover: { width: 0, height: 0 }, headings: [], rowHeights: [] };
+    }
+    const rect = popover.getBoundingClientRect();
+    const headings = Array.from(popover.querySelectorAll("[cmdk-group-heading]")).map(
+      (node) => (node.textContent ?? "").trim(),
+    );
+    const rowHeights = Array.from(
+      popover.querySelectorAll('[data-slot="command-item"]'),
+    ).map((node) => Math.round(node.getBoundingClientRect().height));
+    const search = popover.querySelector(
+      '[data-slot="command-input-wrapper"]',
+    ) as HTMLElement | null;
+    const heading = popover.querySelector(
+      "[cmdk-group-heading]",
+    ) as HTMLElement | null;
+    const separators = popover.querySelectorAll(
+      '[data-slot="command-separator"]',
+    ).length;
+    return {
+      popover: {
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      },
+      searchRowHeight: search
+        ? Math.round(search.getBoundingClientRect().height)
+        : 0,
+      headingHeight: heading
+        ? Math.round(heading.getBoundingClientRect().height)
+        : 0,
+      separatorCount: separators,
+      headings,
+      rowHeights,
+    };
+  });
 }
 
 test.describe.serial("PR56 item 02 evidence", () => {
@@ -433,7 +450,11 @@ test.describe.serial("PR56 item 02 evidence", () => {
         await signInOpenmaMock(page, app, mock.baseUrl);
         await page.reload();
         await openComposerHostPicker(page);
-        await scrollHostPickerToFraction(page);
+        await scrollHostPickerToLabel(
+          page,
+          HOST_MANY_SCROLL_ROW_LABEL,
+          "composer-host-picker-panel",
+        );
         await page.waitForTimeout(200);
         const manyShot = pr56Item02Shot(`host-many-${langTag}.png`);
         await writeHostPickerMetrics(
@@ -460,7 +481,11 @@ test.describe.serial("PR56 item 02 evidence", () => {
         await signInOpenmaMock(page, app, mock.baseUrl);
         await page.reload();
         await openSidebarHostPicker(page);
-        await scrollHostPickerToFraction(page);
+        await scrollHostPickerToLabel(
+          page,
+          HOST_MANY_SCROLL_ROW_LABEL,
+          "sidebar-host-picker-panel",
+        );
         await page.waitForTimeout(200);
         const manyShot = pr56Item02Shot(`sidebar-host-many-${langTag}.png`);
         await writeHostPickerMetrics(
@@ -545,11 +570,13 @@ test.describe.serial("PR56 item 02 evidence", () => {
     await page.getByRole("button", { name: "New chat", exact: true }).click();
     await page.locator('[data-composer-footer-control="project"]').click();
     await page.waitForTimeout(200);
-    await screenshotOpenPickerSurface(
-      page,
-      pr56Item02Shot("usage-project-picker.png"),
-      "composer-project-picker-panel",
+    const shot = pr56Item02Shot("usage-project-picker.png");
+    await writeFile(
+      shot.replace(/\.png$/i, ".metrics.json"),
+      `${JSON.stringify(await measureProjectPickerPopover(page), null, 2)}\n`,
+      "utf8",
     );
+    await screenshotProjectPickerPopover(page, shot);
   });
 
   test("usage ComposerProjectControls workspace picker", async ({ page, home }) => {
