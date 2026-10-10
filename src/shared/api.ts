@@ -153,6 +153,8 @@ export interface AgentListOptions {
   /** `snapshot` returns inventory plus persisted facts immediately. `ready`
    * waits for the cold-start barrier and is required for run selection. */
   readiness?: "snapshot" | "ready";
+  /** Live auth + capability probe for the composer-selected harness only. */
+  liveProbeAgentId?: string;
 }
 
 /** Public shape of a persisted session row. Mirrors PersistedSession in
@@ -457,6 +459,11 @@ export interface ActivityStatsInfo {
 export interface BackchatApi extends OpenmaAccountApi {
   /** Smoke test for the IPC channel. */
   ping(msg: string): Promise<string>;
+
+  /** Forward renderer crash diagnostics to ~/.oma/logs/backchat.log. */
+  rendererCrashLog(
+    report: import("./renderer-crash.js").RendererCrashReport,
+  ): Promise<void>;
 
   /** All known ACP agents merged from the official registry + overlay,
    *  flagged by detection. Renderer uses this to power the agent picker. */

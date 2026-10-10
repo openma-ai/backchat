@@ -16,11 +16,11 @@ describe("app cold-start readiness gate", () => {
     expect(gate).toContain("queryKey: AGENTS_QUERY_KEY");
     expect(gate).toContain('readiness: "snapshot"');
     expect(gate).toContain('readiness: "ready"');
-    expect(gate).toContain("queryClient.setQueryData");
-    expect(gate).not.toContain("queryFn: () => window.backchat.agentsList()");
+    expect(gate).toContain("mergeAgentsWithoutAuth");
+    expect(gate).not.toContain("useAgentsLiveProbePending");
     expect(gate).not.toMatch(/if \(query\.isPending\)\s*\{\s*return/);
     expect(gate).not.toContain("<OpenmaStartupLoader");
-    expect(gate).toContain("return children;");
+    expect(gate).toContain("return children");
     expect(main).toContain("<AppStartupGate>");
     expect(main).toContain("</AppStartupGate>");
   });

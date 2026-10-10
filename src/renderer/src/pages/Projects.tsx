@@ -42,7 +42,6 @@ import type {
 import { Combobox } from "@/components/ui/combobox";
 import { useSettings } from "@/lib/settings-store";
 import { enabledAgentIds, isAgentRunnable } from "@/lib/enabled-agents";
-import { composerAuthNeeded } from "@/lib/composer-harness-state";
 import {
   projectGoalPresentation,
   projectOutcomeLabel,
@@ -281,8 +280,7 @@ export function ProjectEditor({
     : agents.data?.filter(
         (agent) =>
           enabledIds.has(agent.id) &&
-          isAgentRunnable(agent) &&
-          !composerAuthNeeded(agent),
+          isAgentRunnable(agent),
       );
   const field = <K extends keyof ProjectWorkConfig>(
     key: K,

@@ -47,7 +47,7 @@ import type {
 } from "../shared/pair-events.js";
 import type { Settings, SettingsMcpServer } from "../shared/settings.js";
 import type { CreateScheduleInput, UpdateScheduleInput } from "../shared/schedules.js";
-import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
+import { createAgentSetupService, launchTerminalAuth, startOpenMaNpmHarnessAutoUpdater } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
@@ -81,6 +81,8 @@ import {
   latestPersistedOpenMAEventSequence,
 } from "./session-event-enricher.js";
 import { logAppEvent } from "./app-log.js";
+import { logRendererCrash } from "./renderer-crash-log.js";
+import type { RendererCrashReport } from "../shared/renderer-crash.js";
 import { recordUpdateEvidence } from "./update-evidence.js";
 import { deliverSessionEvent } from "./session-event-delivery.js";
 import { join } from "node:path";
@@ -254,6 +256,51 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     getEnabledAgentIds: () => settingsStore.get().agents
       .filter((agent) => agent.enabled)
       .map((agent) => agent.id),
+    onSetupOperationLog: (fields) => {
+      if (fields.outcome === "started") return;
+      logAppEvent("app.harness_probe", {
+        agent_id: fields.agentId,
+        trigger: fields.trigger,
+        scope: fields.scope,
+        outcome: fields.outcome,
+        duration_ms: fields.durationMs,
+        operation_id: fields.operationId,
+        ...(fields.detail ? { detail: fields.detail } : {}),
+      });
+    },
+  });
+  const stopOpenMaHarnessAutoUpdater = startOpenMaNpmHarnessAutoUpdater(agentSetup, {
+    acpBinDir: deps.acpBinDir,
+    acpInstallRoot: deps.acpInstallRoot,
+    npmRegistryUrls: deps.npmRegistryUrls,
+    disabled:
+      testHooksEnabled
+      || process.env["BACKCHAT_DISABLE_OPENMA_HARNESS_AUTO_UPGRADE"] === "1",
+    onEvent: (event) => {
+      if (event.kind === "version-changed") {
+        logAppEvent("app.harness_upgrade", {
+          agent_id: event.agentId,
+          trigger: event.trigger,
+          from_version: event.fromVersion,
+          to_version: event.toVersion,
+        });
+        return;
+      }
+      if (event.kind === "check-settled") {
+        for (const outcome of event.outcomes) {
+          if (outcome.action === "failed") {
+            logAppEvent("app.harness_upgrade", {
+              agent_id: outcome.agentId,
+              trigger: event.trigger,
+              outcome: "error",
+              message: outcome.error,
+              ...(outcome.fromVersion ? { from_version: outcome.fromVersion } : {}),
+              ...(outcome.toVersion ? { to_version: outcome.toVersion } : {}),
+            });
+          }
+        }
+      }
+    },
   });
   const pluginRuntime = new CodexPluginRuntime(
     deps.pluginRoots ?? [join(openmaRoot(), "plugins")],
@@ -323,9 +370,26 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     watch.close();
     inlineVisualizationWatches.delete(watchId);
   };
+  const skipE2eAgentWarmup =
+    testHooksEnabled && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1";
+  const skipE2eLiveHarnessProbe =
+    testHooksEnabled && (
+      process.env["BACKCHAT_E2E_SKIP_LIVE_HARNESS_PROBE"] === "1"
+      || (
+        process.env["BACKCHAT_E2E_SKIP_LIVE_HARNESS_PROBE"] === undefined
+        && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1"
+      )
+    );
+  const runComposerLiveHarnessProbe = async (agentId: string): Promise<AgentInfo[]> => {
+    const slowMs = Number(process.env["BACKCHAT_TEST_SLOW_LIVE_PROBE_MS"] ?? 0);
+    if (Number.isFinite(slowMs) && slowMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, slowMs));
+    }
+    return agentSetup.probeComposerHarness(agentId);
+  };
   const agentWarmupStartedAt = performance.now();
   const agentWarmup =
-    testHooksEnabled && process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"] === "1"
+    skipE2eAgentWarmup
       ? Promise.resolve()
       : agentSetup.warmup().then(() => {
           logAppEvent("app.agent_warmup", { outcome: "ready", duration_ms: Math.round(performance.now() - agentWarmupStartedAt) });
@@ -669,6 +733,13 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   });
 
   ipcMain.handle(
+    InvokeChannel.AppRendererCrashLog,
+    (_e, report: RendererCrashReport) => {
+      logRendererCrash(report);
+    },
+  );
+
+  ipcMain.handle(
     InvokeChannel.AcpTerminalsList,
     (_e, p: { sessionId: string }) => listTerminals(p.sessionId),
   );
@@ -684,17 +755,28 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   ipcMain.handle(
     InvokeChannel.AgentsList,
     async (_e, options?: AgentListOptions): Promise<AgentInfo[]> => {
+      const liveProbeAgentId = options?.liveProbeAgentId?.trim();
       if (testAgentSetupFixture) {
         recordTestAgentSetupCall({ type: "list" });
+        if (liveProbeAgentId && !skipE2eLiveHarnessProbe) {
+          await runComposerLiveHarnessProbe(liveProbeAgentId).catch(() => undefined);
+        }
         return testAgentSetupFixture.agents;
       }
       if (options?.readiness === "snapshot" && !options.refresh) {
+        if (liveProbeAgentId && !skipE2eLiveHarnessProbe) {
+          return runComposerLiveHarnessProbe(liveProbeAgentId);
+        }
         return agentSetup.listAgents();
       }
       await agentWarmup;
-      return options?.refresh
-        ? agentSetup.refreshEnabledAgents()
-        : agentSetup.listAgents();
+      if (options?.refresh) {
+        await agentSetup.refreshEnabledAgents();
+      }
+      if (liveProbeAgentId && !skipE2eLiveHarnessProbe) {
+        return runComposerLiveHarnessProbe(liveProbeAgentId);
+      }
+      return agentSetup.listAgents();
     },
   );
   ipcMain.handle(InvokeChannel.AgentInstall, (_e, id: string): Promise<AgentInfo[]> | AgentInfo[] => {
@@ -1436,6 +1518,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       void mcpAppRuntime.close();
     },
     async dispose() {
+      stopOpenMaHarnessAutoUpdater();
       scheduleEngine.stop();
       projectWork.stop();
       stopBrowserPluginState();

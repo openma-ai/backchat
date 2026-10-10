@@ -29,6 +29,7 @@ import {
   resolveBundledNpmCliPath,
 } from "./bundled-node-runtime.js";
 import { configureAppLog, logAppEvent } from "./app-log.js";
+import { logRendererCrash } from "./renderer-crash-log.js";
 import { startAppUpdater } from "./app-updater.js";
 import { resolveRemoteDebugging } from "./remote-debugging.js";
 
@@ -254,6 +255,21 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
   windows.add(win);
   win.on("closed", () => windows.delete(win));
 
+  win.webContents.on("render-process-gone", (_event, details) => {
+    logRendererCrash({
+      source: "render-process-gone",
+      message: `Renderer process exited (${details.reason})`,
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  });
+  win.webContents.on("unresponsive", () => {
+    logRendererCrash({
+      source: "unresponsive",
+      message: "Renderer became unresponsive",
+    });
+  });
+
   // Electron resets a pre-navigation zoom assignment on the first load, so
   // apply the default once the renderer exists. Later reloads retain the
   // user's View-menu zoom instead of forcing the default again.
@@ -320,10 +336,26 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
     void shell.openExternal(url);
   });
 
+  const demoCrash = process.env["BACKCHAT_DEMO_RENDERER_CRASH"] === "1";
+  const demoVariant = process.env["BACKCHAT_DEMO_RENDERER_CRASH_VARIANT"];
+  const demoQuery: Record<string, string> = demoCrash
+    ? {
+        demo: "renderer-crash",
+        ...(demoVariant ? { variant: demoVariant } : {}),
+      }
+    : {};
   if (process.env["ELECTRON_RENDERER_URL"]) {
-    void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+    const rendererUrl = process.env["ELECTRON_RENDERER_URL"];
+    const url = demoCrash
+      ? `${rendererUrl}${rendererUrl.includes("?") ? "&" : "?"}demo=renderer-crash${
+          demoVariant ? `&variant=${encodeURIComponent(demoVariant)}` : ""
+        }`
+      : rendererUrl;
+    void win.loadURL(url);
   } else {
-    void win.loadFile(join(mainDir, "../renderer/index.html"));
+    void win.loadFile(join(mainDir, "../renderer/index.html"), {
+      query: demoQuery,
+    });
   }
   return win;
 }

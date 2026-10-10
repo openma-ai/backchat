@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AgentInfo } from "@shared/api";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
+import { useComposerHarnessLiveAuth } from "@/lib/composer-harness-live-auth";
 import {
   composerAuthNeeded,
   deriveComposerHarnessState,
@@ -50,6 +51,10 @@ export function ComposerAuthSetup({
     pickedAgentId,
     recentAgentId: readRecentRunPreferences().agentId,
   });
+  const { liveAuth, liveProbePending } = useComposerHarnessLiveAuth(
+    harness.currentAgentId,
+    !!harness.currentAgentId,
+  );
   const agent = overlayAgentAuth(harness.currentAgent, sessionAuth);
   const finishAuthentication = async () => {
     setReconnecting(true);
@@ -108,7 +113,9 @@ export function ComposerAuthSetup({
     !open
     || !settings
     || !agent
-    || !composerAuthNeeded(agent, { authRequired, auth: sessionAuth })
+    || !composerAuthNeeded(liveAuth, { authRequired, auth: sessionAuth }, {
+      liveProbePending,
+    })
   ) {
     return null;
   }

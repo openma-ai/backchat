@@ -44,6 +44,7 @@ import { composerPasteRouter } from "@/lib/composer-paste-router";
 import { collectTransferFiles, shouldConsumePaste } from "@/lib/composer-transfer";
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
 import { ComposerAuthControls, ComposerSessionStateSlot, InlineComposerOptionControls, PermissionModeChip, SessionRunChip } from "./ComposerSessionControls";
+import { ComposerHarnessProbeStatus } from "./ComposerHarnessProbeStatus";
 import {
   armedCommandSessionStatePresentation,
   armedCommandStillPending,
@@ -63,7 +64,13 @@ import {
 } from "./ComposerContentParts";
 import { ComposerSlashCommandMenu } from "./ComposerSlashCommandMenu";
 import { useComposerSuggestionState } from "@/lib/composer-suggestion-state";
-import { useComposerHarnessState, composerActionDisabled, composerAuthNeeded } from "@/lib/composer-harness-state";
+import { useComposerHarnessLiveAuth, composerHarnessLiveAuthKey } from "@/lib/composer-harness-live-auth";
+import {
+  useComposerHarnessState,
+  composerActionDisabled,
+  composerAuthNeeded,
+  composerHarnessAuthChecking,
+} from "@/lib/composer-harness-state";
 import { reconnectAuthenticatedSession } from "@/lib/session-auth-recovery";
 import { useComposerSlashState } from "@/lib/composer-slash-state";
 import {
@@ -320,19 +327,35 @@ export function Composer({
   const primaryIntent = isRemote ? "submit" : localIntent;
   const primaryRunningAction = isRemote ? (running ? describeRunningMessageAction({ agentId: "openma-remote", intent: "submit" }) : null) : localRunningAction;
   const queryClient = useQueryClient();
-  const authNeeded = !isRemote && composerAuthNeeded(currentAgent, {
+  const { liveAuth, liveProbePending, slowAuthProbe } = useComposerHarnessLiveAuth(
+    currentAgentId,
+    !isRemote && !!currentAgentId,
+  );
+  const sessionAuthState = {
     authRequired: sessionAuthRequired,
     auth: sessionAuth,
+  };
+  const authChecking = !isRemote && composerHarnessAuthChecking(liveProbePending, sessionAuthState);
+  const authNeeded = !isRemote && composerAuthNeeded(liveAuth, sessionAuthState, {
+    liveProbePending,
   });
   const actionDisabled = composerActionDisabled({
     runningActionDisabled: primaryRunningAction?.disabled,
     hasHarnessSetup,
     authNeeded,
+    authChecking,
   });
   const refreshAuth = useMutation({
-    mutationFn: () => window.backchat.agentsList({ refresh: true }),
+    mutationFn: async () => {
+      await window.backchat.agentsList({ refresh: true });
+      return window.backchat.agentsList({ liveProbeAgentId: currentAgentId });
+    },
     onSuccess: async (next) => {
       queryClient.setQueryData(AGENTS_QUERY_KEY, next);
+      queryClient.setQueryData(
+        composerHarnessLiveAuthKey(currentAgentId),
+        next.find((item) => item.id === currentAgentId)?.auth ?? null,
+      );
       const updated = next.find((item) => item.id === currentAgentId);
       if (updated?.auth?.status === "configured" && sessionId) {
         await reconnectAuthenticatedSession(sessionId);
@@ -868,6 +891,7 @@ export function Composer({
         runningActionDisabled: action?.disabled,
         hasHarnessSetup,
         authNeeded,
+        authChecking,
       }),
     })) return;
     onSubmit(
@@ -1166,6 +1190,17 @@ export function Composer({
         )}
       </div>
 
+      {!isRemote && authChecking && currentAgentId && (
+        <div className="composer-control-row-inset w-full pb-1">
+          <ComposerHarnessProbeStatus
+            agentId={currentAgentId}
+            agentLabel={currentEnabledAgent?.label ?? currentAgent?.label ?? currentAgentId}
+            iconUrl={currentEnabledAgent?.icon ?? currentAgent?.icon}
+            slow={slowAuthProbe}
+          />
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2">
         {/* The row clips so a long chip truncates instead of spilling. It was
             exactly as tall as its controls, so a focused control's outline —
@@ -1276,6 +1311,7 @@ export function Composer({
               disabled={!!running}
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}
+              authChecking={authChecking}
               agents={enabledAgents}
               currentAgentId={currentAgentId}
               currentAgentLabel={currentEnabledAgent?.label ?? currentAgent?.label}

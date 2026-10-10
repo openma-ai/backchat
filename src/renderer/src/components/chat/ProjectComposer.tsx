@@ -13,7 +13,8 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { resolveComposerKeyAction } from "@/lib/composer-prompt";
 import { sessionStore, useSessionStore } from "@/lib/session-store";
-import { composerAuthNeeded } from "@/lib/composer-harness-state";
+import { useComposerHarnessLiveAuth } from "@/lib/composer-harness-live-auth";
+import { composerAuthNeeded, composerHarnessAuthChecking } from "@/lib/composer-harness-state";
 import { reconnectAuthenticatedSession } from "@/lib/session-auth-recovery";
 import { useI18n } from "@/lib/i18n";
 import { StatusNotice } from "@/components/ui/status-notice";
@@ -93,9 +94,14 @@ export function ProjectComposer({
     };
   }, [busy]);
   const agent = agents?.find((a) => a.id === agentId);
-  const needsAuth = localAuth && composerAuthNeeded(agent, {
+  const { liveAuth, liveProbePending } = useComposerHarnessLiveAuth(agentId, localAuth && !!agentId);
+  const sessionAuthState = {
     authRequired: session?.authRequired || authRequired,
     auth: session?.auth,
+  };
+  const authChecking = localAuth && composerHarnessAuthChecking(liveProbePending, sessionAuthState);
+  const needsAuth = localAuth && composerAuthNeeded(liveAuth, sessionAuthState, {
+    liveProbePending,
   });
   const reconnect = useMutation({
     mutationFn: async () => {
@@ -110,6 +116,7 @@ export function ProjectComposer({
       (!text.trim() && !context.attachments.length) ||
       busy ||
       needsAuth ||
+      authChecking ||
       reconnect.isPending ||
       sending.current
     )

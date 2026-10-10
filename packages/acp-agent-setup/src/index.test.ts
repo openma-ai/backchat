@@ -366,7 +366,33 @@ describe("acp agent setup sdk", () => {
 
     expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
     expect(probeAgentSessionConfigMock).toHaveBeenCalledOnce();
-    expect(agents[0]?.auth?.status).toBe("configured");
+    expect(agents[0]?.auth).toBeUndefined();
+  });
+
+  it("probes every detected harness concurrently during warmup", async () => {
+    const probed = new Set<string>();
+    probeAgentSessionConfigMock.mockImplementation(async ({ agent }) => {
+      probed.add(agent.command);
+      return {
+        configOptions: [],
+        availableCommands: [],
+        auth: { status: "configured" },
+      };
+    });
+
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: "/tmp/sdk-registry.json",
+      agentOverrides: () => [{
+        id: "second-agent",
+        label: "Second Agent",
+        command: "/tmp/second-agent",
+      }],
+    });
+    await service.warmup();
+
+    expect(probed).toEqual(new Set(["/tmp/fake-agent", "/tmp/second-agent"]));
   });
 
   it("repairs a stale managed npx shim during cold start", async () => {
@@ -512,13 +538,15 @@ describe("acp agent setup sdk", () => {
 
     expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
     expect(probeAgentSessionConfigMock).toHaveBeenCalledOnce();
-    expect(agents[0]?.auth).toMatchObject({
+    const probed = await service.probeComposerHarness("fake-agent");
+    expect(probed[0]?.auth).toMatchObject({
       status: "needs-auth",
       methodId: "terminal-login",
     });
+    expect((await service.listAgents())[0]?.auth).toBeUndefined();
   });
 
-  it("persists probed auth so a restarted list still shows Sign in", async () => {
+  it("persists probed auth on disk but not on ordinary lists until a live probe", async () => {
     const root = join(tmpdir(), `openma-acp-auth-cache-${process.pid}-${Date.now()}`);
     probeAgentSessionConfigMock.mockResolvedValue({
       configOptions: [],
@@ -542,8 +570,15 @@ describe("acp agent setup sdk", () => {
     await probingService.warmup();
     const restartedService = createAcpAgentSetupService(deps);
     const restored = await restartedService.listAgents();
+    probeAgentAuthStatusMock.mockResolvedValue({
+      status: "needs-auth",
+      methodId: "terminal-login",
+      methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
+    });
+    const live = await restartedService.probeComposerHarness("fake-agent");
 
-    expect(restored[0]?.auth).toMatchObject({
+    expect(restored[0]?.auth).toBeUndefined();
+    expect(live[0]?.auth).toMatchObject({
       status: "needs-auth",
       methodId: "terminal-login",
       methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
@@ -587,14 +622,22 @@ describe("acp agent setup sdk", () => {
       methodId: "terminal-login",
       methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
     });
-    expect(listed[0]?.auth).toMatchObject({
+    expect(listed[0]?.auth).toBeUndefined();
+    probeAgentSessionConfigMock.mockResolvedValueOnce({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "needs-auth",
+        methodId: "terminal-login",
+        methods: [{ id: "terminal-login", name: "Terminal setup", type: "terminal" }],
+      },
+    });
+    const live = await service.probeComposerHarness("fake-agent");
+    expect(live[0]?.auth).toMatchObject({
       status: "needs-auth",
       methodId: "terminal-login",
     });
-    expect(restored[0]?.auth).toMatchObject({
-      status: "needs-auth",
-      methodId: "terminal-login",
-    });
+    expect((await restarted.listAgents())[0]?.auth).toBeUndefined();
     await rm(root, { recursive: true, force: true });
   });
 
@@ -1053,6 +1096,43 @@ describe("acp agent setup sdk", () => {
     });
     expect(agents[0]).not.toHaveProperty("updateAvailable");
     expect(fetchImpl).not.toHaveBeenCalled();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("drops stale cached auth when agent auth inputs change", async () => {
+    const root = join(tmpdir(), `openma-acp-auth-inputs-${process.pid}-${Date.now()}`);
+    const probeCachePath = join(root, "probe-cache.json");
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(probeCachePath, JSON.stringify({
+      version: 1,
+      agents: {
+        "fake-agent": {
+          config_options: [],
+          available_commands: [],
+          auth: {
+            status: "needs-auth",
+            message: "Authentication required",
+          },
+          auth_inputs_key: "stale-inputs",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    }, null, 2), "utf8");
+
+    const service = createAcpAgentSetupService({
+      acpBinDir: join(root, "bin"),
+      acpInstallRoot: join(root, "acp"),
+      registryCachePath: join(root, "registry.json"),
+      probeCachePath,
+      agentOverrides: () => [{
+        id: "fake-agent",
+        env: [{ name: "OPENAI_API_KEY", value: "sk-current" }],
+      }],
+    });
+
+    const agents = await service.listAgents();
+
+    expect(agents[0]?.auth).toBeUndefined();
     await rm(root, { recursive: true, force: true });
   });
 });

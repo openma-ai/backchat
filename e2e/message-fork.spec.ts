@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
-import { reloadRenderer, waitForRunnableHarness } from "./helpers";
+import {
+  reloadRenderer,
+  waitForComposerSubmitReady,
+  waitForRunnableHarness,
+} from "./helpers";
 
 const fakeAcpAgentPath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -55,6 +59,7 @@ async function sendPrompt(page: Page, text: string) {
   const chat = page.locator('[data-chat-surface="main"] textarea').last();
   const input = await draft.count() > 0 && await draft.isVisible() ? draft : chat;
   await input.fill(text);
+  await waitForComposerSubmitReady(page);
   await input.press("Enter");
   await expect(page.getByText(`Fake response saved for ${text}.`).last()).toBeVisible({
     timeout: 20_000,

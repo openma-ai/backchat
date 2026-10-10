@@ -37,28 +37,43 @@ export interface ComposerHarnessState {
 }
 
 export function composerAuthNeeded(
-  agent?: { auth?: { status?: string; message?: string } } | null,
+  liveAuth?: { status?: string; message?: string } | null,
   session?: {
     authRequired?: boolean;
     auth?: { status?: string; message?: string };
   } | null,
+  options?: { liveProbePending?: boolean },
 ): boolean {
   if (session?.auth?.status === "configured") return false;
   if (session?.authRequired) return true;
-  const status = session?.auth?.status ?? agent?.auth?.status;
-  return status === "needs-auth" || status === "unknown";
+  if (session?.auth?.status === "needs-auth") return true;
+  if (options?.liveProbePending) return false;
+  return liveAuth?.status === "needs-auth";
+}
+
+export function composerHarnessAuthChecking(
+  liveProbePending: boolean,
+  session?: {
+    authRequired?: boolean;
+    auth?: { status?: string };
+  } | null,
+): boolean {
+  if (session?.authRequired || session?.auth?.status === "needs-auth") return false;
+  return liveProbePending;
 }
 
 export function composerActionDisabled({
   runningActionDisabled = false,
   hasHarnessSetup,
   authNeeded,
+  authChecking = false,
 }: {
   runningActionDisabled?: boolean;
   hasHarnessSetup: boolean;
   authNeeded: boolean;
+  authChecking?: boolean;
 }): boolean {
-  return runningActionDisabled || !hasHarnessSetup || authNeeded;
+  return runningActionDisabled || !hasHarnessSetup || authNeeded || authChecking;
 }
 
 export function deriveComposerHarnessState({
