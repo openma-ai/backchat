@@ -4,10 +4,14 @@ import { join, basename } from "node:path";
 import sharp from "sharp";
 
 const root =
-  process.env.PR56_ACCEPTANCE_ROOT ?? "/opt/cursor/artifacts/pr56-acceptance";
+  process.env.PR56_ITEM_02_ROOT ??
+  process.env.PR56_ACCEPTANCE_ROOT ??
+  "/opt/cursor/artifacts/pr56-acceptance";
 const beforeDir = join(root, "before");
 const afterDir = join(root, "after");
 const compareDir = join(root, "compare");
+const leftLabel = process.env.PR56_COMPARE_LEFT_LABEL ?? "main";
+const rightLabel = process.env.PR56_COMPARE_RIGHT_LABEL ?? "PR head";
 
 async function main() {
   await mkdir(compareDir, { recursive: true });
@@ -27,16 +31,17 @@ async function main() {
     const afterMeta = await after.metadata();
     const height = Math.max(beforeMeta.height ?? 0, afterMeta.height ?? 0);
     const label = basename(file, ".png");
-    const header = await sharp({
-      create: {
-        width: (beforeMeta.width ?? 0) + (afterMeta.width ?? 0),
-        height: 28,
-        channels: 4,
-        background: { r: 248, g: 248, b: 248, alpha: 1 },
-      },
-    })
-      .png()
-      .toBuffer();
+    const totalWidth = (beforeMeta.width ?? 0) + (afterMeta.width ?? 0);
+    const split = beforeMeta.width ?? 0;
+    const headerSvg = Buffer.from(
+      `<svg width="${totalWidth}" height="28" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="#f4f4f5"/>
+        <line x1="${split}" y1="0" x2="${split}" y2="28" stroke="#d4d4d8" stroke-width="1"/>
+        <text x="${split / 2}" y="18" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${leftLabel}</text>
+        <text x="${split + (afterMeta.width ?? 0) / 2}" y="18" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${rightLabel}</text>
+      </svg>`,
+    );
+    const header = await sharp(headerSvg).png().toBuffer();
     const row = await sharp({
       create: {
         width: (beforeMeta.width ?? 0) + (afterMeta.width ?? 0),
