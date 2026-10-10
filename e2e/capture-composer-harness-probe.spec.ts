@@ -43,9 +43,10 @@ test("capture composer harness probe loading", async () => {
     });
     try {
       await seedCodexHarness(page);
-      await page.waitForSelector('[data-composer-harness-probe="true"]', {
-        timeout: 35_000,
-      });
+      await page.waitForSelector(
+        'textarea[data-composer-harness-probe="true"], [data-composer-harness-probe="true"]',
+        { timeout: 35_000 },
+      );
       await page.waitForTimeout(400);
       const composer = page.locator(".composer-stack-card").first();
       await composer.screenshot({
