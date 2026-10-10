@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 /**
  * Print PR comment markdown for checklist evidence PNGs.
- * Images live only under /opt/cursor/artifacts — post the output via
- * ManagePullRequest post_comment with <img src="/opt/cursor/artifacts/..."/>
- * so Cursor uploads them for GitHub inline display (no git commits).
+ * Images live only under /opt/cursor/artifacts (never commit PNGs / pr-assets).
+ *
+ * Post via ManagePullRequest with <img src="/opt/cursor/artifacts/..."/> tags.
+ * Cursor rewrites those to public CDN URLs only when:
+ *   - Cloud Agents → My pull requests → "Allow posting artifacts to GitHub" is on, and
+ *   - the write is the PR description (body) via ManagePullRequest update_pr/create_pr.
+ * PR comments currently get agent viewer links, not inline CDN images.
+ *
+ * After a body update with inline images enabled, copy the rewritten https://… URLs
+ * into a follow-up comment if you need evidence in a comment thread.
  */
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
