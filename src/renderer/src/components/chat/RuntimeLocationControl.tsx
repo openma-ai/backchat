@@ -21,10 +21,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  GroupedCommandMenu,
-  groupedCommandMenuShellClassName,
-} from "@/components/ui/grouped-command-menu";
+import { GroupedCommandMenu } from "@/components/ui/grouped-command-menu";
 
 /** Match main native host menu list budget (`max-h-[60vh]`). */
 const HOST_PICKER_LIST_MAX_HEIGHT_PX = 540;
@@ -281,7 +278,7 @@ export function RuntimeLocationControl({
       shrinkToContent={shrinkHostPicker}
       nativeListScroll
       listClassName="host-picker-command-list"
-      panelClassName="host-picker-panel flex h-auto w-full flex-col overflow-visible"
+      panelClassName="flex h-auto w-full min-w-0 flex-col border-0 bg-transparent p-0 shadow-none"
       listHeightPx={HOST_PICKER_LIST_MAX_HEIGHT_PX}
       commandClassName="rounded-none! border-0 bg-transparent p-0 text-popover-foreground shadow-none ring-0"
       groups={groups}
@@ -347,8 +344,7 @@ export function RuntimeLocationControl({
         align="start"
         sideOffset={variant === "sidebar" ? 4 : upwardPickerSideOffset}
         className={cn(
-          groupedCommandMenuShellClassName(),
-          "host-picker-dropdown-content h-auto max-h-[60vh] min-w-[var(--composer-menu-width)] w-[var(--composer-menu-width)] gap-0 overflow-x-hidden overflow-y-auto ring-0 oma-scrollbar",
+          "w-[var(--composer-menu-width)] max-h-[60vh] overflow-y-auto ring-0",
         )}
       >
         {menu}

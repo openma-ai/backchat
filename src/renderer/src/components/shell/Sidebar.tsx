@@ -666,23 +666,19 @@ export function Sidebar() {
           data-sidebar-row="new-chat"
           className="rounded-md text-ui text-fg"
         >
-          <SidebarGridCell slot="icon">
+          <button
+            type="button"
+            data-testid="new-chat-button"
+            onClick={goHome}
+            aria-label={t("sidebar.newChat")}
+            aria-current={newChatActive ? "page" : undefined}
+            className="sidebar-new-chat-primary app-no-drag text-ui text-fg"
+          >
             <span className="sidebar-row-icon">
               <SquarePenIcon className="size-3.5" />
             </span>
-          </SidebarGridCell>
-          <SidebarGridCell slot="label" className="min-w-0">
-            <button
-              type="button"
-              data-testid="new-chat-button"
-              onClick={goHome}
-              aria-label={t("sidebar.newChat")}
-              aria-current={newChatActive ? "page" : undefined}
-              className="app-no-drag flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui text-fg"
-            >
-              <span className={cn("min-w-0 truncate", labelCls)}>{t("sidebar.newChat")}</span>
-            </button>
-          </SidebarGridCell>
+            <span className={cn("min-w-0 truncate", labelCls)}>{t("sidebar.newChat")}</span>
+          </button>
           <SidebarGridCell slot="trailing">
             <button
               type="button"
