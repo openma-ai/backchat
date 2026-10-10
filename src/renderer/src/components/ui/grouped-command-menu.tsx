@@ -274,7 +274,9 @@ export function GroupedCommandMenu({
             className={cn(
               menuMode === "host-picker"
                 ? "max-h-none overflow-visible scroll-py-1 p-0 outline-none"
-                : "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
+                : menuMode === "project-picker"
+                  ? "no-scrollbar max-h-72 overflow-x-hidden overflow-y-auto scroll-py-1 p-0 outline-none"
+                  : "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
               listClassName,
             )}
           >

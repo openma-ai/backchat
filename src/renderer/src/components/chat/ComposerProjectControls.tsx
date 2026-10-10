@@ -179,8 +179,8 @@ export function ProjectChipRow({
               menuMode="project-picker"
               shrinkToContent
               nativeListScroll
-              panelClassName="flex h-auto w-full max-h-[min(336px,var(--radix-popover-content-available-height))] flex-col overflow-hidden p-1"
-              commandClassName="rounded-xl! bg-popover p-0! text-popover-foreground shadow-none ring-0"
+              panelClassName="flex h-auto w-full flex-col overflow-hidden p-0"
+              commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}
               initialHighlightValue={projectPickerValue || activeCwd || noProjectCommandValue}

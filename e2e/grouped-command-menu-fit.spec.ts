@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir as fsMkdir, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "./fixtures";
@@ -19,6 +19,74 @@ function manyGroupedModels() {
     })),
   }));
 }
+
+async function seedPickerProjects(page: import("@playwright/test").Page, home: string) {
+  const alphaDir = join(home, "picker-fit-alpha");
+  const betaDir = join(home, "picker-fit-beta");
+  await fsMkdir(alphaDir, { recursive: true });
+  await fsMkdir(betaDir, { recursive: true });
+  await page.evaluate(async ({ alphaDir, betaDir }) => {
+    await window.backchat.projectSave({
+      project_id: "picker-fit-a",
+      name: "Alpha workspace",
+      source_folders: [alphaDir],
+      primary_folder: alphaDir,
+    });
+    const beta = {
+      project_id: "picker-fit-b",
+      name: "Beta monorepo",
+      source_folders: [betaDir],
+      primary_folder: betaDir,
+    };
+    await window.backchat.projectSave(beta);
+    await window.backchat.projectSave(beta);
+  }, { alphaDir, betaDir });
+  await page.reload();
+}
+
+test("project picker popover height matches main chrome", async ({ page, home }) => {
+  test.setTimeout(120_000);
+  await seedPickerProjects(page, home);
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+  const panel = page.getByTestId("composer-project-picker-panel");
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+  const popover = panel.locator(
+    "xpath=ancestor::*[@data-slot='popover-content'][1]",
+  );
+
+  const metrics = await popover.evaluate((el) => {
+    const popoverTop = el.getBoundingClientRect().top;
+    const rect = el.getBoundingClientRect();
+    const command = el.querySelector('[data-slot="command"]') as HTMLElement | null;
+    const itemNodes = el.querySelectorAll('[data-slot="command-item"]');
+    const lastItem = itemNodes[itemNodes.length - 1] as HTMLElement | undefined;
+    const commandRect = command?.getBoundingClientRect();
+    const lastRect = lastItem?.getBoundingClientRect();
+    return {
+      popoverHeight: Math.round(rect.height),
+      commandHeight: commandRect ? Math.round(commandRect.height) : 0,
+      bottomPaddingToPopover: lastRect
+        ? Math.round(rect.bottom - lastRect.bottom)
+        : 0,
+      bottomPaddingToCommand: lastRect && commandRect
+        ? Math.round(commandRect.bottom - lastRect.bottom)
+        : 0,
+      popoverSlackBelowCommand:
+        commandRect ? Math.round(rect.bottom - commandRect.bottom) : 0,
+      searchTop: Math.round(
+        ((el.querySelector('[data-slot="command-input-wrapper"]') as HTMLElement)
+          ?.getBoundingClientRect().top ?? popoverTop) - popoverTop,
+      ),
+    };
+  });
+
+  expect(metrics.popoverHeight).toBeLessThanOrEqual(204);
+  expect(metrics.popoverHeight).toBeGreaterThanOrEqual(198);
+  expect(metrics.bottomPaddingToPopover).toBeLessThanOrEqual(6);
+  expect(metrics.popoverSlackBelowCommand).toBe(0);
+  expect(metrics.commandHeight).toBe(metrics.popoverHeight);
+});
 
 test("host picker menu shrinks to few rows", async ({ page, home }) => {
   test.setTimeout(120_000);

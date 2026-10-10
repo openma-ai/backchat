@@ -45,6 +45,4 @@ test("capture renderer crash page (en + zh)", async () => {
 
   await capture("renderer-crash-fallback-after-en.png");
   await capture("renderer-crash-fallback-after-zh.png", "zh-CN");
-  await capture("pr56-11-en.png");
-  await capture("pr56-11-zh.png", "zh-CN");
 });
