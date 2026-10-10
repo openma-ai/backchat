@@ -4,6 +4,7 @@ import { ExternalLinkIcon } from "@/components/Icons";
 
 import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";
+import { composerBoxClass } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { StatusNotice } from "@/components/ui/status-notice";
@@ -66,7 +67,7 @@ export function AgentAuthSetupPanel({
 
   return (
     <div className={cn(
-      "mt-1 rounded-xl border border-border/40 bg-bg-surface/55 px-3 py-3 text-xs text-fg-muted shadow-card-soft",
+      composerBoxClass({ className: "mt-1 px-3 py-3 text-xs text-fg-muted" }),
       className ?? "ml-9",
     )}>
       <div className="flex items-start justify-between gap-3">
@@ -225,7 +226,7 @@ export function CustomAgentPanel({
   const inputClass = "h-7 rounded-md border border-border/60 bg-bg/80 px-2 text-xs text-fg outline-none focus:border-border-strong";
   const textareaClass = "min-h-16 rounded-md border border-border/60 bg-bg/80 px-2 py-1.5 font-mono text-xs text-fg outline-none focus:border-border-strong";
   return (
-    <div className="mt-3 rounded-xl border border-border/45 bg-bg/70 px-3 py-3 text-xs text-fg-muted shadow-card-soft">
+    <div className={composerBoxClass({ className: "mt-3 px-3 py-3 text-xs text-fg-muted" })}>
       <div className="grid gap-2 md:grid-cols-2">
         <label className="grid gap-1">
           <span className="font-medium text-fg">ID</span>

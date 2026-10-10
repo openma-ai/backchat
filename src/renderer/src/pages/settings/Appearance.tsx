@@ -1,4 +1,5 @@
 import { MonitorIcon, MoonIcon, SunIcon } from "@/components/Icons";
+import { COMPOSER_FRAME_CLASS, composerBoxClass } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import type { ThemeModePreference, ThemePlugin } from "@/lib/theme-plugin";
@@ -169,15 +170,16 @@ function AppearanceModeCard({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "group rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2",
+        "appearance-mode-card group rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2",
         "focus-visible:outline-brand",
       )}
     >
       <span
         className={cn(
-          "relative flex h-28 overflow-hidden rounded-xl border transition-colors",
-          selected ? "border-brand" : "border-border group-hover:border-border-strong",
+          COMPOSER_FRAME_CLASS,
+          "relative flex h-28 overflow-hidden transition-colors",
         )}
+        data-selected={selected ? "true" : undefined}
         aria-hidden="true"
       >
         <ModePane dark={mode === "dark" || mode === "system"} className="flex-1" />
@@ -225,7 +227,7 @@ function ThemeSelect({
 }) {
   const selected = themes.find((theme) => theme.id === value) ?? themes[0]!;
   return (
-    <div className="rounded-xl border border-border bg-bg p-3">
+    <div className={composerBoxClass({ className: "p-3" })}>
       <div className="mb-2 text-[11px] font-medium text-fg-muted">{label}</div>
       <Select value={selected.id} onValueChange={onChange}>
         <SelectTrigger className="h-9 w-full bg-bg-surface text-xs">
@@ -268,7 +270,7 @@ function ThemeWorkbenchPreview({ theme }: { theme: ThemePlugin }) {
     ["Foreground", theme.tokens.fg],
   ] as const;
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-bg">
+    <div className={composerBoxClass({ className: "mt-3 overflow-hidden" })}>
       <div className="flex min-h-32" style={{ background: theme.preview.background }}>
         <div className="w-[22%] border-r border-black/5 p-3" style={{ background: theme.preview.surface }}>
           <div className="h-2 w-12 rounded-full opacity-50" style={{ background: theme.preview.foreground }} />
@@ -339,7 +341,7 @@ function RadioGroup({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex gap-1 rounded-xl border border-border/60 bg-bg p-1">
+    <div className={composerBoxClass({ className: "flex gap-1 p-1" })}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -348,8 +350,8 @@ function RadioGroup({
           className={cn(
             "min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-[11px] transition-colors",
             value === option.value
-              ? "bg-bg-surface text-fg shadow-chip-press"
-              : "text-fg-muted hover:bg-bg-surface/50 hover:text-fg",
+              ? "bg-bg text-fg shadow-chip-press"
+              : "text-fg-muted hover:bg-bg/70 hover:text-fg",
           )}
         >
           {option.label}

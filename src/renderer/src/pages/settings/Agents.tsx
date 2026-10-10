@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CpuIcon,
@@ -16,6 +16,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import { PageScaffold } from "@/components/shell/PageScaffold";
+import { composerBoxClass } from "@/lib/composer-box";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { isAgentEnabled } from "@/lib/enabled-agents";
 import { useI18n } from "@/lib/i18n";
@@ -172,6 +173,74 @@ export function SettingsAgents() {
   );
   const customRows = filterAgentCatalog(allCustomRows, searchQuery);
   const hasSearchQuery = searchQuery.trim().length > 0;
+  // The setup panel is its own card under the row it belongs to. Leaving it
+  // inside the list card makes its right and bottom borders meet that card.
+  const availableList = (() => {
+    const blocks: ReactNode[] = [];
+    let rows: AgentInfo[] = [];
+    const flushRows = () => {
+      if (rows.length === 0) return;
+      const group = rows;
+      rows = [];
+      blocks.push(
+        <ul
+          key={group.map((agent) => agent.id).join("\n")}
+          className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}
+        >
+          {group.map((a) => (
+            <li key={a.id}>
+              <AgentRow
+                agent={a}
+                enabled={isAgentEnabled(settings, a.id)}
+                waitingForAuth={waitingAuthAgentId === a.id}
+                selectedMethodId={selectedAuthMethodByAgent[a.id]}
+                activeActions={pendingActions}
+                onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
+                onInstall={() => action.mutate({ type: "install", id: a.id })}
+                onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
+                onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
+                onOpenSetup={() => setConfiguringAgentId((id) => id === a.id ? null : a.id)}
+              />
+            </li>
+          ))}
+        </ul>,
+      );
+    };
+    for (const a of available) {
+      rows.push(a);
+      if (settings && configuringAgentId === a.id) {
+        flushRows();
+        blocks.push(
+          <AgentAuthSetupPanel
+            key={`${a.id}:${selectedAuthMethodByAgent[a.id] ?? a.auth?.methodId ?? ""}`}
+            agent={a}
+            settings={settings}
+            selectedMethodId={selectedAuthMethodByAgent[a.id]}
+            waitingForAuth={waitingAuthAgentId === a.id}
+            pending={pendingActions.some((item) => item.id === a.id)}
+            error={
+              action.error && pendingActions.some((item) => item.id === a.id && item.type === "auth")
+                ? (action.error instanceof Error ? action.error.message : String(action.error))
+                : undefined
+            }
+            onMethodIdChange={(methodId) =>
+              setSelectedAuthMethodByAgent((prev) => ({ ...prev, [a.id]: methodId }))
+            }
+            onStart={(methodId, options) => action.mutate({
+              type: "auth",
+              id: a.id,
+              methodId,
+              ...(options?.values ? { values: options.values } : {}),
+            })}
+            onClose={() => setConfiguringAgentId(null)}
+            onSaved={() => setConfiguringAgentId(null)}
+          />,
+        );
+      }
+    }
+    flushRows();
+    return <div className="flex flex-col gap-1">{blocks}</div>;
+  })();
 
   const saveCustomAgent = async () => {
     if (!settings || !customForm) return;
@@ -268,12 +337,12 @@ export function SettingsAgents() {
             : `${available.length} available`}
         />
         {agentsLoading ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
             Loading agents…
           </div>
         ) : available.length === 0 ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             {hasSearchQuery
               ? <SearchIcon className="size-4 shrink-0 text-fg-subtle" />
               : <CpuIcon className="size-4 shrink-0 text-fg-subtle" />}
@@ -288,52 +357,7 @@ export function SettingsAgents() {
               </p>
             </div>
           </div>
-        ) : (
-          <ul className="space-y-1">
-            {available.map((a) => (
-              <li key={a.id}>
-                <AgentRow
-                  agent={a}
-                  enabled={isAgentEnabled(settings, a.id)}
-                  waitingForAuth={waitingAuthAgentId === a.id}
-                  selectedMethodId={selectedAuthMethodByAgent[a.id]}
-                  activeActions={pendingActions}
-                  onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
-                  onInstall={() => action.mutate({ type: "install", id: a.id })}
-                  onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
-                  onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
-                  onOpenSetup={() => setConfiguringAgentId((id) => id === a.id ? null : a.id)}
-                />
-                {settings && configuringAgentId === a.id && (
-                  <AgentAuthSetupPanel
-                    key={`${a.id}:${selectedAuthMethodByAgent[a.id] ?? a.auth?.methodId ?? ""}`}
-                    agent={a}
-                    settings={settings}
-                    selectedMethodId={selectedAuthMethodByAgent[a.id]}
-                    waitingForAuth={waitingAuthAgentId === a.id}
-                    pending={pendingActions.some((item) => item.id === a.id)}
-                    error={
-                      action.error && pendingActions.some((item) => item.id === a.id && item.type === "auth")
-                        ? (action.error instanceof Error ? action.error.message : String(action.error))
-                        : undefined
-                    }
-                    onMethodIdChange={(methodId) =>
-                      setSelectedAuthMethodByAgent((prev) => ({ ...prev, [a.id]: methodId }))
-                    }
-                    onStart={(methodId, options) => action.mutate({
-                      type: "auth",
-                      id: a.id,
-                      methodId,
-                      ...(options?.values ? { values: options.values } : {}),
-                    })}
-                    onClose={() => setConfiguringAgentId(null)}
-                    onSaved={() => setConfiguringAgentId(null)}
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        ) : availableList}
       </section>
 
       <section>
@@ -359,12 +383,12 @@ export function SettingsAgents() {
           </Button>
         </div>
         {agentsLoading ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
             Loading registry…
           </div>
         ) : unavailable.length === 0 ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             {hasSearchQuery
               ? <SearchIcon className="size-4 shrink-0 text-fg-subtle" />
               : <DownloadIcon className="size-4 shrink-0 text-fg-subtle" />}
@@ -380,7 +404,7 @@ export function SettingsAgents() {
             </div>
           </div>
         ) : (
-          <ul className="space-y-1">
+          <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
             {unavailable.map((a) => (
               <li key={a.id}>
                 <AgentRow
@@ -426,11 +450,11 @@ export function SettingsAgents() {
           </div>
 
           {customRows.length > 0 && (
-            <ul className="space-y-1">
+            <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
               {customRows.map((row) => (
                 <li
                   key={row.id}
-                  className="group/custom flex min-h-10 items-center gap-3 rounded-xl px-4 py-3 text-xs transition-colors hover:bg-bg-surface/70"
+                  className="group/custom flex min-h-10 items-center gap-3 px-4 py-3 text-xs transition-colors hover:bg-bg-surface/70"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
@@ -485,7 +509,7 @@ export function SettingsAgents() {
 
         <section>
           <SectionHeading className="mb-4" label="Prompt queue" detail="Agent loop scheduling" />
-          <div className="flex items-center justify-between gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-bg-surface/70">
+          <div className={composerBoxClass({ className: "flex items-center justify-between gap-4 px-4 py-3" })}>
             <div className="min-w-0">
               <h3 className="text-sm font-medium text-fg">Prompt queue</h3>
               <p className="mt-0.5 text-[11px] text-fg-muted">

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentIcon } from "@/components/AgentIcon";
 import { useI18n, type Locale, type TranslationKey } from "@/lib/i18n";
+import { composerBoxClass } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 import type { ActivityStatsInfo, HarnessActivityInfo } from "@shared/api";
 import { PageScaffold } from "@/components/shell/PageScaffold";
@@ -66,7 +67,7 @@ export function SettingsActivity() {
           onMetricChange={setMetric}
         />
       ) : (
-        <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-border/55 px-6 text-center">
+        <div className={composerBoxClass({ className: "flex min-h-52 flex-col items-center justify-center px-6 text-center" })}>
           <p className="text-sm font-medium text-fg">{t("activity.loadError")}</p>
           <p className="mt-1 max-w-md text-[11px] text-fg-muted">
             {query.error instanceof Error ? query.error.message : String(query.error)}
@@ -110,7 +111,7 @@ function ActivityPanel({
   ];
 
   return (
-    <section className="overflow-hidden rounded-xl border border-border/55 bg-bg/78">
+    <section className={composerBoxClass({ className: "overflow-hidden" })}>
       <div className="overflow-x-auto border-b border-border/45">
         <dl className="grid min-w-[660px] grid-cols-5">
           {cards.map(([value, label]) => (
@@ -261,7 +262,7 @@ function Insight({ label, value }: { label: string; value: string }) {
 
 function LoadingPanel() {
   return (
-    <div className="overflow-hidden rounded-xl border border-border/55" data-settings-loading="true" aria-busy="true">
+    <div className={composerBoxClass({ className: "overflow-hidden" })} data-settings-loading="true" aria-busy="true">
       <div className="grid grid-cols-5 border-b border-border/45">
         {Array.from({ length: 5 }, (_, index) => <div key={index} className="flex h-20 flex-col items-center justify-center gap-2"><Skeleton className="h-5 w-14" /><Skeleton className="h-2.5 w-20" /></div>)}
       </div>

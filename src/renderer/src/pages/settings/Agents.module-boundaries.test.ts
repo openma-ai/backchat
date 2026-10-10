@@ -15,6 +15,8 @@ describe("agent settings module boundaries", () => {
     const source = readFileSync(resolve(__dirname, "Agents.tsx"), "utf8");
 
     expect(source).toContain('from "./AgentSettingsRow"');
+    expect(source).toContain("composerBoxClass(");
+    expect(source).not.toContain("rounded-xl px-4");
     expect(source).not.toContain("function AgentRow(");
     expect(source).not.toContain("function pendingActionLabel(");
   });
