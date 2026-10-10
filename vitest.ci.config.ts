@@ -74,6 +74,7 @@ export default defineConfig({
       "src/renderer/src/lib/os.test.ts",
       "src/renderer/src/lib/css-font.test.ts",
       "src/renderer/src/lib/font-weight-match.test.ts",
+      "src/renderer/src/styles/mac-latin-weight.test.ts",
       "src/renderer/src/lib/terminal-text-options.test.ts",
       "src/renderer/src/lib/text-roles.test.ts",
       "src/renderer/src/lib/theme-apply.test.ts",

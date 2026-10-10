@@ -95,9 +95,8 @@ describe("declared Backchat faces", () => {
     expect(matchFontWeight(430, unmapped)?.min).toBe(500);
     const mac = css.slice(css.indexOf('html[data-os="mac"] {'), css.indexOf("/* Chat prose"));
     expect(mac).toContain("--font-ui-weight: 400;");
-    expect(mac).toContain('font-variation-settings: "wght" 430;');
-    expect(css).toContain('html[data-os="mac"] :is(');
-    expect(css).toContain("font-variation-settings: normal;");
+    expect(mac).not.toContain("font-variation-settings");
+    expect(css).not.toContain("font-variation-settings");
   });
 
   it("lets the variable Latin face draw 430 and 600", () => {
