@@ -605,11 +605,15 @@ describe("theme plugin integration", () => {
     expect(homeSuggestions).toContain("configuredSuggestions.map");
     expect(homeSuggestions).toContain('data-slot="home-suggestions"');
     expect(homeSuggestions).toContain("<OpenmaHomeMark />");
+    const newChat = readFileSync(
+      resolve(__dirname, "../pages/NewChatPage.tsx"),
+      "utf8",
+    );
     expect(chatView).toContain("<EmptyStateIntro");
     expect(chatView).toContain('className="home-corner-decoration"');
-    expect(chatView).toContain("home-empty-stage");
-    expect(chatView).toContain("home-empty-stack");
-    expect(chatView).toContain("home-composer-stack");
+    expect(newChat).toContain("home-empty-stage");
+    expect(newChat).toContain("home-empty-stack");
+    expect(newChat).toContain("home-composer-stack");
     expect(homeSuggestions).toContain("home-suggestion-label");
     expect(homeSuggestions).not.toContain("home-suggestion-label mt-auto");
     expect(homeSuggestions).toContain("home-theme-masthead");

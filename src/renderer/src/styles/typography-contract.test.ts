@@ -129,7 +129,26 @@ describe("renderer typography contract", () => {
     expect(css).toContain('html[lang|="zh"]');
     expect(css).toContain("text-autospace: no-autospace;");
     expect(css).toContain("color: var(--fg-disabled);");
+    expect(css).toContain("opacity: 1;");
     expect(css).toContain("color: var(--fg-subtle);");
+    expect(css).toContain(".sidebar-navigation .app-selected-surface");
+    expect(css).toContain("noto-sans-latin-ext-wght-normal.woff2");
+    expect(css).toContain("font-weight: 100 900;");
+    expect(css).not.toContain("noto-sans-sc-chinese-simplified-500-normal.woff2");
+    const projects = readFileSync(
+      fileURLToPath(new URL("../pages/projects.css", import.meta.url)),
+      "utf8",
+    );
+    for (const selector of [
+      ".projects-empty h2",
+      ".project-workers-empty h3",
+      ".project-worker-group > h3",
+      ".project-worker-title",
+    ]) {
+      const block = projects.slice(projects.indexOf(selector), projects.indexOf(selector) + 180);
+      expect(block, selector).toContain("font-weight: 600;");
+      expect(block, selector).not.toContain("font-weight: 500;");
+    }
   });
 
   it("keeps literal font families and hardcoded text colors out of components", () => {

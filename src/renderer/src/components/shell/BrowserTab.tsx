@@ -135,6 +135,175 @@ function localFileExtension(path: string): string {
   return dot > 0 ? name.slice(dot + 1) : "FILE";
 }
 
+type BrowserOverlayRect = { x: number; y: number; width: number; height: number };
+
+export function pickerDragActive(drag: unknown): boolean {
+  return drag != null;
+}
+
+export function leaveAnnotationOverlay(
+  dragActive: boolean,
+  onClearHover: (hover: BrowserElementHoverInfo | null) => void,
+): void {
+  if (!dragActive) onClearHover(null);
+}
+
+export function stopOverlayEvent(event: { stopPropagation(): void }): void {
+  event.stopPropagation();
+}
+
+export function preventOverlayMenu(event: { preventDefault(): void }): void {
+  event.preventDefault();
+}
+
+export function editAnnotationFromMarker(
+  event: { stopPropagation(): void },
+  annotationId: string,
+  onEdit: (id: string) => void,
+): void {
+  event.stopPropagation();
+  onEdit(annotationId);
+}
+
+/** Picker and saved-annotation chrome. Kept separate so the text-role
+ *  classes can render without mounting an Electron webview. */
+export function browserAnnotationOverlay({
+  isPickingElement,
+  resizeSnapshot,
+  pickerHover,
+  regionSelection,
+  markers,
+  editingAnnotationId,
+  canvasLabel,
+  dragActive,
+  onClearHover,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onEdit,
+}: {
+  isPickingElement: boolean;
+  resizeSnapshot: string | null;
+  pickerHover: BrowserElementHoverInfo | null;
+  regionSelection: BrowserOverlayRect | null;
+  markers: ReturnType<typeof browserAnnotationMarkers>;
+  editingAnnotationId: string | null;
+  canvasLabel: string;
+  dragActive: boolean;
+  onClearHover: (hover: BrowserElementHoverInfo | null) => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onEdit: (annotationId: string) => void;
+}) {
+  const picking = Boolean(isPickingElement && !resizeSnapshot);
+  const visibleMarkers = resizeSnapshot ? [] : markers;
+  return (
+    <>
+      {picking && (
+        <div
+          data-browser-annotation-overlay
+          aria-label={canvasLabel}
+          className="absolute inset-0 z-20 cursor-crosshair touch-none"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+          onPointerLeave={() => leaveAnnotationOverlay(dragActive, onClearHover)}
+          onContextMenu={(event) => preventOverlayMenu(event)}
+        >
+          {!regionSelection && pickerHover && (
+            <div
+              data-browser-element-hover
+              className="pointer-events-none absolute border-2 border-[#3b82f6] bg-[#3b82f6]/15"
+              style={{
+                left: pickerHover.rect.x,
+                top: pickerHover.rect.y,
+                width: pickerHover.rect.width,
+                height: pickerHover.rect.height,
+              }}
+            >
+              <span className="absolute right-1 top-1 grid size-5 place-items-center rounded-full border-2 border-white bg-[#3b82f6] text-[10px] font-semibold leading-none text-fg-on-fill shadow-sm">
+                1
+              </span>
+              <span
+                className={cn(
+                  "absolute left-0 max-w-[420px] truncate rounded-sm bg-[#2563eb] px-1.5 py-0.5",
+                  "text-[10px] font-medium leading-4 text-fg-on-fill shadow-sm",
+                  pickerHover.rect.y >= 24 ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]",
+                )}
+              >
+                {pickerHover.label}
+              </span>
+            </div>
+          )}
+          {regionSelection && (
+            <div
+              data-browser-region-selection
+              className="pointer-events-none absolute border-2 border-dashed border-[#3b82f6] bg-[#3b82f6]/15"
+              style={{
+                left: regionSelection.x,
+                top: regionSelection.y,
+                width: regionSelection.width,
+                height: regionSelection.height,
+              }}
+            >
+              <span className="absolute -bottom-2.5 -right-2.5 grid size-5 place-items-center rounded-full border-2 border-white bg-[#3b82f6] text-[10px] font-semibold leading-none text-fg-on-fill shadow-sm">
+                1
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+      {visibleMarkers.length > 0 && (
+        <div
+          data-browser-annotation-markers
+          className="pointer-events-none absolute inset-0 z-30"
+        >
+          {visibleMarkers.map((marker) => {
+            const focused = marker.annotation.id === editingAnnotationId;
+            return (
+              <div
+                key={marker.annotation.id}
+                data-browser-annotation-marker={marker.annotation.id}
+                className={cn(
+                  "pointer-events-none absolute border-2 border-[#3b82f6] bg-[#3b82f6]/10",
+                  marker.kind === "region" && "border-dashed",
+                  focused && "bg-[#3b82f6]/18",
+                )}
+                style={{
+                  left: marker.rect.x,
+                  top: marker.rect.y,
+                  width: marker.rect.width,
+                  height: marker.rect.height,
+                }}
+              >
+                <button
+                  type="button"
+                  data-browser-annotation-marker-button
+                  aria-label={`Edit page annotation ${marker.index}`}
+                  onPointerDown={(event) => stopOverlayEvent(event)}
+                  onClick={(event) => editAnnotationFromMarker(event, marker.annotation.id, onEdit)}
+                  className={cn(
+                    "pointer-events-auto absolute -right-3 -top-3 z-10 inline-flex size-6 items-center justify-center",
+                    "text-[10px] font-semibold tabular-nums text-fg-on-fill",
+                    "drop-shadow-[0_1px_1px_rgb(0_0_0/0.16)]",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/40",
+                  )}
+                >
+                  <AnnotationBadge index={marker.index} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 /**
  * BrowserTab — Electron `<webview>` with a minimal URL bar +
  * back / forward / reload. webviewTag must be true in the main
@@ -965,109 +1134,22 @@ export function BrowserTab({
           // content still goes through the standard partition sandbox.
           webpreferences="allowFileAccess=yes,contextIsolation=yes"
         />
-        {isPickingElement && !resizeSnapshot && (
-          <div
-            data-browser-annotation-overlay
-            aria-label={t("shell.browserAnnotationCanvas")}
-            className="absolute inset-0 z-20 cursor-crosshair touch-none"
-            onPointerDown={onPickerPointerDown}
-            onPointerMove={onPickerPointerMove}
-            onPointerUp={onPickerPointerUp}
-            onPointerCancel={onPickerPointerCancel}
-            onPointerLeave={() => {
-              if (!regionDragRef.current) setPickerHover(null);
-            }}
-            onContextMenu={(event) => event.preventDefault()}
-          >
-            {!regionSelection && pickerHover && (
-              <div
-                data-browser-element-hover
-                className="pointer-events-none absolute border-2 border-[#3b82f6] bg-[#3b82f6]/15"
-                style={{
-                  left: pickerHover.rect.x,
-                  top: pickerHover.rect.y,
-                  width: pickerHover.rect.width,
-                  height: pickerHover.rect.height,
-                }}
-              >
-                  <span className="absolute right-1 top-1 grid size-5 place-items-center rounded-full border-2 border-white bg-[#3b82f6] text-[10px] font-semibold leading-none text-fg-on-fill shadow-sm">
-                  1
-                </span>
-                <span
-                  className={cn(
-                    "absolute left-0 max-w-[420px] truncate rounded-sm bg-[#2563eb] px-1.5 py-0.5",
-                    "text-[10px] font-medium leading-4 text-fg-on-fill shadow-sm",
-                    pickerHover.rect.y >= 24 ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]",
-                  )}
-                >
-                  {pickerHover.label}
-                </span>
-              </div>
-            )}
-            {regionSelection && (
-              <div
-                data-browser-region-selection
-                className="pointer-events-none absolute border-2 border-dashed border-[#3b82f6] bg-[#3b82f6]/15"
-                style={{
-                  left: regionSelection.x,
-                  top: regionSelection.y,
-                  width: regionSelection.width,
-                  height: regionSelection.height,
-                }}
-              >
-                <span className="absolute -bottom-2.5 -right-2.5 grid size-5 place-items-center rounded-full border-2 border-white bg-[#3b82f6] text-[10px] font-semibold leading-none text-fg-on-fill shadow-sm">
-                  1
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-        {pageAnnotationMarkers.length > 0 && !resizeSnapshot && (
-          <div
-            data-browser-annotation-markers
-            className="pointer-events-none absolute inset-0 z-30"
-          >
-            {pageAnnotationMarkers.map((marker) => {
-              const focused = marker.annotation.id === editingAnnotationId;
-              return (
-                <div
-                  key={marker.annotation.id}
-                  data-browser-annotation-marker={marker.annotation.id}
-                  className={cn(
-                    "pointer-events-none absolute border-2 border-[#3b82f6] bg-[#3b82f6]/10",
-                    marker.kind === "region" && "border-dashed",
-                    focused && "bg-[#3b82f6]/18",
-                  )}
-                  style={{
-                    left: marker.rect.x,
-                    top: marker.rect.y,
-                    width: marker.rect.width,
-                    height: marker.rect.height,
-                  }}
-                >
-                  <button
-                    type="button"
-                    data-browser-annotation-marker-button
-                    aria-label={`Edit page annotation ${marker.index}`}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      editBrowserAnnotation(marker.annotation.id);
-                    }}
-                    className={cn(
-                      "pointer-events-auto absolute -right-3 -top-3 z-10 inline-flex size-6 items-center justify-center",
-                      "text-[10px] font-semibold tabular-nums text-fg-on-fill",
-                      "drop-shadow-[0_1px_1px_rgb(0_0_0/0.16)]",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/40",
-                    )}
-                  >
-                    <AnnotationBadge index={marker.index} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {browserAnnotationOverlay({
+          isPickingElement,
+          resizeSnapshot,
+          pickerHover,
+          regionSelection,
+          markers: pageAnnotationMarkers,
+          editingAnnotationId,
+          canvasLabel: t("shell.browserAnnotationCanvas"),
+          dragActive: pickerDragActive(regionDragRef.current),
+          onClearHover: setPickerHover,
+          onPointerDown: onPickerPointerDown,
+          onPointerMove: onPickerPointerMove,
+          onPointerUp: onPickerPointerUp,
+          onPointerCancel: onPickerPointerCancel,
+          onEdit: editBrowserAnnotation,
+        })}
         {editingMarker && editingAnnotationRect && createPortal(
           <AnnotationEditor
             ref={browserAnnotationEditorRef}
