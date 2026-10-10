@@ -1,12 +1,41 @@
 import { useI18n } from "@/lib/i18n";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ExternalLinkIcon } from "@/components/Icons";
 
 import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";
+import {
+  authFieldInputType,
+  authMethodKind,
+  authChoiceDescription,
+  authChoiceLabel,
+  authDialogShouldClose,
+  authFieldValue,
+  authSubmitValues,
+  authVariableLabel,
+  clearAuthDraft,
+  filterAuthMethods,
+  groupAuthMethods,
+  initialAuthDraft,
+  type AuthMethodKind,
+} from "@/lib/auth-method-menu";
 import { composerBoxClass } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Dialog,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { PopupContent, PopupHeader } from "@/components/ui/popup";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { patchSettings } from "@/lib/settings-store";
 import { selectedAuthMethod } from "./agent-setup-lifecycle";
@@ -14,6 +43,13 @@ import {
   upsertAgentEnv,
   type CustomAgentFormState,
 } from "./custom-agent-settings";
+
+const AUTH_GROUP_LABEL: Record<AuthMethodKind, "auth.group.oauth" | "auth.group.apiKey" | "auth.group.gateway" | "auth.group.terminal"> = {
+  oauth: "auth.group.oauth",
+  "api-key": "auth.group.apiKey",
+  gateway: "auth.group.gateway",
+  terminal: "auth.group.terminal",
+};
 
 export function AgentAuthSetupPanel({
   agent,
@@ -26,7 +62,9 @@ export function AgentAuthSetupPanel({
   onStart,
   onClose,
   onSaved,
-  className,
+  supportsLogout,
+  logoutPending = false,
+  onLogout,
 }: {
   agent: AgentInfo;
   settings: Settings;
@@ -38,176 +76,267 @@ export function AgentAuthSetupPanel({
   onStart: (methodId?: string, options?: { values?: Record<string, string> }) => void;
   onClose: () => void;
   onSaved: () => void;
-  className?: string;
+  /** Live session or probe advertised `agentCapabilities.auth.logout`. */
+  supportsLogout?: boolean;
+  logoutPending?: boolean;
+  onLogout?: () => void;
 }) {
+  const { t } = useI18n();
   const methods = agent.auth?.methods ?? [];
-  const method = selectedAuthMethod(agent, selectedMethodId);
+  const [query, setQuery] = useState("");
+  const [activeMethodId, setActiveMethodId] = useState(selectedMethodId);
+  const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
+  const method = selectedAuthMethod(agent, activeMethodId);
   const methodType = method?.type ?? "agent";
   const vars = method?.vars ?? [];
   const isLocalEnvForm = methodType === "env_var";
   const isAuthenticateForm = method?.form === "fields";
-  const initialValues = useMemo(() => {
+  const savedEnv = useMemo(() => {
     const existing = settings.agents.find((item) => item.id === agent.id);
-    const env = new Map(existing?.env.map((item) => [item.name, item.value]) ?? []);
-    return Object.fromEntries(vars.map((variable) => [variable.name, env.get(variable.name) ?? ""]));
-  }, [agent.id, settings.agents, vars]);
-  const [values, setValues] = useState<Record<string, string>>(initialValues);
+    return new Map(existing?.env.map((item) => [item.name, item.value]) ?? []);
+  }, [agent.id, settings.agents]);
+  const values = method ? (drafts[method.id] ?? initialAuthDraft(method, savedEnv)) : {};
   const requiredFilled = vars
     .filter((variable) => variable.optional !== true)
-    .every((variable) => (values[variable.name] ?? "").trim().length > 0);
-  const save = async () => {
-    await patchSettings({
-      agents: upsertAgentEnv(settings, agent.id, values),
-    });
-    onSaved();
+    .every((variable) => authFieldValue(values, variable.name).trim().length > 0);
+  const visibleGroups = groupAuthMethods(filterAuthMethods(methods, query));
+  const showMenu = methods.length > 1;
+  const busy = pending || logoutPending;
+
+  useEffect(() => {
+    setQuery("");
+    setDrafts({});
+    setActiveMethodId(selectedMethodId);
+    // Method changes are owned by this dialog. Reset only when the agent changes,
+    // otherwise picking a method would wipe the secret the user just isolated.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id]);
+
+  const pickMethod = (methodId: string) => {
+    const currentId = method!.id;
+    setDrafts((current) => clearAuthDraft(
+      current,
+      currentId !== methodId ? currentId : undefined,
+    ));
+    setActiveMethodId(methodId);
+    onMethodIdChange(methodId);
   };
-  const actionLabel = methodType === "terminal"
-    ? waitingForAuth ? "Open setup again" : "Open terminal setup"
-    : waitingForAuth ? "Continue sign in" : "Continue";
+  const writeField = (name: string, next: string) => {
+    const active = method!;
+    setDrafts((current) => ({
+      ...current,
+      [active.id]: {
+        ...(current[active.id] ?? initialAuthDraft(active, savedEnv)),
+        [name]: next,
+      },
+    }));
+  };
+  const primaryLabel = !method
+    ? ""
+    : pending
+      ? (isLocalEnvForm || isAuthenticateForm ? t("auth.saving") : t("auth.opening"))
+      : isLocalEnvForm || isAuthenticateForm
+        ? t("auth.save")
+        : methodType === "terminal"
+          ? (waitingForAuth ? t("auth.openAgain") : t("auth.openTerminal"))
+          : (waitingForAuth ? t("auth.continueSignIn") : t("auth.continue"));
 
   return (
-    <div className={cn(
-      composerBoxClass({ className: "mt-1 px-3 py-3 text-xs text-fg-muted" }),
-      className ?? "ml-9",
-    )}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-medium text-fg">Set up {agent.label}</div>
-          <p className="mt-1">
-            Choose one of the authentication methods advertised by this Agent.
-          </p>
-        </div>
-        <Button type="button" variant="ghost" size="sm" onClick={onClose} className="h-7 px-2 text-xs">
-          Close
-        </Button>
-      </div>
-
-      {methods.length > 1 && (
-        <div className="mt-3 grid gap-1" role="radiogroup" aria-label={`Authentication method for ${agent.label}`}>
-          {methods.map((candidate) => {
-            const selected = candidate.id === method?.id;
-            return (
-              <button
-                key={candidate.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => onMethodIdChange(candidate.id)}
-                disabled={pending}
-                className={`flex min-w-0 items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
-                  selected ? "bg-bg text-fg" : "hover:bg-bg/55 hover:text-fg"
-                }`}
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (authDialogShouldClose(next, busy)) onClose();
+      }}
+    >
+      <PopupContent
+        data-auth-setup-dialog=""
+        showCloseButton={!busy}
+        className="!max-w-2xl"
+      >
+        <PopupHeader>
+          <DialogTitle>{t("auth.setupTitle", { agent: agent.label })}</DialogTitle>
+          <DialogDescription>{t("auth.setupDescription")}</DialogDescription>
+        </PopupHeader>
+        <div className={cn(
+          "grid min-h-0 border-t border-border/60",
+          showMenu && "sm:grid-cols-[minmax(0,1.15fr)_minmax(15rem,0.85fr)]",
+        )}>
+          {showMenu && (
+            <Command
+              label={t("auth.searchLabel")}
+              shouldFilter={false}
+              className="rounded-none! bg-transparent! shadow-none!"
+            >
+              <CommandInput
+                value={query}
+                onValueChange={setQuery}
+                placeholder={t("auth.search")}
+                aria-label={t("auth.searchLabel")}
+              />
+              <CommandList
+                data-auth-method-list=""
+                className="max-h-72"
+                aria-label={t("auth.methodList", { agent: agent.label })}
               >
-                <span
-                  className={`mt-0.5 size-3.5 shrink-0 rounded-full border ${
-                    selected ? "border-brand bg-brand shadow-[inset_0_0_0_3px_var(--color-bg)]" : "border-border-strong"
-                  }`}
-                />
-                <span className="min-w-0">
-                  <span className="block truncate font-medium">{candidate.name ?? candidate.id}</span>
-                  {candidate.description && (
-                    <span className="mt-0.5 block line-clamp-2 text-[11px] leading-4 text-fg-subtle">
-                      {candidate.description}
-                    </span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {methods.length <= 1 && method?.description && (
-        <p className="mt-3 max-w-[64ch] leading-5">{method.description}</p>
-      )}
-
-      {isLocalEnvForm || isAuthenticateForm ? (
-        <>
-          <p className="mt-2 text-[11px] leading-4 text-fg-subtle">
-            {isLocalEnvForm
-              ? "Saved as this Agent's local environment override and passed only when OpenMA starts it."
-              : "Submitted through ACP authenticate. Backchat does not keep these values."}
-          </p>
-          <div className="mt-3 grid gap-2">
-            {vars.map((variable) => (
-              <label key={variable.name} className="grid gap-1">
-                <span className={`${isLocalEnvForm ? "font-mono" : ""} text-[11px] text-fg-subtle`}>
-                  {isLocalEnvForm ? variable.name : (variable.label ?? variable.name)}
-                  {variable.optional ? " (optional)" : ""}
-                </span>
-                <input
-                  type={isLocalEnvForm
-                    ? (variable.secret === false ? "text" : "password")
-                    : (variable.secret === true ? "password" : "text")}
-                  value={values[variable.name] ?? ""}
-                  onChange={(event) =>
-                    setValues((prev) => ({ ...prev, [variable.name]: event.target.value }))
-                  }
-                  placeholder={variable.label ?? variable.name}
-                  className="h-8 rounded-md border border-border-subtle bg-bg px-2 font-mono text-xs text-fg outline-none transition-colors focus:border-border-strong"
-                />
-              </label>
-            ))}
-          </div>
-        </>
-      ) : (
-        <p className="mt-2 text-[11px] leading-4 text-fg-subtle">
-          {methodType === "terminal"
-            ? `${agent.label} manages credentials in its own terminal setup.`
-            : `${agent.label} handles sign-in through its ACP authentication flow.`}
-        </p>
-      )}
-
-      {error && (
-        <StatusNotice tone="danger" appearance="surface" className="mt-3">
-          {error}
-        </StatusNotice>
-      )}
-
-      {waitingForAuth && !isAuthenticateForm && (
-        <div className="mt-3 rounded-lg bg-brand/8 px-2.5 py-2 text-[11px] leading-4 text-fg-muted">
-          Finish setup outside OpenMA. The next real session will use the new credentials.
-        </div>
-      )}
-
-      <div className="mt-3 flex items-center justify-between gap-2">
-        {method?.link ? (
-          <a href={method.link} className="inline-flex items-center gap-1 text-fg-muted hover:text-fg">
-            <ExternalLinkIcon className="size-3" />
-            Credential source
-          </a>
-        ) : (
-          <span />
-        )}
-        <div className="flex items-center gap-1.5">
-          {isLocalEnvForm ? (
-            <Button type="button" size="sm" onClick={save} disabled={pending} className="h-7 px-2 text-xs">
-              Save
-            </Button>
-          ) : isAuthenticateForm ? (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => onStart(method?.id, { values })}
-              disabled={pending || !method || !requiredFilled}
-              className="h-7 px-2 text-xs"
-            >
-              {pending ? "Saving…" : "Save"}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => onStart(method?.id)}
-              disabled={pending || !method}
-              className="h-7 px-2 text-xs"
-            >
-              {pending ? "Opening…" : actionLabel}
-            </Button>
+                {visibleGroups.length === 0 ? (
+                  <CommandEmpty>{t("auth.searchEmpty")}</CommandEmpty>
+                ) : visibleGroups.map((group) => (
+                  <CommandGroup key={group.kind} heading={t(AUTH_GROUP_LABEL[group.kind])}>
+                    {group.methods.map((candidate) => {
+                      const selected = candidate.id === method?.id;
+                      return (
+                        <CommandItem
+                          key={candidate.id}
+                          value={`${authChoiceLabel(candidate)} ${candidate.id}`}
+                          keywords={[
+                            authChoiceDescription(candidate),
+                            authMethodKind(candidate),
+                            candidate.id,
+                          ]}
+                          disabled={busy}
+                          data-checked={selected}
+                          data-auth-method={candidate.id}
+                          onSelect={() => pickMethod(candidate.id)}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate">{authChoiceLabel(candidate)}</span>
+                            {candidate.description && (
+                              <span className="mt-0.5 block line-clamp-2 text-[11px] leading-4 text-muted-foreground">
+                                {candidate.description}
+                              </span>
+                            )}
+                          </span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                ))}
+              </CommandList>
+            </Command>
           )}
+          <div
+            data-auth-method-detail={method?.id ?? ""}
+            className="flex min-h-0 flex-col gap-3 px-4 py-3 sm:max-h-80 sm:overflow-y-auto sm:bg-muted/30"
+          >
+            {method ? (
+              <>
+                <div>
+                  <div className="text-sm font-medium text-foreground">{authChoiceLabel(method)}</div>
+                  {method.description && (
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{method.description}</p>
+                  )}
+                </div>
+                <p className="text-[11px] leading-4 text-muted-foreground">
+                  {isLocalEnvForm
+                    ? t("auth.envHint")
+                    : isAuthenticateForm
+                      ? t("auth.fieldsHint")
+                      : methodType === "terminal"
+                        ? t("auth.terminalHint", { agent: agent.label })
+                        : t("auth.agentHint", { agent: agent.label })}
+                </p>
+                {(isLocalEnvForm || isAuthenticateForm) && (
+                  <div key={method.id} className="grid gap-2">
+                    {vars.map((variable) => (
+                      <label key={variable.name} className="grid gap-1">
+                        <span className={cn(
+                          "text-[11px] text-muted-foreground",
+                          isLocalEnvForm && "font-mono",
+                        )}>
+                          {authVariableLabel(variable, isLocalEnvForm)}
+                          {variable.optional ? ` (${t("auth.optional")})` : ""}
+                        </span>
+                        <input
+                          data-auth-field={variable.name}
+                          type={authFieldInputType(method, variable)}
+                          name={`${method.id}:${variable.name}`}
+                          autoComplete="off"
+                          value={authFieldValue(values, variable.name)}
+                          disabled={busy}
+                          onChange={(event) => writeField(variable.name, event.target.value)}
+                          placeholder={authVariableLabel(variable, false)}
+                          className="h-8 rounded-md border border-border-subtle bg-background px-2 font-mono text-xs text-foreground outline-none transition-colors focus:border-border-strong"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {waitingForAuth && !isAuthenticateForm && (
+                  <div className="rounded-lg bg-brand/8 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
+                    {t("auth.waiting")}
+                  </div>
+                )}
+                {method.link ? (
+                  <a href={method.link} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                    <ExternalLinkIcon className="size-3" />
+                    {t("auth.credentialSource")}
+                  </a>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("auth.noMethods")}</p>
+            )}
+          </div>
         </div>
-      </div>
-    </div>
+        {error && (
+          <StatusNotice tone="danger" appearance="surface" className="mx-4 mb-3">
+            {error}
+          </StatusNotice>
+        )}
+        <div className="flex items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
+          {supportsLogout ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-auth-logout=""
+              onClick={onLogout}
+              disabled={busy || !onLogout}
+              className="h-7 px-2 text-xs"
+            >
+              {logoutPending ? t("auth.loggingOut") : t("auth.logout")}
+            </Button>
+          ) : <span />}
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-auth-dismiss=""
+              onClick={onClose}
+              className="h-7 px-2 text-xs"
+            >
+              {t("auth.close")}
+            </Button>
+            {method && (
+              <Button
+                type="button"
+                size="sm"
+                data-auth-submit=""
+                onClick={() => {
+                  const active = method!;
+                  if (isLocalEnvForm) {
+                    void patchSettings({
+                      agents: upsertAgentEnv(settings, agent.id, authSubmitValues(active, values)),
+                    }).then(onSaved);
+                    return;
+                  }
+                  if (isAuthenticateForm) {
+                    onStart(active.id, { values: authSubmitValues(active, values) });
+                    return;
+                  }
+                  onStart(active.id);
+                }}
+                disabled={busy || (isAuthenticateForm && !requiredFilled)}
+                className="h-7 px-2 text-xs"
+              >
+                {primaryLabel}
+              </Button>
+            )}
+          </div>
+        </div>
+      </PopupContent>
+    </Dialog>
   );
 }
 

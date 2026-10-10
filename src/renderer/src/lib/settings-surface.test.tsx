@@ -423,10 +423,11 @@ describe("settings surfaces render the shared box and row", () => {
       onSaved: () => undefined,
     };
     const plain = await mount(<AgentAuthSetupPanel {...props} />);
-    expect(plain.host.innerHTML).toContain("ml-9");
+    expect(document.body.textContent).toContain("auth.setupTitle");
+    expect(document.body.querySelector("[data-auth-setup-dialog]")).not.toBeNull();
     await act(async () => plain.root.unmount());
-    const custom = await mount(<AgentAuthSetupPanel {...props} className="ml-0" />);
-    expect(custom.host.innerHTML).toContain("ml-0");
+    const custom = await mount(<AgentAuthSetupPanel {...props} />);
+    expect(document.body.querySelector("[data-auth-setup-dialog]")).not.toBeNull();
     await act(async () => custom.root.unmount());
     const form = await mount(
       <CustomAgentPanel
@@ -530,7 +531,7 @@ describe("settings surfaces render the shared box and row", () => {
     };
     const closed = await mount(<SettingsAgents />);
     await settle();
-    expect(closed.host.textContent).not.toContain("Set up Evidence Agent");
+    expect(document.body.textContent).not.toContain("auth.setupTitle");
     await act(async () => closed.root.unmount());
 
     harness.settings = settingsFixture;
@@ -550,30 +551,28 @@ describe("settings surfaces render the shared box and row", () => {
     expect(signIn()).not.toBeNull();
     await act(async () => { signIn().click(); });
     await act(async () => { signIn().click(); });
-    expect(view.host.textContent).not.toContain("Set up Evidence Agent");
+    expect(document.body.textContent).not.toContain("auth.setupTitle");
     await act(async () => { signIn().click(); });
-    const panel = () => [...view.host.querySelectorAll(".app-composer-surface")].find((node) =>
-      node.textContent?.includes("Set up Evidence Agent"),
-    );
-    expect(panel()?.className).toContain("ml-9");
+    const dialog = () => document.body.querySelector("[data-auth-setup-dialog]");
+    expect(dialog()).not.toBeNull();
     const lists = () => [...view.host.querySelectorAll("ul.app-composer-surface")];
-    expect(lists().some((list) => list.contains(panel() ?? null))).toBe(false);
+    expect(lists().some((list) => list.contains(dialog()))).toBe(false);
     await act(async () => { fieldsSignIn().click(); });
 
     const clickButton = async (label: string) => {
-      const button = [...view.host.querySelectorAll("button")].find((node) =>
+      const button = [...document.body.querySelectorAll("button")].find((node) =>
         node.textContent?.trim() === label || node.getAttribute("aria-label") === label,
       ) as HTMLButtonElement;
       expect(button, label).toBeTruthy();
       await act(async () => { button.click(); });
     };
-    await clickButton("Save");
-    expect(lists().some((list) => list.textContent?.includes("Set up Fields Agent"))).toBe(false);
+    await clickButton("auth.save");
+    expect(lists().some((list) => list.textContent?.includes("auth.setupTitle"))).toBe(false);
     await act(async () => { signIn().click(); });
     harness.holdMutation = true;
     await clickButton("Install");
     await clickButton("Uninstall Evidence Agent");
-    await clickButton("Continue");
+    await clickButton("auth.continue");
     harness.mutationError = new Error("boom");
     await act(async () => { view.root.render(<SettingsAgents />); });
     expect(view.host.textContent).toContain("boom");

@@ -3,10 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AgentInfo } from "@shared/api";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
-import {
-  composerAuthNeeded,
-  deriveComposerHarnessState,
-} from "@/lib/composer-harness-state";
+import { deriveComposerHarnessState } from "@/lib/composer-harness-state";
 import { readRecentRunPreferences } from "@/lib/recent-run-preferences";
 import { sessionStore } from "@/lib/session-store";
 import type { SessionRow } from "@/lib/session-types";
@@ -19,6 +16,7 @@ export function ComposerAuthSetup({
   pickedAgentId,
   authRequired,
   sessionAuth,
+  sessionSupportsLogout = false,
   open = false,
   onClose,
   onAuthenticated,
@@ -28,6 +26,8 @@ export function ComposerAuthSetup({
   pickedAgentId?: string | null;
   authRequired?: boolean;
   sessionAuth?: SessionRow["auth"];
+  /** Live ACP connection advertised `agentCapabilities.auth.logout`. */
+  sessionSupportsLogout?: boolean;
   open?: boolean;
   onClose?: () => void;
   onAuthenticated?: () => Promise<void>;
@@ -66,6 +66,15 @@ export function ComposerAuthSetup({
       setReconnecting(false);
     }
   };
+  const logout = useMutation({
+    mutationFn: () => window.backchat.agentLogout({
+      id: harness.currentAgentId,
+      ...(sessionId ? { sessionId } : {}),
+    }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(AGENTS_QUERY_KEY, next);
+    },
+  });
   const auth = useMutation({
     mutationFn: (input: { methodId?: string; values?: Record<string, string> }) =>
       window.backchat.agentAuthenticate({
@@ -89,6 +98,7 @@ export function ComposerAuthSetup({
 
   useEffect(() => {
     setWaitingForAuth(false);
+    setSelectedMethodId(undefined);
   }, [harness.currentAgentId, authRequired, sessionAuth?.status]);
 
   useEffect(() => {
@@ -104,15 +114,13 @@ export function ComposerAuthSetup({
     );
   }, [harness.currentAgentId, queryClient, sessionAuth]);
 
-  if (
-    !open
-    || !settings
-    || !agent
-    || !composerAuthNeeded(agent, { authRequired, auth: sessionAuth })
-  ) {
-    return null;
-  }
+  if (!open || !settings || !agent) return null;
 
+  const logoutError = logout.error instanceof Error
+    ? logout.error.message
+    : logout.error
+      ? String(logout.error)
+      : undefined;
   return (
     <AgentAuthSetupPanel
       agent={agent}
@@ -120,8 +128,10 @@ export function ComposerAuthSetup({
       selectedMethodId={selectedMethodId}
       waitingForAuth={waitingForAuth}
       pending={auth.isPending || reconnecting}
-      error={recoveryError ?? (auth.error instanceof Error ? auth.error.message : auth.error ? String(auth.error) : undefined)}
-      className=""
+      logoutPending={logout.isPending}
+      supportsLogout={sessionSupportsLogout || agent.auth?.supportsLogout === true}
+      error={recoveryError ?? logoutError ?? (auth.error instanceof Error ? auth.error.message : auth.error ? String(auth.error) : undefined)}
+      onLogout={() => logout.mutate()}
       onMethodIdChange={setSelectedMethodId}
       onStart={(methodId, options) => auth.mutate({
         methodId,

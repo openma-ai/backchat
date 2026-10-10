@@ -1,4 +1,5 @@
 import type { AgentInfo } from "@shared/api";
+import { preferredAuthMethod } from "@/lib/auth-method-menu";
 
 export type AgentSetupAction =
   | { kind: "install"; label: string }
@@ -87,9 +88,8 @@ export function selectedAuthMethod(
   selectedMethodId?: string,
 ): NonNullable<NonNullable<AgentInfo["auth"]>["methods"]>[number] | undefined {
   const methods = agent.auth?.methods ?? [];
-  return methods.find((method) => method.id === selectedMethodId) ??
-    methods.find((method) => method.id === agent.auth?.methodId) ??
-    methods[0];
+  return methods.find((method) => method.id === selectedMethodId)
+    ?? preferredAuthMethod(methods);
 }
 
 function authMethodType(

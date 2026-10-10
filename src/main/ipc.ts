@@ -170,15 +170,17 @@ interface RegisterDeps {
 }
 
 interface TestAgentSetupCall {
-  type: "list" | "install" | "upgrade" | "uninstall" | "auth";
+  type: "list" | "install" | "upgrade" | "uninstall" | "auth" | "logout";
   id?: string;
   methodId?: string;
+  sessionId?: string;
 }
 
 interface TestAgentSetupFixture {
   agents: AgentInfo[];
   runtimeStatuses?: Record<string, SessionRuntimeStatus>;
   authenticateResults?: Record<string, AgentInfo[]>;
+  logoutResults?: Record<string, AgentInfo[]>;
   installResults?: Record<string, AgentInfo[]>;
   upgradeResults?: Record<string, AgentInfo[]>;
   uninstallResults?: Record<string, AgentInfo[]>;
@@ -409,7 +411,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   const testAgentSetupResult = (
     bucket: keyof Pick<
       TestAgentSetupFixture,
-      "authenticateResults" | "installResults" | "upgradeResults" | "uninstallResults"
+      "authenticateResults" | "logoutResults" | "installResults" | "upgradeResults" | "uninstallResults"
     >,
     id: string,
   ): AgentInfo[] => {
@@ -737,6 +739,23 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         ...(p.values ? { values: p.values } : {}),
         ...(p.gateway ? { gateway: p.gateway } : {}),
       });
+    },
+  );
+  ipcMain.handle(
+    InvokeChannel.AgentLogout,
+    async (_e, p: { id: string; sessionId?: string }): Promise<AgentInfo[]> => {
+      if (testAgentSetupFixture) {
+        recordTestAgentSetupCall({ type: "logout", id: p.id, sessionId: p.sessionId });
+        const agent = testAgentSetupFixture.agents.find((item) => item.id === p.id);
+        if (agent?.auth?.supportsLogout !== true) {
+          throw new Error("This agent does not support ACP logout.");
+        }
+        return testAgentSetupResult("logoutResults", p.id);
+      }
+      if (p.sessionId && await sessionManager.logout(p.sessionId)) {
+        return agentSetup.listAgents();
+      }
+      return agentSetup.logoutAgent(p.id);
     },
   );
   handleLocalSession(InvokeChannel.SessionStart, (_e, p: SessionStartParams) => {

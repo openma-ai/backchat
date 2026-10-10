@@ -160,6 +160,8 @@ export function SessionRunChip({
   onSetConfigOption,
   onResetConfigOptions,
   authNeeded = false,
+  supportsLogout = false,
+  onOpenAuth,
 }: {
   disabled: boolean;
   locked: boolean;
@@ -172,6 +174,10 @@ export function SessionRunChip({
   onSetConfigOption: (configId: string, value: string | boolean) => void;
   onResetConfigOptions?: () => void;
   authNeeded?: boolean;
+  /** Live session or agent snapshot advertised ACP logout. */
+  supportsLogout?: boolean;
+  /** Opens the auth dialog from the harness picker. */
+  onOpenAuth?: () => void;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -263,6 +269,9 @@ export function SessionRunChip({
             currentAgentId={currentAgentId}
             currentAgentLabel={agentLabel}
             locked={locked}
+            authNeeded={authNeeded}
+            supportsLogout={supportsLogout}
+            onOpenAuth={onOpenAuth}
             onPickAgent={onPickAgent}
             onOpenSettings={() => void navigate({ to: "/settings/agents" })}
           />
@@ -300,6 +309,9 @@ function SessionAgentSubmenu({
   currentAgentId,
   currentAgentLabel,
   locked,
+  authNeeded,
+  supportsLogout,
+  onOpenAuth,
   onPickAgent,
   onOpenSettings,
 }: {
@@ -307,6 +319,9 @@ function SessionAgentSubmenu({
   currentAgentId: string;
   currentAgentLabel: string;
   locked: boolean;
+  authNeeded: boolean;
+  supportsLogout: boolean;
+  onOpenAuth?: () => void;
   onPickAgent: (agentId: string) => void;
   onOpenSettings: () => void;
 }) {
@@ -330,6 +345,15 @@ function SessionAgentSubmenu({
         </span>
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
+        {onOpenAuth && (authNeeded || supportsLogout) && (
+          <DropdownMenuItem
+            className="min-h-10 gap-2 px-2 py-1.5 text-xs"
+            onSelect={onOpenAuth}
+          >
+            <LogInIcon className="size-3.5 text-fg-subtle" />
+            <span>{authNeeded ? t("chat.signIn") : t("auth.switchAccount")}</span>
+          </DropdownMenuItem>
+        )}
         {agents.length > 0 ? (
           agents.map((agent) => (
             <SessionRunItem

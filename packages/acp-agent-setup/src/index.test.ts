@@ -16,6 +16,7 @@ const fakeEntry: KnownAgentEntry = {
 const probeAgentAuthStatusMock = vi.fn();
 const probeAgentSessionConfigMock = vi.fn();
 const authenticateAgentMock = vi.fn();
+const logoutAcpAgentMock = vi.fn();
 const installAcpRegistryAgentMock = vi.fn();
 const getKnownAgentsMock = vi.fn(() => [fakeEntry]);
 
@@ -55,6 +56,7 @@ vi.mock("@open-managed-agents-desktop/acp/installer", async (importOriginal) => 
 
 vi.mock("@open-managed-agents-desktop/acp/probe", () => ({
   authenticateAgent: authenticateAgentMock,
+  logoutAcpAgent: logoutAcpAgentMock,
   probeAgentSessionConfig: probeAgentSessionConfigMock,
   probeAgentAuthStatus: probeAgentAuthStatusMock,
 }));
@@ -66,6 +68,7 @@ describe("acp agent setup sdk", () => {
     probeAgentAuthStatusMock.mockReset();
     probeAgentSessionConfigMock.mockReset();
     authenticateAgentMock.mockReset();
+    logoutAcpAgentMock.mockReset();
     installAcpRegistryAgentMock.mockReset();
     getKnownAgentsMock.mockReset();
     getKnownAgentsMock.mockReturnValue([fakeEntry]);
@@ -710,6 +713,58 @@ describe("acp agent setup sdk", () => {
       status: "configured",
       methodId: "custom-endpoint",
     });
+  });
+
+  it("logs out through ACP and keeps the advertised methods", async () => {
+    logoutAcpAgentMock.mockResolvedValue(undefined);
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "configured",
+        methodId: "anthropic",
+        methodName: "Anthropic",
+        supportsLogout: true,
+        methods: [{ id: "anthropic", name: "Anthropic", type: "agent" }],
+      },
+    });
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-logout-${process.pid}-${Date.now()}.json`),
+      getEnabledAgentIds: () => ["fake-agent"],
+    });
+    await service.refreshEnabledAgents();
+    const agents = await service.logoutAgent("fake-agent");
+    expect(logoutAcpAgentMock).toHaveBeenCalledWith(expect.objectContaining({
+      agent: expect.objectContaining({ command: "/tmp/fake-agent" }),
+    }));
+    expect(agents[0]?.auth).toMatchObject({
+      status: "needs-auth",
+      supportsLogout: true,
+      methodId: "anthropic",
+      methods: [{ id: "anthropic", name: "Anthropic", type: "agent" }],
+    });
+  });
+
+  it("does not record a logout when the agent refuses the ACP method", async () => {
+    logoutAcpAgentMock.mockRejectedValue(new Error("This agent does not support ACP logout."));
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-logout-refuse-${process.pid}-${Date.now()}.json`),
+    });
+    await expect(service.logoutAgent("fake-agent")).rejects.toThrow(/does not support ACP logout/);
+  });
+
+  it("refuses logout for an unknown agent", async () => {
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-logout-missing-${process.pid}-${Date.now()}.json`),
+    });
+    await expect(service.logoutAgent("missing-agent")).rejects.toThrow(/not available/);
+    expect(logoutAcpAgentMock).not.toHaveBeenCalled();
   });
 
   it("warms up every detected agent capability inspection in parallel", async () => {

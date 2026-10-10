@@ -15,6 +15,7 @@ import {
   type SessionConfigOption,
   type SessionModeState,
 } from "@agentclientprotocol/sdk";
+import { acpLogoutAdvertised, callAcpLogout } from "./logout-capability.js";
 import { NodeSpawner } from "./spawners/node.js";
 import type { AgentSpec, ChildHandle, Spawner } from "./types.js";
 
@@ -96,6 +97,8 @@ export interface ProbeAgentAuthStatus {
   methodName?: string;
   methods?: ProbeAgentAuthMethod[];
   message?: string;
+  /** Present only when initialize advertised `agentCapabilities.auth.logout`. */
+  supportsLogout?: boolean;
 }
 
 export interface TerminalAuthLaunchOptions {
@@ -466,12 +469,14 @@ function authMethodStatusFields(
   agent: AgentSpec,
   env: Record<string, string>,
   cwd: string,
-): Pick<ProbeAgentAuthStatus, "methodId" | "methodName" | "methods"> {
+  supportsLogout = false,
+): Pick<ProbeAgentAuthStatus, "methodId" | "methodName" | "methods" | "supportsLogout"> {
   const methodName = authMethodName(method);
   return {
     methodId: method.id,
     ...(methodName ? { methodName } : {}),
     methods: publicAuthMethods(methods, agent, env, cwd),
+    ...(supportsLogout ? { supportsLogout: true } : {}),
   };
 }
 
@@ -778,6 +783,7 @@ export async function probeAgentSessionConfig(
               options.agent,
               connection.env,
               cwd,
+              acpLogoutAdvertised(initResult.agentCapabilities),
             )
           : {};
         if (method && isCredentialPromptAuthMethod(method)) {
@@ -1021,6 +1027,36 @@ export async function authenticateAgent(options: AuthenticateAgentOptions): Prom
   }
 }
 
+export async function logoutAcpAgent(options: {
+  agent: AgentSpec;
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  timeoutMs?: number;
+  spawner?: Spawner;
+}): Promise<void> {
+  const cwd = options.cwd ?? join(tmpdir(), "backchat-acp-logout");
+  await mkdir(cwd, { recursive: true });
+  const connection = await spawnAcpProbeAgent({
+    agent: options.agent,
+    cwd,
+    env: options.env,
+    spawner: options.spawner,
+  });
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  try {
+    await withTimeout(
+      (async () => {
+        const initResult = await initializeAcpAgent(connection.agent);
+        await callAcpLogout(connection.agent, initResult.agentCapabilities);
+      })(),
+      timeoutMs,
+      `ACP logout timed out after ${timeoutMs}ms`,
+    );
+  } finally {
+    await connection.dispose();
+  }
+}
+
 export async function probeAgentAuthStatus(
   options: ProbeAgentAuthStatusOptions,
 ): Promise<ProbeAgentAuthStatus> {
@@ -1054,7 +1090,14 @@ export async function probeAgentAuthStatus(
           }
           return { status: "none" as const };
         }
-        const methodFields = authMethodStatusFields(method, methods, options.agent, connection.env, cwd);
+        const methodFields = authMethodStatusFields(
+          method,
+          methods,
+          options.agent,
+          connection.env,
+          cwd,
+          acpLogoutAdvertised(initResult.agentCapabilities),
+        );
         if (isCredentialPromptAuthMethod(method)) {
           const missing = missingCredentialVariableNames(method, connection.env);
           if (missing.length > 0) {

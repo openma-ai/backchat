@@ -93,6 +93,24 @@ describe("deriveAgentSetupState", () => {
     });
   });
 
+  it("does not default a mixed method list to the terminal login", () => {
+    const state = deriveAgentSetupState(agent({
+      auth: {
+        status: "needs-auth",
+        message: "Choose a sign-in path.",
+        methodId: "terminal-login",
+        methodName: "Terminal login",
+        methods: [
+          { id: "terminal-login", name: "Terminal login", type: "terminal" },
+          { id: "browser-login", name: "Browser login", type: "agent" },
+        ],
+      },
+    }));
+
+    expect(state.authMethod?.id).toBe("browser-login");
+    expect(state.authAction.kind).toBe("sign-in");
+  });
+
   it("derives the action from the selected auth method when multiple methods exist", () => {
     const state = deriveAgentSetupState(agent({
       auth: {

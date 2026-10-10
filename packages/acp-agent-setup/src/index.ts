@@ -24,6 +24,7 @@ import {
 import {
   authenticateAgent,
   disposeAllAcpSetupProcesses,
+  logoutAcpAgent,
   probeAgentSessionConfig,
   probeAgentAuthStatus,
   type ProbeAgentAuthStatus,
@@ -54,6 +55,7 @@ export interface AcpAgentSetupAuth {
   message: string;
   methodId?: string;
   methodName?: string;
+  supportsLogout?: boolean;
   methods?: AcpAgentSetupAuthMethod[];
 }
 
@@ -129,6 +131,7 @@ export interface AcpAgentSetupService {
     values?: Record<string, string>;
     gateway?: { baseUrl: string; headers?: Record<string, string>; providerName?: string };
   }): Promise<AcpAgentSetupInfo[]>;
+  logoutAgent(id: string): Promise<AcpAgentSetupInfo[]>;
   observeAuth(
     id: string,
     observation: {
@@ -569,6 +572,30 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return this.listAgents();
   }
 
+  async logoutAgent(id: string): Promise<AcpAgentSetupInfo[]> {
+    await this.refreshRegistry({ refresh: false });
+    const entry = await this.detectCatalogEntry(id);
+    if (!entry) throw new Error(`ACP agent is not available: ${id}`);
+    await logoutAcpAgent({
+      agent: entry.spec,
+      env: this.spawnEnv(),
+      ...(this.deps.probeCwd ? { cwd: this.deps.probeCwd } : {}),
+      timeoutMs: 30_000,
+    });
+    const existing = this.authCache.get(id);
+    const auth: AcpAgentSetupAuth = {
+      status: "needs-auth",
+      message: "Logged out. Sign in again to continue.",
+      ...(existing?.methodId ? { methodId: existing.methodId } : {}),
+      ...(existing?.methodName ? { methodName: existing.methodName } : {}),
+      ...(existing?.methods ? { methods: existing.methods } : {}),
+      supportsLogout: true,
+    };
+    this.authCache.set(id, auth);
+    await this.persistProbe(id, { auth });
+    return this.listAgents();
+  }
+
   async observeAuth(
     id: string,
     observation: {
@@ -868,6 +895,7 @@ function mergeObservedAuth(
     ...(methodId ? { methodId } : {}),
     ...(existing?.methodName ? { methodName: existing.methodName } : {}),
     ...(existing?.methods ? { methods: existing.methods } : {}),
+    ...(existing?.supportsLogout ? { supportsLogout: true } : {}),
   };
 }
 
@@ -895,6 +923,7 @@ function setupAuthFromProbeStatus(
       ...(methodInfo.vars ? { vars: methodInfo.vars } : {}),
       ...(methodInfo.link ? { link: methodInfo.link } : {}),
     })) } : {}),
+    ...(status.supportsLogout ? { supportsLogout: true } : {}),
   };
 }
 

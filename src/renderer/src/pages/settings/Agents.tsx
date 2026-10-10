@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CpuIcon,
@@ -20,7 +20,6 @@ import { composerBoxClass } from "@/lib/composer-box";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { isAgentEnabled } from "@/lib/enabled-agents";
 import { useI18n } from "@/lib/i18n";
-import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";
 import { deriveAgentSetupState } from "./agent-setup-lifecycle";
 import {
@@ -118,6 +117,9 @@ export function SettingsAgents() {
           ...(input.gateway ? { gateway: input.gateway } : {}),
         });
       }
+      if (input.type === "logout" && input.id) {
+        return window.backchat.agentLogout({ id: input.id });
+      }
       if (input.type === "refresh") {
         return window.backchat.agentsList({ refresh: true });
       }
@@ -134,7 +136,9 @@ export function SettingsAgents() {
     onSuccess: (next, variables) => {
       queryClient.setQueryData(AGENTS_QUERY_KEY, next);
       void queryClient.invalidateQueries({ queryKey: ["session-runtime"] });
-      if (variables.type === "auth" && variables.id) {
+      if (variables.type === "logout" && variables.id) {
+        setWaitingAuthAgentId((id) => id === variables.id ? null : id);
+      } else if (variables.type === "auth" && variables.id) {
         const agent = next.find((item) => item.id === variables.id);
         setWaitingAuthAgentId(agent?.auth?.status === "configured" ? null : variables.id);
         if (agent?.auth?.status === "configured") {
@@ -173,74 +177,30 @@ export function SettingsAgents() {
   );
   const customRows = filterAgentCatalog(allCustomRows, searchQuery);
   const hasSearchQuery = searchQuery.trim().length > 0;
-  // The setup panel is its own card under the row it belongs to. Leaving it
-  // inside the list card makes its right and bottom borders meet that card.
-  const availableList = (() => {
-    const blocks: ReactNode[] = [];
-    let rows: AgentInfo[] = [];
-    const flushRows = () => {
-      if (rows.length === 0) return;
-      const group = rows;
-      rows = [];
-      blocks.push(
-        <ul
-          key={group.map((agent) => agent.id).join("\n")}
-          className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}
-        >
-          {group.map((a) => (
-            <li key={a.id}>
-              <AgentRow
-                agent={a}
-                enabled={isAgentEnabled(settings, a.id)}
-                waitingForAuth={waitingAuthAgentId === a.id}
-                selectedMethodId={selectedAuthMethodByAgent[a.id]}
-                activeActions={pendingActions}
-                onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
-                onInstall={() => action.mutate({ type: "install", id: a.id })}
-                onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
-                onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
-                onOpenSetup={() => setConfiguringAgentId((id) => id === a.id ? null : a.id)}
-              />
-            </li>
-          ))}
-        </ul>,
-      );
-    };
-    for (const a of available) {
-      rows.push(a);
-      if (settings && configuringAgentId === a.id) {
-        flushRows();
-        blocks.push(
-          <AgentAuthSetupPanel
-            key={`${a.id}:${selectedAuthMethodByAgent[a.id] ?? a.auth?.methodId ?? ""}`}
+  const configuringAgent = agents.find((agent) => agent.id === configuringAgentId) ?? null;
+  const authError = action.error
+    ? (action.error instanceof Error ? action.error.message : String(action.error))
+    : undefined;
+  const availableList = available.length === 0 ? null : (
+    <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
+      {available.map((a) => (
+        <li key={a.id}>
+          <AgentRow
             agent={a}
-            settings={settings}
-            selectedMethodId={selectedAuthMethodByAgent[a.id]}
+            enabled={isAgentEnabled(settings, a.id)}
             waitingForAuth={waitingAuthAgentId === a.id}
-            pending={pendingActions.some((item) => item.id === a.id)}
-            error={
-              action.error && pendingActions.some((item) => item.id === a.id && item.type === "auth")
-                ? (action.error instanceof Error ? action.error.message : String(action.error))
-                : undefined
-            }
-            onMethodIdChange={(methodId) =>
-              setSelectedAuthMethodByAgent((prev) => ({ ...prev, [a.id]: methodId }))
-            }
-            onStart={(methodId, options) => action.mutate({
-              type: "auth",
-              id: a.id,
-              methodId,
-              ...(options?.values ? { values: options.values } : {}),
-            })}
-            onClose={() => setConfiguringAgentId(null)}
-            onSaved={() => setConfiguringAgentId(null)}
-          />,
-        );
-      }
-    }
-    flushRows();
-    return <div className="flex flex-col gap-1">{blocks}</div>;
-  })();
+            selectedMethodId={selectedAuthMethodByAgent[a.id]}
+            activeActions={pendingActions}
+            onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
+            onInstall={() => action.mutate({ type: "install", id: a.id })}
+            onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
+            onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
+            onOpenSetup={() => setConfiguringAgentId((id) => id === a.id ? null : a.id)}
+          />
+        </li>
+      ))}
+    </ul>
+  );
 
   const saveCustomAgent = async () => {
     if (!settings || !customForm) return;
@@ -525,6 +485,31 @@ export function SettingsAgents() {
           </div>
         </section>
         </>
+      )}
+      {settings && configuringAgent && (
+        <AgentAuthSetupPanel
+          key={configuringAgent.id}
+          agent={configuringAgent}
+          settings={settings}
+          selectedMethodId={selectedAuthMethodByAgent[configuringAgent.id]}
+          waitingForAuth={waitingAuthAgentId === configuringAgent.id}
+          pending={pendingActions.some((item) => item.id === configuringAgent.id && item.type === "auth")}
+          logoutPending={pendingActions.some((item) => item.id === configuringAgent.id && item.type === "logout")}
+          supportsLogout={configuringAgent.auth?.supportsLogout === true}
+          error={authError}
+          onMethodIdChange={(methodId) =>
+            setSelectedAuthMethodByAgent((prev) => ({ ...prev, [configuringAgent.id]: methodId }))
+          }
+          onStart={(methodId, options) => action.mutate({
+            type: "auth",
+            id: configuringAgent.id,
+            methodId,
+            ...(options?.values ? { values: options.values } : {}),
+          })}
+          onLogout={() => action.mutate({ type: "logout", id: configuringAgent.id })}
+          onClose={() => setConfiguringAgentId(null)}
+          onSaved={() => setConfiguringAgentId(null)}
+        />
       )}
     </PageScaffold>
   );
