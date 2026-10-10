@@ -3,14 +3,11 @@
  * Print PR comment markdown for checklist evidence PNGs.
  * Images live only under /opt/cursor/artifacts (never commit PNGs / pr-assets).
  *
- * Post via ManagePullRequest with <img src="/opt/cursor/artifacts/..."/> tags.
- * Cursor rewrites those to public CDN URLs only when:
- *   - Cloud Agents → My pull requests → "Allow posting artifacts to GitHub" is on, and
- *   - the write is the PR description (body) via ManagePullRequest update_pr/create_pr.
- * PR comments currently get agent viewer links, not inline CDN images.
- *
- * After a body update with inline images enabled, copy the rewritten https://… URLs
- * into a follow-up comment if you need evidence in a comment thread.
+ * Post via ManagePullRequest post_comment using markdown image syntax:
+ *   ![label](/opt/cursor/artifacts/…/file.png)
+ * Cursor should rewrite those paths to public cursor.com-hosted image URLs for GitHub.
+ * Requires Cloud Agents → My pull requests → “Allow posting artifacts to GitHub”.
+ * After posting, verify each URL with: curl -sI -L '<url>' → content-type: image/png
  */
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -31,10 +28,11 @@ async function main() {
     console.error(`no PNGs in ${compareDir}`);
     process.exit(1);
   }
-  console.log("# Paste into PR comment (artifact paths — not committed to repo)\n");
+  console.log("# Paste into PR comment via ManagePullRequest post_comment (not committed to repo)\n");
   for (const file of files) {
     const abs = join(compareDir, file);
-    console.log(`<img alt="${file.replace(/-/g, " ")}" src="${abs}" />\n`);
+    const label = file.replace(/-/g, " ").replace(/\.png$/, "");
+    console.log(`![${label}](${abs})\n`);
   }
 }
 
