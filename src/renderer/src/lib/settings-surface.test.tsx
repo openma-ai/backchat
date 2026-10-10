@@ -184,7 +184,7 @@ describe("settings surfaces render the shared box and row", () => {
         <ComposerSurface>Hello</ComposerSurface>
         <ComposerSurface className="extra">More</ComposerSurface>
         <ComposerNotice
-          notice={{ tone: "info", message: "Heads up" }}
+          notice={{ id: "notice-1", tone: "warning", message: "Heads up", expiresAt: 10_000 }}
           dismissLabel="Dismiss"
           onDismiss={() => undefined}
         />
@@ -375,7 +375,7 @@ describe("settings surfaces render the shared box and row", () => {
   });
 
   it("renders agent setup panels with and without an extra class", async () => {
-    const agent = { id: "codex", label: "Codex", auth: { methods: [] } } as AgentInfo;
+    const agent = { id: "codex", label: "Codex", auth: { methods: [] } } as unknown as AgentInfo;
     const props = {
       agent,
       settings: settingsFixture,
