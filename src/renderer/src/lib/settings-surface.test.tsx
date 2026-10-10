@@ -26,6 +26,8 @@ const harness = vi.hoisted(() => ({
   archived: [] as Array<Record<string, unknown>>,
   suspendOutlet: false,
   suspender: null as Promise<void> | null,
+  mutationError: null as unknown,
+  holdMutation: false,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -49,7 +51,20 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => harness.query,
   useQueries: () => [],
-  useMutation: () => ({ mutate: () => undefined, error: null, isPending: false }),
+  useMutation: (options?: {
+    onMutate?: (input: { type: string; id?: string }) => void;
+    onSuccess?: (data: unknown, input: { type: string; id?: string }) => void;
+    onSettled?: (data: unknown, error: unknown, input: { type: string; id?: string }) => void;
+  }) => ({
+    mutate: (input: { type: string; id?: string }) => {
+      options?.onMutate?.(input);
+      if (harness.holdMutation) return;
+      options?.onSuccess?.([], input);
+      options?.onSettled?.([], null, input);
+    },
+    get error() { return harness.mutationError; },
+    isPending: false,
+  }),
   useQueryClient: () => ({
     invalidateQueries: () => undefined,
     setQueryData: () => undefined,
@@ -183,6 +198,8 @@ beforeEach(() => {
   harness.archived = [];
   harness.suspendOutlet = false;
   harness.suspender = null;
+  harness.mutationError = null;
+  harness.holdMutation = false;
   installBackchatStub();
   vi.spyOn(sessionStore, "listArchivedPersisted").mockResolvedValue([]);
   vi.spyOn(sessionStore, "seedOpenmaTasks").mockImplementation(() => undefined);
@@ -479,6 +496,91 @@ describe("settings surfaces render the shared box and row", () => {
     expect(loadingAgents.host.textContent).toContain("Loading agents…");
     expect(loadingAgents.host.textContent).toContain("Loading registry…");
     await act(async () => loadingAgents.root.unmount());
+  });
+
+  it("keeps the auth setup panel outside the agent list card", async () => {
+    const agent = (id: string, auth?: "continue" | "fields") => ({
+      id,
+      label: id === "evidence-agent" ? "Evidence Agent" : id === "fields-agent" ? "Fields Agent" : "First",
+      command: id,
+      detected: true,
+      available: true,
+      installed: true,
+      installable: false,
+      ...(auth ? {
+        auth: {
+          status: "needs-auth" as const,
+          message: "Sign in required",
+          methods: auth === "fields"
+            ? [{ id: "fields", name: "Fields", type: "agent", form: "fields" as const, vars: [] }]
+            : [{ id: "oauth", name: "Browser", type: "agent" }],
+        },
+      } : {}),
+    });
+    harness.settings = null;
+    harness.query = {
+      ...harness.query,
+      isLoading: false,
+      data: [
+        agent("first"),
+        agent("other"),
+        agent("evidence-agent", "continue"),
+        agent("fields-agent", "fields"),
+      ],
+    };
+    const closed = await mount(<SettingsAgents />);
+    await settle();
+    expect(closed.host.textContent).not.toContain("Set up Evidence Agent");
+    await act(async () => closed.root.unmount());
+
+    harness.settings = settingsFixture;
+    harness.query = {
+      ...harness.query,
+      data: [
+        agent("first"),
+        { ...agent("other"), installable: true, installed: false },
+        agent("evidence-agent", "continue"),
+        agent("fields-agent", "fields"),
+      ],
+    };
+    const view = await mount(<SettingsAgents />);
+    await settle();
+    const signIn = () => view.host.querySelector("button[aria-label='Sign in to Evidence Agent']") as HTMLButtonElement;
+    const fieldsSignIn = () => view.host.querySelector("button[aria-label='Sign in to Fields Agent']") as HTMLButtonElement;
+    expect(signIn()).not.toBeNull();
+    await act(async () => { signIn().click(); });
+    await act(async () => { signIn().click(); });
+    expect(view.host.textContent).not.toContain("Set up Evidence Agent");
+    await act(async () => { signIn().click(); });
+    const panel = () => [...view.host.querySelectorAll(".app-composer-surface")].find((node) =>
+      node.textContent?.includes("Set up Evidence Agent"),
+    );
+    expect(panel()?.className).toContain("ml-9");
+    const lists = () => [...view.host.querySelectorAll("ul.app-composer-surface")];
+    expect(lists().some((list) => list.contains(panel() ?? null))).toBe(false);
+    await act(async () => { fieldsSignIn().click(); });
+
+    const clickButton = async (label: string) => {
+      const button = [...view.host.querySelectorAll("button")].find((node) =>
+        node.textContent?.trim() === label || node.getAttribute("aria-label") === label,
+      ) as HTMLButtonElement;
+      expect(button, label).toBeTruthy();
+      await act(async () => { button.click(); });
+    };
+    await clickButton("Save");
+    expect(lists().some((list) => list.textContent?.includes("Set up Fields Agent"))).toBe(false);
+    await act(async () => { signIn().click(); });
+    harness.holdMutation = true;
+    await clickButton("Install");
+    await clickButton("Uninstall Evidence Agent");
+    await clickButton("Continue");
+    harness.mutationError = new Error("boom");
+    await act(async () => { view.root.render(<SettingsAgents />); });
+    expect(view.host.textContent).toContain("boom");
+    harness.mutationError = "plain failure";
+    await act(async () => { view.root.render(<SettingsAgents />); });
+    expect(view.host.textContent).toContain("plain failure");
+    await act(async () => view.root.unmount());
   });
 
   it("renders the settings loading panel while the outlet is suspended", async () => {
