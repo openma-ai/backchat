@@ -7,7 +7,7 @@ test("sidebar navigation scrolls together while new chat and search stay fixed",
   for (let i = 0; i < 35; i++) await persistSessionFixture(page, { sessionId: `density-${i}`, title: `Density task ${i}`, cwd: "", events: [] });
   await page.reload();
   const viewport = page.locator('[data-sidebar-scroll-area] [data-slot="scroll-area-viewport"]');
-  const heading = page.locator('[data-sidebar-scroll-area] nav').getByRole("button", { name: "Local", exact: true });
+  const heading = page.getByTestId("sidebar-local-runtime-row");
   await expect(heading).toBeVisible();
   const search = page.getByRole("button", { name: "Search", exact: true });
   const searchTop = (await search.boundingBox())!.y;

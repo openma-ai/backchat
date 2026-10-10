@@ -203,7 +203,9 @@ export function hostPickerPanel(page: Page) {
 }
 
 export async function openRuntimeLocationPicker(page: Page): Promise<void> {
-  await page.locator('[data-session-runtime-location="true"]').first().click();
+  const composerRuntime = page.locator('[data-composer-footer-control="runtime"]');
+  await expect(composerRuntime).toBeVisible({ timeout: 10_000 });
+  await composerRuntime.click();
   await expect(hostPickerPanel(page)).toBeVisible({ timeout: 10_000 });
 }
 
