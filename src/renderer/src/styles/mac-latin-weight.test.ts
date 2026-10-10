@@ -1,10 +1,11 @@
 /**
  * @vitest-environment happy-dom
  *
- * macOS resting text requests weight 400 so a missed PingFang local() name
- * stays Regular. Latin must use that same font-weight. happy-dom does not
- * inherit font-variation-settings, but Chromium does, so this test applies
- * the stylesheet's own declarations and then inherits them. An element the
+ * macOS resting UI uses font-weight 430 so SF follows that axis. The
+ * PingFang 430 face is the Regular file. Code stays at 400. Heavier
+ * elements keep their own weight. happy-dom does not inherit
+ * font-variation-settings, but Chromium does, so this test applies the
+ * stylesheet's own declarations and then inherits them. An element the
  * stylesheet has never named still has to draw Latin at its font-weight.
  */
 import { readFileSync } from "node:fs";
@@ -127,6 +128,7 @@ describe("macOS Latin follows font-weight", () => {
       <div data-chat-surface>
         <div class="chat-markdown">
           <table><thead><tr><th id="header">Column</th></tr></thead></table>
+          <pre><code id="code">const x = 1</code></pre>
         </div>
       </div>
     `;
@@ -139,10 +141,13 @@ describe("macOS Latin follows font-weight", () => {
     header.style.fontWeight = "600";
 
     const rules = variationRules(css);
-    expect(Number.parseFloat(getComputedStyle(document.body).fontWeight)).toBe(400);
+    const code = document.getElementById("code")!;
+    expect(Number.parseFloat(getComputedStyle(document.body).fontWeight)).toBe(430);
+    expect(latinAxis(document.body, rules)).toBe(430);
+    expect(Number.parseFloat(getComputedStyle(code).fontWeight)).toBe(400);
+    expect(latinAxis(code, rules)).toBe(400);
     expect(latinAxis(bold, rules)).toBe(700);
     expect(latinAxis(header, rules)).toBe(600);
-    expect(latinAxis(document.body, rules)).toBe(400);
   });
 
   it("still flags a heavier element that an allowlist forgot", () => {

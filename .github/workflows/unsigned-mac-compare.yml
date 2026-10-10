@@ -1,0 +1,57 @@
+name: Unsigned macOS compare
+
+# Ad-hoc arm64 builds for a Mac to compare this branch with feat/ui-polish.
+# No Developer ID secrets are read, so the apps are not notarized.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/renderer-type-color-6c90
+
+concurrency:
+  group: unsigned-mac-${{ github.ref }}-${{ matrix.name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dmg:
+    name: arm64 ${{ matrix.name }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: this-head
+            ref: ${{ github.sha }}
+          - name: feat-ui-polish
+            ref: feat/ui-polish
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.ref }}
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Build unsigned arm64 app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          BACKCHAT_UPDATE_CHANNEL: dev
+        run: |
+          pnpm exec electron-vite build
+          pnpm run runtime:prepare
+          node scripts/run-mac-builder.mjs --mac --arm64
+
+      - name: Upload unsigned arm64 package
+        uses: actions/upload-artifact@v7
+        with:
+          name: backchat-macos-arm64-${{ matrix.name }}
+          path: |
+            release/**/*.dmg
+            release/**/*.zip
+          if-no-files-found: error
+          retention-days: 14

@@ -1651,13 +1651,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --type-heading-size: 15px;
   --type-heading-leading: 24px;
   /* Codex desktop uses 430 for resting UI text. SF, Segoe UI Variable,
-     and the bundled Noto Sans axis can draw it. CJK families below also
-     publish an explicit 430 face that points at Regular, so 430 does not
-     climb to Medium while those faces load. macOS requests 400 instead
-     (see html[data-os="mac"]): PingFang SC's 400 face is Regular, and a
-     430 request would select Medium if the local() names miss. macOS does
-     not pin a wght axis. An inherited axis would hold Latin at 430 on
-     every heavier element that forgot to clear it. */
+     and the bundled Noto Sans axis can draw it. On macOS that same 430
+     is the used font-weight, so SF follows its axis. The PingFang 430
+     face below uses the Regular file, so a 430 request resolves to
+     Regular wherever those local() names exist. 500 and 600 stay on
+     their own faces. Code keeps an explicit 400. */
   --font-ui-weight: 430;
   /* Selected text is 600. Medium stays 500. Linux Noto Sans SC and macOS
      PingFang publish a 500 face. Windows YaHei has no 500, so that request
@@ -1935,29 +1933,25 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
    (see package.json build.mac/win.files). Italic is synthesized; there is
    no italic file. https://fonts.google.com/noto */
 /* PingFang SC ships Medium at 500. A request of 430 checks 500 before 400,
-   so resting Chinese would paint Medium while SF draws 430. An explicit
-   430 face uses the Regular file. 500 is its own face (Medium), and 600
-   is Semibold. Without the 500 face, font-medium collapses to Regular.
-   local() names are the English full name and the PostScript name, the
-   same pattern for Regular, Medium, and Semibold. This Linux checkout
-   cannot draw PingFang, so the names are not verified here. If the
-   Regular names miss, the Medium and Semibold names miss with them and
-   the family is skipped. macOS then asks for 400, which is Regular on
-   raw PingFang SC. A 430 request would be Medium; resting text does not
-   make that request. */
+   so raw PingFang SC would paint Medium while SF draws 430. An explicit
+   430 face uses the Regular file, so a 430 request resolves to Regular
+   wherever these local() names exist. 500 is its own face (Medium), and
+   600 is Semibold. Without the 500 face, font-medium collapses to Regular.
+   local() names are the English full name, the PostScript name, and the
+   Simplified Chinese full name. This Linux checkout cannot draw PingFang. */
 @font-face {
   font-family: "Backchat PingFang";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: local("PingFang SC Regular"), local("PingFangSC-Regular");
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular"), local("苹方-简 常规");
 }
 @font-face {
   font-family: "Backchat PingFang";
   font-style: normal;
   font-weight: 430;
   font-display: swap;
-  src: local("PingFang SC Regular"), local("PingFangSC-Regular");
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular"), local("苹方-简 常规");
 }
 @font-face {
   font-family: "Backchat PingFang";
@@ -2222,15 +2216,11 @@ html[data-os="windows"] {
     "Microsoft YaHei UI", ui-monospace, monospace;
 }
 
-/* Resting weight on macOS is 400 so a skipped Backchat PingFang family
-   lands on PingFang SC Regular. `font-weight: 430` would select Medium
-   (CSS Fonts checks 500 before 400). Resting Latin on macOS is therefore
-   400 as well. A `wght` axis on body would inherit, and any heavier
-   element left off a reset list would keep Latin at 430 while Chinese
-   followed font-weight. No axis is set, so 500, 600, 700, and an inline
-   weight all draw Latin at that weight. */
+/* Same resting weight as Linux and Windows. SF follows this number.
+   The PingFang 430 face is the Regular file, so Chinese resolves to
+   Regular wherever those local() names exist. */
 html[data-os="mac"] {
-  --font-ui-weight: 400;
+  --font-ui-weight: 430;
 }
 
 /* Chat prose uses the same family as the chrome. The alias exists so a

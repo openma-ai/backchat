@@ -58,6 +58,14 @@ describe("declared Backchat faces", () => {
     expect(matchFontWeight(430, faces)?.min).toBe(430);
     expect(matchFontWeight(500, faces)?.min).toBe(500);
     expect(matchFontWeight(600, faces)?.min).toBe(600);
+    expect(faceSrc(css, "Backchat PingFang", 400)).toContain('local("PingFang SC Regular")');
+    expect(faceSrc(css, "Backchat PingFang", 400)).toContain('local("PingFangSC-Regular")');
+    expect(faceSrc(css, "Backchat PingFang", 400)).toContain('local("苹方-简 常规")');
+    const regular = faceSrc(css, "Backchat PingFang", 430);
+    expect(regular).toBe(faceSrc(css, "Backchat PingFang", 400));
+    expect(regular).not.toContain("Medium");
+    expect(faceSrc(css, "Backchat PingFang", 500)).toContain('local("PingFang SC Medium")');
+    expect(faceSrc(css, "Backchat PingFang", 600)).toContain('local("PingFang SC Semibold")');
   });
 
   it("gives Noto Sans SC a real 500 face and keeps 430 on the regular file", () => {
@@ -86,17 +94,15 @@ describe("declared Backchat faces", () => {
     expect(faceSrc(css, "Backchat YaHei", 600)).toContain('local("Microsoft YaHei Bold")');
   });
 
-  it("requests 400 on macOS so a missed PingFang local() stays Regular", () => {
-    const mapped = declaredWeightFaces(css, "Backchat PingFang");
-    expect(mapped.map((item) => item.min)).toEqual([400, 430, 500, 600]);
-    expect(matchFontWeight(430, mapped)?.min).toBe(430);
-    const unmapped = [100, 200, 300, 400, 500, 600].map(face);
-    expect(matchFontWeight(400, unmapped)?.min).toBe(400);
-    expect(matchFontWeight(430, unmapped)?.min).toBe(500);
+  it("uses weight 430 for macOS resting text and leaves code at 400", () => {
     const mac = css.slice(css.indexOf('html[data-os="mac"] {'), css.indexOf("/* Chat prose"));
-    expect(mac).toContain("--font-ui-weight: 400;");
-    expect(mac).not.toContain("font-variation-settings");
+    expect(mac).toContain("--font-ui-weight: 430;");
+    expect(mac).not.toContain("--font-ui-weight: 400;");
     expect(css).not.toContain("font-variation-settings");
+    const code = css.slice(css.indexOf(":where(pre, code, kbd, samp)"));
+    expect(code.slice(0, 280)).toContain("font-weight: 400;");
+    const unmapped = [100, 200, 300, 400, 500, 600].map(face);
+    expect(matchFontWeight(430, unmapped)?.min).toBe(500);
   });
 
   it("lets the variable Latin face draw 430 and 600", () => {
