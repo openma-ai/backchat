@@ -2,6 +2,8 @@ import { createServer, type ServerResponse } from "node:http";
 import { mkdir } from "node:fs/promises";
 import { expect, test } from "./fixtures";
 
+// PR56 item 6: sidebar-local-runtime-row is interim UI; restore main Local section
+// then replace these assertions (see PR comment on 7dc700e).
 test("tenant groups start collapsed above local and route new and continued sessions to their owner", async ({ app, page }) => {
   const calls: string[] = [];
   const streams = new Set<ServerResponse>();

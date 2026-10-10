@@ -108,6 +108,7 @@ export function GroupedCommandMenu({
   menuResetKey,
   listHeader,
   listHeaderSeparator = true,
+  shrinkToContent = false,
 }: {
   groups: readonly GroupedCommandMenuGroup[];
   searchPlaceholder: string;
@@ -127,6 +128,8 @@ export function GroupedCommandMenu({
   menuResetKey?: string;
   listHeader?: ReactNode;
   listHeaderSeparator?: boolean;
+  /** Drop flex growth so panel height follows row count (host picker). */
+  shrinkToContent?: boolean;
 }) {
   const [commandValue, setCommandValue] = useState(initialHighlightValue);
   const { commandRovingProps, onKeyDown: onRovingKeyDown } =
@@ -169,7 +172,8 @@ export function GroupedCommandMenu({
         value={commandValue}
         onValueChange={setCommandValue}
         className={cn(
-          "grouped-command-menu flex min-h-0 flex-1 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
+          "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
+          shrinkToContent ? "h-auto flex-none" : "flex-1",
           commandClassName,
         )}
         {...commandRovingProps}
@@ -185,7 +189,8 @@ export function GroupedCommandMenu({
         ) : null}
         <ScrollArea
           className={cn(
-            "grouped-command-menu-scroll sidebar-scroll-area w-full min-h-0",
+            "grouped-command-menu-scroll sidebar-scroll-area w-full",
+            shrinkToContent ? "h-auto flex-none" : "min-h-0 flex-1",
             listClassName,
           )}
         >

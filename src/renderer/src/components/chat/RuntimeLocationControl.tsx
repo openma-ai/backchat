@@ -24,7 +24,6 @@ import {
 import {
   GroupedCommandMenu,
   groupedCommandMenuDropdownShellClassName,
-  groupedCommandMenuPresets,
 } from "@/components/ui/grouped-command-menu";
 import {
   GroupedCommandMenuIconSlot,
@@ -254,8 +253,7 @@ export function RuntimeLocationControl({
       searchPlaceholder=""
       emptyMessage=""
       insideDropdownMenu
-      listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
-      panelHeightPx={groupedCommandMenuPresets.footer.panelHeightPx}
+      shrinkToContent
       commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
       groups={groups}
     />

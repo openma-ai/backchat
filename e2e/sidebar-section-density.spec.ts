@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
 import { enableAgent, persistSessionFixture } from "./helpers";
 
+// PR56 item 6: scroll anchor uses interim sidebar-local-runtime-row until Local section returns.
 test("sidebar navigation scrolls together while new chat and search stay fixed", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 700 });
   await enableAgent(page, "codex-acp");
