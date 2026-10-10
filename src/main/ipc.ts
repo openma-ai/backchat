@@ -180,6 +180,7 @@ interface TestAgentSetupFixture {
   agents: AgentInfo[];
   runtimeStatuses?: Record<string, SessionRuntimeStatus>;
   authenticateResults?: Record<string, AgentInfo[]>;
+  authenticateErrors?: Record<string, string>;
   logoutResults?: Record<string, AgentInfo[]>;
   installResults?: Record<string, AgentInfo[]>;
   upgradeResults?: Record<string, AgentInfo[]>;
@@ -731,6 +732,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     }): Promise<AgentInfo[]> | AgentInfo[] => {
       if (testAgentSetupFixture) {
         recordTestAgentSetupCall({ type: "auth", id: p.id, methodId: p.methodId });
+        const failure = testAgentSetupFixture.authenticateErrors?.[p.id];
+        if (failure) throw new Error(failure);
         return testAgentSetupResult("authenticateResults", p.id);
       }
       return agentSetup.authenticateAgent(p.id, {

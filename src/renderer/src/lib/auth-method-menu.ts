@@ -167,6 +167,30 @@ export function isAuthSlashCommand(name: string): boolean {
   return AUTH_SLASH_COMMANDS.has(name.trim().toLowerCase());
 }
 
+/** Drop auth slash commands from a live catalogue or a cached snapshot. */
+export function withoutAuthSlashCommands<T extends { name?: string }>(
+  commands: readonly T[],
+): T[] {
+  return commands.filter((command) =>
+    typeof command.name !== "string" || !isAuthSlashCommand(command.name),
+  );
+}
+
+/**
+ * Logout switches an account that is already signed in. A needs-auth agent
+ * can advertise the capability and still must not offer Log out in the
+ * sign-in dialog.
+ */
+export function canOfferAuthLogout(
+  agent: { auth?: { status?: string; supportsLogout?: boolean } | null } | null | undefined,
+  options: { authRequired?: boolean; sessionSupportsLogout?: boolean } = {},
+): boolean {
+  if (options.authRequired) return false;
+  const auth = agent?.auth;
+  if (auth?.status !== "configured") return false;
+  return options.sessionSupportsLogout === true || auth.supportsLogout === true;
+}
+
 /** Overlay and Escape dismiss the dialog only when no auth request is in flight. */
 export function authDialogShouldClose(nextOpen: boolean, busy: boolean): boolean {
   return !nextOpen && !busy;

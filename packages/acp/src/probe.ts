@@ -469,7 +469,7 @@ function authMethodStatusFields(
   agent: AgentSpec,
   env: Record<string, string>,
   cwd: string,
-  supportsLogout = false,
+  supportsLogout: boolean,
 ): Pick<ProbeAgentAuthStatus, "methodId" | "methodName" | "methods" | "supportsLogout"> {
   const methodName = authMethodName(method);
   return {

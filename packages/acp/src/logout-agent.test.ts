@@ -12,7 +12,7 @@ import {
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
-import { logoutAcpAgent, probeAgentAuthStatus } from "./probe.js";
+import { logoutAcpAgent, probeAgentAuthStatus, probeAgentSessionConfig } from "./probe.js";
 import type { ChildHandle, Spawner } from "./types.js";
 
 function connectProbeAgent(agentFactory: (connection: AgentSideConnection) => Agent): Spawner {
@@ -86,5 +86,27 @@ describe("logoutAcpAgent", () => {
       spawner: connectProbeAgent(() => new LogoutProbeAgent(false)),
     });
     expect(status.supportsLogout).toBeUndefined();
+  });
+
+  it("uses the default logout directory and an explicit timeout", async () => {
+    const agent = new LogoutProbeAgent(true);
+    await expect(logoutAcpAgent({
+      agent: { command: "fake-agent" },
+      timeoutMs: 1_000,
+      spawner: connectProbeAgent(() => agent),
+    })).resolves.toBeUndefined();
+    expect(agent.logoutCalls).toEqual([{}]);
+    await expect(probeAgentSessionConfig({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-logout-test",
+      capabilitySettleMs: 10,
+      spawner: connectProbeAgent(() => new LogoutProbeAgent(true)),
+    })).resolves.toMatchObject({ auth: { supportsLogout: true } });
+    await expect(probeAgentSessionConfig({
+      agent: { command: "fake-agent" },
+      cwd: "/tmp/backchat-acp-logout-test",
+      capabilitySettleMs: 10,
+      spawner: connectProbeAgent(() => new LogoutProbeAgent(false)),
+    })).resolves.toMatchObject({ auth: { methodId: "login" } });
   });
 });

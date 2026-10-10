@@ -21,6 +21,7 @@ import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { isAgentEnabled } from "@/lib/enabled-agents";
 import { useI18n } from "@/lib/i18n";
 import type { Settings } from "@shared/settings";
+import { canOfferAuthLogout } from "@/lib/auth-method-menu";
 import { deriveAgentSetupState } from "./agent-setup-lifecycle";
 import {
   customAgentRows,
@@ -81,6 +82,7 @@ export function SettingsAgents() {
   const [selectedAuthMethodByAgent, setSelectedAuthMethodByAgent] = useState<Record<string, string>>({});
   const [customForm, setCustomForm] = useState<CustomAgentFormState | null>(null);
   const [pendingActions, setPendingActions] = useState<AgentAction[]>([]);
+  const [authErrors, setAuthErrors] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const { data: agents = [], isLoading: agentsLoading, error: agentsError } = useQuery({
     queryKey: AGENTS_QUERY_KEY,
@@ -117,8 +119,8 @@ export function SettingsAgents() {
           ...(input.gateway ? { gateway: input.gateway } : {}),
         });
       }
-      if (input.type === "logout" && input.id) {
-        return window.backchat.agentLogout({ id: input.id });
+      if (input.type === "logout") {
+        return window.backchat.agentLogout({ id: input.id! });
       }
       if (input.type === "refresh") {
         return window.backchat.agentsList({ refresh: true });
@@ -132,16 +134,35 @@ export function SettingsAgents() {
         ...current.filter((item) => agentActionKey(item) !== key),
         stored,
       ]);
+      if (variables.id && (variables.type === "auth" || variables.type === "logout")) {
+        const id = variables.id;
+        setAuthErrors((current) => {
+          if (!Object.prototype.hasOwnProperty.call(current, id)) return current;
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
+      }
+    },
+    onError: (error, variables) => {
+      if ((variables.type === "auth" || variables.type === "logout") && variables.id) {
+        const message = error instanceof Error ? error.message : String(error);
+        setAuthErrors((current) => ({ ...current, [variables.id!]: message }));
+      }
     },
     onSuccess: (next, variables) => {
       queryClient.setQueryData(AGENTS_QUERY_KEY, next);
       void queryClient.invalidateQueries({ queryKey: ["session-runtime"] });
-      if (variables.type === "logout" && variables.id) {
+      if (variables.type === "logout") {
         setWaitingAuthAgentId((id) => id === variables.id ? null : id);
       } else if (variables.type === "auth" && variables.id) {
         const agent = next.find((item) => item.id === variables.id);
-        setWaitingAuthAgentId(agent?.auth?.status === "configured" ? null : variables.id);
-        if (agent?.auth?.status === "configured") {
+        const started = agent?.auth?.methods?.find((method) => method.id === variables.methodId);
+        const configured = agent?.auth?.status === "configured";
+        // A terminal launch leaves the process outside this window. Keeping
+        // the modal open covers the next agent's sign-in control.
+        setWaitingAuthAgentId(configured ? null : variables.id);
+        if (configured || started?.type === "terminal") {
           setConfiguringAgentId((id) => id === variables.id ? null : id);
         }
       } else if (variables.type === "install" || variables.type === "uninstall" || variables.type === "upgrade") {
@@ -178,9 +199,6 @@ export function SettingsAgents() {
   const customRows = filterAgentCatalog(allCustomRows, searchQuery);
   const hasSearchQuery = searchQuery.trim().length > 0;
   const configuringAgent = agents.find((agent) => agent.id === configuringAgentId) ?? null;
-  const authError = action.error
-    ? (action.error instanceof Error ? action.error.message : String(action.error))
-    : undefined;
   const availableList = available.length === 0 ? null : (
     <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
       {available.map((a) => (
@@ -495,8 +513,8 @@ export function SettingsAgents() {
           waitingForAuth={waitingAuthAgentId === configuringAgent.id}
           pending={pendingActions.some((item) => item.id === configuringAgent.id && item.type === "auth")}
           logoutPending={pendingActions.some((item) => item.id === configuringAgent.id && item.type === "logout")}
-          supportsLogout={configuringAgent.auth?.supportsLogout === true}
-          error={authError}
+          supportsLogout={canOfferAuthLogout(configuringAgent)}
+          error={authErrors[configuringAgent.id]}
           onMethodIdChange={(methodId) =>
             setSelectedAuthMethodByAgent((prev) => ({ ...prev, [configuringAgent.id]: methodId }))
           }

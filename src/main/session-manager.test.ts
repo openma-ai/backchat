@@ -2636,6 +2636,26 @@ describe("SessionManager prompt queue", () => {
     await expect(manager.logout("sess-logout-cache")).resolves.toBe(true);
   });
 
+  it("completes a second logout when no setup observer is installed", async () => {
+    const fake = createControllableAcpSession({ supportsLogout: true });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "claude-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({
+      session_id: "sess-logout-again",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+
+    await expect(manager.logout("sess-logout-again")).resolves.toBe(true);
+    await expect(manager.logout("sess-logout-again")).resolves.toBe(true);
+  });
+
   it("announces the ACP mode state returned during session setup", async () => {
     const modes = {
       currentModeId: "review",

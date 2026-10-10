@@ -1,5 +1,5 @@
 import type { AgentInfo } from "@shared/api";
-import { preferredAuthMethod } from "@/lib/auth-method-menu";
+import { authMethodKind, preferredAuthMethod } from "@/lib/auth-method-menu";
 
 export type AgentSetupAction =
   | { kind: "install"; label: string }
@@ -88,8 +88,19 @@ export function selectedAuthMethod(
   selectedMethodId?: string,
 ): NonNullable<NonNullable<AgentInfo["auth"]>["methods"]>[number] | undefined {
   const methods = agent.auth?.methods ?? [];
-  return methods.find((method) => method.id === selectedMethodId)
-    ?? preferredAuthMethod(methods);
+  const explicit = methods.find((method) => method.id === selectedMethodId);
+  if (explicit) return explicit;
+  // A configured methodId is the user's saved choice, including terminal.
+  // While auth is still required, a terminal methodId is only the probe's
+  // first-method default, so it must not win over a browser or API-key method.
+  const saved = methods.find((method) => method.id === agent.auth?.methodId);
+  if (
+    saved
+    && (agent.auth?.status === "configured" || authMethodKind(saved) !== "terminal")
+  ) {
+    return saved;
+  }
+  return preferredAuthMethod(methods);
 }
 
 function authMethodType(

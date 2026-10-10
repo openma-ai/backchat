@@ -111,6 +111,44 @@ describe("deriveAgentSetupState", () => {
     expect(state.authAction.kind).toBe("sign-in");
   });
 
+  it("keeps a saved non-terminal method while sign-in is still required", () => {
+    const state = deriveAgentSetupState(agent({
+      auth: {
+        status: "needs-auth",
+        message: "Choose a sign-in path.",
+        methodId: "deepseek",
+        methods: [
+          { id: "anthropic", name: "Anthropic", type: "agent" },
+          {
+            id: "deepseek",
+            name: "DeepSeek",
+            type: "agent",
+            form: "fields",
+            vars: [{ name: "api-key", secret: true }],
+          },
+        ],
+      },
+    }));
+
+    expect(state.authMethod?.id).toBe("deepseek");
+  });
+
+  it("keeps a configured terminal method that the user already saved", () => {
+    const state = deriveAgentSetupState(agent({
+      auth: {
+        status: "configured",
+        message: "Authentication configured.",
+        methodId: "terminal-login",
+        methods: [
+          { id: "browser-login", name: "Browser login", type: "agent" },
+          { id: "terminal-login", name: "Terminal login", type: "terminal" },
+        ],
+      },
+    }));
+
+    expect(state.authMethod?.id).toBe("terminal-login");
+  });
+
   it("derives the action from the selected auth method when multiple methods exist", () => {
     const state = deriveAgentSetupState(agent({
       auth: {

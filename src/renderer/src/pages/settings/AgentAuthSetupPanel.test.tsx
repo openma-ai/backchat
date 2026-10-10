@@ -550,4 +550,101 @@ describe("AgentAuthSetupPanel", () => {
     expect(document.body.textContent).toContain("Logging out…");
     expect((document.body.querySelector("button[aria-label='Switch account for pi']") as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("submits an API key with Enter and returns focus to the trigger after Escape", async () => {
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.textContent = "Sign in to pi";
+    document.body.appendChild(trigger);
+    trigger.focus();
+    const onStart = vi.fn();
+    const onClose = vi.fn();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <AgentAuthSetupPanel
+          agent={methodAgent(piMethods)}
+          settings={settings}
+          waitingForAuth={false}
+          pending={false}
+          onMethodIdChange={() => undefined}
+          onStart={onStart}
+          onClose={() => {
+            onClose();
+            root.unmount();
+          }}
+          onSaved={() => undefined}
+        />,
+      );
+    });
+    await click(option("deepseek"));
+    const input = field("api-key");
+    await typeInto(input, "sk-deepseek");
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }));
+    });
+    expect(onStart).not.toHaveBeenCalled();
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onStart).toHaveBeenCalledWith("deepseek", { values: { "api-key": "sk-deepseek" } });
+    const form = document.body.querySelector("#auth-method-form");
+    await act(async () => {
+      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await act(async () => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onClose).toHaveBeenCalled();
+    expect(document.activeElement).toBe(trigger);
+
+    const onEmptyStart = vi.fn();
+    await mount(
+      <AgentAuthSetupPanel
+        agent={methodAgent([deepseek], "empty-key")}
+        settings={settings}
+        waitingForAuth={false}
+        pending={false}
+        onMethodIdChange={() => undefined}
+        onStart={onEmptyStart}
+        onClose={() => undefined}
+        onSaved={() => undefined}
+      />,
+    );
+    const empty = field("api-key");
+    await act(async () => {
+      empty.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(onEmptyStart).not.toHaveBeenCalled();
+  });
+
+  it("does not offer switch account while the agent still needs sign-in", async () => {
+    await mount(
+      <AgentRow
+        agent={{
+          ...methodAgent([anthropic]),
+          auth: {
+            status: "needs-auth",
+            message: "Authentication required.",
+            supportsLogout: true,
+            methods: [anthropic],
+          },
+        }}
+        enabled={false}
+        waitingForAuth={false}
+        activeActions={[]}
+        onSetEnabled={() => undefined}
+        onInstall={() => undefined}
+        onUpgrade={() => undefined}
+        onUninstall={() => undefined}
+        onOpenSetup={() => undefined}
+      />,
+    );
+    expect(document.body.querySelector("button[aria-label='Switch account for pi']")).toBeNull();
+  });
 });

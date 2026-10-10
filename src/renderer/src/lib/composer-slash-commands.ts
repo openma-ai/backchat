@@ -1,4 +1,4 @@
-import { isAuthSlashCommand } from "./auth-method-menu";
+import { isAuthSlashCommand, withoutAuthSlashCommands } from "./auth-method-menu";
 import {
   findSelectConfigOption,
   type AcpSessionConfigOption,
@@ -136,7 +136,7 @@ export function withSessionStateCommands(
     }
     next = [host, ...next];
   }
-  return next;
+  return withoutAuthSlashCommands(next);
 }
 
 export interface SlashCommandConfigAction {

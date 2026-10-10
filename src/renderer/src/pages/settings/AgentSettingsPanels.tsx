@@ -1,5 +1,5 @@
 import { useI18n } from "@/lib/i18n";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLinkIcon } from "@/components/Icons";
 
 import type { AgentInfo } from "@shared/api";
@@ -102,6 +102,42 @@ export function AgentAuthSetupPanel({
   const visibleGroups = groupAuthMethods(filterAuthMethods(methods, query));
   const showMenu = methods.length > 1;
   const busy = pending || logoutPending;
+  const focusCapture = useRef<{ target: HTMLElement | null } | null>(null);
+  if (focusCapture.current === null && typeof document !== "undefined") {
+    const active = document.activeElement;
+    focusCapture.current = {
+      target:
+        active instanceof HTMLElement
+        && active !== document.body
+        && active !== document.documentElement
+          ? active
+          : null,
+    };
+  }
+  const restoreFocus = () => {
+    const target = focusCapture.current?.target;
+    if (!target?.isConnected) return;
+    target.focus();
+  };
+  const requestClose = () => {
+    onClose();
+    queueMicrotask(restoreFocus);
+  };
+  const submitAuth = () => {
+    const active = method!;
+    if (isAuthenticateForm && !requiredFilled) return;
+    if (isLocalEnvForm) {
+      void patchSettings({
+        agents: upsertAgentEnv(settings, agent.id, authSubmitValues(active, values)),
+      }).then(onSaved);
+      return;
+    }
+    if (isAuthenticateForm) {
+      onStart(active.id, { values: authSubmitValues(active, values) });
+      return;
+    }
+    onStart(active.id);
+  };
 
   useEffect(() => {
     setQuery("");
@@ -145,13 +181,19 @@ export function AgentAuthSetupPanel({
     <Dialog
       open
       onOpenChange={(next) => {
-        if (authDialogShouldClose(next, busy)) onClose();
+        if (authDialogShouldClose(next, busy)) requestClose();
       }}
     >
       <PopupContent
         data-auth-setup-dialog=""
         showCloseButton={!busy}
         className="!max-w-2xl"
+        onCloseAutoFocus={(event) => {
+          const target = focusCapture.current?.target;
+          if (!target?.isConnected) return;
+          event.preventDefault();
+          target.focus();
+        }}
       >
         <PopupHeader>
           <DialogTitle>{t("auth.setupTitle", { agent: agent.label })}</DialogTitle>
@@ -236,7 +278,14 @@ export function AgentAuthSetupPanel({
                         : t("auth.agentHint", { agent: agent.label })}
                 </p>
                 {(isLocalEnvForm || isAuthenticateForm) && (
-                  <div key={method.id} className="grid gap-2">
+                  <form
+                    id="auth-method-form"
+                    key={method.id}
+                    className="grid gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                    }}
+                  >
                     {vars.map((variable) => (
                       <label key={variable.name} className="grid gap-1">
                         <span className={cn(
@@ -254,12 +303,17 @@ export function AgentAuthSetupPanel({
                           value={authFieldValue(values, variable.name)}
                           disabled={busy}
                           onChange={(event) => writeField(variable.name, event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+                            event.preventDefault();
+                            submitAuth();
+                          }}
                           placeholder={authVariableLabel(variable, false)}
                           className="h-8 rounded-md border border-border-subtle bg-background px-2 font-mono text-xs text-foreground outline-none transition-colors focus:border-border-strong"
                         />
                       </label>
                     ))}
-                  </div>
+                  </form>
                 )}
                 {waitingForAuth && !isAuthenticateForm && (
                   <div className="rounded-lg bg-brand/8 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
@@ -303,7 +357,7 @@ export function AgentAuthSetupPanel({
               variant="ghost"
               size="sm"
               data-auth-dismiss=""
-              onClick={onClose}
+              onClick={requestClose}
               className="h-7 px-2 text-xs"
             >
               {t("auth.close")}
@@ -313,20 +367,7 @@ export function AgentAuthSetupPanel({
                 type="button"
                 size="sm"
                 data-auth-submit=""
-                onClick={() => {
-                  const active = method!;
-                  if (isLocalEnvForm) {
-                    void patchSettings({
-                      agents: upsertAgentEnv(settings, agent.id, authSubmitValues(active, values)),
-                    }).then(onSaved);
-                    return;
-                  }
-                  if (isAuthenticateForm) {
-                    onStart(active.id, { values: authSubmitValues(active, values) });
-                    return;
-                  }
-                  onStart(active.id);
-                }}
+                onClick={submitAuth}
                 disabled={busy || (isAuthenticateForm && !requiredFilled)}
                 className="h-7 px-2 text-xs"
               >

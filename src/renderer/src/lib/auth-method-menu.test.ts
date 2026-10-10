@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAgentAvailableCommands } from "./composer-slash-commands";
+import { normalizeAgentAvailableCommands, withSessionStateCommands } from "./composer-slash-commands";
 import { translate } from "./i18n";
 import {
   authChoiceDescription,
@@ -9,6 +9,7 @@ import {
   authVariableLabel,
   authMethodKind,
   authDialogShouldClose,
+  canOfferAuthLogout,
   authSubmitValues,
   clearAuthDraft,
   filterAuthMethods,
@@ -16,6 +17,7 @@ import {
   initialAuthDraft,
   isAuthSlashCommand,
   preferredAuthMethod,
+  withoutAuthSlashCommands,
   type AuthMethodChoice,
 } from "./auth-method-menu";
 
@@ -184,5 +186,31 @@ describe("auth slash commands", () => {
       { name: "logout", description: "Log out" },
       { name: "status", description: "Status" },
     ]).map((command) => command.name)).toEqual(["status"]);
+    expect(withSessionStateCommands([
+      { name: "login", description: "Log in" },
+      { name: "logout", description: "Log out" },
+      { name: "status", description: "Status" },
+    ], [], "claude-acp").map((command) => command.name)).toEqual(["status"]);
+    expect(withoutAuthSlashCommands([
+      { description: "unnamed" },
+      { name: "LOGIN" },
+      { name: "review" },
+    ]).map((command) => command.name ?? command.description)).toEqual(["unnamed", "review"]);
+  });
+
+  it("offers logout only after the agent is signed in and the capability is advertised", () => {
+    const configured = { auth: { status: "configured", supportsLogout: true } };
+    expect(canOfferAuthLogout(null)).toBe(false);
+    expect(canOfferAuthLogout({})).toBe(false);
+    expect(canOfferAuthLogout({ auth: null })).toBe(false);
+    expect(canOfferAuthLogout({ auth: { status: "needs-auth", supportsLogout: true } })).toBe(false);
+    expect(canOfferAuthLogout({ auth: { status: "unknown", supportsLogout: true } })).toBe(false);
+    expect(canOfferAuthLogout(configured, { authRequired: true })).toBe(false);
+    expect(canOfferAuthLogout(configured)).toBe(true);
+    expect(canOfferAuthLogout(
+      { auth: { status: "configured", supportsLogout: false } },
+      { sessionSupportsLogout: true },
+    )).toBe(true);
+    expect(canOfferAuthLogout({ auth: { status: "configured" } })).toBe(false);
   });
 });

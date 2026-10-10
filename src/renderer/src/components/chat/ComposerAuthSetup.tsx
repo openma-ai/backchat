@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AgentInfo } from "@shared/api";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
+import { canOfferAuthLogout } from "@/lib/auth-method-menu";
 import { deriveComposerHarnessState } from "@/lib/composer-harness-state";
 import { readRecentRunPreferences } from "@/lib/recent-run-preferences";
 import { sessionStore } from "@/lib/session-store";
@@ -129,7 +130,7 @@ export function ComposerAuthSetup({
       waitingForAuth={waitingForAuth}
       pending={auth.isPending || reconnecting}
       logoutPending={logout.isPending}
-      supportsLogout={sessionSupportsLogout || agent.auth?.supportsLogout === true}
+      supportsLogout={canOfferAuthLogout(agent, { authRequired, sessionSupportsLogout })}
       error={recoveryError ?? logoutError ?? (auth.error instanceof Error ? auth.error.message : auth.error ? String(auth.error) : undefined)}
       onLogout={() => logout.mutate()}
       onMethodIdChange={setSelectedMethodId}
