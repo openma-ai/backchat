@@ -7,6 +7,17 @@ import { declaredWeightFaces, matchFontWeight, type FontWeightFace } from "./fon
 
 const face = (weight: number): FontWeightFace => ({ min: weight, max: weight });
 
+function faceSrc(css: string, family: string, weight: number): string | null {
+  for (const block of css.split("@font-face").slice(1)) {
+    const body = block.slice(0, block.indexOf("}"));
+    if (!body.includes(`font-family: "${family}"`)) continue;
+    const declared = /font-weight:\s*(\d+)/.exec(body);
+    if (Number(declared?.[1]) !== weight) continue;
+    return /src:\s*([^;]+);/.exec(body)?.[1] ?? "";
+  }
+  return null;
+}
+
 describe("matchFontWeight", () => {
   it("returns null when the family has no faces", () => {
     expect(matchFontWeight(430, [])).toBeNull();
@@ -62,13 +73,31 @@ describe("declared Backchat faces", () => {
     expect(matchFontWeight(600, faces)?.min).toBe(600);
   });
 
-  it("maps YaHei emphasis away from Regular", () => {
+  it("keeps YaHei 500 on Regular and maps only 600 to Bold", () => {
     const faces = declaredWeightFaces(css, "Backchat YaHei");
-    expect(faces.map((item) => item.min)).toEqual([400, 430, 500, 600]);
+    expect(faces.map((item) => item.min)).toEqual([400, 430, 600]);
     expect(matchFontWeight(430, faces)?.min).toBe(430);
-    expect(matchFontWeight(500, faces)?.min).toBe(500);
+    expect(matchFontWeight(500, faces)?.min).toBe(430);
     expect(matchFontWeight(600, faces)?.min).toBe(600);
-    expect(css).toContain('local("Microsoft YaHei Bold")');
+    expect(faceSrc(css, "Backchat YaHei", 400)).toContain('local("Microsoft YaHei Regular")');
+    expect(faceSrc(css, "Backchat YaHei", 430)).toContain('local("Microsoft YaHei Regular")');
+    expect(faceSrc(css, "Backchat YaHei", 430)).not.toContain("Bold");
+    expect(faceSrc(css, "Backchat YaHei", 500)).toBeNull();
+    expect(faceSrc(css, "Backchat YaHei", 600)).toContain('local("Microsoft YaHei Bold")');
+  });
+
+  it("requests 400 on macOS so a missed PingFang local() stays Regular", () => {
+    const mapped = declaredWeightFaces(css, "Backchat PingFang");
+    expect(mapped.map((item) => item.min)).toEqual([400, 430, 500, 600]);
+    expect(matchFontWeight(430, mapped)?.min).toBe(430);
+    const unmapped = [100, 200, 300, 400, 500, 600].map(face);
+    expect(matchFontWeight(400, unmapped)?.min).toBe(400);
+    expect(matchFontWeight(430, unmapped)?.min).toBe(500);
+    const mac = css.slice(css.indexOf('html[data-os="mac"] {'), css.indexOf("/* Chat prose"));
+    expect(mac).toContain("--font-ui-weight: 400;");
+    expect(mac).toContain('font-variation-settings: "wght" 430;');
+    expect(css).toContain('html[data-os="mac"] :is(');
+    expect(css).toContain("font-variation-settings: normal;");
   });
 
   it("lets the variable Latin face draw 430 and 600", () => {

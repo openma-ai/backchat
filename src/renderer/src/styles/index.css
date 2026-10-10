@@ -1653,10 +1653,13 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   /* Codex desktop uses 430 for resting UI text. SF, Segoe UI Variable,
      and the bundled Noto Sans axis can draw it. CJK families below also
      publish an explicit 430 face that points at Regular, so 430 does not
-     climb to Medium. */
+     climb to Medium while those faces load. macOS requests 400 instead
+     (see html[data-os="mac"]): PingFang SC's 400 face is Regular, and a
+     430 request would select Medium if the local() names miss. */
   --font-ui-weight: 430;
-  /* Selected text is 600. Medium stays 500, and each CJK family publishes
-     a 500 face so that request cannot fall through to Regular. */
+  /* Selected text is 600. Medium stays 500. Linux Noto Sans SC and macOS
+     PingFang publish a 500 face. Windows YaHei has no 500, so that request
+     stays on Regular; only 600 uses YaHei Bold. */
   --font-weight-emphasis: 600;
 
   /* ---------- Theme-derived product semantics ----------
@@ -1933,8 +1936,13 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
    so resting Chinese would paint Medium while SF draws 430. An explicit
    430 face uses the Regular file. 500 is its own face (Medium), and 600
    is Semibold. Without the 500 face, font-medium collapses to Regular.
-   local() names are the English full name and the PostScript name. This
-   Linux checkout cannot draw PingFang, so the names are not verified here. */
+   local() names are the English full name and the PostScript name, the
+   same pattern for Regular, Medium, and Semibold. This Linux checkout
+   cannot draw PingFang, so the names are not verified here. If the
+   Regular names miss, the Medium and Semibold names miss with them and
+   the family is skipped. macOS then asks for 400, which is Regular on
+   raw PingFang SC. A 430 request would be Medium; resting text does not
+   make that request. */
 @font-face {
   font-family: "Backchat PingFang";
   font-style: normal;
@@ -1963,8 +1971,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   font-display: swap;
   src: local("PingFang SC Semibold"), local("PingFangSC-Semibold");
 }
-/* YaHei has Regular and Bold, and no 500. 500 and 600 both use Bold so
-   neither emphasis step paints Regular. */
+/* YaHei has Regular and Bold, and no 500. 400 and 430 use Regular.
+   A 500 request has no face of its own, so CSS Fonts matches the nearest
+   lighter face (the 430 Regular file). That is the same Regular outcome
+   as an unmapped YaHei family, and the usual result when a family has no
+   Medium. Only 600 uses Bold. */
 @font-face {
   font-family: "Backchat YaHei";
   font-style: normal;
@@ -1978,13 +1989,6 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   font-weight: 430;
   font-display: swap;
   src: local("Microsoft YaHei Regular"), local("Microsoft YaHei"), local("MicrosoftYaHei");
-}
-@font-face {
-  font-family: "Backchat YaHei";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: local("Microsoft YaHei Bold"), local("Microsoft YaHei UI Bold"), local("MicrosoftYaHei-Bold");
 }
 @font-face {
   font-family: "Backchat YaHei";
@@ -2216,6 +2220,19 @@ html[data-os="windows"] {
     "Microsoft YaHei UI", ui-monospace, monospace;
 }
 
+/* Resting weight on macOS is 400 so a skipped Backchat PingFang family
+   lands on PingFang SC Regular. `font-weight: 430` would select Medium
+   (CSS Fonts checks 500 before 400). The wght axis keeps variable Latin
+   (SF, and Backchat Sans if it is reached) at 430. Static CJK ignores
+   that axis and uses the requested weight. Heavier elements clear the
+   axis below so their font-weight is the one that draws. */
+html[data-os="mac"] {
+  --font-ui-weight: 400;
+}
+html[data-os="mac"] body {
+  font-variation-settings: "wght" 430;
+}
+
 /* Chat prose uses the same family as the chrome. The alias exists so a
    transcript cannot pick up a nested `font-mono` or a future display face. */
 [data-session-turn-prompt],
@@ -2244,6 +2261,40 @@ html[data-os="windows"] {
   font-synthesis: weight style;
 }
 
+/* The macOS resting axis is inherited. These weights have to follow
+   font-weight instead, on variable Latin and on static CJK. */
+html[data-os="mac"] :is(
+  .font-medium,
+  .font-semibold,
+  .font-bold,
+  .font-extrabold,
+  .font-black,
+  b,
+  strong,
+  .home-hero-title,
+  .app-selected-surface,
+  .sidebar-section-header > button,
+  .slash-command-section-label,
+  .slash-command-token,
+  .session-mention-section-label,
+  .home-suggestion-select-title,
+  .projects-list-header h1,
+  .project-card h2,
+  .project-knowledge :is(h2, h3),
+  .project-speaker,
+  .project-section-heading h2,
+  .project-worker h3,
+  .project-side-heading h2,
+  .project-panel-summary h2,
+  .project-thread-transcript h2,
+  .projects-empty h2,
+  .project-workers-empty h3,
+  .project-worker-group > h3,
+  .project-worker-title
+) {
+  font-variation-settings: normal;
+}
+
 /* Upright-only families (packaged Noto, many Linux faces) need synthesis
    or em / blockquote / an italic tab label paint upright. */
 :is(em, i, cite, dfn, blockquote, .italic) {
@@ -2256,6 +2307,7 @@ html[data-os="windows"] {
 :where(pre, code, kbd, samp) {
   font-family: var(--font-mono);
   font-weight: 400;
+  font-variation-settings: normal;
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "calt" 0;
   text-autospace: no-autospace;
@@ -2829,6 +2881,7 @@ header:not(.app-drag-region) .app-drag-region {
 [data-chat-surface] :is(.chat-markdown, .streaming-md) :is(h1, h2, h3, h4, h5, h6) {
   font-size: var(--type-heading-size);
   font-weight: 600;
+  font-variation-settings: normal;
   line-height: var(--type-heading-leading);
   margin-top: 16px;
   margin-bottom: 6px;
