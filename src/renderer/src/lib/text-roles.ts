@@ -2,11 +2,12 @@
  * Text color roles for the renderer.
  *
  * Theme plugins own the first three rungs (`fg`, `fg-muted`, `fg-subtle`).
- * `fg-disabled` is derived here, not stored on the plugin: a single mix
- * percentage cannot sit below `fg-subtle` on both light and dark canvases
- * and still clear WCAG AA, so each theme gets the weakest sRGB mix of its
- * own foreground into its canvas that still clears AA on the canvas, the
- * sidebar, and the panel.
+ * `fg-disabled` is derived here, not stored on the plugin. Inactive UI is
+ * exempt from WCAG 1.4.3 and 1.4.11. Pushing it to 4.5:1 or 3:1 put it
+ * next to `fg-subtle`, and enabled icons use that role, so a disabled
+ * control looked on. The mix is the weakest ink that still holds 2:1 on
+ * every surface: the glyph stays visible, and it lands well clear of
+ * `fg-subtle`.
  *
  * Surfaces: body copy, secondary labels, hints, and disabled controls live
  * on `--bg`, `--bg-sidebar`, and `--bg-surface`. The user bubble is a
@@ -19,6 +20,14 @@ export type TextRoleName = (typeof TEXT_ROLE_NAMES)[number];
 /** WCAG 2.1 AA for text under 18pt / 14pt bold. */
 export const WCAG_AA_NORMAL_TEXT = 4.5;
 
+/** Inactive components are exempt from 1.4.11. 2:1 keeps the glyph visible
+ *  without sitting on top of the enabled icon color. */
+export const DISABLED_SURFACE_CONTRAST = 2;
+
+/** Resting icon ink (`fg-subtle`) versus disabled ink. Below ~2:1 the two
+ *  grays read as one control state. */
+export const DISABLED_ENABLED_GAP = 2.5;
+
 /** Adjacent roles must stay at least this far apart on the canvas. */
 export const TEXT_ROLE_MIN_GAP = 0.8;
 
@@ -30,7 +39,7 @@ export function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-/** Weakest readable disabled color for one theme. `amount` is the share of `foreground`. */
+/** Weakest legible disabled color for one theme. `amount` is the share of `foreground`. */
 export function disabledForeground(
   foreground: string,
   background: string,
@@ -43,7 +52,7 @@ export function disabledForeground(
     const mid = (low + high) / 2;
     const color = mixSrgb(foreground, background, mid);
     const worst = worstContrast(color, surfaces);
-    if (worst >= WCAG_AA_NORMAL_TEXT) {
+    if (worst >= DISABLED_SURFACE_CONTRAST) {
       chosen = mid;
       high = mid;
     } else {
@@ -54,7 +63,7 @@ export function disabledForeground(
   let amount = chosen;
   let hex = mixSrgb(foreground, background, amount);
   for (let step = 0; step < 40; step += 1) {
-    if (worstContrast(hex, surfaces) >= WCAG_AA_NORMAL_TEXT) return hex;
+    if (worstContrast(hex, surfaces) >= DISABLED_SURFACE_CONTRAST) return hex;
     amount = Math.min(1, amount + 0.004);
     hex = mixSrgb(foreground, background, amount);
   }

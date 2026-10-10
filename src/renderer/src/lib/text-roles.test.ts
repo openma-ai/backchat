@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DISABLED_ENABLED_GAP,
+  DISABLED_SURFACE_CONTRAST,
   TEXT_ROLE_MIN_GAP,
-  WCAG_AA_NORMAL_TEXT,
   contrastRatio,
   disabledForeground,
   mixSrgb,
@@ -34,22 +35,24 @@ describe("text role color math", () => {
     expect(() => mixSrgb("red", "#ffffff", 1)).toThrow(/Unsupported color token/);
   });
 
-  it("derives a disabled color that still clears AA", () => {
+  it("derives a disabled color that stays legible and apart from the icon ink", () => {
+    const subtle = "#5c5c5c";
     const color = disabledForeground("#141414", "#fcfcfc", ["#fcfcfc", "#f3f3f3"]);
-    expect(contrastRatio(color, "#f3f3f3")).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
+    expect(contrastRatio(color, "#f3f3f3")).toBeGreaterThanOrEqual(DISABLED_SURFACE_CONTRAST);
+    expect(contrastRatio(subtle, color)).toBeGreaterThanOrEqual(DISABLED_ENABLED_GAP);
     expect(contrastRatio("#141414", "#fcfcfc")).toBeGreaterThan(
       contrastRatio(color, "#fcfcfc") + TEXT_ROLE_MIN_GAP,
     );
   });
 
-  it("walks the mix upward when rounding drops the binary-search color under AA", () => {
+  it("walks the mix upward when rounding drops the binary-search color under the floor", () => {
     const color = disabledForeground("#767676", "#ffffff", ["#ffffff"]);
-    expect(contrastRatio(color, "#ffffff")).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
+    expect(contrastRatio(color, "#ffffff")).toBeGreaterThanOrEqual(DISABLED_SURFACE_CONTRAST);
   });
 
-  it("returns the strongest mix when no amount clears AA", () => {
-    const color = disabledForeground("#888888", "#808080", ["#ffffff"]);
+  it("returns the strongest mix when no amount clears the legibility floor", () => {
+    const color = disabledForeground("#c8c8c8", "#ffffff", ["#ffffff"]);
     expect(color).toMatch(/^#[0-9a-f]{6}$/);
-    expect(contrastRatio(color, "#ffffff")).toBeLessThan(WCAG_AA_NORMAL_TEXT);
+    expect(contrastRatio(color, "#ffffff")).toBeLessThan(DISABLED_SURFACE_CONTRAST);
   });
 });

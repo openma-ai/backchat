@@ -34,6 +34,14 @@ describe("applyThemeToRoot", () => {
     }
   });
 
+  it("selects Rose Garden Dark as the dark plugin", () => {
+    const target = root();
+    applyThemeToRoot("backchat-light", "rose-garden-dark", "dark", true, target);
+    expect(target.dataset.theme).toBe("rose-garden-dark");
+    expect(target.dataset.themeMode).toBe("dark");
+    expect(target.vars.get("--fg")).toContain("oklch");
+  });
+
   it("keeps the dark foreground ladder where it already cleared AA", () => {
     const theme = backchatDarkTheme;
     const surfaces = TEXT_CONTRAST_SURFACES.map((name) => theme.tokens[name]);
@@ -56,9 +64,19 @@ describe("applyThemeToRoot", () => {
     expect(measured.muted[1]).toBeCloseTo(7.39, 2);
     expect(measured.subtle[0]).toBeCloseTo(5.74, 2);
     expect(measured.subtle[1]).toBeCloseTo(5.46, 2);
-    expect(measured.disabled[0]).toBeCloseTo(4.74, 2);
-    expect(measured.disabled[1]).toBeCloseTo(4.50, 2);
-    expect(disabled).toBe("#85837f");
+    expect(disabled).toBe("#4d4d4a");
+    expect(measured.disabled[0]).toBeCloseTo(2.11, 2);
+    expect(measured.disabled[1]).toBeCloseTo(2.01, 2);
+    expect(contrastRatio(theme.tokens["fg-subtle"], disabled)).toBeCloseTo(2.72, 2);
+    const lightDisabled = disabledForeground(
+      backchatLightTheme.tokens.fg,
+      backchatLightTheme.tokens.bg,
+      TEXT_CONTRAST_SURFACES.map((name) => backchatLightTheme.tokens[name]),
+    );
+    expect(lightDisabled).toBe("#adadad");
+    expect(contrastRatio(backchatLightTheme.tokens["fg-subtle"], lightDisabled)).toBeCloseTo(2.98, 2);
+    expect(contrastRatio(lightDisabled, backchatLightTheme.tokens["bg-surface"])).toBeCloseTo(2.02, 2);
+    expect(contrastRatio(lightDisabled, backchatLightTheme.tokens.bg)).toBeCloseTo(2.19, 2);
     expect(backchatLightTheme.tokens["fg-muted"]).toBe("#454545");
     expect(backchatLightTheme.tokens["fg-subtle"]).toBe("#5c5c5c");
   });

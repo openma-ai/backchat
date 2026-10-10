@@ -2807,6 +2807,11 @@ textarea:disabled::selection {
   line-height: var(--type-body-leading);
 }
 
+[data-chat-surface] .composer-card textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* Placeholders are the weaker text role. A browser default opacity
    would wash them out, so the color is the token and fully opaque. */
 ::placeholder {
@@ -2814,9 +2819,10 @@ textarea:disabled::selection {
   opacity: 1;
 }
 
-/* Disabled controls keep their fill and use the AA disabled text role.
-   Opacity washes the glyph below the role's contrast (about 2.5:1 on
-   the panel). Switches and checkboxes draw their own disabled chrome. */
+/* Disabled controls keep their fill. Inactive ink is a 2:1 glyph floor,
+   not 3:1 or 4.5:1 — those sat on `fg-subtle`, so disabled icons looked
+   enabled. Opacity would wash the glyph out. Switches and checkboxes draw
+   their own disabled chrome. */
 :is(
   button,
   input,

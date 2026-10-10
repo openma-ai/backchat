@@ -11,6 +11,8 @@ import {
   type ThemePlugin,
 } from "@/lib/theme-plugin";
 import {
+  DISABLED_ENABLED_GAP,
+  DISABLED_SURFACE_CONTRAST,
   TEXT_CONTRAST_SURFACES,
   TEXT_ROLE_MIN_GAP,
   WCAG_AA_NORMAL_TEXT,
@@ -128,6 +130,7 @@ describe("renderer typography contract", () => {
     expect(css).toContain("--type-code-leading: 22px;");
     expect(css).toContain('html[lang|="zh"]');
     expect(css).toContain("text-autospace: no-autospace;");
+    expect(css).toContain("[data-chat-surface] .composer-card textarea:focus-visible");
     expect(css).toContain("color: var(--fg-disabled);");
     expect(css).toContain("opacity: 1;");
     expect(css).toContain("color: var(--fg-subtle);");
@@ -219,12 +222,17 @@ describe("renderer typography contract", () => {
       for (const surfaceName of TEXT_CONTRAST_SURFACES) {
         const surface = theme.tokens[surfaceName]!;
         for (const [role, color] of Object.entries(roles)) {
+          const floor = role === "fg-disabled" ? DISABLED_SURFACE_CONTRAST : WCAG_AA_NORMAL_TEXT;
           expect(
             contrastRatio(color, surface),
             `${theme.id} ${role} on ${surfaceName}`,
-          ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
+          ).toBeGreaterThanOrEqual(floor);
         }
       }
+      expect(
+        contrastRatio(roles["fg-subtle"], roles["fg-disabled"]),
+        `${theme.id} subtle vs disabled`,
+      ).toBeGreaterThanOrEqual(DISABLED_ENABLED_GAP);
       const onCanvas = {
         fg: contrastRatio(roles.fg, theme.tokens.bg!),
         muted: contrastRatio(roles["fg-muted"], theme.tokens.bg!),
