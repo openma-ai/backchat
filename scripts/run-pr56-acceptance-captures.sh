@@ -6,7 +6,7 @@ ACCEPT_ROOT="${PR56_ACCEPTANCE_ROOT:-/opt/cursor/artifacts/pr56-acceptance}"
 
 mkdir -p "$ACCEPT_ROOT"
 
-if [[ ! -d "$MAIN_WORKTREE/.git" ]]; then
+if [[ ! -e "$MAIN_WORKTREE/.git" ]] && [[ ! -f "$MAIN_WORKTREE/.git" ]]; then
   git -C "$ROOT" worktree add "$MAIN_WORKTREE" origin/main
 fi
 
