@@ -229,6 +229,20 @@ export function GroupedCommandMenu({
         </Fragment>
       );
     }
+    if (bareListGroupItems && group.heading) {
+      return (
+        <Fragment key={key}>
+          {group.separatorBefore ? <CommandSeparator /> : null}
+          <div
+            data-grouped-command-group-heading=""
+            className="text-xs font-medium text-muted-foreground pt-1.5 pb-1 pe-[var(--grouped-command-padding-inline)] ps-[length:calc(var(--grouped-command-padding-inline)+var(--grouped-command-icon-track)+var(--grouped-command-column-gap))]"
+          >
+            {group.heading}
+          </div>
+          <CommandGroup className="!p-0">{items}</CommandGroup>
+        </Fragment>
+      );
+    }
     return (
       <Fragment key={key}>
         {group.separatorBefore ? <CommandSeparator /> : null}

@@ -63,6 +63,11 @@ function measureProjectPickerSingleGrid(panel: import("@playwright/test").Locato
     const scope = popover;
     const popoverLeft = popover.getBoundingClientRect().left;
     const rel = (value: number) => Math.round(value - popoverLeft);
+    const textContentLeft = (el: HTMLElement) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return range.getBoundingClientRect().left;
+    };
 
     const rows: ProjectPickerGridRow[] = [];
     const searchWrap = scope.querySelector(
@@ -72,23 +77,38 @@ function measureProjectPickerSingleGrid(panel: import("@playwright/test").Locato
     const searchInput = scope.querySelector(
       '[data-slot="command-input"]',
     ) as HTMLElement | null;
-    if (searchIcon && searchInput) {
-      const iconRect = searchIcon.getBoundingClientRect();
+    if (searchWrap && searchIcon && searchInput) {
+      const trackRect = searchIcon.getBoundingClientRect();
       rows.push({
         id: "search",
-        iconLeft: rel(iconRect.left),
+        iconLeft: rel(trackRect.left),
         textLeft: rel(searchInput.getBoundingClientRect().left),
-        iconWidth: Math.round(iconRect.width),
+        iconWidth: Math.round(trackRect.width),
+      });
+    }
+
+    for (const heading of Array.from(
+      scope.querySelectorAll(
+        "[data-grouped-command-group-heading], [cmdk-group-heading]",
+      ),
+    ) as HTMLElement[]) {
+      const headingText = (heading.textContent ?? "").replace(/\s+/g, " ").trim();
+      rows.push({
+        id: `heading:${headingText.slice(0, 24)}`,
+        iconLeft: rel(heading.getBoundingClientRect().left),
+        textLeft: rel(textContentLeft(heading)),
+        iconWidth: 0,
       });
     }
 
     for (const item of Array.from(
       scope.querySelectorAll('[data-slot="command-item"]'),
     ) as HTMLElement[]) {
+      const iconSlot = item.querySelector(
+        '[data-grouped-command-grid="icon"]',
+      ) as HTMLElement | null;
       const icon =
-        (item.querySelector(
-          '[data-grouped-command-grid="icon"] svg',
-        ) as SVGElement | null) ??
+        (iconSlot?.querySelector("svg") as SVGElement | null) ??
         (item.querySelector("svg") as SVGElement | null);
       const label =
         (item.querySelector(
@@ -104,7 +124,7 @@ function measureProjectPickerSingleGrid(panel: import("@playwright/test").Locato
             !node.closest('[data-grouped-command-grid="icon"]'),
         ) as HTMLElement | undefined);
       if (!icon || !label) continue;
-      const iconRect = icon.getBoundingClientRect();
+      const iconRect = (iconSlot ?? icon).getBoundingClientRect();
       const text = (item.textContent ?? "").replace(/\s+/g, " ").trim();
       rows.push({
         id: text.slice(0, 32),
@@ -228,10 +248,12 @@ test("project picker single grid (search + all rows)", async ({ page, home }) =>
     );
   }
 
-  expect(metrics.rows.length).toBeGreaterThanOrEqual(5);
-  expect(metrics.iconLeftMax - metrics.iconLeftMin).toBe(0);
+  expect(metrics.rows.length).toBeGreaterThanOrEqual(6);
+  const iconRows = metrics.rows.filter((row) => !row.id.startsWith("heading:"));
+  const iconLefts = iconRows.map((row) => row.iconLeft);
+  expect(Math.max(...iconLefts) - Math.min(...iconLefts)).toBe(0);
   expect(metrics.textLeftMax - metrics.textLeftMin).toBe(0);
-  const widths = metrics.rows.map((row) => row.iconWidth);
+  const widths = iconRows.map((row) => row.iconWidth).filter((w) => w > 0);
   expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2);
 });
 

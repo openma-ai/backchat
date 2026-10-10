@@ -2390,8 +2390,14 @@ body,
 
 .grouped-command-menu [data-slot="command-input-wrapper"] > svg {
   grid-column: 1;
-  justify-self: center;
+  box-sizing: border-box;
+  justify-self: start;
   align-self: center;
+  width: var(--grouped-command-icon-track) !important;
+  height: var(--grouped-command-icon-track) !important;
+  max-width: var(--grouped-command-icon-track) !important;
+  max-height: var(--grouped-command-icon-track) !important;
+  padding: 1px;
 }
 
 .grouped-command-menu [data-slot="command-input"] {
@@ -2464,10 +2470,11 @@ body,
 }
 
 .grouped-command-menu [cmdk-group-heading] {
-  padding-inline: calc(
+  padding-inline-start: calc(
     var(--grouped-command-padding-inline) + var(--grouped-command-icon-track) +
       var(--grouped-command-column-gap)
-  );
+  ) !important;
+  padding-inline-end: var(--grouped-command-padding-inline) !important;
   padding-block: 6px 4px;
 }
 
@@ -2495,12 +2502,6 @@ body,
   flex-shrink: 0;
 }
 
-.grouped-command-menu [data-slot="command-input-wrapper"] > svg {
-  width: 14px !important;
-  height: 14px !important;
-  max-width: 14px !important;
-  max-height: 14px !important;
-}
 
 .grouped-command-menu [data-grouped-command-grid="icon"] {
   grid-column: 1;
@@ -2594,11 +2595,16 @@ body,
 
 [data-composer-select-menu-mode="project-picker"] [data-slot="command-group"],
 [data-composer-select-menu-mode="workspace-picker"] [data-slot="command-group"] {
-  padding: 0;
+  padding: 0 !important;
 }
 
 [data-composer-select-menu-mode="project-picker"] [cmdk-group-heading],
 [data-composer-select-menu-mode="workspace-picker"] [cmdk-group-heading] {
+  padding-inline-start: calc(
+    var(--grouped-command-padding-inline) + var(--grouped-command-icon-track) +
+      var(--grouped-command-column-gap)
+  ) !important;
+  padding-inline-end: var(--grouped-command-padding-inline) !important;
   padding-block: 0.375rem !important;
   line-height: 1rem;
 }

@@ -201,6 +201,7 @@ export function ProjectChipRow({
                             <>
                               <GroupedCommandMenuIconSlot>
                                 <ProjectIcon
+                                  className="!size-3.5"
                                   identity={`project:${project.id}`}
                                   sourceFolders={project.source_folders}
                                   primaryRoot={project.primary_folder}
