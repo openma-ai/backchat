@@ -44,23 +44,30 @@ const SECTION_LABELS: Record<SettingsTab["section"], TranslationKey> = {
   archived: "settings.archived",
 };
 
+const SETTINGS_PANEL_LOADERS = [
+  () => import("./Activity"),
+  () => import("./Agents"),
+  () => import("./Appearance"),
+  () => import("./Archive"),
+  () => import("./Browser"),
+  () => import("./McpServers"),
+  () => import("./OpenMA"),
+  () => import("./About"),
+];
+
 export function SettingsLayout() {
-  const { pathname } = useLocation();
-  const [readyPath, setReadyPath] = useState<string | null>(null);
+  // Warm every panel as soon as settings opens. React.lazy suspends the
+  // outlet the first time each chunk is missing, which replaces the whole
+  // page (title included) with the loading skeleton. Loading them together
+  // means a later tab switch does not do that again.
   useEffect(() => {
-    // Commit the navigation/sidebar and paint its skeleton before mounting
-    // potentially expensive settings panels, including cached activity charts.
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => setReadyPath(pathname));
-    });
-    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
-  }, [pathname]);
+    for (const load of SETTINGS_PANEL_LOADERS) void load();
+  }, []);
   return (
     <ContentPage>
-      {readyPath === pathname ? (
-        <Suspense fallback={<SettingsLoadingPanel />}><Outlet /></Suspense>
-      ) : <SettingsLoadingPanel />}
+      <Suspense fallback={<SettingsLoadingPanel />}>
+        <Outlet />
+      </Suspense>
     </ContentPage>
   );
 }

@@ -238,7 +238,14 @@ describe("settings surfaces render the shared box and row", () => {
     harness.pathname = "/settings/openma";
     harness.projects = [];
     const idle = await mount(<SettingsLayout />);
-    expect(idle.host.innerHTML).toContain("app-composer-surface");
+    expect(idle.host.querySelector("[data-outlet='true']")).not.toBeNull();
+    expect(idle.host.querySelector("[data-settings-loading]")).toBeNull();
+    harness.pathname = "/settings/browser";
+    await act(async () => {
+      idle.root.render(<SettingsLayout />);
+    });
+    expect(idle.host.querySelector("[data-settings-loading]")).toBeNull();
+    expect(idle.host.querySelector("[data-outlet='true']")).not.toBeNull();
     await act(async () => idle.root.unmount());
   });
 
