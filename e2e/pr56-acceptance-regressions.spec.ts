@@ -49,20 +49,24 @@ test("sidebar row hover wash is inset from the rail edge", async ({ page }) => {
   expect(insetLeft).toBeLessThanOrEqual(16);
 });
 
-test("new chat row hover spans the icon column", async ({ page }) => {
+test("new chat row hover spans the icon column but not trailing actions", async ({
+  page,
+}) => {
   await enableAgent(page, "codex-acp");
   const row = page.locator(".sidebar-host-chrome .sidebar-grid-row").first();
   await row.hover();
-  const iconAlpha = await row.locator('[data-sidebar-grid="icon"]').evaluate((el) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1;
-    canvas.height = 1;
-    const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = getComputedStyle(el.closest(".sidebar-grid-row")!).backgroundColor;
-    ctx.fillRect(0, 0, 1, 1);
-    return ctx.getImageData(0, 0, 1, 1).data[3];
-  });
-  expect(iconAlpha).toBeGreaterThan(0);
+  const readBgAlpha = async (selector: string) =>
+    row.locator(selector).evaluate((el) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = getComputedStyle(el).backgroundColor;
+      ctx.fillRect(0, 0, 1, 1);
+      return ctx.getImageData(0, 0, 1, 1).data[3];
+    });
+  expect(await readBgAlpha('[data-sidebar-grid="icon"]')).toBeGreaterThan(0);
+  expect(await readBgAlpha('[data-sidebar-grid="trailing"] button')).toBe(0);
   const height = (await row.boundingBox())!.height;
   expect(height).toBeGreaterThanOrEqual(27);
   expect(height).toBeLessThanOrEqual(29);
@@ -79,7 +83,29 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     await page.getByTestId("new-chat-button").click();
     await openRuntimeLocationPicker(page);
     const panel = hostPickerPanel(page);
-    await expect(panel.locator('[data-slot="command-separator"]')).toHaveCount(2);
+    await expect(panel.locator('[data-slot="command-separator"]')).toHaveCount(1);
+    const commandRoot = panel.locator("[data-slot='command']");
+    const padding = await commandRoot.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        top: parseFloat(style.paddingTop),
+        bottom: parseFloat(style.paddingBottom),
+      };
+    });
+    expect(padding.top).toBeGreaterThanOrEqual(4.5);
+    expect(padding.top).toBeLessThanOrEqual(5.5);
+    expect(padding.bottom).toBe(padding.top);
+    const manage = panel.getByRole("option", { name: /Manage OpenMA|管理 OpenMA/i });
+    const separatorsBeforeManage = await manage.evaluate((el) => {
+      let node = el.previousElementSibling;
+      let count = 0;
+      while (node) {
+        if (node.getAttribute("data-slot") === "command-separator") count += 1;
+        node = node.previousElementSibling;
+      }
+      return count;
+    });
+    expect(separatorsBeforeManage).toBe(0);
   } finally {
     await mock.close();
   }
@@ -134,4 +160,15 @@ test("model picker search hides empty provider headings", async ({ page }) => {
   await expect(panel.getByRole("option", { name: /devin model 1/ })).toBeVisible({
     timeout: 10_000,
   });
+});
+
+test("project picker search keeps cmdk best-match order for re", async ({ page }) => {
+  await enableAgent(page, "codex-acp");
+  await page.getByTestId("new-chat-button").click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+  const panel = page.getByTestId("composer-project-picker-panel");
+  const search = panel.locator('input[type="search"], input[cmdk-input]');
+  await search.fill("re");
+  const firstOption = panel.locator('[cmdk-item]:not([aria-disabled="true"])').first();
+  await expect(firstOption).toContainText(/No project|无项目/i);
 });

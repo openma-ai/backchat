@@ -2604,6 +2604,14 @@ body,
   justify-content: center;
 }
 
+/* Hide provider headings when cmdk filtered every item in the group (ranking stays cmdk-owned). */
+.grouped-command-menu
+  [data-grouped-command-group-heading]:not(
+    :has(+ [data-slot="command-group"] [cmdk-item]:not([aria-disabled="true"]))
+  ) {
+  display: none;
+}
+
 .grouped-command-menu[data-composer-select-menu-mode="host-picker"] {
   width: 100%;
 }
@@ -2708,12 +2716,6 @@ body,
 
 .sidebar-navigation .sidebar-grid-row.app-selected-surface {
   background: var(--surface-selected);
-}
-
-.sidebar-navigation
-  .sidebar-host-chrome
-  > .sidebar-grid-row:is(:hover, [data-state="open"]) {
-  background: var(--control-bg-hover);
 }
 
 @keyframes shimmer-text-sweep {

@@ -8,7 +8,6 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { filterGroupedCommandMenuGroups } from "@/components/ui/grouped-command-menu-visible-groups";
 import { useGroupedCommandRovingHighlight } from "@/components/ui/use-grouped-command-roving-highlight";
 import {
   Command,
@@ -45,6 +44,11 @@ export type GroupedCommandMenuGroup = {
   separatorBefore?: boolean;
   items: readonly GroupedCommandMenuItem[];
 };
+
+/** cmdk owns filter + best-match ranking for every mode (project order uses indexed values). */
+export function groupedCommandMenuShouldFilter(_menuMode?: string): boolean {
+  return true;
+}
 
 export const groupedCommandMenuPresets = {
   footer: {
@@ -184,18 +188,12 @@ export function GroupedCommandMenu({
     };
   }, [menuResetKey, showSearch]);
 
-  /** cmdk re-sorts by item `value`; project picker must keep `listProjects` order. */
-  const preserveItemOrder = menuMode === "project-picker";
+  const shouldFilter = groupedCommandMenuShouldFilter(menuMode);
 
   useEffect(() => {
     setCommandValue(effectiveHighlightValue);
     setSearchQuery("");
   }, [effectiveHighlightValue, menuResetKey]);
-
-  const visibleGroups = useMemo(
-    () => filterGroupedCommandMenuGroups(groups, searchQuery),
-    [groups, searchQuery],
-  );
 
   const panelStyle = {
     ["--grouped-command-list-height" as string]: `${listHeightPx}px`,
@@ -300,7 +298,7 @@ export function GroupedCommandMenu({
         loop
         value={commandValue}
         onValueChange={setCommandValue}
-        shouldFilter={false}
+        shouldFilter={shouldFilter}
         className={cn(
           "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
           shrinkToContent ? "h-auto flex-none" : "flex-1",
@@ -323,7 +321,7 @@ export function GroupedCommandMenu({
           <CommandList
             className={cn(
               menuMode === "host-picker"
-                ? "max-h-none overflow-visible scroll-py-1 p-0 outline-none"
+                ? "max-h-none overflow-visible scroll-py-0 p-0 outline-none"
                 : menuMode === "project-picker" || menuMode === "workspace-picker"
                   ? "no-scrollbar max-h-72 overflow-x-hidden overflow-y-auto scroll-py-1 p-0 outline-none"
                   : "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
@@ -337,7 +335,7 @@ export function GroupedCommandMenu({
             {listHeader && listHeaderSeparator && groups.length > 0 ? (
               <CommandSeparator />
             ) : null}
-            {visibleGroups.map(renderGroup)}
+            {groups.map(renderGroup)}
           </CommandList>
         ) : (
           <ScrollArea
@@ -355,7 +353,7 @@ export function GroupedCommandMenu({
               {listHeader && listHeaderSeparator && groups.length > 0 ? (
                 <CommandSeparator />
               ) : null}
-              {visibleGroups.map(renderGroup)}
+              {groups.map(renderGroup)}
             </CommandList>
           </ScrollArea>
         )}

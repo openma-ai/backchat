@@ -26,4 +26,13 @@ describe("grouped command menu styles", () => {
     expect(block).toContain("height: auto");
     expect(block).not.toContain("min-height: var(--grouped-command-list-height)");
   });
+
+  it("hides empty provider headings without removing items from the cmdk list", () => {
+    const styles = readFileSync(
+      resolve(__dirname, "../../styles/index.css"),
+      "utf8",
+    );
+    expect(styles).toContain("[data-grouped-command-group-heading]:not(");
+    expect(styles).toContain('[cmdk-item]:not([aria-disabled="true"])');
+  });
 });

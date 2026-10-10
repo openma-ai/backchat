@@ -236,7 +236,9 @@ export function RuntimeLocationControl({
     }
     if (tailItems.length > 0) {
       result.push({
-        separatorBefore: locationItems.length > 0 || accountItems.length > 0,
+        // One separator after the account row only (location block or tail, never both).
+        separatorBefore:
+          accountItems.length > 0 && locationItems.length === 0,
         items: tailItems,
       });
     }
@@ -281,7 +283,7 @@ export function RuntimeLocationControl({
       listClassName="host-picker-command-list"
       panelClassName="host-picker-panel flex h-auto w-full flex-col overflow-visible"
       listHeightPx={HOST_PICKER_LIST_MAX_HEIGHT_PX}
-      commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
+      commandClassName="rounded-xl! bg-popover p-[5px]! text-popover-foreground shadow-none ring-0"
       groups={groups}
     />
   );

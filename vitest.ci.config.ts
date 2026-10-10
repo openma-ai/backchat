@@ -84,6 +84,7 @@ export default defineConfig({
       "src/renderer/src/components/RouteErrorFallback.test.tsx",
       "src/renderer/src/components/ui/ShimmerText.test.tsx",
       "src/renderer/src/components/ui/grouped-command-menu-visible-groups.test.ts",
+      "src/renderer/src/components/ui/grouped-command-menu-filter-policy.test.ts",
       "src/main/renderer-crash-log.test.ts",
       "src/main/renderer-crash-ipc.contract.test.ts",
       "src/shared/auth-errors.test.ts",
