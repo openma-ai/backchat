@@ -10,7 +10,11 @@ import {
   injectSession,
   launchApp,
 } from "./helpers";
-import { ensurePr56AcceptanceDir, pr56ShotPath } from "./pr56-acceptance-path";
+import {
+  ensurePr56AcceptanceDir,
+  pr56AcceptancePhase,
+  pr56ShotPath,
+} from "./pr56-acceptance-path";
 import { TestBridge } from "./test-bridge";
 
 const VIEWPORT = { width: 1400, height: 900 };
@@ -23,6 +27,22 @@ const codexFixture = {
   available: true,
   installed: true,
 };
+
+async function waitForHarnessProbeUi(page: import("@playwright/test").Page): Promise<void> {
+  const probe = page.locator(
+    'textarea[data-composer-harness-probe="true"], [data-composer-harness-probe="true"]',
+  );
+  if (pr56AcceptancePhase() === "after") {
+    await probe.first().waitFor({ state: "visible", timeout: 35_000 });
+    await page.waitForTimeout(300);
+    return;
+  }
+  try {
+    await probe.first().waitFor({ state: "visible", timeout: 8_000 });
+  } catch {
+    await page.waitForTimeout(600);
+  }
+}
 
 async function seedCodexHarness(page: import("@playwright/test").Page): Promise<void> {
   await page.evaluate(async (fixture) => {
@@ -112,10 +132,7 @@ test.describe.serial("PR #56 acceptance bundle", () => {
     try {
       await page.setViewportSize(VIEWPORT);
       await seedCodexHarness(page);
-      await page.waitForSelector('[data-composer-harness-probe="true"]', {
-        timeout: 35_000,
-      });
-      await page.waitForTimeout(300);
+      await waitForHarnessProbeUi(page);
       await page.locator(".composer-stack-card").first().screenshot({
         path: pr56ShotPath("01-harness-probe-en.png"),
       });
@@ -136,10 +153,7 @@ test.describe.serial("PR #56 acceptance bundle", () => {
     try {
       await page.setViewportSize(VIEWPORT);
       await seedCodexHarness(page);
-      await page.waitForSelector('[data-composer-harness-probe="true"]', {
-        timeout: 35_000,
-      });
-      await page.waitForTimeout(300);
+      await waitForHarnessProbeUi(page);
       await page.locator(".composer-stack-card").first().screenshot({
         path: pr56ShotPath("01-harness-probe-zh.png"),
       });
