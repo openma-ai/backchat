@@ -229,12 +229,11 @@ export function GroupedCommandMenu({
         </Fragment>
       );
     }
-    if (bareListGroupItems && group.heading) {
+    if (group.heading) {
       return (
         <Fragment key={key}>
           {group.separatorBefore ? <CommandSeparator /> : null}
-          {/* Main parity: CommandGroup `p-1` vertical inset without horizontal grid drift. */}
-          <div className="px-0 py-1">
+          <div className={bareListGroupItems ? "px-0 py-1" : "px-0"}>
             <div
               data-grouped-command-group-heading=""
               className="text-xs font-medium text-muted-foreground py-1.5 pe-[var(--grouped-command-padding-inline)] ps-[length:calc(var(--grouped-command-padding-inline)+var(--grouped-command-icon-track)+var(--grouped-command-column-gap))]"
@@ -249,7 +248,7 @@ export function GroupedCommandMenu({
     return (
       <Fragment key={key}>
         {group.separatorBefore ? <CommandSeparator /> : null}
-        <CommandGroup heading={group.heading}>{items}</CommandGroup>
+        <CommandGroup>{items}</CommandGroup>
       </Fragment>
     );
   };

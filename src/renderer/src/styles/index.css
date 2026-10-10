@@ -2542,6 +2542,15 @@ body,
   width: 100%;
 }
 
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  [data-slot="command-group"],
+.grouped-command-menu[data-composer-select-menu-mode="grouped-command-field"]
+  [data-slot="command-group"],
+.grouped-command-menu[data-composer-select-menu-mode="grouped-command"]
+  [data-slot="command-group"] {
+  padding: 0 !important;
+}
+
 /* Host picker: scroll the dropdown shell like main (`max-h-[60vh] overflow-y-auto`), not inner ~288px cap. */
 .grouped-command-menu[data-composer-select-menu-mode="host-picker"]
   .grouped-command-menu-scroll,

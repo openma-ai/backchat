@@ -1,10 +1,19 @@
-import { execFile as execFileCallback } from "node:child_process";
-import { mkdir as fsMkdir, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
-import sharp from "sharp";
 import { expect, test } from "./fixtures";
+import {
+  assertGroupedCommandGridAligned,
+  captureGroupedMenuGridEvidence,
+  measureGroupedCommandMenuGrid,
+} from "./grouped-command-menu-grid";
+import {
+  seedProjectPickerGridFixture,
+  seedWorkspacePickerFixture,
+} from "./grouped-command-menu-fit.shared";
 import { enableAgent, injectEvent, injectSession } from "./helpers";
+import { execFile as execFileCallback } from "node:child_process";
+import { mkdir as fsMkdir } from "node:fs/promises";
+import { promisify } from "node:util";
 
 const execFile = promisify(execFileCallback);
 const artifactDir = "/opt/cursor/artifacts/screenshots/grouped-command-menu-fit";
@@ -20,49 +29,6 @@ function manyGroupedModels() {
     })),
   }));
 }
-
-async function seedProjectPickerGridFixture(
-  page: import("@playwright/test").Page,
-  home: string,
-) {
-  const alphaDir = join(home, "picker-grid-alpha");
-  const betaDir = join(home, "picker-grid-beta");
-  await fsMkdir(alphaDir, { recursive: true });
-  await fsMkdir(betaDir, { recursive: true });
-  await page.evaluate(async ({ alphaDir, betaDir }) => {
-    localStorage.setItem("backchat:workspace-intro-seen:v1", "1");
-    const pinIcon = (projectId: string, glyph: string, color: string) => {
-      localStorage.setItem(
-        `backchat.project-icon.v1:project:${projectId}`,
-        JSON.stringify({ kind: "icon", glyph, color }),
-      );
-    };
-    pinIcon("picker-grid-a", "chat", "#7c3aed");
-    pinIcon("picker-grid-b", "cloud", "#2563eb");
-    await window.backchat.projectSave({
-      project_id: "picker-grid-a",
-      name: "Alpha workspace",
-      source_folders: [alphaDir],
-      primary_folder: alphaDir,
-    });
-    const beta = {
-      project_id: "picker-grid-b",
-      name: "Beta monorepo",
-      source_folders: [betaDir],
-      primary_folder: betaDir,
-    };
-    await window.backchat.projectSave(beta);
-    await window.backchat.projectSave(beta);
-  }, { alphaDir, betaDir });
-  await page.reload();
-}
-
-type ProjectPickerGridRow = {
-  id: string;
-  iconLeft: number;
-  textLeft: number;
-  iconWidth: number;
-};
 
 type ProjectPickerChromeMetrics = {
   popoverHeight: number;
@@ -148,138 +114,6 @@ function measureProjectPickerChrome(panel: import("@playwright/test").Locator) {
   });
 }
 
-function measureProjectPickerSingleGrid(panel: import("@playwright/test").Locator) {
-  return panel.evaluate((rootEl) => {
-    const popover = (rootEl.closest("[data-slot='popover-content']") ??
-      rootEl.querySelector("[data-slot='popover-content']") ??
-      rootEl) as HTMLElement;
-    const scope = popover;
-    const popoverLeft = popover.getBoundingClientRect().left;
-    const rel = (value: number) => Math.round(value - popoverLeft);
-    const textContentLeft = (el: HTMLElement) => {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      return range.getBoundingClientRect().left;
-    };
-
-    const rows: ProjectPickerGridRow[] = [];
-    const searchWrap = scope.querySelector(
-      '[data-slot="command-input-wrapper"]',
-    ) as HTMLElement | null;
-    const searchIcon = searchWrap?.querySelector("svg") as SVGElement | null;
-    const searchInput = scope.querySelector(
-      '[data-slot="command-input"]',
-    ) as HTMLElement | null;
-    if (searchWrap && searchIcon && searchInput) {
-      const trackRect = searchIcon.getBoundingClientRect();
-      rows.push({
-        id: "search",
-        iconLeft: rel(trackRect.left),
-        textLeft: rel(searchInput.getBoundingClientRect().left),
-        iconWidth: Math.round(trackRect.width),
-      });
-    }
-
-    for (const heading of Array.from(
-      scope.querySelectorAll(
-        "[data-grouped-command-group-heading], [cmdk-group-heading]",
-      ),
-    ) as HTMLElement[]) {
-      const headingText = (heading.textContent ?? "").replace(/\s+/g, " ").trim();
-      rows.push({
-        id: `heading:${headingText.slice(0, 24)}`,
-        iconLeft: rel(heading.getBoundingClientRect().left),
-        textLeft: rel(textContentLeft(heading)),
-        iconWidth: 0,
-      });
-    }
-
-    for (const item of Array.from(
-      scope.querySelectorAll('[data-slot="command-item"]'),
-    ) as HTMLElement[]) {
-      const iconSlot = item.querySelector(
-        '[data-grouped-command-grid="icon"]',
-      ) as HTMLElement | null;
-      const icon =
-        (iconSlot?.querySelector("svg") as SVGElement | null) ??
-        (item.querySelector("svg") as SVGElement | null);
-      const label =
-        (item.querySelector(
-          '[data-grouped-command-grid="label"] span',
-        ) as HTMLElement | null) ??
-        (item.querySelector("span.truncate") as HTMLElement | null) ??
-        (item.querySelector(
-          '[data-grouped-command-grid="label"]',
-        ) as HTMLElement | null) ??
-        (Array.from(item.querySelectorAll("span")).find(
-          (node) =>
-            !node.classList.contains("app-select-selected") &&
-            !node.closest('[data-grouped-command-grid="icon"]'),
-        ) as HTMLElement | undefined);
-      if (!icon || !label) continue;
-      const iconRect = (iconSlot ?? icon).getBoundingClientRect();
-      const text = (item.textContent ?? "").replace(/\s+/g, " ").trim();
-      rows.push({
-        id: text.slice(0, 32),
-        iconLeft: rel(iconRect.left),
-        textLeft: rel(label.getBoundingClientRect().left),
-        iconWidth: Math.round(iconRect.width),
-      });
-    }
-
-    const iconLefts = rows.map((row) => row.iconLeft);
-    const textLefts = rows.map((row) => row.textLeft);
-    return {
-      popoverHeight: Math.round(popover.getBoundingClientRect().height),
-      rows,
-      iconLeftMin: Math.min(...iconLefts),
-      iconLeftMax: Math.max(...iconLefts),
-      textLeftMin: Math.min(...textLefts),
-      textLeftMax: Math.max(...textLefts),
-    };
-  });
-}
-
-async function burnProjectPickerGridLines(
-  png: Buffer,
-  iconLeft: number,
-  textLeft: number,
-): Promise<Buffer> {
-  const image = sharp(png);
-  const meta = await image.metadata();
-  const width = meta.width ?? 0;
-  const height = meta.height ?? 0;
-  const svg = Buffer.from(
-    `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <line x1="${iconLeft + 0.5}" y1="0" x2="${iconLeft + 0.5}" y2="${height}" stroke="#ef4444" stroke-width="3"/>
-      <line x1="${textLeft + 0.5}" y1="0" x2="${textLeft + 0.5}" y2="${height}" stroke="#2563eb" stroke-width="3"/>
-    </svg>`,
-  );
-  return image.composite([{ input: svg, top: 0, left: 0 }]).png().toBuffer();
-}
-
-async function screenshotProjectPickerGridReference(
-  page: import("@playwright/test").Page,
-  panel: import("@playwright/test").Locator,
-  grid: {
-    rows: ProjectPickerGridRow[];
-    iconLeftMin: number;
-    textLeftMin: number;
-  },
-  path: string,
-): Promise<void> {
-  const iconRows = grid.rows.filter((row) => !row.id.startsWith("heading:"));
-  const iconLeft = Math.min(...iconRows.map((row) => row.iconLeft));
-  const textLeft = grid.textLeftMin;
-  const shotTarget =
-    (await panel.getAttribute("data-testid")) === "composer-project-picker-panel"
-      ? panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]")
-      : panel;
-  const png = await shotTarget.screenshot({ animations: "disabled" });
-  const burned = await burnProjectPickerGridLines(png, iconLeft, textLeft);
-  await writeFile(path, burned);
-}
-
 test("project picker single grid (search + all rows)", async ({ page, home }) => {
   test.setTimeout(120_000);
   await seedProjectPickerGridFixture(page, home);
@@ -295,29 +129,24 @@ test("project picker single grid (search + all rows)", async ({ page, home }) =>
     timeout: 10_000,
   });
 
-  const grid = await measureProjectPickerSingleGrid(panel);
+  const grid = await measureGroupedCommandMenuGrid(panel);
   const chrome = await measureProjectPickerChrome(panel);
-  const metrics = { grid, chrome };
 
   const evidenceDir = process.env.PR56_EVIDENCE_DIR;
   const label = process.env.PR56_EVIDENCE_LABEL ?? "project-picker-grid.png";
   if (evidenceDir) {
-    await fsMkdir(evidenceDir, { recursive: true });
-    await screenshotProjectPickerGridReference(page, panel, grid, join(evidenceDir, label));
-    await writeFile(
+    await mkdir(evidenceDir, { recursive: true });
+    await captureGroupedMenuGridEvidence(
+      page,
+      panel,
+      join(evidenceDir, label),
       join(evidenceDir, label.replace(/\.png$/i, ".metrics.json")),
-      `${JSON.stringify(metrics, null, 2)}\n`,
-      "utf8",
+      { chrome },
     );
   }
 
   expect(grid.rows.length).toBeGreaterThanOrEqual(6);
-  const iconRows = grid.rows.filter((row) => !row.id.startsWith("heading:"));
-  const iconLefts = iconRows.map((row) => row.iconLeft);
-  expect(Math.max(...iconLefts) - Math.min(...iconLefts)).toBe(0);
-  expect(grid.textLeftMax - grid.textLeftMin).toBe(0);
-  const widths = iconRows.map((row) => row.iconWidth).filter((w) => w > 0);
-  expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2);
+  assertGroupedCommandGridAligned(grid);
 
   expect(chrome.popoverHeight).toBe(203);
   expect(chrome.separatorTop).toBe(137);
@@ -325,37 +154,6 @@ test("project picker single grid (search + all rows)", async ({ page, home }) =>
   expect(chrome.rowHeights).toEqual([28, 28, 28, 28]);
   expect(chrome.commandHeight).toBe(chrome.popoverHeight);
 });
-
-async function seedWorkspacePickerFixture(
-  page: import("@playwright/test").Page,
-  home: string,
-) {
-  const repo = join(home, "workspace-fit-repo");
-  await fsMkdir(repo, { recursive: true });
-  await execFile("git", ["init", "--initial-branch=main", repo]);
-  await execFile("git", [
-    "-C",
-    repo,
-    "-c",
-    "user.name=Test",
-    "-c",
-    "user.email=test@example.test",
-    "commit",
-    "--allow-empty",
-    "-m",
-    "fixture",
-  ]);
-  await page.evaluate(async (path) => {
-    localStorage.setItem("backchat:workspace-intro-seen:v1", "1");
-    await window.backchat.projectSave({
-      project_id: "workspace-fit-project",
-      name: "Workspace fit",
-      source_folders: [path],
-      primary_folder: path,
-    });
-  }, repo);
-  await page.reload();
-}
 
 test("workspace picker popover matches main chrome", async ({ page, home }) => {
   test.setTimeout(120_000);
