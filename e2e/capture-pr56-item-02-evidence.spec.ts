@@ -4,7 +4,7 @@
  * For host height contrast, also run with PR56_ITEM_02_HOST_BASELINE=pre (cbe629a^).
  */
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir as fsMkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "./fixtures";
@@ -154,28 +154,171 @@ async function screenshotHostDropdown(
   await dropdown.screenshot({ path, animations: "disabled" });
 }
 
-async function scrollHostDropdown(
+/** Match main composer many-host capture (~510px on 1221px scroll range in mock). */
+const HOST_MANY_SCROLL_FRACTION = 510 / 683;
+
+async function scrollHostPickerToFraction(
   page: import("@playwright/test").Page,
-  scrollTop: number,
-  panelTestId:
-    | "composer-host-picker-panel"
-    | "sidebar-host-picker-panel" = "composer-host-picker-panel",
 ): Promise<void> {
-  const panel = page.getByTestId(panelTestId);
-  if (await panel.count()) {
-    const viewport = panel.locator('[data-slot="scroll-area-viewport"]');
-    if (await viewport.count()) {
-      await viewport.evaluate((element, top) => {
-        element.scrollTop = top;
-        element.dispatchEvent(new Event("scroll", { bubbles: true }));
-      }, scrollTop);
-      return;
+  await page.evaluate((fraction) => {
+    const dropdown = document.querySelector(
+      '[data-slot="dropdown-menu-content"][data-state="open"]',
+    ) as HTMLElement | null;
+    if (!dropdown) return;
+    const max = dropdown.scrollHeight - dropdown.clientHeight;
+    dropdown.scrollTop = Math.round(max * fraction);
+    dropdown.dispatchEvent(new Event("scroll", { bubbles: true }));
+  }, HOST_MANY_SCROLL_FRACTION);
+}
+
+async function scrollHostPickerToLabel(
+  page: import("@playwright/test").Page,
+  label: string,
+  panelTestId?:
+    | "composer-host-picker-panel"
+    | "sidebar-host-picker-panel",
+): Promise<void> {
+  await page.evaluate(
+    ({ label, panelTestId }) => {
+      const panel = panelTestId
+        ? document.querySelector(`[data-testid="${panelTestId}"]`)
+        : null;
+      const dropdown = (panel?.closest('[data-slot="dropdown-menu-content"]') ??
+        document.querySelector(
+          '[data-slot="dropdown-menu-content"][data-state="open"]',
+        )) as HTMLElement | null;
+      if (!dropdown) return;
+      const list = panel?.querySelector(
+        '[data-slot="command-list"]',
+      ) as HTMLElement | null;
+      const viewport = panel?.querySelector(
+        '[data-slot="scroll-area-viewport"]',
+      ) as HTMLElement | null;
+      const scroller =
+        (dropdown.scrollHeight > dropdown.clientHeight + 1 ? dropdown : null) ??
+        (list && list.scrollHeight > list.clientHeight + 1 ? list : null) ??
+        (viewport && viewport.scrollHeight > viewport.clientHeight + 1
+          ? viewport
+          : null) ??
+        list ??
+        dropdown;
+      const rowSelector = panel
+        ? '[data-slot="command-item"]'
+        : '[data-slot="dropdown-menu-item"]';
+      const scope = panel ?? dropdown;
+      const target = Array.from(scope.querySelectorAll(rowSelector)).find(
+        (row) => row.textContent?.includes(label),
+      ) as HTMLElement | undefined;
+      if (!target) return;
+      const scrollers = [dropdown, list, viewport].filter(Boolean) as HTMLElement[];
+      for (const node of scrollers) {
+        if (node.scrollHeight <= node.clientHeight + 1) continue;
+        let offset = 0;
+        let walk: HTMLElement | null = target;
+        while (walk && walk !== node) {
+          offset += walk.offsetTop;
+          walk = walk.offsetParent as HTMLElement | null;
+        }
+        if (walk === node) {
+          node.scrollTop = offset;
+          node.dispatchEvent(new Event("scroll", { bubbles: true }));
+          break;
+        }
+      }
+    },
+    { label, panelTestId },
+  );
+}
+
+async function measureHostPickerDom(
+  page: import("@playwright/test").Page,
+  panelTestId?:
+    | "composer-host-picker-panel"
+    | "sidebar-host-picker-panel",
+): Promise<{
+  dropdown: {
+    width: number;
+    height: number;
+    scrollTop: number;
+    clientHeight: number;
+    scrollHeight: number;
+  };
+  scrollerTag: string;
+  rows: Array<{ index: number; top: number; height: number; text: string }>;
+}> {
+  return page.evaluate((panelTestId) => {
+    const panel = panelTestId
+      ? document.querySelector(`[data-testid="${panelTestId}"]`)
+      : null;
+    const dropdown = (panel?.closest('[data-slot="dropdown-menu-content"]') ??
+      document.querySelector(
+        '[data-slot="dropdown-menu-content"][data-state="open"]',
+      )) as HTMLElement | null;
+    if (!dropdown) {
+      return {
+        dropdown: {
+          width: 0,
+          height: 0,
+          scrollTop: 0,
+          clientHeight: 0,
+          scrollHeight: 0,
+        },
+        scrollerTag: "missing",
+        rows: [],
+      };
     }
-  }
-  const dropdown = page.locator('[data-slot="dropdown-menu-content"][data-state="open"]').first();
-  await dropdown.evaluate((element, top) => {
-    element.scrollTop = top;
-  }, scrollTop);
+    const list = panel?.querySelector(
+      '[data-slot="command-list"]',
+    ) as HTMLElement | null;
+    const viewport = panel?.querySelector(
+      '[data-slot="scroll-area-viewport"]',
+    ) as HTMLElement | null;
+    const scroller =
+      (dropdown.scrollHeight > dropdown.clientHeight + 1 ? dropdown : null) ??
+      (list && list.scrollHeight > list.clientHeight + 1 ? list : null) ??
+      (viewport && viewport.scrollHeight > viewport.clientHeight + 1
+        ? viewport
+        : null) ??
+      list ??
+      dropdown;
+    const rowSelector = panel
+      ? '[data-slot="command-item"]'
+      : '[data-slot="dropdown-menu-item"]';
+    const scope = panel ?? dropdown;
+    const rows = Array.from(scope.querySelectorAll(rowSelector)).map(
+      (element, index) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          index,
+          top: Math.round(rect.top),
+          height: Math.round(rect.height),
+          text: (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 72),
+        };
+      },
+    );
+    const dropRect = dropdown.getBoundingClientRect();
+    return {
+      dropdown: {
+        width: Math.round(dropRect.width),
+        height: Math.round(dropRect.height),
+      },
+      scroller: {
+        tag: scroller.getAttribute("data-slot") ?? scroller.tagName,
+        scrollTop: Math.round(scroller.scrollTop),
+        clientHeight: Math.round(scroller.clientHeight),
+        scrollHeight: Math.round(scroller.scrollHeight),
+      },
+      rows,
+    };
+  }, panelTestId);
+}
+
+async function writeHostPickerMetrics(
+  shotPath: string,
+  metrics: Awaited<ReturnType<typeof measureHostPickerDom>>,
+): Promise<void> {
+  const metricsPath = shotPath.replace(/\.png$/i, ".metrics.json");
+  await writeFile(metricsPath, `${JSON.stringify(metrics, null, 2)}\n`, "utf8");
 }
 
 async function signInOpenmaMock(
@@ -197,20 +340,24 @@ async function signInOpenmaMock(
 }
 
 async function seedProjects(page: import("@playwright/test").Page, home: string): Promise<void> {
-  await page.evaluate(async (path) => {
+  const alphaDir = `${home}/pr56-item02-alpha`;
+  const betaDir = `${home}/pr56-item02-beta`;
+  await fsMkdir(alphaDir, { recursive: true });
+  await fsMkdir(betaDir, { recursive: true });
+  await page.evaluate(async ({ alphaDir, betaDir }) => {
     await window.backchat.projectSave({
       project_id: "pr56-item02-a",
       name: "Alpha workspace",
-      source_folders: [path],
-      primary_folder: path,
+      source_folders: [alphaDir],
+      primary_folder: alphaDir,
     });
     await window.backchat.projectSave({
       project_id: "pr56-item02-b",
       name: "Beta monorepo",
-      source_folders: [path],
-      primary_folder: path,
+      source_folders: [betaDir],
+      primary_folder: betaDir,
     });
-  }, home);
+  }, { alphaDir, betaDir });
   await page.reload();
 }
 
@@ -234,10 +381,12 @@ test.describe.serial("PR56 item 02 evidence", () => {
       try {
         await page.setViewportSize(VIEWPORT);
         await openSidebarHostPicker(page);
-        await screenshotSidebarHostDropdown(
-          page,
-          pr56Item02Shot(`sidebar-host-few-${langTag}.png`),
+        const fewShot = pr56Item02Shot(`sidebar-host-few-${langTag}.png`);
+        await writeHostPickerMetrics(
+          fewShot,
+          await measureHostPickerDom(page, "sidebar-host-picker-panel"),
         );
+        await screenshotSidebarHostDropdown(page, fewShot);
       } finally {
         await cleanup();
       }
@@ -253,7 +402,12 @@ test.describe.serial("PR56 item 02 evidence", () => {
       try {
         await page.setViewportSize(VIEWPORT);
         await openComposerHostPicker(page);
-        await screenshotHostDropdown(page, pr56Item02Shot(`host-few-${langTag}.png`));
+        const fewShot = pr56Item02Shot(`host-few-${langTag}.png`);
+        await writeHostPickerMetrics(
+          fewShot,
+          await measureHostPickerDom(page, "composer-host-picker-panel"),
+        );
+        await screenshotHostDropdown(page, fewShot);
         await page
           .locator(".composer-stack-card")
           .first()
@@ -279,9 +433,14 @@ test.describe.serial("PR56 item 02 evidence", () => {
         await signInOpenmaMock(page, app, mock.baseUrl);
         await page.reload();
         await openComposerHostPicker(page);
-        await scrollHostDropdown(page, 320);
+        await scrollHostPickerToFraction(page);
         await page.waitForTimeout(200);
-        await screenshotHostDropdown(page, pr56Item02Shot(`host-many-${langTag}.png`));
+        const manyShot = pr56Item02Shot(`host-many-${langTag}.png`);
+        await writeHostPickerMetrics(
+          manyShot,
+          await measureHostPickerDom(page, "composer-host-picker-panel"),
+        );
+        await screenshotHostDropdown(page, manyShot);
       } finally {
         await cleanup();
         await mock.close();
@@ -301,13 +460,18 @@ test.describe.serial("PR56 item 02 evidence", () => {
         await signInOpenmaMock(page, app, mock.baseUrl);
         await page.reload();
         await openSidebarHostPicker(page);
-        await scrollHostDropdown(page, 320, "sidebar-host-picker-panel");
+        await scrollHostPickerToFraction(page);
         await page.waitForTimeout(200);
+        const manyShot = pr56Item02Shot(`sidebar-host-many-${langTag}.png`);
+        await writeHostPickerMetrics(
+          manyShot,
+          await measureHostPickerDom(page, "sidebar-host-picker-panel"),
+        );
         const panel = page.getByTestId("sidebar-host-picker-panel");
         await panel
           .locator("xpath=ancestor::*[@data-slot='dropdown-menu-content'][1]")
           .screenshot({
-            path: pr56Item02Shot(`sidebar-host-many-${langTag}.png`),
+            path: manyShot,
             animations: "disabled",
           });
       } finally {

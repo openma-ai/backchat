@@ -2498,6 +2498,10 @@ body,
   justify-content: center;
 }
 
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"] {
+  width: 100%;
+}
+
 /* Host picker: scroll the dropdown shell like main (`max-h-[60vh] overflow-y-auto`), not inner ~288px cap. */
 .grouped-command-menu[data-composer-select-menu-mode="host-picker"]
   .grouped-command-menu-scroll,
@@ -2509,17 +2513,28 @@ body,
   overflow: visible;
 }
 
-/* Host picker (composer + sidebar): match main DropdownMenuItem density (~40px/row). */
+/* Host picker (composer + sidebar): match main DropdownMenuItem (`py-1` + `text-xs` → 40px two-line). */
 .grouped-command-menu[data-composer-select-menu-mode="host-picker"]
-  [data-slot="command-item"] {
-  align-items: flex-start;
-  padding-block: 6px;
+  .host-picker-command-item {
+  align-items: start !important;
+  min-height: 0 !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+  line-height: 16px !important;
 }
 
 .grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  .host-picker-command-item
+  [data-grouped-command-grid="label"] {
+  gap: 0;
+  line-height: 16px !important;
+}
+
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  .host-picker-command-item
   [data-grouped-command-grid="label"]
-  > span:first-child {
-  line-height: 1.25;
+  > span {
+  line-height: 16px !important;
 }
 
 .sidebar-host-chrome,

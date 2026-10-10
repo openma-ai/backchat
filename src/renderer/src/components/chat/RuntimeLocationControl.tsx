@@ -113,7 +113,7 @@ export function RuntimeLocationControl({
               <MonitorIcon />
             </GroupedCommandMenuIconSlot>
             <GroupedCommandMenuLabelSlot>
-              <span className="truncate">{t("chat.local")}</span>
+              <div className="truncate leading-4">{t("chat.local")}</div>
             </GroupedCommandMenuLabelSlot>
           </>
         ),
@@ -137,13 +137,13 @@ export function RuntimeLocationControl({
                 {choice.kind === "cloud" ? <CloudIcon /> : <ServerIcon />}
               </GroupedCommandMenuIconSlot>
               <GroupedCommandMenuLabelSlot>
-                <span className="truncate">
+                <div className="truncate leading-4">
                   {choice.runtimeName} · {choice.environmentName}
-                </span>
-                <span className="text-fg-subtle">
+                </div>
+                <div className="truncate leading-4 text-fg-subtle">
                   {choice.agentName}
                   {offline ? ` · ${t("openma.offline")}` : ""}
-                </span>
+                </div>
               </GroupedCommandMenuLabelSlot>
             </>
           ),
@@ -265,7 +265,7 @@ export function RuntimeLocationControl({
       shrinkToContent={shrinkHostPicker}
       nativeListScroll
       listClassName="host-picker-command-list"
-      panelClassName="host-picker-panel flex h-auto w-full max-h-[60vh] flex-col overflow-hidden"
+      panelClassName="host-picker-panel flex h-auto w-full flex-col overflow-visible"
       listHeightPx={HOST_PICKER_LIST_MAX_HEIGHT_PX}
       commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
       groups={groups}
@@ -331,7 +331,7 @@ export function RuntimeLocationControl({
         sideOffset={variant === "sidebar" ? 4 : upwardPickerSideOffset}
         className={cn(
           groupedCommandMenuShellClassName(),
-          "h-auto max-h-[60vh] w-[var(--composer-menu-width)] gap-0 overflow-x-hidden overflow-y-auto bg-transparent p-0 shadow-none ring-0 oma-scrollbar",
+          "h-auto max-h-[60vh] min-w-[var(--composer-menu-width)] w-[var(--composer-menu-width)] gap-0 overflow-x-hidden overflow-y-auto bg-transparent p-0 shadow-none ring-0 oma-scrollbar",
         )}
       >
         {menu}

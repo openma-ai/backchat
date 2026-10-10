@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useState,
   type CSSProperties,
@@ -37,6 +38,8 @@ export type GroupedCommandMenuItem = {
 
 export type GroupedCommandMenuGroup = {
   heading?: string;
+  /** Renders `CommandSeparator` immediately above this group (main project picker parity). */
+  separatorBefore?: boolean;
   items: readonly GroupedCommandMenuItem[];
 };
 
@@ -193,7 +196,9 @@ export function GroupedCommandMenu({
         {nativeListScroll ? (
           <CommandList
             className={cn(
-              "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
+              menuMode === "host-picker"
+                ? "max-h-none overflow-visible scroll-py-1 p-0 outline-none"
+                : "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
               listClassName,
             )}
           >
@@ -205,33 +210,37 @@ export function GroupedCommandMenu({
               <CommandSeparator />
             ) : null}
             {groups.map((group, index) => (
-              <CommandGroup
-                key={group.heading ?? `__ungrouped-${index}`}
-                heading={group.heading}
-              >
-                {group.items.map((item) => (
-                  <CommandItem
-                    key={item.id}
-                    value={item.value}
-                    keywords={item.keywords}
-                    disabled={item.disabled}
-                    forceMount={item.forceMount}
-                    data-checked={item.checked ? true : undefined}
-                    title={item.title}
-                    onSelect={item.onSelect}
-                    onMouseDown={
-                      insideDropdownMenu
-                        ? (event) => {
-                            event.preventDefault();
-                          }
-                        : undefined
-                    }
-                    className="text-xs"
-                  >
-                    {item.children}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              <Fragment key={group.heading ?? `__ungrouped-${index}`}>
+                {group.separatorBefore ? <CommandSeparator /> : null}
+                <CommandGroup heading={group.heading}>
+                  {group.items.map((item) => (
+                    <CommandItem
+                      key={item.id}
+                      value={item.value}
+                      keywords={item.keywords}
+                      disabled={item.disabled}
+                      forceMount={item.forceMount}
+                      data-checked={item.checked ? true : undefined}
+                      title={item.title}
+                      onSelect={item.onSelect}
+                      onMouseDown={
+                        insideDropdownMenu
+                          ? (event) => {
+                              event.preventDefault();
+                            }
+                          : undefined
+                      }
+                      className={cn(
+                        "text-xs",
+                        menuMode === "host-picker" &&
+                          "host-picker-command-item !items-start !py-1 !px-2",
+                      )}
+                    >
+                      {item.children}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </Fragment>
             ))}
           </CommandList>
         ) : (
@@ -251,33 +260,37 @@ export function GroupedCommandMenu({
                 <CommandSeparator />
               ) : null}
               {groups.map((group, index) => (
-                <CommandGroup
-                  key={group.heading ?? `__ungrouped-${index}`}
-                  heading={group.heading}
-                >
-                  {group.items.map((item) => (
-                    <CommandItem
-                      key={item.id}
-                      value={item.value}
-                      keywords={item.keywords}
-                      disabled={item.disabled}
-                      forceMount={item.forceMount}
-                      data-checked={item.checked ? true : undefined}
-                      title={item.title}
-                      onSelect={item.onSelect}
-                      onMouseDown={
-                        insideDropdownMenu
-                          ? (event) => {
-                              event.preventDefault();
-                            }
-                          : undefined
-                      }
-                      className="text-xs"
-                    >
-                      {item.children}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
+                <Fragment key={group.heading ?? `__ungrouped-${index}`}>
+                  {group.separatorBefore ? <CommandSeparator /> : null}
+                  <CommandGroup heading={group.heading}>
+                    {group.items.map((item) => (
+                      <CommandItem
+                        key={item.id}
+                        value={item.value}
+                        keywords={item.keywords}
+                        disabled={item.disabled}
+                        forceMount={item.forceMount}
+                        data-checked={item.checked ? true : undefined}
+                        title={item.title}
+                        onSelect={item.onSelect}
+                        onMouseDown={
+                          insideDropdownMenu
+                            ? (event) => {
+                                event.preventDefault();
+                              }
+                            : undefined
+                        }
+                        className={cn(
+                          "text-xs",
+                          menuMode === "host-picker" &&
+                            "host-picker-command-item !items-start !py-1 !px-2",
+                        )}
+                      >
+                        {item.children}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </Fragment>
               ))}
             </CommandList>
           </ScrollArea>

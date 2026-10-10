@@ -239,6 +239,7 @@ export function ProjectChipRow({
                     ]
                   : []),
                 {
+                  separatorBefore: savedProjects.length > 0 || recents.length > 0,
                   items: [
                     {
                       id: "browse",
