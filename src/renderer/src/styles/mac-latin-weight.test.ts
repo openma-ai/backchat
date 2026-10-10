@@ -99,7 +99,7 @@ function specifiedVariation(element: Element, rules: VariationRule[]): string | 
     }
     if (!matches) continue;
     const rank = specificity(rule.selector);
-    if (!winner || beats(rank, winner.rank) || (rank.every((part, index) => part === winner.rank[index]) && rule.order >= winner.order)) {
+    if (!winner || beats(rank, winner.rank)) {
       winner = { value: rule.value, rank, order: rule.order };
     }
   }
