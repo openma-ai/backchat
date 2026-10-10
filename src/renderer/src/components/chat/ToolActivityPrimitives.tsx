@@ -86,7 +86,7 @@ export function ToolActivityIdentity({
         {label}
       </span>
       <span
-        className="min-w-0 flex-1 truncate text-fg-muted/80"
+        className="min-w-0 flex-1 truncate text-fg-subtle"
         title={target || undefined}
       >
         {target}

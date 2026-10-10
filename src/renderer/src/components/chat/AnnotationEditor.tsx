@@ -28,7 +28,7 @@ export function AnnotationBadge({ index }: { index: number }) {
     <span
       className={cn(
         "relative inline-flex size-6 items-center justify-center",
-        "text-[10px] font-semibold tabular-nums text-white",
+        "text-[10px] font-semibold tabular-nums text-fg-on-fill",
         "drop-shadow-[0_1px_1px_rgb(0_0_0/0.16)]",
       )}
       aria-hidden="true"

@@ -134,7 +134,8 @@
 
 .app-compact-control:disabled {
   pointer-events: none;
-  opacity: 0.45;
+  color: var(--fg-disabled);
+  opacity: 1;
 }
 
 /* Every sidebar row uses the same compact overflow affordance. Keeping its
@@ -1579,9 +1580,17 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --type-ui-size: 13px;
   --type-ui-leading: 20px;
   --type-body-size: 14px;
-  --type-body-leading: 22px;
+  /* 14/24 (1.71) is the mixed-script reading line. Latin is comfortable
+     a little tighter; Han needs the extra em-box room so the next line
+     does not collide with punctuation. */
+  --type-body-leading: 24px;
+  --type-code-leading: 22px;
   --type-heading-size: 15px;
   --type-heading-leading: 24px;
+  /* Codex desktop uses 430 for UI text. SF and PingFang are variable, so
+     the extra 30 units restores the stroke weight grayscale smoothing
+     thins in light mode, without jumping to medium (500). */
+  --font-ui-weight: 430;
 
   /* ---------- Theme-derived product semantics ----------
      Theme plugins provide the primitive palette. Product components consume
@@ -1853,12 +1862,33 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --text-body--line-height: var(--type-body-leading);
   --text-section: var(--type-heading-size);
   --text-section--line-height: var(--type-heading-leading);
-  --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
-  --font-sans: "Geist Variable", -apple-system, "Segoe UI", sans-serif;
-  --font-chat:
-    -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono Variable", "SF Mono", Menlo, Consolas, monospace;
+  /* One sans for chrome and chat, one mono for code. Literal families
+     exist only in these two custom properties. `--font-chat` and
+     `--font-display` are aliases: the old slogan serif was never bundled
+     and split mixed Chinese/English lines onto a third set of metrics.
+     UI and prose now share the system pair.
+     Latin families come first so they win ASCII; Han falls through.
+     `-apple-system` is SF and already cascades to PingFang on macOS.
+     PingFang is still named so a host that does not perform that cascade
+     (and Windows / Linux) pairs explicitly: Segoe UI Variable with
+     Microsoft YaHei UI, then Noto Sans CJK. YaHei UI, not YaHei, is the
+     face Microsoft aligns to Segoe's em box. Do not add ascent-override
+     hacks on top of those foundry pairs — a wrong override clips
+     punctuation. Mixed-script gaps and fullwidth punctuation are handled
+     on `body` with text-autospace and text-spacing-trim. */
+  --font-sans:
+    -apple-system-body, -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
+    "Segoe UI", ui-sans-serif, system-ui, Helvetica, Arial, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC",
+    "WenQuanYi Micro Hei", "Apple Color Emoji", "Segoe UI Emoji",
+    "Noto Color Emoji", sans-serif;
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, "Cascadia Mono", Consolas,
+    "Liberation Mono", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "PingFang SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+  --font-chat: var(--font-sans);
+  --font-display: var(--font-sans);
 
   --color-brand: var(--brand);
   --color-brand-hover: var(--brand-hover);
@@ -1874,6 +1904,10 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-fg-subtle: var(--fg-subtle);
+  /* Set by applyThemeToRoot from the active theme. See text-roles.ts. */
+  --color-fg-disabled: var(--fg-disabled);
+  /* Glyphs on a saturated fill (annotation badges). Not part of the gray ladder. */
+  --color-fg-on-fill: #ffffff;
 
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
@@ -1938,9 +1972,23 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
 /* ---------- Base typography ---------- */
 body {
   font-family: var(--font-sans);
+  font-weight: var(--font-ui-weight);
+  /* Static faces (YaHei, Consolas) have no 430 stop. Synthesis would
+     fake a blurry bold; `none` snaps them to the nearest real weight
+     while variable SF / PingFang / Segoe UI Variable still draw 430. */
+  font-synthesis: none;
+  font-kerning: normal;
+  letter-spacing: 0;
   /* Design tokens own interface sizing at 100% window zoom. */
   font-size: 0.875rem;
-  line-height: 1.6;
+  line-height: var(--type-body-leading);
+  /* Insert 1/8 ic between Han and Latin/digits, and trim the extra
+     space built into fullwidth punctuation. This is the mixed
+     Chinese/English rhythm; it is not another font name in the stack. */
+  text-autospace: normal;
+  text-spacing-trim: space-all;
+  /* Keep closing punctuation and small kana from starting a line. */
+  line-break: strict;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -1956,12 +2004,37 @@ html.dark body {
   -moz-osx-font-smoothing: auto;
 }
 
-/* Chat prose is multilingual long-form content. A native system stack keeps
-   Latin and CJK glyph metrics coherent; code descendants retain font-mono. */
+/* Chat prose uses the same family as the chrome. The alias exists so a
+   transcript cannot pick up a nested `font-mono` or a future display face. */
 [data-session-turn-prompt],
 [data-session-turn-answer] {
   font-family: var(--font-chat);
   font-kerning: normal;
+  line-height: var(--type-body-leading);
+}
+
+/* Code shows the characters the user wrote. Autospace would open a gap
+   inside identifiers and comments; ligatures would join them. */
+:where(pre, code, kbd, samp) {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  text-autospace: no-autospace;
+  text-spacing-trim: none;
+}
+
+/* Tracking is a Latin display tool. On a Chinese UI it spaces Han apart
+   and negative tracking makes strokes collide. */
+html[lang|="zh"] :is(
+  [class*="tracking-"],
+  .projects-list-header h1,
+  .project-outcome-label,
+  .session-mention-section-label,
+  .home-theme-masthead strong,
+  .home-theme-masthead small
+) {
+  letter-spacing: 0;
 }
 
 /* Viewport lock — the AppShell sidebar + breadcrumb header are global frame
@@ -2508,8 +2581,9 @@ header:not(.app-drag-region) .app-drag-region {
 
 /* ---------- Transcript density ----------
    Common ships 14px/28px prose and a 32px + 24px gap under the last turn.
-   Backchat is a working tool: 14px/22px reads denser without crowding, and
-   the transcript ends where the composer begins. */
+   Backchat reads at 14px/24px: dense enough for a tool, open enough that
+   Han punctuation clears the next line. The transcript ends where the
+   composer begins. */
 [data-chat-surface] :is(.chat-markdown, .streaming-md) {
   font-size: var(--type-body-size);
   line-height: var(--type-body-leading);
@@ -2529,7 +2603,13 @@ header:not(.app-drag-region) .app-drag-region {
   font-size: inherit;
   line-height: inherit;
 }
-[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(pre, pre code, th, td) {
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(pre, pre code) {
+  font-family: var(--font-mono);
+  font-size: var(--type-ui-size);
+  font-weight: 400;
+  line-height: var(--type-code-leading);
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(th, td) {
   font-size: var(--type-ui-size);
   line-height: var(--type-ui-leading);
 }
@@ -2553,14 +2633,14 @@ header:not(.app-drag-region) .app-drag-region {
 }
 /* Prompt bubble follows the same rhythm. */
 [data-session-turn-prompt] p {
-  line-height: 22px;
+  line-height: var(--type-body-leading);
 }
 /* Last turn: no trailing margin; content padding shrinks to a hairline gap.
    The frame sets `!mb-8` from Tailwind's utilities layer, and important
    declarations resolve layer-first, so the override must live in that same
    layer and win on source order. */
 @layer utilities {
-  /* Spacing scale derived from the 22px body line:
+  /* Spacing scale beside the 24px body line:
        paragraph gap      4px   (~0.2 line)  — inside one answer
        bubble → response 12px   (~0.5 line)  — inside one turn
        turn → turn       24px   (~1.1 line)  — between exchanges
@@ -2607,6 +2687,48 @@ textarea:disabled::selection {
 
 /* Composer copy shares the response's reading tier. */
 [data-chat-surface] .composer-card textarea {
+  font-family: var(--font-chat);
   font-size: var(--type-body-size);
+  font-weight: var(--font-ui-weight);
   line-height: var(--type-body-leading);
+}
+
+/* Placeholders are the weaker text role. A browser or utility opacity
+   would drop them under AA, so the color is the token and fully opaque. */
+::placeholder {
+  color: var(--fg-subtle);
+  opacity: 1;
+}
+
+/* Disabled text is a color role, not a faded copy of the enabled color.
+   Opacity multiplies every role under the AA floor. Graphical controls
+   (switch, checkbox) and intentional hide states opt out. Unlayered so
+   this beats `disabled:opacity-*` utilities.
+   Filled buttons also drop their inverse fill. A near-black primary with
+   gray text would fail AA; a transparent control with `--fg-disabled`
+   stays on the surface the role was measured against. */
+:is(input, textarea, select):is(:disabled, [aria-disabled="true"]):not(
+  [data-disabled-opacity]
+) {
+  color: var(--fg-disabled);
+  -webkit-text-fill-color: var(--fg-disabled);
+  opacity: 1;
+}
+
+:is(
+  button,
+  [role="menuitem"],
+  [role="menuitemcheckbox"],
+  [role="menuitemradio"],
+  [role="option"],
+  [role="tab"]
+):is(:disabled, [aria-disabled="true"], [data-disabled]):not(
+  [role="switch"],
+  [role="checkbox"],
+  [data-disabled-opacity]
+) {
+  color: var(--fg-disabled);
+  -webkit-text-fill-color: var(--fg-disabled);
+  background-color: transparent;
+  opacity: 1;
 }

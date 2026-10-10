@@ -43,7 +43,7 @@ export function SuggestionTemplateEditor({
   }, [disabled, inputRef, template]);
 
   return (
-    <div className="composer-template-row flex min-h-[60px] w-full flex-wrap items-baseline gap-y-2 text-sm leading-7 text-fg">
+    <div className="composer-template-row flex min-h-[60px] w-full flex-wrap items-baseline gap-y-2 text-body text-fg">
       <span className="whitespace-pre-wrap">{template.before}</span>
       <span className="home-suggestion-slot-token">
         <input
@@ -74,7 +74,7 @@ export function SuggestionTemplateEditor({
             }
           }}
           style={{ width }}
-          className="min-w-0 bg-transparent text-sm leading-7 text-fg outline-none placeholder:text-fg-subtle"
+          className="min-w-0 bg-transparent text-body text-fg outline-none placeholder:text-fg-subtle"
         />
         <button
           type="button"

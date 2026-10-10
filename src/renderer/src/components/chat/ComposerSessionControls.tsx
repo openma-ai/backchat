@@ -75,7 +75,7 @@ export type ComposerRuntimeKind = "local" | "cloud" | "remote";
 const COMPOSER_ICON_BUTTON_CLASS = cn(
   "inline-flex size-[var(--control-height-compact)] shrink-0 items-center justify-center rounded-md",
   "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-  "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+  "disabled:text-fg-disabled disabled:hover:bg-transparent disabled:hover:text-fg-disabled",
   "transition-colors",
 );
 
@@ -123,7 +123,7 @@ export function ComposerAuthControls({
         className={cn(
           "inline-flex h-[var(--control-height-compact)] shrink-0 items-center gap-1 rounded-md px-1.5",
           "text-xs text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-          "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+          "disabled:text-fg-disabled disabled:hover:bg-transparent disabled:hover:text-fg-disabled",
           "transition-colors",
         )}
       >

@@ -990,13 +990,13 @@ export function BrowserTab({
                   height: pickerHover.rect.height,
                 }}
               >
-                  <span className="absolute right-1 top-1 grid size-5 place-items-center rounded-full border-2 border-white bg-[#3b82f6] text-[10px] font-semibold leading-none text-white shadow-sm">
+                  <span className="absolute right-1 top-1 grid size-5 place-items-center rounded-full border-2 border-white bg-[#3b82f6] text-[10px] font-semibold leading-none text-fg-on-fill shadow-sm">
                   1
                 </span>
                 <span
                   className={cn(
                     "absolute left-0 max-w-[420px] truncate rounded-sm bg-[#2563eb] px-1.5 py-0.5",
-                    "text-[10px] font-medium leading-4 text-white shadow-sm",
+                    "text-[10px] font-medium leading-4 text-fg-on-fill shadow-sm",
                     pickerHover.rect.y >= 24 ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]",
                   )}
                 >
@@ -1015,7 +1015,7 @@ export function BrowserTab({
                   height: regionSelection.height,
                 }}
               >
-                <span className="absolute -bottom-2.5 -right-2.5 grid size-5 place-items-center rounded-full border-2 border-white bg-[#3b82f6] text-[10px] font-semibold leading-none text-white shadow-sm">
+                <span className="absolute -bottom-2.5 -right-2.5 grid size-5 place-items-center rounded-full border-2 border-white bg-[#3b82f6] text-[10px] font-semibold leading-none text-fg-on-fill shadow-sm">
                   1
                 </span>
               </div>
@@ -1056,7 +1056,7 @@ export function BrowserTab({
                     }}
                     className={cn(
                       "pointer-events-auto absolute -right-3 -top-3 z-10 inline-flex size-6 items-center justify-center",
-                      "text-[10px] font-semibold tabular-nums text-white",
+                      "text-[10px] font-semibold tabular-nums text-fg-on-fill",
                       "drop-shadow-[0_1px_1px_rgb(0_0_0/0.16)]",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/40",
                     )}

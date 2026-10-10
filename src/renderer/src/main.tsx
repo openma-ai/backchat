@@ -8,8 +8,6 @@ import { ThemeController } from "@/components/ThemeController";
 import { AppStartupGate } from "@/components/AppStartupGate";
 import { router } from "@/router";
 import { applyStoredTheme } from "@/lib/theme";
-import "@fontsource-variable/geist";
-import "@fontsource-variable/jetbrains-mono";
 import "@openma/common/chat-ui/styles.css";
 import "./styles/index.css";
 

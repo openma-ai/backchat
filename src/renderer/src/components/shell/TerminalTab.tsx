@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
+import { cssFontFamily } from "@/lib/css-font";
 
 /**
  * TerminalTab — one xterm.js instance bound to one pty in main.
@@ -52,12 +53,11 @@ export function TerminalTab({
     const term = new Terminal({
       cols: initialCols,
       rows: initialRows,
-      // Geist Mono → JetBrains Mono → SF Mono. The bracket characters
-      // and box-drawing chars are the discriminator between "nice" and
-      // "tofu" — JetBrains Mono Variable ships them, .impeccable.md
-      // already loads it.
-      fontFamily:
-        '"JetBrains Mono Variable", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
+      // The system mono token. SF Mono, Cascadia, Consolas, and Liberation
+      // Mono all ship brackets and box drawing, so the terminal does not
+      // wait on a packaged face.
+      fontFamily: cssFontFamily("--font-mono"),
+      fontWeight: 400,
       fontSize: 12,
       lineHeight: 1.25,
       cursorBlink: true,

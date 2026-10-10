@@ -264,8 +264,13 @@ const backchatLight: ThemeTokens = {
   "bg-surface": "#f3f3f3",
   "bg-bubble": "#e9e9e9",
   fg: "#141414",
-  "fg-muted": "#555555",
-  "fg-subtle": "#6e6e6e",
+  /* Secondary and hint text used to sit at #555 / #6e. On the panel that
+     left hints at 4.6:1, which grayscale smoothing then washed out, and
+     left no room under the hint color for a disabled role that still
+     clears AA. #454 / #5c keep about 9.4:1 and 6.5:1 on the canvas, with
+     a full step between them. Disabled is derived in text-roles.ts. */
+  "fg-muted": "#454545",
+  "fg-subtle": "#5c5c5c",
   // 8% / 20% of the foreground. Translucent boundaries keep one value legible
   // on both the canvas and the darker panel material.
   border: "#14141414",
@@ -318,7 +323,9 @@ const workbenchLight: ThemeTokens = {
   "bg-bubble": "oklch(0.925 0.01 250)",
   fg: "oklch(0.20 0.018 255)",
   "fg-muted": "oklch(0.43 0.02 255)",
-  "fg-subtle": "oklch(0.50 0.018 255)",
+  /* 0.50 sat only ~0.6 above the derived disabled color. 0.47 keeps the
+     hint role readable and a full step above disabled. */
+  "fg-subtle": "oklch(0.47 0.018 255)",
   border: "oklch(0.86 0.015 250)",
   "border-strong": "oklch(0.76 0.022 250)",
   info: "oklch(0.54 0.17 252)",
