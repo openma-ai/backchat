@@ -2,6 +2,7 @@ import {
   Fragment,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
@@ -162,10 +163,25 @@ export function GroupedCommandMenu({
 
   const [commandValue, setCommandValue] = useState(effectiveHighlightValue);
   const [searchQuery, setSearchQuery] = useState("");
+  const commandRootRef = useRef<HTMLDivElement>(null);
   const { commandRovingProps, onKeyDown: onRovingKeyDown } =
     useGroupedCommandRovingHighlight(
       menuResetKey ?? effectiveHighlightValue,
     );
+
+  useEffect(() => {
+    if (showSearch || menuResetKey !== "open") return;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        commandRootRef.current?.focus({ preventScroll: true });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      if (inner) cancelAnimationFrame(inner);
+    };
+  }, [menuResetKey, showSearch]);
 
   /** cmdk re-sorts by item `value`; project picker must keep `listProjects` order. */
   const preserveItemOrder = menuMode === "project-picker";
@@ -291,6 +307,9 @@ export function GroupedCommandMenu({
       style={panelStyle}
     >
       <Command
+        ref={commandRootRef}
+        tabIndex={showSearch ? undefined : 0}
+        loop
         value={commandValue}
         onValueChange={setCommandValue}
         shouldFilter={preserveItemOrder ? false : undefined}

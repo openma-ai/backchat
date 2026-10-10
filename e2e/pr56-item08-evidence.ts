@@ -567,13 +567,11 @@ PR checked-at-open (transparent):
 
 Main open wash on selected cmdk row:
 
-\`\`\`394:401:src/renderer/src/styles/index.css
-.app-select-focus:is(:focus, [data-highlighted], [data-selected="true"]):not(
-    [data-checked="true"],
-    [data-state="checked"]
-  ),
-...
+\`\`\`352:355:src/renderer/src/styles/index.css
+.app-select-focus:is(:focus, [data-highlighted], [data-selected="true"]) {
+  color: var(--control-fg-active);
   background: var(--control-bg-hover);
+}
 \`\`\`
 
 (Checked rows on main are also transparent when \`data-checked\` applies; open-on-current uses \`data-selected\` on the value row.)

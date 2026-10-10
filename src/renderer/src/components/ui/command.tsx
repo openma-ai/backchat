@@ -14,10 +14,12 @@ import { CheckIcon } from "@/components/Icons"
 
 function Command({
   className,
+  ref,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
+      ref={ref}
       data-slot="command"
       className={cn(
         "app-select-content flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground",
@@ -71,10 +73,12 @@ function CommandInput({
 
 function CommandList({
   className,
+  ref,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return (
     <CommandPrimitive.List
+      ref={ref}
       data-slot="command-list"
       className={cn(
         "oma-scrollbar max-h-72 scroll-py-1 overflow-x-hidden overflow-y-auto outline-none",

@@ -77,6 +77,11 @@ export function RuntimeLocationControl({
   const [menuOpen, setMenuOpen] = useState(false);
   const upwardPickerSideOffset = useComposerPickerUpwardSideOffset();
 
+  const applySelection = (next: OpenmaExecutionTarget | undefined) => {
+    select(next);
+    setMenuOpen(false);
+  };
+
   const select = (next: OpenmaExecutionTarget | undefined) => {
     if (!row || locked) return;
     if (!next) {
@@ -106,7 +111,7 @@ export function RuntimeLocationControl({
         id: "local",
         value: t("chat.local"),
         checked: true,
-        onSelect: () => select(undefined),
+        onSelect: () => applySelection(undefined),
         children: (
           <>
             <GroupedCommandMenuIconSlot>
@@ -130,7 +135,7 @@ export function RuntimeLocationControl({
           value: `${choice.runtimeName} ${choice.environmentName} ${choice.agentName}`,
           disabled: offline,
           checked,
-          onSelect: () => select(choice),
+          onSelect: () => applySelection(choice),
           children: (
             <>
               <GroupedCommandMenuIconSlot>
@@ -155,7 +160,10 @@ export function RuntimeLocationControl({
       {
         id: "openma-account",
         value: "openma-account",
-        onSelect: () => void navigate({ to: "/settings/openma" }),
+        onSelect: () => {
+          setMenuOpen(false);
+          void navigate({ to: "/settings/openma" });
+        },
         children: (
           <>
             <GroupedCommandMenuIconSlot>
@@ -200,7 +208,10 @@ export function RuntimeLocationControl({
       tailItems.push({
         id: "openma-manage",
         value: "openma-manage",
-        onSelect: () => void window.backchat.openmaOpenManagement(),
+        onSelect: () => {
+          setMenuOpen(false);
+          void window.backchat.openmaOpenManagement();
+        },
         children: (
           <>
             <GroupedCommandMenuIconSlot>
@@ -274,6 +285,7 @@ export function RuntimeLocationControl({
 
   return (
     <DropdownMenu
+      open={menuOpen}
       onOpenChange={(open) => {
         setMenuOpen(open);
         if (open && account?.status === "signed_in") void refetch();
