@@ -306,12 +306,20 @@ async function seedProjects(page: import("@playwright/test").Page, home: string)
       source_folders: [alphaDir],
       primary_folder: alphaDir,
     });
-    await window.backchat.projectSave({
+    const beta = {
       project_id: "pr56-item02-b",
       name: "Beta monorepo",
       source_folders: [betaDir],
       primary_folder: betaDir,
+    };
+    await window.backchat.projectSave({
+      project_id: "pr56-item02-b",
+      name: beta.name,
+      source_folders: beta.source_folders,
+      primary_folder: beta.primary_folder,
     });
+    // Re-touch Beta so `updated_at` is strictly newer than Alpha (stable `listProjects` order).
+    await window.backchat.projectSave(beta);
   }, { alphaDir, betaDir });
   await page.reload();
 }
@@ -345,9 +353,16 @@ async function measureProjectPickerPopover(
       return { popover: { width: 0, height: 0 }, headings: [], rowHeights: [] };
     }
     const rect = popover.getBoundingClientRect();
+    const popoverTop = rect.top;
     const headings = Array.from(popover.querySelectorAll("[cmdk-group-heading]")).map(
       (node) => (node.textContent ?? "").trim(),
     );
+    const projectRows = Array.from(
+      popover.querySelectorAll('[data-slot="command-item"]'),
+    ).map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim());
+    const itemValues = Array.from(
+      popover.querySelectorAll('[data-slot="command-item"]'),
+    ).map((node) => node.getAttribute("data-value") ?? "");
     const rowHeights = Array.from(
       popover.querySelectorAll('[data-slot="command-item"]'),
     ).map((node) => Math.round(node.getBoundingClientRect().height));
@@ -360,19 +375,21 @@ async function measureProjectPickerPopover(
     const separators = popover.querySelectorAll(
       '[data-slot="command-separator"]',
     ).length;
+    const searchRect = search?.getBoundingClientRect();
+    const headingRect = heading?.getBoundingClientRect();
     return {
       popover: {
         width: Math.round(rect.width),
         height: Math.round(rect.height),
       },
-      searchRowHeight: search
-        ? Math.round(search.getBoundingClientRect().height)
-        : 0,
-      headingHeight: heading
-        ? Math.round(heading.getBoundingClientRect().height)
-        : 0,
+      searchRowTop: searchRect ? Math.round(searchRect.top - popoverTop) : 0,
+      searchRowHeight: searchRect ? Math.round(searchRect.height) : 0,
+      headingTop: headingRect ? Math.round(headingRect.top - popoverTop) : 0,
+      headingHeight: headingRect ? Math.round(headingRect.height) : 0,
       separatorCount: separators,
       headings,
+      projectRowLabels: projectRows,
+      commandItemValues: itemValues,
       rowHeights,
     };
   });
@@ -571,9 +588,24 @@ test.describe.serial("PR56 item 02 evidence", () => {
     await page.locator('[data-composer-footer-control="project"]').click();
     await page.waitForTimeout(200);
     const shot = pr56Item02Shot("usage-project-picker.png");
+    const projectsFromStore = await page.evaluate(async () => {
+      const list = await window.backchat.projectsList();
+      return list.map((project) => ({
+        id: project.id,
+        name: project.name,
+        updated_at: project.updated_at,
+      }));
+    });
     await writeFile(
       shot.replace(/\.png$/i, ".metrics.json"),
-      `${JSON.stringify(await measureProjectPickerPopover(page), null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          ...(await measureProjectPickerPopover(page)),
+          projectsFromStore,
+        },
+        null,
+        2,
+      )}\n`,
       "utf8",
     );
     await screenshotProjectPickerPopover(page, shot);

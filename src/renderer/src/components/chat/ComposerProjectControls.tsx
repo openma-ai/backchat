@@ -1,7 +1,7 @@
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { useProjects } from "@/lib/projects-query";
 import { useRemovedProjectPaths } from "@/lib/removed-projects";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleAlertIcon,
   ArrowLeftIcon,
@@ -85,6 +85,15 @@ export function ProjectChipRow({
     staleTime: 30_000,
   });
   const { data: savedProjects = [], isSuccess: projectsLoaded } = useProjects();
+  /** Same order as main `Command` + `projectsList` (`updated_at DESC`). */
+  const projectsForPicker = useMemo(
+    () =>
+      [...savedProjects].sort((a, b) => {
+        const byTime = b.updated_at - a.updated_at;
+        return byTime !== 0 ? byTime : b.id.localeCompare(a.id);
+      }),
+    [savedProjects],
+  );
   const removedPaths = useRemovedProjectPaths();
   const eligiblePersisted = persisted.filter(row => !removedPaths.includes(row.cwd ?? "") || savedProjects.some(project => project.source_folders.includes(row.cwd ?? "")));
   const recents = selectRecentProjectPaths(eligiblePersisted).filter(path => !savedProjects.some(project => project.source_folders.includes(path)));
@@ -169,20 +178,20 @@ export function ProjectChipRow({
               testId="composer-project-picker-panel"
               menuMode="project-picker"
               shrinkToContent
-              panelClassName="flex h-auto w-full max-h-[min(336px,var(--radix-popover-content-available-height))] flex-col overflow-hidden"
-              commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
+              panelClassName="flex h-auto w-full max-h-[min(336px,var(--radix-popover-content-available-height))] flex-col overflow-hidden p-1"
+              commandClassName="rounded-xl! bg-popover p-0! text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}
               initialHighlightValue={projectPickerValue || activeCwd || noProjectCommandValue}
               menuResetKey={projectPickerOpen ? "open" : "closed"}
               groups={[
-                ...(savedProjects.length > 0
+                ...(projectsForPicker.length > 0
                   ? [
                       {
                         heading: t("sidebar.projects"),
-                        items: savedProjects.map((project) => ({
+                        items: projectsForPicker.map((project, index) => ({
                           id: project.id,
-                          value: project.primary_folder,
+                          value: `${String(index).padStart(4, "0")}\u0000${project.primary_folder}`,
                           keywords: [project.name, ...project.source_folders],
                           checked: selectedProject?.id === project.id,
                           title: project.primary_folder,
@@ -236,7 +245,7 @@ export function ProjectChipRow({
                     ]
                   : []),
                 {
-                  separatorBefore: savedProjects.length > 0 || recents.length > 0,
+                  separatorBefore: projectsForPicker.length > 0 || recents.length > 0,
                   items: [
                     {
                       id: "browse",

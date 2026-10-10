@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useMemo,
   useState,
   type CSSProperties,
   type KeyboardEvent,
@@ -138,12 +139,37 @@ export function GroupedCommandMenu({
   nativeListScroll?: boolean;
 }) {
   const [commandValue, setCommandValue] = useState(initialHighlightValue);
+  const [searchQuery, setSearchQuery] = useState("");
   const { commandRovingProps, onKeyDown: onRovingKeyDown } =
     useGroupedCommandRovingHighlight(menuResetKey ?? initialHighlightValue);
 
+  /** cmdk re-sorts by item `value`; project picker must keep `listProjects` order. */
+  const preserveItemOrder = menuMode === "project-picker";
+
   useEffect(() => {
     setCommandValue(initialHighlightValue);
-  }, [initialHighlightValue]);
+    if (preserveItemOrder) setSearchQuery("");
+  }, [initialHighlightValue, menuResetKey, preserveItemOrder]);
+
+  const visibleGroups = useMemo(() => {
+    if (!preserveItemOrder) return groups;
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return groups;
+    return groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          const haystack = [
+            item.value.split("\0").pop() ?? item.value,
+            ...(item.keywords ?? []),
+          ]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(query);
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [groups, searchQuery, preserveItemOrder]);
 
   const panelStyle = {
     ["--grouped-command-list-height" as string]: `${listHeightPx}px`,
@@ -175,8 +201,9 @@ export function GroupedCommandMenu({
       style={panelStyle}
     >
       <Command
-        value={commandValue}
-        onValueChange={setCommandValue}
+        value={preserveItemOrder ? searchQuery : commandValue}
+        onValueChange={preserveItemOrder ? setSearchQuery : setCommandValue}
+        shouldFilter={preserveItemOrder ? false : undefined}
         className={cn(
           "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
           shrinkToContent ? "h-auto flex-none" : "flex-1",
@@ -209,7 +236,7 @@ export function GroupedCommandMenu({
             {listHeader && listHeaderSeparator && groups.length > 0 ? (
               <CommandSeparator />
             ) : null}
-            {groups.map((group, index) => (
+            {visibleGroups.map((group, index) => (
               <Fragment key={group.heading ?? `__ungrouped-${index}`}>
                 {group.separatorBefore ? <CommandSeparator /> : null}
                 <CommandGroup heading={group.heading}>
@@ -259,7 +286,7 @@ export function GroupedCommandMenu({
               {listHeader && listHeaderSeparator && groups.length > 0 ? (
                 <CommandSeparator />
               ) : null}
-              {groups.map((group, index) => (
+              {visibleGroups.map((group, index) => (
                 <Fragment key={group.heading ?? `__ungrouped-${index}`}>
                   {group.separatorBefore ? <CommandSeparator /> : null}
                   <CommandGroup heading={group.heading}>
