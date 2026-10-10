@@ -41,21 +41,34 @@ describe("matchFontWeight", () => {
 describe("declared Backchat faces", () => {
   const css = readFileSync(fileURLToPath(new URL("../styles/index.css", import.meta.url)), "utf8");
 
-  it("hides PingFang Medium so resting 430 stays on Regular", () => {
+  it("pins resting 430 to Regular and keeps Medium for a 500 request", () => {
     const faces = declaredWeightFaces(css, "Backchat PingFang");
-    expect(faces.map((item) => item.min)).toEqual([400, 600]);
-    expect(matchFontWeight(430, faces)?.min).toBe(400);
+    expect(faces.map((item) => item.min)).toEqual([400, 430, 500, 600]);
+    expect(matchFontWeight(430, faces)?.min).toBe(430);
+    expect(matchFontWeight(500, faces)?.min).toBe(500);
     expect(matchFontWeight(600, faces)?.min).toBe(600);
   });
 
-  it("keeps Noto Sans SC at 400 and 600 so 430 does not jump to the heavier file", () => {
+  it("gives Noto Sans SC a real 500 face and keeps 430 on the regular file", () => {
     const faces = declaredWeightFaces(css, "Backchat Sans SC");
     expect(faces).toEqual([
       { min: 400, max: 400 },
+      { min: 430, max: 430 },
+      { min: 500, max: 500 },
       { min: 600, max: 600 },
     ]);
-    expect(matchFontWeight(430, faces)?.min).toBe(400);
+    expect(matchFontWeight(430, faces)?.min).toBe(430);
+    expect(matchFontWeight(500, faces)?.min).toBe(500);
     expect(matchFontWeight(600, faces)?.min).toBe(600);
+  });
+
+  it("maps YaHei emphasis away from Regular", () => {
+    const faces = declaredWeightFaces(css, "Backchat YaHei");
+    expect(faces.map((item) => item.min)).toEqual([400, 430, 500, 600]);
+    expect(matchFontWeight(430, faces)?.min).toBe(430);
+    expect(matchFontWeight(500, faces)?.min).toBe(500);
+    expect(matchFontWeight(600, faces)?.min).toBe(600);
+    expect(css).toContain('local("Microsoft YaHei Bold")');
   });
 
   it("lets the variable Latin face draw 430 and 600", () => {
@@ -66,7 +79,7 @@ describe("declared Backchat faces", () => {
 
   it("ignores other families and a block without a weight", () => {
     const cssWithGap = `${css}\n@font-face { font-family: "Backchat PingFang"; font-style: normal; }`;
-    expect(declaredWeightFaces(cssWithGap, "Backchat PingFang").map((item) => item.min)).toEqual([400, 600]);
+    expect(declaredWeightFaces(cssWithGap, "Backchat PingFang").map((item) => item.min)).toEqual([400, 430, 500, 600]);
     expect(declaredWeightFaces(css, "Missing Family")).toEqual([]);
   });
 });

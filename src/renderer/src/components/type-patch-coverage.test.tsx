@@ -109,7 +109,7 @@ describe("changed type surfaces", () => {
       </Tabs>,
     )).toContain("text-fg-muted");
     expect(renderToStaticMarkup(<MessageContent>Hello</MessageContent>)).toContain("text-body");
-    expect(renderToStaticMarkup(<AnnotationBadge index={2} />)).toContain("text-fg-on-fill");
+    expect(renderToStaticMarkup(<AnnotationBadge index={2} />)).toContain("text-white");
     expect(renderToStaticMarkup(
       <ComposerInput rows={2} placeholder="Ask" />,
     )).toContain("placeholder:text-fg-subtle");

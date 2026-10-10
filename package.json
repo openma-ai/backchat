@@ -20,7 +20,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
-    "test:ci": "vitest run --config vitest.ci.config.ts --reporter=dot",
+    "test:ci": "vitest run --config vitest.ci.config.ts --reporter=default",
     "test:watch": "vitest",
     "test:e2e:composer": "electron-vite build && playwright test e2e/composer.spec.ts e2e/composer-slash.spec.ts e2e/composer-config.spec.ts",
     "test:e2e:harness-feature-matrix": "electron-vite build && playwright test e2e/harness-feature-matrix.visual.spec.ts e2e/harness-final-response.real.spec.ts && pnpm run report:harness-feature-matrix",
@@ -89,7 +89,6 @@
     "cron-parser": "^5.6.2",
     "cross-spawn": "7.0.6",
     "effect": "^3.22.1",
-    "electron-updater": "6.8.10",
     "eventsource": "3.0.7",
     "express": "5.2.1",
     "express-rate-limit": "8.5.2",
@@ -107,7 +106,8 @@
     "streamdown": "^2.5.0",
     "streaming-markdown": "^0.2.15",
     "use-stick-to-bottom": "^1.1.4",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "electron-updater": "6.8.10"
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.64.2",
@@ -133,7 +133,7 @@
     "electron": "^42.5.1",
     "electron-builder": "^26.17.0",
     "electron-vite": "^5.0.0",
-    "happy-dom": "20.8.9",
+    "happy-dom": "^20.14.6",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -176,9 +176,7 @@
       {
         "from": "src/cli",
         "to": "cli",
-        "filter": [
-          "**/*.mjs"
-        ]
+        "filter": ["**/*.mjs"]
       },
       {
         "from": "build/update-metadata.json",

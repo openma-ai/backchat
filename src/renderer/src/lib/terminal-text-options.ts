@@ -1,18 +1,15 @@
-/** xterm text metrics. `lineHeight` above 1 leaves a gap between
- *  box-drawing rows. `customGlyphs` draws those rules to the cell edge
- *  on the canvas and WebGL renderers. */
+/** xterm text metrics. The family comes from the mono token. Line height
+ *  stays at the previous 1.25; box-drawing metrics are not part of this change. */
 export function terminalTextOptions(fontFamily: string): {
   fontFamily: string;
   fontWeight: 400;
   fontSize: 12;
-  lineHeight: 1;
-  customGlyphs: true;
+  lineHeight: 1.25;
 } {
   return {
     fontFamily,
     fontWeight: 400,
     fontSize: 12,
-    lineHeight: 1,
-    customGlyphs: true,
+    lineHeight: 1.25,
   };
 }

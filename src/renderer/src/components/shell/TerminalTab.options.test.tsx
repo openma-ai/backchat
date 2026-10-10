@@ -82,9 +82,9 @@ describe("TerminalTab text options", () => {
     expect(constructed[0]).toMatchObject({
       fontWeight: 400,
       fontSize: 12,
-      lineHeight: 1,
-      customGlyphs: true,
+      lineHeight: 1.25,
     });
+    expect(constructed[0]).not.toHaveProperty("customGlyphs");
     expect(String(constructed[0]?.fontFamily)).not.toContain("JetBrains");
   });
 });

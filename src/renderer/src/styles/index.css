@@ -1591,14 +1591,13 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --type-code-leading: 22px;
   --type-heading-size: 15px;
   --type-heading-leading: 24px;
-  /* Codex desktop uses 430 for resting UI text. SF, PingFang, Segoe UI
-     Variable, and the bundled Noto Sans axis can draw it. Static faces
-     snap to 400 because synthesis stays off for this weight. */
+  /* Codex desktop uses 430 for resting UI text. SF, Segoe UI Variable,
+     and the bundled Noto Sans axis can draw it. CJK families below also
+     publish an explicit 430 face that points at Regular, so 430 does not
+     climb to Medium. */
   --font-ui-weight: 430;
-  /* Emphasis is 600, not 500. CSS font matching tries 400 before any
-     face heavier than 500, so a missing 500 collapses to regular on
-     Segoe UI, YaHei, and single-weight Linux fonts. 600 resolves to
-     Segoe Semibold, YaHei Bold, and the bundled Noto Sans SC 600. */
+  /* Selected text is 600. Medium stays 500, and each CJK family publishes
+     a 500 face so that request cannot fall through to Regular. */
   --font-weight-emphasis: 600;
 
   /* ---------- Theme-derived product semantics ----------
@@ -1867,21 +1866,68 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
    (see package.json build.mac/win.files). Italic is synthesized; there is
    no italic file. https://fonts.google.com/noto */
 /* PingFang SC ships Medium at 500. A request of 430 checks 500 before 400,
-   so Chinese would paint Medium while SF draws 430. These faces hide
-   Medium: 430 resolves to Regular, 600 to Semibold. */
+   so resting Chinese would paint Medium while SF draws 430. An explicit
+   430 face uses the Regular file. 500 is its own face (Medium), and 600
+   is Semibold. Without the 500 face, font-medium collapses to Regular.
+   local() names are the English full name and the PostScript name. This
+   Linux checkout cannot draw PingFang, so the names are not verified here. */
 @font-face {
   font-family: "Backchat PingFang";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: local("PingFang SC Regular");
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular");
+}
+@font-face {
+  font-family: "Backchat PingFang";
+  font-style: normal;
+  font-weight: 430;
+  font-display: swap;
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular");
+}
+@font-face {
+  font-family: "Backchat PingFang";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local("PingFang SC Medium"), local("PingFangSC-Medium");
 }
 @font-face {
   font-family: "Backchat PingFang";
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: local("PingFang SC Semibold");
+  src: local("PingFang SC Semibold"), local("PingFangSC-Semibold");
+}
+/* YaHei has Regular and Bold, and no 500. 500 and 600 both use Bold so
+   neither emphasis step paints Regular. */
+@font-face {
+  font-family: "Backchat YaHei";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local("Microsoft YaHei Regular"), local("Microsoft YaHei"), local("MicrosoftYaHei");
+}
+@font-face {
+  font-family: "Backchat YaHei";
+  font-style: normal;
+  font-weight: 430;
+  font-display: swap;
+  src: local("Microsoft YaHei Regular"), local("Microsoft YaHei"), local("MicrosoftYaHei");
+}
+@font-face {
+  font-family: "Backchat YaHei";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local("Microsoft YaHei Bold"), local("Microsoft YaHei UI Bold"), local("MicrosoftYaHei-Bold");
+}
+@font-face {
+  font-family: "Backchat YaHei";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local("Microsoft YaHei Bold"), local("Microsoft YaHei UI Bold"), local("MicrosoftYaHei-Bold");
 }
 @font-face {
   font-family: "Backchat Sans";
@@ -1916,6 +1962,22 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
 @font-face {
   font-family: "Backchat Sans SC";
   font-style: normal;
+  font-weight: 430;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Backchat Sans SC";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Backchat Sans SC";
+  font-style: normal;
   font-weight: 600;
   font-display: swap;
   src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-600-normal.woff2")
@@ -1936,11 +1998,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      generic is not in front of the bundled faces, or Linux would pick a
      different family per distro. Backchat Sans / Sans SC
      are the packaged Linux pair (Noto Sans Latin variable + Noto Sans SC
-     400/600) and only win after the OS faces miss. */
+     400/500/600) and only win after the OS faces miss. */
   --font-sans:
     -apple-system-body, -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
-    "Segoe UI", "Backchat PingFang", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
-    "Microsoft YaHei", "Backchat Sans", "Backchat Sans SC", "Noto Sans CJK SC",
+    "Segoe UI", "Backchat PingFang", "PingFang SC", "Hiragino Sans GB", "Backchat YaHei",
+    "Microsoft YaHei UI", "Microsoft YaHei", "Backchat Sans", "Backchat Sans SC", "Noto Sans CJK SC",
     "Source Han Sans SC", "WenQuanYi Micro Hei", ui-sans-serif, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   --font-mono:
@@ -1972,8 +2034,6 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --color-fg-subtle: var(--fg-subtle);
   /* Set by applyThemeToRoot from the active theme. See text-roles.ts. */
   --color-fg-disabled: var(--fg-disabled);
-  /* Glyphs on a saturated fill (annotation badges). Not part of the gray ladder. */
-  --color-fg-on-fill: #ffffff;
 
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
@@ -2084,7 +2144,7 @@ html[data-os="linux"] {
 
 html[data-os="windows"] {
   --font-sans:
-    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Segoe UI Variable", "Segoe UI", "Backchat YaHei", "Microsoft YaHei UI", "Microsoft YaHei",
     "Backchat Sans", "Backchat Sans SC", "Segoe UI Emoji", "Noto Color Emoji",
     sans-serif;
   --font-mono:

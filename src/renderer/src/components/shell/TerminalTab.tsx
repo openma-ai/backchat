@@ -54,8 +54,6 @@ export function TerminalTab({
     const term = new Terminal({
       cols: initialCols,
       rows: initialRows,
-      // lineHeight 1 and customGlyphs keep box-drawing cells touching.
-      // A 1.25 line box leaves a gap between vertical rules.
       ...terminalTextOptions(cssFontFamily("--font-mono")),
       cursorBlink: true,
       // Theme reads from CSS vars at construct time — xterm.js doesn't

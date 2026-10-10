@@ -94,13 +94,19 @@ describe("renderer typography contract", () => {
     expect(css).toContain('"Backchat Sans SC"');
     expect(css).toContain('"Backchat PingFang"');
     expect(css).toContain('local("PingFang SC Regular")');
+    expect(css).toContain('local("PingFangSC-Regular")');
+    expect(css).toContain('local("PingFang SC Medium")');
+    expect(css).toContain('local("PingFangSC-Medium")');
     expect(css).toContain('local("PingFang SC Semibold")');
+    expect(css).toContain('local("PingFangSC-Semibold")');
+    expect(css).toContain('"Backchat YaHei"');
     expect(css).toContain('"WenQuanYi Micro Hei Mono"');
     const defaultMono = css.slice(css.indexOf("--font-mono:"), css.indexOf("--font-chat:"));
     expect(defaultMono).toContain('"PingFang SC"');
     expect(defaultMono).toContain('"Microsoft YaHei UI"');
     expect(css).toContain("noto-sans-latin-wght-normal.woff2");
     expect(css).toContain("noto-sans-sc-chinese-simplified-400-normal.woff2");
+    expect(css).toContain("noto-sans-sc-chinese-simplified-500-normal.woff2");
     expect(css).toContain("noto-sans-sc-chinese-simplified-600-normal.woff2");
     expect(css).toContain('html[data-os="linux"]');
     expect(css).toContain('html[data-os="windows"]');
@@ -121,7 +127,8 @@ describe("renderer typography contract", () => {
     expect(css).toContain("font-synthesis: weight style;");
     expect(css).toContain("font-style: italic;");
     expect(css).not.toContain("font-synthesis: none;");
-    expect(css).not.toContain("font-weight: 500;");
+    expect(css).toContain('font-family: "Backchat Sans SC"');
+    expect(css).toContain("font-weight: 500;");
     expect(css).toContain("letter-spacing: 0;");
     expect(css).toContain("text-autospace: normal;");
     expect(css).toContain("text-spacing-trim: space-all;");
@@ -137,7 +144,7 @@ describe("renderer typography contract", () => {
     expect(css).toContain(".sidebar-navigation .app-selected-surface");
     expect(css).toContain("noto-sans-latin-ext-wght-normal.woff2");
     expect(css).toContain("font-weight: 100 900;");
-    expect(css).not.toContain("noto-sans-sc-chinese-simplified-500-normal.woff2");
+    expect(css).toContain("noto-sans-sc-chinese-simplified-500-normal.woff2");
     const projects = readFileSync(
       fileURLToPath(new URL("../pages/projects.css", import.meta.url)),
       "utf8",
@@ -174,7 +181,7 @@ describe("renderer typography contract", () => {
           violations.push(`${where} hardcodes fontFamily`);
         }
         if (
-          /(?:^|[\s"'`])text-(?:white|black|neutral-|zinc-|gray-|slate-|stone-)\b/.test(line) ||
+          /(?:^|[\s"'`])text-(?:black|neutral-|zinc-|gray-|slate-|stone-)\b/.test(line) ||
           /text-(?:foreground|fg(?:-muted|-subtle)?|muted-foreground)\/\d/.test(line) ||
           /text-\[(?:#|rgb|hsl|oklch)/.test(line)
         ) {

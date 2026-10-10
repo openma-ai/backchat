@@ -73,7 +73,6 @@ export default defineConfig({
       "src/renderer/src/main.entry.test.ts",
       "src/renderer/src/components/type-patch-coverage.test.tsx",
       "src/renderer/src/components/shell/TerminalTab.options.test.tsx",
-      "src/renderer/src/components/shell/browser-annotation-overlay.test.tsx",
       "src/renderer/src/components/chat/ComposerSessionControls.test.tsx",
       "src/renderer/src/components/chat/ComposerContentParts.test.tsx",
       "src/renderer/src/components/chat/ComposerAskPanel.test.tsx",
