@@ -2498,6 +2498,30 @@ body,
   justify-content: center;
 }
 
+/* Host picker: scroll the dropdown shell like main (`max-h-[60vh] overflow-y-auto`), not inner ~288px cap. */
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  .grouped-command-menu-scroll,
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  .grouped-command-menu-scroll
+  [data-slot="scroll-area-viewport"] {
+  max-height: none;
+  height: auto;
+  overflow: visible;
+}
+
+/* Host picker (composer + sidebar): match main DropdownMenuItem density (~40px/row). */
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  [data-slot="command-item"] {
+  align-items: flex-start;
+  padding-block: 6px;
+}
+
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  [data-grouped-command-grid="label"]
+  > span:first-child {
+  line-height: 1.25;
+}
+
 .sidebar-host-chrome,
 .sidebar-footer-chrome {
   padding-inline-start: 0;

@@ -109,6 +109,7 @@ export function GroupedCommandMenu({
   listHeader,
   listHeaderSeparator = true,
   shrinkToContent = false,
+  nativeListScroll = false,
 }: {
   groups: readonly GroupedCommandMenuGroup[];
   searchPlaceholder: string;
@@ -130,6 +131,8 @@ export function GroupedCommandMenu({
   listHeaderSeparator?: boolean;
   /** Drop flex growth so panel height follows row count (host picker). */
   shrinkToContent?: boolean;
+  /** Scroll on `CommandList` (host picker — matches main dropdown `overflow-y-auto`). */
+  nativeListScroll?: boolean;
 }) {
   const [commandValue, setCommandValue] = useState(initialHighlightValue);
   const { commandRovingProps, onKeyDown: onRovingKeyDown } =
@@ -187,14 +190,13 @@ export function GroupedCommandMenu({
             onKeyDown={mergeRovingKeyDown}
           />
         ) : null}
-        <ScrollArea
-          className={cn(
-            "grouped-command-menu-scroll sidebar-scroll-area w-full",
-            shrinkToContent ? "h-auto flex-none" : "min-h-0 flex-1",
-            listClassName,
-          )}
-        >
-          <CommandList className="max-h-none overflow-visible scroll-py-1 p-0 outline-none">
+        {nativeListScroll ? (
+          <CommandList
+            className={cn(
+              "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
+              listClassName,
+            )}
+          >
             <CommandEmpty className="px-3 text-center text-xs leading-relaxed text-fg-subtle">
               {emptyMessage}
             </CommandEmpty>
@@ -232,7 +234,54 @@ export function GroupedCommandMenu({
               </CommandGroup>
             ))}
           </CommandList>
-        </ScrollArea>
+        ) : (
+          <ScrollArea
+            className={cn(
+              "grouped-command-menu-scroll sidebar-scroll-area w-full",
+              shrinkToContent ? "h-auto flex-none" : "min-h-0 flex-1",
+              listClassName,
+            )}
+          >
+            <CommandList className="max-h-none overflow-visible scroll-py-1 p-0 outline-none">
+              <CommandEmpty className="px-3 text-center text-xs leading-relaxed text-fg-subtle">
+                {emptyMessage}
+              </CommandEmpty>
+              {listHeader}
+              {listHeader && listHeaderSeparator && groups.length > 0 ? (
+                <CommandSeparator />
+              ) : null}
+              {groups.map((group, index) => (
+                <CommandGroup
+                  key={group.heading ?? `__ungrouped-${index}`}
+                  heading={group.heading}
+                >
+                  {group.items.map((item) => (
+                    <CommandItem
+                      key={item.id}
+                      value={item.value}
+                      keywords={item.keywords}
+                      disabled={item.disabled}
+                      forceMount={item.forceMount}
+                      data-checked={item.checked ? true : undefined}
+                      title={item.title}
+                      onSelect={item.onSelect}
+                      onMouseDown={
+                        insideDropdownMenu
+                          ? (event) => {
+                              event.preventDefault();
+                            }
+                          : undefined
+                      }
+                      className="text-xs"
+                    >
+                      {item.children}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))}
+            </CommandList>
+          </ScrollArea>
+        )}
       </Command>
     </div>
   );

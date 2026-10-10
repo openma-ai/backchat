@@ -23,8 +23,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   GroupedCommandMenu,
-  groupedCommandMenuDropdownShellClassName,
+  groupedCommandMenuShellClassName,
 } from "@/components/ui/grouped-command-menu";
+
+/** Match main native host menu list budget (`max-h-[60vh]`). */
+const HOST_PICKER_LIST_MAX_HEIGHT_PX = 540;
 import {
   GroupedCommandMenuIconSlot,
   GroupedCommandMenuLabelSlot,
@@ -239,6 +242,12 @@ export function RuntimeLocationControl({
     ? `${target.runtimeName} · ${target.environmentName}`
     : t("chat.local");
 
+  const hostPickerItemCount = useMemo(
+    () => groups.reduce((total, group) => total + group.items.length, 0),
+    [groups],
+  );
+  const shrinkHostPicker = hostPickerItemCount <= 8;
+
   const menu = (
     <GroupedCommandMenu
       testId={
@@ -253,7 +262,11 @@ export function RuntimeLocationControl({
       searchPlaceholder=""
       emptyMessage=""
       insideDropdownMenu
-      shrinkToContent
+      shrinkToContent={shrinkHostPicker}
+      nativeListScroll
+      listClassName="host-picker-command-list"
+      panelClassName="host-picker-panel flex h-auto w-full max-h-[60vh] flex-col overflow-hidden"
+      listHeightPx={HOST_PICKER_LIST_MAX_HEIGHT_PX}
       commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
       groups={groups}
     />
@@ -316,7 +329,10 @@ export function RuntimeLocationControl({
         side={variant === "sidebar" ? "bottom" : "top"}
         align="start"
         sideOffset={variant === "sidebar" ? 4 : upwardPickerSideOffset}
-        className={groupedCommandMenuDropdownShellClassName()}
+        className={cn(
+          groupedCommandMenuShellClassName(),
+          "h-auto max-h-[60vh] w-[var(--composer-menu-width)] gap-0 overflow-x-hidden overflow-y-auto bg-transparent p-0 shadow-none ring-0 oma-scrollbar",
+        )}
       >
         {menu}
       </DropdownMenuContent>

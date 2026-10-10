@@ -17,6 +17,7 @@ import {
 import { startOpenmaCatalogMock } from "./openma-catalog-mock-server";
 import {
   ensurePr56Item02Dir,
+  pr56Item02Phase,
   pr56Item02Shot,
 } from "./pr56-item-02-path";
 
@@ -43,6 +44,59 @@ async function openComposerHostPicker(page: import("@playwright/test").Page): Pr
   await enableAgent(page, "codex-acp");
   await page.locator('[data-composer-footer-control="runtime"]').click();
   await page.waitForTimeout(250);
+}
+
+async function openSidebarHostPicker(page: import("@playwright/test").Page): Promise<void> {
+  await enableAgent(page, "codex-acp");
+  const row = page.getByTestId("sidebar-local-runtime-row");
+  await expect(row).toBeVisible({ timeout: 10_000 });
+  await row.click();
+  await expect(page.getByTestId("sidebar-host-picker-panel")).toBeVisible({
+    timeout: 10_000,
+  });
+  await page.waitForTimeout(200);
+}
+
+/** Reproduces pre-`shrinkToContent` shell: tall dropdown, short panel → blank tail. */
+async function applyLegacyHostPickerDropdownBlank(
+  page: import("@playwright/test").Page,
+  testId: "sidebar-host-picker-panel" | "composer-host-picker-panel",
+): Promise<void> {
+  await page.evaluate((panelTestId) => {
+    const panel = document.querySelector(
+      `[data-testid="${panelTestId}"]`,
+    ) as HTMLElement | null;
+    const drop = panel?.closest(
+      '[data-slot="dropdown-menu-content"]',
+    ) as HTMLElement | null;
+    const cmd = panel?.querySelector(".grouped-command-menu") as HTMLElement | null;
+    const scroll = panel?.querySelector(
+      ".grouped-command-menu-scroll",
+    ) as HTMLElement | null;
+    if (drop) drop.style.minHeight = "336px";
+    if (cmd) {
+      cmd.classList.remove("h-auto", "flex-none");
+      cmd.classList.add("flex-1", "min-h-0");
+    }
+    if (scroll) {
+      scroll.classList.remove("h-auto", "flex-none");
+      scroll.classList.add("min-h-0", "flex-1");
+    }
+  }, testId);
+}
+
+async function screenshotSidebarHostDropdown(
+  page: import("@playwright/test").Page,
+  path: string,
+): Promise<void> {
+  if (pr56Item02Phase() === "before") {
+    await applyLegacyHostPickerDropdownBlank(page, "sidebar-host-picker-panel");
+    await page.waitForTimeout(100);
+  }
+  const panel = page.getByTestId("sidebar-host-picker-panel");
+  await panel
+    .locator("xpath=ancestor::*[@data-slot='dropdown-menu-content'][1]")
+    .screenshot({ path, animations: "disabled" });
 }
 
 async function screenshotOpenPickerSurface(
@@ -103,8 +157,11 @@ async function screenshotHostDropdown(
 async function scrollHostDropdown(
   page: import("@playwright/test").Page,
   scrollTop: number,
+  panelTestId:
+    | "composer-host-picker-panel"
+    | "sidebar-host-picker-panel" = "composer-host-picker-panel",
 ): Promise<void> {
-  const panel = page.getByTestId("composer-host-picker-panel");
+  const panel = page.getByTestId(panelTestId);
   if (await panel.count()) {
     const viewport = panel.locator('[data-slot="scroll-area-viewport"]');
     if (await viewport.count()) {
@@ -167,6 +224,25 @@ test.describe.serial("PR56 item 02 evidence", () => {
   for (const language of ["zh-CN", "en"] as const) {
     const langTag = language === "zh-CN" ? "zh" : "en";
 
+    test(`sidebar host picker few locations (${langTag})`, async () => {
+      test.skip(suiteMode() === "host-only" && hostBaseline() === "main");
+      test.skip(suiteMode() === "full" && hostBaseline() === "pre");
+      const { page, cleanup } = await launchApp({
+        language,
+        env: { BACKCHAT_E2E_VISIBLE: "1" },
+      });
+      try {
+        await page.setViewportSize(VIEWPORT);
+        await openSidebarHostPicker(page);
+        await screenshotSidebarHostDropdown(
+          page,
+          pr56Item02Shot(`sidebar-host-few-${langTag}.png`),
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+
     test(`host picker few locations (${langTag})`, async () => {
       test.skip(suiteMode() === "host-only" && hostBaseline() === "main");
       test.skip(suiteMode() === "full" && hostBaseline() === "pre");
@@ -206,6 +282,34 @@ test.describe.serial("PR56 item 02 evidence", () => {
         await scrollHostDropdown(page, 320);
         await page.waitForTimeout(200);
         await screenshotHostDropdown(page, pr56Item02Shot(`host-many-${langTag}.png`));
+      } finally {
+        await cleanup();
+        await mock.close();
+      }
+    });
+
+    test(`sidebar host picker many locations scroll (${langTag})`, async () => {
+      test.skip(suiteMode() === "host-only" && hostBaseline() === "main");
+      test.skip(suiteMode() === "full" && hostBaseline() === "pre");
+      const mock = await startOpenmaCatalogMock({ cloudEnvironmentCount: 28 });
+      const { page, app, cleanup } = await launchApp({
+        language,
+        env: { BACKCHAT_E2E_VISIBLE: "1" },
+      });
+      try {
+        await page.setViewportSize(VIEWPORT);
+        await signInOpenmaMock(page, app, mock.baseUrl);
+        await page.reload();
+        await openSidebarHostPicker(page);
+        await scrollHostDropdown(page, 320, "sidebar-host-picker-panel");
+        await page.waitForTimeout(200);
+        const panel = page.getByTestId("sidebar-host-picker-panel");
+        await panel
+          .locator("xpath=ancestor::*[@data-slot='dropdown-menu-content'][1]")
+          .screenshot({
+            path: pr56Item02Shot(`sidebar-host-many-${langTag}.png`),
+            animations: "disabled",
+          });
       } finally {
         await cleanup();
         await mock.close();
