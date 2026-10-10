@@ -43,8 +43,9 @@ const { createAcpAgentSetupService } = await import("./index.js");
 
 function shellShimCommand(shim: string): string {
   const match = shim.match(/^exec '([^']+)'/m);
-  if (!match) throw new Error("invalid shim");
-  return match[1];
+  const captured = match?.[1];
+  if (captured === undefined) throw new Error("invalid shim");
+  return captured;
 }
 
 async function writeFakeNpm(root: string): Promise<string> {
