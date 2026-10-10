@@ -241,11 +241,11 @@ function measureProjectPickerSingleGrid(panel: import("@playwright/test").Locato
 }
 
 async function burnProjectPickerGridLines(
-  path: string,
+  png: Buffer,
   iconLeft: number,
   textLeft: number,
-): Promise<void> {
-  const image = sharp(path);
+): Promise<Buffer> {
+  const image = sharp(png);
   const meta = await image.metadata();
   const width = meta.width ?? 0;
   const height = meta.height ?? 0;
@@ -255,11 +255,7 @@ async function burnProjectPickerGridLines(
       <line x1="${textLeft + 0.5}" y1="0" x2="${textLeft + 0.5}" y2="${height}" stroke="#2563eb" stroke-width="3"/>
     </svg>`,
   );
-  const burned = await image
-    .composite([{ input: svg, top: 0, left: 0 }])
-    .png()
-    .toBuffer();
-  await writeFile(path, burned);
+  return image.composite([{ input: svg, top: 0, left: 0 }]).png().toBuffer();
 }
 
 async function screenshotProjectPickerGridReference(
@@ -279,8 +275,9 @@ async function screenshotProjectPickerGridReference(
     (await panel.getAttribute("data-testid")) === "composer-project-picker-panel"
       ? panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]")
       : panel;
-  await shotTarget.screenshot({ path, animations: "disabled" });
-  await burnProjectPickerGridLines(path, iconLeft, textLeft);
+  const png = await shotTarget.screenshot({ animations: "disabled" });
+  const burned = await burnProjectPickerGridLines(png, iconLeft, textLeft);
+  await writeFile(path, burned);
 }
 
 test("project picker single grid (search + all rows)", async ({ page, home }) => {
