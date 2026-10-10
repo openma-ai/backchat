@@ -2718,11 +2718,7 @@ body,
 }
 
 .sidebar-navigation
-  .sidebar-grid-row:not([data-sidebar-row="new-chat"]):is(
-    :hover,
-    .app-selected-surface,
-    [data-state="open"]
-  ) {
+  .sidebar-grid-row:not([data-sidebar-row="new-chat"]):is(:hover, [data-state="open"]) {
   background: var(--control-bg-hover);
 }
 
