@@ -27,7 +27,7 @@ describe("agent and session lifecycle contract", () => {
     expect(ipc).toContain("agentSetup.warmup()");
     expect(ipc).toContain('process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"]');
     expect(listHandler).toContain("await agentWarmup");
-    expect(listHandler).toContain("skipE2eAgentProbes");
+    expect(listHandler).toContain("skipE2eLiveHarnessProbe");
     expect(gate).toContain('readiness: "ready"');
     expect(gate).toContain('readiness: "snapshot"');
     expect(gate).toContain("return children");
