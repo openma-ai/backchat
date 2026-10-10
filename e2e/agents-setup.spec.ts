@@ -222,6 +222,8 @@ test.describe("settings agent setup lifecycle", () => {
     // sidebar exposes the direct-update control.
     await page.getByRole("link", { name: "Settings" }).click();
     await page.getByRole("link", { name: "Agents", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
+    await expect(page.getByText("Update Agent", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Back to app" }).click();
     await expect(page.locator('[data-chat-surface="main"]')).toBeVisible();
 
