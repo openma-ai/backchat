@@ -146,8 +146,19 @@ export function GroupedCommandMenu({
     }
     return "";
   }, [groups]);
-  const effectiveHighlightValue =
-    initialHighlightValue || highlightFromChecked;
+  const effectiveHighlightValue = useMemo(() => {
+    const itemValues = new Set(
+      groups.flatMap((group) => group.items.map((item) => item.value)),
+    );
+    if (
+      initialHighlightValue &&
+      itemValues.has(initialHighlightValue)
+    ) {
+      return initialHighlightValue;
+    }
+    if (highlightFromChecked) return highlightFromChecked;
+    return initialHighlightValue;
+  }, [groups, highlightFromChecked, initialHighlightValue]);
 
   const [commandValue, setCommandValue] = useState(effectiveHighlightValue);
   const [searchQuery, setSearchQuery] = useState("");
