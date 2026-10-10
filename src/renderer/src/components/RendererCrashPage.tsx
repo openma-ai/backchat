@@ -61,7 +61,7 @@ export function RendererCrashPage({
         >
           <div className="px-5 pb-4 pt-5">
             <div
-              className="renderer-crash-mark-slot mb-4"
+              className="renderer-crash-mark-slot mb-4 flex justify-center"
               data-renderer-crash-mark-slot="true"
             >
               <BackchatCrashMark />
