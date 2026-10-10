@@ -57,6 +57,10 @@ describe("i18n", () => {
 
     expect(translate?.("en", "chat.whatCanIHelp")).toBe("What can I help with?");
     expect(translate?.("zh-CN", "chat.whatCanIHelp")).toBe("有什么可以帮你？");
+    expect(translate?.("en", "crash.title")).toBe("Something went wrong");
+    expect(translate?.("zh-CN", "crash.title")).toBe("出了点问题");
+    expect(translate?.("zh-CN", "crash.reload")).toBe("重新加载");
+    expect(translate?.("zh-CN", "crash.copy")).toBe("复制错误信息");
     expect(translate?.("en", "chat.suggestionUnderstand")).toBe("Make sense of something");
     expect(translate?.("en", "chat.suggestionShape")).toBe("Shape an idea");
     expect(translate?.("en", "chat.suggestionRefine")).toBe("Improve what I have");

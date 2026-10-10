@@ -20,6 +20,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useGapAdjacentPx } from "@/components/ui/gap-adjacent";
 import { useI18n } from "@/lib/i18n";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 
@@ -128,7 +129,7 @@ export function AgentUpdateError({
       </summary>
       <div className="mt-1.5 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-[10px] leading-4">
         <p className="text-destructive">{message}</p>
-        <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] leading-3.5 text-muted-foreground">
+        <pre className="oma-scrollbar mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] leading-3.5 text-muted-foreground">
           {error}
         </pre>
       </div>
@@ -137,6 +138,7 @@ export function AgentUpdateError({
 }
 
 export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
+  const gapAdjacent = useGapAdjacentPx();
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -221,7 +223,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
           title={triggerLabel}
           data-sidebar-agent-update-control="true"
           data-sidebar-agent-update-count={availableAgents.length || undefined}
-          className="app-no-drag inline-flex h-[var(--sidebar-row-h)] shrink-0 items-center justify-center gap-1 px-2 text-[10px] font-medium tabular-nums text-fg-muted transition-colors hover:bg-[var(--control-bg-hover)] hover:text-fg focus-visible:bg-[var(--control-bg-hover)] focus-visible:text-fg"
+          className="app-no-drag inline-flex h-[var(--sidebar-row-h)] shrink-0 items-center justify-center gap-1 rounded-md px-2 text-[10px] font-medium tabular-nums text-fg-muted transition-colors hover:bg-[var(--control-bg-hover)] hover:text-fg focus-visible:bg-[var(--control-bg-hover)] focus-visible:text-fg"
         >
           {activeIds.size > 0 ? (
             <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />
@@ -239,7 +241,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
         data-sidebar-agent-update-popover="true"
         side="top"
         align="start"
-        sideOffset={8}
+        sideOffset={gapAdjacent}
         collisionPadding={8}
         style={{ width: "var(--agent-update-popover-width)" }}
         className="max-w-[var(--radix-popover-content-available-width)]"
@@ -275,7 +277,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
           </p>
         )}
 
-        <div className="max-h-[min(300px,var(--radix-popover-content-available-height))] space-y-1 overflow-y-auto">
+        <div className="oma-scrollbar max-h-[min(300px,var(--radix-popover-content-available-height))] space-y-1 overflow-y-auto">
           {availableAgents.map((agent) => {
             const updating = activeIds.has(agent.id);
             const error = errors[agent.id];

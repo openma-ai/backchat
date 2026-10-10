@@ -1,6 +1,10 @@
 import { createServer, type ServerResponse } from "node:http";
 import { mkdir } from "node:fs/promises";
-import { expect, test } from "./fixtures";
+import { expect, test, type Locator } from "./fixtures";
+
+async function sidebarGridIconLeft(row: Locator) {
+  return row.locator('[data-sidebar-grid="icon"]').evaluate((cell) => cell.getBoundingClientRect().left);
+}
 
 test("tenant groups start collapsed above local and route new and continued sessions to their owner", async ({ app, page }) => {
   const calls: string[] = [];
@@ -45,8 +49,20 @@ test("tenant groups start collapsed above local and route new and continued sess
     const beta = nav.getByRole("button", { name: "Beta", exact: true });
     await expect(alpha).toHaveAttribute("aria-expanded", "false");
     await expect(beta).toHaveAttribute("aria-expanded", "false");
-    await expect(nav.getByRole("button", { name: "Local", exact: true })).toHaveAttribute("aria-expanded", "true");
-    expect(await nav.locator(':scope > section > div > button[aria-expanded]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")).slice(0, 3))).toEqual(["Alpha", "Beta", "Local"]);
+    const hostRow = page.locator(".sidebar-host-chrome .sidebar-grid-row").first();
+    const localRuntimeRow = page.getByTestId("sidebar-local-runtime-row");
+    await expect(localRuntimeRow).toHaveClass(/sidebar-grid-row/);
+    await expect(localRuntimeRow).toBeVisible();
+    expect(Math.abs(await sidebarGridIconLeft(hostRow) - await sidebarGridIconLeft(localRuntimeRow))).toBeLessThanOrEqual(
+      0.75,
+    );
+    expect(
+      await nav
+        .locator("section.sidebar-section .sidebar-section-header button[aria-expanded]")
+        .evaluateAll((buttons) =>
+          buttons.map((b) => b.getAttribute("aria-label")).slice(0, 2),
+        ),
+    ).toEqual(["Alpha", "Beta"]);
     await mkdir("artifacts/tenant-sidebar", { recursive: true });
     await page.screenshot({ path: "artifacts/tenant-sidebar/collapsed.png" });
     await beta.click();
@@ -63,7 +79,7 @@ test("tenant groups start collapsed above local and route new and continued sess
     await page.screenshot({ path: "artifacts/tenant-sidebar/expanded.png" });
     await page.evaluate(() => window.backchat.openmaLogout());
     await expect(alpha).toHaveCount(0); await expect(beta).toHaveCount(0);
-    await expect(nav.getByRole("button", { name: "Local", exact: true })).toBeVisible();
+    await expect(localRuntimeRow).toBeVisible();
   } finally {
     for (const stream of streams) stream.end(); server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

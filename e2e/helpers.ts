@@ -13,6 +13,7 @@
  */
 import {
   _electron as electron,
+  expect,
   type ElectronApplication,
   type Locator,
   type Page,
@@ -37,6 +38,8 @@ const repoRoot = process.env["BACKCHAT_E2E_APP_ROOT"]
 interface LaunchAppOptions {
   language?: "en" | "zh-CN";
   env?: Record<string, string>;
+  /** Skip waiting for the main shell (e.g. renderer crash demo entry). */
+  skipRendererReady?: boolean;
 }
 
 export async function launchApp(options: LaunchAppOptions = {}): Promise<{
@@ -87,7 +90,8 @@ export async function launchAppWithHome(
       BACKCHAT_TEST_HOOKS: "1",
       // Live ACP capability probes are useful in production, but they make
       // relaunch/persistence E2Es depend on a configured agent process.
-      BACKCHAT_E2E_SKIP_AGENT_WARMUP: "1",
+      BACKCHAT_E2E_SKIP_AGENT_WARMUP:
+        options.env?.BACKCHAT_E2E_SKIP_AGENT_WARMUP ?? "1",
       BACKCHAT_HOME: home,
       // `openmaRoot()` honours BACKCHAT_HOME whenever BACKCHAT_TEST_HOOKS is set,
       // so the SQLite store opens under this per-test home. Nothing here reads or
@@ -110,15 +114,19 @@ export async function launchAppWithHome(
         }
       `,
     });
-    // Wait on a locale-independent marker, then force English for the legacy
-    // E2E suite unless a localization test explicitly requests Chinese.
-    await waitForRendererReady(page);
-    await page.evaluate(async (language) => {
-      const current = await window.backchat.settingsGet();
-      await window.backchat.settingsPatch({
-        appearance: { ...current.appearance, language },
-      });
-    }, options.language ?? "en");
+    if (options.skipRendererReady) {
+      await page.waitForLoadState("domcontentloaded");
+    } else {
+      // Wait on a locale-independent marker, then force English for the legacy
+      // E2E suite unless a localization test explicitly requests Chinese.
+      await waitForRendererReady(page);
+      await page.evaluate(async (language) => {
+        const current = await window.backchat.settingsGet();
+        await window.backchat.settingsPatch({
+          appearance: { ...current.appearance, language },
+        });
+      }, options.language ?? "en");
+    }
   } catch (e) {
     await closeApp(app).catch(() => undefined);
     throw e;
@@ -196,6 +204,55 @@ export async function enableAgent(page: Page, agentId: string): Promise<void> {
     return true;
   }, agentId);
   if (changed) await reloadRenderer(page);
+}
+
+/** Runtime / host picker (`RuntimeLocationControl`) uses `GroupedCommandMenu`. */
+export function hostPickerPanel(page: Page) {
+  return page.getByTestId("composer-host-picker-panel");
+}
+
+export async function openRuntimeLocationPicker(page: Page): Promise<void> {
+  const composerRuntime = page.locator('[data-composer-footer-control="runtime"]');
+  await expect(composerRuntime).toBeVisible({ timeout: 10_000 });
+  await composerRuntime.click();
+  await expect(hostPickerPanel(page)).toBeVisible({ timeout: 10_000 });
+}
+
+export async function clickHostPickerOption(
+  page: Page,
+  name: string | RegExp,
+): Promise<void> {
+  const option = hostPickerPanel(page).getByRole("option", { name });
+  await expect(option).toBeVisible({ timeout: 15_000 });
+  await option.click();
+  if (await hostPickerPanel(page).isVisible().catch(() => false)) {
+    await page.keyboard.press("Escape");
+  }
+}
+
+export async function pickRuntimeLocationOption(
+  page: Page,
+  name: string | RegExp,
+): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await openRuntimeLocationPicker(page);
+    const option = hostPickerPanel(page).getByRole("option", { name });
+    if (await option.isVisible().catch(() => false)) {
+      await clickHostPickerOption(page, name);
+      return;
+    }
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+  }
+  await openRuntimeLocationPicker(page);
+  await clickHostPickerOption(page, name);
+}
+
+/** Primary allow action in `ComposerBrokerAsk` permission sheets. */
+export async function clickPermissionAllowOnce(page: Page): Promise<void> {
+  const allow = page.locator('[data-permission-primary-action="true"]');
+  await expect(allow).toBeVisible({ timeout: 60_000 });
+  await allow.click();
 }
 
 /** Electron can occasionally create its first window before the renderer has
@@ -294,11 +351,34 @@ export async function openBrowserPanel(page: Page): Promise<void> {
   await webview.waitFor({ state: "visible" });
 }
 
+/** Composer typing is allowed during harness auth probes, but submit stays
+ *  blocked until the live probe settles. Wait on the run-chip spinner. */
+export async function waitForComposerHarnessAuthProbe(page: Page): Promise<void> {
+  const spinners = page.locator(
+    '[data-composer-harness-probe="true"] svg.animate-spin, [data-composer-run-harness="true"] svg.animate-spin',
+  );
+  await expect
+    .poll(async () => {
+      const count = await spinners.count();
+      for (let index = 0; index < count; index += 1) {
+        if (await spinners.nth(index).isVisible()) return false;
+      }
+      return true;
+    }, { timeout: 60_000 })
+    .toBe(true);
+}
+
+export async function waitForComposerSubmitReady(page: Page): Promise<void> {
+  const submit = page.locator('[data-composer-submit="true"]').first();
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+}
+
 export async function waitForRunnableHarness(page: Page): Promise<Locator> {
   const runButton = page.getByRole("button", {
     name: /Run on Local with .* using/,
   });
   await runButton.waitFor({ state: "visible", timeout: 15_000 });
+  await waitForComposerHarnessAuthProbe(page);
   return runButton;
 }
 

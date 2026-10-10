@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from "node:http";
 import { expect, test } from "./fixtures";
-import { closeApp, launchAppWithHome } from "./helpers";
+import { closeApp, launchAppWithHome, pickRuntimeLocationOption } from "./helpers";
 
 for (const provider of ["openma", "claude-managed", "openai-agents"] as const) {
   test(`${provider}: key and base URL create a tenant, chat and restore without resending`, async ({ app, page, home }) => {
@@ -73,8 +73,7 @@ for (const provider of ["openma", "claude-managed", "openai-agents"] as const) {
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
     try {
       await page.evaluate(() => window.backchat.settingsPatch({ agents: [] }));
-      await page.locator('[data-session-runtime-location="true"]').first().click();
-      await page.getByRole("menuitem", { name: "Sign in to OpenMA", exact: true }).click();
+      await pickRuntimeLocationOption(page, "Sign in to OpenMA");
       const form = page.getByRole("form", { name: "Agent connections" });
       await form.getByLabel("Protocol", { exact: true }).selectOption(provider);
       await form.getByLabel("Tenant name (optional)").fill(title);

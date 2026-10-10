@@ -858,7 +858,7 @@ function LegacyEmptyState({
   }, [mainActive?.cwd, hasArtifacts]);
 
   return (
-    <div className="h-full overflow-y-auto px-4 pb-6">
+    <div className="oma-scrollbar h-full overflow-y-auto px-4 pb-6">
       <div className="space-y-2 pt-2">
         {EMPTY_TILES.filter((tile) => browserEnabled || tile.type !== "browser").map((tile) => {
           const disabled = tile.type === "chat" && !canStartSideChat;

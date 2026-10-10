@@ -1,6 +1,11 @@
 import { createServer, type ServerResponse } from "node:http";
 import { expect, test } from "./fixtures";
-import { closeApp, launchAppWithHome } from "./helpers";
+import {
+  clickPermissionAllowOnce,
+  closeApp,
+  launchAppWithHome,
+  pickRuntimeLocationOption,
+} from "./helpers";
 
 test("cloud chat survives complete desktop exit and restores without resending input", async ({ app, page, home }, testInfo) => {
   const events: Array<Record<string, unknown>> = [];
@@ -86,17 +91,21 @@ test("cloud chat survives complete desktop exit and restores without resending i
       shell.openExternal = async (url: string) => { await fetch(url); };
     });
     await page.evaluate(() => window.backchat.settingsPatch({ agents: [] }));
-    await page.locator('[data-session-runtime-location="true"]').first().click();
-    await page.getByRole("menuitem", { name: "Sign in to OpenMA", exact: true }).click();
+    await pickRuntimeLocationOption(page, "Sign in to OpenMA");
     await page.getByLabel("OpenMA server").fill(`http://127.0.0.1:${port}`);
     await page.getByRole("button", { name: "Sign in to OpenMA", exact: true }).click();
     await expect(page.getByText("cloud@example.com", { exact: true })).toBeVisible();
     await page.reload();
-    await page.locator('[data-session-runtime-location="true"]').first().click();
-    await page.getByRole("menuitem", { name: /Cloud · Cloud project.*Cloud helper/ }).click();
+    await expect.poll(() => page.evaluate(() => window.backchat.openmaAccountState())).toMatchObject({
+      status: "signed_in",
+    });
+    await pickRuntimeLocationOption(page, /Cloud · Cloud project.*Cloud helper/);
+    await expect(page.locator('[data-session-runtime-location="true"]').first()).toContainText(
+      "Cloud · Cloud project",
+    );
     await page.locator("textarea").fill("Run cloud test");
     await page.locator("textarea").press("Enter");
-    await page.getByRole("button", { name: "Allow once", exact: true }).click();
+    await clickPermissionAllowOnce(page);
     await page.getByLabel("Reply *", { exact: true }).fill("main");
     await page.getByRole("button", { name: "Submit", exact: true }).click();
     await expect(page.getByText("Executed in the cloud project.", { exact: true })).toBeVisible();
@@ -189,7 +198,7 @@ test("cloud chat survives complete desktop exit and restores without resending i
     await restored.getByRole("combobox").fill("Renamed cloud task");
     await restored.getByRole("option").filter({ hasText: "Renamed cloud task" }).click();
     await expect(restored.getByText("Finished while Backchat was closed.", { exact: true })).toBeVisible();
-    await expect(restored.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
+    await expect(restored.locator('[data-permission-primary-action="true"]')).toHaveCount(0);
     expect(mutations).toHaveLength(5);
     expect(creates).toBe(1);
     await restored.getByRole("button", { name: "Files", exact: true }).click();

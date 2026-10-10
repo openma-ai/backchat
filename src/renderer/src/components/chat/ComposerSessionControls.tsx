@@ -18,6 +18,7 @@ import {
   WrenchIcon,
   XIcon,
   ZapIcon,
+  Loader2Icon,
   LogInIcon,
   RefreshCwIcon,
   type LucideIcon,
@@ -44,14 +45,26 @@ import {
   buildComposerConfigOptions,
   buildRunMenuConfigOptionSections,
   configModeOptionPresentation,
-  findModeConfigOption,
+  findPermissionModeConfigOption,
+  configSelectItemHint,
   flattenSelectOptions,
+  isWorkspaceAccessPermissionMode,
+  permissionModeMenuItems,
   isAgentPresetConfigOption,
   isFastModeConfigOption,
   selectedConfigOptionLabel,
   type AcpSessionConfigOption,
 } from "@/lib/session-config-options";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import {
+  ComposerSearchableSelectMenu,
+} from "@/components/composer/searchable-select-menu-adapter";
+import { groupedCommandMenuShellClassName } from "@/components/ui/grouped-command-menu";
+import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
+import {
+  GroupedCommandMenuIconSlot,
+  GroupedCommandMenuLabelSlot,
+} from "@/components/ui/grouped-command-menu-slots";
 import type { ComposerSessionStatePresentation } from "@/lib/composer-session-state";
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
@@ -160,6 +173,7 @@ export function SessionRunChip({
   onSetConfigOption,
   onResetConfigOptions,
   authNeeded = false,
+  authChecking = false,
 }: {
   disabled: boolean;
   locked: boolean;
@@ -172,6 +186,7 @@ export function SessionRunChip({
   onSetConfigOption: (configId: string, value: string | boolean) => void;
   onResetConfigOptions?: () => void;
   authNeeded?: boolean;
+  authChecking?: boolean;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -207,7 +222,7 @@ export function SessionRunChip({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        disabled={disabled}
+        disabled={disabled || authChecking}
         data-composer-run-trigger="true"
         className={cn(
           "app-compact-control group/model-selector inline-flex max-w-[250px] items-center pl-[var(--control-padding-inline)] text-xs",
@@ -229,12 +244,23 @@ export function SessionRunChip({
               data-composer-run-harness="true"
               className={cn("flex shrink-0 items-center", authNeeded && "text-danger")}
             >
-              <AgentIcon
-                agentId={currentAgentId}
-                iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
-                className="size-3.5 shrink-0"
-                title={agentLabel}
-              />
+              <span className="relative flex size-3.5 shrink-0 items-center justify-center">
+                <AgentIcon
+                  agentId={currentAgentId}
+                  iconUrl={agents.find((agent) => agent.id === currentAgentId)?.icon}
+                  className={cn(
+                    "size-3.5 shrink-0",
+                    authChecking && "opacity-80",
+                  )}
+                  title={agentLabel}
+                />
+                {authChecking && (
+                  <RefreshCwIcon
+                    className="absolute -right-1 -bottom-1 size-2.5 animate-spin text-info"
+                    aria-hidden="true"
+                  />
+                )}
+              </span>
             </span>
             <TooltipProvider>
               <Tooltip>
@@ -256,7 +282,7 @@ export function SessionRunChip({
         )}
         <ChevronDownIcon className="size-3.5 shrink-0 text-current opacity-65 group-hover/model-selector:text-fg group-hover/model-selector:opacity-100" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="w-[var(--composer-menu-width)]">
+      <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-[var(--composer-menu-width)]">
         <div className="border-b border-border/50 py-1">
           <SessionAgentSubmenu
             agents={agents}
@@ -329,27 +355,50 @@ function SessionAgentSubmenu({
           {currentAgentLabel}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
-        {agents.length > 0 ? (
-          agents.map((agent) => (
+      <DropdownMenuSubContent sideOffset={GAP_ADJACENT_PX} className={groupedCommandMenuShellClassName()}>
+        <ComposerSearchableSelectMenu
+          items={
+            agents.length > 0
+              ? agents.map((agent) => ({
+                  value: agent.id,
+                  label: agent.label,
+                  searchText: agent.id,
+                  active: agent.id === currentAgentId,
+                  disabled: locked,
+                }))
+              : [
+                  {
+                    value: "__settings__",
+                    label: t("chat.noHarness"),
+                    hint: "Open Settings to install and enable",
+                  },
+                ]
+          }
+          activeValue={currentAgentId}
+          searchPlaceholder={t("chat.searchOptions")}
+          emptyMessage={t("chat.noMatchingOptions")}
+          onSelect={(value) => {
+            if (value === "__settings__") onOpenSettings();
+            else onPickAgent(value);
+          }}
+          renderItem={(item, { highlighted }) => (
             <SessionRunItem
-              key={agent.id}
-              agentId={agent.id}
-              agentIconUrl={agent.icon}
-              label={agent.label}
-              active={agent.id === currentAgentId}
-              disabled={locked}
-              onSelect={() => onPickAgent(agent.id)}
+              presentation="command"
+              agentId={item.value === "__settings__" ? undefined : item.value}
+              agentIconUrl={
+                item.value === "__settings__"
+                  ? undefined
+                  : agents.find((agent) => agent.id === item.value)?.icon
+              }
+              icon={item.value === "__settings__" ? TerminalIcon : undefined}
+              label={item.label}
+              hint={item.hint}
+              active={item.active}
+              disabled={item.disabled}
+              highlighted={highlighted}
             />
-          ))
-        ) : (
-          <SessionRunItem
-            icon={TerminalIcon}
-            label={t("chat.noHarness")}
-            hint="Open Settings to install and enable"
-            onSelect={onOpenSettings}
-          />
-        )}
+          )}
+        />
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   );
@@ -372,6 +421,19 @@ function SessionConfigSubmenu({
         : isFastModeConfigOption(option)
           ? t("chat.fast")
           : option.name;
+  const selectMenuItems =
+    option.type === "select"
+      ? flattenSelectOptions(option).map((item) => ({
+          value: item.value,
+          label: item.name,
+          groupName: item.groupName,
+          hint: isAgentPresetConfigOption(option)
+            ? undefined
+            : configSelectItemHint(option, item),
+          searchText: [item.groupName, item.value].filter(Boolean).join(" "),
+          active: item.value === option.currentValue,
+        }))
+      : [];
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className="min-h-10 gap-2 px-2 py-1.5 text-xs">
@@ -381,41 +443,39 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
+      <DropdownMenuSubContent sideOffset={GAP_ADJACENT_PX} className={groupedCommandMenuShellClassName()}>
         {option.type === "select" ? (
-          flattenSelectOptions(option).map((item) => (
-            <SessionRunItem
-              key={`${option.id}:${item.value}`}
-              icon={
-                isAgentPresetConfigOption(option)
-                  ? agentPresetIcon(item.value)
-                  : Icon
-              }
-              label={item.name}
-              hint={
-                isAgentPresetConfigOption(option)
-                  ? undefined
-                  : item.groupName ??
-                    item.description ??
-                    option.description ??
-                    option.name
-              }
-              active={item.value === option.currentValue}
-              onSelect={() => onSetConfigOption(option.id, item.value)}
+            <ComposerSearchableSelectMenu
+              items={selectMenuItems}
+              activeValue={option.currentValue}
+              searchPlaceholder={t("chat.searchOptions")}
+              emptyMessage={t("chat.noMatchingOptions")}
+              onSelect={(value) => onSetConfigOption(option.id, value)}
+              renderItem={(item, { highlighted }) => (
+                <SessionRunItem
+                  presentation="command"
+                  icon={
+                    isAgentPresetConfigOption(option)
+                      ? agentPresetIcon(item.value)
+                      : Icon
+                  }
+                  label={item.label}
+                  hint={item.hint}
+                  active={item.active}
+                  highlighted={highlighted}
+                />
+              )}
             />
-          ))
         ) : (
-          <SessionRunItem
-            icon={Icon}
-            label={option.name}
-            hint={
-              option.description ?? (option.currentValue ? "On" : "Off")
-            }
-            active={option.currentValue}
-            onSelect={() =>
-              onSetConfigOption(option.id, !option.currentValue)
-            }
-          />
+          <div className="p-1">
+            <SessionRunItem
+              icon={Icon}
+              label={option.name}
+              hint={option.description ?? (option.currentValue ? "On" : "Off")}
+              active={option.currentValue}
+              onSelect={() => onSetConfigOption(option.id, !option.currentValue)}
+            />
+          </div>
         )}
       </DropdownMenuSubContent>
     </DropdownMenuSub>
@@ -440,11 +500,17 @@ export function PermissionModeChip({
   disabled,
   agentId,
   configOptions,
+  harnessProbe,
   onSetConfigOption,
 }: {
   disabled: boolean;
   agentId: string;
   configOptions?: AcpSessionConfigOption[];
+  /** Cold-start / live harness probe facts used to cap permission mode choices. */
+  harnessProbe?: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null;
   onSetConfigOption?: (
     configId: string,
     value: string | boolean,
@@ -452,13 +518,14 @@ export function PermissionModeChip({
 }) {
   const { t } = useI18n();
   const settings = useSettings();
-  const sessionMode = findModeConfigOption(configOptions);
+  const sessionMode = findPermissionModeConfigOption(configOptions);
   if (sessionMode) {
     return (
       <SessionModeControl
         disabled={disabled}
         agentId={agentId}
         option={sessionMode}
+        harnessProbe={harnessProbe}
         onSetConfigOption={onSetConfigOption}
       />
     );
@@ -489,7 +556,7 @@ export function PermissionModeChip({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        sideOffset={6}
+        sideOffset={GAP_ADJACENT_PX}
         className="w-[var(--composer-menu-width)]"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
@@ -528,7 +595,7 @@ export function PermissionModeChip({
   );
 }
 
-const CODEX_MODE_TRANSLATIONS: Record<
+const PERMISSION_MODE_VALUE_I18N: Record<
   string,
   { label: TranslationKey; hint: TranslationKey }
 > = {
@@ -544,17 +611,30 @@ const CODEX_MODE_TRANSLATIONS: Record<
     label: "permission.codexFull",
     hint: "permission.codexFullHint",
   },
+  workspace: {
+    label: "permission.workspaceAccess",
+    hint: "permission.workspaceAccessHint",
+  },
+  "workspace-access": {
+    label: "permission.workspaceAccess",
+    hint: "permission.workspaceAccessHint",
+  },
 };
 
 function SessionModeControl({
   disabled,
   agentId,
   option,
+  harnessProbe,
   onSetConfigOption,
 }: {
   disabled: boolean;
   agentId: string;
   option: AcpSessionConfigOption & { type: "select" };
+  harnessProbe?: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null;
   onSetConfigOption?: (
     configId: string,
     value: string | boolean,
@@ -562,15 +642,11 @@ function SessionModeControl({
 }) {
   const { t } = useI18n();
   const settings = useSettings();
-  const values = flattenSelectOptions(option);
+  const values = permissionModeMenuItems(option, harnessProbe);
   const selected =
     values.find((item) => item.value === option.currentValue) ?? values[0];
   if (!selected) return null;
-  const selectedPresentation = localizedSessionModePresentation(
-    t,
-    agentId,
-    selected,
-  );
+  const selectedPresentation = localizedSessionModePresentation(t, selected);
   const SelectedIcon = sessionModeIcon(selected.value);
 
   const pick = async (value: string) => {
@@ -602,16 +678,12 @@ function SessionModeControl({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        sideOffset={6}
+        sideOffset={GAP_ADJACENT_PX}
         className="w-[var(--composer-menu-width)] p-1"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {values.map((item) => {
-          const presentation = localizedSessionModePresentation(
-            t,
-            agentId,
-            item,
-          );
+          const presentation = localizedSessionModePresentation(t, item);
           const ItemIcon = sessionModeIcon(item.value);
           return (
             <DropdownMenuItem
@@ -644,14 +716,14 @@ function SessionModeControl({
 
 function localizedSessionModePresentation(
   t: (key: TranslationKey) => string,
-  agentId: string,
   option: { value: string; name: string; description?: string | null },
 ) {
-  const presentation = configModeOptionPresentation(agentId, option);
+  const presentation = configModeOptionPresentation(option);
   const translation =
-    agentId === "codex-acp"
-      ? CODEX_MODE_TRANSLATIONS[option.value]
-      : undefined;
+    PERMISSION_MODE_VALUE_I18N[option.value]
+    ?? (isWorkspaceAccessPermissionMode(option.value)
+      ? PERMISSION_MODE_VALUE_I18N["workspace-access"]
+      : undefined);
   return translation
     ? {
         ...presentation,
@@ -765,6 +837,7 @@ function InlineComposerOptionControl({
     value: string | boolean,
   ) => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   if (option.type === "boolean") {
     return (
       <button
@@ -803,22 +876,36 @@ function InlineComposerOptionControl({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          sideOffset={6}
-          className="w-[var(--composer-menu-width)] p-1"
+          sideOffset={GAP_ADJACENT_PX}
+          collisionPadding={8}
+          className={groupedCommandMenuShellClassName()}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          {flattenSelectOptions(option).map((item) => {
-            const ItemIcon = agentPresetIcon(item.value);
-            return (
-              <SessionRunItem
-                key={item.value}
-                icon={ItemIcon}
-                label={item.name}
-                active={item.value === option.currentValue}
-                onSelect={() => onSetConfigOption?.(option.id, item.value)}
-              />
-            );
-          })}
+          <ComposerSearchableSelectMenu
+            items={flattenSelectOptions(option).map((item) => ({
+              value: item.value,
+              label: item.name,
+              groupName: item.groupName,
+              searchText: item.value,
+              active: item.value === option.currentValue,
+            }))}
+            activeValue={option.currentValue}
+            searchPlaceholder={t("chat.searchOptions")}
+            emptyMessage={t("chat.noMatchingOptions")}
+            onSelect={(value) => onSetConfigOption?.(option.id, value)}
+            renderItem={(item, { highlighted }) => {
+              const ItemIcon = agentPresetIcon(item.value);
+              return (
+                <SessionRunItem
+                  presentation="command"
+                  icon={ItemIcon}
+                  label={item.label}
+                  active={item.active}
+                  highlighted={highlighted}
+                />
+              );
+            }}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -841,19 +928,34 @@ function InlineComposerOptionControl({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        sideOffset={6}
-        className="w-[260px]"
+        sideOffset={GAP_ADJACENT_PX}
+        collisionPadding={8}
+        className={groupedCommandMenuShellClassName("w-[260px]")}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        {flattenSelectOptions(option).map((item) => (
-          <SessionRunItem
-            key={item.value}
-            label={item.name}
-            hint={item.description ?? option.description ?? option.name}
-            active={item.value === option.currentValue}
-            onSelect={() => onSetConfigOption?.(option.id, item.value)}
-          />
-        ))}
+        <ComposerSearchableSelectMenu
+          items={flattenSelectOptions(option).map((item) => ({
+            value: item.value,
+            label: item.name,
+            groupName: item.groupName,
+            hint: configSelectItemHint(option, item),
+            searchText: [item.groupName, item.value].filter(Boolean).join(" "),
+            active: item.value === option.currentValue,
+          }))}
+          activeValue={option.currentValue}
+          searchPlaceholder={t("chat.searchOptions")}
+          emptyMessage={t("chat.noMatchingOptions")}
+          onSelect={(value) => onSetConfigOption?.(option.id, value)}
+          renderItem={(item, { highlighted }) => (
+            <SessionRunItem
+              presentation="command"
+              label={item.label}
+              hint={item.hint}
+              active={item.active}
+              highlighted={highlighted}
+            />
+          )}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -867,7 +969,9 @@ function SessionRunItem({
   hint,
   active,
   disabled,
+  highlighted,
   onSelect,
+  presentation = "menu",
 }: {
   icon?: LucideIcon | DshPresetIcon;
   agentId?: string;
@@ -876,17 +980,12 @@ function SessionRunItem({
   hint?: string;
   active?: boolean;
   disabled?: boolean;
-  onSelect: () => void;
+  highlighted?: boolean;
+  onSelect?: () => void;
+  presentation?: "menu" | "command";
 }) {
-  return (
-    <DropdownMenuItem
-      disabled={disabled}
-      onSelect={onSelect}
-      className={cn(
-        "flex items-start gap-2 px-2 py-1.5 text-xs",
-        active && "text-fg",
-      )}
-    >
+  const row = (
+    <>
       {agentId ? (
         <span aria-hidden="true" className="mt-0.5 shrink-0">
           <AgentIcon
@@ -901,14 +1000,59 @@ function SessionRunItem({
       <span className="min-w-0 flex-1">
         <span className="block truncate">{label}</span>
         {hint && (
-          <span className="block truncate text-[11px] text-fg-subtle">
-            {hint}
-          </span>
+          <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
         )}
       </span>
       {active && (
         <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-fg-muted" />
       )}
+    </>
+  );
+
+  if (presentation === "command") {
+    return (
+      <>
+        <GroupedCommandMenuIconSlot>
+          {agentId ? (
+            <AgentIcon
+              agentId={agentId}
+              iconUrl={agentIconUrl}
+              className="size-3.5 text-fg-subtle"
+            />
+          ) : Icon ? (
+            <Icon className="size-3.5 text-fg-subtle" />
+          ) : (
+            <span className="size-3.5" aria-hidden="true" />
+          )}
+        </GroupedCommandMenuIconSlot>
+        <GroupedCommandMenuLabelSlot
+          className={cn(
+            "text-xs",
+            highlighted && "text-accent-foreground",
+            active && "text-fg",
+          )}
+        >
+          <span className="block truncate">{label}</span>
+          {hint ? (
+            <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
+          ) : null}
+        </GroupedCommandMenuLabelSlot>
+      </>
+    );
+  }
+
+  return (
+    <DropdownMenuItem
+      disabled={disabled}
+      onSelect={onSelect}
+      onFocus={() => undefined}
+      className={cn(
+        "flex items-start gap-2 px-2 py-1.5 text-xs",
+        highlighted && "bg-accent text-accent-foreground",
+        active && "text-fg",
+      )}
+    >
+      {row}
     </DropdownMenuItem>
   );
 }

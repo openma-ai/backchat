@@ -4,7 +4,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { expect, test } from "@playwright/test";
-import { launchApp, launchAppWithHome } from "./helpers";
+import {
+  clickHostPickerOption,
+  launchApp,
+  launchAppWithHome,
+  openRuntimeLocationPicker,
+} from "./helpers";
 
 test("external daemon stays usable after Backchat quits, restores, disconnects and signs out", async () => {
   const runtime = { id: "runtime", machine_id: "machine", hostname: "Existing runner", status: "online", version: "0.6.0", agents: [{ id: "codex-acp", binary: "codex-acp" }] };
@@ -54,9 +59,11 @@ test("external daemon stays usable after Backchat quits, restores, disconnects a
     await launched.page.evaluate(async (url) => { await window.backchat.openmaLogin(url); await window.backchat.openmaRunnerEnable(); }, baseUrl);
     await expect.poll(() => launched.page.evaluate(() => window.backchat.openmaRunnerState())).toMatchObject({ hosting: "external", status: "online", enabled: true });
     await launched.app.evaluate(({ BrowserWindow }) => { for (const window of BrowserWindow.getAllWindows()) window.webContents.setBackgroundThrottling(false); });
-    await launched.page.locator('[data-session-runtime-location="true"]').first().click();
-    await expect(launched.page.getByRole("menuitem", { name: /Existing runner.*Daemon project/ })).toBeVisible();
-    await launched.page.getByRole("menuitem", { name: "OpenMA account", exact: true }).click();
+    await openRuntimeLocationPicker(launched.page);
+    await expect(
+      launched.page.getByRole("option", { name: /Existing runner.*Daemon project/ }),
+    ).toBeVisible();
+    await clickHostPickerOption(launched.page, "OpenMA account");
     await expect(launched.page.getByText("Managed independently. Disconnecting or quitting Backchat leaves this runner running.", { exact: true })).toBeVisible();
     await launched.app.close();
     await stillUsable();

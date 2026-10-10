@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openmaDesktopTaskId, openmaRunnerSessionId } from "../src/main/openma-identity";
 import { expect, test } from "./fixtures";
+import { pickRuntimeLocationOption } from "./helpers";
 
 test("desktop login selects a workspace without registering the machine", async ({ app, page, home }) => {
   const hasIdleSleepAssertion = () => execFileSync('/usr/bin/pmset', ['-g', 'assertions'], { encoding: 'utf8' })
@@ -134,8 +135,7 @@ test("desktop login selects a workspace without registering the machine", async 
     // The browser boundary is replaced; the real main-process login callback,
     // HTTP verification, persistence, IPC, and renderer all run unchanged.
     await app.evaluate(({ shell }) => { shell.openExternal = async (url: string) => { await fetch(url); }; });
-    await page.locator('[data-session-runtime-location="true"]').first().click();
-    await page.getByRole("menuitem", { name: "Sign in to OpenMA" }).click();
+    await pickRuntimeLocationOption(page, "Sign in to OpenMA");
     await expect(page.getByRole("heading", { name: "OpenMA", exact: true, level: 1 })).toBeVisible();
     await page.getByLabel("OpenMA server").fill(`http://127.0.0.1:${address.port}`);
     await page.getByRole("button", { name: "Sign in to OpenMA", exact: true }).click();
@@ -153,8 +153,7 @@ test("desktop login selects a workspace without registering the machine", async 
     await page.evaluate(async (cwd) => { await window.backchat.projectSave({ project_id: "project", name: "Sample project", primary_folder: cwd, source_folders: [cwd] }); }, folder);
     await page.reload();
     await expect.poll(() => page.evaluate(() => window.backchat.openmaAccountState())).toMatchObject({ activeWorkspaceId: "beta" });
-    await page.locator('[data-session-runtime-location="true"]').first().click();
-    await page.getByRole("menuitem", { name: "OpenMA account", exact: true }).click();
+    await pickRuntimeLocationOption(page, "OpenMA account");
     await page.getByLabel("Backchat project", { exact: true }).selectOption("project");
     await page.getByLabel("OpenMA environment", { exact: true }).selectOption("project-env");
     await page.getByRole("button", { name: "Link environment", exact: true }).click();
@@ -265,8 +264,7 @@ test("desktop login selects a workspace without registering the machine", async 
     page = await reopened;
     await expect.poll(() => page.evaluate(() => window.backchat.openmaRunnerState())).toMatchObject({ enabled: true, status: "online" });
     await page.getByTestId("new-chat-button").click();
-    await page.locator('[data-session-runtime-location="true"]').first().click();
-    await page.getByRole("menuitem", { name: "OpenMA account", exact: true }).click();
+    await pickRuntimeLocationOption(page, "OpenMA account");
     await page.getByRole("button", { name: "Unlink", exact: true }).click();
     await expect(page.getByText("Sample project → Project environment", { exact: true })).toHaveCount(0);
     expect(environment.metadata).toEqual({ custom: "preserved" });

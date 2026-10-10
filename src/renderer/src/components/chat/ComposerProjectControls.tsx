@@ -1,7 +1,7 @@
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { useProjects } from "@/lib/projects-query";
 import { useRemovedProjectPaths } from "@/lib/removed-projects";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleAlertIcon,
   ArrowLeftIcon,
@@ -17,13 +17,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
 import {
-  Command,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandGroup,
-  CommandSeparator,
-} from "@/components/ui/command";
+  GroupedCommandMenu,
+  groupedCommandMenuPopoverShellClassName,
+} from "@/components/ui/grouped-command-menu";
+import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
+import { useComposerPickerUpwardSideOffset } from "@/components/ui/use-composer-picker-upward-side-offset";
+import {
+  GroupedCommandMenuIconSlot,
+  GroupedCommandMenuLabelSlot,
+} from "@/components/ui/grouped-command-menu-slots";
+import { CommandItem } from "@/components/ui/command";
 import {
   Popover,
   PopoverContent,
@@ -34,6 +37,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { selectRecentProjectPaths } from "@/lib/composer-project-paths";
+import { composerFooterTriggerClass } from "@/components/ui/composer-footer-trigger";
+import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { folderName } from "@/lib/project-path";
 import { useSessionStore, selectActive } from "@/lib/session-store";
@@ -77,6 +82,15 @@ export function ProjectChipRow({
     staleTime: 30_000,
   });
   const { data: savedProjects = [], isSuccess: projectsLoaded } = useProjects();
+  /** Same order as main `Command` + `projectsList` (`updated_at DESC`). */
+  const projectsForPicker = useMemo(
+    () =>
+      [...savedProjects].sort((a, b) => {
+        const byTime = b.updated_at - a.updated_at;
+        return byTime !== 0 ? byTime : b.id.localeCompare(a.id);
+      }),
+    [savedProjects],
+  );
   const removedPaths = useRemovedProjectPaths();
   const eligiblePersisted = persisted.filter(row => !removedPaths.includes(row.cwd ?? "") || savedProjects.some(project => project.source_folders.includes(row.cwd ?? "")));
   const recents = selectRecentProjectPaths(eligiblePersisted).filter(path => !savedProjects.some(project => project.source_folders.includes(path)));
@@ -113,6 +127,7 @@ export function ProjectChipRow({
 
   const cwdLabel = selectedProject?.name ?? (activeCwd ? folderName(activeCwd) : t("chat.chooseProject"));
   const noProjectCommandValue = `${t("chat.noProject")} no project`;
+  const upwardPickerSideOffset = useComposerPickerUpwardSideOffset();
 
   return (
     <div
@@ -139,7 +154,7 @@ export function ProjectChipRow({
             size="sm"
             data-composer-footer-control="project"
             disabled={!isDraft}
-            className="app-compact-control min-w-0 bg-transparent"
+            className={composerFooterTriggerClass()}
             title={activeCwd || t("chat.chooseProjectFolder")}
           >
             <span data-control-icon>
@@ -153,96 +168,156 @@ export function ProjectChipRow({
           <PopoverContent
             side="top"
             align="start"
-            sideOffset={0}
-            className="w-[var(--composer-menu-width)] max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0"
+            sideOffset={upwardPickerSideOffset}
+            className={groupedCommandMenuPopoverShellClassName()}
           >
-            <Command
-              value={projectPickerValue}
-              onValueChange={setProjectPickerValue}
-            >
-              <CommandInput
-                autoFocus
-                placeholder={t("chat.chooseProject")}
-              />
-              <CommandList>
-                {savedProjects.length > 0 && <CommandGroup heading={t("sidebar.projects")}>
-                  {savedProjects.map(project => <CommandItem
-                    key={project.id} value={project.primary_folder} keywords={[project.name, ...project.source_folders]}
-                    data-checked={selectedProject?.id === project.id}
-                    onSelect={() => { onSetCwd(project.primary_folder); setProjectPickerOpen(false); }}
-                    className="text-xs" title={project.primary_folder}
-                  >
-                    <ProjectIcon identity={`project:${project.id}`} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} />
-                    <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                  </CommandItem>)}
-                </CommandGroup>}
-                {recents.length > 0 && <CommandGroup heading={t("chat.recentDirectories")}>
-                {recents.map((path) => (
-                  <CommandItem
-                    key={path}
-                    value={path}
-                    data-checked={path === activeCwd}
-                    onSelect={() => {
-                      onSetCwd(path);
-                      setProjectPickerOpen(false);
-                    }}
-                    className="text-xs"
-                    title={path}
-                  >
-                    <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-                    <span className="min-w-0 flex-1 truncate">
-                      {folderName(path)}
-                    </span>
-                  </CommandItem>
-                ))}
-                </CommandGroup>}
-                {(recents.length > 0 || savedProjects.length > 0) && <CommandSeparator />}
-                <CommandItem
-                  value={`${t("common.browse")} browse`}
-                  onSelect={() => {
-                    setProjectPickerOpen(false);
-                    void (async () => {
-                      try {
-                        const path = await onPickCwd();
-                        if (!path) return;
-                        // A deliberate folder choice is a saved project, so it
-                        // stays visible in both the sidebar and future drafts.
-                        const projects = await window.backchat.projectsList();
-                        if (!projects.some(project => project.primary_folder === path)) {
-                          const project = await window.backchat.projectSave({
-                            project_id: `proj-${crypto.randomUUID()}`,
-                            name: folderName(path), source_folders: [path], primary_folder: path,
-                          });
-                          projects.push(project);
-                        }
-                        queryClient.setQueryData<ProjectInfo[]>(["projects"], projects);
-                        onSetCwd(path);
-                      } catch (error) {
-                        toast.error(t("project.createFailed"), {
-                          description: error instanceof Error ? error.message : String(error),
-                        });
-                      }
-                    })();
-                  }}
-                  className="text-xs"
-                >
-                  <FolderOpenIcon className="size-3.5 text-fg-subtle" />
-                  <span>{t("common.browse")}</span>
-                </CommandItem>
-                <CommandItem
-                  value={noProjectCommandValue}
-                  data-checked={!activeCwd}
-                  onSelect={() => {
-                    onClearCwd();
-                    setProjectPickerOpen(false);
-                  }}
-                  className="text-xs"
-                >
-                  <XIcon className="size-3.5 text-fg-subtle" />
-                  <span>{t("chat.noProject")}</span>
-                </CommandItem>
-              </CommandList>
-            </Command>
+            <GroupedCommandMenu
+              testId="composer-project-picker-panel"
+              menuMode="project-picker"
+              shrinkToContent
+              nativeListScroll
+              panelClassName="flex h-auto w-full flex-col p-0"
+              commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
+              searchPlaceholder={t("chat.chooseProject")}
+              emptyMessage={t("chat.noMatchingOptions")}
+              initialHighlightValue={projectPickerValue || activeCwd || noProjectCommandValue}
+              menuResetKey={projectPickerOpen ? "open" : "closed"}
+              groups={[
+                ...(projectsForPicker.length > 0
+                  ? [
+                      {
+                        heading: t("sidebar.projects"),
+                        items: projectsForPicker.map((project, index) => ({
+                          id: project.id,
+                          value: `${String(index).padStart(4, "0")}\u0000${project.primary_folder}`,
+                          keywords: [project.name, ...project.source_folders],
+                          checked: selectedProject?.id === project.id,
+                          title: project.primary_folder,
+                          onSelect: () => {
+                            onSetCwd(project.primary_folder);
+                            setProjectPickerOpen(false);
+                          },
+                          children: (
+                            <>
+                              <GroupedCommandMenuIconSlot>
+                                <ProjectIcon
+                                  className="!size-3.5"
+                                  identity={`project:${project.id}`}
+                                  sourceFolders={project.source_folders}
+                                  primaryRoot={project.primary_folder}
+                                />
+                              </GroupedCommandMenuIconSlot>
+                              <GroupedCommandMenuLabelSlot>
+                                <span className="truncate">{project.name}</span>
+                              </GroupedCommandMenuLabelSlot>
+                            </>
+                          ),
+                        })),
+                      },
+                    ]
+                  : []),
+                ...(recents.length > 0
+                  ? [
+                      {
+                        heading: t("chat.recentDirectories"),
+                        items: recents.map((path) => ({
+                          id: path,
+                          value: path,
+                          checked: path === activeCwd,
+                          title: path,
+                          onSelect: () => {
+                            onSetCwd(path);
+                            setProjectPickerOpen(false);
+                          },
+                          children: (
+                            <>
+                              <GroupedCommandMenuIconSlot>
+                                <FolderOpenIcon />
+                              </GroupedCommandMenuIconSlot>
+                              <GroupedCommandMenuLabelSlot>
+                                <span className="truncate">{folderName(path)}</span>
+                              </GroupedCommandMenuLabelSlot>
+                            </>
+                          ),
+                        })),
+                      },
+                    ]
+                  : []),
+                {
+                  separatorBefore: projectsForPicker.length > 0 || recents.length > 0,
+                  items: [
+                    {
+                      id: "browse",
+                      value: `${t("common.browse")} browse`,
+                      onSelect: () => {
+                        setProjectPickerOpen(false);
+                        void (async () => {
+                          try {
+                            const path = await onPickCwd();
+                            if (!path) return;
+                            const projects = await window.backchat.projectsList();
+                            if (
+                              !projects.some(
+                                (project) => project.primary_folder === path,
+                              )
+                            ) {
+                              const project = await window.backchat.projectSave({
+                                project_id: `proj-${crypto.randomUUID()}`,
+                                name: folderName(path),
+                                source_folders: [path],
+                                primary_folder: path,
+                              });
+                              projects.push(project);
+                            }
+                            queryClient.setQueryData<ProjectInfo[]>(
+                              ["projects"],
+                              projects,
+                            );
+                            onSetCwd(path);
+                          } catch (error) {
+                            toast.error(t("project.createFailed"), {
+                              description:
+                                error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                            });
+                          }
+                        })();
+                      },
+                      children: (
+                        <>
+                          <GroupedCommandMenuIconSlot>
+                            <FolderOpenIcon />
+                          </GroupedCommandMenuIconSlot>
+                          <GroupedCommandMenuLabelSlot>
+                            <span className="truncate">{t("common.browse")}</span>
+                          </GroupedCommandMenuLabelSlot>
+                        </>
+                      ),
+                    },
+                    {
+                      id: "no-project",
+                      value: noProjectCommandValue,
+                      checked: !activeCwd,
+                      onSelect: () => {
+                        onClearCwd();
+                        setProjectPickerOpen(false);
+                      },
+                      children: (
+                        <>
+                          <GroupedCommandMenuIconSlot>
+                            <XIcon />
+                          </GroupedCommandMenuIconSlot>
+                          <GroupedCommandMenuLabelSlot>
+                            <span className="truncate">{t("chat.noProject")}</span>
+                          </GroupedCommandMenuLabelSlot>
+                        </>
+                      ),
+                    },
+                  ],
+                },
+              ]}
+            />
           </PopoverContent>
         )}
       </Popover>}
@@ -302,6 +377,7 @@ function WorkspaceChip({
   const explicitChoices = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const upwardPickerSideOffset = useComposerPickerUpwardSideOffset();
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -406,63 +482,159 @@ function WorkspaceChip({
       <PopoverTrigger asChild>
         <Button type="button" variant="ghost" size="sm"
           data-composer-footer-control="workspace" data-workspace-id={workspaceId ?? ""}
-          disabled={!isDraft || isFetching} aria-busy={isFetching} className="app-compact-control min-w-0 bg-transparent"
+          disabled={!isDraft || isFetching} aria-busy={isFetching} className={composerFooterTriggerClass()}
           title={selected?.roots.map(root => root.effectivePath).join("\n") ?? t("workspace.localHint")}>
           <span data-control-icon>{isFetching ? <Spinner aria-label={t("workspace.loading")} /> : selected ? <GitBranchIcon /> : <GitBranchIcon />}</span>
           <span className="max-w-[160px] truncate">{label}</span>
           {isDraft && <ChevronDownIcon data-control-chevron />}
         </Button>
       </PopoverTrigger>
-      {isDraft && <PopoverContent side="top" align="start" sideOffset={0}
+      {isDraft && <PopoverContent side="top" align="start" sideOffset={upwardPickerSideOffset}
         className={`${view === "create" ? "w-[360px]" : "w-[var(--composer-menu-width)]"} max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0`}>
-        {view === "choose" ? <Command defaultValue={selected?.id ?? "local"}>
-          <CommandInput autoFocus placeholder={t("workspace.search")} />
-          <CommandList>
-            <div className="relative" data-workspace-create-row>
-              <CommandItem forceMount value="new-workspace" keywords={[t("workspace.new")]} onSelect={beginCreate} className="pr-10 text-xs">
-                <PlusIcon className="size-3.5" />
-                <span className="flex-1">{t("workspace.new")}</span>
-              </CommandItem>
-              <Popover open={introOpen} onOpenChange={setIntroOpen}>
-                <PopoverTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon" className="absolute right-2 top-1/2 size-6 -translate-y-1/2 text-fg-subtle hover:text-fg" aria-label={t("workspace.about")} title={t("workspace.about")}>
-                    <CircleAlertIcon className="size-3.5" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent side="top" align="end" sideOffset={8}
-                  onKeyDown={event => event.stopPropagation()}
-                  aria-label={t("workspace.introTitle")}
-                  className="app-select-content w-80 max-w-[var(--radix-popover-content-available-width)] gap-3 rounded-xl p-4"
-                  onOpenAutoFocus={event => event.preventDefault()}
-                  onCloseAutoFocus={event => event.preventDefault()}>
-                  <div className="flex items-center gap-2 text-fg">
-                    <CircleAlertIcon className="size-4 shrink-0 text-fg-muted" />
-                    <h3 className="text-sm font-medium">{t("workspace.introTitle")}</h3>
-                  </div>
-                  <p className="text-xs leading-relaxed text-fg-muted">{t("workspace.introBody")}</p>
-                  <p className="text-xs leading-relaxed text-fg-muted">{t("workspace.introOptions")}</p>
-                  <div className="flex justify-end gap-2">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setIntroOpen(false)}>{t("workspace.gotIt")}</Button>
-                    <Button type="button" size="sm" onClick={() => { setIntroOpen(false); beginCreate(); setOpen(true); }}>{t("workspace.create")}</Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <CommandSeparator />
-            <CommandItem value="local" keywords={[t("workspace.local"), "main"]} data-checked={!workspaceId || isLiveWorkspaceId(workspaceId)} onSelect={() => { onSetWorkspace(null); setOpen(false); }} className="text-xs" title={t("workspace.localHint")}>
-              <GitBranchIcon className="size-3.5" />
-              <span className="flex-1">{t("workspace.local")}</span>
-              {liveBranch && <span className="text-fg-subtle">{liveBranch}</span>}
-            </CommandItem>
-            {saved.map(ws => <CommandItem key={ws.id} value={ws.id} keywords={[ws.name, ws.branch ?? ""]} data-checked={ws.id === workspaceId}
-              onSelect={() => { onSetWorkspace(ws.id); setOpen(false); }} className="text-xs"
-              title={ws.roots.map(root => `${folderName(root.sourcePath)} → ${root.effectivePath}`).join("\n")}>
-              <GitBranchIcon className="size-3.5" />
-              <span className="min-w-0 flex-1 truncate">{ws.name}</span>
-              <span className="text-fg-subtle">{ws.worktrees.length} {t("workspace.repositories")}</span>
-            </CommandItem>)}
-          </CommandList>
-        </Command> : <form className="app-select-content max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl p-3" onSubmit={event => { event.preventDefault(); void create(); }}>
+        {view === "choose" ? (
+          <GroupedCommandMenu
+            testId="composer-workspace-picker-panel"
+            menuMode="workspace-picker"
+            shrinkToContent
+            nativeListScroll
+            menuResetKey={open ? "open" : "closed"}
+            panelClassName="flex h-auto w-full flex-col overflow-hidden p-0"
+            commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
+            searchPlaceholder={t("workspace.search")}
+            emptyMessage={t("chat.noMatchingOptions")}
+            initialHighlightValue={selected?.id ?? "local"}
+            listHeader={
+              <div className="relative" data-workspace-create-row>
+                <CommandItem
+                  forceMount
+                  value="new-workspace"
+                  keywords={[t("workspace.new")]}
+                  onSelect={beginCreate}
+                  className="pr-10 text-xs"
+                >
+                  <GroupedCommandMenuIconSlot>
+                    <PlusIcon />
+                  </GroupedCommandMenuIconSlot>
+                  <GroupedCommandMenuLabelSlot>
+                    <span className="truncate">{t("workspace.new")}</span>
+                  </GroupedCommandMenuLabelSlot>
+                </CommandItem>
+                <Popover open={introOpen} onOpenChange={setIntroOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-2 top-1/2 size-6 -translate-y-1/2 text-fg-subtle hover:text-fg"
+                      aria-label={t("workspace.about")}
+                      title={t("workspace.about")}
+                    >
+                      <CircleAlertIcon className="size-3.5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="end"
+                    sideOffset={GAP_ADJACENT_PX}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    aria-label={t("workspace.introTitle")}
+                    className="app-select-content w-80 max-w-[var(--radix-popover-content-available-width)] gap-3 rounded-xl p-4"
+                    onOpenAutoFocus={(event) => event.preventDefault()}
+                    onCloseAutoFocus={(event) => event.preventDefault()}
+                  >
+                    <div className="flex items-center gap-2 text-fg">
+                      <CircleAlertIcon className="size-4 shrink-0 text-fg-muted" />
+                      <h3 className="text-sm font-medium">{t("workspace.introTitle")}</h3>
+                    </div>
+                    <p className="text-xs leading-relaxed text-fg-muted">{t("workspace.introBody")}</p>
+                    <p className="text-xs leading-relaxed text-fg-muted">{t("workspace.introOptions")}</p>
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setIntroOpen(false)}>
+                        {t("workspace.gotIt")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setIntroOpen(false);
+                          beginCreate();
+                          setOpen(true);
+                        }}
+                      >
+                        {t("workspace.create")}
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            }
+            groups={[
+              {
+                items: [
+                  {
+                    id: "local",
+                    value: "local",
+                    keywords: [t("workspace.local"), "main"],
+                    checked: !workspaceId || isLiveWorkspaceId(workspaceId),
+                    title: t("workspace.localHint"),
+                    onSelect: () => {
+                      onSetWorkspace(null);
+                      setOpen(false);
+                    },
+                    children: (
+                      <>
+                        <GroupedCommandMenuIconSlot>
+                          <GitBranchIcon />
+                        </GroupedCommandMenuIconSlot>
+                        <GroupedCommandMenuLabelSlot className="flex-row items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">
+                            {t("workspace.local")}
+                          </span>
+                          {liveBranch ? (
+                            <span className="shrink-0 text-fg-subtle">{liveBranch}</span>
+                          ) : null}
+                        </GroupedCommandMenuLabelSlot>
+                      </>
+                    ),
+                  },
+                  ...saved.map((ws) => ({
+                    id: ws.id,
+                    value: ws.id,
+                    keywords: [ws.name, ws.branch ?? ""],
+                    checked: ws.id === workspaceId,
+                    title: ws.roots
+                      .map((root) => `${folderName(root.sourcePath)} → ${root.effectivePath}`)
+                      .join("\n"),
+                    onSelect: () => {
+                      onSetWorkspace(ws.id);
+                      setOpen(false);
+                    },
+                    children: (
+                      <>
+                        <GroupedCommandMenuIconSlot>
+                          <GitBranchIcon />
+                        </GroupedCommandMenuIconSlot>
+                        <GroupedCommandMenuLabelSlot className="flex-row items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">{ws.name}</span>
+                          <span className="shrink-0 text-fg-subtle">
+                            {ws.worktrees.length} {t("workspace.repositories")}
+                          </span>
+                        </GroupedCommandMenuLabelSlot>
+                      </>
+                    ),
+                  })),
+                ],
+              },
+            ]}
+          />
+        ) : (
+          <form
+            className="app-select-content max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void create();
+            }}
+          >
           <div className="mb-3 flex items-center gap-2">
             <Button type="button" variant="ghost" size="icon" className="size-6" disabled={creating} aria-label={t("workspace.back")} onClick={() => setView("choose")}><ArrowLeftIcon className="size-3.5" /></Button>
             <span className="text-sm font-medium">{t("workspace.create")}</span>
@@ -490,7 +662,8 @@ function WorkspaceChip({
           {mode === "new" && <p className="mt-3 text-xs leading-relaxed text-fg-muted">{t("workspace.creationNotice")}</p>}
           {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
           <div className="mt-3 flex justify-end"><Button type="submit" size="sm" disabled={!newName.trim() || creating}>{t(creating ? "workspace.creating" : "workspace.create")}</Button></div>
-        </form>}
+        </form>
+        )}
       </PopoverContent>}
     </Popover>
   );

@@ -63,7 +63,13 @@ import {
 } from "./ComposerContentParts";
 import { ComposerSlashCommandMenu } from "./ComposerSlashCommandMenu";
 import { useComposerSuggestionState } from "@/lib/composer-suggestion-state";
-import { useComposerHarnessState, composerActionDisabled, composerAuthNeeded } from "@/lib/composer-harness-state";
+import { useComposerHarnessLiveAuth, composerHarnessLiveAuthKey } from "@/lib/composer-harness-live-auth";
+import {
+  useComposerHarnessState,
+  composerActionDisabled,
+  composerAuthNeeded,
+  composerHarnessAuthChecking,
+} from "@/lib/composer-harness-state";
 import { reconnectAuthenticatedSession } from "@/lib/session-auth-recovery";
 import { useComposerSlashState } from "@/lib/composer-slash-state";
 import {
@@ -320,19 +326,35 @@ export function Composer({
   const primaryIntent = isRemote ? "submit" : localIntent;
   const primaryRunningAction = isRemote ? (running ? describeRunningMessageAction({ agentId: "openma-remote", intent: "submit" }) : null) : localRunningAction;
   const queryClient = useQueryClient();
-  const authNeeded = !isRemote && composerAuthNeeded(currentAgent, {
+  const { liveAuth, liveProbePending, slowAuthProbe } = useComposerHarnessLiveAuth(
+    currentAgentId,
+    !isRemote && !!currentAgentId,
+  );
+  const sessionAuthState = {
     authRequired: sessionAuthRequired,
     auth: sessionAuth,
+  };
+  const authChecking = !isRemote && composerHarnessAuthChecking(liveProbePending, sessionAuthState);
+  const authNeeded = !isRemote && composerAuthNeeded(liveAuth, sessionAuthState, {
+    liveProbePending,
   });
   const actionDisabled = composerActionDisabled({
     runningActionDisabled: primaryRunningAction?.disabled,
     hasHarnessSetup,
     authNeeded,
+    authChecking,
   });
   const refreshAuth = useMutation({
-    mutationFn: () => window.backchat.agentsList({ refresh: true }),
+    mutationFn: async () => {
+      await window.backchat.agentsList({ refresh: true });
+      return window.backchat.agentsList({ liveProbeAgentId: currentAgentId });
+    },
     onSuccess: async (next) => {
       queryClient.setQueryData(AGENTS_QUERY_KEY, next);
+      queryClient.setQueryData(
+        composerHarnessLiveAuthKey(currentAgentId),
+        next.find((item) => item.id === currentAgentId)?.auth ?? null,
+      );
       const updated = next.find((item) => item.id === currentAgentId);
       if (updated?.auth?.status === "configured" && sessionId) {
         await reconnectAuthenticatedSession(sessionId);
@@ -868,6 +890,7 @@ export function Composer({
         runningActionDisabled: action?.disabled,
         hasHarnessSetup,
         authNeeded,
+        authChecking,
       }),
     })) return;
     onSubmit(
@@ -1148,9 +1171,29 @@ export function Composer({
               placeholder={
                 selectedSkillCommand
                   ? t("chat.addInstructions")
-                  : authNeeded
-                    ? t("chat.signInToChat")
-                    : placeholder
+                  : authChecking && currentAgentId
+                    ? slowAuthProbe
+                      ? t("chat.harnessProbeSlow", {
+                          harness:
+                            currentEnabledAgent?.label ??
+                            currentAgent?.label ??
+                            currentAgentId,
+                        })
+                      : t("chat.harnessProbeChecking", {
+                          harness:
+                            currentEnabledAgent?.label ??
+                            currentAgent?.label ??
+                            currentAgentId,
+                        })
+                    : authNeeded
+                      ? t("chat.signInToChat")
+                      : placeholder
+              }
+              data-composer-harness-probe={
+                authChecking && currentAgentId ? "true" : undefined
+              }
+              data-composer-harness-probe-agent={
+                authChecking && currentAgentId ? currentAgentId : undefined
               }
               disabled={!!disabled || authNeeded}
               rows={1}
@@ -1159,6 +1202,7 @@ export function Composer({
                 selectedSkillCommand
                   ? "min-h-[var(--control-height-compact)]"
                   : "min-h-[var(--composer-body-min-height)]",
+                authChecking && currentAgentId && "composer-harness-probe-placeholder",
               )}
             />
             </div>
@@ -1173,7 +1217,7 @@ export function Composer({
             surviving right edge read as a stray background behind the button.
             The negative margin keeps the row where it was while the padding
             gives the clip box room for the ring. */}
-        <div className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden p-1">
+        <div className="composer-toolbar-chip-row -m-1 flex min-w-0 flex-1 items-center overflow-hidden p-1">
           {!isRemote && <button
             type="button"
             aria-label={t("chat.attachFiles")}
@@ -1193,6 +1237,7 @@ export function Composer({
             disabled={!!running}
             agentId={currentAgentId}
             configOptions={effectiveConfigOptions}
+            harnessProbe={currentEnabledAgent}
             onSetConfigOption={(configId, value) => {
               if (lockedAgentId) return onSetConfigOption?.(configId, value);
               setDraftConfigValues((prev) => ({ ...prev, [configId]: value }));
@@ -1276,6 +1321,7 @@ export function Composer({
               disabled={!!running}
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}
+              authChecking={authChecking}
               agents={enabledAgents}
               currentAgentId={currentAgentId}
               currentAgentLabel={currentEnabledAgent?.label ?? currentAgent?.label}

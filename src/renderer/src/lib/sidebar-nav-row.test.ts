@@ -86,4 +86,24 @@ describe("sidebar nav row", () => {
     expect(settings).not.toContain("hover:bg-bg-surface");
     expect(settings).not.toContain("h-[var(--sidebar-row-h)]");
   });
+
+  it("keeps selected rows on the opaque surface-selected token", () => {
+    const hoverRule = styles.slice(
+      styles.indexOf(
+        '.sidebar-navigation\n  .sidebar-grid-row:not([data-sidebar-row="new-chat"])',
+      ),
+      styles.indexOf(".sidebar-grid-row[data-sidebar-row=\"new-chat\"]"),
+    );
+    expect(hoverRule).not.toMatch(/:is\([^)]*\.app-selected-surface/);
+    expect(styles).toMatch(
+      /\.sidebar-navigation\s+\.sidebar-grid-row\.app-selected-surface:is\(:hover/,
+    );
+    expect(styles).toMatch(/\.sidebar-new-chat-primary/);
+    expect(styles).not.toContain(
+      '.sidebar-grid-row[data-sidebar-row="new-chat"]::before',
+    );
+    expect(styles).toMatch(
+      /\.sidebar-navigation \.sidebar-grid-row\.app-selected-surface \{[^}]*--surface-selected/,
+    );
+  });
 });

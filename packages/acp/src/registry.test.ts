@@ -3,7 +3,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { _resetRegistryCache, detect, getKnownAgents, loadRegistry } from "./registry.js";
+import {
+  _resetRegistryCache,
+  detect,
+  detectEntry,
+  getKnownAgents,
+  loadRegistry,
+} from "./registry.js";
 
 describe("ACP agent setup registry", () => {
   beforeEach(() => {
@@ -235,6 +241,38 @@ describe("ACP agent setup registry", () => {
     });
 
     expect(detected).toBeNull();
+  });
+
+  it("preserves custom spawn args when a registry agent command is overridden", async () => {
+    const binDir = join(tmpdir(), `backchat-acp-bin-${process.pid}-${Date.now()}`);
+    await mkdir(binDir, { recursive: true });
+    const codex = getKnownAgents().find((agent) => agent.id === "codex-acp");
+    expect(codex).toBeDefined();
+    const fakeScript = join(binDir, "fake-acp-agent.mjs");
+    await writeFile(fakeScript, "export {};\n");
+
+    const detected = await detectEntry(
+      {
+        ...codex!,
+        spec: {
+          ...codex!.spec,
+          command: process.execPath,
+          args: [fakeScript],
+        },
+      },
+      {
+        env: {
+          PATH: "/usr/bin:/bin",
+          OPENMA_ACP_BIN_DIR: binDir,
+        },
+        managedBinDirs: [binDir],
+      },
+    );
+
+    expect(detected).toMatchObject({
+      id: "codex-acp",
+      spec: { command: process.execPath, args: [fakeScript] },
+    });
   });
 
   it("runs Cursor from cursor-agent acp on PATH and prefers the managed shim", async () => {

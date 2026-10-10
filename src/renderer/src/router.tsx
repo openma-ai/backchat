@@ -33,6 +33,7 @@ import { SettingsLayout } from "@/pages/settings/SettingsLayout";
 import { ProjectSettingsPage } from "@/pages/settings/ProjectSettings";
 import { ProjectsPage } from "@/pages/Projects";
 import { ScheduledPage } from "@/pages/Scheduled";
+import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 
 // Keep the settings shell synchronous; panels load inside its Suspense boundary.
 const SettingsAgents = lazy(() => import("@/pages/settings/Agents").then(module => ({ default: module.SettingsAgents })));
@@ -54,6 +55,7 @@ function RootRoute() {
 
 const rootRoute = createRootRoute({
   component: RootRoute,
+  errorComponent: RouteErrorFallback,
 });
 
 const homeRoute = createRoute({
@@ -163,6 +165,7 @@ const routeTree = rootRoute.addChildren([
 export const router = createRouter({
   routeTree,
   history: createMemoryHistory({ initialEntries: ["/"] }),
+  defaultErrorComponent: RouteErrorFallback,
 });
 
 declare module "@tanstack/react-router" {

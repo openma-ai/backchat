@@ -118,7 +118,7 @@ export function BackgroundProcessDetails({
       </div>
       <pre
         data-testid="background-terminal-output"
-        className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words py-3 font-mono text-[11px] leading-5 text-fg-muted"
+        className="oma-scrollbar min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words py-3 font-mono text-[11px] leading-5 text-fg-muted"
       >
         {snapshot.output || t("rightPanel.waitingForOutput")}
       </pre>

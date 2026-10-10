@@ -80,6 +80,8 @@ const api: BackchatApi = {
     return () => ipcRenderer.removeListener(PushChannel.OpenmaAccount, listener);
   },
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
+  rendererCrashLog: (report) =>
+    ipcRenderer.invoke(InvokeChannel.AppRendererCrashLog, report),
 
   agentsList: (options) =>
     ipcRenderer.invoke(InvokeChannel.AgentsList, options) as Promise<AgentInfo[]>,

@@ -56,6 +56,11 @@ describe("theme token contract", () => {
     expect(css).toContain(
       "--composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);",
     );
+    expect(css).toContain("--gap-adjacent: 6px;");
+    expect(css).toContain("--composer-menu-side-offset: var(--gap-adjacent);");
+    expect(css).toContain(
+      "--composer-picker-popover-gap: var(--gap-adjacent);",
+    );
     expect(css).toContain("--composer-menu-width: 280px;");
     expect(css).toContain("--control-bg-hover:");
     expect(css).toContain("--control-bg-open:");

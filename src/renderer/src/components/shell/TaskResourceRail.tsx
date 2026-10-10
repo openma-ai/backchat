@@ -33,10 +33,10 @@ export function TaskResourceMenu({ open, onOpenChange, docked }: { open: boolean
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: reduceMotion ? 0 : 12 }}
         transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.2, 0.8, 0.2, 1] }}
-        data-resource-docked aria-label={t("resourceRail.title")} className="app-no-drag fixed z-40 overflow-y-auto rounded-2xl border border-border/40 bg-bg p-3" style={{ top: "52px", right: "var(--stage-inset)", maxHeight: "calc(100vh - 64px)", width: "300px" }}>
+        data-resource-docked aria-label={t("resourceRail.title")} className="oma-scrollbar app-no-drag fixed z-40 overflow-y-auto rounded-2xl border border-border/40 bg-bg p-3" style={{ top: "52px", right: "var(--stage-inset)", maxHeight: "calc(100vh - 64px)", width: "300px" }}>
         <ResourceRail key={session.id} sessionId={session.id} cwd={session.cwd} onOpen={() => onOpenChange(false)} />
       </motion.aside>}</AnimatePresence>, document.body,
-    ) : <PopoverContent onOpenAutoFocus={event => event.preventDefault()} align="end" side="bottom" sideOffset={12} className="w-[300px] max-w-[calc(100vw-24px)] max-h-[75vh] overflow-y-auto rounded-2xl p-3">
+    ) : <PopoverContent onOpenAutoFocus={event => event.preventDefault()} align="end" side="bottom" sideOffset={12} className="oma-scrollbar w-[300px] max-w-[calc(100vw-24px)] max-h-[75vh] overflow-y-auto rounded-2xl p-3">
       <ResourceRail key={session.id} sessionId={session.id} cwd={session.cwd} onOpen={() => onOpenChange(false)} />
     </PopoverContent>}
 

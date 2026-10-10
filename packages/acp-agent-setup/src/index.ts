@@ -21,6 +21,7 @@ import {
   readAcpHarnessInstallState,
   usesOpenMaNpmLatestSource,
 } from "@openma/common/acp-harnesses/installer";
+import { computeAuthProbeInputsKey } from "./auth-probe-inputs.js";
 import {
   authenticateAgent,
   disposeAllAcpSetupProcesses,
@@ -114,10 +115,13 @@ export interface AcpAgentSetupServiceDeps {
   agentOverrides?: () => readonly AcpAgentSetupOverride[];
   getEnabledAgentIds?: () => readonly string[];
   managedByName?: string;
+  onSetupOperationLog?: (fields: AcpAgentSetupOperationLog) => void;
 }
 
 export interface AcpAgentSetupService {
   warmup(): Promise<void>;
+  /** Live auth probe for one harness; never reads cached auth. */
+  probeComposerHarness(agentId: string): Promise<AcpAgentSetupInfo[]>;
   refreshEnabledAgents(): Promise<AcpAgentSetupInfo[]>;
   listAgents(): Promise<AcpAgentSetupInfo[]>;
   installAgent(id: string): Promise<AcpAgentSetupInfo[]>;
@@ -159,6 +163,16 @@ type AgentSnapshotPlan = {
     | { target: "ids"; ids: readonly string[] };
 };
 
+export type AcpAgentSetupOperationLog = {
+  operationId: string;
+  trigger: AgentSnapshotPlan["trigger"];
+  scope: "auth" | "full" | "snapshot";
+  agentId: string;
+  outcome: string;
+  durationMs: number;
+  detail?: string;
+};
+
 const NO_LIVE_PROBE_PLAN: AgentSnapshotPlan = {
   trigger: "list",
   refreshRegistry: false,
@@ -175,6 +189,8 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   private probeCachePromise: Promise<Record<string, CachedAgentProbe>> | null = null;
   private probeCacheWrite: Promise<void> = Promise.resolve();
   private readonly authCache = new Map<string, AcpAgentSetupAuth>();
+  private readonly inflightAgentProbes =
+    new Map<string, { promise: Promise<void>; probeCapabilities: boolean }>();
   private readonly capabilityInspections =
     new Map<string, AcpAgentCapabilityInspection>();
 
@@ -184,14 +200,84 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return disposeAllAcpSetupProcesses();
   }
 
+  async probeComposerHarness(agentId: string): Promise<AcpAgentSetupInfo[]> {
+    const id = agentId.trim();
+    if (!id) return this.listAgents();
+    await this.ensureAgentLiveProbe(id, {
+      trigger: "manual",
+      probeCapabilities: false,
+    });
+    return this.listAgentsWithLiveAuth(id);
+  }
+
+  private listAgentsWithLiveAuth(agentId: string): Promise<AcpAgentSetupInfo[]> {
+    const liveAuth = this.authCache.get(agentId);
+    return this.listAgents().then((listed) =>
+      listed.map((agent) =>
+        agent.id === agentId && liveAuth ? { ...agent, auth: liveAuth } : agent,
+      ),
+    );
+  }
+
   async warmup(): Promise<void> {
     await this.repairRelocatedRegistryShims();
-    await this.collectAgentSnapshot({
-      trigger: "startup",
-      refreshRegistry: true,
-      auth: { target: "ids", ids: [] },
-      capabilities: { target: "detected" },
+    await this.refreshRegistry({ refresh: true });
+    const agentIds = await this.detectedAgentIds();
+    await Promise.all(agentIds.map((id) =>
+      this.ensureAgentLiveProbe(id, {
+        trigger: "startup",
+        probeCapabilities: true,
+      }),
+    ));
+  }
+
+  private async detectedAgentIds(): Promise<string[]> {
+    const entries = this.catalogEntries();
+    const detected = await Promise.all(
+      entries.map((entry) => detectEntry(entry, this.resolveOptions())),
+    );
+    return detected
+      .filter((entry): entry is SetupAgentEntry => entry !== null)
+      .map((entry) => entry.id);
+  }
+
+  private ensureAgentLiveProbe(
+    agentId: string,
+    options: {
+      trigger: AgentSnapshotPlan["trigger"];
+      probeCapabilities: boolean;
+    },
+  ): Promise<void> {
+    const inflight = this.inflightAgentProbes.get(agentId);
+    if (inflight) {
+      if (!options.probeCapabilities || inflight.probeCapabilities) {
+        return inflight.promise;
+      }
+      return inflight.promise.then(() =>
+        this.ensureAgentLiveProbe(agentId, {
+          ...options,
+          probeCapabilities: true,
+        }),
+      );
+    }
+
+    const promise = this.collectAgentSnapshot({
+      trigger: options.trigger,
+      refreshRegistry: false,
+      auth: { target: "ids", ids: [agentId] },
+      capabilities: options.probeCapabilities
+        ? { target: "ids", ids: [agentId] }
+        : { target: "ids", ids: [] },
+    }).then(() => undefined).finally(() => {
+      if (this.inflightAgentProbes.get(agentId)?.promise === promise) {
+        this.inflightAgentProbes.delete(agentId);
+      }
     });
+    this.inflightAgentProbes.set(agentId, {
+      promise,
+      probeCapabilities: options.probeCapabilities,
+    });
+    return promise;
   }
 
   private async repairRelocatedRegistryShims(): Promise<void> {
@@ -252,7 +338,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       const detectedEntry = detectedById.get(entry.id);
       const shouldProbeAuth = Boolean(detectedEntry) &&
         (plan.auth.target === "detected" || authAgentIds.has(entry.id));
-      let auth = detectedEntry ? this.authCache.get(entry.id) : undefined;
+      let auth: AcpAgentSetupAuth | undefined;
       const shouldProbeCapabilities = Boolean(detectedEntry) &&
         (
           plan.capabilities.target === "detected"
@@ -263,7 +349,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         const startedAt = Date.now();
         let outcome = "settled";
         let errorDetail: string | undefined;
-        logSetupOperation({
+        this.logSetupOperation({
           operationId,
           trigger: plan.trigger,
           scope: "full",
@@ -295,7 +381,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           });
           // Keep the last confirmed state across a transient probe failure.
         } finally {
-          logSetupOperation({
+          this.logSetupOperation({
             operationId,
             trigger: plan.trigger,
             scope: "full",
@@ -308,7 +394,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       } else if (detectedEntry && shouldProbeAuth) {
         const startedAt = Date.now();
         let outcome = "settled";
-        logSetupOperation({
+        this.logSetupOperation({
           operationId,
           trigger: plan.trigger,
           scope: "auth",
@@ -327,7 +413,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           outcome = "degraded";
           // Keep the last confirmed state across a transient probe failure.
         } finally {
-          logSetupOperation({
+          this.logSetupOperation({
             operationId,
             trigger: plan.trigger,
             scope: "auth",
@@ -338,10 +424,10 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         }
       }
       const cachedProbe = detectedEntry ? probeCache[entry.id] : undefined;
-      if (!auth && cachedProbe?.auth) {
-        auth = cachedProbe.auth;
-        this.authCache.set(entry.id, auth);
-      }
+      const authInputsKey = detectedEntry
+        ? await computeAuthProbeInputsKey(detectedEntry, this.deps.probeCwd)
+        : undefined;
+      const publishAuth = shouldProbeAuth || shouldProbeCapabilities;
       const usableSessionConfig =
         sessionConfig && !setupAuthBlocksCapabilities(auth)
           ? sessionConfig
@@ -354,9 +440,13 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
             ? { session_modes: usableSessionConfig.modes }
             : {}),
           ...(auth ? { auth } : {}),
+          ...(authInputsKey ? { auth_inputs_key: authInputsKey } : {}),
         });
       } else if (auth && (shouldProbeAuth || shouldProbeCapabilities)) {
-        await this.persistProbe(entry.id, { auth });
+        await this.persistProbe(entry.id, {
+          auth,
+          ...(authInputsKey ? { auth_inputs_key: authInputsKey } : {}),
+        });
       }
       const configOptions =
         usableSessionConfig?.configOptions ??
@@ -386,7 +476,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         installable: !entry.custom && Boolean(entry.installSource || entry.downloadUrl || entry.install),
         ...(entry.installSource ? { installSource: entry.installSource } : {}),
         ...(entry.custom ? { custom: true } : {}),
-        ...(auth ? { auth } : {}),
+        ...(publishAuth && auth ? { auth } : {}),
         ...(configOptions ? { config_options: configOptions } : {}),
         ...(availableCommands ? { available_commands: availableCommands } : {}),
         ...(sessionModes ? { session_modes: sessionModes } : {}),
@@ -398,7 +488,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           : {}),
       } satisfies AcpAgentSetupInfo;
     }));
-    logSetupOperation({
+    this.logSetupOperation({
       operationId,
       trigger: plan.trigger,
       scope: "snapshot",
@@ -407,6 +497,18 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       durationMs: Date.now() - operationStartedAt,
     });
     return result;
+  }
+
+  private logSetupOperation(fields: AcpAgentSetupOperationLog): void {
+    if (process.env.NODE_ENV !== "test") {
+      const detail = fields.detail
+        ? ` error=${JSON.stringify(fields.detail.replace(/\s+/g, " ").slice(0, 500))}`
+        : "";
+      process.stderr.write(
+        `[agent-lifecycle] op=${fields.operationId} trigger=${fields.trigger} scope=${fields.scope} agent=${fields.agentId} outcome=${fields.outcome} total_ms=${fields.durationMs}${detail}\n`,
+      );
+    }
+    this.deps.onSetupOperationLog?.(fields);
   }
 
   async installAgent(id: string): Promise<AcpAgentSetupInfo[]> {
@@ -561,12 +663,15 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         ...(existing?.methods ? { methods: existing.methods } : {}),
       };
       this.authCache.set(id, auth);
-      await this.persistProbe(id, { auth });
+      await this.persistProbe(id, {
+        auth,
+        ...(await this.authInputsKeyPatch(id)),
+      });
     }
     // Authentication is an explicit lifecycle of its own. Do not follow it
     // with another disposable ACP probe; the next real session is the source
     // of truth if a browser/terminal flow is still finishing.
-    return this.listAgents();
+    return this.listAgentsWithLiveAuth(id);
   }
 
   async observeAuth(
@@ -579,7 +684,10 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   ): Promise<AcpAgentSetupAuth> {
     const auth = mergeObservedAuth(this.authCache.get(id), observation);
     this.authCache.set(id, auth);
-    await this.persistProbe(id, { auth });
+    await this.persistProbe(id, {
+      auth,
+      ...(await this.authInputsKeyPatch(id)),
+    });
     return auth;
   }
 
@@ -672,6 +780,18 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     return registryLatestVersion ?? entry.version;
   }
 
+  private async authInputsKeyPatch(
+    id: string,
+  ): Promise<{ auth_inputs_key: string } | Record<string, never>> {
+    const entry = await this.detectCatalogEntry(id);
+    if (!entry) return {};
+    const auth_inputs_key = await computeAuthProbeInputsKey(
+      entry,
+      this.deps.probeCwd,
+    );
+    return { auth_inputs_key };
+  }
+
   private async probeAuth(entry: KnownAgentEntry): Promise<AcpAgentSetupAuth | undefined> {
     const status = await probeAgentAuthStatus({
       agent: entry.spec,
@@ -713,6 +833,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       available_commands?: unknown[];
       session_modes?: unknown;
       auth?: AcpAgentSetupAuth;
+      auth_inputs_key?: string;
     },
   ): Promise<void> {
     const cache = await this.loadProbeCache();
@@ -726,6 +847,11 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
           ? { session_modes: prev.session_modes }
           : {}),
       ...(patch.auth ? { auth: patch.auth } : prev?.auth ? { auth: prev.auth } : {}),
+      ...(patch.auth_inputs_key
+        ? { auth_inputs_key: patch.auth_inputs_key }
+        : prev?.auth_inputs_key
+          ? { auth_inputs_key: prev.auth_inputs_key }
+          : {}),
       updated_at: new Date().toISOString(),
     };
     const path = this.probeCachePath();
@@ -750,6 +876,7 @@ interface CachedAgentProbe {
   available_commands: unknown[];
   session_modes?: unknown;
   auth?: AcpAgentSetupAuth;
+  auth_inputs_key?: string;
   updated_at: string;
 }
 
@@ -769,6 +896,9 @@ function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {
             available_commands: value.available_commands,
             ...(value.session_modes ? { session_modes: value.session_modes } : {}),
             ...(value.auth ? { auth: value.auth } : {}),
+            ...(typeof value.auth_inputs_key === "string"
+              ? { auth_inputs_key: value.auth_inputs_key }
+              : {}),
             updated_at: typeof value.updated_at === "string" ? value.updated_at : "",
           } satisfies CachedAgentProbe]]
         : value.auth
@@ -779,6 +909,9 @@ function parseProbeCache(raw: string): Record<string, CachedAgentProbe> {
               : [],
             ...(value.session_modes ? { session_modes: value.session_modes } : {}),
             auth: value.auth,
+            ...(typeof value.auth_inputs_key === "string"
+              ? { auth_inputs_key: value.auth_inputs_key }
+              : {}),
             updated_at: typeof value.updated_at === "string" ? value.updated_at : "",
           } satisfies CachedAgentProbe]]
         : [],
@@ -902,24 +1035,6 @@ function setupAuthBlocksCapabilities(
   auth: AcpAgentSetupAuth | undefined,
 ): boolean {
   return auth?.status === "needs-auth" || auth?.status === "unknown";
-}
-
-function logSetupOperation(fields: {
-  operationId: string;
-  trigger: AgentSnapshotPlan["trigger"];
-  scope: "auth" | "full" | "snapshot";
-  agentId: string;
-  outcome: string;
-  durationMs: number;
-  detail?: string;
-}): void {
-  if (process.env.NODE_ENV === "test") return;
-  const detail = fields.detail
-    ? ` error=${JSON.stringify(fields.detail.replace(/\s+/g, " ").slice(0, 500))}`
-    : "";
-  process.stderr.write(
-    `[agent-lifecycle] op=${fields.operationId} trigger=${fields.trigger} scope=${fields.scope} agent=${fields.agentId} outcome=${fields.outcome} total_ms=${fields.durationMs}${detail}\n`,
-  );
 }
 
 function errorMessage(error: unknown): string {

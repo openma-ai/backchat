@@ -23,6 +23,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import {
   Tooltip,
   TooltipContent,
@@ -158,7 +159,7 @@ export function ComposerProgress({
           <PopoverContent
             align="center"
             side="top"
-            sideOffset={8}
+            sideOffset={GAP_ADJACENT_PX}
             aria-label={visibleModel.label}
             className="composer-action-panel composer-progress-panel app-overlay-surface composer-card w-[min(420px,calc(100vw-32px))]"
           >
@@ -349,7 +350,7 @@ function ActivityDock({
               </button>
             </PopoverTrigger>
           </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={6}>
+          <TooltipContent side="top" sideOffset={GAP_ADJACENT_PX}>
             <span className="font-medium">{primary.label}</span>
             <span className="tabular-nums opacity-70">{primary.summary}</span>
             {additionalCount > 0 && (
@@ -360,7 +361,7 @@ function ActivityDock({
         <PopoverContent
           align="center"
           side="top"
-          sideOffset={8}
+          sideOffset={GAP_ADJACENT_PX}
           aria-label={activityLabel}
           className="composer-action-panel app-overlay-surface composer-card w-[min(420px,calc(100vw-32px))]"
         >

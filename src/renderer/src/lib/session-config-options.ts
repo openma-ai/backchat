@@ -285,6 +285,117 @@ export function findModeConfigOption(
   );
 }
 
+const NON_PERMISSION_MODE_CONFIG_IDS = new Set(["collaboration_mode"]);
+
+/** ACP session mode value for workspace-scoped permission tiers (when advertised). */
+export function isWorkspaceAccessPermissionMode(value: string): boolean {
+  const normalized = value.trim().toLowerCase().replaceAll("_", "-");
+  return normalized === "workspace" || normalized === "workspace-access";
+}
+
+function looksLikePermissionModeSelect(
+  option: AcpSessionConfigOption & { type: "select" },
+): boolean {
+  const values = flattenSelectOptions(option).map((item) => item.value);
+  if (values.length === 0) return false;
+  return !values.every((value) => value === "default" || value === "plan");
+}
+
+function sessionModeOptionsFromProbe(
+  sessionModes: unknown,
+): AcpSessionConfigSelectOption[] {
+  if (!sessionModes || typeof sessionModes !== "object") return [];
+  const availableModes = (sessionModes as { availableModes?: unknown })
+    .availableModes;
+  if (!Array.isArray(availableModes)) return [];
+  return availableModes.flatMap((mode) => {
+    if (!mode || typeof mode !== "object") return [];
+    const id = (mode as { id?: unknown }).id;
+    if (typeof id !== "string" || !id.trim()) return [];
+    const name = (mode as { name?: unknown }).name;
+    const description = (mode as { description?: unknown }).description;
+    return [{
+      value: id,
+      name: typeof name === "string" && name.trim() ? name : id,
+      ...(typeof description === "string" ? { description } : {}),
+    }];
+  });
+}
+
+/** Permission mode rows from the harness ACP capability probe (cached on AgentInfo). */
+export function probedPermissionModeSelectOptions(
+  probe: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null | undefined,
+): readonly AcpSessionConfigSelectOption[] | undefined {
+  if (!probe) return undefined;
+  const probedConfig = normalizeAgentConfigOptions(probe.config_options);
+  const modeOption = findPermissionModeConfigOption(probedConfig);
+  if (modeOption) return flattenSelectOptions(modeOption);
+  const fromSessionModes = sessionModeOptionsFromProbe(probe.session_modes);
+  return fromSessionModes.length > 0 ? fromSessionModes : undefined;
+}
+
+/** Values advertised by the harness capability probe (config option + session modes). */
+export function probedPermissionModeValues(
+  probe: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null | undefined,
+): ReadonlySet<string> | undefined {
+  const options = probedPermissionModeSelectOptions(probe);
+  return options && options.length > 0
+    ? new Set(options.map((item) => item.value))
+    : undefined;
+}
+
+/** Menu rows: probe catalog order, session labels when the live session has newer copy. */
+export function permissionModeMenuItems(
+  sessionOption: AcpSessionConfigOption & { type: "select" },
+  probe: {
+    config_options?: unknown;
+    session_modes?: unknown;
+  } | null | undefined,
+): AcpSessionConfigSelectOption[] {
+  const catalog = probedPermissionModeSelectOptions(probe);
+  const sessionItems = flattenSelectOptions(sessionOption);
+  if (!catalog?.length) return sessionItems;
+  const sessionByValue = new Map(
+    sessionItems.map((item) => [item.value, item]),
+  );
+  return catalog.map((item) => {
+    const live = sessionByValue.get(item.value);
+    if (!live) return item;
+    return {
+      ...item,
+      name: live.name.trim() ? live.name : item.name,
+      ...(live.description != null && live.description !== ""
+        ? { description: live.description }
+        : item.description != null
+          ? { description: item.description }
+          : {}),
+    };
+  });
+}
+
+/** Composer permission chip: sandbox / approval modes, not plan collaboration_mode. */
+export function findPermissionModeConfigOption(
+  options: readonly AcpSessionConfigOption[] | undefined,
+): (AcpSessionConfigOption & { type: "select" }) | undefined {
+  const candidates = (options ?? []).filter(
+    (option): option is AcpSessionConfigOption & { type: "select" } =>
+      option.type === "select"
+      && !NON_PERMISSION_MODE_CONFIG_IDS.has(option.id)
+      && (option.id === "mode" || option.category === "mode"),
+  );
+  if (candidates.length === 0) return undefined;
+  const explicitMode = candidates.find((option) => option.id === "mode");
+  if (explicitMode) return explicitMode;
+  const permissionLike = candidates.find(looksLikePermissionModeSelect);
+  return permissionLike ?? candidates[0];
+}
+
 export function findSelectConfigOption(
   options: readonly AcpSessionConfigOption[] | undefined,
   id: string,
@@ -302,37 +413,42 @@ export interface ConfigModeOptionPresentation {
 }
 
 export function configModeOptionPresentation(
-  agentId: string,
   option: AcpSessionConfigSelectOption,
 ): ConfigModeOptionPresentation {
-  if (agentId === "codex-acp") {
-    if (option.value === "read-only") {
-      return {
-        label: "Ask for approval",
-        hint: "Always ask to edit external files and use the internet",
-        tone: "neutral",
-      };
-    }
-    if (option.value === "agent") {
-      return {
-        label: "Approve for me",
-        hint: "Only ask for actions detected as potentially unsafe",
-        tone: "neutral",
-      };
-    }
-    if (option.value === "agent-full-access") {
-      return {
-        label: "Full access",
-        hint: "Unrestricted access to the internet and any file on your computer",
-        tone: "warning",
-      };
-    }
-  }
   return {
     label: option.name,
     ...(option.description ? { hint: option.description } : {}),
-    tone: "neutral",
+    tone: option.value === "agent-full-access" ? "warning" : "neutral",
   };
+}
+
+const GENERIC_CONFIG_OPTION_LABELS = new Set(["model", "mode"]);
+
+function isGenericConfigOptionLabel(label: string | null | undefined): boolean {
+  if (!label?.trim()) return true;
+  return GENERIC_CONFIG_OPTION_LABELS.has(label.trim().toLowerCase());
+}
+
+/** Row subtitle for composer config selects — never a generic option title like "Model". */
+export function configSelectItemHint(
+  option: AcpSessionConfigOption,
+  item: FlattenedConfigSelectOption,
+): string | undefined {
+  const itemDescription = item.description?.trim();
+  if (itemDescription) return itemDescription;
+  if (option.category === "model") {
+    const provider = item.groupName?.trim();
+    return provider || undefined;
+  }
+  const optionDescription = option.description?.trim();
+  if (optionDescription && !isGenericConfigOptionLabel(option.description)) {
+    return optionDescription;
+  }
+  const optionName = option.name?.trim();
+  if (optionName && !isGenericConfigOptionLabel(option.name)) {
+    return optionName;
+  }
+  return undefined;
 }
 
 export function flattenSelectOptions(
