@@ -162,7 +162,7 @@ test.describe("settings agent setup lifecycle", () => {
 
       await page.getByRole("button", { name: "Sign in to Multi Agent" }).click();
       await expect(page.getByText("Set up Multi Agent")).toBeVisible();
-      await page.getByRole("radio", { name: /Terminal login/ }).click();
+      await page.getByRole("option", { name: /Terminal login/ }).click();
       await page.getByRole("button", { name: "Open terminal setup" }).click();
       await expect.poll(() => bridge.readAgentSetupCalls())
         .toContainEqual({ type: "auth", id: "multi-agent", methodId: "terminal-login" });
@@ -222,6 +222,8 @@ test.describe("settings agent setup lifecycle", () => {
     // sidebar exposes the direct-update control.
     await page.getByRole("link", { name: "Settings" }).click();
     await page.getByRole("link", { name: "Agents", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
+    await expect(page.getByText("Update Agent", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Back to app" }).click();
     await expect(page.locator('[data-chat-surface="main"]')).toBeVisible();
 

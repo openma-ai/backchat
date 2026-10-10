@@ -7,6 +7,7 @@ import {
 } from "@/components/Icons";
 
 import type { AgentInfo } from "@shared/api";
+import { useI18n } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,6 +41,7 @@ export function AgentRow({
   onUninstall: () => void;
   onOpenSetup: () => void;
 }) {
+  const { t } = useI18n();
   const setup = deriveAgentSetupState(agent, { waitingForAuth, selectedMethodId });
   const activeAction = activeActions.find((item) => item.id === agent.id) ?? null;
   const rowPending = activeAction != null;
@@ -51,7 +53,7 @@ export function AgentRow({
   return (
     <div
       className={cn(
-        "group/agent grid min-h-11 w-full grid-cols-[minmax(0,1fr)] items-center gap-x-2.5 gap-y-1.5 rounded-xl px-4 py-3 text-left text-xs text-fg transition-colors hover:bg-bg-surface/70 sm:grid-cols-[minmax(0,1fr)_auto]",
+        "group/agent grid min-h-11 w-full grid-cols-[minmax(0,1fr)] items-center gap-x-2.5 gap-y-1.5 px-4 py-3 text-left text-xs text-fg transition-colors hover:bg-bg-surface/70 sm:grid-cols-[minmax(0,1fr)_auto]",
         !setup.available && "text-fg-subtle",
       )}
     >
@@ -131,6 +133,20 @@ export function AgentRow({
             {rowPending && activeAction?.type === "upgrade" ? "Upgrading…" : "Upgrade"}
           </Button>
         )}
+        {agent.auth?.supportsLogout && !setup.authNeeded && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onOpenSetup}
+            disabled={anyPending}
+            className="h-7 shrink-0 gap-1.5 bg-bg/55 px-2 text-xs hover:bg-bg"
+            aria-label={t("auth.switchAccountFor", { agent: agent.label })}
+          >
+            <KeyRoundIcon className="size-3.5" />
+            {t("auth.switchAccount")}
+          </Button>
+        )}
         {(setup.authAction.kind === "configure" || setup.authAction.kind === "sign-in" || setup.authAction.kind === "open-setup") && (
           <Button
             type="button"
@@ -180,6 +196,8 @@ function pendingActionLabel(action: AgentAction): string {
       return "Uninstalling…";
     case "auth":
       return "Opening auth…";
+    case "logout":
+      return "Logging out…";
     case "refresh":
       return "Checking…";
   }

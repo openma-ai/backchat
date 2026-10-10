@@ -46,6 +46,8 @@ describe("theme token contract", () => {
     expect(css).toContain("--surface-canvas: var(--bg);");
     expect(css).toContain("--surface-panel: var(--bg-surface);");
     expect(css).toContain("--surface-raised: var(--bg-bubble);");
+    expect(css).toContain("--surface-inset: var(--bg-bubble);");
+    expect(css).toContain("--surface-field: var(--surface-inset);");
     expect(css).toContain("--control-height-compact: 28px;");
     expect(css).toContain("--control-icon-size: 14px;");
     expect(css).toContain(

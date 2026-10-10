@@ -15,6 +15,8 @@ describe("agent settings module boundaries", () => {
     const source = readFileSync(resolve(__dirname, "Agents.tsx"), "utf8");
 
     expect(source).toContain('from "./AgentSettingsRow"');
+    expect(source).toContain("composerBoxClass(");
+    expect(source).not.toContain("rounded-xl px-4");
     expect(source).not.toContain("function AgentRow(");
     expect(source).not.toContain("function pendingActionLabel(");
   });
@@ -45,10 +47,13 @@ describe("agent settings module boundaries", () => {
     );
     const page = readFileSync(resolve(__dirname, "Agents.tsx"), "utf8");
 
-    expect(panels).toContain("ACP authenticate");
-    expect(panels).toContain("local environment override");
+    expect(panels).toContain("t(\"auth.fieldsHint\")");
+    expect(panels).toContain("t(\"auth.envHint\")");
     expect(panels).toContain("form === \"fields\"");
-    expect(panels).toContain("{ values }");
+    const catalog = readFileSync(resolve(__dirname, "../../lib/i18n.ts"), "utf8");
+    expect(catalog).toContain("ACP authenticate");
+    expect(catalog).toContain("local environment override");
+    expect(panels).toContain("authSubmitValues");
     expect(panels).toContain("StatusNotice");
     expect(composerAuth).toContain("values:");
     expect(composerAuth).toContain("auth.error");

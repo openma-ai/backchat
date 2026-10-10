@@ -16,11 +16,12 @@ import { SearchField } from "@/components/ui/search-field";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import { PageScaffold } from "@/components/shell/PageScaffold";
+import { composerBoxClass } from "@/lib/composer-box";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { isAgentEnabled } from "@/lib/enabled-agents";
 import { useI18n } from "@/lib/i18n";
-import type { AgentInfo } from "@shared/api";
 import type { Settings } from "@shared/settings";
+import { canOfferAuthLogout } from "@/lib/auth-method-menu";
 import { deriveAgentSetupState } from "./agent-setup-lifecycle";
 import {
   customAgentRows,
@@ -81,6 +82,7 @@ export function SettingsAgents() {
   const [selectedAuthMethodByAgent, setSelectedAuthMethodByAgent] = useState<Record<string, string>>({});
   const [customForm, setCustomForm] = useState<CustomAgentFormState | null>(null);
   const [pendingActions, setPendingActions] = useState<AgentAction[]>([]);
+  const [authErrors, setAuthErrors] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const { data: agents = [], isLoading: agentsLoading, error: agentsError } = useQuery({
     queryKey: AGENTS_QUERY_KEY,
@@ -117,6 +119,9 @@ export function SettingsAgents() {
           ...(input.gateway ? { gateway: input.gateway } : {}),
         });
       }
+      if (input.type === "logout") {
+        return window.backchat.agentLogout({ id: input.id! });
+      }
       if (input.type === "refresh") {
         return window.backchat.agentsList({ refresh: true });
       }
@@ -129,14 +134,35 @@ export function SettingsAgents() {
         ...current.filter((item) => agentActionKey(item) !== key),
         stored,
       ]);
+      if (variables.id && (variables.type === "auth" || variables.type === "logout")) {
+        const id = variables.id;
+        setAuthErrors((current) => {
+          if (!Object.prototype.hasOwnProperty.call(current, id)) return current;
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
+      }
+    },
+    onError: (error, variables) => {
+      if ((variables.type === "auth" || variables.type === "logout") && variables.id) {
+        const message = error instanceof Error ? error.message : String(error);
+        setAuthErrors((current) => ({ ...current, [variables.id!]: message }));
+      }
     },
     onSuccess: (next, variables) => {
       queryClient.setQueryData(AGENTS_QUERY_KEY, next);
       void queryClient.invalidateQueries({ queryKey: ["session-runtime"] });
-      if (variables.type === "auth" && variables.id) {
+      if (variables.type === "logout") {
+        setWaitingAuthAgentId((id) => id === variables.id ? null : id);
+      } else if (variables.type === "auth" && variables.id) {
         const agent = next.find((item) => item.id === variables.id);
-        setWaitingAuthAgentId(agent?.auth?.status === "configured" ? null : variables.id);
-        if (agent?.auth?.status === "configured") {
+        const started = agent?.auth?.methods?.find((method) => method.id === variables.methodId);
+        const configured = agent?.auth?.status === "configured";
+        // A terminal launch leaves the process outside this window. Keeping
+        // the modal open covers the next agent's sign-in control.
+        setWaitingAuthAgentId(configured ? null : variables.id);
+        if (configured || started?.type === "terminal") {
           setConfiguringAgentId((id) => id === variables.id ? null : id);
         }
       } else if (variables.type === "install" || variables.type === "uninstall" || variables.type === "upgrade") {
@@ -172,6 +198,27 @@ export function SettingsAgents() {
   );
   const customRows = filterAgentCatalog(allCustomRows, searchQuery);
   const hasSearchQuery = searchQuery.trim().length > 0;
+  const configuringAgent = agents.find((agent) => agent.id === configuringAgentId) ?? null;
+  const availableList = available.length === 0 ? null : (
+    <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
+      {available.map((a) => (
+        <li key={a.id}>
+          <AgentRow
+            agent={a}
+            enabled={isAgentEnabled(settings, a.id)}
+            waitingForAuth={waitingAuthAgentId === a.id}
+            selectedMethodId={selectedAuthMethodByAgent[a.id]}
+            activeActions={pendingActions}
+            onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
+            onInstall={() => action.mutate({ type: "install", id: a.id })}
+            onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
+            onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
+            onOpenSetup={() => setConfiguringAgentId((id) => id === a.id ? null : a.id)}
+          />
+        </li>
+      ))}
+    </ul>
+  );
 
   const saveCustomAgent = async () => {
     if (!settings || !customForm) return;
@@ -268,12 +315,12 @@ export function SettingsAgents() {
             : `${available.length} available`}
         />
         {agentsLoading ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
             Loading agents…
           </div>
         ) : available.length === 0 ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             {hasSearchQuery
               ? <SearchIcon className="size-4 shrink-0 text-fg-subtle" />
               : <CpuIcon className="size-4 shrink-0 text-fg-subtle" />}
@@ -288,52 +335,7 @@ export function SettingsAgents() {
               </p>
             </div>
           </div>
-        ) : (
-          <ul className="space-y-1">
-            {available.map((a) => (
-              <li key={a.id}>
-                <AgentRow
-                  agent={a}
-                  enabled={isAgentEnabled(settings, a.id)}
-                  waitingForAuth={waitingAuthAgentId === a.id}
-                  selectedMethodId={selectedAuthMethodByAgent[a.id]}
-                  activeActions={pendingActions}
-                  onSetEnabled={(enabled) => void setAgentEnabled(a.id, enabled)}
-                  onInstall={() => action.mutate({ type: "install", id: a.id })}
-                  onUpgrade={() => action.mutate({ type: "upgrade", id: a.id })}
-                  onUninstall={() => action.mutate({ type: "uninstall", id: a.id })}
-                  onOpenSetup={() => setConfiguringAgentId((id) => id === a.id ? null : a.id)}
-                />
-                {settings && configuringAgentId === a.id && (
-                  <AgentAuthSetupPanel
-                    key={`${a.id}:${selectedAuthMethodByAgent[a.id] ?? a.auth?.methodId ?? ""}`}
-                    agent={a}
-                    settings={settings}
-                    selectedMethodId={selectedAuthMethodByAgent[a.id]}
-                    waitingForAuth={waitingAuthAgentId === a.id}
-                    pending={pendingActions.some((item) => item.id === a.id)}
-                    error={
-                      action.error && pendingActions.some((item) => item.id === a.id && item.type === "auth")
-                        ? (action.error instanceof Error ? action.error.message : String(action.error))
-                        : undefined
-                    }
-                    onMethodIdChange={(methodId) =>
-                      setSelectedAuthMethodByAgent((prev) => ({ ...prev, [a.id]: methodId }))
-                    }
-                    onStart={(methodId, options) => action.mutate({
-                      type: "auth",
-                      id: a.id,
-                      methodId,
-                      ...(options?.values ? { values: options.values } : {}),
-                    })}
-                    onClose={() => setConfiguringAgentId(null)}
-                    onSaved={() => setConfiguringAgentId(null)}
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        ) : availableList}
       </section>
 
       <section>
@@ -359,12 +361,12 @@ export function SettingsAgents() {
           </Button>
         </div>
         {agentsLoading ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
             Loading registry…
           </div>
         ) : unavailable.length === 0 ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             {hasSearchQuery
               ? <SearchIcon className="size-4 shrink-0 text-fg-subtle" />
               : <DownloadIcon className="size-4 shrink-0 text-fg-subtle" />}
@@ -380,7 +382,7 @@ export function SettingsAgents() {
             </div>
           </div>
         ) : (
-          <ul className="space-y-1">
+          <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
             {unavailable.map((a) => (
               <li key={a.id}>
                 <AgentRow
@@ -426,11 +428,11 @@ export function SettingsAgents() {
           </div>
 
           {customRows.length > 0 && (
-            <ul className="space-y-1">
+            <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
               {customRows.map((row) => (
                 <li
                   key={row.id}
-                  className="group/custom flex min-h-10 items-center gap-3 rounded-xl px-4 py-3 text-xs transition-colors hover:bg-bg-surface/70"
+                  className="group/custom flex min-h-10 items-center gap-3 px-4 py-3 text-xs transition-colors hover:bg-bg-surface/70"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
@@ -485,7 +487,7 @@ export function SettingsAgents() {
 
         <section>
           <SectionHeading className="mb-4" label="Prompt queue" detail="Agent loop scheduling" />
-          <div className="flex items-center justify-between gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-bg-surface/70">
+          <div className={composerBoxClass({ className: "flex items-center justify-between gap-4 px-4 py-3" })}>
             <div className="min-w-0">
               <h3 className="text-sm font-medium text-fg">Prompt queue</h3>
               <p className="mt-0.5 text-[11px] text-fg-muted">
@@ -501,6 +503,31 @@ export function SettingsAgents() {
           </div>
         </section>
         </>
+      )}
+      {settings && configuringAgent && (
+        <AgentAuthSetupPanel
+          key={configuringAgent.id}
+          agent={configuringAgent}
+          settings={settings}
+          selectedMethodId={selectedAuthMethodByAgent[configuringAgent.id]}
+          waitingForAuth={waitingAuthAgentId === configuringAgent.id}
+          pending={pendingActions.some((item) => item.id === configuringAgent.id && item.type === "auth")}
+          logoutPending={pendingActions.some((item) => item.id === configuringAgent.id && item.type === "logout")}
+          supportsLogout={canOfferAuthLogout(configuringAgent)}
+          error={authErrors[configuringAgent.id]}
+          onMethodIdChange={(methodId) =>
+            setSelectedAuthMethodByAgent((prev) => ({ ...prev, [configuringAgent.id]: methodId }))
+          }
+          onStart={(methodId, options) => action.mutate({
+            type: "auth",
+            id: configuringAgent.id,
+            methodId,
+            ...(options?.values ? { values: options.values } : {}),
+          })}
+          onLogout={() => action.mutate({ type: "logout", id: configuringAgent.id })}
+          onClose={() => setConfiguringAgentId(null)}
+          onSaved={() => setConfiguringAgentId(null)}
+        />
       )}
     </PageScaffold>
   );

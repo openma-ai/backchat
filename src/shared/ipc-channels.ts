@@ -48,6 +48,7 @@ export const InvokeChannel = {
   AgentUpgrade: "agent:upgrade",
   AgentUninstall: "agent:uninstall",
   AgentAuthenticate: "agent:authenticate",
+  AgentLogout: "agent:logout",
   SessionStart: "session:start",
   SessionPrompt: "session:prompt",
   SessionUpdatePromptQueue: "session:updatePromptQueue",

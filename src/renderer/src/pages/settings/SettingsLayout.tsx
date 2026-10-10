@@ -13,9 +13,10 @@ import {
 } from "@/components/Icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SearchField } from "@/components/ui/search-field";
-import { ContentPage } from "@/components/shell/PageScaffold";
+import { ContentPage, PAGE_SCAFFOLD_CLASS } from "@/components/shell/PageScaffold";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { composerBoxClass } from "@/lib/composer-box";
+import { sidebarNavRowClass } from "@/lib/sidebar-nav-row";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 type SettingsTab = {
@@ -42,25 +43,31 @@ const SECTION_LABELS: Record<SettingsTab["section"], TranslationKey> = {
   integrations: "settings.integrations",
   archived: "settings.archived",
 };
-const iconSlotClass = "flex w-4 shrink-0 items-center justify-center";
+
+const SETTINGS_PANEL_LOADERS = [
+  () => import("./Activity"),
+  () => import("./Agents"),
+  () => import("./Appearance"),
+  () => import("./Archive"),
+  () => import("./Browser"),
+  () => import("./McpServers"),
+  () => import("./OpenMA"),
+  () => import("./About"),
+];
 
 export function SettingsLayout() {
-  const { pathname } = useLocation();
-  const [readyPath, setReadyPath] = useState<string | null>(null);
+  // Warm every panel as soon as settings opens. React.lazy suspends the
+  // outlet the first time each chunk is missing, which replaces the whole
+  // page (title included) with the loading skeleton. Loading them together
+  // means a later tab switch does not do that again.
   useEffect(() => {
-    // Commit the navigation/sidebar and paint its skeleton before mounting
-    // potentially expensive settings panels, including cached activity charts.
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => setReadyPath(pathname));
-    });
-    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
-  }, [pathname]);
+    for (const load of SETTINGS_PANEL_LOADERS) void load();
+  }, []);
   return (
     <ContentPage>
-      {readyPath === pathname ? (
-        <Suspense fallback={<SettingsLoadingPanel />}><Outlet /></Suspense>
-      ) : <SettingsLoadingPanel />}
+      <Suspense fallback={<SettingsLoadingPanel />}>
+        <Outlet />
+      </Suspense>
     </ContentPage>
   );
 }
@@ -69,10 +76,10 @@ function SettingsLoadingPanel() {
   const { t } = useI18n();
   return (
     <div data-settings-loading="true" role="status" aria-label={t("common.loadingShort")}
-      className="mx-auto w-full max-w-4xl space-y-6 p-6" aria-busy="true">
+      className={PAGE_SCAFFOLD_CLASS} aria-busy="true">
       <Skeleton className="h-7 w-32" />
       <Skeleton className="h-4 w-64 max-w-full" />
-      {[0, 1, 2].map(key => <div key={key} className="space-y-4 rounded-xl border border-border/55 p-5">
+      {[0, 1, 2].map(key => <div key={key} className={composerBoxClass({ className: "space-y-4 p-5" })}>
         <Skeleton className="h-4 w-40" /><Skeleton className="h-10 w-full" /><Skeleton className="h-4 w-2/3" />
       </div>)}
     </div>
@@ -95,16 +102,19 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-ui font-medium text-fg">
+    <div className="sidebar-navigation flex h-full min-h-0 flex-col text-ui font-medium text-fg">
       <div className="app-drag-region h-[36px] shrink-0" />
       <div className="px-2 pt-[var(--row-gap-y)]">
         <button
           type="button"
           onClick={backToApp}
           aria-label={t("settings.backToApp")}
-          className="app-no-drag mb-2 inline-flex h-[var(--sidebar-row-h)] w-fit items-center gap-2 rounded-md px-2 text-ui text-fg-subtle transition-colors hover:bg-bg-surface/55 hover:text-fg"
+          className={sidebarNavRowClass({
+            active: false,
+            className: "app-no-drag mb-2 w-fit",
+          })}
         >
-          <span className={iconSlotClass}>
+          <span className="sidebar-row-icon">
             <ArrowLeftIcon className="size-4" />
           </span>
           <span>{t("settings.backToApp")}</span>
@@ -141,14 +151,9 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
                       <li key={tab.to}>
                         <Link
                           to={tab.to}
-                          className={cn(
-                            "flex h-[var(--sidebar-row-h)] items-center gap-2 rounded-md px-2 text-ui transition-colors",
-                            active
-                              ? "app-selected-surface text-fg"
-                              : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg",
-                          )}
+                          className={sidebarNavRowClass({ active })}
                         >
-                          <span className={iconSlotClass}>
+                          <span className="sidebar-row-icon">
                             <Icon className="size-4" />
                           </span>
                           <span>{t(tab.labelKey)}</span>
@@ -163,7 +168,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
           {!!projects.data?.length && <div className="mb-4">
             <div className="mb-1.5 px-2 text-ui font-medium text-fg-subtle">{t("sidebar.projects")}</div>
             <ul className="space-y-0.5">{projects.data.filter(project => project.name.toLowerCase().includes(query.trim().toLowerCase())).map(project => <li key={project.id}>
-              <Link to="/settings/projects/$projectId" params={{ projectId: project.id }} className={cn("flex h-[var(--sidebar-row-h)] items-center gap-2 rounded-md px-2 text-ui", location.pathname === `/settings/projects/${project.id}` ? "app-selected-surface text-fg" : "text-fg-muted hover:bg-bg-surface/65 hover:text-fg")}>
+              <Link to="/settings/projects/$projectId" params={{ projectId: project.id }} className={sidebarNavRowClass({ active: location.pathname === `/settings/projects/${project.id}` })}>
                 <ProjectIcon identity={`project:${project.id}`} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} /><span className="truncate">{project.name}</span>
               </Link>
             </li>)}</ul>

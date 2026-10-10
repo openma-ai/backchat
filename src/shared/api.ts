@@ -121,6 +121,8 @@ export interface AgentInfo {
     message: string;
     methodId?: string;
     methodName?: string;
+    /** ACP `agentCapabilities.auth.logout` was advertised. */
+    supportsLogout?: boolean;
     methods?: Array<{
       id: string;
       name?: string;
@@ -471,6 +473,8 @@ export interface BackchatApi extends OpenmaAccountApi {
     values?: Record<string, string>;
     gateway?: AgentGatewayAuth;
   }): Promise<AgentInfo[]>;
+  /** Ends the authenticated state through ACP `logout` when the agent advertised it. */
+  agentLogout(p: { id: string; sessionId?: string }): Promise<AgentInfo[]>;
 
   sessionStart(p: SessionStartParams): Promise<SessionStartResult>;
   sessionPrompt(p: SessionPromptParams): Promise<void>;
