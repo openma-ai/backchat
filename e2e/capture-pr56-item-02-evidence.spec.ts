@@ -372,11 +372,17 @@ async function measureProjectPickerPopover(
     const heading = popover.querySelector(
       "[cmdk-group-heading]",
     ) as HTMLElement | null;
-    const separators = popover.querySelectorAll(
+    const separatorEl = popover.querySelector(
       '[data-slot="command-separator"]',
-    ).length;
+    ) as HTMLElement | null;
+    const items = Array.from(
+      popover.querySelectorAll('[data-slot="command-item"]'),
+    ) as HTMLElement[];
+    const lastItem = items.at(-1);
     const searchRect = search?.getBoundingClientRect();
     const headingRect = heading?.getBoundingClientRect();
+    const separatorRect = separatorEl?.getBoundingClientRect();
+    const lastItemRect = lastItem?.getBoundingClientRect();
     return {
       popover: {
         width: Math.round(rect.width),
@@ -386,7 +392,15 @@ async function measureProjectPickerPopover(
       searchRowHeight: searchRect ? Math.round(searchRect.height) : 0,
       headingTop: headingRect ? Math.round(headingRect.top - popoverTop) : 0,
       headingHeight: headingRect ? Math.round(headingRect.height) : 0,
-      separatorCount: separators,
+      separatorTop: separatorRect
+        ? Math.round(separatorRect.top - popoverTop)
+        : 0,
+      separatorHeight: separatorRect ? Math.round(separatorRect.height) : 0,
+      bottomPadding: lastItemRect
+        ? Math.round(rect.bottom - lastItemRect.bottom)
+        : 0,
+      separatorCount: popover.querySelectorAll('[data-slot="command-separator"]')
+        .length,
       headings,
       projectRowLabels: projectRows,
       commandItemValues: itemValues,

@@ -187,6 +187,55 @@ export function GroupedCommandMenu({
     if (event.key === "Escape") event.stopPropagation();
   };
 
+  /** Main project picker: Browse / No project are list siblings, not a padded group. */
+  const bareProjectPickerTail = menuMode === "project-picker";
+
+  const renderMenuItem = (item: GroupedCommandMenuItem) => (
+    <CommandItem
+      key={item.id}
+      value={item.value}
+      keywords={item.keywords}
+      disabled={item.disabled}
+      forceMount={item.forceMount}
+      data-checked={item.checked ? true : undefined}
+      title={item.title}
+      onSelect={item.onSelect}
+      onMouseDown={
+        insideDropdownMenu
+          ? (event) => {
+              event.preventDefault();
+            }
+          : undefined
+      }
+      className={cn(
+        "text-xs",
+        menuMode === "host-picker" &&
+          "host-picker-command-item !items-start !py-1 !px-2",
+      )}
+    >
+      {item.children}
+    </CommandItem>
+  );
+
+  const renderGroup = (group: GroupedCommandMenuGroup, index: number) => {
+    const key = group.heading ?? `__ungrouped-${index}`;
+    const items = group.items.map((item) => renderMenuItem(item));
+    if (bareProjectPickerTail && !group.heading) {
+      return (
+        <Fragment key={key}>
+          {group.separatorBefore ? <CommandSeparator /> : null}
+          {items}
+        </Fragment>
+      );
+    }
+    return (
+      <Fragment key={key}>
+        {group.separatorBefore ? <CommandSeparator /> : null}
+        <CommandGroup heading={group.heading}>{items}</CommandGroup>
+      </Fragment>
+    );
+  };
+
   return (
     <div
       data-testid={testId}
@@ -236,39 +285,7 @@ export function GroupedCommandMenu({
             {listHeader && listHeaderSeparator && groups.length > 0 ? (
               <CommandSeparator />
             ) : null}
-            {visibleGroups.map((group, index) => (
-              <Fragment key={group.heading ?? `__ungrouped-${index}`}>
-                {group.separatorBefore ? <CommandSeparator /> : null}
-                <CommandGroup heading={group.heading}>
-                  {group.items.map((item) => (
-                    <CommandItem
-                      key={item.id}
-                      value={item.value}
-                      keywords={item.keywords}
-                      disabled={item.disabled}
-                      forceMount={item.forceMount}
-                      data-checked={item.checked ? true : undefined}
-                      title={item.title}
-                      onSelect={item.onSelect}
-                      onMouseDown={
-                        insideDropdownMenu
-                          ? (event) => {
-                              event.preventDefault();
-                            }
-                          : undefined
-                      }
-                      className={cn(
-                        "text-xs",
-                        menuMode === "host-picker" &&
-                          "host-picker-command-item !items-start !py-1 !px-2",
-                      )}
-                    >
-                      {item.children}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </Fragment>
-            ))}
+            {visibleGroups.map(renderGroup)}
           </CommandList>
         ) : (
           <ScrollArea
@@ -286,39 +303,7 @@ export function GroupedCommandMenu({
               {listHeader && listHeaderSeparator && groups.length > 0 ? (
                 <CommandSeparator />
               ) : null}
-              {visibleGroups.map((group, index) => (
-                <Fragment key={group.heading ?? `__ungrouped-${index}`}>
-                  {group.separatorBefore ? <CommandSeparator /> : null}
-                  <CommandGroup heading={group.heading}>
-                    {group.items.map((item) => (
-                      <CommandItem
-                        key={item.id}
-                        value={item.value}
-                        keywords={item.keywords}
-                        disabled={item.disabled}
-                        forceMount={item.forceMount}
-                        data-checked={item.checked ? true : undefined}
-                        title={item.title}
-                        onSelect={item.onSelect}
-                        onMouseDown={
-                          insideDropdownMenu
-                            ? (event) => {
-                                event.preventDefault();
-                              }
-                            : undefined
-                        }
-                        className={cn(
-                          "text-xs",
-                          menuMode === "host-picker" &&
-                            "host-picker-command-item !items-start !py-1 !px-2",
-                        )}
-                      >
-                        {item.children}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </Fragment>
-              ))}
+              {visibleGroups.map(renderGroup)}
             </CommandList>
           </ScrollArea>
         )}
