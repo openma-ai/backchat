@@ -185,7 +185,8 @@
 
 .app-compact-control:disabled {
   pointer-events: none;
-  opacity: 0.45;
+  color: var(--fg-disabled);
+  opacity: 1;
 }
 
 /* Every sidebar row uses the same compact overflow affordance. Keeping its
@@ -309,8 +310,9 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-.sidebar-navigation .text-ui {
-  font-weight: 500;
+.sidebar-navigation .app-selected-surface {
+  font-weight: 600;
+  font-synthesis: weight style;
 }
 .sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
   margin-top: 1px;
@@ -330,7 +332,8 @@
 }
 .sidebar-scroll-area nav > .sidebar-section > .sidebar-section-header > button {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-emphasis);
+  font-synthesis: weight style;
   color: var(--fg-muted);
 }
 .sidebar-section-header > button {
@@ -584,7 +587,8 @@
   padding-inline: 12px;
   color: var(--fg-subtle);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-emphasis);
+  font-synthesis: weight style;
   line-height: 18px;
 }
 
@@ -1430,7 +1434,8 @@ html[data-theme-asset-home-corner-decoration="true"]
 .home-suggestion-select-title {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-emphasis);
+  font-synthesis: weight style;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1638,9 +1643,24 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --type-ui-size: 13px;
   --type-ui-leading: 20px;
   --type-body-size: 14px;
-  --type-body-leading: 22px;
+  /* 14/24 (1.71) is the mixed-script reading line. Latin is comfortable
+     a little tighter; Han needs the extra em-box room so the next line
+     does not collide with punctuation. */
+  --type-body-leading: 24px;
+  --type-code-leading: 22px;
   --type-heading-size: 15px;
   --type-heading-leading: 24px;
+  /* Codex desktop uses 430 for resting UI text. SF, Segoe UI Variable,
+     and the bundled Noto Sans axis can draw it. On macOS that same 430
+     is the used font-weight, so SF follows its axis. The PingFang 430
+     face below uses the Regular file, so a 430 request resolves to
+     Regular wherever those local() names exist. 500 and 600 stay on
+     their own faces. Code keeps an explicit 400. */
+  --font-ui-weight: 430;
+  /* Selected text is 600. Medium stays 500. Linux Noto Sans SC and macOS
+     PingFang publish a 500 face. Windows YaHei has no 500, so that request
+     stays on Regular; only 600 uses YaHei Bold. */
+  --font-weight-emphasis: 600;
 
   /* ---------- Theme-derived product semantics ----------
      Theme plugins provide the primitive palette. Product components consume
@@ -1908,6 +1928,126 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   );
 }
 
+/* Linux UI pair. Only the upright Latin variable files and two Simplified
+   Chinese weights are packaged. macOS and Windows builds omit these files
+   (see package.json build.mac/win.files). Italic is synthesized; there is
+   no italic file. https://fonts.google.com/noto */
+/* PingFang SC ships Medium at 500. A request of 430 checks 500 before 400,
+   so raw PingFang SC would paint Medium while SF draws 430. An explicit
+   430 face uses the Regular file, so a 430 request resolves to Regular
+   wherever these local() names exist. 500 is its own face (Medium), and
+   600 is Semibold. Without the 500 face, font-medium collapses to Regular.
+   local() names are the English full name, the PostScript name, and the
+   Simplified Chinese full name. This Linux checkout cannot draw PingFang. */
+@font-face {
+  font-family: "Backchat PingFang";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular"), local("苹方-简 常规");
+}
+@font-face {
+  font-family: "Backchat PingFang";
+  font-style: normal;
+  font-weight: 430;
+  font-display: swap;
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular"), local("苹方-简 常规");
+}
+@font-face {
+  font-family: "Backchat PingFang";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local("PingFang SC Medium"), local("PingFangSC-Medium");
+}
+@font-face {
+  font-family: "Backchat PingFang";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local("PingFang SC Semibold"), local("PingFangSC-Semibold");
+}
+/* YaHei has Regular and Bold, and no 500. 400 and 430 use Regular.
+   A 500 request has no face of its own, so CSS Fonts matches the nearest
+   lighter face (the 430 Regular file). That is the same Regular outcome
+   as an unmapped YaHei family, and the usual result when a family has no
+   Medium. Only 600 uses Bold. */
+@font-face {
+  font-family: "Backchat YaHei";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local("Microsoft YaHei Regular"), local("Microsoft YaHei"), local("MicrosoftYaHei");
+}
+@font-face {
+  font-family: "Backchat YaHei";
+  font-style: normal;
+  font-weight: 430;
+  font-display: swap;
+  src: local("Microsoft YaHei Regular"), local("Microsoft YaHei"), local("MicrosoftYaHei");
+}
+@font-face {
+  font-family: "Backchat YaHei";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local("Microsoft YaHei Bold"), local("Microsoft YaHei UI Bold"), local("MicrosoftYaHei-Bold");
+}
+@font-face {
+  font-family: "Backchat Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource-variable/noto-sans/files/noto-sans-latin-ext-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Backchat Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Backchat Sans SC";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Backchat Sans SC";
+  font-style: normal;
+  font-weight: 430;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Backchat Sans SC";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Backchat Sans SC";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-600-normal.woff2")
+    format("woff2");
+}
+
 @theme {
   --text-caption: var(--type-caption-size);
   --text-caption--line-height: var(--type-caption-leading);
@@ -1917,12 +2057,30 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --text-body--line-height: var(--type-body-leading);
   --text-section: var(--type-heading-size);
   --text-section--line-height: var(--type-heading-leading);
-  --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
-  --font-sans: "Geist Variable", -apple-system, "Segoe UI", sans-serif;
-  --font-chat:
-    -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono Variable", "SF Mono", Menlo, Consolas, monospace;
+  /* UI and chat share one sans. macOS and Windows names come first so
+     those platforms keep SF/PingFang and Segoe/YaHei. The fontconfig UI
+     generic is not in front of the bundled faces, or Linux would pick a
+     different family per distro. Backchat Sans / Sans SC
+     are the packaged Linux pair (Noto Sans Latin variable + Noto Sans SC
+     400/500/600) and only win after the OS faces miss. */
+  --font-sans:
+    -apple-system-body, -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
+    "Segoe UI", "Backchat PingFang", "PingFang SC", "Hiragino Sans GB", "Backchat YaHei",
+    "Microsoft YaHei UI", "Microsoft YaHei", "Backchat Sans", "Backchat Sans SC", "Noto Sans CJK SC",
+    "Source Han Sans SC", "WenQuanYi Micro Hei", ui-sans-serif, Helvetica, Arial,
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, "Cascadia Mono", Consolas,
+    "Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Sarasa Mono SC",
+    "Noto Sans Mono CJK SC", "WenQuanYi Micro Hei Mono", "PingFang SC",
+    "Microsoft YaHei UI", "Backchat Sans SC", monospace;
+  --font-chat: var(--font-sans);
+  /* Slogan face. Distinct from the UI sans so homeSlogan.fontFamily
+     "display" still changes the hero. System serif only; not packaged. */
+  --font-display:
+    "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC",
+    "STSong", "Source Han Serif SC", "Noto Serif CJK SC", "Noto Serif SC",
+    "Noto Serif", serif;
 
   --color-brand: var(--brand);
   --color-brand-hover: var(--brand-hover);
@@ -1938,6 +2096,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-fg-subtle: var(--fg-subtle);
+  /* Set by applyThemeToRoot from the active theme. See text-roles.ts. */
+  --color-fg-disabled: var(--fg-disabled);
 
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
@@ -2002,9 +2162,23 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
 /* ---------- Base typography ---------- */
 body {
   font-family: var(--font-sans);
+  font-weight: var(--font-ui-weight);
+  /* Weight stays real: 430 must not faux-bold. Style stays on so em,
+     blockquote, and .italic can oblique an upright face (Noto has no
+     italic file). */
+  font-synthesis: style;
+  font-kerning: normal;
+  letter-spacing: 0;
   /* Design tokens own interface sizing at 100% window zoom. */
   font-size: 0.875rem;
-  line-height: 1.6;
+  line-height: var(--type-body-leading);
+  /* Insert 1/8 ic between Han and Latin/digits, and trim the extra
+     space built into fullwidth punctuation. This is the mixed
+     Chinese/English rhythm; it is not another font name in the stack. */
+  text-autospace: normal;
+  text-spacing-trim: space-all;
+  /* Keep closing punctuation and small kana from starting a line. */
+  line-break: strict;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -2020,12 +2194,92 @@ html.dark body {
   -moz-osx-font-smoothing: auto;
 }
 
-/* Chat prose is multilingual long-form content. A native system stack keeps
-   Latin and CJK glyph metrics coherent; code descendants retain font-mono. */
+/* Linux must not inherit Chromium's fontconfig UI face. The packaged
+   Noto pair is the whole sans stack. The mono stack prefers one CJK
+   mono so box-drawing and Han share a width. */
+html[data-os="linux"] {
+  --font-sans:
+    "Backchat Sans", "Backchat Sans SC", "Noto Sans CJK SC",
+    "Source Han Sans SC", "WenQuanYi Micro Hei", "Noto Color Emoji", sans-serif;
+  --font-mono:
+    "WenQuanYi Micro Hei Mono", "Noto Sans Mono CJK SC", "Sarasa Mono SC",
+    "DejaVu Sans Mono", "Liberation Mono", ui-monospace, monospace;
+}
+
+html[data-os="windows"] {
+  --font-sans:
+    "Segoe UI Variable", "Segoe UI", "Backchat YaHei", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Backchat Sans", "Backchat Sans SC", "Segoe UI Emoji", "Noto Color Emoji",
+    sans-serif;
+  --font-mono:
+    "Cascadia Mono", Consolas, "Sarasa Mono SC", "Noto Sans Mono CJK SC",
+    "Microsoft YaHei UI", ui-monospace, monospace;
+}
+
+/* Same resting weight as Linux and Windows. SF follows this number.
+   The PingFang 430 face is the Regular file, so Chinese resolves to
+   Regular wherever those local() names exist. */
+html[data-os="mac"] {
+  --font-ui-weight: 430;
+}
+
+/* Chat prose uses the same family as the chrome. The alias exists so a
+   transcript cannot pick up a nested `font-mono` or a future display face. */
 [data-session-turn-prompt],
 [data-session-turn-answer] {
   font-family: var(--font-chat);
   font-kerning: normal;
+  line-height: var(--type-body-leading);
+}
+
+/* Resting text stays on a real 400/430 face. Emphasis opts back into
+   weight synthesis so a family that only has regular still paints a
+   heavier stroke. Style stays on so italics inside those elements
+   do not snap upright. */
+:is(
+  .font-semibold,
+  .font-bold,
+  b,
+  strong,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6
+) {
+  font-synthesis: weight style;
+}
+
+/* Upright-only families (packaged Noto, many Linux faces) need synthesis
+   or em / blockquote / an italic tab label paint upright. */
+:is(em, i, cite, dfn, blockquote, .italic) {
+  font-style: italic;
+  font-synthesis: style;
+}
+
+/* Code shows the characters the user wrote. Autospace would open a gap
+   inside identifiers and comments; ligatures would join them. */
+:where(pre, code, kbd, samp) {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  text-autospace: no-autospace;
+  text-spacing-trim: none;
+}
+
+/* Tracking is a Latin display tool. On a Chinese UI it spaces Han apart
+   and negative tracking makes strokes collide. */
+html[lang|="zh"] :is(
+  [class*="tracking-"],
+  .projects-list-header h1,
+  .project-outcome-label,
+  .session-mention-section-label,
+  .home-theme-masthead strong,
+  .home-theme-masthead small
+) {
+  letter-spacing: 0;
 }
 
 /* Viewport lock — the AppShell sidebar + breadcrumb header are global frame
@@ -2572,8 +2826,9 @@ header:not(.app-drag-region) .app-drag-region {
 
 /* ---------- Transcript density ----------
    Common ships 14px/28px prose and a 32px + 24px gap under the last turn.
-   Backchat is a working tool: 14px/22px reads denser without crowding, and
-   the transcript ends where the composer begins. */
+   Backchat reads at 14px/24px: dense enough for a tool, open enough that
+   Han punctuation clears the next line. The transcript ends where the
+   composer begins. */
 [data-chat-surface] :is(.chat-markdown, .streaming-md) {
   font-size: var(--type-body-size);
   line-height: var(--type-body-leading);
@@ -2593,7 +2848,13 @@ header:not(.app-drag-region) .app-drag-region {
   font-size: inherit;
   line-height: inherit;
 }
-[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(pre, pre code, th, td) {
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(pre, pre code) {
+  font-family: var(--font-mono);
+  font-size: var(--type-ui-size);
+  font-weight: 400;
+  line-height: var(--type-code-leading);
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) :is(th, td) {
   font-size: var(--type-ui-size);
   line-height: var(--type-ui-leading);
 }
@@ -2617,14 +2878,14 @@ header:not(.app-drag-region) .app-drag-region {
 }
 /* Prompt bubble follows the same rhythm. */
 [data-session-turn-prompt] p {
-  line-height: 22px;
+  line-height: var(--type-body-leading);
 }
 /* Last turn: no trailing margin; content padding shrinks to a hairline gap.
    The frame sets `!mb-8` from Tailwind's utilities layer, and important
    declarations resolve layer-first, so the override must live in that same
    layer and win on source order. */
 @layer utilities {
-  /* Spacing scale derived from the 22px body line:
+  /* Spacing scale beside the 24px body line:
        paragraph gap      4px   (~0.2 line)  — inside one answer
        bubble → response 12px   (~0.5 line)  — inside one turn
        turn → turn       24px   (~1.1 line)  — between exchanges
@@ -2671,6 +2932,36 @@ textarea:disabled::selection {
 
 /* Composer copy shares the response's reading tier. */
 [data-chat-surface] .composer-card textarea {
+  font-family: var(--font-chat);
   font-size: var(--type-body-size);
+  font-weight: var(--font-ui-weight);
   line-height: var(--type-body-leading);
+}
+
+/* Placeholders are the weaker text role. A browser default opacity
+   would wash them out, so the color is the token and fully opaque. */
+::placeholder {
+  color: var(--fg-subtle);
+  opacity: 1;
+}
+
+/* Disabled controls keep their fill. Inactive ink is a 2:1 glyph floor,
+   not 3:1 or 4.5:1 — those sat on `fg-subtle`, so disabled icons looked
+   enabled. Opacity would wash the glyph out. Switches and checkboxes draw
+   their own disabled chrome. */
+:is(
+  button,
+  input,
+  textarea,
+  select,
+  [role="menuitem"],
+  [role="option"],
+  [role="tab"]
+):is(:disabled, [aria-disabled="true"], [data-disabled]):not(
+  [role="switch"],
+  [role="checkbox"],
+  [data-disabled-hidden]
+) {
+  color: var(--fg-disabled);
+  opacity: 1;
 }

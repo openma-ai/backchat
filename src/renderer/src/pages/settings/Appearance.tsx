@@ -190,7 +190,7 @@ function AppearanceModeCard({
       </span>
       <span className={cn(
         "mt-2 block text-center text-xs",
-        selected ? "font-medium text-fg" : "text-fg-muted",
+        selected ? "font-semibold text-fg" : "font-normal text-fg-muted",
       )}>
         {label}
       </span>
@@ -321,7 +321,7 @@ function Section({
       <div className="mb-2">
         <h2 className="text-xs font-medium text-fg">{label}</h2>
         {description && (
-          <p className="mt-1 max-w-[68ch] text-[11px] leading-4 text-fg-muted">
+          <p className="mt-1 max-w-full text-[11px] leading-4 text-fg-muted">
             {description}
           </p>
         )}
@@ -348,10 +348,10 @@ function RadioGroup({
           type="button"
           onClick={() => onChange(option.value)}
           className={cn(
-            "min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-[11px] transition-colors",
+            "flex-1 whitespace-nowrap rounded-md px-1.5 py-1.5 text-[11px] leading-4 transition-colors",
             value === option.value
-              ? "bg-bg text-fg shadow-chip-press"
-              : "text-fg-muted hover:bg-bg/70 hover:text-fg",
+              ? "bg-bg font-semibold text-fg shadow-chip-press"
+              : "font-normal text-fg-muted hover:bg-bg/70 hover:text-fg",
           )}
         >
           {option.label}

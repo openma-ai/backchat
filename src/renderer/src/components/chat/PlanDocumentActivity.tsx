@@ -28,7 +28,7 @@ export function PlanDocumentActivity({
       >
         <LightbulbIcon className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="shrink-0">Plan</span>
-        <span className="min-w-0 flex-1 truncate text-fg-muted/80">
+        <span className="min-w-0 flex-1 truncate text-fg-subtle">
           {document.title ?? "Markdown document"}
         </span>
         <ChevronRightIcon

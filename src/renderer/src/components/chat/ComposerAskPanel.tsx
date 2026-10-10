@@ -119,7 +119,7 @@ export function ComposerBrokerAsk({
             </Button>
           )}
           {primaryAllow ? (
-            <div className="flex items-stretch overflow-hidden rounded-full bg-fg text-bg dark:bg-neutral-950 dark:text-neutral-100">
+            <div className="flex items-stretch overflow-hidden rounded-full bg-fg text-bg">
               <Button
                 data-permission-primary-action="true"
                 type="button"
