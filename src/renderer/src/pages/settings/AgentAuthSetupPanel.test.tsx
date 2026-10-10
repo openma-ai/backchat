@@ -187,6 +187,47 @@ describe("AgentAuthSetupPanel", () => {
     installDomShims();
   });
 
+  it("highlights and scrolls the saved method instead of the first row", async () => {
+    const scrolled: Element[] = [];
+    Element.prototype.scrollIntoView = function remember(this: Element) {
+      scrolled.push(this);
+    };
+    const saved = methodAgent(piMethods);
+    saved.auth = { ...saved.auth!, methodId: "deepseek" };
+    await mount(
+      <AgentAuthSetupPanel
+        agent={saved}
+        settings={settings}
+        waitingForAuth={false}
+        pending={false}
+        onMethodIdChange={() => undefined}
+        onStart={() => undefined}
+        onClose={() => undefined}
+        onSaved={() => undefined}
+      />,
+    );
+
+    expect(document.body.querySelector("[data-auth-method-detail]")?.getAttribute("data-auth-method-detail")).toBe("deepseek");
+    expect(option("deepseek").getAttribute("data-selected")).toBe("true");
+    expect(option("deepseek").getAttribute("aria-selected")).toBe("true");
+    expect(option("deepseek").getAttribute("data-checked")).toBe("true");
+    expect(option("anthropic").getAttribute("data-selected")).toBe("false");
+    expect(scrolled.includes(option("deepseek"))).toBe(true);
+
+    await act(async () => {
+      document.querySelector("[data-slot='command']")?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+    expect(option("openai").getAttribute("data-selected")).toBe("true");
+    expect(document.body.querySelector("[data-auth-method-detail]")?.getAttribute("data-auth-method-detail")).toBe("openai");
+
+    const search = document.body.querySelector("input[aria-label='Search authentication methods']") as HTMLInputElement;
+    await typeInto(search, "anthropic");
+    expect(document.body.querySelector("[data-auth-method-detail]")?.getAttribute("data-auth-method-detail")).toBe("openai");
+    expect(option("anthropic").getAttribute("data-auth-method")).toBe("anthropic");
+  });
+
   it("does not submit a secret typed for one api-key method with another method", async () => {
     const onStart = vi.fn();
     const onMethodIdChange = vi.fn();

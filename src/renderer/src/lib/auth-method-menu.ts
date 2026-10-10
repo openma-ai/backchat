@@ -195,3 +195,20 @@ export function canOfferAuthLogout(
 export function authDialogShouldClose(nextOpen: boolean, busy: boolean): boolean {
   return !nextOpen && !busy;
 }
+
+/**
+ * Command-menu highlight moves on its own when rows mount and unmount.
+ * Follow that highlight only when it lands on a different visible method.
+ * A search that hides the current method must not replace it.
+ */
+export function nextAuthMethodId(
+  methods: readonly { id: string }[],
+  currentId: string | undefined,
+  query: string,
+  next: string,
+): string | undefined {
+  if (!next || next === currentId) return undefined;
+  const visible = filterAuthMethods(methods, query);
+  if (query.trim() && !visible.some((method) => method.id === currentId)) return undefined;
+  return visible.some((method) => method.id === next) ? next : undefined;
+}

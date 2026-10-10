@@ -16,6 +16,7 @@ import {
   groupAuthMethods,
   initialAuthDraft,
   isAuthSlashCommand,
+  nextAuthMethodId,
   preferredAuthMethod,
   withoutAuthSlashCommands,
   type AuthMethodChoice,
@@ -196,6 +197,18 @@ describe("auth slash commands", () => {
       { name: "LOGIN" },
       { name: "review" },
     ]).map((command) => command.name ?? command.description)).toEqual(["unnamed", "review"]);
+  });
+
+  it("follows the menu highlight only onto a different visible method", () => {
+    const methods = [anthropic, deepseek, openaiEnv];
+    expect(nextAuthMethodId(methods, "deepseek", "", "")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", "", "deepseek")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", "", "openai-key")).toBe("openai-key");
+    expect(nextAuthMethodId(methods, "deepseek", "api", "openai-key")).toBe("openai-key");
+    expect(nextAuthMethodId(methods, "deepseek", "api", "anthropic")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", "anth", "openai-key")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "anthropic", "deep", "deepseek")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", "", "missing")).toBeUndefined();
   });
 
   it("offers logout only after the agent is signed in and the capability is advertised", () => {

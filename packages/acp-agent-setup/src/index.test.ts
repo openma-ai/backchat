@@ -678,6 +678,80 @@ describe("acp agent setup sdk", () => {
     });
   });
 
+  it("keeps advertised logout support when sign-in completes without another probe", async () => {
+    const root = join(tmpdir(), `sdk-auth-logout-${process.pid}-${Date.now()}`);
+    const deps = {
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(root, "registry.json"),
+      probeCachePath: join(root, "probe-cache.json"),
+      getEnabledAgentIds: () => ["fake-agent"],
+    };
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "needs-auth",
+        methodId: "deepseek",
+        methodName: "DeepSeek API key",
+        supportsLogout: true,
+        methods: [{ id: "deepseek", name: "DeepSeek API key", type: "agent" }],
+      },
+    });
+    const service = createAcpAgentSetupService(deps);
+    const before = await service.refreshEnabledAgents();
+    expect(before[0]?.auth).toMatchObject({
+      status: "needs-auth",
+      supportsLogout: true,
+      methodId: "deepseek",
+    });
+
+    probeAgentSessionConfigMock.mockClear();
+    probeAgentAuthStatusMock.mockClear();
+    authenticateAgentMock.mockResolvedValue({ status: "completed" });
+    const after = await service.authenticateAgent("fake-agent", { methodId: "deepseek" });
+    expect(probeAgentSessionConfigMock).not.toHaveBeenCalled();
+    expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
+    expect(after[0]?.auth).toMatchObject({
+      status: "configured",
+      methodId: "deepseek",
+      methodName: "DeepSeek API key",
+      supportsLogout: true,
+      methods: [{ id: "deepseek", name: "DeepSeek API key", type: "agent" }],
+    });
+
+    const restored = await createAcpAgentSetupService(deps).listAgents();
+    expect(restored[0]?.auth).toMatchObject({
+      status: "configured",
+      supportsLogout: true,
+      methodId: "deepseek",
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("does not invent logout support when the probe never advertised it", async () => {
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "needs-auth",
+        methodId: "deepseek",
+        methods: [{ id: "deepseek", name: "DeepSeek API key", type: "agent" }],
+      },
+    });
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-auth-no-logout-${process.pid}-${Date.now()}.json`),
+      getEnabledAgentIds: () => ["fake-agent"],
+    });
+    await service.refreshEnabledAgents();
+    authenticateAgentMock.mockResolvedValue({ status: "completed" });
+    const after = await service.authenticateAgent("fake-agent", { methodId: "deepseek" });
+    expect(after[0]?.auth?.status).toBe("configured");
+    expect(after[0]?.auth?.supportsLogout).toBeUndefined();
+  });
+
   it("forwards authenticate form values without a follow-up capability probe", async () => {
     authenticateAgentMock.mockResolvedValue({ status: "completed" });
 

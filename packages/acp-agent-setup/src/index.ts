@@ -562,6 +562,10 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
             : {}),
         ...(existing?.methodName ? { methodName: existing.methodName } : {}),
         ...(existing?.methods ? { methods: existing.methods } : {}),
+        // A needs-auth probe already learned whether logout is advertised.
+        // Completing sign-in must keep that; otherwise Switch account and
+        // Log out stay hidden until the next probe.
+        ...(existing?.supportsLogout ? { supportsLogout: true } : {}),
       };
       this.authCache.set(id, auth);
       await this.persistProbe(id, { auth });

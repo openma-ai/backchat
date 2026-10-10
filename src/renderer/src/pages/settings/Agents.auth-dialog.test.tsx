@@ -355,4 +355,35 @@ describe("Settings agent auth dialog", () => {
     await click("Check again");
     await act(async () => view.root.unmount());
   });
+
+  it("shows Switch account immediately when completed sign-in keeps logout support", async () => {
+    const view = await mount();
+    expect(document.body.querySelector("button[aria-label='Switch account for pi']")).toBeNull();
+    authenticate.mockResolvedValueOnce(agents.map((item) => item.id === "pi-acp"
+      ? {
+          ...item,
+          auth: {
+            ...item.auth!,
+            status: "configured" as const,
+            methodId: "deepseek",
+            supportsLogout: true,
+          },
+        }
+      : item));
+    await click("Sign in to pi");
+    await clickNode(document.body.querySelector("[data-auth-method='deepseek']")!);
+    const input = document.body.querySelector("[data-auth-field='api-key']") as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "sk-ok");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await click("Save");
+    expect(document.body.querySelector("[data-auth-setup-dialog]")).toBeNull();
+    expect(button("Switch account for pi")).toBeTruthy();
+    await click("Switch account for pi");
+    expect(document.body.textContent).toContain("Log out");
+    await act(async () => view.root.unmount());
+  });
 });

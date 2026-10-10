@@ -17,6 +17,7 @@ import {
   filterAuthMethods,
   groupAuthMethods,
   initialAuthDraft,
+  nextAuthMethodId,
   type AuthMethodKind,
 } from "@/lib/auth-method-menu";
 import { composerBoxClass } from "@/lib/composer-box";
@@ -148,6 +149,13 @@ export function AgentAuthSetupPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id]);
 
+  useEffect(() => {
+    const item = document.querySelector(
+      `[data-auth-method="${CSS.escape(method?.id ?? "")}"]`,
+    );
+    if (item instanceof HTMLElement) item.scrollIntoView({ block: "nearest" });
+  }, [method?.id]);
+
   const pickMethod = (methodId: string) => {
     const currentId = method!.id;
     setDrafts((current) => clearAuthDraft(
@@ -207,6 +215,12 @@ export function AgentAuthSetupPanel({
             <Command
               label={t("auth.searchLabel")}
               shouldFilter={false}
+              disablePointerSelection
+              value={method!.id}
+              onValueChange={(next) => {
+                const picked = nextAuthMethodId(methods, method?.id, query, next);
+                if (picked) pickMethod(picked);
+              }}
               className="rounded-none! bg-transparent! shadow-none!"
             >
               <CommandInput
@@ -229,7 +243,7 @@ export function AgentAuthSetupPanel({
                       return (
                         <CommandItem
                           key={candidate.id}
-                          value={`${authChoiceLabel(candidate)} ${candidate.id}`}
+                          value={candidate.id}
                           keywords={[
                             authChoiceDescription(candidate),
                             authMethodKind(candidate),
