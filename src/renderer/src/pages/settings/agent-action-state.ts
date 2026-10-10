@@ -1,5 +1,5 @@
 export type AgentAction = {
-  type: "install" | "upgrade" | "uninstall" | "auth" | "refresh";
+  type: "install" | "upgrade" | "uninstall" | "auth" | "logout" | "refresh";
   id?: string;
   methodId?: string;
   secret?: string;

@@ -354,8 +354,13 @@ export function ChatView({
       active?.status === "draft" ? active.chosenCwd ?? null : null,
     );
     setPickedAgentId(null);
-    setAuthSetupOpen(false);
   }, [active?.chosenCwd, active?.id, active?.status]);
+  useEffect(() => {
+    setAuthSetupOpen(!!active?.authRequired);
+  }, [active?.id]);
+  useEffect(() => {
+    if (active?.authRequired) setAuthSetupOpen(true);
+  }, [active?.authRequired]);
 
   const onSubmit = useChatSubmission({
     isSide,
@@ -429,6 +434,7 @@ export function ChatView({
       pickedAgentId={pickedAgentId}
       sessionAuthRequired={!!active?.authRequired}
       sessionAuth={active?.auth}
+      sessionSupportsLogout={!!active?.supportsLogout}
       suggestionDraft={suggestionDraft}
       goal={active?.goal}
       pendingAsk={active?.pendingAsks?.[0]}
@@ -488,6 +494,7 @@ export function ChatView({
       pickedAgentId={pickedAgentId}
       authRequired={!!active?.authRequired}
       sessionAuth={active?.auth}
+      sessionSupportsLogout={!!active?.supportsLogout}
       onClose={() => setAuthSetupOpen(false)}
       onAuthenticated={() => reconnectAuthenticatedSession(active?.id)}
     />

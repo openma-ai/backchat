@@ -29,6 +29,7 @@ export interface AgentSetupService {
     values?: Record<string, string>;
     gateway?: { baseUrl: string; headers?: Record<string, string>; providerName?: string };
   }): Promise<AgentInfo[]>;
+  logoutAgent(id: string): Promise<AgentInfo[]>;
   observeAuth(
     id: string,
     observation: {

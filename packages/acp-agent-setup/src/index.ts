@@ -24,6 +24,7 @@ import {
 import {
   authenticateAgent,
   disposeAllAcpSetupProcesses,
+  logoutAcpAgent,
   probeAgentSessionConfig,
   probeAgentAuthStatus,
   type ProbeAgentAuthStatus,
@@ -54,6 +55,7 @@ export interface AcpAgentSetupAuth {
   message: string;
   methodId?: string;
   methodName?: string;
+  supportsLogout?: boolean;
   methods?: AcpAgentSetupAuthMethod[];
 }
 
@@ -129,6 +131,7 @@ export interface AcpAgentSetupService {
     values?: Record<string, string>;
     gateway?: { baseUrl: string; headers?: Record<string, string>; providerName?: string };
   }): Promise<AcpAgentSetupInfo[]>;
+  logoutAgent(id: string): Promise<AcpAgentSetupInfo[]>;
   observeAuth(
     id: string,
     observation: {
@@ -559,6 +562,10 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
             : {}),
         ...(existing?.methodName ? { methodName: existing.methodName } : {}),
         ...(existing?.methods ? { methods: existing.methods } : {}),
+        // A needs-auth probe already learned whether logout is advertised.
+        // Completing sign-in must keep that; otherwise Switch account and
+        // Log out stay hidden until the next probe.
+        ...(existing?.supportsLogout ? { supportsLogout: true } : {}),
       };
       this.authCache.set(id, auth);
       await this.persistProbe(id, { auth });
@@ -566,6 +573,30 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     // Authentication is an explicit lifecycle of its own. Do not follow it
     // with another disposable ACP probe; the next real session is the source
     // of truth if a browser/terminal flow is still finishing.
+    return this.listAgents();
+  }
+
+  async logoutAgent(id: string): Promise<AcpAgentSetupInfo[]> {
+    await this.refreshRegistry({ refresh: false });
+    const entry = await this.detectCatalogEntry(id);
+    if (!entry) throw new Error(`ACP agent is not available: ${id}`);
+    await logoutAcpAgent({
+      agent: entry.spec,
+      env: this.spawnEnv(),
+      ...(this.deps.probeCwd ? { cwd: this.deps.probeCwd } : {}),
+      timeoutMs: 30_000,
+    });
+    const existing = this.authCache.get(id);
+    const auth: AcpAgentSetupAuth = {
+      status: "needs-auth",
+      message: "Logged out. Sign in again to continue.",
+      ...(existing?.methodId ? { methodId: existing.methodId } : {}),
+      ...(existing?.methodName ? { methodName: existing.methodName } : {}),
+      ...(existing?.methods ? { methods: existing.methods } : {}),
+      supportsLogout: true,
+    };
+    this.authCache.set(id, auth);
+    await this.persistProbe(id, { auth });
     return this.listAgents();
   }
 
@@ -868,6 +899,7 @@ function mergeObservedAuth(
     ...(methodId ? { methodId } : {}),
     ...(existing?.methodName ? { methodName: existing.methodName } : {}),
     ...(existing?.methods ? { methods: existing.methods } : {}),
+    ...(existing?.supportsLogout ? { supportsLogout: true } : {}),
   };
 }
 
@@ -895,6 +927,7 @@ function setupAuthFromProbeStatus(
       ...(methodInfo.vars ? { vars: methodInfo.vars } : {}),
       ...(methodInfo.link ? { link: methodInfo.link } : {}),
     })) } : {}),
+    ...(status.supportsLogout ? { supportsLogout: true } : {}),
   };
 }
 

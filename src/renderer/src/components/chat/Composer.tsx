@@ -114,6 +114,7 @@ export function Composer({
   pickedAgentId,
   sessionAuthRequired = false,
   sessionAuth,
+  sessionSupportsLogout = false,
   suggestionDraft,
   goal,
   pendingAsk,
@@ -145,6 +146,7 @@ export function Composer({
   pickedAgentId: string | null;
   sessionAuthRequired?: boolean;
   sessionAuth?: SessionRow["auth"];
+  sessionSupportsLogout?: boolean;
   suggestionDraft?: ComposerSuggestionDraft | null;
   goal?: SessionGoal;
   pendingAsk?: BrokerAsk;
@@ -1276,6 +1278,8 @@ export function Composer({
               disabled={!!running}
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}
+              supportsLogout={sessionSupportsLogout || currentAgent?.auth?.supportsLogout === true}
+              onOpenAuth={onRequestAuth}
               agents={enabledAgents}
               currentAgentId={currentAgentId}
               currentAgentLabel={currentEnabledAgent?.label ?? currentAgent?.label}
