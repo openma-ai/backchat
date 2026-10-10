@@ -915,8 +915,8 @@ html[data-theme-asset-empty-state="true"]
 }
 
 .renderer-crash-mark-slot {
-  width: 96px;
-  height: 88px;
+  width: 104px;
+  height: 96px;
   color: var(--fg-subtle);
 }
 

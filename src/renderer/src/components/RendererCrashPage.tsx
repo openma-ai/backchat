@@ -17,7 +17,7 @@ export interface RendererCrashPageProps {
   componentStack?: string;
 }
 
-/** Full-window renderer crash surface — matches home empty-state typography and tokens. */
+/** Full-window renderer crash surface — dialog-style card, left-aligned copy. */
 export function RendererCrashPage({
   message,
   stack,
@@ -53,39 +53,39 @@ export function RendererCrashPage({
       data-renderer-crash-page="true"
     >
       <div className="app-drag-region h-9 shrink-0" aria-hidden="true" />
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16">
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-16">
         <div
-          className="home-empty-intro reveal-in flex w-full max-w-md flex-col items-center text-center"
+          className="reveal-in w-full max-w-sm overflow-hidden rounded-xl shadow-sm ring-1 ring-foreground/10 app-panel-surface"
           data-renderer-error-fallback="true"
+          data-renderer-crash-card="true"
         >
-          <div
-            className="app-panel-surface w-full rounded-xl px-6 py-8 shadow-sm"
-            data-renderer-crash-card="true"
-          >
+          <div className="px-5 pb-4 pt-5">
             <div
-              className="renderer-crash-mark-slot mx-auto mb-3 flex items-center justify-center"
+              className="renderer-crash-mark-slot mb-4"
               data-renderer-crash-mark-slot="true"
             >
               <BackchatCrashMark />
             </div>
-            <div className="home-hero-copy">
-              <h1 className="home-hero-title text-2xl leading-tight text-fg">
-                {t("crash.title")}
-              </h1>
-              <p className="home-hero-description mt-2 max-w-sm text-sm text-fg-muted">
-                {t("crash.description")}
-              </p>
-            </div>
-
-            <Collapsible
-              open={detailsOpen}
-              onOpenChange={setDetailsOpen}
-              className="mt-6 w-full text-left"
+            <h1
+              data-slot="dialog-title"
+              className="text-base font-medium leading-snug text-fg"
             >
+              {t("crash.title")}
+            </h1>
+            <p
+              data-slot="dialog-description"
+              className="mt-2 text-sm leading-relaxed text-fg-muted"
+            >
+              {t("crash.description")}
+            </p>
+          </div>
+
+          <div className="border-t border-border px-5 py-3">
+            <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
               <CollapsibleTrigger
                 className={cn(
-                  "app-no-drag flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2",
-                  "text-sm text-fg-muted hover:bg-muted/60 hover:text-fg",
+                  "app-no-drag flex w-full items-center justify-between gap-2 rounded-lg py-1.5",
+                  "text-left text-sm text-fg-muted hover:text-fg",
                 )}
               >
                 <span>{t("crash.details")}</span>
@@ -106,15 +106,27 @@ export function RendererCrashPage({
                 </pre>
               </CollapsibleContent>
             </Collapsible>
+          </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-              <Button type="button" onClick={() => window.location.reload()}>
-                {t("crash.reload")}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => void copyDetails()}>
-                {copyLabel}
-              </Button>
-            </div>
+          <div
+            className="grid grid-cols-2 gap-2 border-t border-border bg-muted/50 px-5 py-3"
+            data-renderer-crash-actions="true"
+          >
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 w-full rounded-full"
+              onClick={() => void copyDetails()}
+            >
+              {copyLabel}
+            </Button>
+            <Button
+              type="button"
+              className="h-9 w-full rounded-full"
+              onClick={() => window.location.reload()}
+            >
+              {t("crash.reload")}
+            </Button>
           </div>
         </div>
       </div>

@@ -20,7 +20,7 @@ vi.mock("@/lib/i18n", () => ({
 import { RendererCrashPage } from "./RendererCrashPage";
 
 describe("RendererCrashPage", () => {
-  it("renders home empty-state typography, drag region, and localized actions", () => {
+  it("renders dialog-style layout, drag region, and full-width action row", () => {
     const html = renderToStaticMarkup(
       <RendererCrashPage
         message="Test boom"
@@ -35,12 +35,15 @@ describe("RendererCrashPage", () => {
     expect(html).not.toMatch(/>\[</);
     expect(html).toContain("app-canvas-surface");
     expect(html).toContain("app-drag-region");
-    expect(html).toContain("home-empty-intro");
-    expect(html).toContain("home-hero-title");
+    expect(html).toContain('data-slot="dialog-title"');
+    expect(html).toContain('data-slot="dialog-description"');
+    expect(html).toContain('data-renderer-crash-actions="true"');
+    expect(html).toContain("grid-cols-2");
     expect(html).toContain("Something went wrong");
     expect(html).toContain("Error details");
     expect(html).toContain("Reload");
     expect(html).toContain("Copy error info");
     expect(html).toContain('data-slot="collapsible"');
+    expect(html).not.toContain("home-empty-intro");
   });
 });
