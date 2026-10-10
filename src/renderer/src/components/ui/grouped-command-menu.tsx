@@ -187,8 +187,9 @@ export function GroupedCommandMenu({
     if (event.key === "Escape") event.stopPropagation();
   };
 
-  /** Main project picker: Browse / No project are list siblings, not a padded group. */
-  const bareProjectPickerTail = menuMode === "project-picker";
+  /** Main CommandList: tail rows are siblings, not a padded `CommandGroup`. */
+  const bareListGroupItems =
+    menuMode === "project-picker" || menuMode === "workspace-picker";
 
   const renderMenuItem = (item: GroupedCommandMenuItem) => (
     <CommandItem
@@ -220,7 +221,7 @@ export function GroupedCommandMenu({
   const renderGroup = (group: GroupedCommandMenuGroup, index: number) => {
     const key = group.heading ?? `__ungrouped-${index}`;
     const items = group.items.map((item) => renderMenuItem(item));
-    if (bareProjectPickerTail && !group.heading) {
+    if (bareListGroupItems && !group.heading) {
       return (
         <Fragment key={key}>
           {group.separatorBefore ? <CommandSeparator /> : null}
@@ -274,7 +275,7 @@ export function GroupedCommandMenu({
             className={cn(
               menuMode === "host-picker"
                 ? "max-h-none overflow-visible scroll-py-1 p-0 outline-none"
-                : menuMode === "project-picker"
+                : menuMode === "project-picker" || menuMode === "workspace-picker"
                   ? "no-scrollbar max-h-72 overflow-x-hidden overflow-y-auto scroll-py-1 p-0 outline-none"
                   : "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
               listClassName,

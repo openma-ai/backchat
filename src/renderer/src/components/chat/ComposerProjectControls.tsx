@@ -17,11 +17,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
 import {
-  GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX,
   GroupedCommandMenu,
-  groupedCommandMenuPanelClassName,
   groupedCommandMenuPopoverShellClassName,
-  groupedCommandMenuPresets,
 } from "@/components/ui/grouped-command-menu";
 import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import { useComposerPickerUpwardSideOffset } from "@/components/ui/use-composer-picker-upward-side-offset";
@@ -179,7 +176,7 @@ export function ProjectChipRow({
               menuMode="project-picker"
               shrinkToContent
               nativeListScroll
-              panelClassName="flex h-auto w-full flex-col overflow-hidden p-0"
+              panelClassName="flex h-auto w-full flex-col p-0"
               commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}
@@ -497,13 +494,11 @@ function WorkspaceChip({
           <GroupedCommandMenu
             testId="composer-workspace-picker-panel"
             menuMode="workspace-picker"
+            shrinkToContent
+            nativeListScroll
             menuResetKey={open ? "open" : "closed"}
-            panelHeightPx={GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}
-            listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
-            panelClassName={groupedCommandMenuPanelClassName({
-              maxHeightPx: GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX,
-            })}
-            commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
+            panelClassName="flex h-auto w-full flex-col overflow-hidden p-0"
+            commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
             searchPlaceholder={t("workspace.search")}
             emptyMessage={t("chat.noMatchingOptions")}
             initialHighlightValue={selected?.id ?? "local"}
@@ -590,10 +585,12 @@ function WorkspaceChip({
                         <GroupedCommandMenuIconSlot>
                           <GitBranchIcon />
                         </GroupedCommandMenuIconSlot>
-                        <GroupedCommandMenuLabelSlot>
-                          <span className="truncate">{t("workspace.local")}</span>
+                        <GroupedCommandMenuLabelSlot className="flex-row items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">
+                            {t("workspace.local")}
+                          </span>
                           {liveBranch ? (
-                            <span className="text-fg-subtle">{liveBranch}</span>
+                            <span className="shrink-0 text-fg-subtle">{liveBranch}</span>
                           ) : null}
                         </GroupedCommandMenuLabelSlot>
                       </>
@@ -616,9 +613,9 @@ function WorkspaceChip({
                         <GroupedCommandMenuIconSlot>
                           <GitBranchIcon />
                         </GroupedCommandMenuIconSlot>
-                        <GroupedCommandMenuLabelSlot>
-                          <span className="truncate">{ws.name}</span>
-                          <span className="text-fg-subtle">
+                        <GroupedCommandMenuLabelSlot className="flex-row items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">{ws.name}</span>
+                          <span className="shrink-0 text-fg-subtle">
                             {ws.worktrees.length} {t("workspace.repositories")}
                           </span>
                         </GroupedCommandMenuLabelSlot>

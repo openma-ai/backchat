@@ -2423,6 +2423,12 @@ body,
   min-height: 0;
 }
 
+[data-composer-select-menu-mode="project-picker"] [cmdk-list-sizer],
+[data-composer-select-menu-mode="workspace-picker"] [cmdk-list-sizer] {
+  height: auto !important;
+  min-height: unset !important;
+}
+
 /* Current value: checkmark only — never the gray hover/keyboard wash. */
 .grouped-command-menu [data-slot="command-item"][data-checked="true"],
 .grouped-command-menu [data-slot="command-item"][data-checked="true"]:hover,
@@ -2537,8 +2543,9 @@ body,
   line-height: 16px !important;
 }
 
-/* Project picker: match main `Command` popover chrome (SearchField h-9, group p-1, heading py-1.5). */
-[data-composer-select-menu-mode="project-picker"]
+/* Project / workspace pickers: match main `Command` popover chrome (SearchField h-9). */
+[data-composer-select-menu-mode="project-picker"],
+[data-composer-select-menu-mode="workspace-picker"]
   [data-slot="command-input-wrapper"] {
   display: flex !important;
   height: 2.25rem !important;
@@ -2550,14 +2557,17 @@ body,
   border-block-end: none;
 }
 
-[data-composer-select-menu-mode="project-picker"]
+[data-composer-select-menu-mode="project-picker"],
+[data-composer-select-menu-mode="workspace-picker"]
   [data-slot="command-input-wrapper"]
   > svg {
   grid-column: unset;
   justify-self: unset;
 }
 
-[data-composer-select-menu-mode="project-picker"] [data-slot="command-input"] {
+[data-composer-select-menu-mode="project-picker"],
+[data-composer-select-menu-mode="workspace-picker"]
+  [data-slot="command-input"] {
   grid-column: unset;
 }
 

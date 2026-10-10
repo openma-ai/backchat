@@ -72,8 +72,8 @@ test("capture project picker alignment and stable height while filtering", async
     expect(heights[heights.length - 1]).toBeLessThan(heights[0] - 20);
 
     await search.fill("");
-    const viewport = panel.locator('[data-slot="scroll-area-viewport"]');
-    await viewport.evaluate((element) => {
+    const list = panel.locator('[data-slot="command-list"]');
+    await list.evaluate((element) => {
       element.scrollTop = 120;
       element.dispatchEvent(new Event("scroll", { bubbles: true }));
     });

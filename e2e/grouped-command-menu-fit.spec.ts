@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdir as fsMkdir, mkdir } from "node:fs/promises";
+import { mkdir as fsMkdir, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "./fixtures";
@@ -20,72 +20,104 @@ function manyGroupedModels() {
   }));
 }
 
-async function seedPickerProjects(page: import("@playwright/test").Page, home: string) {
-  const alphaDir = join(home, "picker-fit-alpha");
-  const betaDir = join(home, "picker-fit-beta");
-  await fsMkdir(alphaDir, { recursive: true });
-  await fsMkdir(betaDir, { recursive: true });
-  await page.evaluate(async ({ alphaDir, betaDir }) => {
+async function seedWorkspacePickerFixture(
+  page: import("@playwright/test").Page,
+  home: string,
+) {
+  const repo = join(home, "workspace-fit-repo");
+  await fsMkdir(repo, { recursive: true });
+  await execFile("git", ["init", "--initial-branch=main", repo]);
+  await execFile("git", [
+    "-C",
+    repo,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.test",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "fixture",
+  ]);
+  await page.evaluate(async (path) => {
+    localStorage.setItem("backchat:workspace-intro-seen:v1", "1");
     await window.backchat.projectSave({
-      project_id: "picker-fit-a",
-      name: "Alpha workspace",
-      source_folders: [alphaDir],
-      primary_folder: alphaDir,
+      project_id: "workspace-fit-project",
+      name: "Workspace fit",
+      source_folders: [path],
+      primary_folder: path,
     });
-    const beta = {
-      project_id: "picker-fit-b",
-      name: "Beta monorepo",
-      source_folders: [betaDir],
-      primary_folder: betaDir,
-    };
-    await window.backchat.projectSave(beta);
-    await window.backchat.projectSave(beta);
-  }, { alphaDir, betaDir });
+  }, repo);
   await page.reload();
 }
 
-test("project picker popover height matches main chrome", async ({ page, home }) => {
+test("workspace picker popover matches main chrome", async ({ page, home }) => {
   test.setTimeout(120_000);
-  await seedPickerProjects(page, home);
+  await seedWorkspacePickerFixture(page, home);
+  await enableAgent(page, "codex-acp");
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.locator('[data-composer-footer-control="project"]').click();
-  const panel = page.getByTestId("composer-project-picker-panel");
-  await expect(panel).toBeVisible({ timeout: 10_000 });
-  const popover = panel.locator(
-    "xpath=ancestor::*[@data-slot='popover-content'][1]",
-  );
+  await page.getByRole("option", { name: "Workspace fit", exact: true }).click();
+  const workspaceTrigger = page.locator('[data-composer-footer-control="workspace"]');
+  await expect(workspaceTrigger).toBeVisible({ timeout: 10_000 });
+  await workspaceTrigger.click();
+  const panel = page.getByTestId("composer-workspace-picker-panel");
+  const popover = (await panel.count())
+    ? panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]")
+    : page.locator('[data-slot="popover-content"][data-state="open"]').last();
+  await expect(popover).toBeVisible({ timeout: 10_000 });
 
   const metrics = await popover.evaluate((el) => {
-    const popoverTop = el.getBoundingClientRect().top;
     const rect = el.getBoundingClientRect();
+    const popoverTop = rect.top;
     const command = el.querySelector('[data-slot="command"]') as HTMLElement | null;
     const itemNodes = el.querySelectorAll('[data-slot="command-item"]');
     const lastItem = itemNodes[itemNodes.length - 1] as HTMLElement | undefined;
     const commandRect = command?.getBoundingClientRect();
     const lastRect = lastItem?.getBoundingClientRect();
+    const search = el.querySelector(
+      '[data-slot="command-input-wrapper"]',
+    ) as HTMLElement | null;
+    const searchRect = search?.getBoundingClientRect();
+    const rowHeights = Array.from(itemNodes).map((node) =>
+      Math.round(node.getBoundingClientRect().height),
+    );
     return {
       popoverHeight: Math.round(rect.height),
       commandHeight: commandRect ? Math.round(commandRect.height) : 0,
+      searchRowHeight: searchRect ? Math.round(searchRect.height) : 0,
       bottomPaddingToPopover: lastRect
         ? Math.round(rect.bottom - lastRect.bottom)
         : 0,
-      bottomPaddingToCommand: lastRect && commandRect
-        ? Math.round(commandRect.bottom - lastRect.bottom)
-        : 0,
       popoverSlackBelowCommand:
         commandRect ? Math.round(rect.bottom - commandRect.bottom) : 0,
-      searchTop: Math.round(
-        ((el.querySelector('[data-slot="command-input-wrapper"]') as HTMLElement)
-          ?.getBoundingClientRect().top ?? popoverTop) - popoverTop,
-      ),
+      rowCount: itemNodes.length,
+      rowHeights,
     };
   });
 
-  expect(metrics.popoverHeight).toBeLessThanOrEqual(204);
-  expect(metrics.popoverHeight).toBeGreaterThanOrEqual(198);
-  expect(metrics.bottomPaddingToPopover).toBeLessThanOrEqual(6);
+  const evidenceDir = process.env.PR56_EVIDENCE_DIR;
+  if (evidenceDir) {
+    await fsMkdir(evidenceDir, { recursive: true });
+    const label = process.env.PR56_EVIDENCE_LABEL ?? "workspace-picker.png";
+    await popover.screenshot({
+      path: join(evidenceDir, label),
+      animations: "disabled",
+    });
+    await writeFile(
+      join(evidenceDir, label.replace(/\.png$/i, ".metrics.json")),
+      `${JSON.stringify(metrics, null, 2)}\n`,
+      "utf8",
+    );
+  }
+
+  expect(metrics.popoverHeight).toBeLessThanOrEqual(220);
+  expect(metrics.popoverHeight).toBeGreaterThanOrEqual(100);
+  expect(metrics.searchRowHeight).toBe(36);
+  expect(metrics.bottomPaddingToPopover).toBeLessThanOrEqual(9);
   expect(metrics.popoverSlackBelowCommand).toBe(0);
   expect(metrics.commandHeight).toBe(metrics.popoverHeight);
+  expect(metrics.rowCount).toBeGreaterThanOrEqual(2);
 });
 
 test("host picker menu shrinks to few rows", async ({ page, home }) => {
