@@ -345,13 +345,16 @@ export async function openBrowserPanel(page: Page): Promise<void> {
 /** Composer typing is allowed during harness auth probes, but submit stays
  *  blocked until the live probe settles. Wait on the run-chip spinner. */
 export async function waitForComposerHarnessAuthProbe(page: Page): Promise<void> {
-  const spinner = page.locator(
-    '[data-composer-harness-probe="true"], [data-composer-run-harness="true"] svg.animate-spin',
+  const spinners = page.locator(
+    '[data-composer-harness-probe="true"] svg.animate-spin, [data-composer-run-harness="true"] svg.animate-spin',
   );
   await expect
     .poll(async () => {
-      if ((await spinner.count()) === 0) return true;
-      return !(await spinner.isVisible());
+      const count = await spinners.count();
+      for (let index = 0; index < count; index += 1) {
+        if (await spinners.nth(index).isVisible()) return false;
+      }
+      return true;
     }, { timeout: 60_000 })
     .toBe(true);
 }
