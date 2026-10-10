@@ -130,7 +130,7 @@ describe("renderer typography contract", () => {
     expect(css).toContain("--type-code-leading: 22px;");
     expect(css).toContain('html[lang|="zh"]');
     expect(css).toContain("text-autospace: no-autospace;");
-    expect(css).toContain("[data-chat-surface] .composer-card textarea:focus-visible");
+    expect(css).not.toContain("[data-chat-surface] .composer-card textarea:focus-visible");
     expect(css).toContain("color: var(--fg-disabled);");
     expect(css).toContain("opacity: 1;");
     expect(css).toContain("color: var(--fg-subtle);");

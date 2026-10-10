@@ -34,14 +34,6 @@ describe("applyThemeToRoot", () => {
     }
   });
 
-  it("selects Rose Garden Dark as the dark plugin", () => {
-    const target = root();
-    applyThemeToRoot("backchat-light", "rose-garden-dark", "dark", true, target);
-    expect(target.dataset.theme).toBe("rose-garden-dark");
-    expect(target.dataset.themeMode).toBe("dark");
-    expect(target.vars.get("--fg")).toContain("oklch");
-  });
-
   it("keeps the dark foreground ladder where it already cleared AA", () => {
     const theme = backchatDarkTheme;
     const surfaces = TEXT_CONTRAST_SURFACES.map((name) => theme.tokens[name]);

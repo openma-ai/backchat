@@ -2807,11 +2807,6 @@ textarea:disabled::selection {
   line-height: var(--type-body-leading);
 }
 
-[data-chat-surface] .composer-card textarea:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
 /* Placeholders are the weaker text role. A browser default opacity
    would wash them out, so the color is the token and fully opaque. */
 ::placeholder {

@@ -1,3 +1,8 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { createRoot, type Root } from "react-dom/client";
+import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -108,6 +113,62 @@ describe("browser annotation overlay", () => {
     expect(event.stopPropagation).toHaveBeenCalled();
     expect(event.preventDefault).toHaveBeenCalled();
     expect(onEdit).toHaveBeenCalledWith("ann-1");
+  });
+
+  it("runs the overlay leave, menu, and marker handlers", () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const clear = vi.fn();
+    const onEdit = vi.fn();
+    let root: Root | null = null;
+    act(() => {
+      root = createRoot(host);
+      root.render(
+        browserAnnotationOverlay({
+          isPickingElement: true,
+          resizeSnapshot: null,
+          pickerHover: null,
+          regionSelection: null,
+          markers: [marker("element", "ann-9")],
+          editingAnnotationId: null,
+          canvasLabel: "Annotate",
+          dragActive: false,
+          onClearHover: clear,
+          onPointerDown: vi.fn(),
+          onPointerMove: vi.fn(),
+          onPointerUp: vi.fn(),
+          onPointerCancel: vi.fn(),
+          onEdit,
+        }),
+      );
+    });
+    const overlayEl = host.querySelector("[data-browser-annotation-overlay]");
+    const button = host.querySelector("[data-browser-annotation-marker-button]");
+    if (!(overlayEl instanceof HTMLElement) || !(button instanceof HTMLElement)) {
+      throw new Error("annotation overlay did not render");
+    }
+    const reactProps = (node: HTMLElement) => {
+      const key = Object.keys(node).find((name) => name.startsWith("__reactProps$"));
+      if (!key) throw new Error(`no react props on ${node.tagName}`);
+      return (node as unknown as Record<string, Record<string, (event?: object) => void>>)[key]!;
+    };
+    const overlayProps = reactProps(overlayEl);
+    const buttonProps = reactProps(button);
+    const menuEvent = { preventDefault: vi.fn() };
+    const markerEvent = { stopPropagation: vi.fn() };
+    act(() => {
+      overlayProps.onPointerLeave?.();
+      overlayProps.onContextMenu?.(menuEvent);
+      buttonProps.onPointerDown?.(markerEvent);
+      buttonProps.onClick?.(markerEvent);
+    });
+    expect(menuEvent.preventDefault).toHaveBeenCalled();
+    expect(markerEvent.stopPropagation).toHaveBeenCalled();
+    expect(clear).toHaveBeenCalledWith(null);
+    expect(onEdit).toHaveBeenCalledWith("ann-9");
+    act(() => root?.unmount());
+    host.remove();
   });
 
   it("mounts the overlay from the browser tab", () => {
