@@ -60,6 +60,7 @@ import {
   useArchiveSessions,
 } from "./ArchiveScheduledChatDialog";
 import { AgentUpdateControl } from "./AgentUpdateControl";
+import { RuntimeLocationControl } from "@/components/chat/RuntimeLocationControl";
 import type { ProjectInfo } from "@shared/projects.js";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
@@ -457,8 +458,6 @@ export function Sidebar() {
     }).data ?? [],
   );
   const { data: openmaAccount } = useOpenmaAccount();
-  const [localOpen, setLocalOpen] = useState(() => readDisclosureKeys("backchat:sidebar-local:v1", ["local"]).has("local"));
-  useEffect(() => saveDisclosureKeys("backchat:sidebar-local:v1", new Set(localOpen ? ["local"] : [])), [localOpen]);
   const localSessions = useMemo(() => sessions.filter((row) => !row.openma && !row.executionTarget), [sessions]);
   const grouped = useMemo(
     () => groupSidebarSessions(localSessions, savedProjects, workspaces, removedPaths, coordinatorSessionIds, customSections),
@@ -756,7 +755,7 @@ export function Sidebar() {
               onArchive={() => void requestArchive([s.id])} menuOpen={openMenuId === s.id} onMenuOpenChange={(open) => setOpenMenuId(open ? s.id : null)} />}
           />;
         })}
-        <SidebarSection title={t("chat.local")} open={localOpen} onToggle={() => setLocalOpen(!localOpen)} labelCls={labelCls}>
+        <RuntimeLocationControl variant="sidebar" labelCls={labelCls} />
         <div>
           {(() => {
             const { pinned, projects, chats } = grouped;
@@ -1054,7 +1053,6 @@ export function Sidebar() {
             );
           })()}
         </div>
-        </SidebarSection>
         </nav>
       </div>
       </ScrollArea>

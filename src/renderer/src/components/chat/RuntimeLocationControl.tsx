@@ -32,6 +32,10 @@ import {
 } from "@/components/ui/grouped-command-menu-slots";
 import { composerFooterTriggerClass } from "@/components/ui/composer-footer-trigger";
 import { useComposerPickerUpwardSideOffset } from "@/components/ui/use-composer-picker-upward-side-offset";
+import {
+  SidebarGridCell,
+  SidebarGridRow,
+} from "@/components/shell/SidebarGridRow";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useMemo, useState } from "react";
@@ -44,10 +48,14 @@ export function RuntimeLocationControl({
   title,
   className,
   session,
+  variant = "composer",
+  labelCls,
 }: {
   title?: string;
   className?: string;
   session?: SessionRow;
+  variant?: "composer" | "sidebar";
+  labelCls?: string;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -228,6 +236,31 @@ export function RuntimeLocationControl({
     target,
   ]);
 
+  const locationLabel = target
+    ? `${target.runtimeName} · ${target.environmentName}`
+    : t("chat.local");
+
+  const menu = (
+    <GroupedCommandMenu
+      testId={
+        variant === "sidebar"
+          ? "sidebar-host-picker-panel"
+          : "composer-host-picker-panel"
+      }
+      menuMode="host-picker"
+      menuResetKey={menuOpen ? "open" : "closed"}
+      showSearch={false}
+      autoFocus={false}
+      searchPlaceholder=""
+      emptyMessage=""
+      insideDropdownMenu
+      listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
+      panelHeightPx={groupedCommandMenuPresets.footer.panelHeightPx}
+      commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
+      groups={groups}
+    />
+  );
+
   return (
     <DropdownMenu
       onOpenChange={(open) => {
@@ -236,44 +269,58 @@ export function RuntimeLocationControl({
       }}
     >
       <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          data-composer-footer-control="runtime"
-          data-session-runtime-location="true"
-          className={cn(composerFooterTriggerClass("runtime-location-control"), className)}
-          title={title ?? t("chat.whereRuns")}
-        >
-          <span data-control-icon>
-            <Icon />
-          </span>
-          <span className="truncate">
-            {target ? `${target.runtimeName} · ${target.environmentName}` : t("chat.local")}
-          </span>
-          <ChevronDownIcon data-control-chevron />
-        </Button>
+        {variant === "sidebar" ? (
+          <SidebarGridRow
+            depth={0}
+            trailingTrack="single"
+            data-sidebar-local-runtime="true"
+            data-testid="sidebar-local-runtime-row"
+            data-session-runtime-location="true"
+            title={title ?? t("chat.whereRuns")}
+            className={cn(
+              "app-no-drag cursor-pointer rounded-md text-ui text-fg transition-colors",
+              "hover:bg-[var(--control-bg-hover)] focus-visible:bg-[var(--control-bg-hover)]",
+              "data-[state=open]:bg-[var(--control-bg-hover)]",
+              className,
+            )}
+          >
+            <SidebarGridCell slot="icon">
+              <span className="sidebar-row-icon">
+                <Icon className="size-3.5" />
+              </span>
+            </SidebarGridCell>
+            <SidebarGridCell slot="label">
+              <span className={cn("min-w-0 truncate", labelCls)}>{locationLabel}</span>
+            </SidebarGridCell>
+            <SidebarGridCell slot="trailing" aria-hidden="true">
+              <ChevronDownIcon className="size-3 text-fg-subtle" />
+            </SidebarGridCell>
+          </SidebarGridRow>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-composer-footer-control="runtime"
+            data-session-runtime-location="true"
+            className={cn(composerFooterTriggerClass("runtime-location-control"), className)}
+            title={title ?? t("chat.whereRuns")}
+          >
+            <span data-control-icon>
+              <Icon />
+            </span>
+            <span className="truncate">{locationLabel}</span>
+            <ChevronDownIcon data-control-chevron />
+          </Button>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        side="top"
+        side={variant === "sidebar" ? "bottom" : "top"}
         align="start"
-        sideOffset={upwardPickerSideOffset}
+        sideOffset={variant === "sidebar" ? 4 : upwardPickerSideOffset}
         className={groupedCommandMenuDropdownShellClassName()}
       >
-        <GroupedCommandMenu
-          testId="composer-host-picker-panel"
-          menuMode="host-picker"
-          menuResetKey={menuOpen ? "open" : "closed"}
-          showSearch={false}
-          autoFocus={false}
-          searchPlaceholder=""
-          emptyMessage=""
-          insideDropdownMenu
-          listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
-          panelHeightPx={groupedCommandMenuPresets.footer.panelHeightPx}
-          commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
-          groups={groups}
-        />
+        {menu}
       </DropdownMenuContent>
     </DropdownMenu>
   );

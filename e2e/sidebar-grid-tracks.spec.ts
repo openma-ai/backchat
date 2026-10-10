@@ -67,9 +67,11 @@ test("sidebar rows share icon and trailing column x-positions", async () => {
       timeout: 10_000,
     });
 
+    const localRuntimeRow = page.getByTestId("sidebar-local-runtime-row");
     const depth0IconLefts = await Promise.all([
       gridColumnLeft(hostRow, "icon"),
       gridColumnLeft(scheduledRow, "icon"),
+      gridColumnLeft(localRuntimeRow, "icon"),
       gridColumnLeft(projectsHeader, "icon"),
       gridColumnLeft(chatsHeader, "icon"),
       gridColumnLeft(footerRow, "icon"),

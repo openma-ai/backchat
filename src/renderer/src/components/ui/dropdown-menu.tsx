@@ -245,8 +245,6 @@ function DropdownMenuSubTrigger({
 function DropdownMenuSubContent({
   className,
   collisionPadding = 8,
-  side = "right",
-  align = "end",
   sideOffset = 4,
   alignOffset: alignOffsetProp,
   ...props
@@ -271,8 +269,6 @@ function DropdownMenuSubContent({
     <DropdownMenuPrimitive.SubContent
       ref={syncBottomWithParentMenu}
       data-slot="dropdown-menu-sub-content"
-      side={side}
-      align={align}
       sideOffset={sideOffset}
       alignOffset={alignOffsetProp ?? alignOffset}
       collisionPadding={collisionPadding}

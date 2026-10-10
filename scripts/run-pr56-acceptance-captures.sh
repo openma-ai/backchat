@@ -24,7 +24,8 @@ run_phase() {
   PR56_ACCEPTANCE_PHASE="$phase" \
   PR56_ACCEPTANCE_ROOT="$ACCEPT_ROOT" \
   BACKCHAT_E2E_APP_ROOT="$app_root" \
-  "$ROOT/node_modules/.bin/playwright" test "$ROOT/e2e/capture-pr56-acceptance.spec.ts"
+  "$ROOT/node_modules/.bin/playwright" test \
+    "$ROOT/e2e/capture-pr56-evidence.spec.ts"
 }
 
 run_phase before "$MAIN_WORKTREE"
