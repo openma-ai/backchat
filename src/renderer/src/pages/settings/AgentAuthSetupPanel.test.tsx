@@ -180,6 +180,25 @@ async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: st
   });
 }
 
+async function typeKeys(input: HTMLInputElement, text: string): Promise<void> {
+  let value = input.value;
+  for (const char of text) {
+    value += char;
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true }));
+    });
+    await typeInto(input, value);
+  }
+}
+
+async function backspaceKeys(input: HTMLInputElement): Promise<void> {
+  let value = input.value;
+  while (value.length > 0) {
+    value = value.slice(0, -1);
+    await typeInto(input, value);
+  }
+}
+
 describe("AgentAuthSetupPanel", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
@@ -226,6 +245,39 @@ describe("AgentAuthSetupPanel", () => {
     await typeInto(search, "anthropic");
     expect(document.body.querySelector("[data-auth-method-detail]")?.getAttribute("data-auth-method-detail")).toBe("openai");
     expect(option("anthropic").getAttribute("data-auth-method")).toBe("anthropic");
+  });
+
+  it("keeps the selected method and typed key while search is typed one character at a time", async () => {
+    await mount(
+      <AgentAuthSetupPanel
+        agent={methodAgent(piMethods)}
+        settings={settings}
+        waitingForAuth={false}
+        pending={false}
+        onMethodIdChange={() => undefined}
+        onStart={() => undefined}
+        onClose={() => undefined}
+        onSaved={() => undefined}
+      />,
+    );
+    await click(option("deepseek"));
+    await typeInto(field("api-key"), "sk-deepseek");
+    const search = document.body.querySelector("input[aria-label='Search authentication methods']") as HTMLInputElement;
+    await typeKeys(search, "openai");
+    expect(document.body.querySelector("[data-auth-method-detail]")?.getAttribute("data-auth-method-detail")).toBe("deepseek");
+    expect(field("api-key").value).toBe("sk-deepseek");
+    const highlighted = document.querySelector("[data-auth-method][data-selected='true']");
+    if (highlighted) expect(highlighted.getAttribute("data-auth-method")).toBe("deepseek");
+    await backspaceKeys(search);
+    expect(document.body.querySelector("[data-auth-method-detail]")?.getAttribute("data-auth-method-detail")).toBe("deepseek");
+    expect(field("api-key").value).toBe("sk-deepseek");
+    expect(option("deepseek").getAttribute("data-selected")).toBe("true");
+
+    await typeKeys(search, "deep");
+    expect(document.body.querySelector("[data-auth-method-detail]")?.getAttribute("data-auth-method-detail")).toBe("deepseek");
+    expect(field("api-key").value).toBe("sk-deepseek");
+    expect(option("deepseek").getAttribute("data-selected")).toBe("true");
+    expect(option("deepseek").getAttribute("data-checked")).toBe("true");
   });
 
   it("does not submit a secret typed for one api-key method with another method", async () => {

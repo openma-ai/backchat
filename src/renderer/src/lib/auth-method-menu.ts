@@ -197,9 +197,9 @@ export function authDialogShouldClose(nextOpen: boolean, busy: boolean): boolean
 }
 
 /**
- * Command-menu highlight moves on its own when rows mount and unmount.
- * Follow that highlight only when it lands on a different visible method.
- * A search that hides the current method must not replace it.
+ * Arrow keys may move the selected method when the search box is empty.
+ * A search query must not: cmdk reselects the first visible row on each
+ * keystroke, and following that would wipe the draft.
  */
 export function nextAuthMethodId(
   methods: readonly { id: string }[],
@@ -207,8 +207,35 @@ export function nextAuthMethodId(
   query: string,
   next: string,
 ): string | undefined {
-  if (!next || next === currentId) return undefined;
-  const visible = filterAuthMethods(methods, query);
-  if (query.trim() && !visible.some((method) => method.id === currentId)) return undefined;
-  return visible.some((method) => method.id === next) ? next : undefined;
+  if (query.trim()) return undefined;
+  const picked = next.trim();
+  if (!picked || picked === currentId) return undefined;
+  return methods.some((method) => method.id === picked) ? picked : undefined;
+}
+
+/** Keyboard movement that is allowed to change the selected method. Search input is not. */
+export function isAuthMethodArrowKey(key: string): boolean {
+  return key === "ArrowDown" || key === "ArrowUp" || key === "Home" || key === "End";
+}
+
+/** Apply a cmdk highlight change. Arrows can select another method. Search only restores the current highlight. */
+export function authMenuValueChange(
+  fromArrow: boolean,
+  methods: readonly { id: string }[],
+  currentId: string | undefined,
+  next: string,
+  revision: number,
+): { methodId?: string; revision: number } {
+  if (!fromArrow) return { revision: authCommandRevision(currentId, next, revision) };
+  const picked = nextAuthMethodId(methods, currentId, "", next);
+  return picked ? { methodId: picked, revision } : { revision };
+}
+
+/** Bump when a search-driven highlight leaves the selected method, so the controlled value is applied again. */
+export function authCommandRevision(
+  currentId: string | undefined,
+  next: string,
+  revision: number,
+): number {
+  return next.trim() === (currentId ?? "") ? revision : revision + 1;
 }

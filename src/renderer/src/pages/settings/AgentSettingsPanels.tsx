@@ -16,8 +16,9 @@ import {
   clearAuthDraft,
   filterAuthMethods,
   groupAuthMethods,
+  authMenuValueChange,
   initialAuthDraft,
-  nextAuthMethodId,
+  isAuthMethodArrowKey,
   type AuthMethodKind,
 } from "@/lib/auth-method-menu";
 import { composerBoxClass } from "@/lib/composer-box";
@@ -86,6 +87,7 @@ export function AgentAuthSetupPanel({
   const methods = agent.auth?.methods ?? [];
   const [query, setQuery] = useState("");
   const [activeMethodId, setActiveMethodId] = useState(selectedMethodId);
+  const [commandRevision, setCommandRevision] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
   const method = selectedAuthMethod(agent, activeMethodId);
   const methodType = method?.type ?? "agent";
@@ -104,6 +106,7 @@ export function AgentAuthSetupPanel({
   const showMenu = methods.length > 1;
   const busy = pending || logoutPending;
   const focusCapture = useRef<{ target: HTMLElement | null } | null>(null);
+  const arrowSelection = useRef(false);
   if (focusCapture.current === null && typeof document !== "undefined") {
     const active = document.activeElement;
     focusCapture.current = {
@@ -216,10 +219,16 @@ export function AgentAuthSetupPanel({
               label={t("auth.searchLabel")}
               shouldFilter={false}
               disablePointerSelection
-              value={method!.id}
+              value={`${method!.id}${commandRevision % 2 === 1 ? " " : ""}`}
+              onKeyDown={(event) => {
+                if (isAuthMethodArrowKey(event.key)) arrowSelection.current = true;
+              }}
               onValueChange={(next) => {
-                const picked = nextAuthMethodId(methods, method?.id, query, next);
-                if (picked) pickMethod(picked);
+                const fromArrow = arrowSelection.current;
+                arrowSelection.current = false;
+                const action = authMenuValueChange(fromArrow, methods, method?.id, next, commandRevision);
+                if (action.methodId) pickMethod(action.methodId);
+                if (action.revision !== commandRevision) setCommandRevision(action.revision);
               }}
               className="rounded-none! bg-transparent! shadow-none!"
             >

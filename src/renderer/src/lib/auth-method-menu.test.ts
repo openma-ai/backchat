@@ -16,6 +16,9 @@ import {
   groupAuthMethods,
   initialAuthDraft,
   isAuthSlashCommand,
+  authCommandRevision,
+  authMenuValueChange,
+  isAuthMethodArrowKey,
   nextAuthMethodId,
   preferredAuthMethod,
   withoutAuthSlashCommands,
@@ -199,16 +202,32 @@ describe("auth slash commands", () => {
     ]).map((command) => command.name ?? command.description)).toEqual(["unnamed", "review"]);
   });
 
-  it("follows the menu highlight only onto a different visible method", () => {
+  it("follows an arrow highlight only when search is empty", () => {
     const methods = [anthropic, deepseek, openaiEnv];
     expect(nextAuthMethodId(methods, "deepseek", "", "")).toBeUndefined();
     expect(nextAuthMethodId(methods, "deepseek", "", "deepseek")).toBeUndefined();
-    expect(nextAuthMethodId(methods, "deepseek", "", "openai-key")).toBe("openai-key");
-    expect(nextAuthMethodId(methods, "deepseek", "api", "openai-key")).toBe("openai-key");
-    expect(nextAuthMethodId(methods, "deepseek", "api", "anthropic")).toBeUndefined();
-    expect(nextAuthMethodId(methods, "deepseek", "anth", "openai-key")).toBeUndefined();
-    expect(nextAuthMethodId(methods, "anthropic", "deep", "deepseek")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", "", " openai-key ")).toBe("openai-key");
     expect(nextAuthMethodId(methods, "deepseek", "", "missing")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", "o", "anthropic")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", "openai", "openai-key")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", "deep", "anthropic")).toBeUndefined();
+    expect(nextAuthMethodId(methods, "deepseek", " ", "openai-key")).toBe("openai-key");
+    expect(authCommandRevision("deepseek", "deepseek", 2)).toBe(2);
+    expect(authCommandRevision("deepseek", " deepseek ", 2)).toBe(2);
+    expect(authCommandRevision("deepseek", "anthropic", 2)).toBe(3);
+    expect(authCommandRevision(undefined, "anthropic", 0)).toBe(1);
+    expect(authCommandRevision(undefined, "", 4)).toBe(4);
+    expect(authCommandRevision("deepseek", "", 4)).toBe(5);
+    expect(isAuthMethodArrowKey("ArrowDown")).toBe(true);
+    expect(isAuthMethodArrowKey("ArrowUp")).toBe(true);
+    expect(isAuthMethodArrowKey("Home")).toBe(true);
+    expect(isAuthMethodArrowKey("End")).toBe(true);
+    expect(isAuthMethodArrowKey("o")).toBe(false);
+    expect(authMenuValueChange(true, methods, "deepseek", "openai-key", 2)).toEqual({ methodId: "openai-key", revision: 2 });
+    expect(authMenuValueChange(true, methods, "deepseek", "deepseek", 2)).toEqual({ revision: 2 });
+    expect(authMenuValueChange(true, methods, "deepseek", "missing", 2)).toEqual({ revision: 2 });
+    expect(authMenuValueChange(false, methods, "deepseek", "anthropic", 2)).toEqual({ revision: 3 });
+    expect(authMenuValueChange(false, methods, "deepseek", "deepseek", 2)).toEqual({ revision: 2 });
   });
 
   it("offers logout only after the agent is signed in and the capability is advertised", () => {
