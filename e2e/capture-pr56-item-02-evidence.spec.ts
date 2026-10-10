@@ -178,6 +178,13 @@ test.describe.serial("PR56 item 02 evidence", () => {
         await page.setViewportSize(VIEWPORT);
         await openComposerHostPicker(page);
         await screenshotHostDropdown(page, pr56Item02Shot(`host-few-${langTag}.png`));
+        await page
+          .locator(".composer-stack-card")
+          .first()
+          .screenshot({
+            path: pr56Item02Shot(`host-few-${langTag}-composer-context.png`),
+            animations: "disabled",
+          });
       } finally {
         await cleanup();
       }

@@ -53,12 +53,16 @@ async function main() {
         ])
         .png()
         .toBuffer();
+    const beforeSize = `${beforeMeta.width ?? 0}×${beforeMeta.height ?? 0}`;
+    const afterSize = `${afterMeta.width ?? 0}×${afterMeta.height ?? 0}`;
     const headerSvg = Buffer.from(
-      `<svg width="${totalWidth}" height="28" xmlns="http://www.w3.org/2000/svg">
+      `<svg width="${totalWidth}" height="40" xmlns="http://www.w3.org/2000/svg">
         <rect width="100%" height="100%" fill="#f4f4f5"/>
-        <line x1="${split}" y1="0" x2="${split}" y2="28" stroke="#d4d4d8" stroke-width="1"/>
-        <text x="${split / 2}" y="18" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${leftLabel}</text>
-        <text x="${split + colWidth / 2}" y="18" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${rightLabel}</text>
+        <line x1="${split}" y1="0" x2="${split}" y2="40" stroke="#d4d4d8" stroke-width="1"/>
+        <text x="${split / 2}" y="16" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${leftLabel}</text>
+        <text x="${split + colWidth / 2}" y="16" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="#3f3f46">${rightLabel}</text>
+        <text x="${split / 2}" y="32" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#71717a">${beforeSize}px</text>
+        <text x="${split + colWidth / 2}" y="32" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#71717a">${afterSize}px</text>
       </svg>`,
     );
     const header = await sharp(headerSvg).png().toBuffer();
@@ -88,14 +92,14 @@ async function main() {
     await sharp({
       create: {
         width: totalWidth,
-        height: height + 28,
+        height: height + 40,
         channels: 4,
         background: { r: 255, g: 255, b: 255, alpha: 1 },
       },
     })
       .composite([
         { input: header, left: 0, top: 0 },
-        { input: row, left: 0, top: 28 },
+        { input: row, left: 0, top: 40 },
       ])
       .png()
       .toFile(out);
