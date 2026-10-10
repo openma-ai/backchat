@@ -100,7 +100,9 @@ test("model picker shows provider command groups with bounded scroll", async ({ 
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height + 1);
 });
 
-test("model picker panel height does not jump while typing", async ({ page, bridge }) => {
+test("model picker height shrinks when filtered and caps when browsing", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await enableAgent(page, "codex-acp");
   const sessionId = await injectSession(page, { agentId: "codex-acp" });
@@ -128,12 +130,14 @@ test("model picker panel height does not jump while typing", async ({ page, brid
   const panel = modelPickerPanel(page);
   await expect(panel).toBeVisible({ timeout: 10_000 });
   const search = modelPickerSearchInput(panel);
-  const heights: number[] = [];
-  for (const query of ["", "d", "devin", "devin 1", "zzz"]) {
-    await search.fill(query);
-    const box = await panel.boundingBox();
-    expect(box).not.toBeNull();
-    heights.push(box!.height);
-  }
-  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(2);
+
+  const browseBox = await panel.boundingBox();
+  expect(browseBox).not.toBeNull();
+  expect(browseBox!.height).toBeGreaterThan(200);
+  expect(browseBox!.height).toBeLessThanOrEqual(420 + 2);
+
+  await search.fill("devin 1");
+  const filteredBox = await panel.boundingBox();
+  expect(filteredBox).not.toBeNull();
+  expect(filteredBox!.height).toBeLessThan(browseBox!.height - 40);
 });

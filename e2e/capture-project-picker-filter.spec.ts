@@ -68,7 +68,8 @@ test("capture project picker alignment and stable height while filtering", async
       });
     }
 
-    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(2);
+    expect(heights[0]).toBeLessThanOrEqual(336 + 2);
+    expect(heights[heights.length - 1]).toBeLessThan(heights[0] - 20);
 
     await search.fill("");
     const viewport = panel.locator('[data-slot="scroll-area-viewport"]');

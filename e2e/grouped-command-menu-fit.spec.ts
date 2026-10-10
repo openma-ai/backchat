@@ -1,0 +1,142 @@
+import { execFile as execFileCallback } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import { expect, test } from "./fixtures";
+import { enableAgent, injectEvent, injectSession } from "./helpers";
+
+const execFile = promisify(execFileCallback);
+const artifactDir = "/opt/cursor/artifacts/screenshots/grouped-command-menu-fit";
+
+function manyGroupedModels() {
+  const providers = ["anthropic-proxy", "openai-codex", "devin"];
+  return providers.map((provider) => ({
+    group: provider,
+    name: provider,
+    options: Array.from({ length: 8 }, (_, index) => ({
+      value: `${provider}-${index}`,
+      name: `${provider} model ${index}`,
+    })),
+  }));
+}
+
+test("host picker menu shrinks to few rows", async ({ page, home }) => {
+  test.setTimeout(120_000);
+  await mkdir(artifactDir, { recursive: true });
+
+  const repo = join(home, "host-fit-repo");
+  await mkdir(repo, { recursive: true });
+  await execFile("git", ["init", "--initial-branch=main", repo]);
+  await execFile("git", [
+    "-C",
+    repo,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.test",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "fixture",
+  ]);
+
+  await page.evaluate(async (path) => {
+    localStorage.setItem("backchat:workspace-intro-seen:v1", "1");
+    await window.backchat.projectSave({
+      project_id: "host-fit-demo",
+      name: "Host demo",
+      source_folders: [path],
+      primary_folder: path,
+    });
+  }, repo);
+  await page.reload();
+  await enableAgent(page, "codex-acp");
+  await page.getByTestId("new-chat-button").click();
+
+  const runtimeTrigger = page.locator('[data-composer-footer-control="runtime"]');
+  await runtimeTrigger.click();
+  const panel = page.getByTestId("composer-host-picker-panel");
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+
+  const box = await panel.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.height).toBeLessThan(220);
+
+  await page.screenshot({
+    path: join(artifactDir, "host-picker-fit-height.png"),
+    animations: "disabled",
+  });
+});
+
+test("model submenu shrinks when search filters to one row", async ({ page }) => {
+  await enableAgent(page, "codex-acp");
+  const sessionId = await injectSession(page, { agentId: "codex-acp" });
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: "menu-fit",
+    event: {
+      sessionUpdate: "config_option_update",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "openai-codex-2",
+          options: manyGroupedModels(),
+        },
+      ],
+    },
+  });
+
+  await page.getByRole("button", { name: /Run on|运行位置/ }).first().click();
+  await page.getByRole("menuitem", { name: /模型|Model/ }).first().hover();
+  const panel = page.getByTestId("composer-select-menu-panel");
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+
+  const fullHeight = (await panel.boundingBox())?.height ?? 0;
+  expect(fullHeight).toBeGreaterThan(120);
+
+  const search = panel.locator('input[type="search"], input[cmdk-input]');
+  await search.fill("devin 1");
+  await expect(panel.getByText("openai-codex model 0")).toHaveCount(0);
+
+  const filteredHeight = (await panel.boundingBox())?.height ?? 0;
+  expect(filteredHeight).toBeLessThan(fullHeight - 40);
+  expect(filteredHeight).toBeLessThan(220);
+});
+
+test("model submenu bottom aligns with primary run menu", async ({ page }) => {
+  await enableAgent(page, "codex-acp");
+  const sessionId = await injectSession(page, { agentId: "codex-acp" });
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: "menu-align",
+    event: {
+      sessionUpdate: "config_option_update",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "openai-codex-2",
+          options: manyGroupedModels(),
+        },
+      ],
+    },
+  });
+
+  await page.getByRole("button", { name: /Run on|运行位置/ }).first().click();
+  const primary = page.locator('[data-slot="dropdown-menu-content"]').last();
+  await expect(primary).toBeVisible();
+  await page.getByRole("menuitem", { name: /模型|Model/ }).first().hover();
+  const subPanel = page.getByTestId("composer-select-menu-panel");
+  await expect(subPanel).toBeVisible({ timeout: 10_000 });
+
+  const primaryBottom = await primary.evaluate((el) => el.getBoundingClientRect().bottom);
+  const subBottom = await subPanel.evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(Math.abs(primaryBottom - subBottom)).toBeLessThanOrEqual(3);
+});

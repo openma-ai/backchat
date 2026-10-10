@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useCallback, useState } from "react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -244,13 +245,38 @@ function DropdownMenuSubTrigger({
 function DropdownMenuSubContent({
   className,
   collisionPadding = 8,
+  side = "right",
+  align = "end",
+  sideOffset = 4,
+  alignOffset: alignOffsetProp,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  const [alignOffset, setAlignOffset] = useState(0);
+  const syncBottomWithParentMenu = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const trigger = document.querySelector(
+      '[data-slot="dropdown-menu-sub-trigger"][data-state="open"]',
+    );
+    const parentMenu = trigger?.closest('[data-slot="dropdown-menu-content"]');
+    if (!(trigger instanceof HTMLElement) || !(parentMenu instanceof HTMLElement)) {
+      return;
+    }
+    const offset =
+      trigger.getBoundingClientRect().bottom -
+      parentMenu.getBoundingClientRect().bottom;
+    setAlignOffset(offset);
+  }, []);
+
   return (
     <DropdownMenuPrimitive.SubContent
+      ref={syncBottomWithParentMenu}
       data-slot="dropdown-menu-sub-content"
+      side={side}
+      align={align}
+      sideOffset={sideOffset}
+      alignOffset={alignOffsetProp ?? alignOffset}
       collisionPadding={collisionPadding}
-      className={cn("z-50 min-w-[96px] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+      className={cn("z-50 h-auto min-w-[96px] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
       {...props}
     />
   )

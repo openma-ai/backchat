@@ -19,6 +19,7 @@ import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
 import {
   GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX,
   GroupedCommandMenu,
+  groupedCommandMenuPanelClassName,
   groupedCommandMenuPopoverShellClassName,
   groupedCommandMenuPresets,
 } from "@/components/ui/grouped-command-menu";
@@ -169,12 +170,9 @@ export function ProjectChipRow({
               menuMode="project-picker"
               panelHeightPx={GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}
               listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
-              panelClassName={cn(
-                "flex flex-col overflow-hidden",
-                `h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
-                `min-h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
-                `max-h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
-              )}
+              panelClassName={groupedCommandMenuPanelClassName({
+                maxHeightPx: GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX,
+              })}
               commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}
@@ -494,12 +492,9 @@ function WorkspaceChip({
             menuResetKey={open ? "open" : "closed"}
             panelHeightPx={GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}
             listHeightPx={groupedCommandMenuPresets.footer.listHeightPx}
-            panelClassName={cn(
-              "flex flex-col overflow-hidden",
-              `h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
-              `min-h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
-              `max-h-[min(${GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX}px,var(--radix-popover-content-available-height))]`,
-            )}
+            panelClassName={groupedCommandMenuPanelClassName({
+              maxHeightPx: GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX,
+            })}
             commandClassName="rounded-xl! bg-popover text-popover-foreground shadow-none ring-0"
             searchPlaceholder={t("workspace.search")}
             emptyMessage={t("chat.noMatchingOptions")}

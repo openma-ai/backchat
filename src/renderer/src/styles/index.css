@@ -2399,13 +2399,14 @@ body,
 
 .grouped-command-menu-scroll {
   flex: 1 1 auto;
-  height: var(--grouped-command-list-height);
-  min-height: var(--grouped-command-list-height);
+  height: auto;
+  min-height: 0;
   max-height: var(--grouped-command-list-height);
 }
 
 .grouped-command-menu-scroll [data-slot="scroll-area-viewport"] {
-  height: 100%;
+  height: auto;
+  max-height: var(--grouped-command-list-height);
   scrollbar-gutter: auto;
 }
 
@@ -2418,7 +2419,7 @@ body,
 }
 
 .grouped-command-menu [cmdk-list-sizer] {
-  min-height: min(100%, var(--grouped-command-list-height));
+  min-height: 0;
 }
 
 /* Current value: checkmark only — never the gray hover/keyboard wash. */

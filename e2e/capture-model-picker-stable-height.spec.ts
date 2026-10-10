@@ -87,9 +87,11 @@ test("model picker panel height stays fixed while filtering (screenshots)", asyn
         });
       }
 
-      const maxDelta = Math.max(...heights) - Math.min(...heights);
-      expect(maxDelta).toBeLessThanOrEqual(2);
-      expect(Math.max(...heights)).toBeLessThanOrEqual(420 + 2);
+      const browseHeight = heights[0] ?? 0;
+      const filteredHeight = heights[heights.length - 1] ?? 0;
+      expect(browseHeight).toBeGreaterThan(200);
+      expect(browseHeight).toBeLessThanOrEqual(420 + 2);
+      expect(filteredHeight).toBeLessThan(browseHeight - 40);
     } finally {
       await cleanup();
     }

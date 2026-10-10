@@ -59,9 +59,7 @@ export function groupedCommandMenuPanelClassName({
   className?: string;
 } = {}) {
   return cn(
-    "flex flex-col overflow-hidden",
-    `h-[min(${maxHeightPx}px,var(--radix-dropdown-menu-content-available-height))]`,
-    `min-h-[min(${maxHeightPx}px,var(--radix-dropdown-menu-content-available-height))]`,
+    "flex h-auto w-full flex-col overflow-hidden",
     `max-h-[min(${maxHeightPx}px,var(--radix-dropdown-menu-content-available-height))]`,
     className,
   );
@@ -171,7 +169,7 @@ export function GroupedCommandMenu({
         value={commandValue}
         onValueChange={setCommandValue}
         className={cn(
-          "grouped-command-menu size-full min-h-0 overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
+          "grouped-command-menu flex min-h-0 flex-1 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
           commandClassName,
         )}
         {...commandRovingProps}
