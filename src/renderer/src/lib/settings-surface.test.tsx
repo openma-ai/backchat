@@ -24,6 +24,8 @@ const harness = vi.hoisted(() => ({
   },
   settings: null as Settings | null,
   archived: [] as Array<Record<string, unknown>>,
+  suspendOutlet: false,
+  suspender: null as Promise<void> | null,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -36,7 +38,10 @@ vi.mock("@tanstack/react-router", () => ({
     className?: string;
     children?: ReactNode;
   }) => <a href={to} className={className}>{children}</a>,
-  Outlet: () => <div data-outlet="true" />,
+  Outlet: () => {
+    if (harness.suspendOutlet && harness.suspender) throw harness.suspender;
+    return <div data-outlet="true" />;
+  },
   useLocation: () => ({ pathname: harness.pathname }),
   useNavigate: () => () => undefined,
 }));
@@ -176,6 +181,8 @@ beforeEach(() => {
   };
   harness.settings = settingsFixture;
   harness.archived = [];
+  harness.suspendOutlet = false;
+  harness.suspender = null;
   installBackchatStub();
   vi.spyOn(sessionStore, "listArchivedPersisted").mockResolvedValue([]);
   vi.spyOn(sessionStore, "seedOpenmaTasks").mockImplementation(() => undefined);
@@ -466,5 +473,26 @@ describe("settings surfaces render the shared box and row", () => {
     });
     expect(listed.host.textContent).toContain("Codex");
     await act(async () => listed.root.unmount());
+
+    harness.query = { ...harness.query, isLoading: true, data: undefined };
+    const loadingAgents = await mount(<SettingsAgents />);
+    expect(loadingAgents.host.textContent).toContain("Loading agents…");
+    expect(loadingAgents.host.textContent).toContain("Loading registry…");
+    await act(async () => loadingAgents.root.unmount());
+  });
+
+  it("renders the settings loading panel while the outlet is suspended", async () => {
+    let release = () => undefined;
+    harness.suspender = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    harness.suspendOutlet = true;
+    const view = await mount(<SettingsLayout />);
+    expect(view.host.querySelector("[data-settings-loading]")).not.toBeNull();
+    expect(view.host.querySelectorAll(".app-composer-surface").length).toBe(3);
+    expect(view.host.querySelector("[data-outlet='true']")).toBeNull();
+    release();
+    harness.suspendOutlet = false;
+    await act(async () => view.root.unmount());
   });
 });
