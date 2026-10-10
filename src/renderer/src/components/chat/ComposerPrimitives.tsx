@@ -1,4 +1,5 @@
 import { forwardRef, type ComponentProps } from "react";
+import { COMPOSER_BOX_CLASS } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 
 /** Shared presentation for session and project composers; hosts own delivery. */
@@ -9,7 +10,8 @@ export function ComposerSurface({
   return (
     <div
       className={cn(
-        "composer-control-row-inset composer-radius relative flex flex-col gap-[var(--composer-section-gap)] py-[var(--composer-card-padding-block)] app-composer-surface composer-card transition-shadow",
+        "composer-control-row-inset relative flex flex-col gap-[var(--composer-section-gap)] py-[var(--composer-card-padding-block)] composer-card transition-shadow",
+        COMPOSER_BOX_CLASS,
         className,
       )}
       {...props}

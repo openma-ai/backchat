@@ -23,9 +23,25 @@
   box-shadow: var(--shadow-sm);
 }
 
-.app-composer-surface {
+.app-composer-surface,
+.composer-box-border {
   border: var(--composer-card-border-width) solid var(--border);
+}
+
+.app-composer-surface {
   box-shadow: var(--shadow-input-rest);
+}
+
+/* Appearance mode frames reuse the composer border. Brand only when
+   that frame is the selected choice. The composer card never sets
+   data-selected. */
+.app-composer-surface[data-selected="true"],
+.composer-box-border[data-selected="true"] {
+  border-color: var(--brand);
+}
+
+.appearance-mode-card:hover > .composer-box-border:not([data-selected="true"]) {
+  border-color: var(--border-strong);
 }
 
 .app-raised-surface,
@@ -240,9 +256,15 @@
   margin-left: auto;
 }
 
-/* Match the reference navigation rhythm: 28px rows with a 1px step. */
+/* Match the reference navigation rhythm: 28px rows with a 1px step.
+   Session rows and settings nav items both use `.sidebar-nav-row`, so
+   this override is the only height they can resolve. */
 .sidebar-navigation {
   --sidebar-row-h: 28px;
+}
+
+.sidebar-nav-row {
+  height: var(--sidebar-row-h);
 }
 /* Scroll viewports and collapsed groups clip outward focus rings. Keep
    keyboard focus entirely inside the row, including after menu dismissal. */

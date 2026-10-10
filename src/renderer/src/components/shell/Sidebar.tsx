@@ -27,6 +27,7 @@ import {
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { sidebarNavRowClass } from "@/lib/sidebar-nav-row";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/lib/settings-store";
 import {
@@ -1666,7 +1667,7 @@ function PairSidebarRow({
  *  controlled-vs-uncontrolled state bugs). Trades: clicking `…`
  *  doesn't also navigate (stopPropagation on the button), and the
  *  menu opens via a pure onClick handler. */
-function SessionRow({
+export function SessionRow({
   row,
   agentIconUrl,
   active,
@@ -1711,15 +1712,11 @@ function SessionRow({
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
         <div
-          className={cn(
-            "group relative flex w-full items-center gap-2 rounded-md px-2 text-ui",
-            errored && "text-danger",
-            active
-              ? "app-selected-surface text-fg"
-              : !errored && "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-            "transition-colors",
-          )}
-          style={{ height: "var(--sidebar-row-h)" }}
+          className={sidebarNavRowClass({
+            active,
+            errored,
+            className: "group relative",
+          })}
         >
           <button
             type="button"
