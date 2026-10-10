@@ -20,6 +20,120 @@ function manyGroupedModels() {
   }));
 }
 
+async function seedProjectPickerGridFixture(
+  page: import("@playwright/test").Page,
+  home: string,
+) {
+  const alphaDir = join(home, "picker-grid-alpha");
+  const betaDir = join(home, "picker-grid-beta");
+  await fsMkdir(alphaDir, { recursive: true });
+  await fsMkdir(betaDir, { recursive: true });
+  await page.evaluate(async ({ alphaDir, betaDir }) => {
+    localStorage.setItem("backchat:workspace-intro-seen:v1", "1");
+    await window.backchat.projectSave({
+      project_id: "picker-grid-a",
+      name: "Alpha workspace",
+      source_folders: [alphaDir],
+      primary_folder: alphaDir,
+    });
+    const beta = {
+      project_id: "picker-grid-b",
+      name: "Beta monorepo",
+      source_folders: [betaDir],
+      primary_folder: betaDir,
+    };
+    await window.backchat.projectSave(beta);
+    await window.backchat.projectSave(beta);
+  }, { alphaDir, betaDir });
+  await page.reload();
+}
+
+function measureProjectPickerLabelColumns(panel: import("@playwright/test").Locator) {
+  return panel.evaluate((rootEl) => {
+    const panelEl =
+      rootEl.getAttribute("data-testid") === "composer-project-picker-panel"
+        ? rootEl
+        : rootEl.querySelector('[data-testid="composer-project-picker-panel"]') ??
+          rootEl;
+    const popover = (panelEl as HTMLElement).closest?.(
+      '[data-slot="popover-content"]',
+    ) ??
+      (rootEl.matches('[data-slot="popover-content"]')
+        ? rootEl
+        : rootEl.querySelector('[data-slot="popover-content"]'));
+    const scope = (panelEl as HTMLElement) ?? rootEl;
+    const popoverLeft = popover?.getBoundingClientRect().left ?? 0;
+    const items = Array.from(
+      scope.querySelectorAll('[data-slot="command-item"]'),
+    ) as HTMLElement[];
+    const labelLeft = (item: HTMLElement) => {
+      const label =
+        item.querySelector('[data-grouped-command-grid="label"]') ??
+        item.querySelector("span.truncate");
+      return label
+        ? Math.round(label.getBoundingClientRect().left - popoverLeft)
+        : 0;
+    };
+    const projectRow = items.find((node) =>
+      (node.textContent ?? "").includes("Beta monorepo"),
+    );
+    const browseRow = items.find((node) =>
+      (node.textContent ?? "").includes("Browse"),
+    );
+    const rows = items.map((item) => ({
+      text: (item.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40),
+      labelLeft: labelLeft(item),
+    }));
+    return {
+      popoverHeight: popover
+        ? Math.round(popover.getBoundingClientRect().height)
+        : 0,
+      projectLabelLeft: projectRow ? labelLeft(projectRow) : 0,
+      browseLabelLeft: browseRow ? labelLeft(browseRow) : 0,
+      rows,
+    };
+  });
+}
+
+test("project picker label grid aligns project and tail rows", async ({
+  page,
+  home,
+}) => {
+  test.setTimeout(120_000);
+  await seedProjectPickerGridFixture(page, home);
+  await enableAgent(page, "codex-acp");
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+  const panelByTestId = page.getByTestId("composer-project-picker-panel");
+  const panel = (await panelByTestId.count())
+    ? panelByTestId
+    : page.locator('[data-slot="popover-content"][data-state="open"]').last();
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+  await expect(panel.locator('[data-slot="command-item"]').first()).toBeVisible({
+    timeout: 10_000,
+  });
+
+  const metrics = await measureProjectPickerLabelColumns(panel);
+
+  const evidenceDir = process.env.PR56_EVIDENCE_DIR;
+  if (evidenceDir) {
+    await fsMkdir(evidenceDir, { recursive: true });
+    const label = process.env.PR56_EVIDENCE_LABEL ?? "project-picker-grid.png";
+    const popover = panel.locator(
+      "xpath=ancestor::*[@data-slot='popover-content'][1]",
+    );
+    await popover.screenshot({ path: join(evidenceDir, label), animations: "disabled" });
+    await writeFile(
+      join(evidenceDir, label.replace(/\.png$/i, ".metrics.json")),
+      `${JSON.stringify(metrics, null, 2)}\n`,
+      "utf8",
+    );
+  }
+
+  expect(metrics.projectLabelLeft).toBeGreaterThan(0);
+  expect(metrics.browseLabelLeft).toBe(metrics.projectLabelLeft);
+});
+
 async function seedWorkspacePickerFixture(
   page: import("@playwright/test").Page,
   home: string,

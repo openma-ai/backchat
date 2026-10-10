@@ -2572,7 +2572,14 @@ body,
 }
 
 [data-composer-select-menu-mode="project-picker"] [data-slot="command-group"] {
-  padding: 4px;
+  padding: 0;
+}
+
+/* One grid: project rows used to sit inside group `p-1`; tail rows are list siblings — same inset for all items. */
+[data-composer-select-menu-mode="project-picker"] [data-slot="command-item"] {
+  box-sizing: border-box;
+  width: calc(100% - 8px);
+  margin-inline: 4px;
 }
 
 [data-composer-select-menu-mode="project-picker"] [cmdk-group-heading] {
