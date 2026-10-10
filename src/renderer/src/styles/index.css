@@ -2376,7 +2376,7 @@ body,
 }
 
 .grouped-command-menu [data-slot="command-input-wrapper"] {
-  display: grid;
+  display: grid !important;
   height: var(--control-height-compact);
   min-height: var(--control-height-compact);
   align-items: center;
@@ -2391,6 +2391,7 @@ body,
 .grouped-command-menu [data-slot="command-input-wrapper"] > svg {
   grid-column: 1;
   justify-self: center;
+  align-self: center;
 }
 
 .grouped-command-menu [data-slot="command-input"] {
@@ -2471,8 +2472,9 @@ body,
 }
 
 .grouped-command-menu [data-slot="command-item"] {
-  display: grid;
+  display: grid !important;
   align-items: center;
+  gap: 0;
   column-gap: var(--grouped-command-column-gap);
   padding-inline: var(--grouped-command-padding-inline);
   grid-template-columns:
@@ -2481,9 +2483,40 @@ body,
     var(--grouped-command-trailing-track);
 }
 
+.grouped-command-menu [data-grouped-command-grid="icon"] svg,
+.grouped-command-menu
+  [data-slot="command-item"]
+  [data-grouped-command-grid="icon"]
+  svg {
+  width: 14px !important;
+  height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+  flex-shrink: 0;
+}
+
+.grouped-command-menu [data-slot="command-input-wrapper"] > svg {
+  width: 14px !important;
+  height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+}
+
 .grouped-command-menu [data-grouped-command-grid="icon"] {
   grid-column: 1;
-  justify-self: center;
+  display: inline-flex;
+  width: var(--grouped-command-icon-track);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+}
+
+.grouped-command-menu [data-grouped-command-grid="icon"] > * {
+  width: 14px !important;
+  height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
 }
 
 .grouped-command-menu [data-grouped-command-grid="label"] {
@@ -2543,47 +2576,29 @@ body,
   line-height: 16px !important;
 }
 
-/* Project / workspace pickers: match main `Command` popover chrome (SearchField h-9). */
+/* Project / workspace pickers: same icon | label mesh as other grouped menus (search uses grid, not flex). */
 [data-composer-select-menu-mode="project-picker"],
+[data-composer-select-menu-mode="workspace-picker"] {
+  --grouped-command-padding-inline: 8px;
+}
+
+[data-composer-select-menu-mode="project-picker"]
+  [data-slot="command-input-wrapper"],
 [data-composer-select-menu-mode="workspace-picker"]
   [data-slot="command-input-wrapper"] {
-  display: flex !important;
   height: 2.25rem !important;
   min-height: 2.25rem !important;
-  align-items: center;
-  column-gap: 0.5rem;
-  padding-inline: 0.5rem;
-  grid-template-columns: unset;
+  padding-inline: var(--grouped-command-padding-inline) !important;
   border-block-end: none;
 }
 
-[data-composer-select-menu-mode="project-picker"],
-[data-composer-select-menu-mode="workspace-picker"]
-  [data-slot="command-input-wrapper"]
-  > svg {
-  grid-column: unset;
-  justify-self: unset;
-}
-
-[data-composer-select-menu-mode="project-picker"],
-[data-composer-select-menu-mode="workspace-picker"]
-  [data-slot="command-input"] {
-  grid-column: unset;
-}
-
-[data-composer-select-menu-mode="project-picker"] [data-slot="command-group"] {
+[data-composer-select-menu-mode="project-picker"] [data-slot="command-group"],
+[data-composer-select-menu-mode="workspace-picker"] [data-slot="command-group"] {
   padding: 0;
 }
 
-/* One grid: project rows used to sit inside group `p-1`; tail rows are list siblings — same inset for all items. */
-[data-composer-select-menu-mode="project-picker"] [data-slot="command-item"] {
-  box-sizing: border-box;
-  width: calc(100% - 8px);
-  margin-inline: 4px;
-}
-
-[data-composer-select-menu-mode="project-picker"] [cmdk-group-heading] {
-  padding-inline: 0.5rem !important;
+[data-composer-select-menu-mode="project-picker"] [cmdk-group-heading],
+[data-composer-select-menu-mode="workspace-picker"] [cmdk-group-heading] {
   padding-block: 0.375rem !important;
   line-height: 1rem;
 }

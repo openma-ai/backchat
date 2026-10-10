@@ -13,7 +13,7 @@ export function GroupedCommandMenuIconSlot({
     <span
       data-grouped-command-grid="icon"
       className={cn(
-        "flex items-center justify-center text-fg-subtle [&_svg]:size-3.5",
+        "flex items-center justify-center text-fg-subtle [&_svg]:!size-3.5 [&_svg]:!max-h-3.5 [&_svg]:!max-w-3.5",
         className,
       )}
     >

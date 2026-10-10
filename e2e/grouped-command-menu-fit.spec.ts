@@ -48,57 +48,153 @@ async function seedProjectPickerGridFixture(
   await page.reload();
 }
 
-function measureProjectPickerLabelColumns(panel: import("@playwright/test").Locator) {
+type ProjectPickerGridRow = {
+  id: string;
+  iconLeft: number;
+  textLeft: number;
+  iconWidth: number;
+};
+
+function measureProjectPickerSingleGrid(panel: import("@playwright/test").Locator) {
   return panel.evaluate((rootEl) => {
-    const panelEl =
-      rootEl.getAttribute("data-testid") === "composer-project-picker-panel"
-        ? rootEl
-        : rootEl.querySelector('[data-testid="composer-project-picker-panel"]') ??
-          rootEl;
-    const popover = (panelEl as HTMLElement).closest?.(
-      '[data-slot="popover-content"]',
-    ) ??
-      (rootEl.matches('[data-slot="popover-content"]')
-        ? rootEl
-        : rootEl.querySelector('[data-slot="popover-content"]'));
-    const scope = (panelEl as HTMLElement) ?? rootEl;
-    const popoverLeft = popover?.getBoundingClientRect().left ?? 0;
-    const items = Array.from(
+    const popover = (rootEl.closest("[data-slot='popover-content']") ??
+      rootEl.querySelector("[data-slot='popover-content']") ??
+      rootEl) as HTMLElement;
+    const scope = popover;
+    const popoverLeft = popover.getBoundingClientRect().left;
+    const rel = (value: number) => Math.round(value - popoverLeft);
+
+    const rows: ProjectPickerGridRow[] = [];
+    const searchWrap = scope.querySelector(
+      '[data-slot="command-input-wrapper"]',
+    ) as HTMLElement | null;
+    const searchIcon = searchWrap?.querySelector("svg") as SVGElement | null;
+    const searchInput = scope.querySelector(
+      '[data-slot="command-input"]',
+    ) as HTMLElement | null;
+    if (searchIcon && searchInput) {
+      const iconRect = searchIcon.getBoundingClientRect();
+      rows.push({
+        id: "search",
+        iconLeft: rel(iconRect.left),
+        textLeft: rel(searchInput.getBoundingClientRect().left),
+        iconWidth: Math.round(iconRect.width),
+      });
+    }
+
+    for (const item of Array.from(
       scope.querySelectorAll('[data-slot="command-item"]'),
-    ) as HTMLElement[];
-    const labelLeft = (item: HTMLElement) => {
+    ) as HTMLElement[]) {
+      const icon =
+        (item.querySelector(
+          '[data-grouped-command-grid="icon"] svg',
+        ) as SVGElement | null) ??
+        (item.querySelector("svg") as SVGElement | null);
       const label =
-        item.querySelector('[data-grouped-command-grid="label"]') ??
-        item.querySelector("span.truncate");
-      return label
-        ? Math.round(label.getBoundingClientRect().left - popoverLeft)
-        : 0;
-    };
-    const projectRow = items.find((node) =>
-      (node.textContent ?? "").includes("Beta monorepo"),
-    );
-    const browseRow = items.find((node) =>
-      (node.textContent ?? "").includes("Browse"),
-    );
-    const rows = items.map((item) => ({
-      text: (item.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40),
-      labelLeft: labelLeft(item),
-    }));
+        (item.querySelector(
+          '[data-grouped-command-grid="label"] span',
+        ) as HTMLElement | null) ??
+        (item.querySelector("span.truncate") as HTMLElement | null) ??
+        (item.querySelector(
+          '[data-grouped-command-grid="label"]',
+        ) as HTMLElement | null) ??
+        (Array.from(item.querySelectorAll("span")).find(
+          (node) =>
+            !node.classList.contains("app-select-selected") &&
+            !node.closest('[data-grouped-command-grid="icon"]'),
+        ) as HTMLElement | undefined);
+      if (!icon || !label) continue;
+      const iconRect = icon.getBoundingClientRect();
+      const text = (item.textContent ?? "").replace(/\s+/g, " ").trim();
+      rows.push({
+        id: text.slice(0, 32),
+        iconLeft: rel(iconRect.left),
+        textLeft: rel(label.getBoundingClientRect().left),
+        iconWidth: Math.round(iconRect.width),
+      });
+    }
+
+    const iconLefts = rows.map((row) => row.iconLeft);
+    const textLefts = rows.map((row) => row.textLeft);
     return {
-      popoverHeight: popover
-        ? Math.round(popover.getBoundingClientRect().height)
-        : 0,
-      projectLabelLeft: projectRow ? labelLeft(projectRow) : 0,
-      browseLabelLeft: browseRow ? labelLeft(browseRow) : 0,
+      popoverHeight: Math.round(popover.getBoundingClientRect().height),
       rows,
+      iconLeftMin: Math.min(...iconLefts),
+      iconLeftMax: Math.max(...iconLefts),
+      textLeftMin: Math.min(...textLefts),
+      textLeftMax: Math.max(...textLefts),
     };
   });
 }
 
-test("project picker label grid aligns project and tail rows", async ({
-  page,
-  home,
-}) => {
+async function screenshotProjectPickerGridReference(
+  page: import("@playwright/test").Page,
+  panel: import("@playwright/test").Locator,
+  metrics: {
+    rows: ProjectPickerGridRow[];
+    iconLeftMin: number;
+    textLeftMin: number;
+  },
+  path: string,
+): Promise<void> {
+  const lines = await panel.evaluate(
+    ({ iconLeft, textLeft }) => {
+      const scope =
+        document.querySelector('[data-testid="composer-project-picker-panel"]') ??
+        document.querySelector('[data-slot="popover-content"][data-state="open"]');
+      const popover = (scope?.closest("[data-slot='popover-content']") ??
+        scope) as HTMLElement | null;
+      if (!popover) return { top: 0, height: 0, iconX: 0, textX: 0 };
+      const rect = popover.getBoundingClientRect();
+      const iconX = rect.left + iconLeft;
+      const textX = rect.left + textLeft;
+      for (const el of document.querySelectorAll("[data-pr56-grid-line]")) {
+        el.remove();
+      }
+      for (const [x, color] of [
+        [iconX, "rgba(239, 68, 68, 0.9)"],
+        [textX, "rgba(59, 130, 246, 0.9)"],
+      ] as const) {
+        const line = document.createElement("div");
+        line.setAttribute("data-pr56-grid-line", "true");
+        line.style.cssText = [
+          "position:fixed",
+          `left:${x}px`,
+          `top:${rect.top}px`,
+          `height:${rect.height}px`,
+          "width:2px",
+          `background:${color}`,
+          "pointer-events:none",
+          "z-index:2147483646",
+        ].join(";");
+        document.body.appendChild(line);
+      }
+      return {
+        top: rect.top,
+        height: rect.height,
+        iconX,
+        textX,
+      };
+    },
+    { iconLeft: metrics.iconLeftMin, textLeft: metrics.textLeftMin },
+  );
+  await page.waitForTimeout(50);
+  const popover = panel.locator(
+    "xpath=ancestor-or-self::*[@data-slot='popover-content'][1]",
+  );
+  const shotTarget =
+    (await panel.getAttribute("data-testid")) === "composer-project-picker-panel"
+      ? panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]")
+      : panel;
+  await shotTarget.screenshot({ path, animations: "disabled" });
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll("[data-pr56-grid-line]")) {
+      el.remove();
+    }
+  });
+}
+
+test("project picker single grid (search + all rows)", async ({ page, home }) => {
   test.setTimeout(120_000);
   await seedProjectPickerGridFixture(page, home);
   await enableAgent(page, "codex-acp");
@@ -113,16 +209,18 @@ test("project picker label grid aligns project and tail rows", async ({
     timeout: 10_000,
   });
 
-  const metrics = await measureProjectPickerLabelColumns(panel);
+  const metrics = await measureProjectPickerSingleGrid(panel);
 
   const evidenceDir = process.env.PR56_EVIDENCE_DIR;
+  const label = process.env.PR56_EVIDENCE_LABEL ?? "project-picker-grid.png";
   if (evidenceDir) {
     await fsMkdir(evidenceDir, { recursive: true });
-    const label = process.env.PR56_EVIDENCE_LABEL ?? "project-picker-grid.png";
-    const popover = panel.locator(
-      "xpath=ancestor::*[@data-slot='popover-content'][1]",
+    await screenshotProjectPickerGridReference(
+      page,
+      panel,
+      metrics,
+      join(evidenceDir, label),
     );
-    await popover.screenshot({ path: join(evidenceDir, label), animations: "disabled" });
     await writeFile(
       join(evidenceDir, label.replace(/\.png$/i, ".metrics.json")),
       `${JSON.stringify(metrics, null, 2)}\n`,
@@ -130,8 +228,11 @@ test("project picker label grid aligns project and tail rows", async ({
     );
   }
 
-  expect(metrics.projectLabelLeft).toBeGreaterThan(0);
-  expect(metrics.browseLabelLeft).toBe(metrics.projectLabelLeft);
+  expect(metrics.rows.length).toBeGreaterThanOrEqual(5);
+  expect(metrics.iconLeftMax - metrics.iconLeftMin).toBe(0);
+  expect(metrics.textLeftMax - metrics.textLeftMin).toBe(0);
+  const widths = metrics.rows.map((row) => row.iconWidth);
+  expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2);
 });
 
 async function seedWorkspacePickerFixture(
