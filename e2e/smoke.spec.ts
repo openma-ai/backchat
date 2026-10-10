@@ -1017,7 +1017,7 @@ test.describe("backchat smoke", () => {
   test("keeps the runtime trigger background transparent while its menu is open", async ({
       page,
   }) => {
-      const runtime = page.locator('[data-session-runtime-location="true"]').first();
+      const runtime = page.locator('[data-composer-footer-control="runtime"]');
       await expect(runtime).toBeVisible();
 
       await runtime.click();

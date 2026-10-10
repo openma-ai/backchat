@@ -1,8 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
-import { ComposerHarnessLiveAuthWarmup } from "@/components/ComposerHarnessLiveAuthWarmup";
-
 export function AppStartupGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   useQuery({
@@ -28,12 +26,7 @@ export function AppStartupGate({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [queryClient]);
 
-  return (
-    <>
-      <ComposerHarnessLiveAuthWarmup />
-      {children}
-    </>
-  );
+  return children;
 }
 
 /** Background warmup may attach auth; the composer ignores it until live probe. */

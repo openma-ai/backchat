@@ -394,7 +394,8 @@
 .app-select-focus:is(:focus, [data-highlighted], [data-selected="true"]):not(
     [data-checked="true"],
     [data-state="checked"]
-  ) {
+  ),
+.app-select-focus[data-state="open"]:not([data-checked="true"], [data-state="checked"]) {
   color: var(--control-fg-active);
   background: var(--control-bg-hover);
 }

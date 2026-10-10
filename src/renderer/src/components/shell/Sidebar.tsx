@@ -1307,7 +1307,7 @@ function ProjectSidebarRow({
   const navigate = useNavigate();
   return (
     <SidebarGridRow
-      depth={2}
+      depth={1}
       trailingTrack="double"
       className="app-no-drag sidebar-project-row sidebar-project-surface group rounded-md text-left text-ui text-fg-muted transition-colors"
       data-sidebar-project={group.key}

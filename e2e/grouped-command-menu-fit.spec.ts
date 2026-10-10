@@ -140,3 +140,40 @@ test("model submenu bottom aligns with primary run menu", async ({ page }) => {
   const subBottom = await subPanel.evaluate((el) => el.getBoundingClientRect().bottom);
   expect(Math.abs(primaryBottom - subBottom)).toBeLessThanOrEqual(3);
 });
+
+test("model submenu keeps the parent Model row highlighted while open", async ({
+  page,
+}) => {
+  await enableAgent(page, "codex-acp");
+  const sessionId = await injectSession(page, { agentId: "codex-acp" });
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: "menu-parent-highlight",
+    event: {
+      sessionUpdate: "config_option_update",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "openai-codex-2",
+          options: manyGroupedModels(),
+        },
+      ],
+    },
+  });
+
+  await page.getByRole("button", { name: /Run on|运行位置/ }).first().click();
+  const modelTrigger = page.getByRole("menuitem", { name: /模型|Model/ }).first();
+  await modelTrigger.hover();
+  const subPanel = page.getByTestId("composer-select-menu-panel");
+  await expect(subPanel).toBeVisible({ timeout: 10_000 });
+
+  const wash = await modelTrigger.evaluate((element) => {
+    const bg = getComputedStyle(element).backgroundColor;
+    return bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
+  });
+  expect(wash).toBe(true);
+});

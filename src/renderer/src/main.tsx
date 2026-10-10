@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeController } from "@/components/ThemeController";
 import { AppStartupGate } from "@/components/AppStartupGate";
+import { ComposerHarnessLiveAuthWarmup } from "@/components/ComposerHarnessLiveAuthWarmup";
 import { RendererErrorBoundary } from "@/components/RendererErrorBoundary";
 import { RendererCrashPage } from "@/components/RendererCrashPage";
 import { RendererCrashLegacyPreview } from "@/dev/RendererCrashLegacyPreview";
@@ -75,6 +76,7 @@ if (rendererCrashDemo) {
           <TooltipProvider>
             <ThemeController />
             <AppStartupGate>
+              <ComposerHarnessLiveAuthWarmup />
               <RouterProvider router={router} />
             </AppStartupGate>
             <Toaster position="bottom-right" />
