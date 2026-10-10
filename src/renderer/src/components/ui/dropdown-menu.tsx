@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useCallback, useState } from "react"
+import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import { measureSubmenuBottomAlignOffset } from "@/components/ui/dropdown-menu-sub-content-align"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -242,37 +243,67 @@ function DropdownMenuSubTrigger({
   )
 }
 
+type DropdownMenuSubContentProps = React.ComponentProps<
+  typeof DropdownMenuPrimitive.SubContent
+> & {
+  side?: "top" | "right" | "bottom" | "left"
+  align?: "start" | "center" | "end"
+}
+
 function DropdownMenuSubContent({
   className,
   collisionPadding = 8,
+  side = "right",
+  align = "end",
   sideOffset = 4,
   alignOffset: alignOffsetProp,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+}: DropdownMenuSubContentProps) {
   const [alignOffset, setAlignOffset] = useState(0);
-  const syncBottomWithParentMenu = useCallback((node: HTMLDivElement | null) => {
-    if (!node) return;
+  const nodeRef = useRef<HTMLDivElement | null>(null);
+  const syncBottomWithParentMenu = useCallback(() => {
+    setAlignOffset(measureSubmenuBottomAlignOffset());
+  }, []);
+
+  const setRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      nodeRef.current = node;
+      syncBottomWithParentMenu();
+    },
+    [syncBottomWithParentMenu],
+  );
+
+  useLayoutEffect(() => {
+    syncBottomWithParentMenu();
     const trigger = document.querySelector(
       '[data-slot="dropdown-menu-sub-trigger"][data-state="open"]',
     );
     const parentMenu = trigger?.closest('[data-slot="dropdown-menu-content"]');
-    if (!(trigger instanceof HTMLElement) || !(parentMenu instanceof HTMLElement)) {
+    if (!(parentMenu instanceof HTMLElement)) {
       return;
     }
-    const offset =
-      trigger.getBoundingClientRect().bottom -
-      parentMenu.getBoundingClientRect().bottom;
-    setAlignOffset(offset);
-  }, []);
+    const observer = new ResizeObserver(() => syncBottomWithParentMenu());
+    observer.observe(parentMenu);
+    if (nodeRef.current) {
+      observer.observe(nodeRef.current);
+    }
+    return () => observer.disconnect();
+  }, [syncBottomWithParentMenu]);
+
+  const popperPlacement = {
+    side,
+    align,
+    sideOffset,
+    alignOffset: alignOffsetProp ?? alignOffset,
+    collisionPadding,
+  } as React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>
 
   return (
     <DropdownMenuPrimitive.SubContent
-      ref={syncBottomWithParentMenu}
+      ref={setRefs}
       data-slot="dropdown-menu-sub-content"
-      sideOffset={sideOffset}
-      alignOffset={alignOffsetProp ?? alignOffset}
-      collisionPadding={collisionPadding}
       className={cn("z-50 h-auto min-w-[96px] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+      {...popperPlacement}
       {...props}
     />
   )
