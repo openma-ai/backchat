@@ -16,6 +16,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import { PageScaffold } from "@/components/shell/PageScaffold";
+import { composerBoxClass } from "@/lib/composer-box";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { isAgentEnabled } from "@/lib/enabled-agents";
 import { useI18n } from "@/lib/i18n";
@@ -268,12 +269,12 @@ export function SettingsAgents() {
             : `${available.length} available`}
         />
         {agentsLoading ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
             Loading agents…
           </div>
         ) : available.length === 0 ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             {hasSearchQuery
               ? <SearchIcon className="size-4 shrink-0 text-fg-subtle" />
               : <CpuIcon className="size-4 shrink-0 text-fg-subtle" />}
@@ -289,7 +290,7 @@ export function SettingsAgents() {
             </div>
           </div>
         ) : (
-          <ul className="space-y-1">
+          <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
             {available.map((a) => (
               <li key={a.id}>
                 <AgentRow
@@ -359,12 +360,12 @@ export function SettingsAgents() {
           </Button>
         </div>
         {agentsLoading ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             <RefreshCwIcon className="size-4 shrink-0 animate-spin text-fg-subtle" />
             Loading registry…
           </div>
         ) : unavailable.length === 0 ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl px-4 py-3 text-xs text-fg-muted hover:bg-bg-surface/60">
+          <div className={composerBoxClass({ className: "flex min-h-14 items-center gap-3 px-4 py-3 text-xs text-fg-muted" })}>
             {hasSearchQuery
               ? <SearchIcon className="size-4 shrink-0 text-fg-subtle" />
               : <DownloadIcon className="size-4 shrink-0 text-fg-subtle" />}
@@ -380,7 +381,7 @@ export function SettingsAgents() {
             </div>
           </div>
         ) : (
-          <ul className="space-y-1">
+          <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
             {unavailable.map((a) => (
               <li key={a.id}>
                 <AgentRow
@@ -426,11 +427,11 @@ export function SettingsAgents() {
           </div>
 
           {customRows.length > 0 && (
-            <ul className="space-y-1">
+            <ul className={composerBoxClass({ className: "divide-y divide-border/35 overflow-hidden" })}>
               {customRows.map((row) => (
                 <li
                   key={row.id}
-                  className="group/custom flex min-h-10 items-center gap-3 rounded-xl px-4 py-3 text-xs transition-colors hover:bg-bg-surface/70"
+                  className="group/custom flex min-h-10 items-center gap-3 px-4 py-3 text-xs transition-colors hover:bg-bg-surface/70"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
@@ -485,7 +486,7 @@ export function SettingsAgents() {
 
         <section>
           <SectionHeading className="mb-4" label="Prompt queue" detail="Agent loop scheduling" />
-          <div className="flex items-center justify-between gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-bg-surface/70">
+          <div className={composerBoxClass({ className: "flex items-center justify-between gap-4 px-4 py-3" })}>
             <div className="min-w-0">
               <h3 className="text-sm font-medium text-fg">Prompt queue</h3>
               <p className="mt-0.5 text-[11px] text-fg-muted">

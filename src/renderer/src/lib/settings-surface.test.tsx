@@ -44,7 +44,11 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => harness.query,
   useQueries: () => [],
-  useQueryClient: () => ({ invalidateQueries: () => undefined }),
+  useMutation: () => ({ mutate: () => undefined, error: null, isPending: false }),
+  useQueryClient: () => ({
+    invalidateQueries: () => undefined,
+    setQueryData: () => undefined,
+  }),
 }));
 
 vi.mock("@/lib/projects-query", () => ({
@@ -83,6 +87,7 @@ import { ContentPage, PageScaffold } from "@/components/shell/PageScaffold";
 import { SessionRow } from "@/components/shell/Sidebar";
 import { sessionStore } from "@/lib/session-store";
 import { SettingsAbout } from "@/pages/settings/About";
+import { SettingsAgents } from "@/pages/settings/Agents";
 import { SettingsActivity } from "@/pages/settings/Activity";
 import {
   AgentAuthSetupPanel,
@@ -402,5 +407,57 @@ describe("settings surfaces render the shared box and row", () => {
     );
     expect(form.host.querySelector(".app-composer-surface")).not.toBeNull();
     await act(async () => form.root.unmount());
+  });
+
+  it("renders agent catalog cards for empty, listed, and custom rows", async () => {
+    const empty = await mount(<SettingsAgents />);
+    await settle();
+    expect(empty.host.querySelectorAll(".app-composer-surface").length).toBeGreaterThan(1);
+    await act(async () => empty.root.unmount());
+
+    harness.query = {
+      ...harness.query,
+      data: [
+        {
+          id: "codex",
+          label: "Codex",
+          command: "codex",
+          detected: true,
+          available: true,
+          installed: true,
+          installable: false,
+        },
+        {
+          id: "missing",
+          label: "Missing",
+          command: "missing",
+          detected: false,
+          available: false,
+          installed: false,
+          installable: true,
+        },
+      ],
+    };
+    harness.settings = {
+      ...settingsFixture,
+      agents: [{
+        id: "local-agent",
+        enabled: true,
+        label_override: "Local",
+        command_override: "echo",
+        args_override: ["--acp"],
+        env: [{ name: "TOKEN", value: "secret" }],
+      }],
+    };
+    const listed = await mount(<SettingsAgents />);
+    await settle();
+    expect(listed.host.querySelectorAll("ul.app-composer-surface").length).toBe(3);
+    const search = listed.host.querySelector('input[type="search"]') as HTMLInputElement;
+    await act(async () => {
+      search.value = "codex";
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(listed.host.textContent).toContain("Codex");
+    await act(async () => listed.root.unmount());
   });
 });

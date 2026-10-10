@@ -62,6 +62,13 @@ describe("sidebar nav row", () => {
   it("resolves session and settings rows from one height rule", () => {
     const navigation = styles.slice(styles.indexOf(".sidebar-navigation {"));
     expect(navigation).toMatch(/--sidebar-row-h:\s*28px;/);
+    expect(navigation).toMatch(
+      /\.sidebar-navigation :is\(button, a\):focus-visible \{[^}]*outline-offset:\s*-2px;/,
+    );
+    expect(navigation).toMatch(
+      /\.sidebar-navigation \.space-y-0\\.5 > :not\(\[hidden\]\) ~ :not\(\[hidden\]\) \{[^}]*margin-top:\s*1px;/,
+    );
+    expect(settings).toContain('className="space-y-0.5"');
     expect(styles).toMatch(/\.sidebar-nav-row\s*\{[^}]*height:\s*var\(--sidebar-row-h\);/);
     expect(styles.indexOf("--sidebar-row-h: 28px")).toBe(
       styles.lastIndexOf("--sidebar-row-h: 28px"),

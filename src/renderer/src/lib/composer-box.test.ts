@@ -34,6 +34,17 @@ describe("composer box", () => {
     expect(styles).toMatch(
       /\.app-panel-surface,\s*\.app-rail-surface,\s*\.app-composer-surface\s*\{[^}]*background:\s*var\(--surface-panel\);/,
     );
+    expect(styles).toContain("--surface-inset: var(--bg-bubble);");
+    expect(styles).toMatch(
+      /\.app-composer-surface \* \{[^}]*--color-bg-surface:\s*var\(--surface-inset\);/,
+    );
+    expect(styles).toMatch(
+      /\.app-composer-surface \* \{[^}]*--color-secondary:\s*var\(--surface-inset\);/,
+    );
+    expect(styles).toContain(
+      ".app-composer-surface:not(.composer-card) :is(",
+    );
+    expect(styles).toContain("background-color: var(--surface-field);");
 
     const composer = readFileSync(
       resolve(__dirname, "../components/chat/ComposerPrimitives.tsx"),
