@@ -2,6 +2,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { mkdir as fsMkdir, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import sharp from "sharp";
 import { expect, test } from "./fixtures";
 import { enableAgent, injectEvent, injectSession } from "./helpers";
 
@@ -30,6 +31,14 @@ async function seedProjectPickerGridFixture(
   await fsMkdir(betaDir, { recursive: true });
   await page.evaluate(async ({ alphaDir, betaDir }) => {
     localStorage.setItem("backchat:workspace-intro-seen:v1", "1");
+    const pinIcon = (projectId: string, glyph: string, color: string) => {
+      localStorage.setItem(
+        `backchat.project-icon.v1:project:${projectId}`,
+        JSON.stringify({ kind: "icon", glyph, color }),
+      );
+    };
+    pinIcon("picker-grid-a", "chat", "#7c3aed");
+    pinIcon("picker-grid-b", "cloud", "#2563eb");
     await window.backchat.projectSave({
       project_id: "picker-grid-a",
       name: "Alpha workspace",
@@ -54,6 +63,90 @@ type ProjectPickerGridRow = {
   textLeft: number;
   iconWidth: number;
 };
+
+type ProjectPickerChromeMetrics = {
+  popoverHeight: number;
+  commandHeight: number;
+  searchRowHeight: number;
+  separatorTop: number | null;
+  bottomPaddingToPopover: number;
+  headingOffsetFromSearch: number | null;
+  headingFontSize: string;
+  headingFontWeight: string;
+  rowHeights: number[];
+};
+
+function measureProjectPickerChrome(panel: import("@playwright/test").Locator) {
+  return panel.evaluate(() => {
+    const scope =
+      (document.querySelector('[data-testid="composer-project-picker-panel"]') ??
+        document.querySelector(
+          '[data-slot="popover-content"][data-state="open"]',
+        )) as HTMLElement | null;
+    const popover = (scope?.closest("[data-slot='popover-content']") ??
+      scope) as HTMLElement | null;
+    if (!popover) {
+      return {
+        popoverHeight: 0,
+        commandHeight: 0,
+        searchRowHeight: 0,
+        separatorTop: null,
+        bottomPaddingToPopover: 0,
+        headingOffsetFromSearch: null,
+        headingFontSize: "",
+        headingFontWeight: "",
+        rowHeights: [],
+      };
+    }
+    const popoverRect = popover.getBoundingClientRect();
+    const relTop = (value: number) => Math.round(value - popoverRect.top);
+    const command = popover.querySelector(
+      '[data-slot="command"]',
+    ) as HTMLElement | null;
+    const search = popover.querySelector(
+      '[data-slot="command-input-wrapper"]',
+    ) as HTMLElement | null;
+    const separator = popover.querySelector(
+      '[data-slot="command-separator"]',
+    ) as HTMLElement | null;
+    const heading = popover.querySelector(
+      "[data-grouped-command-group-heading], [cmdk-group-heading]",
+    ) as HTMLElement | null;
+    const items = Array.from(
+      popover.querySelectorAll('[data-slot="command-item"]'),
+    ) as HTMLElement[];
+    const lastItem = items[items.length - 1];
+    const headingStyle = heading ? getComputedStyle(heading) : null;
+    const searchRect = search?.getBoundingClientRect();
+    const headingTextTop = heading
+      ? (() => {
+          const range = document.createRange();
+          range.selectNodeContents(heading);
+          return range.getBoundingClientRect().top;
+        })()
+      : null;
+    return {
+      popoverHeight: Math.round(popoverRect.height),
+      commandHeight: command
+        ? Math.round(command.getBoundingClientRect().height)
+        : 0,
+      searchRowHeight: searchRect ? Math.round(searchRect.height) : 0,
+      separatorTop: separator ? relTop(separator.getBoundingClientRect().top) : null,
+      bottomPaddingToPopover: lastItem
+        ? Math.round(popoverRect.bottom - lastItem.getBoundingClientRect().bottom)
+        : 0,
+      headingOffsetFromSearch:
+        searchRect && headingTextTop != null
+          ? Math.round(headingTextTop - searchRect.bottom)
+          : null,
+      headingFontSize: headingStyle?.fontSize ?? "",
+      headingFontWeight: headingStyle?.fontWeight ?? "",
+      rowHeights: items.map((item) =>
+        Math.round(item.getBoundingClientRect().height),
+      ),
+    };
+  });
+}
 
 function measureProjectPickerSingleGrid(panel: import("@playwright/test").Locator) {
   return panel.evaluate((rootEl) => {
@@ -147,71 +240,47 @@ function measureProjectPickerSingleGrid(panel: import("@playwright/test").Locato
   });
 }
 
+async function burnProjectPickerGridLines(
+  path: string,
+  iconLeft: number,
+  textLeft: number,
+): Promise<void> {
+  const image = sharp(path);
+  const meta = await image.metadata();
+  const width = meta.width ?? 0;
+  const height = meta.height ?? 0;
+  const svg = Buffer.from(
+    `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <line x1="${iconLeft + 0.5}" y1="0" x2="${iconLeft + 0.5}" y2="${height}" stroke="#ef4444" stroke-width="3"/>
+      <line x1="${textLeft + 0.5}" y1="0" x2="${textLeft + 0.5}" y2="${height}" stroke="#2563eb" stroke-width="3"/>
+    </svg>`,
+  );
+  const burned = await image
+    .composite([{ input: svg, top: 0, left: 0 }])
+    .png()
+    .toBuffer();
+  await writeFile(path, burned);
+}
+
 async function screenshotProjectPickerGridReference(
   page: import("@playwright/test").Page,
   panel: import("@playwright/test").Locator,
-  metrics: {
+  grid: {
     rows: ProjectPickerGridRow[];
     iconLeftMin: number;
     textLeftMin: number;
   },
   path: string,
 ): Promise<void> {
-  const lines = await panel.evaluate(
-    ({ iconLeft, textLeft }) => {
-      const scope =
-        document.querySelector('[data-testid="composer-project-picker-panel"]') ??
-        document.querySelector('[data-slot="popover-content"][data-state="open"]');
-      const popover = (scope?.closest("[data-slot='popover-content']") ??
-        scope) as HTMLElement | null;
-      if (!popover) return { top: 0, height: 0, iconX: 0, textX: 0 };
-      const rect = popover.getBoundingClientRect();
-      const iconX = rect.left + iconLeft;
-      const textX = rect.left + textLeft;
-      for (const el of document.querySelectorAll("[data-pr56-grid-line]")) {
-        el.remove();
-      }
-      for (const [x, color] of [
-        [iconX, "rgba(239, 68, 68, 0.9)"],
-        [textX, "rgba(59, 130, 246, 0.9)"],
-      ] as const) {
-        const line = document.createElement("div");
-        line.setAttribute("data-pr56-grid-line", "true");
-        line.style.cssText = [
-          "position:fixed",
-          `left:${x}px`,
-          `top:${rect.top}px`,
-          `height:${rect.height}px`,
-          "width:2px",
-          `background:${color}`,
-          "pointer-events:none",
-          "z-index:2147483646",
-        ].join(";");
-        document.body.appendChild(line);
-      }
-      return {
-        top: rect.top,
-        height: rect.height,
-        iconX,
-        textX,
-      };
-    },
-    { iconLeft: metrics.iconLeftMin, textLeft: metrics.textLeftMin },
-  );
-  await page.waitForTimeout(50);
-  const popover = panel.locator(
-    "xpath=ancestor-or-self::*[@data-slot='popover-content'][1]",
-  );
+  const iconRows = grid.rows.filter((row) => !row.id.startsWith("heading:"));
+  const iconLeft = Math.min(...iconRows.map((row) => row.iconLeft));
+  const textLeft = grid.textLeftMin;
   const shotTarget =
     (await panel.getAttribute("data-testid")) === "composer-project-picker-panel"
       ? panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]")
       : panel;
   await shotTarget.screenshot({ path, animations: "disabled" });
-  await page.evaluate(() => {
-    for (const el of document.querySelectorAll("[data-pr56-grid-line]")) {
-      el.remove();
-    }
-  });
+  await burnProjectPickerGridLines(path, iconLeft, textLeft);
 }
 
 test("project picker single grid (search + all rows)", async ({ page, home }) => {
@@ -229,18 +298,15 @@ test("project picker single grid (search + all rows)", async ({ page, home }) =>
     timeout: 10_000,
   });
 
-  const metrics = await measureProjectPickerSingleGrid(panel);
+  const grid = await measureProjectPickerSingleGrid(panel);
+  const chrome = await measureProjectPickerChrome(panel);
+  const metrics = { grid, chrome };
 
   const evidenceDir = process.env.PR56_EVIDENCE_DIR;
   const label = process.env.PR56_EVIDENCE_LABEL ?? "project-picker-grid.png";
   if (evidenceDir) {
     await fsMkdir(evidenceDir, { recursive: true });
-    await screenshotProjectPickerGridReference(
-      page,
-      panel,
-      metrics,
-      join(evidenceDir, label),
-    );
+    await screenshotProjectPickerGridReference(page, panel, grid, join(evidenceDir, label));
     await writeFile(
       join(evidenceDir, label.replace(/\.png$/i, ".metrics.json")),
       `${JSON.stringify(metrics, null, 2)}\n`,
@@ -248,13 +314,19 @@ test("project picker single grid (search + all rows)", async ({ page, home }) =>
     );
   }
 
-  expect(metrics.rows.length).toBeGreaterThanOrEqual(6);
-  const iconRows = metrics.rows.filter((row) => !row.id.startsWith("heading:"));
+  expect(grid.rows.length).toBeGreaterThanOrEqual(6);
+  const iconRows = grid.rows.filter((row) => !row.id.startsWith("heading:"));
   const iconLefts = iconRows.map((row) => row.iconLeft);
   expect(Math.max(...iconLefts) - Math.min(...iconLefts)).toBe(0);
-  expect(metrics.textLeftMax - metrics.textLeftMin).toBe(0);
+  expect(grid.textLeftMax - grid.textLeftMin).toBe(0);
   const widths = iconRows.map((row) => row.iconWidth).filter((w) => w > 0);
   expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2);
+
+  expect(chrome.popoverHeight).toBe(203);
+  expect(chrome.separatorTop).toBe(137);
+  expect(chrome.bottomPaddingToPopover).toBe(5);
+  expect(chrome.rowHeights).toEqual([28, 28, 28, 28]);
+  expect(chrome.commandHeight).toBe(chrome.popoverHeight);
 });
 
 async function seedWorkspacePickerFixture(

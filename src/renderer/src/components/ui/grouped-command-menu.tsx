@@ -233,13 +233,16 @@ export function GroupedCommandMenu({
       return (
         <Fragment key={key}>
           {group.separatorBefore ? <CommandSeparator /> : null}
-          <div
-            data-grouped-command-group-heading=""
-            className="text-xs font-medium text-muted-foreground pt-1.5 pb-1 pe-[var(--grouped-command-padding-inline)] ps-[length:calc(var(--grouped-command-padding-inline)+var(--grouped-command-icon-track)+var(--grouped-command-column-gap))]"
-          >
-            {group.heading}
+          {/* Main parity: CommandGroup `p-1` vertical inset without horizontal grid drift. */}
+          <div className="px-0 py-1">
+            <div
+              data-grouped-command-group-heading=""
+              className="text-xs font-medium text-muted-foreground py-1.5 pe-[var(--grouped-command-padding-inline)] ps-[length:calc(var(--grouped-command-padding-inline)+var(--grouped-command-icon-track)+var(--grouped-command-column-gap))]"
+            >
+              {group.heading}
+            </div>
+            <CommandGroup className="!p-0">{items}</CommandGroup>
           </div>
-          <CommandGroup className="!p-0">{items}</CommandGroup>
         </Fragment>
       );
     }
