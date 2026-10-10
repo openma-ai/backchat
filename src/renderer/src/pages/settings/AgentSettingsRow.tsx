@@ -51,7 +51,7 @@ export function AgentRow({
   return (
     <div
       className={cn(
-        "group/agent grid min-h-11 w-full grid-cols-[minmax(0,1fr)] items-center gap-x-2.5 gap-y-1.5 rounded-xl px-4 py-3 text-left text-xs text-fg transition-colors hover:bg-bg-surface/70 sm:grid-cols-[minmax(0,1fr)_auto]",
+        "group/agent grid min-h-11 w-full grid-cols-[minmax(0,1fr)] items-center gap-x-2.5 gap-y-1.5 px-4 py-3 text-left text-xs text-fg transition-colors hover:bg-bg-surface/70 sm:grid-cols-[minmax(0,1fr)_auto]",
         !setup.available && "text-fg-subtle",
       )}
     >

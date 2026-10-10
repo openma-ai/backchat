@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { composerBoxClass } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 
 /** Native <select> styled like the compact SelectTrigger. Native keeps
@@ -49,7 +50,7 @@ export function SettingsCard({
   return (
     <div
       className={cn(
-        "space-y-3 rounded-lg border border-border/55 bg-bg/72 p-3.5 shadow-card-soft",
+        composerBoxClass({ className: "space-y-3 p-3.5" }),
         className,
       )}
     >
@@ -88,7 +89,7 @@ export function SettingsListRow({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border/55 bg-bg px-3 py-2">
+    <div className={composerBoxClass({ className: "flex items-center gap-3 px-3 py-2" })}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs font-medium text-fg">{title}</div>
         {description && (

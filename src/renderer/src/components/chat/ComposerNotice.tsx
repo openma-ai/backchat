@@ -1,4 +1,6 @@
+import { COMPOSER_BOX_CLASS } from "@/lib/composer-box";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { hideNoticePermanently, useNoticeHidden } from "@/lib/notice-preferences";
 import { StatusNotice } from "@/components/ui/status-notice";
 import type { SessionNotice } from "@/lib/session-store";
@@ -28,7 +30,7 @@ export function ComposerNotice({
       }} className="shrink-0 rounded px-1 text-xs text-fg-muted underline-offset-4 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-ring">
         {t("chat.dontShowNoticeAgain")}
       </button>}
-      className="app-composer-surface composer-radius px-4 py-3"
+      className={cn(COMPOSER_BOX_CLASS, "px-4 py-3")}
     >
       {notice.message}
     </StatusNotice>

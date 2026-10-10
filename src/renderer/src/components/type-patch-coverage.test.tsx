@@ -205,9 +205,9 @@ describe("changed type surfaces", () => {
     route.pathname = "/settings/projects/proj-1";
     const selectedProject = renderToStaticMarkup(<SettingsSidebar />);
     route.pathname = "/settings/appearance";
-    expect(sidebar).toContain("font-semibold text-fg");
-    expect(sidebar).toContain("font-normal text-fg-muted");
-    expect(selectedProject).toContain("font-semibold text-fg");
+    expect(sidebar).toContain("sidebar-navigation");
+    expect(sidebar).toContain("app-selected-surface text-fg");
+    expect(selectedProject).toContain("app-selected-surface text-fg");
     expect(sidebar).not.toContain("font-medium text-fg\"");
     const appearanceHtml = renderToStaticMarkup(<SettingsAppearance />);
     expect(appearanceHtml).toContain("font-semibold text-fg");

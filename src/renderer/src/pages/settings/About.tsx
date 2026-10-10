@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { PageScaffold } from "@/components/shell/PageScaffold";
 import { Button } from "@/components/ui/button";
+import { composerBoxClass } from "@/lib/composer-box";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import type { AppUpdateState, UpdateChannel } from "@shared/app-update";
 
@@ -40,7 +41,7 @@ export function SettingsAbout() {
 
   return (
     <PageScaffold title={t("settings.about")}>
-      <dl className="overflow-hidden rounded-xl border border-border/45 bg-bg/70 text-xs shadow-card-soft">
+      <dl className={composerBoxClass({ className: "overflow-hidden text-xs" })}>
         <Row label={t("about.version")}>
           <span data-testid="about-version">Backchat {version}</span>
           {detail ? (

@@ -19,7 +19,8 @@ describe("PageScaffold", () => {
     expect(source).toContain("mx-auto max-w-[800px] space-y-8 text-xs");
     expect(source).toContain("text-2xl font-medium tracking-[-0.02em]");
     expect(source).toContain("mt-2 max-w-[68ch] text-xs leading-5 text-fg-muted");
-    expect(source).toContain("w-full px-8 pb-16 pt-20");
+    expect(source).toContain("w-full px-8 pb-16 pt-[var(--row-gap-y)]");
+    expect(source).not.toContain("pt-20");
     expect(source).not.toContain("max-w-[960px]");
     expect(source).not.toContain("pt-8");
   });
