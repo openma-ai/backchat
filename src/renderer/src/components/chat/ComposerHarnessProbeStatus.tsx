@@ -1,5 +1,6 @@
 import { AgentIcon } from "@/components/AgentIcon";
 import { RefreshCwIcon } from "@/components/Icons";
+import { ShimmerText } from "@/components/ui/ShimmerText";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +48,7 @@ export function ComposerHarnessProbeStatus({
           aria-hidden="true"
         />
       </span>
-      <span className="min-w-0 truncate font-medium text-fg">{statusText}</span>
+      <ShimmerText className="min-w-0 truncate font-medium">{statusText}</ShimmerText>
     </div>
   );
 }

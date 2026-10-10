@@ -232,10 +232,13 @@ export function RuntimeLocationControl({
         items: [],
       });
     } else if (locationItems.length > 0) {
-      result.push({ items: locationItems });
+      result.push({ separatorBefore: true, items: locationItems });
     }
     if (tailItems.length > 0) {
-      result.push({ items: tailItems });
+      result.push({
+        separatorBefore: locationItems.length > 0 || accountItems.length > 0,
+        items: tailItems,
+      });
     }
     return result;
   }, [

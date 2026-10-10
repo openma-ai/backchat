@@ -56,6 +56,8 @@ test("model picker search filters by provider and model name", async ({ page, br
   await search.fill("devin 1");
   await expect(modelPickerList(panel)).toContainText("devin model 1");
   await expect(panel.getByText("anthropic-proxy model 1")).toHaveCount(0);
+  await expect(panel.getByText("anthropic-proxy", { exact: true })).toHaveCount(0);
+  await expect(panel.getByText("openai-codex", { exact: true })).toHaveCount(0);
 });
 
 test("model picker row subtitles show provider, not generic Model", async ({ page }) => {

@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { filterGroupedCommandMenuGroups } from "@/components/ui/grouped-command-menu-visible-groups";
 import { useGroupedCommandRovingHighlight } from "@/components/ui/use-grouped-command-roving-highlight";
 import {
   Command,
@@ -188,28 +189,13 @@ export function GroupedCommandMenu({
 
   useEffect(() => {
     setCommandValue(effectiveHighlightValue);
-    if (preserveItemOrder) setSearchQuery("");
-  }, [effectiveHighlightValue, menuResetKey, preserveItemOrder]);
+    setSearchQuery("");
+  }, [effectiveHighlightValue, menuResetKey]);
 
-  const visibleGroups = useMemo(() => {
-    if (!preserveItemOrder) return groups;
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return groups;
-    return groups
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((item) => {
-          const haystack = [
-            item.value.split("\0").pop() ?? item.value,
-            ...(item.keywords ?? []),
-          ]
-            .join(" ")
-            .toLowerCase();
-          return haystack.includes(query);
-        }),
-      }))
-      .filter((group) => group.items.length > 0);
-  }, [groups, searchQuery, preserveItemOrder]);
+  const visibleGroups = useMemo(
+    () => filterGroupedCommandMenuGroups(groups, searchQuery),
+    [groups, searchQuery],
+  );
 
   const panelStyle = {
     ["--grouped-command-list-height" as string]: `${listHeightPx}px`,
@@ -229,7 +215,9 @@ export function GroupedCommandMenu({
 
   /** Main CommandList: tail rows are siblings, not a padded `CommandGroup`. */
   const bareListGroupItems =
-    menuMode === "project-picker" || menuMode === "workspace-picker";
+    menuMode === "project-picker"
+    || menuMode === "workspace-picker"
+    || menuMode === "host-picker";
 
   const renderMenuItem = (item: GroupedCommandMenuItem) => (
     <CommandItem
@@ -312,7 +300,7 @@ export function GroupedCommandMenu({
         loop
         value={commandValue}
         onValueChange={setCommandValue}
-        shouldFilter={preserveItemOrder ? false : undefined}
+        shouldFilter={false}
         className={cn(
           "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
           shrinkToContent ? "h-auto flex-none" : "flex-1",
@@ -326,8 +314,8 @@ export function GroupedCommandMenu({
             autoFocus={autoFocus}
             placeholder={searchPlaceholder}
             aria-label={searchInputAriaLabel ?? searchPlaceholder}
-            value={preserveItemOrder ? searchQuery : undefined}
-            onValueChange={preserveItemOrder ? setSearchQuery : undefined}
+            value={searchQuery}
+            onValueChange={setSearchQuery}
             onKeyDown={mergeRovingKeyDown}
           />
         ) : null}

@@ -1202,6 +1202,7 @@ export function Composer({
                 selectedSkillCommand
                   ? "min-h-[var(--control-height-compact)]"
                   : "min-h-[var(--composer-body-min-height)]",
+                authChecking && currentAgentId && "composer-harness-probe-placeholder",
               )}
             />
             </div>

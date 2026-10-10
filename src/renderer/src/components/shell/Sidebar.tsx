@@ -661,7 +661,10 @@ export function Sidebar() {
       {/* Header actions and conversation rows share one fixed 8px inset. The
           product-owned scrollbar overlays the viewport and reserves no gutter. */}
       <div className="sidebar-host-chrome shrink-0 pt-[var(--row-gap-y)]">
-        <SidebarGridRow trailingTrack="double" className="rounded-md">
+        <SidebarGridRow
+          trailingTrack="double"
+          className="rounded-md text-ui text-fg transition-colors hover:bg-[var(--control-bg-hover)]"
+        >
           <SidebarGridCell slot="icon">
             <span className="sidebar-row-icon">
               <SquarePenIcon className="size-3.5" />
@@ -674,10 +677,7 @@ export function Sidebar() {
               onClick={goHome}
               aria-label={t("sidebar.newChat")}
               aria-current={newChatActive ? "page" : undefined}
-              className={cn(
-                "app-no-drag flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui text-fg",
-                "hover:bg-[var(--control-bg-hover)] transition-colors",
-              )}
+              className="app-no-drag flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui text-fg"
             >
               <span className={cn("min-w-0 truncate", labelCls)}>{t("sidebar.newChat")}</span>
             </button>

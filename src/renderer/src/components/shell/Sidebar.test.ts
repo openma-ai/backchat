@@ -528,6 +528,8 @@ describe("groupSidebarSessions", () => {
       "utf8",
     );
 
+    expect(styles).toContain("--scrollbar-thumb:");
+    expect(styles).toContain("--sidebar-row-surface-inset:");
     expect(styles).toContain("--sidebar-grid-icon-track:");
     expect(styles).toContain("grid-template-columns:");
     for (const component of [

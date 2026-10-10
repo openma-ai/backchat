@@ -1746,6 +1746,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --interaction-bg-active: var(--interaction-bg-hover);
   --control-bg-hover: var(--interaction-bg-hover);
   --control-bg-open: var(--interaction-bg-active);
+  --scrollbar-thumb: color-mix(in srgb, var(--fg-subtle) 72%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--fg-muted) 90%, transparent);
   --sidebar-row-action-size: 16px;
   --sidebar-row-action-icon-size: var(--control-icon-size);
   --sidebar-row-action-radius: calc(var(--sidebar-row-action-size) / 2);
@@ -2684,8 +2686,67 @@ body,
 
 .sidebar-host-chrome,
 .sidebar-footer-chrome {
-  padding-inline-start: 0;
-  padding-inline-end: 0;
+  padding-inline: var(--sidebar-row-surface-inset);
+}
+
+.sidebar-scroll-content {
+  padding-inline: var(--sidebar-row-surface-inset);
+}
+
+/* Row hover/selected washes align with main (inset inside the rail). */
+.sidebar-navigation {
+  --sidebar-row-surface-inset: 7px;
+}
+
+.sidebar-navigation .sidebar-grid-row:is(
+    :hover,
+    .app-selected-surface,
+    [data-state="open"]
+  ) {
+  background: var(--control-bg-hover);
+}
+
+.sidebar-navigation .sidebar-grid-row.app-selected-surface {
+  background: var(--surface-selected);
+}
+
+.sidebar-navigation
+  .sidebar-host-chrome
+  > .sidebar-grid-row:is(:hover, [data-state="open"]) {
+  background: var(--control-bg-hover);
+}
+
+@keyframes shimmer-text-sweep {
+  0% {
+    background-position: 120% center;
+  }
+  100% {
+    background-position: -20% center;
+  }
+}
+
+.shimmer-text,
+.composer-harness-probe-placeholder::placeholder {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--fg-muted) 88%, transparent) 0%,
+    color-mix(in srgb, var(--fg) 96%, transparent) 45%,
+    color-mix(in srgb, var(--fg-muted) 88%, transparent) 90%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: shimmer-text-sweep 2.4s var(--ease-soft) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text,
+  .composer-harness-probe-placeholder::placeholder {
+    animation: none;
+    color: var(--fg-muted);
+    background: none;
+  }
 }
 
 .sidebar-scroll-boundary {
