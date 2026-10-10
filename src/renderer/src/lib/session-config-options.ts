@@ -422,6 +422,35 @@ export function configModeOptionPresentation(
   };
 }
 
+const GENERIC_CONFIG_OPTION_LABELS = new Set(["model", "mode"]);
+
+function isGenericConfigOptionLabel(label: string | null | undefined): boolean {
+  if (!label?.trim()) return true;
+  return GENERIC_CONFIG_OPTION_LABELS.has(label.trim().toLowerCase());
+}
+
+/** Row subtitle for composer config selects — never a generic option title like "Model". */
+export function configSelectItemHint(
+  option: AcpSessionConfigOption,
+  item: FlattenedConfigSelectOption,
+): string | undefined {
+  const itemDescription = item.description?.trim();
+  if (itemDescription) return itemDescription;
+  if (option.category === "model") {
+    const provider = item.groupName?.trim();
+    return provider || undefined;
+  }
+  const optionDescription = option.description?.trim();
+  if (optionDescription && !isGenericConfigOptionLabel(option.description)) {
+    return optionDescription;
+  }
+  const optionName = option.name?.trim();
+  if (optionName && !isGenericConfigOptionLabel(option.name)) {
+    return optionName;
+  }
+  return undefined;
+}
+
 export function flattenSelectOptions(
   option: AcpSessionConfigOption,
 ): FlattenedConfigSelectOption[] {

@@ -1,9 +1,11 @@
 import { createServer, type ServerResponse } from "node:http";
 import { mkdir } from "node:fs/promises";
-import { expect, test } from "./fixtures";
+import { expect, test, type Locator } from "./fixtures";
 
-// PR56 item 6: sidebar-local-runtime-row is interim UI; restore main Local section
-// then replace these assertions (see PR comment on 7dc700e).
+async function sidebarGridIconLeft(row: Locator) {
+  return row.locator('[data-sidebar-grid="icon"]').evaluate((cell) => cell.getBoundingClientRect().left);
+}
+
 test("tenant groups start collapsed above local and route new and continued sessions to their owner", async ({ app, page }) => {
   const calls: string[] = [];
   const streams = new Set<ServerResponse>();
@@ -47,7 +49,13 @@ test("tenant groups start collapsed above local and route new and continued sess
     const beta = nav.getByRole("button", { name: "Beta", exact: true });
     await expect(alpha).toHaveAttribute("aria-expanded", "false");
     await expect(beta).toHaveAttribute("aria-expanded", "false");
-    await expect(page.getByTestId("sidebar-local-runtime-row")).toBeVisible();
+    const hostRow = page.locator(".sidebar-host-chrome .sidebar-grid-row").first();
+    const localRuntimeRow = page.getByTestId("sidebar-local-runtime-row");
+    await expect(localRuntimeRow).toHaveClass(/sidebar-grid-row/);
+    await expect(localRuntimeRow).toBeVisible();
+    expect(Math.abs(await sidebarGridIconLeft(hostRow) - await sidebarGridIconLeft(localRuntimeRow))).toBeLessThanOrEqual(
+      0.75,
+    );
     expect(
       await nav
         .locator("section.sidebar-section .sidebar-section-header button[aria-expanded]")
@@ -71,7 +79,7 @@ test("tenant groups start collapsed above local and route new and continued sess
     await page.screenshot({ path: "artifacts/tenant-sidebar/expanded.png" });
     await page.evaluate(() => window.backchat.openmaLogout());
     await expect(alpha).toHaveCount(0); await expect(beta).toHaveCount(0);
-    await expect(page.getByTestId("sidebar-local-runtime-row")).toBeVisible();
+    await expect(localRuntimeRow).toBeVisible();
   } finally {
     for (const stream of streams) stream.end(); server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

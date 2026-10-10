@@ -6,6 +6,7 @@ import {
   configModeOptionPresentation,
   findModeConfigOption,
   findPermissionModeConfigOption,
+  configSelectItemHint,
   flattenSelectOptions,
   isWorkspaceAccessPermissionMode,
   permissionModeMenuItems,
@@ -78,6 +79,44 @@ describe("session config options", () => {
       "Model options",
       "Options",
     ]);
+  });
+
+  test("model select hints use provider group name, not generic Model title", () => {
+    const hint = configSelectItemHint(
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "sonnet",
+        options: [
+          {
+            group: "anthropic",
+            name: "anthropic-proxy",
+            options: [{ value: "sonnet", name: "Claude Sonnet" }],
+          },
+        ],
+      },
+      {
+        value: "sonnet",
+        name: "Claude Sonnet",
+        groupName: "anthropic-proxy",
+      },
+    );
+    expect(hint).toBe("anthropic-proxy");
+    expect(
+      configSelectItemHint(
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "solo",
+          options: [{ value: "solo", name: "Solo" }],
+        },
+        { value: "solo", name: "Solo" },
+      ),
+    ).toBeUndefined();
   });
 
   test("flattens grouped select options without losing labels", () => {

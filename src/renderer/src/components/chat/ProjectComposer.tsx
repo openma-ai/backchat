@@ -123,11 +123,17 @@ export function ProjectComposer({
       return;
     sending.current = true;
     const submitted = text;
+    const attachments = context.attachments;
+    setText("");
     try {
-      if (await onSubmit(submitted.trim(), context.attachments)) {
-        setText((current) => (current === submitted ? "" : current));
+      if (await onSubmit(submitted.trim(), attachments)) {
         context.clearAttachments();
+      } else {
+        setText((current) => (current ? current : submitted));
       }
+    } catch (error) {
+      setText((current) => (current ? current : submitted));
+      throw error;
     } finally {
       sending.current = false;
       input.current?.focus();

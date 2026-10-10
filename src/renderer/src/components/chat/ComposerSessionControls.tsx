@@ -46,6 +46,7 @@ import {
   buildRunMenuConfigOptionSections,
   configModeOptionPresentation,
   findPermissionModeConfigOption,
+  configSelectItemHint,
   flattenSelectOptions,
   isWorkspaceAccessPermissionMode,
   permissionModeMenuItems,
@@ -428,7 +429,7 @@ function SessionConfigSubmenu({
           groupName: item.groupName,
           hint: isAgentPresetConfigOption(option)
             ? undefined
-            : item.description ?? option.description ?? option.name,
+            : configSelectItemHint(option, item),
           searchText: [item.groupName, item.value].filter(Boolean).join(" "),
           active: item.value === option.currentValue,
         }))
@@ -937,7 +938,7 @@ function InlineComposerOptionControl({
             value: item.value,
             label: item.name,
             groupName: item.groupName,
-            hint: item.description ?? option.description ?? option.name,
+            hint: configSelectItemHint(option, item),
             searchText: [item.groupName, item.value].filter(Boolean).join(" "),
             active: item.value === option.currentValue,
           }))}

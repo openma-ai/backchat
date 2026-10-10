@@ -74,7 +74,16 @@ export async function launchAppWithHome(
 }> {
   const app = await electron.launch({
     // Keep cookies/localStorage isolated as well as the Backchat database.
-    args: [join(repoRoot, "out/main/index.js"), `--user-data-dir=${join(home, "electron-user-data")}`],
+    args: [
+      join(repoRoot, "out/main/index.js"),
+      `--user-data-dir=${join(home, "electron-user-data")}`,
+      // A visible Linux recording has to composite through X11. GPU surfaces
+      // stay invisible to the desktop capture even though Playwright can
+      // screenshot the page bitmap.
+      ...(process.env["BACKCHAT_E2E_VISIBLE"] === "1"
+        ? ["--disable-gpu", "--ozone-platform=x11"]
+        : []),
+    ],
     env: {
       ...process.env,
       ...(options.env ?? {}),

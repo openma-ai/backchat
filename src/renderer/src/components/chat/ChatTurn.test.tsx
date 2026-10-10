@@ -348,6 +348,45 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("chat.thinking");
   });
 
+  it("paints a pending user message without the working indicator", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          promptText: "Ship it now",
+          clientId: "client-1",
+          sendState: "pending",
+        })}
+      />,
+    );
+    expect(html).toContain('data-user-echo="pending"');
+    expect(html).toContain('data-client-id="client-1"');
+    expect(html).toContain("Ship it now");
+    expect(html).toContain("chat.sending");
+    expect(html).not.toContain("chat.thinking");
+    expect(html).not.toContain("chat.workingFor");
+  });
+
+  it("shows retry when the optimistic send fails", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "error",
+          promptText: "Ship it now",
+          clientId: "client-1",
+          sendState: "failed",
+          sendError: "coordinator offline",
+        })}
+        onRetrySend={() => undefined}
+      />,
+    );
+    expect(html).toContain('data-user-echo="failed"');
+    expect(html).toContain("Ship it now");
+    expect(html).toContain("coordinator offline");
+    expect(html).toContain('data-user-echo-retry="true"');
+    expect(html).toContain("common.retry");
+  });
+
   it("shows a lightweight thinking label for an empty running turn", () => {
     const html = renderToStaticMarkup(
       <TurnBlock turn={turn({ status: "running" })} />,

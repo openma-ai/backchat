@@ -27,6 +27,7 @@ import {
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { sidebarNavRowClass } from "@/lib/sidebar-nav-row";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/lib/settings-store";
 import {
@@ -245,7 +246,7 @@ export function groupSidebarSessions(
   }
 
   for (const session of sessions) {
-    if (coordinatorSessionIds.has(session.id)) continue;
+    if (coordinatorSessionIds.has(session.id) || session.listHidden) continue;
     if (session.pinnedAt != null) {
       pinned.push(session);
       continue;
@@ -1736,7 +1737,7 @@ function PairSidebarRow({
  *  controlled-vs-uncontrolled state bugs). Trades: clicking `…`
  *  doesn't also navigate (stopPropagation on the button), and the
  *  menu opens via a pure onClick handler. */
-function SessionRow({
+export function SessionRow({
   row,
   agentIconUrl,
   active,
@@ -1785,14 +1786,11 @@ function SessionRow({
         <SidebarGridRow
           depth={depth}
           trailingTrack="double"
-          className={cn(
-            "group relative rounded-md text-ui",
-            errored && "text-danger",
-            active
-              ? "app-selected-surface text-fg"
-              : !errored && "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-            "transition-colors",
-          )}
+          className={sidebarNavRowClass({
+            active,
+            errored,
+            className: "group relative",
+          })}
         >
           <SidebarGridCell slot="icon">
             <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">

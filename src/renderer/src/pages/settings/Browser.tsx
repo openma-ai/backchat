@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { composerBoxClass } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 import { patchSettings, useSettings } from "@/lib/settings-store";
 import {
@@ -102,7 +103,7 @@ export function SettingsBrowserPage() {
       )}
     >
 
-      <div className="flex items-center gap-3 rounded-lg border border-border/55 bg-bg/72 px-3.5 py-3 shadow-card-soft">
+      <div className={composerBoxClass({ className: "flex items-center gap-3 px-3.5 py-3" })}>
         <span className="inline-flex size-9 items-center justify-center rounded-md bg-bg-surface text-fg">
           <PanelTopIcon className="size-5" />
         </span>
@@ -258,7 +259,7 @@ function BrowserBackendPanel({
   };
 
   return (
-    <section className="rounded-lg border border-border/55 bg-bg/72 p-4 shadow-card-soft">
+    <section className={composerBoxClass({ className: "p-4" })}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className="grid size-8 shrink-0 place-items-center rounded-md bg-bg-surface text-fg-muted">
@@ -364,7 +365,7 @@ function SettingsSection({
         {icon}
         {title}
       </h2>
-      <div className="divide-y divide-border/50 overflow-hidden rounded-lg border border-border/55 bg-bg/72 shadow-card-soft">
+      <div className={composerBoxClass({ className: "divide-y divide-border/50 overflow-hidden" })}>
         {children}
       </div>
     </section>

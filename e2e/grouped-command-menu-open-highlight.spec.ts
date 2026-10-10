@@ -20,9 +20,7 @@ import {
   openRuntimeLocationPicker,
 } from "./helpers";
 
-const evidenceDir =
-  process.env.PR56_EVIDENCE_DIR ??
-  "/opt/cursor/artifacts/pr56-evidence/item-08-project-picker-open-highlight";
+const evidenceDir = process.env.PR56_EVIDENCE_DIR;
 
 test("project picker opens on checked project row", async ({ page, home }) => {
   test.setTimeout(120_000);
@@ -34,38 +32,40 @@ test("project picker opens on checked project row", async ({ page, home }) => {
   await expect(panel).toBeVisible({ timeout: 10_000 });
   await expectGroupedCommandOpensOnCurrentChoice(panel, { requireChecked: true });
 
-  await mkdir(evidenceDir, { recursive: true });
-  const popover = panel.locator(
-    "xpath=ancestor::*[@data-slot='popover-content'][1]",
-  );
-  await popover.screenshot({
-    path: join(evidenceDir, "pr-project-picker-open.png"),
-    animations: "disabled",
-  });
+  if (evidenceDir) {
+    await mkdir(evidenceDir, { recursive: true });
+    const popover = panel.locator(
+      "xpath=ancestor::*[@data-slot='popover-content'][1]",
+    );
+    await popover.screenshot({
+      path: join(evidenceDir, "pr-project-picker-open.png"),
+      animations: "disabled",
+    });
 
-  const grid = await measureGroupedCommandMenuGrid(panel);
-  const { iconLeft, textLeft } = groupedCommandGridLinePositions(grid);
-  const png = await popover.screenshot({ animations: "disabled" });
-  const gridPng = await burnGroupedCommandGridLines(
-    png,
-    iconLeft,
-    textLeft,
-    groupedCommandGridReferenceLinePositions(),
-  );
-  await writeFile(join(evidenceDir, "pr-grid-lines.png"), gridPng);
-  await writeFile(
-    join(evidenceDir, "pr-grid.metrics.json"),
-    `${JSON.stringify(
-      {
-        grid,
-        gridLines: { iconLeft, textLeft },
-        referenceLines: groupedCommandGridReferenceLinePositions(),
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
+    const grid = await measureGroupedCommandMenuGrid(panel);
+    const { iconLeft, textLeft } = groupedCommandGridLinePositions(grid);
+    const png = await popover.screenshot({ animations: "disabled" });
+    const gridPng = await burnGroupedCommandGridLines(
+      png,
+      iconLeft,
+      textLeft,
+      groupedCommandGridReferenceLinePositions(),
+    );
+    await writeFile(join(evidenceDir, "pr-grid-lines.png"), gridPng);
+    await writeFile(
+      join(evidenceDir, "pr-grid.metrics.json"),
+      `${JSON.stringify(
+        {
+          grid,
+          gridLines: { iconLeft, textLeft },
+          referenceLines: groupedCommandGridReferenceLinePositions(),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }
 });
 
 test("workspace picker opens on checked workspace row", async ({ page, home }) => {

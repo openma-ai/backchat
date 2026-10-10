@@ -6,7 +6,7 @@ import { PageTopbar } from "@/components/shell/PageTopbar";
 import type { PromptAttachment } from "@shared/session-events";
 import { ProjectMessageAttachments } from "@/components/chat/ProjectMessageAttachments";
 import { projectResponseText } from "@shared/project-transcript";
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -49,10 +49,11 @@ import {
   projectGoalPresentation,
   projectOutcomeLabel,
   projectThreads,
-  projectCoordinatorTurns,
 } from "@/lib/project-goals";
+import { ChatView } from "@/components/chat/ChatView";
 import { ProjectComposer } from "@/components/chat/ProjectComposer";
-import { ProjectConversation } from "@/components/chat/ProjectConversation";
+import { openHistoryWindow } from "@/lib/history-paging";
+import { sessionStore } from "@/lib/session-store";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -822,9 +823,6 @@ function ProjectWorkspace({
   );
   const coordinator = sessions.filter((s) => s.agentId === "coordinator");
   const workers = sessions.filter((s) => s.agentId === "worker");
-  const selectedTurns = facts.turns.filter((t) =>
-    coordinator.some((s) => s.id === t.sessionId),
-  );
   const projectThreadView = projectThreads(
     view,
     config?.continuity === "per-run" ? runId : undefined,
@@ -864,8 +862,9 @@ function ProjectWorkspace({
       runId,
       attachments,
     ]);
-    if (uncertainSubmission.current?.fingerprint !== fingerprint)
+    if (uncertainSubmission.current?.fingerprint !== fingerprint) {
       uncertainSubmission.current = { fingerprint, id: crypto.randomUUID() };
+    }
     try {
       await window.backchat.projectWorkSubmit({
         projectId: project.id,
@@ -886,13 +885,27 @@ function ProjectWorkspace({
       setBusy(false);
     }
   };
-  const coordinatorChatTurns = projectCoordinatorTurns(
-    view, config?.continuity === "per-run" ? runId : undefined,
-  );
-  const promptPayloads = new Map(selectedTurns.map((turn) => [
-    turn.id,
-    facts.events.find((event) => event.id === turn.triggerEventId)?.payload,
-  ] as const));
+  const placeholderSessionId = `coordinator:${project.id}:${config?.continuity === "per-run" ? runId : "scope"}`;
+  const coordinatorSessionId = coordinator.at(-1)?.id;
+  useEffect(() => {
+    if (!config?.coordinatorAgent || !coordinatorSessionId) return;
+    sessionStore.rebindSession(placeholderSessionId, coordinatorSessionId);
+    sessionStore.ensureBoundSession({
+      id: coordinatorSessionId,
+      agentId: config.coordinatorAgent,
+      cwd: project.primary_folder || "",
+      label: project.name,
+      projectId: project.id,
+    });
+    void openHistoryWindow(coordinatorSessionId);
+  }, [
+    config?.coordinatorAgent,
+    coordinatorSessionId,
+    placeholderSessionId,
+    project.id,
+    project.name,
+    project.primary_folder,
+  ]);
   const runs = [
     ...new Set(
       facts.events
@@ -978,28 +991,32 @@ function ProjectWorkspace({
               <Button onClick={edit}>Set up coordinator</Button>
             </div>
           ) : (
-            <>
-              <ProjectConversation
-                turns={coordinatorChatTurns}
-                cwd={project.primary_folder || null}
-                promptPayloads={promptPayloads}
-                composer={
-                  <ProjectComposer
-                      key={`${project.id}:${runId}`}
-                      agentId={config.coordinatorAgent}
-                      sessionId={selectedTurns.at(-1)?.sessionId ?? coordinator.at(-1)?.id}
-                      localAuth={config.execution?.kind !== "cloud"}
-                      authRequired={facts.agentEvents.some(event => event.turn_id === selectedTurns.at(-1)?.id && event.type === "session.error" && (event.data as { code?: string }).code === "auth_required")}
-                      placeholder={`Message ${project.name}…`}
-                      busy={busy}
-                      onSubmit={(message, attachments) =>
-                        submit("message", message, undefined, attachments)
-                      }
-                      onEditAgents={edit}
-                  />
-                }
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ChatView
+                binding={{
+                  projectId: project.id,
+                  runId: config.continuity === "per-run" ? runId : undefined,
+                  sessionId: coordinatorSessionId ?? placeholderSessionId,
+                  agentId: config.coordinatorAgent,
+                  cwd: project.primary_folder || "",
+                  label: project.name,
+                  placeholder: `Message ${project.name}…`,
+                  inputLabel: "Message coordinator",
+                  loadHistory: !!coordinatorSessionId,
+                  deliver: async ({ turnId, text, attachments }) => {
+                    await window.backchat.projectWorkSubmit({
+                      projectId: project.id,
+                      commandId: turnId,
+                      type: "message",
+                      text,
+                      attachments,
+                      ...(config.continuity === "per-run" ? { runId } : {}),
+                    });
+                    await refresh();
+                  },
+                }}
               />
-            </>
+            </div>
           )}
           {error || view.error ? (
             <p role="alert" className="project-error">

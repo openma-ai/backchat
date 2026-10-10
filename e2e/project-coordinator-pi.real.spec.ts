@@ -346,7 +346,7 @@ test("Pi coordinator delegates a red-green repair and reviews the worker result 
       "Use project.delegate to delegate exactly one worker with workerId addition-tdd. Copy ALL of these requirements into its task: In your assigned cwd, (1) execute exactly `node --test sum.test.mjs` as the only command in one bash tool call and observe exit code 1; (2) repair sum.mjs only using the edit tool, do not edit tests; (3) execute exactly `node --test sum.test.mjs` as the only command in a separate bash tool call and observe exit code 0. Do not pipe output, use grep/tail, combine steps with semicolons, mask exit status, or commit. Stay in your assigned source workspace. (4) Generate a random token using node:crypto and write it to worker-proof.txt. These are the only two source workspace files you may change or create. Save the exact token, RED/GREEN evidence and branch in a text file of your choice inside your thread's memoryDirectory, using native write/edit tools for notes. Choose the filename, organization and when to maintain it yourself. Report the token, the RED and GREEN test counts, and your branch. Coordinator: do not edit source files. After the delegation receipt, call project.status once with no worker filter and end the turn after reporting the observed facts. When the worker result comes back, call project.status with workerId addition-tdd, save its exact token and test results in a text file of your choice inside your own memoryDirectory, and report your review including that token. If project tools are unavailable, report the failure and do not use shell workarounds.",
     );
     await page
-      .getByRole("button", { name: "Send message", exact: true })
+      .getByRole("button", { name: "Send (Enter)", exact: true })
       .click();
     await expect(composer).toHaveValue("");
 
@@ -757,7 +757,7 @@ test("Pi uses the WorkThread outcome tools", async ({}, testInfo) => {
     await composer.fill(
       "For this WorkThread, use create_goal with objective exactly 'Verify the Pi outcome round trip'. Then use get_goal to read it back and update_goal with status complete and reason 'Verified by the coordinator'. Do all three in this turn.",
     );
-    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    await page.getByRole("button", { name: "Send (Enter)", exact: true }).click();
     await expect
       .poll(
         async () => {

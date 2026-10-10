@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   chatIdleDeliveryMeta,
+  retryBoundChatSend,
   resolveDraftStartWorkspace,
   resolveProjectScopedPickedCwd,
   resolveWorkspaceMode,
@@ -10,6 +11,7 @@ import {
   resolveChatStartCwd,
   resolveChatSubmitAgentId,
 } from "./chat-submission";
+import { sessionStore } from "./session-store";
 
 describe("chat submission decisions", () => {
   it("chains prompt delivery directly from the completed start IPC", () => {
@@ -20,6 +22,44 @@ describe("chat submission decisions", () => {
     expect(source.indexOf("await window.backchat.sessionStart({")).toBeLessThan(
       source.indexOf("await window.backchat.sessionPrompt({"),
     );
+    expect(source.indexOf("onOptimisticEcho?.(")).toBeGreaterThan(0);
+    expect(source.indexOf("onOptimisticEcho?.(")).toBeLessThan(
+      source.indexOf("sessionStore.registerTurn("),
+    );
+    expect(source.indexOf("onOptimisticEcho?.(")).toBeLessThan(
+      source.indexOf("await window.backchat.sessionStart({"),
+    );
+    expect(source.indexOf("if (deliver)")).toBeLessThan(
+      source.indexOf("await window.backchat.sessionPrompt({"),
+    );
+  });
+
+  it("retries a bound send on the injected transport", async () => {
+    sessionStore.ensureBoundSession({
+      id: "bound-retry",
+      agentId: "codex-acp",
+      cwd: "/tmp/bound",
+      label: "Bound",
+      projectId: "project-1",
+    });
+    sessionStore.registerTurn("turn-retry", "bound-retry", "Retry me");
+    sessionStore.failSend("turn-retry", "offline");
+    const delivered: Array<{ turnId: string; text: string }> = [];
+    await retryBoundChatSend(sessionStore.turnsFor("bound-retry")[0]!, async (input) => {
+      delivered.push({ turnId: input.turnId, text: input.text });
+    });
+    expect(delivered).toEqual([{ turnId: "turn-retry", text: "Retry me" }]);
+    expect(sessionStore.turnsFor("bound-retry")[0]).toMatchObject({
+      sendState: "pending",
+      status: "running",
+    });
+    await retryBoundChatSend(sessionStore.turnsFor("bound-retry")[0]!, async () => {
+      throw new Error("still offline");
+    });
+    expect(sessionStore.turnsFor("bound-retry")[0]).toMatchObject({
+      sendState: "failed",
+      sendError: "still offline",
+    });
   });
 
   it("uses selected and picked agents only for draft targets", () => {

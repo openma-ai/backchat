@@ -1,15 +1,19 @@
 import { test, expect } from "./fixtures";
 import { enableAgent, persistSessionFixture } from "./helpers";
 
-// PR56 item 6: scroll anchor uses interim sidebar-local-runtime-row until Local section returns.
 test("sidebar navigation scrolls together while new chat and search stay fixed", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 700 });
   await enableAgent(page, "codex-acp");
   for (let i = 0; i < 35; i++) await persistSessionFixture(page, { sessionId: `density-${i}`, title: `Density task ${i}`, cwd: "", events: [] });
   await page.reload();
   const viewport = page.locator('[data-sidebar-scroll-area] [data-slot="scroll-area-viewport"]');
+  const hostRow = page.locator(".sidebar-host-chrome .sidebar-grid-row").first();
   const heading = page.getByTestId("sidebar-local-runtime-row");
+  await expect(heading).toHaveClass(/sidebar-grid-row/);
   await expect(heading).toBeVisible();
+  const hostIconLeft = await hostRow.locator('[data-sidebar-grid="icon"]').evaluate((cell) => cell.getBoundingClientRect().left);
+  const localIconLeft = await heading.locator('[data-sidebar-grid="icon"]').evaluate((cell) => cell.getBoundingClientRect().left);
+  expect(Math.abs(hostIconLeft - localIconLeft)).toBeLessThanOrEqual(0.75);
   const search = page.getByRole("button", { name: "Search", exact: true });
   const searchTop = (await search.boundingBox())!.y;
   const headingTop = (await heading.boundingBox())!.y;

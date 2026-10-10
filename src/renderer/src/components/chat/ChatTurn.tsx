@@ -61,10 +61,12 @@ export const TurnBlock = memo(function TurnBlock({
   turn,
   onFork,
   forkLabel,
+  onRetrySend,
 }: {
   turn: Turn;
   onFork?: () => void;
   forkLabel?: string;
+  onRetrySend?: (turn: Turn) => void;
 }) {
   const { t } = useI18n();
   const rendered = useMemo(() => reduceTurn(turn.events), [turn.events]);
@@ -109,7 +111,9 @@ export const TurnBlock = memo(function TurnBlock({
       ),
     };
   }, [planDocument?.sourceToolCallId, rendered, turn.status]);
-  const isStreaming = turn.status === "running";
+  const sendPending = turn.sendState === "pending";
+  const sendFailed = turn.sendState === "failed";
+  const isStreaming = turn.status === "running" && !sendPending && !sendFailed;
   // The agent states why a turn ended; a limit or a refusal arrives as an
   // ordinary completion and would otherwise read as a finished answer.
   const stopNotice = turnStopNotice(turn);
@@ -146,8 +150,8 @@ export const TurnBlock = memo(function TurnBlock({
           attachments: turn.attachments,
           events: turn.events,
           assistantText: turn.assistantText,
-          status: turn.status,
-          errorMessage: turn.errorMessage,
+          status: sendFailed ? "error" : sendPending ? "complete" : turn.status,
+          errorMessage: sendFailed ? (turn.sendError ?? turn.errorMessage) : turn.errorMessage,
           startedAt: turn.startedAt,
           endedAt: turn.endedAt,
         },
@@ -166,6 +170,9 @@ export const TurnBlock = memo(function TurnBlock({
       turn.events,
       turn.id,
       turn.promptText,
+      sendFailed,
+      sendPending,
+      turn.sendError,
       turn.startedAt,
       turn.status,
     ],
@@ -183,11 +190,11 @@ export const TurnBlock = memo(function TurnBlock({
     rawEvents.length > 0 ||
     hasTurnSubagentLinks(activityRendered, subagents);
 
-  return (
+  const view = (
     <AgentUITurnView
       sessionId={turn.sessionId}
       turn={projectedTurn}
-      frameStatus={turn.status}
+      frameStatus={sendFailed ? "error" : sendPending ? "completed" : turn.status}
       thoughts="history"
       activityTools="all"
       collapsiblePrimitives={BACKCHAT_COLLAPSIBLE_PRIMITIVES}
@@ -321,6 +328,21 @@ export const TurnBlock = memo(function TurnBlock({
               sessionId={turn.sessionId}
               tools={activityRendered.tools}
             />
+            {sendPending ? (
+              <p className="text-xs text-fg-muted" data-user-echo-status="pending">
+                {t("chat.sending")}
+              </p>
+            ) : null}
+            {sendFailed && onRetrySend ? (
+              <button
+                type="button"
+                data-user-echo-retry="true"
+                className="text-xs text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+                onClick={() => onRetrySend(turn)}
+              >
+                {t("common.retry")}
+              </button>
+            ) : null}
             {stopNotice && (
               <p
                 data-turn-stop-reason={turn.stopReason}
@@ -345,6 +367,16 @@ export const TurnBlock = memo(function TurnBlock({
         ),
       }}
     />
+  );
+  if (!turn.sendState) return view;
+  return (
+    <div
+      className="contents"
+      data-user-echo={turn.sendState}
+      data-client-id={turn.clientId}
+    >
+      {view}
+    </div>
   );
 });
 

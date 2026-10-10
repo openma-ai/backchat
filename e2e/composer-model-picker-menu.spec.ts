@@ -58,6 +58,38 @@ test("model picker search filters by provider and model name", async ({ page, br
   await expect(panel.getByText("anthropic-proxy model 1")).toHaveCount(0);
 });
 
+test("model picker row subtitles show provider, not generic Model", async ({ page }) => {
+  await enableAgent(page, "codex-acp");
+  const sessionId = await injectSession(page, { agentId: "codex-acp" });
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: "model-picker-subtitle",
+    event: {
+      sessionUpdate: "config_option_update",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "anthropic-proxy-0",
+          options: manyGroupedModels(),
+        },
+      ],
+    },
+  });
+
+  await page.getByRole("button", { name: /Run on|运行位置/ }).first().click();
+  await page.getByRole("menuitem", { name: /模型|Model/ }).first().hover();
+  const panel = modelPickerPanel(page);
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+  const row = panel.getByRole("option", { name: /anthropic-proxy model 0/ });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("anthropic-proxy", { exact: true })).toBeVisible();
+  await expect(row.getByText("Model", { exact: true })).toHaveCount(0);
+});
+
 test("model picker shows provider command groups with bounded scroll", async ({ page, bridge }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await enableAgent(page, "codex-acp");

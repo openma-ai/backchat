@@ -23,9 +23,60 @@
   box-shadow: var(--shadow-sm);
 }
 
-.app-composer-surface {
+.app-composer-surface,
+.composer-box-border {
   border: var(--composer-card-border-width) solid var(--border);
+}
+
+.app-composer-surface {
   box-shadow: var(--shadow-input-rest);
+}
+
+/* A card is painted with --surface-panel, which is --bg-surface. Chips,
+   tracks, badges, and hovers that also ask for that material would
+   disappear. Descendants re-read the surface aliases as --surface-inset
+   (the next step on the ladder, --bg-bubble). The card itself is not a
+   descendant, so its fill stays the panel. Rails and the terminal panel
+   are not in this scope: they read --bg-surface as their own material. */
+.app-composer-surface * {
+  --bg-surface: var(--surface-inset);
+  --color-bg-surface: var(--surface-inset);
+  --color-secondary: var(--surface-inset);
+  --color-muted: var(--surface-inset);
+  --color-accent: var(--surface-inset);
+}
+
+/* Text fields inside a settings card are transparent or a border wash,
+   which is the same gray as the card. The chat composer is .composer-card
+   and keeps a transparent body. */
+.app-composer-surface:not(.composer-card) :is(
+  input:not(
+    [type="checkbox"],
+    [type="radio"],
+    [type="file"],
+    [type="hidden"],
+    [type="range"],
+    [type="color"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ),
+  textarea,
+  select
+) {
+  background-color: var(--surface-field);
+}
+
+/* Appearance mode frames reuse the composer border. Brand only when
+   that frame is the selected choice. The composer card never sets
+   data-selected. */
+.app-composer-surface[data-selected="true"],
+.composer-box-border[data-selected="true"] {
+  border-color: var(--brand);
+}
+
+.appearance-mode-card:hover > .composer-box-border:not([data-selected="true"]) {
+  border-color: var(--border-strong);
 }
 
 .app-raised-surface,
@@ -238,9 +289,17 @@
   margin-left: auto;
 }
 
-/* Match the reference navigation rhythm: 28px rows with a 1px step. */
+/* Match the conversation list. Session rows and settings nav items both
+   use `.sidebar-nav-row` inside `.sidebar-navigation`, so this is the
+   only height they can resolve. The 1px list step and the inset focus
+   ring below are the same rules the conversation list already uses —
+   settings does not keep a separate 2px gap or an outward ring. */
 .sidebar-navigation {
   --sidebar-row-h: 28px;
+}
+
+.sidebar-nav-row {
+  height: var(--sidebar-row-h);
 }
 /* Scroll viewports and collapsed groups clip outward focus rings. Keep
    keyboard focus entirely inside the row, including after menu dismissal. */
@@ -1651,6 +1710,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --surface-canvas: var(--bg);
   --surface-panel: var(--bg-surface);
   --surface-raised: var(--bg-bubble);
+  /* Nested material on a panel. Themes already define this step as
+     --bg-bubble; fields and bg-bg-surface descendants share it so a
+     card and the controls inside it cannot collapse into one gray. */
+  --surface-inset: var(--bg-bubble);
+  --surface-field: var(--surface-inset);
   /* The same 8% interaction wash, pre-composited against the panel it lives
      on. A selected row must be opaque (see `.app-selected-surface`) yet still
      land on the exact color a hovered row shows. */

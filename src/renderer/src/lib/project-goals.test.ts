@@ -51,6 +51,30 @@ describe("project thread goals", () => {
     expect(JSON.stringify(turns)).not.toContain("Private worker output");
   });
 
+  it("keeps the project message client id so an optimistic echo can reconcile", () => {
+    const at = "2026-09-22T00:00:00Z";
+    const view = {
+      project: { id: "proj" },
+      facts: {
+        sessions: [
+          { id: "coordinator-session", scopeId: "proj", workThreadId: "proj:coordinator", agentId: "coordinator" },
+        ],
+        turns: [
+          { id: "coordinator-turn", sessionId: "coordinator-session", triggerEventId: "proj:message:client-9", state: "running", createdAt: at },
+        ],
+        events: [
+          { id: "proj:message:client-9", payload: { text: "Ship it" } },
+        ],
+        agentEvents: [],
+      },
+    } as unknown as ProjectWorkView;
+    expect(projectCoordinatorTurns(view)[0]).toMatchObject({
+      clientId: "client-9",
+      promptText: "Ship it",
+      status: "running",
+    });
+  });
+
   it("keeps one worker and its active goal across replacement sessions and completed turns", () => {
     const view = {
       project: { id: "p" },
