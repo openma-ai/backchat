@@ -9,7 +9,7 @@ on:
       - cursor/renderer-type-color-6c90
 
 concurrency:
-  group: unsigned-mac-${{ github.ref }}-${{ matrix.name }}
+  group: unsigned-mac-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
