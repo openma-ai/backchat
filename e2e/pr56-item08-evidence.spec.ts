@@ -16,8 +16,8 @@ const pickers: PickerId[] = [
   "model",
 ];
 
-test.describe("PR56 item 08 evidence v2", () => {
-  test.setTimeout(900_000);
+test.describe("PR56 item 08 evidence v3", () => {
+  test.setTimeout(1_200_000);
 
   test("highlight token doc", async () => {
     await writeHighlightTokenDoc(ITEM08_EVIDENCE_ROOT);
@@ -36,28 +36,29 @@ test.describe("PR56 item 08 evidence v2", () => {
   }
 
   test("write comment.md", async () => {
-    const comment = `# PR56 item 08 evidence (v2)
+    const comment = `# PR56 item 08 evidence (v3)
 
-Archive: \`pr56-evidence-item08-v2.tar.gz\`
+Archive: \`pr56-evidence-item08-v3.tar.gz\`
 
-## Capture
+## Intentional PR change (not main parity)
 
-- Full **viewport** screenshots (1280×800; sidebar-host PR uses 1280×960), not popover crops.
-- Caption strip on every half: build SHA (\`origin/main\` vs PR), picker, locale, dimensions.
-- Stitched \`*-main-pr-<mainSha>-vs-<prSha>.png\` with dual-SHA footer.
-- Grid lines at **ink** left edges (SVG path / text glyph bounds), viewport coordinates.
-- Electron window focused before paint; menu search focused + arrow keys to settle roving state.
-- **Sidebar host:** main half is an explicit **N/A** plate (no sidebar host on \`origin/main\`); see \`composer-host\` for closest main surface.
-- **Model:** submenu panel only (\`composer-select-menu-panel\` / \`dropdown-menu-sub-content\`), not parent harness menu.
-- Open highlight policy: \`highlight-token.md\` (checkmark-only for checked rows; shared \`--control-bg-hover\` token).
+On **open**, PR keeps the **checkmark only** on the current row (no gray wash). \`origin/main\` still paints the 8% fg wash on the \`data-selected\` current row. Hover and arrow keys move the wash on both; see \`highlight-token.md\`.
+
+## Capture hygiene
+
+- \`*-open-*\`: menu just opened — **no ArrowDown/Up** (autofocus only).
+- \`*-roving-*\`: one \`ArrowDown\` after open to show keyboard wash on the focused row.
+- Identical fixture: \`e2e/pr56-item08-fixture.ts\` (icons, project order, \`item08-evidence-model\` session id).
+- Stitched PNGs use the **same buffers** as standalone \`-main-\` / \`-pr-\` files from one capture pass per phase.
+- Sidebar-host main half: N/A plate with **same caption height** as PR (800px + strip); stitched halves padded to equal height.
+- Main model panel: \`DropdownMenuSubContent\` (no cmdk search); PR model: \`GroupedCommandMenu\`.
 
 Regenerate:
 
 \`\`\`bash
-pnpm build
-pnpm --dir /tmp/backchat-main build
+pnpm build && pnpm --dir /tmp/backchat-main build
 pnpm exec playwright test e2e/pr56-item08-evidence.spec.ts
-tar -czf /opt/cursor/artifacts/pr56-evidence-item08-v2.tar.gz -C /opt/cursor/artifacts pr56-evidence-item08-v2
+tar -czf /opt/cursor/artifacts/pr56-evidence-item08-v3.tar.gz -C /opt/cursor/artifacts pr56-evidence-item08-v3
 \`\`\`
 `;
     await writeFile(join(ITEM08_EVIDENCE_ROOT, "comment.md"), comment, "utf8");

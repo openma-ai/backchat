@@ -13,9 +13,14 @@ export async function measureMenuInkGrid(
   rows: { id: string; iconLeft: number; textLeft: number }[];
 }> {
   return panel.evaluate((rootEl, opts) => {
-    const scope = (opts?.scopeSelector
-      ? rootEl.closest(opts.scopeSelector)
+    const scope = (rootEl.matches("[data-slot='dropdown-menu-sub-content']") ||
+      rootEl.matches("[data-testid='composer-select-menu-panel']") ||
+      rootEl.matches("[data-testid='composer-project-picker-panel']")
+      ? rootEl
       : null) ??
+      (opts?.scopeSelector
+        ? rootEl.closest(opts.scopeSelector)
+        : null) ??
       (rootEl.closest("[data-testid='composer-select-menu-panel']") ??
         rootEl.closest("[data-testid='composer-project-picker-panel']") ??
         rootEl.closest("[data-testid='composer-workspace-picker-panel']") ??
