@@ -447,26 +447,39 @@ test.describe.serial("PR #56 evidence captures", () => {
     }
   });
 
-  test("11 renderer crash page centered", async () => {
-    const { page, cleanup } = await launchApp({
-      language: "en",
-      skipRendererReady: true,
-      env: {
-        BACKCHAT_DEMO_RENDERER_CRASH: "1",
-        BACKCHAT_E2E_VISIBLE: "1",
-      },
-    });
-    try {
-      await page.waitForSelector('[data-backchat-crash-mark="true"]', {
-        timeout: 30_000,
+  test("11 renderer crash page (en + zh)", async () => {
+    const capture = async (filename: string, language?: "en" | "zh-CN") => {
+      const { page, cleanup } = await launchApp({
+        language,
+        skipRendererReady: true,
+        env: {
+          BACKCHAT_DEMO_RENDERER_CRASH: "1",
+          BACKCHAT_E2E_VISIBLE: "1",
+        },
       });
-      await page.waitForTimeout(400);
-      await page.screenshot({
-        path: `${artifactDir}/pr56-11.png`,
-        fullPage: true,
-      });
-    } finally {
-      await cleanup();
-    }
+      try {
+        if (language === "zh-CN") {
+          await page.evaluate(async () => {
+            const current = await window.backchat.settingsGet();
+            await window.backchat.settingsPatch({
+              appearance: { ...current.appearance, language: "zh-CN" },
+            });
+          });
+          await page.reload({ waitUntil: "domcontentloaded" });
+        }
+        await page.waitForSelector('[data-backchat-crash-mark="true"]', {
+          timeout: 30_000,
+        });
+        await page.waitForTimeout(400);
+        await page.screenshot({
+          path: `${artifactDir}/${filename}`,
+          fullPage: true,
+        });
+      } finally {
+        await cleanup();
+      }
+    };
+    await capture("pr56-11-en.png");
+    await capture("pr56-11-zh.png", "zh-CN");
   });
 });
