@@ -1931,8 +1931,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --font-mono:
     ui-monospace, "SFMono-Regular", "SF Mono", Menlo, "Cascadia Mono", Consolas,
     "Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Sarasa Mono SC",
-    "Noto Sans Mono CJK SC", "WenQuanYi Micro Hei Mono", "Backchat Sans SC",
-    monospace;
+    "Noto Sans Mono CJK SC", "WenQuanYi Micro Hei Mono", "PingFang SC",
+    "Microsoft YaHei UI", "Backchat Sans SC", monospace;
   --font-chat: var(--font-sans);
   /* Slogan face. Distinct from the UI sans so homeSlogan.fontFamily
      "display" still changes the hero. System serif only; not packaged. */

@@ -91,6 +91,9 @@ describe("renderer typography contract", () => {
     expect(css).toContain('"Backchat Sans"');
     expect(css).toContain('"Backchat Sans SC"');
     expect(css).toContain('"WenQuanYi Micro Hei Mono"');
+    const defaultMono = css.slice(css.indexOf("--font-mono:"), css.indexOf("--font-chat:"));
+    expect(defaultMono).toContain('"PingFang SC"');
+    expect(defaultMono).toContain('"Microsoft YaHei UI"');
     expect(css).toContain("noto-sans-latin-wght-normal.woff2");
     expect(css).toContain("noto-sans-sc-chinese-simplified-400-normal.woff2");
     expect(css).toContain("noto-sans-sc-chinese-simplified-600-normal.woff2");
