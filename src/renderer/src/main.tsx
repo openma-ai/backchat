@@ -11,6 +11,13 @@ import { applyStoredTheme } from "@/lib/theme";
 import "@openma/common/chat-ui/styles.css";
 import "./styles/index.css";
 
+const userAgent = navigator.userAgent;
+document.documentElement.dataset.os = /Windows/.test(userAgent)
+  ? "windows"
+  : /Macintosh|Mac OS X/.test(userAgent)
+    ? "mac"
+    : "linux";
+
 /**
  * Renderer entry. TanStack Router owns the page layout via routeTree; the
  * QueryClient powers async fetches (agentsList, future SQLite-backed lists).

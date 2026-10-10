@@ -134,8 +134,7 @@
 
 .app-compact-control:disabled {
   pointer-events: none;
-  color: var(--fg-disabled);
-  opacity: 1;
+  opacity: 0.4;
 }
 
 /* Every sidebar row uses the same compact overflow affordance. Keeping its
@@ -252,7 +251,8 @@
   outline-offset: -2px;
 }
 .sidebar-navigation .text-ui {
-  font-weight: 500;
+  font-weight: var(--font-weight-emphasis);
+  font-synthesis: weight;
 }
 .sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
   margin-top: 1px;
@@ -272,7 +272,8 @@
 }
 .sidebar-scroll-area nav > .sidebar-section > .sidebar-section-header > button {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-emphasis);
+  font-synthesis: weight;
   color: var(--fg-muted);
 }
 .sidebar-section-header > button {
@@ -526,7 +527,8 @@
   padding-inline: 12px;
   color: var(--fg-subtle);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-emphasis);
+  font-synthesis: weight;
   line-height: 18px;
 }
 
@@ -1372,7 +1374,8 @@ html[data-theme-asset-home-corner-decoration="true"]
 .home-suggestion-select-title {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-emphasis);
+  font-synthesis: weight;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1587,10 +1590,15 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --type-code-leading: 22px;
   --type-heading-size: 15px;
   --type-heading-leading: 24px;
-  /* Codex desktop uses 430 for UI text. SF and PingFang are variable, so
-     the extra 30 units restores the stroke weight grayscale smoothing
-     thins in light mode, without jumping to medium (500). */
+  /* Codex desktop uses 430 for resting UI text. SF, PingFang, Segoe UI
+     Variable, and the bundled Noto Sans axis can draw it. Static faces
+     snap to 400 because synthesis stays off for this weight. */
   --font-ui-weight: 430;
+  /* Emphasis is 600, not 500. CSS font matching tries 400 before any
+     face heavier than 500, so a missing 500 collapses to regular on
+     Segoe UI, YaHei, and single-weight Linux fonts. 600 resolves to
+     Segoe Semibold, YaHei Bold, and the bundled Noto Sans SC 600. */
+  --font-weight-emphasis: 600;
 
   /* ---------- Theme-derived product semantics ----------
      Theme plugins provide the primitive palette. Product components consume
@@ -1853,6 +1861,50 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   );
 }
 
+/* Linux UI pair. Only the Latin variable file and two Simplified Chinese
+   weights are packaged (about 2.4MB of woff2). macOS and Windows never
+   reach these families for glyphs their own fonts already cover.
+   https://fonts.google.com/noto — Noto Sans + Noto Sans SC is the
+   Latin/Simplified Chinese pair Chrome OS and Android ship. */
+@font-face {
+  font-family: "Backchat Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource-variable/noto-sans/files/noto-sans-latin-ext-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Backchat Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2")
+    format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Backchat Sans SC";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Backchat Sans SC";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-600-normal.woff2")
+    format("woff2");
+}
+
 @theme {
   --text-caption: var(--type-caption-size);
   --text-caption--line-height: var(--type-caption-leading);
@@ -1862,33 +1914,32 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --text-body--line-height: var(--type-body-leading);
   --text-section: var(--type-heading-size);
   --text-section--line-height: var(--type-heading-leading);
-  /* One sans for chrome and chat, one mono for code. Literal families
-     exist only in these two custom properties. `--font-chat` and
-     `--font-display` are aliases: the old slogan serif was never bundled
-     and split mixed Chinese/English lines onto a third set of metrics.
-     UI and prose now share the system pair.
-     Latin families come first so they win ASCII; Han falls through.
-     `-apple-system` is SF and already cascades to PingFang on macOS.
-     PingFang is still named so a host that does not perform that cascade
-     (and Windows / Linux) pairs explicitly: Segoe UI Variable with
-     Microsoft YaHei UI, then Noto Sans CJK. YaHei UI, not YaHei, is the
-     face Microsoft aligns to Segoe's em box. Do not add ascent-override
-     hacks on top of those foundry pairs — a wrong override clips
-     punctuation. Mixed-script gaps and fullwidth punctuation are handled
-     on `body` with text-autospace and text-spacing-trim. */
+  /* UI and chat share one sans. macOS and Windows names come first so
+     those platforms keep SF/PingFang and Segoe/YaHei. The fontconfig UI
+     generic is not in front of the bundled faces, or Linux would pick a
+     different family per distro. Backchat Sans / Sans SC
+     are the packaged Linux pair (Noto Sans Latin variable + Noto Sans SC
+     400/600) and only win after the OS faces miss. */
+  --font-weight-medium: 600;
+  --font-weight-semibold: 700;
   --font-sans:
     -apple-system-body, -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
-    "Segoe UI", ui-sans-serif, system-ui, Helvetica, Arial, "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
-    "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC",
-    "WenQuanYi Micro Hei", "Apple Color Emoji", "Segoe UI Emoji",
-    "Noto Color Emoji", sans-serif;
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Backchat Sans", "Backchat Sans SC", "Noto Sans CJK SC",
+    "Source Han Sans SC", "WenQuanYi Micro Hei", ui-sans-serif, Helvetica, Arial,
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   --font-mono:
     ui-monospace, "SFMono-Regular", "SF Mono", Menlo, "Cascadia Mono", Consolas,
-    "Liberation Mono", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "PingFang SC",
-    "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+    "Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Sarasa Mono SC",
+    "Noto Sans Mono CJK SC", "WenQuanYi Micro Hei Mono", "Backchat Sans SC",
+    monospace;
   --font-chat: var(--font-sans);
-  --font-display: var(--font-sans);
+  /* Slogan face. Distinct from the UI sans so homeSlogan.fontFamily
+     "display" still changes the hero. System serif only; not packaged. */
+  --font-display:
+    "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC",
+    "STSong", "Source Han Serif SC", "Noto Serif CJK SC", "Noto Serif SC",
+    "Noto Serif", serif;
 
   --color-brand: var(--brand);
   --color-brand-hover: var(--brand-hover);
@@ -2004,6 +2055,28 @@ html.dark body {
   -moz-osx-font-smoothing: auto;
 }
 
+/* Linux must not inherit Chromium's fontconfig UI face. The packaged
+   Noto pair is the whole sans stack. The mono stack prefers one CJK
+   mono so box-drawing and Han share a width. */
+html[data-os="linux"] {
+  --font-sans:
+    "Backchat Sans", "Backchat Sans SC", "Noto Sans CJK SC",
+    "Source Han Sans SC", "WenQuanYi Micro Hei", "Noto Color Emoji", sans-serif;
+  --font-mono:
+    "WenQuanYi Micro Hei Mono", "Noto Sans Mono CJK SC", "Sarasa Mono SC",
+    "DejaVu Sans Mono", "Liberation Mono", ui-monospace, monospace;
+}
+
+html[data-os="windows"] {
+  --font-sans:
+    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Backchat Sans", "Backchat Sans SC", "Segoe UI Emoji", "Noto Color Emoji",
+    sans-serif;
+  --font-mono:
+    "Cascadia Mono", Consolas, "Sarasa Mono SC", "Noto Sans Mono CJK SC",
+    "Microsoft YaHei UI", ui-monospace, monospace;
+}
+
 /* Chat prose uses the same family as the chrome. The alias exists so a
    transcript cannot pick up a nested `font-mono` or a future display face. */
 [data-session-turn-prompt],
@@ -2011,6 +2084,25 @@ html.dark body {
   font-family: var(--font-chat);
   font-kerning: normal;
   line-height: var(--type-body-leading);
+}
+
+/* Resting text stays on a real 400/430 face. Emphasis opts back into
+   synthesis so a family that only has regular still paints a heavier
+   stroke instead of matching 600 down to 400. */
+:is(
+  .font-medium,
+  .font-semibold,
+  .font-bold,
+  b,
+  strong,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6
+) {
+  font-synthesis: weight;
 }
 
 /* Code shows the characters the user wrote. Autospace would open a gap
@@ -2693,42 +2785,28 @@ textarea:disabled::selection {
   line-height: var(--type-body-leading);
 }
 
-/* Placeholders are the weaker text role. A browser or utility opacity
-   would drop them under AA, so the color is the token and fully opaque. */
+/* Placeholders are the weaker text role. A browser default opacity
+   would wash them out, so the color is the token and fully opaque. */
 ::placeholder {
   color: var(--fg-subtle);
   opacity: 1;
 }
 
-/* Disabled text is a color role, not a faded copy of the enabled color.
-   Opacity multiplies every role under the AA floor. Graphical controls
-   (switch, checkbox) and intentional hide states opt out. Unlayered so
-   this beats `disabled:opacity-*` utilities.
-   Filled buttons also drop their inverse fill. A near-black primary with
-   gray text would fail AA; a transparent control with `--fg-disabled`
-   stays on the surface the role was measured against. */
-:is(input, textarea, select):is(:disabled, [aria-disabled="true"]):not(
-  [data-disabled-opacity]
-) {
-  color: var(--fg-disabled);
-  -webkit-text-fill-color: var(--fg-disabled);
-  opacity: 1;
-}
-
+/* Disabled controls stay filled and fade as a whole. A near-tertiary
+   text color does not read as disabled, and clearing the fill makes a
+   primary button look enabled. Inactive UI is exempt from WCAG 1.4.3. */
 :is(
   button,
+  input,
+  textarea,
+  select,
   [role="menuitem"],
-  [role="menuitemcheckbox"],
-  [role="menuitemradio"],
   [role="option"],
   [role="tab"]
 ):is(:disabled, [aria-disabled="true"], [data-disabled]):not(
   [role="switch"],
   [role="checkbox"],
-  [data-disabled-opacity]
+  [data-disabled-hidden]
 ) {
-  color: var(--fg-disabled);
-  -webkit-text-fill-color: var(--fg-disabled);
-  background-color: transparent;
-  opacity: 1;
+  opacity: 0.4;
 }

@@ -1183,7 +1183,7 @@ export function Composer({
             className={cn(
               "inline-flex size-[var(--control-height-compact)] shrink-0 items-center justify-center rounded-md",
               "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-              "disabled:text-fg-disabled disabled:hover:bg-transparent disabled:hover:text-fg-disabled",
+              "disabled:opacity-40 disabled:hover:bg-transparent",
               "transition-colors",
             )}
           >

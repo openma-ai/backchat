@@ -77,29 +77,40 @@ function themeCases(): Array<{ id: string; tokens: Record<string, string> }> {
 describe("renderer typography contract", () => {
   const css = readFileSync(stylesPath, "utf8");
 
-  it("defines each family once and aliases chat and display to the UI sans", () => {
-    expect(css.match(/--font-sans:/g)).toEqual(["--font-sans:"]);
-    expect(css.match(/--font-mono:/g)).toEqual(["--font-mono:"]);
+  it("defines the UI stack once and keeps a separate slogan serif", () => {
+    expect(css.match(/--font-sans:/g)).toEqual(["--font-sans:", "--font-sans:", "--font-sans:"]);
+    expect(css.match(/--font-mono:/g)?.length).toBeGreaterThanOrEqual(2);
     expect(css).toContain("--font-chat: var(--font-sans);");
-    expect(css).toContain("--font-display: var(--font-sans);");
+    expect(css).not.toContain("--font-display: var(--font-sans);");
+    expect(css).toContain('"Songti SC"');
+    expect(css).toContain('"Noto Serif SC"');
     expect(css).toContain("-apple-system-body, -apple-system, BlinkMacSystemFont");
     expect(css).toContain('"Segoe UI Variable"');
     expect(css).toContain('"PingFang SC"');
     expect(css).toContain('"Microsoft YaHei UI"');
-    expect(css).toContain('"Noto Sans CJK SC"');
+    expect(css).toContain('"Backchat Sans"');
+    expect(css).toContain('"Backchat Sans SC"');
+    expect(css).toContain('"WenQuanYi Micro Hei Mono"');
+    expect(css).toContain("noto-sans-latin-wght-normal.woff2");
+    expect(css).toContain("noto-sans-sc-chinese-simplified-400-normal.woff2");
+    expect(css).toContain("noto-sans-sc-chinese-simplified-600-normal.woff2");
+    expect(css).toContain('html[data-os="linux"]');
+    expect(css).toContain('html[data-os="windows"]');
     expect(css).toContain("ui-monospace");
-    expect(css).toContain('"Cascadia Mono"');
-    expect(css).toContain('"Sarasa Mono SC"');
+    expect(css).not.toContain("system-ui");
     expect(css).not.toContain("Geist");
     expect(css).not.toContain("JetBrains");
     expect(css).not.toContain("Source Serif");
-    expect(css).not.toContain("@fontsource");
   });
 
   it("sets the Codex UI weight and the mixed-script rhythm in one place", () => {
     expect(css).toContain("--font-ui-weight: 430;");
+    expect(css).toContain("--font-weight-emphasis: 600;");
+    expect(css).toContain("--font-weight-medium: 600;");
     expect(css).toContain("font-weight: var(--font-ui-weight);");
     expect(css).toContain("font-synthesis: none;");
+    expect(css).toContain("font-synthesis: weight;");
+    expect(css).not.toContain("font-weight: 500;");
     expect(css).toContain("letter-spacing: 0;");
     expect(css).toContain("text-autospace: normal;");
     expect(css).toContain("text-spacing-trim: space-all;");
@@ -108,7 +119,7 @@ describe("renderer typography contract", () => {
     expect(css).toContain("--type-code-leading: 22px;");
     expect(css).toContain('html[lang|="zh"]');
     expect(css).toContain("text-autospace: no-autospace;");
-    expect(css).toContain("color: var(--fg-disabled);");
+    expect(css).toContain("opacity: 0.4;");
     expect(css).toContain("color: var(--fg-subtle);");
   });
 
@@ -117,13 +128,14 @@ describe("renderer typography contract", () => {
     for (const path of walk(rendererRoot).filter(isSource)) {
       const source = readFileSync(path, "utf8");
       const rel = relative(rendererRoot, path);
-      if (/Geist|JetBrains|Source Serif|@fontsource/.test(source)) {
+      if (/Geist|JetBrains|Source Serif|@fontsource-variable\/geist|@fontsource-variable\/jetbrains/.test(source)) {
         violations.push(`${rel} names a removed font`);
       }
       const lines = source.split("\n");
       lines.forEach((line, index) => {
         const where = `${rel}:${index + 1}`;
-        if (/font-family\s*:/.test(line) && !/var\(--font-/.test(line)) {
+        const packagedFace = rel === "styles/index.css" && /font-family:\s*"Backchat Sans/.test(line);
+        if (/font-family\s*:/.test(line) && !/var\(--font-/.test(line) && !packagedFace) {
           violations.push(`${where} sets font-family outside the token`);
         }
         const family = /fontFamily\s*:\s*(['"`])([\s\S]*?)\1/.exec(line);

@@ -73,6 +73,14 @@ export function TerminalTab({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    // Evidence runs set this flag so the panel paints box-drawing and a
+    // CJK cell with the configured mono face even when the host shell
+    // has not emitted a prompt yet.
+    if (document.documentElement.dataset.terminalDemo === "1") {
+      term.writeln("┌──┬──┐");
+      term.writeln("│中│AB│");
+      term.writeln("└──┴──┘");
+    }
 
     // WebGL renderer — the perf headline. Falls back gracefully on
     // context-create failure (xterm.js logs to console).

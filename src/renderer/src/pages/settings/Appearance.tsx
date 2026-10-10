@@ -319,7 +319,7 @@ function Section({
       <div className="mb-2">
         <h2 className="text-xs font-medium text-fg">{label}</h2>
         {description && (
-          <p className="mt-1 max-w-[68ch] text-[11px] leading-4 text-fg-muted">
+          <p className="mt-1 max-w-full text-[11px] leading-4 text-fg-muted">
             {description}
           </p>
         )}
