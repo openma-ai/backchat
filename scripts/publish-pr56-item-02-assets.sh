@@ -20,7 +20,6 @@ git remote add origin "https://github.com/${REPO}.git"
 
 if git fetch origin pr-assets:pr-assets 2>/dev/null; then
   git checkout pr-assets
-  git rm -rf . 2>/dev/null || true
 else
   git checkout --orphan pr-assets
 fi
