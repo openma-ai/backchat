@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { Locator } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { seedWorkspacePickerFixture } from "./grouped-command-menu-fit.shared";
 import {
@@ -10,6 +11,46 @@ import {
   openRuntimeLocationPicker,
 } from "./helpers";
 import { startOpenmaCatalogMock } from "./openma-catalog-mock-server";
+
+async function measurePickerRow(row: Locator, nextRow: Locator) {
+  const geometry = await row.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const icon = element.querySelector(
+      '[data-grouped-command-grid="icon"] svg, [data-grouped-command-grid="icon"] img',
+    )?.getBoundingClientRect();
+    const label = element.querySelector('[data-grouped-command-grid="label"]') ?? element;
+    const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
+    let textX: number | null = null;
+    let node = walker.nextNode();
+    while (node) {
+      if (node.textContent?.trim()) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const textRect = range.getBoundingClientRect();
+        if (textRect.width > 0 && textRect.height > 0) {
+          textX = textRect.x - rect.x;
+          break;
+        }
+      }
+      node = walker.nextNode();
+    }
+    return {
+      inlinePadding: parseFloat(style.paddingInlineStart),
+      blockPadding: parseFloat(style.paddingBlockStart),
+      height: rect.height,
+      iconX: icon ? icon.x - rect.x : null,
+      iconWidth: icon?.width ?? null,
+      textX,
+    };
+  });
+  const rowBox = await row.boundingBox();
+  const nextBox = await nextRow.boundingBox();
+  return {
+    ...geometry,
+    pitch: rowBox && nextBox ? nextBox.y - rowBox.y : null,
+  };
+}
 
 test("harness probe placeholder uses shimmer styles", async ({ page }) => {
   await enableAgent(page, "codex-acp");
@@ -511,6 +552,26 @@ test("project picker bounds long results and fits a short query", async ({
   expect(initial.searchVisible).toBe(true);
   expect(initial.listScrollHeight).toBeGreaterThan(initial.listClientHeight);
   expect(["auto", "scroll"]).toContain(initial.listOverflowY);
+  const projectTriggerBox = await page
+    .locator('[data-composer-footer-control="project"]')
+    .boundingBox();
+  const projectPopoverBox = await popover.boundingBox();
+  const projectGap = projectTriggerBox!.y - (projectPopoverBox!.y + projectPopoverBox!.height);
+  expect(Math.abs(projectGap)).toBeLessThanOrEqual(0.5);
+  const projectRows = list
+    .locator('[cmdk-item]:not([aria-disabled="true"])')
+    .filter({ hasText: /Picker Overflow/ });
+  const projectRow = await measurePickerRow(projectRows.nth(0), projectRows.nth(1));
+  console.log(`[project picker row geometry] ${JSON.stringify(projectRow)}`);
+  expect(projectRow).toMatchObject({
+    inlinePadding: 8,
+    blockPadding: 6,
+    height: 28,
+    pitch: 28,
+    iconX: 8,
+    iconWidth: 16,
+    textX: 32,
+  });
 
   await search.fill("Unique Target Signal");
   const shortResults = await list
@@ -579,6 +640,27 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
   expect(initial.searchVisible).toBe(true);
   expect(initial.listScrollHeight).toBeGreaterThan(initial.listClientHeight);
   expect(["auto", "scroll"]).toContain(initial.listOverflowY);
+  const workspaceTriggerBox = await page
+    .locator('[data-composer-footer-control="workspace"]')
+    .boundingBox();
+  const workspacePopoverBox = await popover.boundingBox();
+  const workspaceGap = workspaceTriggerBox!.y -
+    (workspacePopoverBox!.y + workspacePopoverBox!.height);
+  expect(Math.abs(workspaceGap)).toBeLessThanOrEqual(0.5);
+  const workspaceRows = list
+    .locator('[cmdk-item]:not([aria-disabled="true"])')
+    .filter({ hasText: /Workspace Overflow/ });
+  const workspaceRow = await measurePickerRow(workspaceRows.nth(0), workspaceRows.nth(1));
+  console.log(`[workspace picker row geometry] ${JSON.stringify(workspaceRow)}`);
+  expect(workspaceRow).toMatchObject({
+    inlinePadding: 8,
+    blockPadding: 6,
+    height: 28,
+    pitch: 28,
+    iconX: 8,
+    iconWidth: 16,
+    textX: 32,
+  });
 
   await search.fill("Unique Workspace Signal");
   const shortResults = await list

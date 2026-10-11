@@ -2783,6 +2783,7 @@ body,
 .grouped-command-menu {
   --grouped-command-padding-inline: var(--menu-item-padding-inline);
   --grouped-command-icon-track: var(--sidebar-grid-icon-track);
+  --grouped-command-icon-size: 14px;
   --grouped-command-column-gap: var(--menu-item-gap);
   --grouped-command-trailing-track: var(--sidebar-grid-icon-track);
   --grouped-command-list-height: 288px;
@@ -2903,10 +2904,10 @@ body,
   [data-slot="command-item"]
   [data-grouped-command-grid="icon"]
   svg {
-  width: 14px !important;
-  height: 14px !important;
-  max-width: 14px !important;
-  max-height: 14px !important;
+  width: var(--grouped-command-icon-size) !important;
+  height: var(--grouped-command-icon-size) !important;
+  max-width: var(--grouped-command-icon-size) !important;
+  max-height: var(--grouped-command-icon-size) !important;
   flex-shrink: 0;
 }
 
@@ -2922,10 +2923,10 @@ body,
 }
 
 .grouped-command-menu [data-grouped-command-grid="icon"] > * {
-  width: 14px !important;
-  height: 14px !important;
-  max-width: 14px !important;
-  max-height: 14px !important;
+  width: var(--grouped-command-icon-size) !important;
+  height: var(--grouped-command-icon-size) !important;
+  max-width: var(--grouped-command-icon-size) !important;
+  max-height: var(--grouped-command-icon-size) !important;
 }
 
 .grouped-command-menu [data-grouped-command-grid="label"] {
@@ -3005,7 +3006,14 @@ body,
 /* Project / workspace pickers: same icon | label mesh as other grouped menus (search uses grid, not flex). */
 [data-composer-select-menu-mode="project-picker"],
 [data-composer-select-menu-mode="workspace-picker"] {
-  --grouped-command-padding-inline: 8px;
+  --menu-item-padding-inline: 8px;
+  --menu-item-padding-block: 6px;
+  --menu-item-gap: 8px;
+}
+
+[data-composer-select-menu-mode="project-picker"] .grouped-command-menu,
+[data-composer-select-menu-mode="workspace-picker"] .grouped-command-menu {
+  --grouped-command-icon-size: 16px;
 }
 
 [data-composer-select-menu-mode="project-picker"]
