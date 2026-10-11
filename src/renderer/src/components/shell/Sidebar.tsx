@@ -933,7 +933,7 @@ export function Sidebar() {
                                     <SessionRow
                                       row={s}
                                       {...sectionRowProps}
-                                      depth={1}
+                                      depth={2}
                                       agentIconUrl={agentIconUrls.get(s.agent_id)}
                                       active={s.id === activeId && location.pathname.startsWith("/chat/")}
                                       hasSchedule={scheduledSessionIds.has(s.id)}
@@ -987,7 +987,7 @@ export function Sidebar() {
                                               <SessionRow
                                                 row={s}
                                                 {...sectionRowProps}
-                                                depth={2}
+                                                depth={3}
                                                 agentIconUrl={agentIconUrls.get(s.agent_id)}
                                                 active={s.id === activeId && location.pathname.startsWith("/chat/")}
                                                 hasSchedule={scheduledSessionIds.has(s.id)}

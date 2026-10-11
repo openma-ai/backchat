@@ -158,9 +158,6 @@
   /* Button ghost utilities set bg-transparent / aria-expanded:bg-muted; open
      must win on the first pointer click before focus moves into the menu. */
   background: var(--control-bg-open) !important;
-  outline: 2px solid var(--fg);
-  outline-offset: 2px;
-  box-shadow: none;
 }
 
 /* Host chip stays visually quiet on hover and while its menu is open. */
@@ -377,6 +374,12 @@
 /* Header toggles fill the 28px row so collapsed sections keep the 1px step. */
 .sidebar-section-header.sidebar-grid-row {
   align-items: stretch;
+}
+/* Section headings anchor their label at the row inset (main's x24), not the
+   icon-track label column. */
+.sidebar-section-header .sidebar-grid-cell-label {
+  grid-column: 1;
+  padding-inline-start: var(--sidebar-grid-icon-track);
 }
 .sidebar-section-header .sidebar-row-action:is(:hover, :focus-visible, [data-state="open"], [aria-expanded="true"]) {
   background: transparent;
@@ -2590,6 +2593,11 @@ body,
 }
 .sidebar-grid-row[data-sidebar-trailing-track="host"] {
   --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track-host);
+}
+/* Rows with no trailing content release the reserved action column so labels
+   keep main's full clip width. */
+.sidebar-grid-row:not(:has(> [data-sidebar-grid="trailing"] > *)) {
+  --sidebar-grid-trailing-effective: 0px;
 }
 .sidebar-grid-row[data-sidebar-trailing-track="double"] [data-sidebar-grid="trailing"] {
   display: grid;

@@ -417,12 +417,14 @@ export function configModeOptionPresentation(
 ): ConfigModeOptionPresentation {
   return {
     label: option.name,
-    ...(option.description ? { hint: option.description } : {}),
+    ...(option.description && !isGenericConfigOptionLabel(option.description)
+      ? { hint: option.description }
+      : {}),
     tone: option.value === "agent-full-access" ? "warning" : "neutral",
   };
 }
 
-const GENERIC_CONFIG_OPTION_LABELS = new Set(["model", "mode"]);
+const GENERIC_CONFIG_OPTION_LABELS = new Set(["model", "mode", "lane"]);
 
 function isGenericConfigOptionLabel(label: string | null | undefined): boolean {
   if (!label?.trim()) return true;
@@ -435,7 +437,8 @@ export function configSelectItemHint(
   item: FlattenedConfigSelectOption,
 ): string | undefined {
   const itemDescription = item.description?.trim();
-  if (itemDescription) return itemDescription;
+  if (itemDescription && !isGenericConfigOptionLabel(itemDescription))
+    return itemDescription;
   if (option.category === "model") {
     const provider = item.groupName?.trim();
     return provider || undefined;

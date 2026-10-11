@@ -30,7 +30,6 @@ import {
   GroupedCommandMenuLabelSlot,
 } from "@/components/ui/grouped-command-menu-slots";
 import { composerFooterTriggerClass } from "@/components/ui/composer-footer-trigger";
-import { useComposerPickerUpwardSideOffset } from "@/components/ui/use-composer-picker-upward-side-offset";
 import {
   SidebarGridCell,
   SidebarGridRow,
@@ -72,7 +71,6 @@ export function RuntimeLocationControl({
   const choices = scope && catalog ? openmaTargets(scope, catalog) : [];
   const Icon = target?.kind === "cloud" ? CloudIcon : target ? ServerIcon : MonitorIcon;
   const [menuOpen, setMenuOpen] = useState(false);
-  const upwardPickerSideOffset = useComposerPickerUpwardSideOffset();
 
   const applySelection = (next: OpenmaExecutionTarget | undefined) => {
     select(next);
@@ -324,7 +322,7 @@ export function RuntimeLocationControl({
       <DropdownMenuContent
         side={variant === "sidebar" ? "bottom" : "top"}
         align="start"
-        sideOffset={variant === "sidebar" ? 4 : upwardPickerSideOffset}
+        sideOffset={0}
         className={cn(
           "w-[var(--composer-menu-width)] max-h-[60vh] overflow-y-auto ring-0",
         )}

@@ -246,7 +246,7 @@ export function GroupedCommandMenu({
       className={cn(
         item.plain ? "grouped-command-plain-item text-sm" : "text-xs",
         menuMode === "host-picker" &&
-          "host-picker-command-item !items-start !py-1 !px-2",
+          "host-picker-command-item !items-start !py-[3px] !px-[5px]",
       )}
     >
       {item.children}
