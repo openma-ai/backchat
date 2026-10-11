@@ -76,6 +76,7 @@ export default defineConfig({
       "src/renderer/src/lib/surface-inset.test.ts",
       "src/renderer/src/lib/settings-surface.test.tsx",
       "src/renderer/src/components/shell/Sidebar.test.ts",
+      "src/renderer/src/components/shell/Sidebar.new-chat-grid.test.tsx",
       "src/renderer/src/lib/searchable-select-filter.test.ts",
       "src/renderer/src/lib/composer-select-menu-layout.test.ts",
       "src/renderer/src/components/composer/searchable-select-menu-adapter.test.tsx",

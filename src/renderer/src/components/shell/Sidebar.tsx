@@ -674,10 +674,14 @@ export function Sidebar() {
             aria-current={newChatActive ? "page" : undefined}
             className="sidebar-new-chat-primary app-no-drag text-ui text-fg"
           >
-            <span className="sidebar-row-icon">
-              <SquarePenIcon className="size-3.5" />
-            </span>
-            <span className={cn("min-w-0 truncate", labelCls)}>{t("sidebar.newChat")}</span>
+            <SidebarGridCell slot="icon">
+              <span className="sidebar-row-icon">
+                <SquarePenIcon className="size-3.5" />
+              </span>
+            </SidebarGridCell>
+            <SidebarGridCell slot="label" className="min-w-0">
+              <span className={cn("min-w-0 truncate", labelCls)}>{t("sidebar.newChat")}</span>
+            </SidebarGridCell>
           </button>
           <SidebarGridCell slot="trailing">
             <button

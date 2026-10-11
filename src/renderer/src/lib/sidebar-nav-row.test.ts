@@ -99,9 +99,24 @@ describe("sidebar nav row", () => {
       /\.sidebar-navigation\s+\.sidebar-grid-row\.app-selected-surface:is\(:hover/,
     );
     expect(styles).toMatch(/\.sidebar-new-chat-primary/);
+    expect(styles).toMatch(
+      /\.sidebar-grid-row\[data-sidebar-row="new-chat"\] > \.sidebar-new-chat-primary \{[^}]*grid-template-columns:\s*subgrid;/,
+    );
     expect(styles).not.toContain(
       '.sidebar-grid-row[data-sidebar-row="new-chat"]::before',
     );
+    const newChat = sidebar.slice(
+      sidebar.indexOf('data-sidebar-row="new-chat"'),
+      sidebar.indexOf("sidebar-scroll-content"),
+    );
+    const primaryStart = newChat.indexOf("sidebar-new-chat-primary");
+    const primaryEnd = newChat.indexOf("</button>", primaryStart);
+    const trailing = newChat.indexOf('slot="trailing"');
+    expect(primaryStart).toBeGreaterThan(-1);
+    expect(newChat.indexOf('slot="icon"')).toBeGreaterThan(primaryStart);
+    expect(newChat.indexOf('slot="label"')).toBeGreaterThan(newChat.indexOf('slot="icon"'));
+    expect(primaryEnd).toBeGreaterThan(newChat.indexOf('slot="label"'));
+    expect(trailing).toBeGreaterThan(primaryEnd);
     expect(styles).toMatch(
       /\.sidebar-navigation \.sidebar-grid-row\.app-selected-surface \{[^}]*--surface-selected/,
     );
