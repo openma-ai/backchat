@@ -54,6 +54,22 @@ describe("chat module boundaries", () => {
     expect(composer).toContain('t("chat.signInToChat")');
     expect(composer).toContain("composerActionDisabled");
     expect(composer).toContain('agentsList({ refresh: true })');
+    expect(composer).toContain("authChecking={authChecking}");
+    expect(composer).toContain(
+      "supportsLogout={sessionSupportsLogout || currentAgent?.auth?.supportsLogout === true}",
+    );
+    expect(composer).toContain("onOpenAuth={onRequestAuth}");
+    const controls = readFileSync(
+      resolve(__dirname, "ComposerSessionControls.tsx"),
+      "utf8",
+    );
+    expect(controls).toContain("ComposerSearchableSelectMenu");
+    expect(controls).toContain('t("auth.switchAccount")');
+    expect(controls).toContain('t("chat.signIn")');
+    expect(composerAuth).toContain("useComposerHarnessLiveAuth");
+    expect(composerAuth).toContain("canOfferAuthLogout");
+    expect(composerAuth).toContain("if (!open || !settings || !agent) return null");
+    expect(composerAuth).not.toContain("composerAuthNeeded");
     expect(composerAuth).toContain("open");
     expect(composerAuth).toContain("AgentAuthSetupPanel");
     expect(composerAuth).toContain("AGENTS_QUERY_KEY");

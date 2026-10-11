@@ -114,6 +114,7 @@ import {
   extractCanonicalContentSources,
   extractHtmlPathsFromExecute,
 } from "./session-artifacts";
+import { withoutAuthSlashCommands } from "./auth-method-menu";
 import type {
   AcpAvailableCommand,
   AcpSessionUsage,
@@ -662,7 +663,7 @@ export class SessionStore {
       this.#mutateSession(event.session_id, (session) => ({
         ...session,
         availableCommands: Array.isArray(data.commands)
-          ? data.commands as AcpAvailableCommand[]
+          ? withoutAuthSlashCommands(data.commands as AcpAvailableCommand[])
           : [],
       }));
       return true;
@@ -3993,7 +3994,7 @@ export class SessionStore {
         if (parsed.kind === "commands") {
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
-            availableCommands: parsed.commands,
+            availableCommands: withoutAuthSlashCommands(parsed.commands),
           }));
           break;
         }
@@ -4599,10 +4600,11 @@ export class SessionStore {
           // Auth is recoverable from this chat. Other session-wide errors
           // (unknown agent, missing binary, handshake refused) still lock.
           status: authRequired
-            ? "ready"
+            ? (s.status === "draft" ? "draft" : "ready")
             : turnId ? s.status : "errored",
           lastError: authRequired ? undefined : message,
           authRequired: authRequired ? true : s.authRequired,
+          supportsLogout: ev.auth?.supportsLogout ?? s.supportsLogout,
           auth: ev.auth ?? (authRequired
             ? { status: "needs-auth", message }
             : s.auth),

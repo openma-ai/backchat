@@ -1,3 +1,4 @@
+import { isAuthSlashCommand, withoutAuthSlashCommands } from "./auth-method-menu";
 import {
   findSelectConfigOption,
   type AcpSessionConfigOption,
@@ -18,6 +19,8 @@ export function normalizeAgentAvailableCommands(
     if (!candidate || typeof candidate !== "object") return [];
     const command = candidate as Record<string, unknown>;
     if (typeof command.name !== "string" || !command.name.trim()) return [];
+    // claude-agent-acp omits /login and /logout. Logout is the ACP method.
+    if (isAuthSlashCommand(command.name)) return [];
     const input = command.input && typeof command.input === "object"
       ? command.input as Record<string, unknown>
       : null;
@@ -133,7 +136,7 @@ export function withSessionStateCommands(
     }
     next = [host, ...next];
   }
-  return next;
+  return withoutAuthSlashCommands(next);
 }
 
 export interface SlashCommandConfigAction {

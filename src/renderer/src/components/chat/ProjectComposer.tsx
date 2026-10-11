@@ -56,6 +56,9 @@ export function ProjectComposer({
   const session = useSessionStore(useMemo(() =>
     (store: typeof sessionStore) => sessionId ? store.get(sessionId) : undefined,
   [sessionId]));
+  useEffect(() => {
+    if (session?.authRequired || authRequired) setAuthOpen(true);
+  }, [authRequired, session?.authRequired, sessionId]);
   const [text, setText] = useState("");
   const sending = useRef(false);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -147,6 +150,7 @@ export function ProjectComposer({
         sessionAgentId={agentId}
         authRequired={session?.authRequired || authRequired}
         sessionAuth={session?.auth}
+        sessionSupportsLogout={!!session?.supportsLogout}
         onClose={() => setAuthOpen(false)}
         onAuthenticated={() => reconnectAuthenticatedSession(sessionId)}
       /> : null}
