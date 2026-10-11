@@ -2548,6 +2548,114 @@ describe("SessionManager prompt queue", () => {
     }));
   });
 
+  it("logs out through the ACP logout method when the live session advertised it", async () => {
+    const fake = createControllableAcpSession({ supportsLogout: true });
+    let loggedOut = 0;
+    fake.session.logout = async () => {
+      loggedOut += 1;
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const observations: Array<{ agentId: string; status: string }> = [];
+    const manager = new SessionManager({
+      send: (message) => events.push(message),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "claude-acp" }),
+      resolveAgentOverride: () => undefined,
+      observeAuth: (agentId, observation) => {
+        observations.push({ agentId, status: observation.status });
+      },
+    });
+    await manager.start({
+      session_id: "sess-logout",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+
+    await expect(manager.logout("missing-session")).resolves.toBe(false);
+    await expect(manager.logout("sess-logout")).resolves.toBe(true);
+
+    expect(loggedOut).toBe(1);
+    expect(observations).toContainEqual({ agentId: "claude-acp", status: "needs-auth" });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.error",
+      session_id: "sess-logout",
+      code: "auth_required",
+      auth: expect.objectContaining({
+        status: "needs-auth",
+        supportsLogout: true,
+        message: "Logged out. Sign in again to continue.",
+      }),
+    }));
+  });
+
+  it("does not call ACP logout when the agent did not advertise it", async () => {
+    const fake = createControllableAcpSession({ supportsLogout: false });
+    let loggedOut = 0;
+    fake.session.logout = async () => {
+      loggedOut += 1;
+    };
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "pi-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({
+      session_id: "sess-no-logout",
+      agent_id: "pi-acp",
+      cwd: "/repo",
+    });
+
+    await expect(manager.logout("sess-no-logout")).rejects.toThrow(/does not support ACP logout/);
+    expect(loggedOut).toBe(0);
+  });
+
+  it("keeps a completed ACP logout when recording it in the setup cache fails", async () => {
+    const fake = createControllableAcpSession({ supportsLogout: true });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "claude-acp" }),
+      resolveAgentOverride: () => undefined,
+      observeAuth: () => {
+        throw new Error("cache unavailable");
+      },
+    });
+    await manager.start({
+      session_id: "sess-logout-cache",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+
+    await expect(manager.logout("sess-logout-cache")).resolves.toBe(true);
+  });
+
+  it("completes a second logout when no setup observer is installed", async () => {
+    const fake = createControllableAcpSession({ supportsLogout: true });
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: () => undefined,
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({ agentId: "claude-acp" }),
+      resolveAgentOverride: () => undefined,
+    });
+    await manager.start({
+      session_id: "sess-logout-again",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+
+    await expect(manager.logout("sess-logout-again")).resolves.toBe(true);
+    await expect(manager.logout("sess-logout-again")).resolves.toBe(true);
+  });
+
   it("announces the ACP mode state returned during session setup", async () => {
     const modes = {
       currentModeId: "review",

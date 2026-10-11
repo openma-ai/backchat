@@ -2094,6 +2094,42 @@ export class SessionManager {
     this.#onSessionPendingWorkCancelled?.(session_id);
   }
 
+  /** ACP `logout` on the live connection. Returns false when that session is not running. */
+  async logout(sessionId: string): Promise<boolean> {
+    const sess = this.#sessions.get(sessionId);
+    if (!sess) return false;
+    if (!sess.acp.supportsLogout) {
+      throw new Error("This agent does not support ACP logout.");
+    }
+    await sess.acp.logout();
+    const auth: SessionAuthObservation = {
+      ...sess.auth,
+      status: "needs-auth",
+      message: "Logged out. Sign in again to continue.",
+      supportsLogout: true,
+    };
+    sess.auth = auth;
+    this.#send({
+      type: "session.error",
+      session_id: sessionId,
+      message: auth.message,
+      code: "auth_required",
+      agent_id: sess.agentId,
+      auth,
+    });
+    if (this.#observeAuth) {
+      try {
+        await this.#observeAuth(sess.agentId, {
+          status: "needs-auth",
+          message: auth.message,
+        });
+      } catch {
+        // Setup-cache write-back must not fail a completed ACP logout.
+      }
+    }
+    return true;
+  }
+
   async close(session_id: string): Promise<void> {
     const sess = this.#sessions.get(session_id);
     if (!sess) throw new Error("no such active session");

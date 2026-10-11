@@ -114,6 +114,7 @@ export function Composer({
   pickedAgentId,
   sessionAuthRequired = false,
   sessionAuth,
+  sessionSupportsLogout = false,
   suggestionDraft,
   goal,
   pendingAsk,
@@ -145,6 +146,7 @@ export function Composer({
   pickedAgentId: string | null;
   sessionAuthRequired?: boolean;
   sessionAuth?: SessionRow["auth"];
+  sessionSupportsLogout?: boolean;
   suggestionDraft?: ComposerSuggestionDraft | null;
   goal?: SessionGoal;
   pendingAsk?: BrokerAsk;
@@ -1183,7 +1185,7 @@ export function Composer({
             className={cn(
               "inline-flex size-[var(--control-height-compact)] shrink-0 items-center justify-center rounded-md",
               "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-              "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+              "disabled:text-fg-disabled disabled:hover:bg-transparent",
               "transition-colors",
             )}
           >
@@ -1276,6 +1278,8 @@ export function Composer({
               disabled={!!running}
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}
+              supportsLogout={sessionSupportsLogout || currentAgent?.auth?.supportsLogout === true}
+              onOpenAuth={onRequestAuth}
               agents={enabledAgents}
               currentAgentId={currentAgentId}
               currentAgentLabel={currentEnabledAgent?.label ?? currentAgent?.label}

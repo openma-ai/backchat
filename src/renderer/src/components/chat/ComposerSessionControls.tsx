@@ -75,7 +75,7 @@ export type ComposerRuntimeKind = "local" | "cloud" | "remote";
 const COMPOSER_ICON_BUTTON_CLASS = cn(
   "inline-flex size-[var(--control-height-compact)] shrink-0 items-center justify-center rounded-md",
   "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-  "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+  "disabled:text-fg-disabled disabled:hover:bg-transparent",
   "transition-colors",
 );
 
@@ -123,7 +123,7 @@ export function ComposerAuthControls({
         className={cn(
           "inline-flex h-[var(--control-height-compact)] shrink-0 items-center gap-1 rounded-md px-1.5",
           "text-xs text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-          "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+          "disabled:text-fg-disabled disabled:hover:bg-transparent",
           "transition-colors",
         )}
       >
@@ -160,6 +160,8 @@ export function SessionRunChip({
   onSetConfigOption,
   onResetConfigOptions,
   authNeeded = false,
+  supportsLogout = false,
+  onOpenAuth,
 }: {
   disabled: boolean;
   locked: boolean;
@@ -172,6 +174,10 @@ export function SessionRunChip({
   onSetConfigOption: (configId: string, value: string | boolean) => void;
   onResetConfigOptions?: () => void;
   authNeeded?: boolean;
+  /** Live session or agent snapshot advertised ACP logout. */
+  supportsLogout?: boolean;
+  /** Opens the auth dialog from the harness picker. */
+  onOpenAuth?: () => void;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -263,6 +269,9 @@ export function SessionRunChip({
             currentAgentId={currentAgentId}
             currentAgentLabel={agentLabel}
             locked={locked}
+            authNeeded={authNeeded}
+            supportsLogout={supportsLogout}
+            onOpenAuth={onOpenAuth}
             onPickAgent={onPickAgent}
             onOpenSettings={() => void navigate({ to: "/settings/agents" })}
           />
@@ -300,6 +309,9 @@ function SessionAgentSubmenu({
   currentAgentId,
   currentAgentLabel,
   locked,
+  authNeeded,
+  supportsLogout,
+  onOpenAuth,
   onPickAgent,
   onOpenSettings,
 }: {
@@ -307,6 +319,9 @@ function SessionAgentSubmenu({
   currentAgentId: string;
   currentAgentLabel: string;
   locked: boolean;
+  authNeeded: boolean;
+  supportsLogout: boolean;
+  onOpenAuth?: () => void;
   onPickAgent: (agentId: string) => void;
   onOpenSettings: () => void;
 }) {
@@ -329,7 +344,16 @@ function SessionAgentSubmenu({
           {currentAgentLabel}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
+      <DropdownMenuSubContent sideOffset={6} collisionPadding={16} className="w-[var(--composer-menu-width)]">
+        {onOpenAuth && (authNeeded || supportsLogout) && (
+          <DropdownMenuItem
+            className="min-h-10 gap-2 px-2 py-1.5 text-xs"
+            onSelect={onOpenAuth}
+          >
+            <LogInIcon className="size-3.5 text-fg-subtle" />
+            <span>{authNeeded ? t("chat.signIn") : t("auth.switchAccount")}</span>
+          </DropdownMenuItem>
+        )}
         {agents.length > 0 ? (
           agents.map((agent) => (
             <SessionRunItem
@@ -381,7 +405,7 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={6} className="w-[var(--composer-menu-width)]">
+      <DropdownMenuSubContent sideOffset={6} collisionPadding={16} className="w-[var(--composer-menu-width)]">
         {option.type === "select" ? (
           flattenSelectOptions(option).map((item) => (
             <SessionRunItem
@@ -883,7 +907,7 @@ function SessionRunItem({
       disabled={disabled}
       onSelect={onSelect}
       className={cn(
-        "flex items-start gap-2 px-2 py-1.5 text-xs",
+        "flex items-start gap-2 px-2 py-1 text-xs leading-4",
         active && "text-fg",
       )}
     >
@@ -899,9 +923,9 @@ function SessionRunItem({
         <Icon className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" />
       ) : null}
       <span className="min-w-0 flex-1">
-        <span className="block truncate">{label}</span>
+        <span className="block truncate leading-4">{label}</span>
         {hint && (
-          <span className="block truncate text-[11px] text-fg-subtle">
+          <span className="block truncate text-[11px] leading-4 text-fg-subtle">
             {hint}
           </span>
         )}

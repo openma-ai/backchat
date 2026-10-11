@@ -55,8 +55,13 @@ export function NewChatPage() {
   useEffect(() => {
     setPickedCwd(draft?.chosenCwd ?? null);
     setPickedAgentId(null);
-    setAuthSetupOpen(false);
   }, [draft?.chosenCwd, draft?.id]);
+  useEffect(() => {
+    setAuthSetupOpen(!!draft?.authRequired);
+  }, [draft?.id]);
+  useEffect(() => {
+    if (draft?.authRequired) setAuthSetupOpen(true);
+  }, [draft?.authRequired]);
 
   const {
     draft: suggestionDraft,
@@ -143,6 +148,7 @@ export function NewChatPage() {
           pickedAgentId={pickedAgentId}
           authRequired={!!draft?.authRequired}
           sessionAuth={draft?.auth}
+          sessionSupportsLogout={!!draft?.supportsLogout}
           onClose={() => setAuthSetupOpen(false)}
         />
         <Composer
@@ -157,6 +163,7 @@ export function NewChatPage() {
           pickedAgentId={pickedAgentId}
           sessionAuthRequired={!!draft?.authRequired}
           sessionAuth={draft?.auth}
+          sessionSupportsLogout={!!draft?.supportsLogout}
           suggestionDraft={suggestionDraft}
           currentModeId={draft?.currentModeId}
           onUserInput={syncForUserInput}

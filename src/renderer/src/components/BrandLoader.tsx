@@ -1,6 +1,6 @@
 /**
  * Brand-mark loader — `[ … ]` with three pulsing dots inside the
- * JetBrains Mono brackets. Reuses the brand identity (the Backchat logo
+ * system-mono brackets. Reuses the brand identity (the Backchat logo
  * is the same `[ ]` shape) so loading states feel native to the
  * product instead of generic spinner-y.
  *
