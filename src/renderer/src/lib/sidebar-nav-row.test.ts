@@ -102,6 +102,12 @@ describe("sidebar nav row", () => {
     expect(styles).toMatch(
       /\.sidebar-grid-row\[data-sidebar-row="new-chat"\] > \.sidebar-new-chat-primary \{[^}]*grid-template-columns:\s*subgrid;/,
     );
+    expect(styles).toMatch(
+      /\.sidebar-grid-row\[data-sidebar-row="new-chat"\] \[data-sidebar-grid="trailing"\] \{[^}]*align-self:\s*stretch;/,
+    );
+    expect(styles).toMatch(
+      /\.sidebar-section-header\.sidebar-grid-row \{[^}]*align-items:\s*stretch;/,
+    );
     expect(styles).not.toContain(
       '.sidebar-grid-row[data-sidebar-row="new-chat"]::before',
     );

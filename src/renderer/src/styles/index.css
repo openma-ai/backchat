@@ -370,6 +370,11 @@
 .sidebar-section-header > button {
   color: var(--fg-muted);
 }
+
+/* Header toggles fill the 28px row so collapsed sections keep the 1px step. */
+.sidebar-section-header.sidebar-grid-row {
+  align-items: stretch;
+}
 .sidebar-section-header .sidebar-row-action:is(:hover, :focus-visible, [data-state="open"], [aria-expanded="true"]) {
   background: transparent;
 }
@@ -2738,6 +2743,17 @@ body,
 .sidebar-grid-row[data-sidebar-row="new-chat"]
   > .sidebar-new-chat-primary:is(:hover, :focus-visible) {
   background: var(--control-bg-hover);
+}
+
+/* Trailing actions stay 16px glyphs, but their boxes share the row's top
+   edge with the full-height primary control. */
+.sidebar-grid-row[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"] {
+  align-self: stretch;
+  height: 100%;
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action {
+  height: 100%;
 }
 
 .sidebar-navigation .sidebar-grid-row.app-selected-surface {
