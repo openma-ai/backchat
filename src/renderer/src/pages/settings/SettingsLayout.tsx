@@ -102,7 +102,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
   };
 
   return (
-    <div className="sidebar-navigation flex h-full min-h-0 flex-col text-ui font-medium text-fg">
+    <div className="sidebar-navigation flex h-full min-h-0 flex-col text-ui text-fg">
       <div className="app-drag-region h-[36px] shrink-0" />
       <div className="px-2 pt-[var(--row-gap-y)]">
         <button

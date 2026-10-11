@@ -58,7 +58,7 @@ describe("SuggestionTemplateEditor", () => {
     expect(source).toContain("focus({ preventScroll: true })");
     expect(source).toContain("items-baseline");
     expect(source).not.toContain("items-center gap-y-2");
-    expect(source).toContain("leading-7");
+    expect(source).toContain("text-body");
   });
 });
 
