@@ -66,7 +66,12 @@ test("tenant groups start collapsed above local and route new and continued sess
     await mkdir("artifacts/tenant-sidebar", { recursive: true });
     await page.screenshot({ path: "artifacts/tenant-sidebar/collapsed.png" });
     await beta.click();
-    await nav.getByText("Beta task", { exact: true }).click();
+    const betaTask = nav.getByText("Beta task", { exact: true });
+    const betaTaskRow = betaTask.locator(
+      "xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' sidebar-grid-row ')]",
+    );
+    await expect(betaTaskRow).toHaveAttribute("data-sidebar-depth", "1");
+    await betaTask.click();
     await page.locator("textarea").fill("Continue B"); await page.locator("textarea").press("Enter");
     await expect.poll(() => calls.filter((c) => c === "Beta:POST:/v1/sessions/shared-id/events").length).toBe(1);
     await page.evaluate(() => window.backchat.openmaSelectWorkspace("Beta"));

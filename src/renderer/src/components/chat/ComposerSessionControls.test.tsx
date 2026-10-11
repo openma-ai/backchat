@@ -191,7 +191,7 @@ describe("InlineComposerOptionControls", () => {
     );
     const trigger = html.match(/<button\b[^>]*aria-label="Standard"[^>]*>/)?.[0];
 
-    expect(trigger).toContain("bg-transparent");
+    expect(trigger).toContain("composer-footer-trigger");
     expect(trigger).not.toContain("focus-visible:bg-");
     expect(trigger).not.toMatch(/(?<![^\s"'])bg-\[var\(--control-bg-(?:hover|open)\)\]/);
   });

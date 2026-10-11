@@ -80,7 +80,7 @@ describe("ProjectChipRow", () => {
     );
   });
 
-  it("keeps the closed project trigger transparent", () => {
+  it("uses the shared composer footer trigger", () => {
     const html = renderToStaticMarkup(
       <ProjectChipRow
         isDraft
@@ -94,7 +94,6 @@ describe("ProjectChipRow", () => {
     const trigger = html.match(
       /<button[^>]*data-composer-footer-control="project"[^>]*>/,
     )?.[0];
-    expect(trigger).toContain("app-compact-control");
-    expect(trigger).toContain("bg-transparent");
+    expect(trigger).toContain("composer-footer-trigger");
   });
 });

@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 type MockOptions = {
   cloudEnvironmentCount: number;
   cloudAgentCount?: number;
+  tenantSessionCount?: number;
 };
 
 /** Minimal OpenMA HTTP mock for signed-in catalog / host picker seeds. */
@@ -25,6 +26,13 @@ export async function startOpenmaCatalogMock(
     updated_at: "2026-01-01T00:00:00Z",
     description: null,
     metadata: {},
+  }));
+  const sessions = Array.from({ length: options.tenantSessionCount ?? 0 }, (_, index) => ({
+    id: `demo-session-${index}`,
+    title: `Demo session ${index + 1}`,
+    status: "idle",
+    agent: agents[0],
+    environment_id: environments[0]?.id,
   }));
 
   const server = createServer((req, res) => {
@@ -66,6 +74,12 @@ export async function startOpenmaCatalogMock(
     }
     if (url.pathname === "/v1/agents") {
       return reply({ data: agents, has_more: false });
+    }
+    if (url.pathname === "/v1/sessions") {
+      return reply({ data: sessions, has_more: false });
+    }
+    if (/\/v1\/sessions\/[^/]+\/events$/.test(url.pathname)) {
+      return reply({ data: [], has_more: false });
     }
     if (url.pathname === "/v1/oma/runtimes") {
       return reply({ runtimes: [] });

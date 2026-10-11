@@ -3,6 +3,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  SidebarGridCell,
+  SidebarGridRow,
+} from "./SidebarGridRow";
 
 vi.mock("@/components/AgentIcon", () => ({
   AgentIcon: () => null,
@@ -12,6 +18,42 @@ import { groupSidebarSessions } from "./Sidebar";
 import type { SessionRow } from "@/lib/session-store";
 import type { ProjectInfo } from "@shared/projects";
 import type { WorkspaceInfo } from "@shared/workspaces";
+
+describe("sidebar grid primitives", () => {
+  it("renders iconless rows without a trailing track", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(
+        SidebarGridRow,
+        { depth: 1, leading: "none", trailingTrack: "none" },
+        React.createElement(SidebarGridCell, { slot: "label" }, "Tenant"),
+      ),
+    );
+
+    expect(html).toContain('data-sidebar-depth="1"');
+    expect(html).toContain('data-sidebar-leading="none"');
+    expect(html).toContain('data-sidebar-trailing-track="none"');
+    expect(html).toContain('data-sidebar-grid="label"');
+    expect(html).not.toContain('data-sidebar-grid="icon"');
+    expect(html).not.toContain('data-sidebar-grid="trailing"');
+  });
+
+  it("renders button rows and every grid cell slot", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(
+        SidebarGridRow,
+        { as: "button", type: "button" },
+        React.createElement(SidebarGridCell, { slot: "icon" }, "Icon"),
+        React.createElement(SidebarGridCell, { slot: "label" }, "Label"),
+        React.createElement(SidebarGridCell, { slot: "trailing" }, "Actions"),
+      ),
+    );
+
+    expect(html.startsWith("<button")).toBe(true);
+    expect(html).toContain('data-sidebar-grid="icon"');
+    expect(html).toContain('data-sidebar-grid="label"');
+    expect(html).toContain('data-sidebar-grid="trailing"');
+  });
+});
 
 function row(overrides: Partial<SessionRow>): SessionRow {
   return {

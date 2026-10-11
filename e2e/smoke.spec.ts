@@ -320,28 +320,44 @@ test.describe("backchat smoke", () => {
         { width: 16, height: 16, radius: 8 },
       ]);
 
-      // Nav and project rows share an icon rail; nested session rows have
-      // their own inset inside the expanded project.
-      const projectsHeaderIcon = navigation
-        .getByRole("button", { name: "Projects", exact: true })
-        .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
-        .locator(".sidebar-row-icon");
+      // Main nests project sessions in ul.pl-4 beside the coordinator row.
+      const projectRow = projectActions.locator(
+        "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
+      );
+      const coordinatorRow = navigation.getByTestId("project-coordinator-row").first();
+      const sessionRow = sessionActions.locator(
+        "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
+      );
       const iconBoxes = await Promise.all([
-        projectsHeaderIcon.boundingBox(),
-        projectActions
+        navigation
+          .getByRole("button", { name: "Projects", exact: true })
           .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
-          .locator(".sidebar-row-icon")
+          .locator('[data-sidebar-grid="icon"]')
           .boundingBox(),
-        sessionActions
-          .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
-          .locator(".sidebar-row-icon")
-          .boundingBox(),
+        projectRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
+        coordinatorRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
+        sessionRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
       ]);
       for (const box of iconBoxes) expect(box).not.toBeNull();
-      const [sectionIcon, projectIcon, childIcon] = iconBoxes;
-      const nestStep = 16;
+      const [sectionIcon, projectIcon, coordinatorIcon, childIcon] = iconBoxes;
+      const glyphBoxes = await Promise.all([
+        projectRow.locator(".sidebar-row-icon > *").first().boundingBox(),
+        coordinatorRow.locator(".sidebar-coordinator-icon > *").first().boundingBox(),
+        sessionRow.locator(".sidebar-row-icon > *").first().boundingBox(),
+      ]);
+      for (const box of glyphBoxes) expect(box).not.toBeNull();
+      const [projectGlyph, coordinatorGlyph, childGlyph] = glyphBoxes;
+      const nestStep = await navigation.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).getPropertyValue("--sidebar-grid-nest-step")),
+      );
+      expect(nestStep).toBeGreaterThan(0);
       expect(Math.abs(projectIcon!.x - sectionIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(childIcon!.x - projectIcon!.x)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(childIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(coordinatorIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(childIcon!.x - coordinatorIcon!.x)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(coordinatorGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(childGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(childGlyph!.x - coordinatorGlyph!.x)).toBeLessThanOrEqual(0.5);
       expect(projectIcon!.width).toBeCloseTo(sectionIcon!.width, 3);
       expect(childIcon!.width).toBeCloseTo(sectionIcon!.width, 3);
   });
@@ -550,12 +566,11 @@ test.describe("backchat smoke", () => {
         code: getComputedStyle(element.querySelector("code")!).fontFamily,
       }));
 
-      expect(families.prose).toContain("-apple-system");
-      expect(families.prose).toContain("PingFang SC");
-      expect(families.prose).toContain("Microsoft YaHei UI");
+      expect(families.prose).toContain("Backchat Sans");
+      expect(families.prose).toContain("Backchat Sans SC");
+      expect(families.prose).toContain("Noto Sans CJK SC");
       expect(families.prose).not.toContain("Geist");
       expect(families.code).toContain("ui-monospace");
-      expect(families.code).toContain("PingFang SC");
       expect(families.code).not.toContain("JetBrains");
   });
 

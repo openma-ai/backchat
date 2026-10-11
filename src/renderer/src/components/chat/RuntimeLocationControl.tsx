@@ -29,7 +29,10 @@ import {
   GroupedCommandMenuIconSlot,
   GroupedCommandMenuLabelSlot,
 } from "@/components/ui/grouped-command-menu-slots";
-import { composerFooterTriggerClass } from "@/components/ui/composer-footer-trigger";
+import {
+  composerFooterTriggerClass,
+  composerFooterTriggerProps,
+} from "@/components/ui/composer-footer-trigger";
 import {
   SidebarGridCell,
   SidebarGridRow,
@@ -308,6 +311,7 @@ export function RuntimeLocationControl({
             size="sm"
             data-composer-footer-control="runtime"
             data-session-runtime-location="true"
+            {...composerFooterTriggerProps("none")}
             className={cn(composerFooterTriggerClass("runtime-location-control"), className)}
             title={title ?? t("chat.whereRuns")}
           >

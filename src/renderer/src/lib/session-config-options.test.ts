@@ -119,6 +119,37 @@ describe("session config options", () => {
     ).toBeUndefined();
   });
 
+  test("option subtitles do not repeat their option title", () => {
+    const laneOption: AcpSessionConfigOption = {
+      id: "lane",
+      name: "Lane",
+      type: "select",
+      currentValue: "strict",
+      options: [{ value: "strict", name: "Strict", description: " lane " }],
+    };
+
+    expect(configSelectItemHint(laneOption, {
+      value: "strict",
+      name: "Strict",
+      description: " lane ",
+    })).toBeUndefined();
+    expect(configSelectItemHint(laneOption, {
+      value: "strict",
+      name: "Strict",
+      description: "Strict execution",
+    })).toBe("Strict execution");
+    expect(configModeOptionPresentation({
+      value: "strict",
+      name: "Strict",
+      description: " Lane ",
+    }, "lane").hint).toBeUndefined();
+    expect(configModeOptionPresentation({
+      value: "strict",
+      name: "Strict",
+      description: "Use strict validation",
+    }, "Lane").hint).toBe("Use strict validation");
+  });
+
   test("flattens grouped select options without losing labels", () => {
     const flat = flattenSelectOptions({
       id: "mode",

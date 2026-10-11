@@ -244,9 +244,8 @@ export function GroupedCommandMenu({
           : undefined
       }
       className={cn(
+        "menu-item",
         item.plain ? "grouped-command-plain-item text-sm" : "text-xs",
-        menuMode === "host-picker" &&
-          "host-picker-command-item !items-start !py-[3px] !px-[5px]",
       )}
     >
       {item.children}
@@ -259,13 +258,7 @@ export function GroupedCommandMenu({
     if (bareListGroupItems && !group.heading) {
       return (
         <Fragment key={key}>
-          {group.separatorBefore ? (
-            <CommandSeparator
-              className={
-                menuMode === "host-picker" ? "host-picker-command-separator" : undefined
-              }
-            />
-          ) : null}
+          {group.separatorBefore ? <CommandSeparator /> : null}
           {items}
         </Fragment>
       );
@@ -273,13 +266,7 @@ export function GroupedCommandMenu({
     if (group.heading) {
       return (
         <Fragment key={key}>
-          {group.separatorBefore ? (
-            <CommandSeparator
-              className={
-                menuMode === "host-picker" ? "host-picker-command-separator" : undefined
-              }
-            />
-          ) : null}
+          {group.separatorBefore ? <CommandSeparator /> : null}
           <div className={bareListGroupItems ? "px-0 py-1" : "px-0"}>
             <div
               data-grouped-command-group-heading=""
@@ -294,13 +281,7 @@ export function GroupedCommandMenu({
     }
     return (
       <Fragment key={key}>
-        {group.separatorBefore ? (
-          <CommandSeparator
-            className={
-              menuMode === "host-picker" ? "host-picker-command-separator" : undefined
-            }
-          />
-        ) : null}
+        {group.separatorBefore ? <CommandSeparator /> : null}
         <CommandGroup>{items}</CommandGroup>
       </Fragment>
     );
@@ -346,9 +327,7 @@ export function GroupedCommandMenu({
         ) : null}
         {listHeader}
         {listHeader && listHeaderSeparator && groups.length > 0 ? (
-          <CommandSeparator
-            className={menuMode === "host-picker" ? "host-picker-command-separator" : undefined}
-          />
+          <CommandSeparator />
         ) : null}
         {nativeListScroll ? (
           <CommandList

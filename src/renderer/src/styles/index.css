@@ -160,15 +160,6 @@
   background: var(--control-bg-open) !important;
 }
 
-/* Host chip stays visually quiet on hover and while its menu is open. */
-.runtime-location-control:hover,
-.runtime-location-control[data-state="open"],
-.runtime-location-control[aria-expanded="true"] {
-  background: transparent !important;
-  outline: none;
-  box-shadow: none;
-}
-
 .app-compact-control:focus {
   outline: none;
 }
@@ -267,7 +258,7 @@
   width: var(--control-icon-size);
   height: var(--control-icon-size);
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .sidebar-coordinator-icon > svg {
   width: 14px;
@@ -306,8 +297,7 @@
   outline-offset: -2px;
 }
 .sidebar-navigation .app-selected-surface {
-  font-weight: 600;
-  font-synthesis: weight style;
+  font-weight: 500;
 }
 .sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
   margin-top: 1px;
@@ -339,7 +329,7 @@
   gap: var(--control-gap-compact);
 }
 [data-composer-footer-controls="true"]:has(
-  .app-compact-control:is(:hover, [data-state="open"], [aria-expanded="true"])
+  .composer-footer-trigger:is(:hover, [data-state="open"], [aria-expanded="true"])
 ) {
   gap: var(--gap-adjacent);
 }
@@ -347,7 +337,7 @@
   gap: var(--control-gap-compact);
 }
 .composer-toolbar-chip-row:has(
-  :is([data-state="open"], [aria-expanded="true"]):is(.app-compact-control, button, [role="button"])
+  .composer-footer-trigger:is([data-state="open"], [aria-expanded="true"])
 ) {
   gap: var(--gap-adjacent);
 }
@@ -359,7 +349,7 @@
 }
 /* Environment headings use the smaller label role; groups align with nav icons. */
 .sidebar-scroll-area nav > .sidebar-section + .sidebar-section {
-  margin-top: 20px;
+  margin-top: var(--sidebar-section-gap);
 }
 .sidebar-scroll-area nav > .sidebar-section > .sidebar-section-header > button {
   font-size: 12px;
@@ -374,12 +364,6 @@
 /* Header toggles fill the 28px row so collapsed sections keep the 1px step. */
 .sidebar-section-header.sidebar-grid-row {
   align-items: stretch;
-}
-/* Section headings anchor their label at the row inset (main's x24), not the
-   icon-track label column. */
-.sidebar-section-header .sidebar-grid-cell-label {
-  grid-column: 1;
-  padding-inline-start: var(--sidebar-grid-icon-track);
 }
 .sidebar-section-header .sidebar-row-action:is(:hover, :focus-visible, [data-state="open"], [aria-expanded="true"]) {
   background: transparent;
@@ -1803,12 +1787,18 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --sidebar-grid-icon-track: 16px;
   --sidebar-grid-column-gap: 8px;
   --sidebar-grid-nest-step: 16px;
+  --sidebar-grid-no-trailing-end-inset: 4px;
+  --sidebar-section-gap: 20px;
   --sidebar-grid-trailing-gap: 4px;
   --sidebar-grid-trailing-track: var(--sidebar-row-action-size);
   --sidebar-grid-trailing-track-double: calc(
     2 * var(--sidebar-row-action-size) + var(--sidebar-grid-trailing-gap)
   );
   --sidebar-grid-trailing-track-host: max-content;
+  --menu-panel-padding: 4px;
+  --menu-item-padding-inline: 6px;
+  --menu-item-padding-block: 4px;
+  --menu-item-gap: 6px;
   --oma-scrollbar-thumb: color-mix(
     in srgb,
     var(--chat-fg, var(--fg)) 30%,
@@ -2596,8 +2586,17 @@ body,
 }
 /* Rows with no trailing content release the reserved action column so labels
    keep main's full clip width. */
-.sidebar-grid-row:not(:has(> [data-sidebar-grid="trailing"] > *)) {
-  --sidebar-grid-trailing-effective: 0px;
+.sidebar-grid-row[data-sidebar-trailing-track="none"] {
+  padding-inline-end: calc(
+    var(--sidebar-content-padding-inline-end) +
+      var(--sidebar-grid-no-trailing-end-inset)
+  );
+  grid-template-columns:
+    var(--sidebar-grid-icon-track)
+    minmax(0, 1fr);
+}
+.sidebar-grid-row[data-sidebar-leading="none"] [data-sidebar-grid="label"] {
+  grid-column: 1 / span 2;
 }
 .sidebar-grid-row[data-sidebar-trailing-track="double"] [data-sidebar-grid="trailing"] {
   display: grid;
@@ -2621,7 +2620,7 @@ body,
   display: flex;
   width: var(--sidebar-grid-icon-track);
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .sidebar-grid-cell-label,
 [data-sidebar-grid="label"] {
@@ -2639,6 +2638,86 @@ body,
   align-items: center;
   justify-content: flex-end;
   justify-self: end;
+}
+
+.menu-panel {
+  padding: var(--menu-panel-padding);
+}
+
+.menu-item {
+  gap: var(--menu-item-gap);
+  padding-inline: var(--menu-item-padding-inline);
+  padding-block: var(--menu-item-padding-block);
+}
+
+.menu-separator {
+  margin-inline: calc(-1 * var(--menu-panel-padding));
+  margin-block: var(--menu-item-padding-block);
+}
+
+.composer-footer-trigger {
+  display: inline-flex;
+  height: var(--control-height-compact);
+  min-width: 0;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--control-gap-compact);
+  padding-inline: var(--control-padding-inline);
+  border: 0;
+  border-radius: var(--control-radius);
+  outline: none;
+  color: var(--control-fg-rest);
+  background: transparent;
+  box-shadow: none;
+  user-select: none;
+  font-size: var(--type-caption-size);
+  transition:
+    color var(--dur-quick) var(--ease-snap),
+    background-color var(--dur-quick) var(--ease-snap),
+    box-shadow var(--dur-quick) var(--ease-snap);
+}
+
+.composer-footer-trigger:hover {
+  color: var(--control-fg-active);
+  background: var(--control-bg-hover);
+}
+
+.composer-footer-trigger[data-state="open"],
+.composer-footer-trigger[aria-expanded="true"] {
+  color: var(--control-fg-active);
+  background: var(--control-bg-open);
+  outline: none;
+  box-shadow: none;
+}
+
+.composer-footer-trigger[data-open-surface="none"]:is(
+    :hover,
+    [data-state="open"],
+    [aria-expanded="true"]
+  ) {
+  background: transparent;
+}
+
+.composer-footer-trigger:focus {
+  outline: none;
+}
+
+.composer-footer-trigger:focus-visible:not([data-state="open"]):not(
+    [aria-expanded="true"]
+  ) {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+  color: var(--control-fg-active);
+  background: var(--control-bg-hover);
+  box-shadow: none;
+}
+
+.composer-footer-trigger:focus-visible:is(
+    [data-state="open"],
+    [aria-expanded="true"]
+  ) {
+  outline: none;
+  box-shadow: none;
 }
 
 /* Settings / form selects sharing GroupedCommandMenu (coordinator settings, etc.). */
@@ -2702,9 +2781,9 @@ body,
 
 /* Grouped command menus (project / workspace / host / model): icon | label | check mesh. */
 .grouped-command-menu {
-  --grouped-command-padding-inline: 8px;
+  --grouped-command-padding-inline: var(--menu-item-padding-inline);
   --grouped-command-icon-track: var(--sidebar-grid-icon-track);
-  --grouped-command-column-gap: var(--sidebar-grid-column-gap);
+  --grouped-command-column-gap: var(--menu-item-gap);
   --grouped-command-trailing-track: var(--sidebar-grid-icon-track);
   --grouped-command-list-height: 288px;
 }
@@ -2818,6 +2897,7 @@ body,
   gap: 0;
   column-gap: var(--grouped-command-column-gap);
   padding-inline: var(--grouped-command-padding-inline);
+  padding-block: var(--menu-item-padding-block);
   grid-template-columns:
     var(--grouped-command-icon-track)
     minmax(0, 1fr)
@@ -2908,11 +2988,6 @@ body,
   box-shadow: none;
 }
 
-[data-composer-select-menu-mode="host-picker"] .host-picker-command-separator {
-  margin-inline: -0.25rem !important;
-  margin-block: 0.25rem !important;
-}
-
 .grouped-command-menu[data-composer-select-menu-mode="host-picker"]
   [data-slot="command-group"],
 .grouped-command-menu[data-composer-select-menu-mode="grouped-command-field"]
@@ -2931,29 +3006,6 @@ body,
   max-height: none;
   height: auto;
   overflow: visible;
-}
-
-/* Host picker (composer + sidebar): match main DropdownMenuItem (`py-1` + `text-xs` → 40px two-line). */
-.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
-  .host-picker-command-item {
-  align-items: start !important;
-  min-height: 0 !important;
-  font-size: 12px !important;
-  line-height: 16px !important;
-}
-
-.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
-  .host-picker-command-item
-  [data-grouped-command-grid="label"] {
-  gap: 0;
-  line-height: 16px !important;
-}
-
-.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
-  .host-picker-command-item
-  [data-grouped-command-grid="label"]
-  > span {
-  line-height: 16px !important;
 }
 
 /* Project / workspace pickers: same icon | label mesh as other grouped menus (search uses grid, not flex). */

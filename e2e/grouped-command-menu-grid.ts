@@ -22,8 +22,8 @@ export function assertGroupedCommandGridAligned(grid: GroupedCommandGridMetrics)
   const iconRows = grid.rows.filter((row) => !row.id.startsWith("heading:"));
   expect(iconRows.length).toBeGreaterThan(0);
   const iconLefts = iconRows.map((row) => row.iconLeft);
-  expect(Math.max(...iconLefts) - Math.min(...iconLefts)).toBe(0);
-  expect(grid.textLeftMax - grid.textLeftMin).toBe(0);
+  expect(Math.max(...iconLefts) - Math.min(...iconLefts), JSON.stringify(grid.rows)).toBe(0);
+  expect(grid.textLeftMax - grid.textLeftMin, JSON.stringify(grid.rows)).toBe(0);
   const widths = iconRows.map((row) => row.iconWidth).filter((w) => w > 0);
   if (widths.length > 1) {
     expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2);
@@ -81,6 +81,7 @@ export async function measureGroupedCommandMenuGrid(
     for (const item of Array.from(
       scope.querySelectorAll('[data-slot="command-item"]'),
     ) as HTMLElement[]) {
+      if (item.classList.contains("grouped-command-plain-item")) continue;
       const iconSlot = item.querySelector(
         '[data-grouped-command-grid="icon"]',
       ) as HTMLElement | null;

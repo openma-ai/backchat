@@ -414,42 +414,33 @@ export interface ConfigModeOptionPresentation {
 
 export function configModeOptionPresentation(
   option: AcpSessionConfigSelectOption,
+  optionName?: string,
 ): ConfigModeOptionPresentation {
   return {
     label: option.name,
-    ...(option.description && !isGenericConfigOptionLabel(option.description)
+    ...(option.description
+      && option.description.trim().toLowerCase() !== optionName?.trim().toLowerCase()
       ? { hint: option.description }
       : {}),
     tone: option.value === "agent-full-access" ? "warning" : "neutral",
   };
 }
 
-const GENERIC_CONFIG_OPTION_LABELS = new Set(["model", "mode", "lane"]);
-
-function isGenericConfigOptionLabel(label: string | null | undefined): boolean {
-  if (!label?.trim()) return true;
-  return GENERIC_CONFIG_OPTION_LABELS.has(label.trim().toLowerCase());
-}
-
-/** Row subtitle for composer config selects — never a generic option title like "Model". */
+/** A row subtitle must not repeat its containing option's title. */
 export function configSelectItemHint(
   option: AcpSessionConfigOption,
   item: FlattenedConfigSelectOption,
 ): string | undefined {
-  const itemDescription = item.description?.trim();
-  if (itemDescription && !isGenericConfigOptionLabel(itemDescription))
+  const itemDescription = item.description;
+  if (
+    itemDescription?.trim()
+    && itemDescription.trim().toLowerCase() !== option.name.trim().toLowerCase()
+  ) {
     return itemDescription;
+  }
   if (option.category === "model") {
     const provider = item.groupName?.trim();
     return provider || undefined;
-  }
-  const optionDescription = option.description?.trim();
-  if (optionDescription && !isGenericConfigOptionLabel(option.description)) {
-    return optionDescription;
-  }
-  const optionName = option.name?.trim();
-  if (optionName && !isGenericConfigOptionLabel(option.name)) {
-    return optionName;
   }
   return undefined;
 }

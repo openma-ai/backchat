@@ -751,14 +751,15 @@ export function Sidebar() {
           const rows = sessions.filter((row) => row.openma && sameOpenmaScope(row.openma, scope));
           return <TenantSidebarSection key={JSON.stringify(scope)} scope={scope} name={workspace.name || workspace.id}
             enabled={!workspace.expired && openmaAccount.status !== "signing_in"} labelCls={labelCls} rows={rows}
-            renderRow={(s) => <SessionRow row={s} agentIconUrl={agentIconUrls.get(s.agent_id)}
+            renderRow={(s, depth) => <SessionRow row={s} depth={depth} agentIconUrl={agentIconUrls.get(s.agent_id)}
               active={s.id === activeId && location.pathname.startsWith("/chat/")} hasSchedule={false} labelCls={labelCls}
               onSelect={() => onSelectSession(s.id)} onRename={() => requestRename({ kind: "session", id: s.id, title: s.label })}
               onArchive={() => void requestArchive([s.id])} menuOpen={openMenuId === s.id} onMenuOpenChange={(open) => setOpenMenuId(open ? s.id : null)} />}
           />;
         })}
-        <RuntimeLocationControl variant="sidebar" labelCls={labelCls} />
-        <div>
+        <section className="sidebar-section">
+          <RuntimeLocationControl variant="sidebar" labelCls={labelCls} />
+          <div>
           {(() => {
             const { pinned, projects, chats } = grouped;
             return (
@@ -1054,7 +1055,8 @@ export function Sidebar() {
               </>
             );
           })()}
-        </div>
+          </div>
+        </section>
         </nav>
       </div>
       </ScrollArea>
@@ -1171,7 +1173,7 @@ export function Sidebar() {
 
 function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow }: {
   scope: OpenmaScope; name: string; enabled: boolean; labelCls: string; rows: SessionRow[];
-  renderRow: (row: SessionRow) => ReactNode;
+  renderRow: (row: SessionRow, depth: SidebarGridDepth) => ReactNode;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -1182,14 +1184,16 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
   const choices = catalog.data ? openmaTargets(scope, catalog.data) : [];
   const pinned = rows.filter((row) => row.pinnedAt != null);
   const chats = rows.filter((row) => row.pinnedAt == null);
-  const list = (items: SessionRow[]) => <ul className="m-0 list-none space-y-0.5 p-0">{items.map((row) => <li key={row.id}>{renderRow(row)}</li>)}</ul>;
+  const list = (items: SessionRow[]) => <ul className="m-0 list-none space-y-0.5 p-0">{items.map((row) => <li key={row.id}>{renderRow(row, 1)}</li>)}</ul>;
   return <SidebarSection title={name} open={open} onToggle={() => setOpen(!open)} labelCls={labelCls}>
-    <div className="pl-2">
       {enabled ? <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <button type="button" aria-label={t("sidebar.newTenantChat", { name })} className="flex h-[var(--sidebar-row-h)] w-full items-center gap-2 rounded-md px-2 text-left text-ui text-fg-muted hover:bg-surface-hover hover:text-fg">
-            <PlusIcon className="size-3.5" /><span className={labelCls}>{t("sidebar.newChat")}</span>
-          </button>
+          <SidebarGridRow as="button" type="button" depth={1}
+            aria-label={t("sidebar.newTenantChat", { name })}
+            className="rounded-md text-left text-ui text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg">
+            <SidebarGridCell slot="icon"><span className="sidebar-row-icon"><PlusIcon className="size-3.5" /></span></SidebarGridCell>
+            <SidebarGridCell slot="label"><span className={labelCls}>{t("sidebar.newChat")}</span></SidebarGridCell>
+          </SidebarGridRow>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="oma-scrollbar max-h-[60vh] w-72 overflow-y-auto">
           {choices.map(({ target, offline }) => <DropdownMenuItem key={`${target.environmentId}:${target.agentId}`} disabled={offline} onSelect={() => {
@@ -1200,12 +1204,27 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
           {!choices.length && <div role="status" className="px-2 py-2 text-ui text-fg-muted">{t(catalog.isFetching ? "openma.loadingLocations" : catalog.error ? "openma.locationsUnavailable" : "openma.noLocations")}</div>}
           {catalog.error && <DropdownMenuItem onSelect={(event) => { event.preventDefault(); void catalog.refetch(); }}>{t("sidebar.retryTenant")}</DropdownMenuItem>}
         </DropdownMenuContent>
-      </DropdownMenu> : <button type="button" className="px-2 py-2 text-ui text-fg-muted" onClick={() => void navigate({ to: "/settings/openma" })}>{t("openma.signIn")}</button>}
-      {pinned.length > 0 && <><div className="px-2 py-1 text-ui text-fg-subtle">{t("sidebar.pinned")}</div>{list(pinned)}</>}
+      </DropdownMenu> : <SidebarGridRow as="button" type="button" depth={1} leading="none" trailingTrack="none"
+        className="rounded-md text-left text-ui text-fg-muted hover:bg-[var(--control-bg-hover)]"
+        onClick={() => void navigate({ to: "/settings/openma" })}>
+        <SidebarGridCell slot="label"><span>{t("openma.signIn")}</span></SidebarGridCell>
+      </SidebarGridRow>}
+      {pinned.length > 0 && <>
+        <SidebarGridRow depth={1} leading="none" trailingTrack="none" className="text-ui text-fg-subtle">
+          <SidebarGridCell slot="label"><span>{t("sidebar.pinned")}</span></SidebarGridCell>
+        </SidebarGridRow>
+        {list(pinned)}
+      </>}
       {list(chats)}
-      {enabled && tasks.error && <button type="button" onClick={() => void tasks.refetch()} className="px-2 py-2 text-left text-ui text-fg-muted">{t("sidebar.tenantLoadFailed")}</button>}
-      {enabled && !tasks.error && !rows.length && <p role="status" className="m-0 px-2 py-2 text-caption text-fg-subtle">{t(tasks.isPending ? "sidebar.loadingTenant" : "sidebar.emptyTenant")}</p>}
-    </div>
+      {enabled && tasks.error && <SidebarGridRow as="button" type="button" depth={1} leading="none" trailingTrack="none"
+        className="text-left text-ui text-fg-muted hover:bg-[var(--control-bg-hover)]"
+        onClick={() => void tasks.refetch()}>
+        <SidebarGridCell slot="label"><span>{t("sidebar.tenantLoadFailed")}</span></SidebarGridCell>
+      </SidebarGridRow>}
+      {enabled && !tasks.error && !rows.length && <SidebarGridRow depth={1} leading="none" trailingTrack="none"
+        role="status" className="text-caption text-fg-subtle">
+        <SidebarGridCell slot="label"><span>{t(tasks.isPending ? "sidebar.loadingTenant" : "sidebar.emptyTenant")}</span></SidebarGridCell>
+      </SidebarGridRow>}
   </SidebarSection>;
 }
 
@@ -1234,12 +1253,11 @@ function SidebarSection({
     <section className="sidebar-section" data-state={open ? "open" : "closed"} data-sidebar-custom-section={customSectionId}>
       <SidebarGridRow
         depth={depth}
-        trailingTrack="double"
+        trailingTrack={action ? "double" : "none"}
+        leading={icon ? "icon" : "none"}
         className="sidebar-section-header group/section rounded-md transition-colors hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]"
       >
-        <SidebarGridCell slot="icon">
-          {icon ? <span className="sidebar-row-icon">{icon}</span> : null}
-        </SidebarGridCell>
+        {icon ? <SidebarGridCell slot="icon"><span className="sidebar-row-icon">{icon}</span></SidebarGridCell> : null}
         <SidebarGridCell slot="label">
           <button
             type="button"
@@ -1267,17 +1285,18 @@ function SidebarSection({
             </span>
           </button>
         </SidebarGridCell>
-        <SidebarGridCell
-          slot="trailing"
-          className={cn(
-            labelCls.split(/\s+/).includes("hidden") && "hidden",
-            action &&
+        {action ? (
+          <SidebarGridCell
+            slot="trailing"
+            className={cn(
+              labelCls.split(/\s+/).includes("hidden") && "hidden",
               "opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100",
-          )}
-          data-sidebar-section-header-action={action ? "true" : undefined}
-        >
-          {action}
-        </SidebarGridCell>
+            )}
+            data-sidebar-section-header-action="true"
+          >
+            {action}
+          </SidebarGridCell>
+        ) : null}
       </SidebarGridRow>
       <AnimatedCollapse open={open}>{children}</AnimatedCollapse>
     </section>
@@ -1432,7 +1451,7 @@ function ProjectCoordinatorRow({
     "data-configured": hasCoordinator,
     className: cn("sidebar-grid-row", rowClassName),
     "data-sidebar-depth": "2",
-    "data-sidebar-trailing-track": "double",
+    "data-sidebar-trailing-track": "none",
   };
   const content = <>
     <SidebarGridCell slot="icon">
@@ -1444,9 +1463,6 @@ function ProjectCoordinatorRow({
     </SidebarGridCell>
     <SidebarGridCell slot="label">
       <span className={cn("min-w-0 truncate font-medium", labelCls)}>{label}</span>
-    </SidebarGridCell>
-    <SidebarGridCell slot="trailing" className={cn(!hasCoordinator && "invisible", labelCls)} aria-hidden={!hasCoordinator}>
-      <WorkflowIcon className="size-3.5 text-fg-muted" />
     </SidebarGridCell>
   </>;
   return group.projectId ? (

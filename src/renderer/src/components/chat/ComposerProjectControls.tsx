@@ -334,7 +334,8 @@ export function ProjectChipRow({
         />
       ) : !remoteTarget && branch && (
         <span
-          className="app-compact-control inline-flex"
+          data-composer-footer-control="workspace-branch"
+          className={composerFooterTriggerClass()}
           title={t("workspace.branchLabel", { branch })}
         >
           <span data-control-icon>
@@ -466,7 +467,7 @@ function WorkspaceChip({
   };
 
   if (isPending) return (
-    <span className="app-compact-control inline-flex" data-composer-footer-control="workspace-loading">
+    <span className={composerFooterTriggerClass()} data-composer-footer-control="workspace-loading">
       <Spinner className="size-3.5 text-fg-muted" aria-label={t("workspace.loading")} />
       <span>{t("common.loadingShort")}</span>
     </span>

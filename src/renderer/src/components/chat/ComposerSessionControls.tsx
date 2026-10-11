@@ -69,6 +69,10 @@ import type { ComposerSessionStatePresentation } from "@/lib/composer-session-st
 import { useSettings } from "@/lib/settings-store";
 import { cn } from "@/lib/utils";
 import {
+  composerFooterTriggerClass,
+  composerFooterTriggerProps,
+} from "@/components/ui/composer-footer-trigger";
+import {
   agentPresetIcon,
   DshPresetStandardIcon,
   type DshPresetIcon,
@@ -94,13 +98,8 @@ const COMPOSER_ICON_BUTTON_CLASS = cn(
 
 /** Toolbar chips stay transparent at rest. Hover and an open menu wash;
  * leftover :focus-visible after closing the menu must not look selected. */
-const COMPOSER_TOOLBAR_CHIP_CLASS = cn(
-  "inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-md bg-transparent px-1.5 text-xs",
-  "appearance-none shadow-none",
-  "hover:bg-[var(--control-bg-hover)]",
-  "focus:outline-none",
-  "data-[state=open]:bg-[var(--control-bg-open)] data-[state=open]:text-fg",
-  "transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+const COMPOSER_TOOLBAR_CHIP_CLASS = composerFooterTriggerClass(
+  "shrink-0 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50",
 );
 
 export function ComposerAuthControls({
@@ -230,10 +229,9 @@ export function SessionRunChip({
       <DropdownMenuTrigger
         disabled={disabled || authChecking}
         data-composer-run-trigger="true"
+        {...composerFooterTriggerProps()}
         className={cn(
-          "app-compact-control group/model-selector inline-flex max-w-[250px] items-center pl-[var(--control-padding-inline)] text-xs",
-          "select-none bg-transparent",
-          "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+          composerFooterTriggerClass("group/model-selector inline-flex max-w-[250px] text-xs disabled:cursor-not-allowed disabled:opacity-50"),
           authNeeded && "text-danger",
         )}
         aria-label={
@@ -576,6 +574,7 @@ export function PermissionModeChip({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled}
+        {...composerFooterTriggerProps()}
         className={cn(COMPOSER_TOOLBAR_CHIP_CLASS, meta.toneClass)}
         aria-label={label}
       >
@@ -676,7 +675,7 @@ function SessionModeControl({
   const selected =
     values.find((item) => item.value === option.currentValue) ?? values[0];
   if (!selected) return null;
-  const selectedPresentation = localizedSessionModePresentation(t, selected);
+  const selectedPresentation = localizedSessionModePresentation(t, selected, option.name);
   const SelectedIcon = sessionModeIcon(selected.value);
 
   const pick = async (value: string) => {
@@ -692,6 +691,7 @@ function SessionModeControl({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
+        {...composerFooterTriggerProps()}
         className={cn(
           COMPOSER_TOOLBAR_CHIP_CLASS,
           "max-w-[180px]",
@@ -714,7 +714,7 @@ function SessionModeControl({
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {values.map((item) => {
-          const presentation = localizedSessionModePresentation(t, item);
+          const presentation = localizedSessionModePresentation(t, item, option.name);
           const ItemIcon = sessionModeIcon(item.value);
           return (
             <DropdownMenuItem
@@ -748,8 +748,9 @@ function SessionModeControl({
 function localizedSessionModePresentation(
   t: (key: TranslationKey) => string,
   option: { value: string; name: string; description?: string | null },
+  optionName: string,
 ) {
-  const presentation = configModeOptionPresentation(option);
+  const presentation = configModeOptionPresentation(option, optionName);
   const translation =
     PERMISSION_MODE_VALUE_I18N[option.value]
     ?? (isWorkspaceAccessPermissionMode(option.value)
@@ -895,6 +896,7 @@ function InlineComposerOptionControl({
       <DropdownMenu>
         <DropdownMenuTrigger
           disabled={disabled || !onSetConfigOption}
+          {...composerFooterTriggerProps()}
           aria-label={currentLabel}
           className={cn(
             COMPOSER_TOOLBAR_CHIP_CLASS,
@@ -946,6 +948,7 @@ function InlineComposerOptionControl({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
+        {...composerFooterTriggerProps()}
         className={cn(
           COMPOSER_TOOLBAR_CHIP_CLASS,
           "max-w-[180px] text-fg-muted",

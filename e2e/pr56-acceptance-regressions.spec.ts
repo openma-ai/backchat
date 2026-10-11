@@ -92,13 +92,43 @@ test("new chat row matches session row vertical alignment and shows hover wash",
 
 test("host picker draws separator after OpenMA account row", async ({ page }) => {
   test.setTimeout(120_000);
-  const mock = await startOpenmaCatalogMock({ cloudEnvironmentCount: 1 });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const mock = await startOpenmaCatalogMock({
+    cloudEnvironmentCount: 1,
+    tenantSessionCount: 2,
+  });
   try {
     await page.evaluate(async (baseUrl) => {
       await window.backchat.openmaLogin(baseUrl);
     }, mock.baseUrl);
     await enableAgent(page, "codex-acp");
     await page.getByTestId("new-chat-button").click();
+    const demoHeading = page
+      .locator(".sidebar-section-header")
+      .filter({ hasText: "Demo" })
+      .first();
+    await expect(demoHeading).toBeVisible();
+    await expect(demoHeading).toHaveAttribute("data-sidebar-leading", "none");
+    await demoHeading.click();
+    const tenantSection = demoHeading.locator(
+      "xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' sidebar-section ')]",
+    );
+    await expect(
+      tenantSection.locator('.sidebar-grid-row[data-sidebar-depth="1"]'),
+    ).toHaveCount(3);
+    const demoLabelBox = await demoHeading
+      .locator('[data-sidebar-grid="label"]')
+      .boundingBox();
+    const tenantChildIconBox = await tenantSection
+      .locator('.sidebar-grid-row[data-sidebar-depth="1"] .sidebar-row-icon')
+      .first()
+      .boundingBox();
+    expect(demoLabelBox).not.toBeNull();
+    expect(tenantChildIconBox).not.toBeNull();
+    expect(Math.abs(demoLabelBox!.x - 23)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(tenantChildIconBox!.x - demoLabelBox!.x - 16),
+    ).toBeLessThanOrEqual(0.5);
     await openRuntimeLocationPicker(page);
     const panel = hostPickerPanel(page);
     const shell = page
@@ -131,8 +161,15 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     });
     expect(separatorsBetweenLocationsAndManage).toBe(0);
     const shellBox = await shell.boundingBox();
-    expect(shellBox?.height ?? 0).toBeGreaterThanOrEqual(141);
-    expect(shellBox?.height ?? 0).toBeLessThanOrEqual(146);
+    expect(shellBox).not.toBeNull();
+    expect(Math.abs(shellBox!.height - 143)).toBeLessThanOrEqual(1);
+    expect(Math.abs(shellBox!.y - 618)).toBeLessThanOrEqual(1);
+    const triggerBox = await page
+      .locator('[data-composer-footer-control="runtime"]')
+      .first()
+      .boundingBox();
+    expect(triggerBox).not.toBeNull();
+    expect(Math.abs(triggerBox!.y - (shellBox!.y + shellBox!.height))).toBeLessThanOrEqual(1);
     const borderWidth = await shell.evaluate((el) =>
       parseFloat(getComputedStyle(el).borderTopWidth),
     );
@@ -152,7 +189,23 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
       shellBox!.width - shellPads.left - shellPads.right - shellPads.border * 2;
     expect(separatorBox!.width).toBeGreaterThanOrEqual(innerWidth - 2);
     expect(separatorBox!.width).toBeLessThanOrEqual(shellBox!.width);
-    const firstRow = panel.locator('[cmdk-item]').first();
+    const firstRow = panel.locator('[cmdk-item]').nth(1);
+    const rowBoxes = await Promise.all([
+      firstRow.boundingBox(),
+      panel.locator('[cmdk-item]').nth(2).boundingBox(),
+    ]);
+    expect(rowBoxes[0]).not.toBeNull();
+    expect(rowBoxes[1]).not.toBeNull();
+    expect(Math.abs(rowBoxes[1]!.y - rowBoxes[0]!.y - 28)).toBeLessThanOrEqual(1);
+    const rowPadding = await firstRow.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        block: parseFloat(style.paddingTop),
+        gap: parseFloat(style.columnGap),
+      };
+    });
+    expect(rowPadding.block).toBe(4);
+    expect(rowPadding.gap).toBe(6);
     const rowInset = await firstRow.evaluate((el) => {
       const shellRect = el
         .closest('[data-slot="dropdown-menu-content"]')!
@@ -262,6 +315,10 @@ test("selected session row stays opaque on hover", async ({ page }) => {
     cwd: "/tmp/backchat-selected-hover",
   });
   const row = page.locator(".sidebar-grid-row.app-selected-surface").first();
+  const selectedWeight = await row
+    .locator('[data-sidebar-grid="label"]')
+    .evaluate((el) => Number.parseInt(getComputedStyle(el).fontWeight, 10));
+  expect(selectedWeight).toBe(500);
   await row.hover();
   const alpha = await row.evaluate((el) => {
     const canvas = document.createElement("canvas");
@@ -273,6 +330,74 @@ test("selected session row stays opaque on hover", async ({ page }) => {
     return ctx.getImageData(0, 0, 1, 1).data[3];
   });
   expect(alpha).toBe(255);
+});
+
+test("project sessions share the coordinator grid without clipping", async ({ page }) => {
+  await injectSession(page, {
+    sessionId: "pr56-grid-alignment",
+    agentId: "codex-acp",
+    cwd: "/tmp/pr56-grid-alignment",
+  });
+  const navigation = page.getByRole("navigation");
+  const coordinator = navigation.getByTestId("project-coordinator-row").first();
+  const sessionActions = navigation.getByRole("button", {
+    name: "Session actions",
+    exact: true,
+  });
+  await expect(coordinator).toBeVisible();
+  await expect(sessionActions).toBeAttached();
+
+  const [coordinatorIcon, sessionIcon] = await Promise.all([
+    coordinator.locator('[data-sidebar-grid="icon"]').boundingBox(),
+    sessionActions
+      .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
+      .locator('[data-sidebar-grid="icon"]')
+      .boundingBox(),
+  ]);
+  expect(coordinatorIcon).not.toBeNull();
+  expect(sessionIcon).not.toBeNull();
+  expect(Math.abs(sessionIcon!.x - coordinatorIcon!.x)).toBeLessThanOrEqual(0.5);
+
+  const projectActions = navigation.getByRole("button", {
+    name: "Project actions",
+    exact: true,
+  });
+  const projectRow = projectActions.locator(
+    "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
+  );
+  const sessionRow = sessionActions.locator(
+    "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
+  );
+  const [projectGlyph, coordinatorGlyph, sessionGlyph] = await Promise.all([
+    projectRow.locator(".sidebar-row-icon > *").first().boundingBox(),
+    coordinator.locator(".sidebar-coordinator-icon > *").first().boundingBox(),
+    sessionRow.locator(".sidebar-row-icon > *").first().boundingBox(),
+  ]);
+  expect(projectGlyph).not.toBeNull();
+  expect(coordinatorGlyph).not.toBeNull();
+  expect(sessionGlyph).not.toBeNull();
+  const nestStep = await navigation.evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element).getPropertyValue("--sidebar-grid-nest-step")),
+  );
+  expect(Math.abs(coordinatorGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(sessionGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(sessionGlyph!.x - coordinatorGlyph!.x)).toBeLessThanOrEqual(0.5);
+
+  const labelMetrics = await coordinator
+    .locator('[data-sidebar-grid="label"]')
+    .evaluate((label) => {
+      const row = label.closest(".sidebar-grid-row")!;
+      const rowRect = row.getBoundingClientRect();
+      const labelRect = label.getBoundingClientRect();
+      const style = getComputedStyle(row);
+      return {
+        width: labelRect.width,
+        contentRight: rowRect.right - parseFloat(style.paddingRight),
+        labelRight: labelRect.right,
+      };
+    });
+  expect(Math.abs(labelMetrics.width - 148), JSON.stringify(labelMetrics)).toBeLessThanOrEqual(2);
+  expect(Math.abs(labelMetrics.labelRight - labelMetrics.contentRight)).toBeLessThanOrEqual(1);
 });
 
 test("capture acceptance evidence @pr56", async ({ page }) => {
@@ -524,47 +649,93 @@ test("composer footer menus open upward inside a short window", async ({ page })
       expect(side, `${label} opens upward`).toBe("top");
     };
 
-    for (const control of ["runtime", "project", "workspace"] as const) {
-      const trigger = page.locator(`[data-composer-footer-control="${control}"]`);
-      if (!(await trigger.isVisible().catch(() => false))) continue;
-      await trigger.click();
-      const content = page.locator(
-        '[data-slot="dropdown-menu-content"], [data-slot="popover-content"]',
-      ).last();
-      await expectInsideWindow(content, `footer ${control} menu`);
+    for (const theme of ["light", "dark"] as const) {
+      await page.evaluate(async (theme) => {
+        const current = await window.backchat.settingsGet();
+        await window.backchat.settingsPatch({
+          appearance: { ...current.appearance, theme },
+        });
+      }, theme);
+      for (const control of ["runtime", "project", "workspace"] as const) {
+        const trigger = page.locator(`[data-composer-footer-control="${control}"]`);
+        if (!(await trigger.isVisible().catch(() => false))) continue;
+        await trigger.click();
+        const content = page.locator(
+          '[data-slot="dropdown-menu-content"], [data-slot="popover-content"]',
+        ).last();
+        await expectInsideWindow(content, `footer ${control} menu`);
+        const openStyle = await trigger.evaluate((el) => {
+          const style = getComputedStyle(el);
+        return {
+          outlineStyle: style.outlineStyle,
+          boxShadow: style.boxShadow,
+        };
+      });
+        expect(openStyle.outlineStyle).toBe("none");
+        expect(openStyle.boxShadow).toBe("none");
+        await page.keyboard.press("Escape");
+        await expect(content).toBeHidden();
+      }
+
+      const runTrigger = page.locator("[data-composer-run-trigger]");
+      await runTrigger.click();
+      const runStyle = await runTrigger.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { outlineStyle: style.outlineStyle, boxShadow: style.boxShadow };
+      });
+      expect(runStyle.outlineStyle).toBe("none");
+      expect(runStyle.boxShadow).toBe("none");
+      const runMenu = page
+        .locator('[data-slot="dropdown-menu-content"]')
+        .first();
+      await expectInsideWindow(runMenu, "harness/agent menu");
+
+      const subTrigger = runMenu.locator('[data-slot="dropdown-menu-sub-trigger"]').first();
+      await subTrigger.hover();
+      const subMenu = page.locator('[data-slot="dropdown-menu-sub-content"]').first();
+      await expect(subMenu).toBeVisible({ timeout: 10_000 });
+      const [menuBox, subBox] = await Promise.all([
+        runMenu.boundingBox(),
+        subMenu.boundingBox(),
+      ]);
+      expect(subBox).not.toBeNull();
+      expect(subBox!.y + subBox!.height).toBeLessThanOrEqual(viewportH);
+      expect(
+        Math.abs(menuBox!.y + menuBox!.height - (subBox!.y + subBox!.height)),
+      ).toBeLessThanOrEqual(3);
+      const subStyles = await subMenu.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { overflow: cs.overflowY, maxHeight: cs.maxHeight };
+      });
+      expect(subStyles.overflow).toMatch(/hidden|auto/);
+      expect(subStyles.maxHeight).not.toBe("none");
       await page.keyboard.press("Escape");
-      await expect(content).toBeHidden();
+      await page.keyboard.press("Escape");
+
+      const footerChips = page.locator("button.composer-footer-trigger");
+      for (let index = 0; index < await footerChips.count(); index += 1) {
+        const chip = footerChips.nth(index);
+        if (
+          !(await chip.isVisible().catch(() => false))
+          || !(await chip.isEnabled().catch(() => false))
+        ) {
+          continue;
+        }
+        await chip.click();
+        await expect(chip).toHaveAttribute("data-state", "open");
+        const style = await chip.evaluate((el) => {
+          const computed = getComputedStyle(el);
+          return {
+            outlineStyle: computed.outlineStyle,
+            boxShadow: computed.boxShadow,
+          };
+        });
+        expect(style.outlineStyle).toBe("none");
+        expect(style.boxShadow).toBe("none");
+        await page.keyboard.press("Escape");
+        await page.keyboard.press("Escape");
+      }
     }
-
-    const runTrigger = page.locator("[data-composer-run-trigger]");
-    await runTrigger.click();
-    const runMenu = page
-      .locator('[data-slot="dropdown-menu-content"]')
-      .first();
-    await expectInsideWindow(runMenu, "harness/agent menu");
-
-    const subTrigger = runMenu.locator('[data-slot="dropdown-menu-sub-trigger"]').first();
-    await subTrigger.hover();
-    const subMenu = page.locator('[data-slot="dropdown-menu-sub-content"]').first();
-    await expect(subMenu).toBeVisible({ timeout: 10_000 });
-    const [menuBox, subBox] = await Promise.all([
-      runMenu.boundingBox(),
-      subMenu.boundingBox(),
-    ]);
-    expect(subBox).not.toBeNull();
-    // Submenu stays inside the window and bottom-aligns with its parent row.
-    expect(subBox!.y + subBox!.height).toBeLessThanOrEqual(viewportH);
-    expect(
-      Math.abs(menuBox!.y + menuBox!.height - (subBox!.y + subBox!.height)),
-    ).toBeLessThanOrEqual(3);
-    // Auto height capped by a scrollable max-height.
-    const subStyles = await subMenu.evaluate((el) => {
-      const cs = getComputedStyle(el);
-      return { overflow: cs.overflowY, maxHeight: cs.maxHeight };
-    });
-    expect(subStyles.overflow).toMatch(/hidden|auto/);
-    expect(subStyles.maxHeight).not.toBe("none");
-    await page.keyboard.press("Escape");
   } finally {
     await mock.close();
   }

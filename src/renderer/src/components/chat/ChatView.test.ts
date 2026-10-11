@@ -600,7 +600,7 @@ describe("home suggestions", () => {
     // Highlights answer the pointer or the open menu — a plain click must
     // not leave any chip painted, so pointer focus never styles a trigger.
     expect(controlsSource).not.toContain("focus:bg-");
-    expect(runTrigger).toContain("app-compact-control");
+    expect(runTrigger).toContain("composer-footer-trigger");
   });
 
   it("uses distinct runtime icons for local, cloud, and other machines", () => {
@@ -629,8 +629,9 @@ describe("home suggestions", () => {
     expect(runtimeControl).toContain("ServerIcon");
     expect(runtimeControl).toContain("choice.runtimeName");
     expect(runtimeControl).toContain("choice.environmentName");
-    expect(runtimeControl).toContain("disabled={offline}");
-    expect(runtimeControl).toContain("!locked && choices.map");
+    expect(runtimeControl).toContain("disabled: offline");
+    expect(runtimeControl).toContain("if (!locked)");
+    expect(runtimeControl).toContain("for (const { target: choice, offline } of choices)");
   });
 });
 
