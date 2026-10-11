@@ -3585,7 +3585,10 @@ textarea:disabled::selection {
 /* Disabled controls keep their fill. Inactive ink is a 2:1 glyph floor,
    not 3:1 or 4.5:1 — those sat on `fg-subtle`, so disabled icons looked
    enabled. Opacity would wash the glyph out. Switches and checkboxes draw
-   their own disabled chrome. */
+   their own disabled chrome. `[data-disabled]` can't be a bare presence
+   match: cmdk emits the attribute as "false" on enabled items, so the
+   exclusion below keeps every truthy spelling ("", "true") matching while
+   `data-disabled="false"` stays enabled ink. */
 :is(
   button,
   input,
@@ -3594,7 +3597,7 @@ textarea:disabled::selection {
   [role="menuitem"],
   [role="option"],
   [role="tab"]
-):is(:disabled, [aria-disabled="true"], [data-disabled]):not(
+):is(:disabled, [aria-disabled="true"], [data-disabled]:not([data-disabled="false"])):not(
   [role="switch"],
   [role="checkbox"],
   [data-disabled-hidden]

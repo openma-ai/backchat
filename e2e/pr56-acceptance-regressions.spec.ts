@@ -395,6 +395,32 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
       // no border or shadow of its own.
       expect(frame.border).toBe(0);
       expect(frame.shadow).toBe("none");
+      // Enabled items must not render in disabled ink. cmdk emits
+      // `data-disabled="false"` on enabled items, which a bare `[data-disabled]`
+      // presence selector would still paint with `--fg-disabled`.
+      const ink = await panel.evaluate((el) => {
+        const disabledInk = getComputedStyle(el).getPropertyValue("--fg-disabled").trim()
+          || getComputedStyle(document.documentElement).getPropertyValue("--fg-disabled").trim();
+        const enabled = Array.from(
+          el.querySelectorAll('[cmdk-item][data-disabled="false"], [data-slot="command-item"][data-disabled="false"]'),
+        ).slice(0, 8);
+        return {
+          disabledInk,
+          colors: enabled.map((n) => getComputedStyle(n).color),
+        };
+      });
+      // token may be a hex/oklch keyword; compare rgb of a probe element instead
+      const probe = await page.evaluate((ink) => {
+        const probe = document.createElement("div");
+        probe.style.color = ink;
+        document.body.appendChild(probe);
+        const rgb = getComputedStyle(probe).color;
+        probe.remove();
+        return rgb;
+      }, ink.disabledInk);
+      for (const color of ink.colors) {
+        expect(color).not.toBe(probe);
+      }
       const shell = page
         .locator('[data-slot="dropdown-menu-content"]')
         .filter({ has: panel });

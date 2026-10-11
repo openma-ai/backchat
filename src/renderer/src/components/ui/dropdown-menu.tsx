@@ -259,10 +259,54 @@ function DropdownMenuSubContent({
   alignOffset: alignOffsetProp,
   ...props
 }: DropdownMenuSubContentProps) {
-  const [alignOffset, setAlignOffset] = useState(0);
+  // Measure before the first paint: the popper computes its position once at
+  // mount, so an offset set in a ref callback arrives one render too late.
+  const [alignOffset, setAlignOffset] = useState(() =>
+    measureSubmenuBottomAlignOffset(),
+  );
   const nodeRef = useRef<HTMLDivElement | null>(null);
+  const appliedDyRef = useRef(0);
+  const lastResidualRef = useRef(Number.NaN);
+  const stableFramesRef = useRef(0);
   const syncBottomWithParentMenu = useCallback(() => {
+    const trigger = document.querySelector(
+      '[data-slot="dropdown-menu-sub-trigger"][data-state="open"]',
+    );
+    const parentMenu = trigger?.closest('[data-slot="dropdown-menu-content"]');
     setAlignOffset(measureSubmenuBottomAlignOffset());
+    const node = nodeRef.current;
+    if (!node || !(parentMenu instanceof HTMLElement)) return false;
+    // Radix popper positions the submenu's wrapper; before it resolves the
+    // wrapper sits at a translate(0px,-200%) hide sentinel — correcting on a
+    // hidden or unpositioned rect would fold garbage into the delta.
+    const wrapper = node.parentElement;
+    if (
+      !(wrapper instanceof HTMLElement) ||
+      wrapper.style.cssText.includes("-200%") ||
+      !(wrapper.style.transform || wrapper.style.left || wrapper.style.top)
+    ) {
+      return false;
+    }
+    // The popper's mount-time compute can race the parent popper settling;
+    // correct only once the rendered gap has stopped moving (a few identical
+    // frames), folding it into the CSS `translate` property — untouched by
+    // popper's `transform` — so both bottoms stay flush.
+    const residual =
+      parentMenu.getBoundingClientRect().bottom -
+      node.getBoundingClientRect().bottom;
+    if (residual === lastResidualRef.current) {
+      stableFramesRef.current += 1;
+    } else {
+      stableFramesRef.current = 0;
+      lastResidualRef.current = residual;
+    }
+    if (stableFramesRef.current < 6) return false;
+    if (Math.abs(residual) <= 0.5) return true;
+    appliedDyRef.current += residual;
+    node.style.translate = `0 ${appliedDyRef.current}px`;
+    stableFramesRef.current = 0;
+    lastResidualRef.current = Number.NaN;
+    return false;
   }, []);
 
   const setRefs = useCallback(
@@ -274,20 +318,52 @@ function DropdownMenuSubContent({
   );
 
   useLayoutEffect(() => {
+    // The popper may position the submenu after mount and the open animation
+    // keeps the rect moving; keep correcting each frame for a short window so
+    // the bottoms end flush once everything settles.
+    let raf = 0;
+    let deadline = performance.now() + 2000;
+    const tick = () => {
+      if (performance.now() > deadline) {
+        // Never converged — correct once with a fresh measurement.
+        const node = nodeRef.current;
+        const trig = document.querySelector(
+          '[data-slot="dropdown-menu-sub-trigger"][data-state="open"]',
+        );
+        const parent = trig?.closest('[data-slot="dropdown-menu-content"]');
+        if (node && parent instanceof HTMLElement) {
+          const residual =
+            parent.getBoundingClientRect().bottom -
+            node.getBoundingClientRect().bottom;
+          if (Math.abs(residual) > 0.5) {
+            appliedDyRef.current += residual;
+            node.style.translate = `0 ${appliedDyRef.current}px`;
+          }
+        }
+        return;
+      }
+      syncBottomWithParentMenu();
+      raf = requestAnimationFrame(tick);
+    };
     syncBottomWithParentMenu();
+    raf = requestAnimationFrame(tick);
+    const observer = new ResizeObserver(() => {
+      deadline = performance.now() + 250;
+    });
     const trigger = document.querySelector(
       '[data-slot="dropdown-menu-sub-trigger"][data-state="open"]',
     );
     const parentMenu = trigger?.closest('[data-slot="dropdown-menu-content"]');
-    if (!(parentMenu instanceof HTMLElement)) {
-      return;
+    if (parentMenu instanceof HTMLElement) {
+      observer.observe(parentMenu);
     }
-    const observer = new ResizeObserver(() => syncBottomWithParentMenu());
-    observer.observe(parentMenu);
     if (nodeRef.current) {
       observer.observe(nodeRef.current);
     }
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
   }, [syncBottomWithParentMenu]);
 
   const popperPlacement = {
