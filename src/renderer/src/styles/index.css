@@ -1937,21 +1937,22 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
    430 face uses the Regular file, so a 430 request resolves to Regular
    wherever these local() names exist. 500 is its own face (Medium), and
    600 is Semibold. Without the 500 face, font-medium collapses to Regular.
-   local() names are the English full name, the PostScript name, and the
-   Simplified Chinese full name. This Linux checkout cannot draw PingFang. */
+   local() names are the English full name and the PostScript name.
+   This Linux checkout cannot draw PingFang. The Simplified Chinese full
+   name does not resolve in Chromium, so it is not listed. */
 @font-face {
   font-family: "Backchat PingFang";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: local("PingFang SC Regular"), local("PingFangSC-Regular"), local("苹方-简 常规");
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular");
 }
 @font-face {
   font-family: "Backchat PingFang";
   font-style: normal;
   font-weight: 430;
   font-display: swap;
-  src: local("PingFang SC Regular"), local("PingFangSC-Regular"), local("苹方-简 常规");
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular");
 }
 @font-face {
   font-family: "Backchat PingFang";

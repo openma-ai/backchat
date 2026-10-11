@@ -60,7 +60,7 @@ describe("declared Backchat faces", () => {
     expect(matchFontWeight(600, faces)?.min).toBe(600);
     expect(faceSrc(css, "Backchat PingFang", 400)).toContain('local("PingFang SC Regular")');
     expect(faceSrc(css, "Backchat PingFang", 400)).toContain('local("PingFangSC-Regular")');
-    expect(faceSrc(css, "Backchat PingFang", 400)).toContain('local("苹方-简 常规")');
+    expect(faceSrc(css, "Backchat PingFang", 400)).not.toContain("苹方");
     const regular = faceSrc(css, "Backchat PingFang", 430);
     expect(regular).toBe(faceSrc(css, "Backchat PingFang", 400));
     expect(regular).not.toContain("Medium");
