@@ -47,6 +47,8 @@
     "@anthropic-ai/sdk": "0.120.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@fontsource-variable/noto-sans": "^5.3.0",
+    "@fontsource/noto-sans-sc": "^5.3.0",
     "@hono/node-server": "1.19.15",
     "@lobehub/icons": "^5.10.0",
     "@modelcontextprotocol/ext-apps": "1.7.4",
@@ -185,6 +187,17 @@
       "**/*.node"
     ],
     "mac": {
+      "files": [
+        "out/**/*",
+        "!**/*noto-sans*.woff2",
+        {
+          "from": "build/packaged-dependencies/node_modules",
+          "to": "node_modules",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
       "identity": "-",
       "hardenedRuntime": false,
       "target": [
@@ -194,6 +207,17 @@
       "category": "public.app-category.developer-tools"
     },
     "win": {
+      "files": [
+        "out/**/*",
+        "!**/*noto-sans*.woff2",
+        {
+          "from": "build/packaged-dependencies/node_modules",
+          "to": "node_modules",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
       "target": [
         "nsis"
       ]

@@ -12,11 +12,12 @@ import { RendererCrashPage } from "@/components/RendererCrashPage";
 import { RendererCrashLegacyPreview } from "@/dev/RendererCrashLegacyPreview";
 import { installRendererCrashHandlers } from "@/lib/renderer-crash-report";
 import { router } from "@/router";
+import { applyRendererOs } from "@/lib/os";
 import { applyStoredTheme } from "@/lib/theme";
-import "@fontsource-variable/geist";
-import "@fontsource-variable/jetbrains-mono";
 import "@openma/common/chat-ui/styles.css";
 import "./styles/index.css";
+
+applyRendererOs(document.documentElement, navigator.userAgent);
 
 /**
  * Renderer entry. TanStack Router owns the page layout via routeTree; the

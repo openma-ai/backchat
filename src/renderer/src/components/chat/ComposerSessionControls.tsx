@@ -88,7 +88,7 @@ export type ComposerRuntimeKind = "local" | "cloud" | "remote";
 const COMPOSER_ICON_BUTTON_CLASS = cn(
   "inline-flex size-[var(--control-height-compact)] shrink-0 items-center justify-center rounded-md",
   "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-  "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+  "disabled:text-fg-disabled disabled:hover:bg-transparent",
   "transition-colors",
 );
 
@@ -136,7 +136,7 @@ export function ComposerAuthControls({
         className={cn(
           "inline-flex h-[var(--control-height-compact)] shrink-0 items-center gap-1 rounded-md px-1.5",
           "text-xs text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
-          "disabled:text-fg-subtle/40 disabled:hover:bg-transparent disabled:hover:text-fg-subtle/40",
+          "disabled:text-fg-disabled disabled:hover:bg-transparent",
           "transition-colors",
         )}
       >
@@ -370,7 +370,7 @@ function SessionAgentSubmenu({
           {currentAgentLabel}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={GAP_ADJACENT_PX} className={groupedCommandMenuShellClassName()}>
+      <DropdownMenuSubContent sideOffset={GAP_ADJACENT_PX} collisionPadding={16} className={groupedCommandMenuShellClassName()}>
         {onOpenAuth && (authNeeded || supportsLogout) && (
           <DropdownMenuItem
             className="min-h-10 gap-2 px-2 py-1.5 text-xs"
@@ -467,7 +467,7 @@ function SessionConfigSubmenu({
           {selectedConfigOptionLabel(option)}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={GAP_ADJACENT_PX} className={groupedCommandMenuShellClassName()}>
+      <DropdownMenuSubContent sideOffset={GAP_ADJACENT_PX} collisionPadding={16} className={groupedCommandMenuShellClassName()}>
         {option.type === "select" ? (
             <ComposerSearchableSelectMenu
               items={selectMenuItems}
@@ -1022,9 +1022,11 @@ function SessionRunItem({
         <Icon className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" />
       ) : null}
       <span className="min-w-0 flex-1">
-        <span className="block truncate">{label}</span>
+        <span className="block truncate leading-4">{label}</span>
         {hint && (
-          <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
+          <span className="block truncate text-[11px] leading-4 text-fg-subtle">
+            {hint}
+          </span>
         )}
       </span>
       {active && (
@@ -1071,7 +1073,7 @@ function SessionRunItem({
       onSelect={onSelect}
       onFocus={() => undefined}
       className={cn(
-        "flex items-start gap-2 px-2 py-1.5 text-xs",
+        "flex items-start gap-2 px-2 py-1 text-xs leading-4",
         highlighted && "bg-accent text-accent-foreground",
         active && "text-fg",
       )}

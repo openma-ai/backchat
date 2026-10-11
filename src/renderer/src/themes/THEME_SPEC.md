@@ -140,6 +140,11 @@ allows a skin to be installed and switched like an editor color theme.
 - `layout.sidebarWidth`: 200..560 CSS pixels.
 - `homeHero.height`: 240..720 CSS pixels.
 - `homeSlogan.fontSize`: 20..72; `fontWeight`: 400..800.
+`homeSlogan.fontFamily`: `"ui"` uses the UI/body sans (`--font-sans`).
+`"display"` uses the slogan serif (`--font-display`: Iowan Old Style /
+Palatino / Georgia, with Songti SC and Noto Serif SC for Chinese). Omitting
+`fontFamily` also uses the serif. Neither face is a packaged webfont; the
+serif is what makes `"display"` a different slogan from the UI sans.
 - `homeSuggestions.offsetY`: -180..80 CSS pixels.
 - `homeComposer.width`: 480..1120 CSS pixels.
 - Suggestion values outside their declared ranges are rejected.
