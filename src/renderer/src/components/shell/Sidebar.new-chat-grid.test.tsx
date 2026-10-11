@@ -6,6 +6,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenmaAccountState, OpenmaTask } from "@shared/openma";
+import type { ProjectInfo } from "@shared/projects";
 import { sessionStore } from "@/lib/session-store";
 
 const scope = {
@@ -114,13 +115,23 @@ function openmaTask(id: string, title: string, pinnedAt?: number): OpenmaTask {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function installBackchat(account: OpenmaAccountState = signedOutAccount): void {
+function installBackchat(
+  account: OpenmaAccountState = signedOutAccount,
+  projects: ProjectInfo[] = [],
+  coordinatorAgent?: string,
+): void {
   taskRefreshCalls = 0;
   const api = new Proxy({}, {
     get(_target, prop) {
       if (typeof prop !== "string") return undefined;
       if (prop.startsWith("on")) return () => () => undefined;
       if (prop === "openmaAccountState") return async () => account;
+      if (prop === "projectsList") return async () => projects;
+      if (prop === "projectWorkView") return async () => ({
+        config: coordinatorAgent ? { coordinatorAgent } : null,
+        facts: { sessions: [] },
+      });
+      if (prop === "agentsList") return async () => [];
       if (prop === "openmaTasksRefresh") return async () => {
         taskRefreshCalls += 1;
         if (taskRefreshMode === "error") throw new Error("tenant unavailable");
@@ -164,6 +175,7 @@ async function waitForText(host: HTMLElement, text: string): Promise<void> {
 describe("new chat sidebar grid", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    localStorage.clear();
     taskRefreshMode = "success";
     installBackchat();
   });
@@ -220,6 +232,56 @@ describe("new chat sidebar grid", () => {
     expect(tenantRows.some((row) => row.textContent?.includes("Pinned tenant conversation"))).toBe(true);
     expect(tenantRows.some((row) => row.textContent?.includes("Tenant conversation"))).toBe(true);
     await act(async () => root.unmount());
+  });
+
+  it("uses a trailing coordinator cell only for configured projects", async () => {
+    const project: ProjectInfo = {
+      id: "coordinator-project",
+      name: "Coordinator project",
+      primary_folder: "/work/coordinator-project",
+      source_folders: ["/work/coordinator-project"],
+      created_at: 1,
+      updated_at: 1,
+    };
+    const renderCoordinator = async (coordinatorAgent?: string) => {
+      localStorage.setItem(
+        "backchat:sidebar-projects:v1",
+        JSON.stringify([`project:${project.id}`]),
+      );
+      installBackchat(signedOutAccount, [project], coordinatorAgent);
+      const { root, host } = await mount();
+      await act(async () => {
+        await vi.waitFor(() => {
+          const row = host.querySelector<HTMLElement>(
+            '[data-testid="project-coordinator-row"]',
+          );
+          expect(row?.getAttribute("data-configured")).toBe(
+            String(!!coordinatorAgent),
+          );
+        });
+      });
+      return { root, host };
+    };
+
+    const configured = await renderCoordinator("codex-acp");
+    const configuredRow = configured.host.querySelector<HTMLElement>(
+      '[data-testid="project-coordinator-row"]',
+    );
+    const configuredTrailing = configuredRow?.querySelector<HTMLElement>(
+      '[data-sidebar-grid="trailing"]',
+    );
+    expect(configuredRow?.getAttribute("data-sidebar-trailing-track")).toBe("single");
+    expect(configuredTrailing?.getAttribute("aria-hidden")).toBe("true");
+    expect(configuredTrailing?.querySelector("svg")).not.toBeNull();
+    await act(async () => configured.root.unmount());
+
+    const unconfigured = await renderCoordinator();
+    const unconfiguredRow = unconfigured.host.querySelector<HTMLElement>(
+      '[data-testid="project-coordinator-row"]',
+    );
+    expect(unconfiguredRow?.getAttribute("data-sidebar-trailing-track")).toBe("none");
+    expect(unconfiguredRow?.querySelector('[data-sidebar-grid="trailing"]')).toBeNull();
+    await act(async () => unconfigured.root.unmount());
   });
 
   it("uses a label-only sign-in row for a workspace still signing in", async () => {

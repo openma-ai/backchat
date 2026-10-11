@@ -1451,7 +1451,7 @@ function ProjectCoordinatorRow({
     "data-configured": hasCoordinator,
     className: cn("sidebar-grid-row", rowClassName),
     "data-sidebar-depth": "2",
-    "data-sidebar-trailing-track": "none",
+    "data-sidebar-trailing-track": hasCoordinator ? "single" : "none",
   };
   const content = <>
     <SidebarGridCell slot="icon">
@@ -1464,6 +1464,11 @@ function ProjectCoordinatorRow({
     <SidebarGridCell slot="label">
       <span className={cn("min-w-0 truncate font-medium", labelCls)}>{label}</span>
     </SidebarGridCell>
+    {hasCoordinator && (
+      <SidebarGridCell slot="trailing" className={labelCls} aria-hidden="true">
+        <WorkflowIcon className="size-3.5 shrink-0 text-fg-muted" />
+      </SidebarGridCell>
+    )}
   </>;
   return group.projectId ? (
     <Link to="/projects/$projectId" params={{ projectId: group.projectId }} {...props}>{content}</Link>

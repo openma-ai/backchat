@@ -609,8 +609,15 @@ describe("groupSidebarSessions", () => {
       const start = source.indexOf(component);
       expect(source.slice(start, start + 2400)).toContain("sidebar-row-icon");
     }
-    // No row renders a bare glyph outside the shared box.
-    expect(source).not.toContain('className="size-3.5 shrink-0');
+    const coordinatorStart = source.indexOf("function ProjectCoordinatorRow");
+    const coordinatorEnd = source.indexOf("/** Workspace node.", coordinatorStart);
+    const coordinator = source.slice(coordinatorStart, coordinatorEnd);
+    expect(coordinator).toContain(
+      '<SidebarGridCell slot="trailing" className={labelCls} aria-hidden="true">',
+    );
+    expect(coordinator).toContain(
+      '<WorkflowIcon className="size-3.5 shrink-0 text-fg-muted" />',
+    );
     expect(source).not.toContain('"inline-flex size-4 shrink-0');
   });
 
