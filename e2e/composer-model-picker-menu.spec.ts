@@ -120,7 +120,11 @@ test("model picker shows provider command groups with bounded scroll", async ({ 
   const panel = modelPickerPanel(page);
   await expect(panel).toBeVisible({ timeout: 10_000 });
 
-  await expect(panel.getByText("openai-codex", { exact: true })).toBeVisible();
+  await expect(
+    panel.locator("[data-grouped-command-group-heading]", {
+      hasText: "openai-codex",
+    }),
+  ).toBeVisible();
   await expect(
     panel.getByRole("option", { name: /openai-codex model 2/ }),
   ).toBeVisible();

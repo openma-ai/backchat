@@ -29,6 +29,10 @@ describe("renderer entry", () => {
       documentElement: { dataset },
       getElementById: () => ({ nodeType: 1 }),
     });
+    vi.stubGlobal("window", {
+      addEventListener: () => undefined,
+      location: { search: "" },
+    });
     await import("./main");
     expect(dataset.os).toBe("mac");
     expect(render).toHaveBeenCalled();

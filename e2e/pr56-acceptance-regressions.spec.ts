@@ -70,7 +70,7 @@ test("new chat row matches session row vertical alignment and shows hover wash",
   await expect
     .poll(async () => {
       const bg = await newChat.evaluate(
-        (el) => getComputedStyle(el).backgroundColor,
+        (el) => getComputedStyle(el, "::before").backgroundColor,
       );
       return bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
     })
@@ -325,4 +325,198 @@ test("project picker search keeps cmdk best-match order for re", async ({ page }
   await search.fill("re");
   const firstOption = panel.locator('[cmdk-item]:not([aria-disabled="true"])').first();
   await expect(firstOption).toContainText(/No project|无项目/i);
+});
+
+test("new chat hover wash matches the shared mesh button box", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enableAgent(page, "codex-acp");
+  const newChat = page.getByTestId("new-chat-button");
+  await newChat.hover();
+  const wash = await newChat.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const bcs = getComputedStyle(el, "::before");
+    return {
+      left: r.left + parseFloat(bcs.left),
+      right: r.right - parseFloat(bcs.right),
+      top: r.top + parseFloat(bcs.top),
+      bottom: r.bottom - parseFloat(bcs.bottom),
+      bg: bcs.backgroundColor,
+      elementBg: getComputedStyle(el).backgroundColor,
+    };
+  });
+  // A single shape paints the wash; the button element itself stays transparent.
+  expect(wash.elementBg).toBe("rgba(0, 0, 0, 0)");
+  expect(wash.bg).not.toBe("rgba(0, 0, 0, 0)");
+  // Main's wash ran 15→172 at 28px tall; cells stay on the x22/x46 mesh so the
+  // icon keeps a visible gap to the wash's left edge.
+  expect(wash.left).toBeGreaterThanOrEqual(14.5);
+  expect(wash.left).toBeLessThanOrEqual(15.5);
+  expect(wash.right).toBeGreaterThanOrEqual(171.5);
+  expect(wash.right).toBeLessThanOrEqual(172.5);
+  expect(wash.bottom - wash.top).toBeGreaterThanOrEqual(27);
+  expect(wash.bottom - wash.top).toBeLessThanOrEqual(29);
+  const iconCell = page.locator('[data-sidebar-row="new-chat"] [data-sidebar-grid="icon"]');
+  const labelCell = page.locator('[data-sidebar-row="new-chat"] [data-sidebar-grid="label"]');
+  const iconBox = await iconCell.boundingBox();
+  const labelBox = await labelCell.boundingBox();
+  expect(iconBox).not.toBeNull();
+  expect(labelBox).not.toBeNull();
+  expect(iconBox!.x).toBeGreaterThanOrEqual(21.5);
+  expect(iconBox!.x).toBeLessThanOrEqual(22.5);
+  expect(labelBox!.x).toBeGreaterThanOrEqual(45.5);
+  expect(labelBox!.x).toBeLessThanOrEqual(46.5);
+  expect(iconBox!.x - wash.left).toBeGreaterThanOrEqual(6.5);
+});
+
+test("host picker panels draw a single framed surface", async ({ page }) => {
+  test.setTimeout(120_000);
+  const mock = await startOpenmaCatalogMock({ cloudEnvironmentCount: 1 });
+  try {
+    await page.evaluate(async (baseUrl) => {
+      await window.backchat.openmaLogin(baseUrl);
+    }, mock.baseUrl);
+    await enableAgent(page, "codex-acp");
+    await page.getByTestId("new-chat-button").click();
+
+    const assertSingleFrame = async (
+      open: () => Promise<void>,
+      panel: ReturnType<typeof hostPickerPanel>,
+    ) => {
+      await open();
+      const command = panel.locator('[data-slot="command"], .grouped-command-menu').first();
+      const frame = await command.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          border: parseFloat(cs.borderTopWidth),
+          shadow: cs.boxShadow,
+        };
+      });
+      // The dropdown shell is the only framed surface; the nested command keeps
+      // no border or shadow of its own.
+      expect(frame.border).toBe(0);
+      expect(frame.shadow).toBe("none");
+      const shell = page
+        .locator('[data-slot="dropdown-menu-content"]')
+        .filter({ has: panel });
+      const shellBox = await shell.boundingBox();
+      expect(shellBox).not.toBeNull();
+      // Rows keep main's ~5px inset from the shell edge.
+      const firstRow = panel.locator('[cmdk-item]').first();
+      const rowInset = await firstRow.evaluate((el) => {
+        const shellRect = el
+          .closest('[data-slot="dropdown-menu-content"]')!
+          .getBoundingClientRect();
+        return el.getBoundingClientRect().left - shellRect.left;
+      });
+      expect(rowInset).toBeGreaterThanOrEqual(4);
+      expect(rowInset).toBeLessThanOrEqual(6.5);
+      // The divider spans the shell's content box edge to edge.
+      const separator = panel.locator('[data-slot="command-separator"]').first();
+      const sepBox = await separator.boundingBox();
+      const shellPads = await shell.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return {
+          left: parseFloat(style.paddingLeft),
+          right: parseFloat(style.paddingRight),
+          border: parseFloat(style.borderLeftWidth),
+        };
+      });
+      const innerWidth =
+        shellBox!.width - shellPads.left - shellPads.right - shellPads.border * 2;
+      expect(sepBox).not.toBeNull();
+      expect(sepBox!.width).toBeGreaterThanOrEqual(innerWidth - 2);
+      await page.keyboard.press("Escape");
+      await expect(shell).toBeHidden();
+    };
+
+    await assertSingleFrame(
+      () => openRuntimeLocationPicker(page),
+      hostPickerPanel(page),
+    );
+    await assertSingleFrame(
+      async () => {
+        await page.getByTestId("sidebar-local-runtime-row").click();
+        await expect(page.getByTestId("sidebar-host-picker-panel")).toBeVisible({
+          timeout: 10_000,
+        });
+      },
+      page.getByTestId("sidebar-host-picker-panel"),
+    );
+  } finally {
+    await mock.close();
+  }
+});
+
+test("composer footer menus open upward inside a short window", async ({ page }) => {
+  test.setTimeout(120_000);
+  const mock = await startOpenmaCatalogMock({ cloudEnvironmentCount: 1 });
+  try {
+    await page.evaluate(async (baseUrl) => {
+      await window.backchat.openmaLogin(baseUrl);
+    }, mock.baseUrl);
+    await enableAgent(page, "codex-acp");
+    await page.getByTestId("new-chat-button").click();
+    await page.setViewportSize({ width: 900, height: 560 });
+
+    const viewportH = await page.evaluate(() => window.innerHeight);
+    const expectInsideWindow = async (
+      content: ReturnType<typeof page.locator>,
+      label: string,
+    ) => {
+      await expect(content).toBeVisible({ timeout: 10_000 });
+      const box = await content.boundingBox();
+      expect(box, `${label} bounds`).not.toBeNull();
+      expect(box!.y, `${label} top inside window`).toBeGreaterThanOrEqual(0);
+      expect(
+        box!.y + box!.height,
+        `${label} bottom inside window`,
+      ).toBeLessThanOrEqual(viewportH);
+      const side = await content.getAttribute("data-side");
+      expect(side, `${label} opens upward`).toBe("top");
+    };
+
+    for (const control of ["runtime", "project", "workspace"] as const) {
+      const trigger = page.locator(`[data-composer-footer-control="${control}"]`);
+      if (!(await trigger.isVisible().catch(() => false))) continue;
+      await trigger.click();
+      const content = page.locator(
+        '[data-slot="dropdown-menu-content"], [data-slot="popover-content"]',
+      ).last();
+      await expectInsideWindow(content, `footer ${control} menu`);
+      await page.keyboard.press("Escape");
+      await expect(content).toBeHidden();
+    }
+
+    const runTrigger = page.locator("[data-composer-run-trigger]");
+    await runTrigger.click();
+    const runMenu = page
+      .locator('[data-slot="dropdown-menu-content"]')
+      .first();
+    await expectInsideWindow(runMenu, "harness/agent menu");
+
+    const subTrigger = runMenu.locator('[data-slot="dropdown-menu-sub-trigger"]').first();
+    await subTrigger.hover();
+    const subMenu = page.locator('[data-slot="dropdown-menu-sub-content"]').first();
+    await expect(subMenu).toBeVisible({ timeout: 10_000 });
+    const [menuBox, subBox] = await Promise.all([
+      runMenu.boundingBox(),
+      subMenu.boundingBox(),
+    ]);
+    expect(subBox).not.toBeNull();
+    // Submenu stays inside the window and bottom-aligns with its parent row.
+    expect(subBox!.y + subBox!.height).toBeLessThanOrEqual(viewportH);
+    expect(
+      Math.abs(menuBox!.y + menuBox!.height - (subBox!.y + subBox!.height)),
+    ).toBeLessThanOrEqual(3);
+    // Auto height capped by a scrollable max-height.
+    const subStyles = await subMenu.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { overflow: cs.overflowY, maxHeight: cs.maxHeight };
+    });
+    expect(subStyles.overflow).toMatch(/hidden|auto/);
+    expect(subStyles.maxHeight).not.toBe("none");
+    await page.keyboard.press("Escape");
+  } finally {
+    await mock.close();
+  }
 });

@@ -108,6 +108,31 @@ describe("InlineComposerOptionControls", () => {
     expect(html).not.toContain("disabled");
   });
 
+  it("renders a generic custom select option with its current value", () => {
+    const html = renderToStaticMarkup(
+      <InlineComposerOptionControls
+        disabled={false}
+        configOptions={[
+          {
+            id: "theme",
+            name: "Theme",
+            category: "custom",
+            type: "select",
+            currentValue: "dark",
+            options: [
+              { value: "dark", name: "Dark" },
+              { value: "light", name: "Light" },
+            ],
+          },
+        ]}
+        onSetConfigOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Theme");
+    expect(html).toContain("Dark");
+  });
+
   it("renders the Agent option like permission: icon plus current name, per-option icons in the menu", () => {
     const html = renderToStaticMarkup(
       <InlineComposerOptionControls

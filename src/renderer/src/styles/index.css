@@ -2876,6 +2876,22 @@ body,
   width: 100%;
 }
 
+/* The dropdown/submenu shell is already the framed surface; a Command nested
+   inside it keeps its layout chrome but not a second border+shadow.
+   `app-select-content` lives outside Tailwind's layers, so `border-0` /
+   `shadow-none` utilities could never strip it — this rule does it once.
+   grouped-command-field re-adds its own border and project/workspace pickers
+   use the Command itself as the framed surface, so only the dropdown modes
+   are stripped here. */
+:is(
+    [data-composer-select-menu-mode="host-picker"],
+    [data-composer-select-menu-mode="grouped-command"]
+  )
+  > .grouped-command-menu.app-select-content {
+  border: 0;
+  box-shadow: none;
+}
+
 [data-composer-select-menu-mode="host-picker"] .host-picker-command-separator {
   margin-inline: -0.25rem !important;
   margin-block: 0.25rem !important;
@@ -2979,7 +2995,10 @@ body,
 
 /* One hover wash across icon + label. Subgrid keeps those cells on the
    shared icon and label tracks, so this row's icon shares every other
-   row's x position. */
+   row's x position. The wash itself follows main's button box: it starts
+   7px left of the icon track and stops before the trailing actions, so it
+   is painted by a pseudo-element that extends past the button's grid box
+   (the cells stay pinned to the parent tracks). */
 .sidebar-grid-row[data-sidebar-row="new-chat"] > .sidebar-new-chat-primary {
   grid-column: 1 / 3;
   display: grid;
@@ -2992,12 +3011,37 @@ body,
   text-align: left;
   background: transparent;
   border: 0;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  position: relative;
+  isolation: isolate;
+  transition: color 0.15s ease;
 }
 
 .sidebar-grid-row[data-sidebar-row="new-chat"]
-  > .sidebar-new-chat-primary:is(:hover, :focus-visible) {
+  > .sidebar-new-chat-primary::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -7px;
+  inset-inline-end: 14px;
+  z-index: -1;
+  border-radius: var(--control-radius);
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"]
+  > .sidebar-new-chat-primary:is(:hover, :focus-visible)::before {
   background: var(--control-bg-hover);
+}
+
+/* The focus ring wraps the wash, not the narrower grid box. */
+.sidebar-grid-row[data-sidebar-row="new-chat"]
+  > .sidebar-new-chat-primary:focus-visible {
+  outline: none;
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"]
+  > .sidebar-new-chat-primary:focus-visible::before {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 /* Trailing actions stay 16px glyphs, but their boxes share the row's top

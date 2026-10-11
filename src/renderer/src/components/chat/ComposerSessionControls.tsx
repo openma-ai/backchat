@@ -288,7 +288,12 @@ export function SessionRunChip({
         )}
         <ChevronDownIcon className="size-3.5 shrink-0 text-current opacity-65 group-hover/model-selector:text-fg group-hover/model-selector:opacity-100" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-[var(--composer-menu-width)]">
+      <DropdownMenuContent
+        side="top"
+        align="end"
+        sideOffset={GAP_ADJACENT_PX}
+        className="w-[var(--composer-menu-width)]"
+      >
         <div className="border-b border-border/50 py-1">
           <SessionAgentSubmenu
             agents={agents}
@@ -579,6 +584,7 @@ export function PermissionModeChip({
         <ChevronDownIcon className="size-3.5 opacity-70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
+        side="top"
         align="start"
         sideOffset={GAP_ADJACENT_PX}
         className="w-[var(--composer-menu-width)]"
@@ -701,6 +707,7 @@ function SessionModeControl({
         <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
+        side="top"
         align="start"
         sideOffset={GAP_ADJACENT_PX}
         className="w-[var(--composer-menu-width)] p-1"
@@ -899,6 +906,7 @@ function InlineComposerOptionControl({
           <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
         </DropdownMenuTrigger>
         <DropdownMenuContent
+          side="top"
           align="start"
           sideOffset={GAP_ADJACENT_PX}
           collisionPadding={8}
@@ -951,6 +959,7 @@ function InlineComposerOptionControl({
         <ChevronDownIcon className="size-3.5 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
+        side="top"
         align="start"
         sideOffset={GAP_ADJACENT_PX}
         collisionPadding={8}
