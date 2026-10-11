@@ -73,13 +73,35 @@ test.describe("searchable grouped command menus do not crash the renderer", () =
   test("grouped command field tolerates agent search", async ({ page, home }) => {
     test.setTimeout(120_000);
     await seedWorkspacePickerFixture(page, home);
-    await enableAgent(page, "codex-acp");
-    await enableAgent(page, "claude-acp");
-    await page.goto("/projects/workspace-fit-project");
+    await page.evaluate(async (command) => {
+      const settings = await window.backchat.settingsGet();
+      await window.backchat.settingsPatch({
+        agents: [
+          ...settings.agents,
+          ...Array.from({ length: 8 }, (_, index) => ({
+            id: `grouped-search-agent-${index}`,
+            label_override: `Grouped search agent ${index}`,
+            command_override: command,
+            args_override: [],
+            env: [],
+            enabled: true,
+          })),
+        ],
+      });
+    }, process.execPath);
+    await page.reload();
+    const projects = page.getByRole("button", { name: "Projects", exact: true });
+    if (await projects.getAttribute("aria-expanded") === "false") await projects.click();
+    const project = page.locator('[data-sidebar-project="project:workspace-fit-project"]');
+    const toggle = project.locator("button[aria-expanded]").first();
+    await expect(toggle).toBeVisible();
+    if (await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
+    await page.locator('[data-project-coordinator="project:workspace-fit-project"]').click();
     await page.getByRole("button", { name: /Set up coordinator|设置项目协调/ }).click();
-    const combobox = page.getByRole("combobox", {
-      name: /Coordinator agent|协调代理|Set-up coordinator/i,
-    });
+    await page.getByRole("button", { name: /Configure|配置/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Coordinator settings", exact: true });
+    await dialog.getByRole("tab", { name: "Agents", exact: true }).click();
+    const combobox = dialog.getByRole("combobox", { name: "Coordinator agent", exact: true });
     await combobox.click();
     const panel = page.locator('[data-composer-select-menu-mode="grouped-command-field"]');
     await panel.locator('input[type="search"], input[cmdk-input]').fill("an");

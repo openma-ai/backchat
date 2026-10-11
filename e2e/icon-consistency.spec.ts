@@ -32,7 +32,10 @@ test("project menu uses the shared compact circular action highlight", async ({ 
   }, home);
   await page.reload();
   const row = page.locator('[data-sidebar-project="project:row-highlight"]');
-  const surface = row.locator('.sidebar-project-surface');
+  // The row itself is the hover surface on this branch.
+  const surface = page.locator(
+    '[data-sidebar-project="project:row-highlight"].sidebar-project-surface',
+  );
   const trigger = row.locator('button[data-sidebar-row-action="true"]');
   await row.hover();
   await trigger.hover();
