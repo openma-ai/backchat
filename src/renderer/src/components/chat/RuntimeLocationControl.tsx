@@ -157,21 +157,15 @@ export function RuntimeLocationControl({
       {
         id: "openma-account",
         value: "openma-account",
+        plain: true,
         onSelect: () => {
           setMenuOpen(false);
           void navigate({ to: "/settings/openma" });
         },
         children: (
-          <>
-            <GroupedCommandMenuIconSlot>
-              <span className="size-3.5" aria-hidden />
-            </GroupedCommandMenuIconSlot>
-            <GroupedCommandMenuLabelSlot>
-              <span className="truncate">
-                {t(account?.status === "signed_in" ? "openma.account" : "openma.signIn")}
-              </span>
-            </GroupedCommandMenuLabelSlot>
-          </>
+          <span className="truncate">
+            {t(account?.status === "signed_in" ? "openma.account" : "openma.signIn")}
+          </span>
         ),
       },
     ];
@@ -181,23 +175,17 @@ export function RuntimeLocationControl({
       tailItems.push({
         id: "locations-status",
         value: "locations-status",
+        plain: true,
         disabled: true,
         onSelect: () => {},
         children: (
-          <>
-            <GroupedCommandMenuIconSlot>
-              <span className="size-3.5" aria-hidden />
-            </GroupedCommandMenuIconSlot>
-            <GroupedCommandMenuLabelSlot>
-              <span className="text-fg-subtle">
-                {isFetching
-                  ? t("openma.loadingLocations")
-                  : error
-                    ? t("openma.locationsUnavailable")
-                    : t("openma.noLocations")}
-              </span>
-            </GroupedCommandMenuLabelSlot>
-          </>
+          <span className="text-fg-subtle">
+            {isFetching
+              ? t("openma.loadingLocations")
+              : error
+                ? t("openma.locationsUnavailable")
+                : t("openma.noLocations")}
+          </span>
         ),
       });
     }
@@ -205,19 +193,13 @@ export function RuntimeLocationControl({
       tailItems.push({
         id: "openma-manage",
         value: "openma-manage",
+        plain: true,
         onSelect: () => {
           setMenuOpen(false);
           void window.backchat.openmaOpenManagement();
         },
         children: (
-          <>
-            <GroupedCommandMenuIconSlot>
-              <span className="size-3.5" aria-hidden />
-            </GroupedCommandMenuIconSlot>
-            <GroupedCommandMenuLabelSlot>
-              <span className="truncate">{t("openma.manageResources")}</span>
-            </GroupedCommandMenuLabelSlot>
-          </>
+          <span className="truncate">{t("openma.manageResources")}</span>
         ),
       });
     }

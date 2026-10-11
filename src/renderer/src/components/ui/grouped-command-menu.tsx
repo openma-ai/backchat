@@ -35,6 +35,9 @@ export type GroupedCommandMenuItem = {
   disabled?: boolean;
   title?: string;
   forceMount?: boolean;
+  /** Renders like a plain DropdownMenuItem — no icon-track grid, label at the
+      row inset, default item size (main's host-picker parity). */
+  plain?: boolean;
   onSelect: () => void;
   children: ReactNode;
 };
@@ -241,7 +244,7 @@ export function GroupedCommandMenu({
           : undefined
       }
       className={cn(
-        "text-xs",
+        item.plain ? "grouped-command-plain-item text-sm" : "text-xs",
         menuMode === "host-picker" &&
           "host-picker-command-item !items-start !py-1 !px-2",
       )}

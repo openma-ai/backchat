@@ -451,6 +451,29 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
         shellBox!.width - shellPads.left - shellPads.right - shellPads.border * 2;
       expect(sepBox).not.toBeNull();
       expect(sepBox!.width).toBeGreaterThanOrEqual(innerWidth - 2);
+      // Account/manage rows render like main's plain DropdownMenuItems: the
+      // label sits at the row's padding inset (no icon-track indent) at the
+      // default item size (14px), not the grid rows' 12px label-column offset.
+      const plainRows = panel.locator(".grouped-command-plain-item");
+      expect(await plainRows.count()).toBeGreaterThanOrEqual(1);
+      for (let i = 0; i < (await plainRows.count()); i++) {
+        const metrics = await plainRows.nth(i).evaluate((el) => {
+          const shellRect = el
+            .closest('[data-slot="dropdown-menu-content"]')!
+            .getBoundingClientRect();
+          const textEl = Array.from(el.querySelectorAll("span,div")).find(
+            (c) => c.textContent?.trim() && c.children.length === 0,
+          );
+          return {
+            labelInset: (textEl ?? el).getBoundingClientRect().left - shellRect.left,
+            fontSize: parseFloat(getComputedStyle(textEl ?? el).fontSize),
+          };
+        });
+        expect(metrics.labelInset).toBeGreaterThanOrEqual(10);
+        expect(metrics.labelInset).toBeLessThanOrEqual(16);
+        expect(metrics.fontSize).toBeGreaterThanOrEqual(13.5);
+        expect(metrics.fontSize).toBeLessThanOrEqual(14.5);
+      }
       await page.keyboard.press("Escape");
       await expect(shell).toBeHidden();
     };

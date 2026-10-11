@@ -2857,6 +2857,14 @@ body,
   justify-self: center;
 }
 
+/* Plain rows (host-picker account/manage) match main's DropdownMenuItem:
+   label sits at the row inset, no icon-track grid. */
+.grouped-command-menu [data-slot="command-item"].grouped-command-plain-item {
+  display: flex !important;
+  align-items: center;
+  column-gap: 0;
+}
+
 .grouped-command-menu [data-slot="command-empty"] {
   display: flex;
   min-height: calc(var(--grouped-command-list-height) - 16px);
