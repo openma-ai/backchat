@@ -2831,7 +2831,7 @@ body,
   scrollbar-gutter: auto;
 }
 
-.grouped-command-menu [data-slot="command-list"] {
+.grouped-command-menu-scroll [data-slot="command-list"] {
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
@@ -2841,12 +2841,6 @@ body,
 
 .grouped-command-menu [cmdk-list-sizer] {
   min-height: 0;
-}
-
-[data-composer-select-menu-mode="project-picker"] [cmdk-list-sizer],
-[data-composer-select-menu-mode="workspace-picker"] [cmdk-list-sizer] {
-  height: auto !important;
-  min-height: unset !important;
 }
 
 /* Current value: checkmark only — never the gray hover/keyboard wash. */
@@ -3018,6 +3012,7 @@ body,
   [data-slot="command-input-wrapper"],
 [data-composer-select-menu-mode="workspace-picker"]
   [data-slot="command-input-wrapper"] {
+  flex: 0 0 auto;
   height: 2.25rem !important;
   min-height: 2.25rem !important;
   padding-inline: var(--grouped-command-padding-inline) !important;

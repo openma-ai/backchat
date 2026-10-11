@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   GroupedCommandMenu,
   groupedCommandMenuPanelClassName,
+  groupedCommandMenuPanelMaxHeightStyle,
 } from "./grouped-command-menu";
 
 describe("groupedCommandMenuPanelClassName", () => {
@@ -15,6 +16,26 @@ describe("groupedCommandMenuPanelClassName", () => {
     expect(className).toContain("h-auto");
     expect(className).toContain("max-h-[min(336px");
     expect(className).not.toContain("min-h-[");
+  });
+});
+
+describe("groupedCommandMenuPanelMaxHeightStyle", () => {
+  it("uses dropdown available height by default", () => {
+    expect(groupedCommandMenuPanelMaxHeightStyle({ maxHeightPx: 420 })).toEqual({
+      maxHeight:
+        "min(420px, var(--radix-dropdown-menu-content-available-height))",
+    });
+  });
+
+  it("caps popover pickers against popover available height", () => {
+    expect(
+      groupedCommandMenuPanelMaxHeightStyle({
+        maxHeightPx: 336,
+        availableHeightVariable: "radix-popover-content-available-height",
+      }),
+    ).toEqual({
+      maxHeight: "min(336px, var(--radix-popover-content-available-height))",
+    });
   });
 });
 
@@ -55,11 +76,76 @@ describe("grouped command menu styles", () => {
         listHeaderSeparator: false,
       }),
     );
+    const projectPicker = renderToStaticMarkup(
+      createElement(GroupedCommandMenu, {
+        groups: [{ items: [item("project")] }],
+        searchPlaceholder: "Search projects",
+        emptyMessage: "No projects",
+        menuMode: "project-picker",
+        panelClassName: "p-0",
+        shrinkToContent: true,
+        nativeListScroll: true,
+      }),
+    );
+    const workspacePicker = renderToStaticMarkup(
+      createElement(GroupedCommandMenu, {
+        groups: [{ items: [item("workspace")] }],
+        searchPlaceholder: "Search workspaces",
+        emptyMessage: "No workspaces",
+        menuMode: "workspace-picker",
+        panelClassName: "p-0",
+        shrinkToContent: true,
+        nativeListScroll: true,
+      }),
+    );
+    const modelPicker = renderToStaticMarkup(
+      createElement(GroupedCommandMenu, {
+        groups: [{ items: [item("model")] }],
+        searchPlaceholder: "Search models",
+        emptyMessage: "No models",
+        menuMode: "model-picker",
+        panelHeightPx: 288,
+        nativeListScroll: true,
+      }),
+    );
+    const contentFitHostPicker = renderToStaticMarkup(
+      createElement(GroupedCommandMenu, {
+        groups: [{ items: [item("host")] }],
+        searchPlaceholder: "",
+        emptyMessage: "No hosts",
+        menuMode: "host-picker",
+        showSearch: false,
+        shrinkToContent: true,
+      }),
+    );
+    const groupedCommandField = renderToStaticMarkup(
+      createElement(GroupedCommandMenu, {
+        groups: [{ items: [item("agent")] }],
+        searchPlaceholder: "Search agents",
+        emptyMessage: "No agents",
+        menuMode: "grouped-command-field",
+        panelHeightPx: 336,
+        panelClassName:
+          "max-h-[min(var(--grouped-command-field-panel-height),var(--radix-popover-content-available-height))]",
+      }),
+    );
 
     expect(hostPicker).toContain('data-slot="command-item"');
     expect(hostPicker).toContain("data-grouped-command-group-heading");
     expect(hostPicker.match(/data-slot="command-separator"/g)).toHaveLength(3);
     expect(grouped.match(/data-slot="command-separator"/g)).toHaveLength(2);
+    for (const picker of [projectPicker, workspacePicker]) {
+      expect(picker).toContain("radix-popover-content-available-height");
+      expect(picker).toContain("oma-scrollbar min-h-0 flex-1");
+    }
+    expect(modelPicker).toContain(
+      "radix-dropdown-menu-content-available-height",
+    );
+    expect(modelPicker).toContain("oma-scrollbar max-h-[60vh] overflow-y-auto");
+    expect(contentFitHostPicker).toContain("h-auto flex-none");
+    expect(groupedCommandField).toContain(
+      "max-height:min(336px, var(--radix-popover-content-available-height))",
+    );
   });
 
   it("lets the list region shrink with filtered results", () => {
@@ -67,12 +153,19 @@ describe("grouped command menu styles", () => {
       resolve(__dirname, "../../styles/index.css"),
       "utf8",
     );
-    const block = styles.slice(
-      styles.indexOf(".grouped-command-menu-scroll"),
-      styles.indexOf(".grouped-command-menu [data-slot=\"command-list\"]"),
+    const start = styles.indexOf(
+      '.grouped-command-menu-scroll [data-slot="command-list"]',
     );
+    const end = styles.indexOf("}", start);
+    const block = styles.slice(start, end);
     expect(block).toContain("height: auto");
     expect(block).not.toContain("min-height: var(--grouped-command-list-height)");
+    expect(styles).not.toContain(
+      '[data-composer-select-menu-mode="project-picker"] [cmdk-list-sizer]',
+    );
+    expect(styles).not.toContain(
+      '[data-composer-select-menu-mode="workspace-picker"] [cmdk-list-sizer]',
+    );
   });
 
   it("hides empty provider headings without removing items from the cmdk list", () => {

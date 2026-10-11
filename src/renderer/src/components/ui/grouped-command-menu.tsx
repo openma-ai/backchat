@@ -79,6 +79,18 @@ export function groupedCommandMenuPanelClassName({
   );
 }
 
+export function groupedCommandMenuPanelMaxHeightStyle({
+  maxHeightPx = GROUPED_COMMAND_MENU_DROPDOWN_PANEL_HEIGHT_PX,
+  availableHeightVariable = "radix-dropdown-menu-content-available-height",
+}: {
+  maxHeightPx?: number;
+  availableHeightVariable?: string;
+} = {}): Pick<CSSProperties, "maxHeight"> {
+  return {
+    maxHeight: `min(${maxHeightPx}px, var(--${availableHeightVariable}))`,
+  };
+}
+
 export function groupedCommandMenuShellClassName(className?: string) {
   return cn("w-[var(--composer-menu-width)] overflow-hidden p-0", className);
 }
@@ -204,13 +216,24 @@ export function GroupedCommandMenu({
     [groups, searchQuery],
   );
 
+  const popoverPicker =
+    menuMode === "project-picker" || menuMode === "workspace-picker";
+  const popoverAvailableHeight =
+    popoverPicker || menuMode === "grouped-command-field";
+  const effectivePanelHeightPx =
+    panelHeightPx ??
+    (popoverPicker
+      ? GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX
+      : GROUPED_COMMAND_MENU_DROPDOWN_PANEL_HEIGHT_PX);
   const panelStyle = {
     ["--grouped-command-list-height" as string]: `${listHeightPx}px`,
-    ...(panelHeightPx
-      ? {
-          ["--grouped-command-menu-panel-height" as string]: `${panelHeightPx}px`,
-        }
-      : {}),
+    ["--grouped-command-menu-panel-height" as string]: `${effectivePanelHeightPx}px`,
+    ...groupedCommandMenuPanelMaxHeightStyle({
+      maxHeightPx: effectivePanelHeightPx,
+      availableHeightVariable: popoverAvailableHeight
+        ? "radix-popover-content-available-height"
+        : "radix-dropdown-menu-content-available-height",
+    }),
   } as CSSProperties;
 
   const mergeRovingKeyDown = (
@@ -291,13 +314,10 @@ export function GroupedCommandMenu({
     <div
       data-testid={testId}
       data-composer-select-menu-mode={menuMode}
-      className={
-        panelClassName ??
-        groupedCommandMenuPanelClassName({
-          maxHeightPx:
-            panelHeightPx ?? GROUPED_COMMAND_MENU_DROPDOWN_PANEL_HEIGHT_PX,
-        })
-      }
+      className={cn(
+        groupedCommandMenuPanelClassName({ maxHeightPx: effectivePanelHeightPx }),
+        panelClassName,
+      )}
       style={panelStyle}
     >
       <Command
@@ -309,7 +329,11 @@ export function GroupedCommandMenu({
         shouldFilter={shouldFilter}
         className={cn(
           "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
-          shrinkToContent ? "h-auto flex-none" : "flex-1",
+          popoverPicker
+            ? "h-auto min-h-0 flex-1"
+            : shrinkToContent
+              ? "h-auto flex-none"
+              : "flex-1",
           commandClassName,
         )}
         {...commandRovingProps}
@@ -335,7 +359,7 @@ export function GroupedCommandMenu({
               menuMode === "host-picker"
                 ? "max-h-none overflow-visible scroll-py-0 p-0 outline-none"
                 : menuMode === "project-picker" || menuMode === "workspace-picker"
-                  ? "no-scrollbar max-h-72 overflow-x-hidden overflow-y-auto scroll-py-1 p-0 outline-none"
+                  ? "oma-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto scroll-py-1 p-0 outline-none"
                   : "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
               listClassName,
             )}

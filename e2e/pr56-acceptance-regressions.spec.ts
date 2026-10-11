@@ -1,4 +1,7 @@
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test } from "./fixtures";
+import { seedWorkspacePickerFixture } from "./grouped-command-menu-fit.shared";
 import {
   enableAgent,
   hostPickerPanel,
@@ -450,6 +453,146 @@ test("project picker search keeps cmdk best-match order for re", async ({ page }
   await search.fill("re");
   const firstOption = panel.locator('[cmdk-item]:not([aria-disabled="true"])').first();
   await expect(firstOption).toContainText(/No project|无项目/i);
+});
+
+test("project picker bounds long results and fits a short query", async ({
+  page,
+  home,
+}) => {
+  await page.setViewportSize({ width: 900, height: 560 });
+  const projects = Array.from({ length: 25 }, (_, index) => {
+    const id = `picker-overflow-${String(index).padStart(2, "0")}`;
+    const directory = join(home, id);
+    return {
+      project_id: id,
+      name:
+        index === 24
+          ? "Unique Target Signal"
+          : `Picker Overflow ${String(index).padStart(2, "0")}`,
+      source_folders: [directory],
+      primary_folder: directory,
+    };
+  });
+  await Promise.all(
+    projects.map((project) => mkdir(project.primary_folder, { recursive: true })),
+  );
+  await page.evaluate(async (seededProjects) => {
+    localStorage.setItem("backchat:workspace-intro-seen:v1", "1");
+    await Promise.all(
+      seededProjects.map((project) => window.backchat.projectSave(project)),
+    );
+  }, projects);
+  await page.reload();
+  await enableAgent(page, "codex-acp");
+  await page.getByTestId("new-chat-button").click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+
+  const panel = page.getByTestId("composer-project-picker-panel");
+  const popover = panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]");
+  const search = panel.locator('input[cmdk-input]');
+  const list = panel.locator('[data-slot="command-list"]');
+  await expect(popover).toBeVisible();
+  await expect(search).toBeVisible();
+
+  const initial = await popover.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const list = element.querySelector('[data-slot="command-list"]') as HTMLElement;
+    const input = element.querySelector('[data-slot="command-input-wrapper"]');
+    return {
+      panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      inside: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
+      searchVisible: !!input && input.getBoundingClientRect().height > 0,
+      listScrollHeight: list.scrollHeight,
+      listClientHeight: list.clientHeight,
+      listOverflowY: getComputedStyle(list).overflowY,
+    };
+  });
+  expect(initial.inside).toBe(true);
+  expect(initial.searchVisible).toBe(true);
+  expect(initial.listScrollHeight).toBeGreaterThan(initial.listClientHeight);
+  expect(["auto", "scroll"]).toContain(initial.listOverflowY);
+
+  await search.fill("Unique Target Signal");
+  const shortResults = await list
+    .locator('[cmdk-item]:not([aria-disabled="true"])')
+    .count();
+  const matchingProjects = await list
+    .locator('[cmdk-item]:not([aria-disabled="true"])')
+    .filter({ hasText: "Unique Target Signal" })
+    .count();
+  expect(shortResults).toBeGreaterThanOrEqual(1);
+  expect(shortResults).toBeLessThanOrEqual(2);
+  expect(matchingProjects).toBe(1);
+  await expect.poll(async () => (await popover.boundingBox())?.height ?? Infinity)
+    .toBeLessThan(160);
+});
+
+test("workspace picker bounds many worktrees and fits a short query", async ({
+  page,
+  home,
+}) => {
+  test.setTimeout(120_000);
+  await seedWorkspacePickerFixture(page, home);
+  await page.evaluate(async () => {
+    for (let index = 0; index < 25; index += 1) {
+      const suffix = String(index).padStart(2, "0");
+      await window.backchat.workspaceCreate({
+        project_id: "workspace-fit-project",
+        name:
+          index === 24
+            ? "Unique Workspace Signal"
+            : `Workspace Overflow ${suffix}`,
+        branch: `backchat/picker-overflow-${suffix}`,
+      });
+    }
+  });
+  await page.reload();
+  await page.setViewportSize({ width: 900, height: 560 });
+  await enableAgent(page, "codex-acp");
+  await page.getByTestId("new-chat-button").click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+  await page.getByRole("option", { name: "Workspace fit", exact: true }).click();
+  const workspaceTrigger = page.locator('[data-composer-footer-control="workspace"]');
+  await workspaceTrigger.click();
+
+  const panel = page.getByTestId("composer-workspace-picker-panel");
+  const popover = panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]");
+  const search = panel.locator('input[cmdk-input]');
+  const list = panel.locator('[data-slot="command-list"]');
+  await expect(popover).toBeVisible();
+  await expect(search).toBeVisible();
+
+  const initial = await popover.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const list = element.querySelector('[data-slot="command-list"]') as HTMLElement;
+    const input = element.querySelector('[data-slot="command-input-wrapper"]');
+    return {
+      panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      inside: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
+      searchVisible: !!input && input.getBoundingClientRect().height > 0,
+      listScrollHeight: list.scrollHeight,
+      listClientHeight: list.clientHeight,
+      listOverflowY: getComputedStyle(list).overflowY,
+    };
+  });
+  expect(initial.inside).toBe(true);
+  expect(initial.searchVisible).toBe(true);
+  expect(initial.listScrollHeight).toBeGreaterThan(initial.listClientHeight);
+  expect(["auto", "scroll"]).toContain(initial.listOverflowY);
+
+  await search.fill("Unique Workspace Signal");
+  const shortResults = await list
+    .locator('[cmdk-item]:not([aria-disabled="true"])')
+    .count();
+  const matchingWorkspaces = await list
+    .locator('[cmdk-item]:not([aria-disabled="true"])')
+    .filter({ hasText: "Unique Workspace Signal" })
+    .count();
+  expect(shortResults).toBeGreaterThanOrEqual(1);
+  expect(shortResults).toBeLessThanOrEqual(2);
+  expect(matchingWorkspaces).toBe(1);
+  await expect.poll(async () => (await popover.boundingBox())?.height ?? Infinity)
+    .toBeLessThan(160);
 });
 
 test("new chat hover wash matches the shared mesh button box", async ({ page }) => {
