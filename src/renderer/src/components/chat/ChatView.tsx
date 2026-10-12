@@ -541,6 +541,7 @@ export function ChatView({
     () => composerActivityModulesForSession({
       agentId: active?.agent_id,
       turns,
+      projectTurn: sessionStore.projectTurn,
       workItems,
       openmaEvents,
       labels: {
@@ -555,7 +556,7 @@ export function ChatView({
         events: t("chat.activityEvents"),
       },
     }),
-    [active?.agent_id, openmaEvents, t, turns, workItems],
+    [active?.agent_id, openmaEvents, sessionStore.projectTurn, t, turns, workItems],
   );
   const queueCallbacks =
     active && showPromptQueue

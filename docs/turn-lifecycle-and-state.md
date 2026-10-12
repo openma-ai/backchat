@@ -117,12 +117,12 @@ Two consequences that keep being missed:
 | --- | --- | --- |
 | ACP session | the prompt request and its `StopReason` | the agent |
 | Main process | `activePromptTurnId`, `queuedPrompts`, `steeringPromptTurnIds`, host turn ids | `src/main/session-manager.ts` |
-| Renderer | `Turn` reduced from persisted events, `status`, `thoughtText`, tool entries | `src/renderer/src/lib/session-store.ts`, `reduce-turn` |
+| Renderer | `Turn` routed by canonical `turn_id`, incrementally projected transcript, `status`, `thoughtText`, tool entries | `src/renderer/src/lib/session-store.ts`, `reduce-turn` |
 
-Two of these are ours, and both contain states ACP does not have — `queued` and
-`steering` are host inventions with no wire representation. That is legitimate:
-a queue is a client feature. What is not legitimate is deriving facts the agent
-already told us.
+Queue membership and steering delivery are host state. The canonical OpenMA
+`user.message` records steering input and its outcome; those fields are an
+OpenMA extension, not ACP v1 fields. What is not legitimate is deriving facts
+the agent already told us.
 
 **`stopReason` currently stops at the main process.** It is read at
 `src/main/session-manager.ts:1441` and forwarded as `stop_reason` on an event,
@@ -140,9 +140,10 @@ not a comment.
 request resolves. The renderer must learn a turn's terminal state from the
 reported `StopReason`, never by inferring it from the absence of events.
 
-**I2 — Nothing renders inside a turn that has not ended.** A prompt accepted
-while an earlier turn is unresolved is queued or steered; its bubble may not
-appear before that turn's last output.
+**I2 — Prompt placement follows delivery outcome.** A queued prompt remains a
+separate block. An injected canonical steering `user.message` is an inline
+`user_input` item in `data.active_turn_id`; it does not create a turn block.
+A steer reported as `startedNewTurn` keeps its own block.
 
 **I3 — While a turn is unresolved, the transcript says so.** Assistant text
 arriving does not mean the turn finished, so text may not silently replace the
@@ -177,6 +178,12 @@ presentation, and no terminal status is invented in the event log.
 **I10 — Adapter knowledge is keyed by harness and read from data.** Anything in
 §3 is looked up by agent id and by the field the agent published, never by
 matching a command name.
+
+**I11 — Transcript events have one deterministic owner.** Each event is routed
+to its own canonical `turn_id`, except an injected steering `user.message`,
+which is projected into its declared `active_turn_id`. Live projection and
+history replay use the same routing rule; neither infers a boundary from tool,
+thought, or text events.
 
 ## 6. Corrected state machines
 
@@ -284,6 +291,9 @@ under investigation are marked; do not treat them as settled findings.
   order, which the Map already holds: replayed turns are built from persisted
   rows in stored sequence, live turns are appended as they start, and
   re-registering an id keeps its original position.
+  Injected steering is routed from its canonical `user.message` into the
+  active turn as an inline item. `startedNewTurn` remains its own block, and
+  queued prompts remain separate.
 
   A first attempt at this assigned sequence numbers lazily inside the sort
   comparator and broke six tests. That was the implementation, not the idea: the
@@ -365,6 +375,10 @@ under investigation are marked; do not treat them as settled findings.
   called a translucent row solid. It now fails when the row is made
   translucent.
 - **I10 held** for plan, goal, and the sent-as-goal annotation.
+- **I11 — held by the incremental projector.** Live and replay events are
+  grouped by their canonical turn id. Injected steering is the only exception:
+  its OpenMA event names the active turn explicitly, without an output-boundary
+  heuristic.
 
 ## 8. Rules for changing any of this
 

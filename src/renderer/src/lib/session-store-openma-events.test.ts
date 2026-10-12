@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { createOpenMAEvent } from "@openma/common/session-events/openma";
 import { attachOpenMAEvent } from "@shared/openma-event.js";
@@ -2083,5 +2085,232 @@ describe("SessionStore canonical OpenMA events", () => {
       lastError: undefined,
       auth: { status: "needs-auth", message: "Authentication required" },
     });
+  });
+});
+
+type RecordedEvent = {
+  seq: number;
+  type: string;
+  event_id?: string;
+  session_id?: string;
+  turn_id?: string;
+  occurred_at?: string;
+  data: Record<string, unknown>;
+  raw?: { payload?: unknown };
+};
+
+function recordedGuardianEvents(): RecordedEvent[] {
+  return JSON.parse(
+    readFileSync(
+      resolve(__dirname, "__fixtures__/sess-guardian-interleave.anon.json"),
+      "utf8",
+    ),
+  ) as RecordedEvent[];
+}
+
+function routedTurnId(event: RecordedEvent): string | undefined {
+  if (
+    event.type === "user.message"
+    && event.data.input_kind === "steering"
+    && event.data.outcome === "injected"
+    && typeof event.data.active_turn_id === "string"
+  ) {
+    return event.data.active_turn_id;
+  }
+  return event.turn_id;
+}
+
+function firstArrivalTimelineKeys(
+  events: readonly RecordedEvent[],
+  turnId: string,
+): string[] {
+  const items: string[] = [];
+  const seenTools = new Set<string>();
+  let openSegment: string | undefined;
+  for (const event of events) {
+    if (routedTurnId(event) !== turnId) continue;
+    if (
+      event.type === "user.message"
+      && event.data.input_kind === "steering"
+      && event.data.outcome === "injected"
+    ) {
+      items.push(`user_input:${event.turn_id}`);
+      openSegment = undefined;
+      continue;
+    }
+    if (event.type === "agent.thinking" || event.type === "agent.message_chunk") {
+      const key = [
+        event.type,
+        typeof event.data.message_id === "string" ? event.data.message_id : "anonymous",
+        typeof event.data.phase === "string" ? event.data.phase : "",
+      ].join(":");
+      if (key !== openSegment) {
+        items.push(`segment:${event.type}`);
+        openSegment = key;
+      }
+      continue;
+    }
+    if (event.type.startsWith("tool.")) {
+      const toolCallId = event.data.tool_call_id;
+      if (typeof toolCallId !== "string") continue;
+      if (!seenTools.has(toolCallId)) {
+        items.push(`tool:${toolCallId}`);
+        seenTools.add(toolCallId);
+        openSegment = undefined;
+      }
+    }
+  }
+  return items;
+}
+
+function projectedTimelineKeys(timeline: ReturnType<typeof reduceTurn>["timeline"]): string[] {
+  return timeline.map((item) => {
+    if (item.kind === "tool") return `tool:${item.toolCallId}`;
+    if (item.kind === "user_input") return `user_input:${item.clientId}`;
+    return item.kind === "thought"
+      ? "segment:agent.thinking"
+      : "segment:agent.message_chunk";
+  });
+}
+
+describe("SessionStore recorded Guardian interleave", () => {
+  it("replays prompt turns and steers in first-arrival order with stable tool positions", () => {
+    const events = recordedGuardianEvents().sort((a, b) => a.seq - b.seq);
+    const sessionId = "sess_fixture";
+    const rows = events.map((event) => ({
+      seq: event.seq,
+      type: "openma_event",
+      data: JSON.stringify(event),
+      ts: Date.parse(event.occurred_at ?? "") || event.seq,
+    }));
+    const replayed = new SessionStore();
+    replayed.replayHistory(sessionId, rows);
+    const turns = replayed.turnsFor(sessionId);
+    const promptTurnIds = events
+      .filter((event) =>
+        event.type === "user.message" && event.data.input_kind === "prompt"
+      )
+      .map((event) => event.turn_id);
+
+    expect(turns.map((turn) => turn.id)).toEqual(promptTurnIds);
+    expect(turns).toHaveLength(2);
+    expect(turns.map((turn) => turn.status)).toEqual(["complete", "complete"]);
+    for (const turn of turns) {
+      const rendered = replayed.projectTurn(turn);
+      const expected = firstArrivalTimelineKeys(events, turn.id);
+      expect(projectedTimelineKeys(rendered.timeline)).toEqual(expected);
+      expect(new Set(rendered.tools.map((tool) => tool.toolCallId)).size)
+        .toBe(rendered.tools.length);
+      expect(rendered.tools.map((tool) => `tool:${tool.toolCallId}`))
+        .toEqual(expected.filter((key) => key.startsWith("tool:")));
+    }
+
+    const steers = events.filter((event) =>
+      event.type === "user.message"
+      && event.data.input_kind === "steering"
+      && event.data.outcome === "injected"
+    );
+    const activeTurnId = String(steers[0]?.data.active_turn_id);
+    const activeTurn = turns.find((turn) => turn.id === activeTurnId)!;
+    const activeTimeline = replayed.projectTurn(activeTurn).timeline;
+    const userInputs = activeTimeline.filter((item) => item.kind === "user_input");
+    expect(userInputs.map((item) => item.kind === "user_input" ? item.clientId : ""))
+      .toEqual(steers.map((event) => event.turn_id));
+    expect(activeTimeline.filter((item) => item.kind === "tool").map((item) => item.toolCallId))
+      .toContain("guardian_assessment:call_55a19ca7a0");
+    expect(
+      replayed.projectTurn(activeTurn).tools
+        .filter((tool) => tool.title === "Guardian Review")
+        .map((tool) => tool.toolCallId),
+    ).toContain("guardian_assessment:call_55a19ca7a0");
+  });
+
+  it("matches live incremental projection with replay and keeps the footer boundary terminal", () => {
+    const events = recordedGuardianEvents().sort((a, b) => a.seq - b.seq);
+    const sessionId = "sess_fixture";
+    const rows = events.map((event) => ({
+      seq: event.seq,
+      type: "openma_event",
+      data: JSON.stringify(event),
+      ts: Date.parse(event.occurred_at ?? "") || event.seq,
+    }));
+    const replayed = new SessionStore();
+    replayed.replayHistory(sessionId, rows);
+    const live = new SessionStore();
+    live.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-fixture",
+      agent_id: "codex-acp",
+      cwd: "/fixture",
+    });
+
+    for (const event of events) {
+      const data = event.data;
+      if (event.type === "user.message" && data.input_kind === "prompt") {
+        live.registerTurn(
+          event.turn_id!,
+          sessionId,
+          typeof data.text === "string" ? data.text : "",
+        );
+      } else if (
+        event.type === "user.message"
+        && data.input_kind === "steering"
+        && data.outcome === "injected"
+      ) {
+        live.apply({
+          type: "session.steering",
+          session_id: sessionId,
+          turn_id: event.turn_id!,
+          active_turn_id: String(data.active_turn_id),
+          text: String(data.text ?? ""),
+          requested_delivery: "llm_boundary",
+          effective_delivery: "llm_boundary",
+          outcome: "injected",
+          openma_event: event,
+        } as Parameters<SessionStore["apply"]>[0]);
+      } else if (event.type === "turn.completed") {
+        live.apply({
+          type: "session.complete",
+          session_id: sessionId,
+          turn_id: event.turn_id!,
+          stop_reason: typeof data.stop_reason === "string"
+            ? data.stop_reason
+            : undefined,
+        });
+      } else if (
+        event.turn_id
+        && (event.type.startsWith("agent.") || event.type.startsWith("tool.") || event.type.startsWith("plan."))
+      ) {
+        live.apply(attachOpenMAEvent({
+          type: "session.event",
+          session_id: sessionId,
+          turn_id: event.turn_id,
+          event: event.raw?.payload ?? event,
+        }, event as never));
+      }
+    }
+
+    const replayedTurns = replayed.turnsFor(sessionId);
+    const liveTurns = live.turnsFor(sessionId);
+    expect(liveTurns.map((turn) => turn.id)).toEqual(replayedTurns.map((turn) => turn.id));
+    for (const replayedTurn of replayedTurns) {
+      const liveTurn = liveTurns.find((turn) => turn.id === replayedTurn.id)!;
+      expect(live.projectTurn(liveTurn)).toEqual(replayed.projectTurn(replayedTurn));
+    }
+
+    const unfinished = new SessionStore();
+    unfinished.replayHistory(
+      sessionId,
+      rows.filter((row) => {
+        const event = JSON.parse(row.data) as RecordedEvent;
+        return !(event.type === "turn.completed" && event.turn_id === "turn_ab678cc0d5");
+      }),
+    );
+    expect(
+      unfinished.turnsFor(sessionId).find((turn) => turn.id === "turn_ab678cc0d5")?.status,
+    ).toBe("running");
+    expect(replayed.turnsFor(sessionId).find((turn) => turn.id === "turn_ab678cc0d5")?.status)
+      .toBe("complete");
   });
 });

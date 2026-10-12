@@ -20,7 +20,7 @@ import type {
 import { StatusNotice } from "@/components/ui/status-notice";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { reduceTurn, type TurnRender } from "@/lib/reduce-turn";
+import { type TurnRender } from "@/lib/reduce-turn";
 import {
   capitalizeToolLabel,
   pickToolActivityTarget,
@@ -29,7 +29,7 @@ import {
   toolRunSummaryKeys,
 } from "@/lib/chat-tool-presentation";
 import { promptCommandAnnotation } from "@/lib/prompt-command-annotation";
-import { latestPlanDocumentForEvents } from "@/lib/session-plan";
+import { latestPlanDocumentForRender } from "@/lib/session-plan";
 import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
 import {
   selectAgentIdFor,
@@ -69,7 +69,7 @@ export const TurnBlock = memo(function TurnBlock({
   onRetrySend?: (turn: Turn) => void;
 }) {
   const { t } = useI18n();
-  const rendered = useMemo(() => reduceTurn(turn.events), [turn.events]);
+  const rendered = sessionStore.projectTurn(turn);
   const cwd = useMarkdownCwd();
   const subagentsSelector = useMemo(
     () => selectSubagentsFor(turn.sessionId),
@@ -82,8 +82,8 @@ export const TurnBlock = memo(function TurnBlock({
   );
   const agentId = useSessionStore(agentIdSelector);
   const planDocument = useMemo(
-    () => latestPlanDocumentForEvents(turn.events, agentId),
-    [agentId, turn.events],
+    () => latestPlanDocumentForRender(rendered, agentId),
+    [agentId, rendered],
   );
   const activityRendered = useMemo<TurnRender>(() => {
     // A turn that stopped running will never receive another tool update, so
@@ -239,12 +239,9 @@ export const TurnBlock = memo(function TurnBlock({
               surfacePrefix={assistantSurfacePrefix(turn.id, item, section)}
             />
           ),
-        projectThoughtActivity: ({ item, live, prefixSkip }) =>
+        projectThoughtActivity: ({ item, live }) =>
           projectThoughtEvent({
-            turnId: turn.id,
-            text: item.text,
             live,
-            prefixSkip,
             liveFallback: t("chat.thinking"),
             completedLabel: t("chat.thoughtFor", {
               seconds: itemContentNumber(item, "durationSeconds"),

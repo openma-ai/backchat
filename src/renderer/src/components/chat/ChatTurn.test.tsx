@@ -37,6 +37,7 @@ vi.mock("@/lib/session-store", async (importOriginal) => {
     sessionStore: {
       sideTabs: () => [],
       openSideTabForTask: vi.fn(),
+      projectTurn: actual.sessionStore.projectTurn,
     },
   };
 });
@@ -122,6 +123,38 @@ describe("TurnBlock", () => {
     expect(html).toContain('data-session-turn-answer="true"');
   });
 
+  it("renders injected steering as an inline user-input item", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          id: "turn-active",
+          status: "running",
+          events: [{
+            payload: {
+              schema: "oma.event.v1",
+              event_id: "steering-input",
+              session_id: "session-1",
+              turn_id: "turn-steering",
+              source: { kind: "user" },
+              occurred_at: "2026-08-06T00:00:00.000Z",
+              type: "user.message",
+              data: {
+                text: "Change direction inline",
+                input_kind: "steering",
+                outcome: "injected",
+                active_turn_id: "turn-active",
+              },
+            },
+            receivedAt: 1,
+          }],
+        })}
+      />,
+    );
+
+    expect(html).toContain("Change direction inline");
+    expect(html).toContain("ml-auto w-fit max-w-full whitespace-pre-wrap");
+  });
+
   it("keeps unphased ACP text before a later tool", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
@@ -154,6 +187,77 @@ describe("TurnBlock", () => {
 
     expect(before).toBeGreaterThanOrEqual(0);
     expect(tool).toBeGreaterThan(before);
+  });
+
+  it("preserves thought, tool rounds, interleaved text, answer, and footer in order", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          events: [
+            {
+              payload: {
+                sessionUpdate: "agent_thought_chunk",
+                content: { type: "text", text: "FIRST_THOUGHT" },
+              },
+              receivedAt: 1,
+            },
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-round-one",
+                kind: "execute",
+                status: "completed",
+                title: "First tool round",
+              },
+              receivedAt: 2,
+            },
+            {
+              payload: {
+                sessionUpdate: "agent_message_chunk",
+                _meta: { codex: { phase: "commentary" } },
+                content: { type: "text", text: "FIRST_PARAGRAPH" },
+              },
+              receivedAt: 3,
+            },
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-round-two",
+                kind: "execute",
+                status: "completed",
+                title: "Second tool round",
+              },
+              receivedAt: 4,
+            },
+            {
+              payload: {
+                sessionUpdate: "agent_message_chunk",
+                _meta: { codex: { phase: "final_answer" } },
+                content: { type: "text", text: "FINAL_ANSWER_PARAGRAPH" },
+              },
+              receivedAt: 5,
+            },
+          ],
+        })}
+      />,
+    );
+    const thought = html.indexOf("FIRST_THOUGHT");
+    const toolOne = html.indexOf('data-tool-call-id="tool-round-one"');
+    const firstParagraph = html.indexOf("FIRST_PARAGRAPH");
+    const toolTwo = html.indexOf('data-tool-call-id="tool-round-two"');
+    const answer = html.indexOf('data-session-turn-answer="true"');
+    const finalParagraph = html.indexOf("FINAL_ANSWER_PARAGRAPH");
+    const footer = html.indexOf('data-turn-footer="true"');
+
+    expect([thought, toolOne, firstParagraph, toolTwo, answer, finalParagraph, footer]
+      .every((index) => index >= 0)).toBe(true);
+    expect(thought).toBeLessThan(toolOne);
+    expect(toolOne).toBeLessThan(firstParagraph);
+    expect(firstParagraph).toBeLessThan(toolTwo);
+    expect(toolTwo).toBeLessThan(answer);
+    expect(answer).toBeLessThan(finalParagraph);
+    expect(finalParagraph).toBeLessThan(footer);
   });
 
   it("renders Continue in new chat as a response action when fork is available", () => {
@@ -456,6 +560,28 @@ describe("TurnBlock", () => {
     );
 
     expect(html).not.toContain('data-streaming-continuation="true"');
+  });
+
+  it("renders the turn footer only after completion", () => {
+    const running = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "running",
+          assistantText: "A response still arriving",
+        })}
+      />,
+    );
+    const completed = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          assistantText: "A completed response",
+        })}
+      />,
+    );
+
+    expect(running).not.toContain('data-turn-footer="true"');
+    expect(completed).toContain('data-turn-footer="true"');
   });
 
   it("shows why a turn stopped when the agent did not choose to end it", () => {

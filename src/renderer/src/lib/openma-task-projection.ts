@@ -135,6 +135,23 @@ function projectDirectTask(snapshot: OpenmaTaskSnapshot): { row: SessionRow; tur
     for (const item of source.items) {
       if (item.kind === "tool") {
         turn.events.push({ receivedAt: startedAt, payload: { sessionUpdate: "tool_call", toolCallId: item.id, title: item.title ?? item.name ?? "Tool", rawInput: item.rawInput, rawOutput: item.rawOutput, status: item.status } });
+      } else if (item.kind === "user_input") {
+        turn.events.push({
+          receivedAt: startedAt,
+          payload: {
+            schema: "oma.event.v1",
+            event_id: item.id,
+            session_id: turn.sessionId,
+            turn_id: item.clientId ?? turn.id,
+            type: "user.message",
+            data: {
+              text: item.text,
+              input_kind: "steering",
+              outcome: "injected",
+              active_turn_id: turn.id,
+            },
+          },
+        });
       } else if (!("text" in item)) {
         // Raw/vendor records stay in the canonical log; they are not assistant prose.
         continue;

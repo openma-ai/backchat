@@ -58,11 +58,12 @@ import {
   type AcpSessionConfigOption,
 } from "./session-config-options";
 import {
+  createBackchatTurnProjector,
   mergeStreamingText,
   parseAcpEvent,
-  reduceTurn,
   sessionUpdateInner,
   sessionUpdateType,
+  type TurnRender,
 } from "./reduce-turn";
 import type {
   NativeAgentContext,
@@ -150,6 +151,13 @@ export interface SessionStoreDependencies {
   readSessionGoalUpdate?: SessionGoalUpdateReader;
 }
 
+interface TurnProjectionCacheEntry {
+  projector: ReturnType<typeof createBackchatTurnProjector>;
+  applied: number;
+  first?: Turn["events"][number];
+  last?: Turn["events"][number];
+}
+
 export class SessionStore {
   static readonly NOTICE_DURATION_MS = 10_000;
 
@@ -160,20 +168,13 @@ export class SessionStore {
    *  Retain them by session id until the matching row is restored. */
   #pendingAsksBeforeSession = new Map<string, BrokerAsk[]>();
   #turns = new Map<string, Turn>();
+  #turnProjectionCache = new Map<string, TurnProjectionCacheEntry>();
   /** Persisted rows currently materialized per session when history was
    *  opened as a tail window (see replayHistoryWindow / prependHistory). */
   #history = new Map<string, HistoryWindowState>();
   /** Sessions whose first history fetch is in flight. The chat view shows a
    *  loading surface instead of flashing the home empty state. */
   #historyPending = new Set<string>();
-  /** Steer input is visible immediately, but ACP keeps streaming the current
-   * model/tool cycle under the original prompt request. Hold the accepted
-   * steer until that model call completes, then project the next call's
-   * events onto its transcript row. */
-  #pendingSteeringTurns = new Map<string, string[]>();
-  #steeringEventTargets = new Map<string, string>();
-  #steeringBoundariesArmed = new Set<string>();
-  #modelCallsReadyForOutput = new Set<string>();
   /** Pair-chats. Each pair owns N member session ids; the members
    *  themselves live in `#sessions` like any other session — the pair
    *  is just metadata. Routing is by id: navigating to /pair/<id>
@@ -415,7 +416,7 @@ export class SessionStore {
     const previous = this.#sessions.get(row.id);
     this.#sessions.set(row.id, { ...previous, ...row });
     const ids = new Set(turns.map((turn) => turn.id));
-    for (const [id, turn] of this.#turns) if (turn.sessionId === row.id && !ids.has(id)) this.#turns.delete(id);
+    for (const [id, turn] of this.#turns) if (turn.sessionId === row.id && !ids.has(id)) this.#deleteTurn(id);
     for (const turn of turns) {
       const old = this.#turns.get(turn.id);
       const corrected = !!old && (!turn.assistantText.startsWith(old.assistantText) || !turn.thoughtText.startsWith(old.thoughtText));
@@ -438,7 +439,7 @@ export class SessionStore {
       const owner = row.openma ?? row.executionTarget;
       if (owner && !scopes.some((scope) => scope.baseUrl === owner.baseUrl && scope.userId === owner.userId && scope.workspaceId === owner.workspaceId)) {
         this.#sessions.delete(id);
-        for (const [turnId, turn] of this.#turns) if (turn.sessionId === id) this.#turns.delete(turnId);
+        for (const [turnId, turn] of this.#turns) if (turn.sessionId === id) this.#deleteTurn(turnId);
       }
     }
     this.#emit();
@@ -533,7 +534,7 @@ export class SessionStore {
       sessionId: childId,
       inherited: true,
       status: turn.status === "running" ? "complete" : turn.status,
-      events: turn.events.map((event) => ({ ...event })),
+      events: turn.events,
     };
   }
 
@@ -561,6 +562,40 @@ export class SessionStore {
       this.#cloneInheritedTurn(sessionId, turn),
     );
     return [...inherited, ...own];
+  }
+
+  projectTurn = (turn: Turn): TurnRender => {
+    const events = turn.events;
+    const cached = this.#turnProjectionCache.get(turn.id);
+    if (
+      cached
+      && events[0] === cached.first
+      && events.length >= cached.applied
+      && (cached.applied === 0 || events[cached.applied - 1] === cached.last)
+    ) {
+      for (let index = cached.applied; index < events.length; index += 1) {
+        cached.projector.apply(events[index]!);
+      }
+      cached.applied = events.length;
+      cached.first = events[0];
+      cached.last = events.at(-1);
+      return cached.projector.snapshot();
+    }
+
+    const projector = createBackchatTurnProjector();
+    for (const event of events) projector.apply(event);
+    this.#turnProjectionCache.set(turn.id, {
+      projector,
+      applied: events.length,
+      first: events[0],
+      last: events.at(-1),
+    });
+    return projector.snapshot();
+  };
+
+  #deleteTurn(turnId: string): void {
+    this.#turnProjectionCache.delete(turnId);
+    this.#turns.delete(turnId);
   }
 
   subagentsFor(parentSessionId: string): SubagentActivity[] {
@@ -1294,7 +1329,7 @@ export class SessionStore {
     this.#autoOpenedHtmlBySession.delete(sessionId);
     this.#artifactsBySession.delete(sessionId);
     for (const [tid, turn] of this.#turns) {
-      if (turn.sessionId === sessionId) this.#turns.delete(tid);
+      if (turn.sessionId === sessionId) this.#deleteTurn(tid);
     }
     this.#emit();
   }
@@ -2103,10 +2138,11 @@ export class SessionStore {
     annotations: PromptAnnotation[] = [],
   ): void {
     const row = this.#sessions.get(sessionId);
-    const waitsForSteeringBoundary =
-      !!row?.activeTurnId && delivery?.effectiveDelivery === "llm_boundary";
-    const isQueued =
-      !!row?.activeTurnId && !waitsForSteeringBoundary;
+    const isSteering =
+      !!row?.activeTurnId
+      && delivery?.intent === "steer"
+      && delivery.effectiveDelivery === "llm_boundary";
+    const isQueued = !!row?.activeTurnId && !isSteering;
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
@@ -2123,13 +2159,11 @@ export class SessionStore {
       thoughtText: "",
       status: isQueued
         ? "queued"
-        : waitsForSteeringBoundary
-          ? "complete"
-          : "running",
+        : "running",
       clientId: turnId,
       // The bubble is visible immediately. "Working" waits until the host
       // accepts the prompt (the first turn event, or a terminal boundary).
-      sendState: isQueued || waitsForSteeringBoundary ? undefined : "pending",
+      sendState: isQueued ? undefined : "pending",
       promptIntent: delivery?.intent,
       requestedDelivery: delivery?.requestedDelivery,
       effectiveDelivery: delivery?.effectiveDelivery,
@@ -2187,7 +2221,7 @@ export class SessionStore {
       return;
     }
     const host = this.#turns.get(hostTurnId);
-    this.#turns.delete(optimistic.id);
+    this.#deleteTurn(optimistic.id);
     this.#turns.set(hostTurnId, host
       ? {
           ...host,
@@ -2311,109 +2345,6 @@ export class SessionStore {
       lastError: undefined,
     }));
     this.#emit();
-  }
-
-  #acceptSteeringTurn(
-    sessionId: string,
-    activeTurnId: string,
-    steeringTurnId: string,
-  ): void {
-    const key = steeringProjectionKey(sessionId, activeTurnId);
-    const pending = this.#pendingSteeringTurns.get(key) ?? [];
-    if (!pending.includes(steeringTurnId)) {
-      this.#pendingSteeringTurns.set(key, [...pending, steeringTurnId]);
-    }
-    const currentTarget = this.#steeringEventTargets.get(key) ?? activeTurnId;
-    const currentTurn = this.#turns.get(currentTarget);
-    if (
-      this.#modelCallsReadyForOutput.has(key)
-      || !currentTurn
-      || currentTurn.events.length === 0
-    ) {
-      this.#steeringBoundariesArmed.add(key);
-    }
-  }
-
-  #projectSteeringEventTurnId(
-    sessionId: string,
-    sourceTurnId: string,
-    event: unknown,
-  ): string {
-    const key = steeringProjectionKey(sessionId, sourceTurnId);
-    const current = this.#steeringEventTargets.get(key) ?? sourceTurnId;
-    const pending = this.#pendingSteeringTurns.get(key);
-    const type = sessionUpdateType(event);
-    if (type === "usage_update") {
-      this.#modelCallsReadyForOutput.add(key);
-      if (pending?.length) this.#steeringBoundariesArmed.add(key);
-      return current;
-    }
-    if (!isModelOutputBoundary(event)) return current;
-
-    const boundaryArmed = this.#steeringBoundariesArmed.has(key);
-    if (type === "tool_call") {
-      // A tool start is the tail of the model call that requested it. It only
-      // belongs to the steer when a prior completion already armed the next
-      // call; otherwise it arms the call that follows the tool result.
-      this.#modelCallsReadyForOutput.add(key);
-      if (pending?.length && !boundaryArmed) {
-        this.#steeringBoundariesArmed.add(key);
-      }
-    } else {
-      this.#modelCallsReadyForOutput.delete(key);
-    }
-    if (!pending?.length || !boundaryArmed) return current;
-
-    const next = pending.at(-1)!;
-    for (const completedId of [current, ...pending.slice(0, -1)]) {
-      if (completedId === next) continue;
-      const completed = this.#turns.get(completedId);
-      if (completed?.status === "running") {
-        this.#turns.set(completedId, {
-          ...completed,
-          events: [...completed.events],
-          activeThoughtMessageId: undefined,
-          activeThoughtSegmentText: undefined,
-          status: "complete",
-          endedAt: Date.now(),
-        });
-      }
-    }
-    this.#pendingSteeringTurns.delete(key);
-    this.#steeringBoundariesArmed.delete(key);
-    this.#steeringEventTargets.set(key, next);
-    const nextTurn = this.#turns.get(next);
-    if (nextTurn) {
-      this.#turns.set(next, {
-        ...nextTurn,
-        status: "running",
-        endedAt: undefined,
-      });
-    }
-    return next;
-  }
-
-  #settleSteeringProjection(
-    sessionId: string,
-    sourceTurnId: string,
-  ): string {
-    const key = steeringProjectionKey(sessionId, sourceTurnId);
-    const target = this.#steeringEventTargets.get(key) ?? sourceTurnId;
-    for (const pendingId of this.#pendingSteeringTurns.get(key) ?? []) {
-      const pending = this.#turns.get(pendingId);
-      if (pending?.status === "running") {
-        this.#turns.set(pendingId, {
-          ...pending,
-          status: "complete",
-          endedAt: Date.now(),
-        });
-      }
-    }
-    this.#pendingSteeringTurns.delete(key);
-    this.#steeringEventTargets.delete(key);
-    this.#steeringBoundariesArmed.delete(key);
-    this.#modelCallsReadyForOutput.delete(key);
-    return target;
   }
 
   #advanceAfterTurn(sessionId: string, turnId: string, opts?: { unread?: boolean }): void {
@@ -3286,14 +3217,14 @@ export class SessionStore {
     const live: Array<[string, Turn]> = [];
     for (const [id, turn] of this.#turns) {
       if (turn.sessionId !== sessionId) continue;
-      if (id.startsWith(`replay-${sessionId}-`)) this.#turns.delete(id);
+      if (id.startsWith(`replay-${sessionId}-`)) this.#deleteTurn(id);
       else {
         live.push([id, turn]);
-        this.#turns.delete(id);
+        this.#deleteTurn(id);
       }
     }
     for (const activity of this.#subagentsByParent.get(sessionId) ?? []) {
-      this.#turns.delete(`${activity.viewSessionId}:turn`);
+      this.#deleteTurn(`${activity.viewSessionId}:turn`);
     }
     // Session-level projections (status, usage, title, subagent status) are
     // "latest wins". The current row already reflects the newest rows plus
@@ -3360,7 +3291,7 @@ export class SessionStore {
   #clearMaterializableTurns(sessionId: string): void {
     for (const [id, turn] of this.#turns) {
       if (turn.sessionId === sessionId && !turn.inherited) {
-        this.#turns.delete(id);
+        this.#deleteTurn(id);
       }
     }
   }
@@ -3370,6 +3301,7 @@ export class SessionStore {
     rows: HistoryRow[],
     opts: { partialHead: boolean; notices: boolean },
   ): void {
+    this.#turnProjectionCache.clear();
     const notify = (message: string) => {
       if (opts.notices) this.#showNotice(sessionId, message, "warning");
     };
@@ -3383,7 +3315,7 @@ export class SessionStore {
       events: [],
       assistantText: "",
       thoughtText: "",
-      status: "complete",
+      status: "running",
       startedAt: ts,
       endedAt: ts,
     });
@@ -3442,9 +3374,7 @@ export class SessionStore {
     }
 
     let current: Turn | null = null;
-    let pendingSteering: Turn[] = [];
-    let steeringBoundaryArmed = false;
-    let modelCallReadyForOutput = false;
+    const turnsByCanonicalId = new Map<string, Turn>();
     for (const { row: r, data, canonical } of prepared) {
       if (canonical) {
         const canonicalRaw = canonical.raw?.payload;
@@ -3478,9 +3408,27 @@ export class SessionStore {
             : {};
           const inputKind = input.input_kind;
           if (inputKind === "prompt" || inputKind === "steering") {
-            if (current) this.#turns.set(current.id, current);
-            // Row seq keys the turn so ids survive a rebuild after paging.
-            const tid = `replay-${sessionId}-${r.seq}`;
+            const activeTurnId =
+              typeof input.active_turn_id === "string"
+                ? input.active_turn_id
+                : undefined;
+            if (inputKind === "steering" && input.outcome === "injected") {
+              let activeTurn =
+                (activeTurnId ? turnsByCanonicalId.get(activeTurnId) : undefined)
+                ?? (activeTurnId ? this.#turns.get(activeTurnId) : undefined);
+              if (!activeTurn && opts.partialHead) {
+                activeTurn = makeHead(r.ts);
+                if (activeTurnId) {
+                  turnsByCanonicalId.set(activeTurnId, activeTurn);
+                }
+              }
+              if (activeTurn) {
+                activeTurn.events.push({ payload: canonical, receivedAt: r.ts });
+                activeTurn.endedAt = Math.max(activeTurn.endedAt ?? activeTurn.startedAt, r.ts);
+              }
+              continue;
+            }
+            const tid = canonical.turn_id ?? `replay-${sessionId}-${r.seq}`;
             const next: Turn = {
               id: tid,
               sessionId,
@@ -3498,64 +3446,34 @@ export class SessionStore {
               events: [],
               assistantText: "",
               thoughtText: "",
-              status: "complete",
+              status: "running",
               startedAt: r.ts,
               endedAt: r.ts,
             };
             if (inputKind === "steering") {
-              this.#turns.set(tid, next);
-              pendingSteering.push(next);
-              if (
-                modelCallReadyForOutput
-                || !current
-                || current.events.length === 0
-              ) {
-                steeringBoundaryArmed = true;
-              }
-            } else {
-              pendingSteering = [];
-              steeringBoundaryArmed = false;
-              modelCallReadyForOutput = false;
-              current = next;
+              next.events.push({ payload: canonical, receivedAt: r.ts });
             }
+            if (canonical.turn_id) turnsByCanonicalId.set(canonical.turn_id, next);
+            this.#turns.set(tid, next);
+            current = next;
           }
           continue;
         }
 
         const parsedCanonical = parseAcpEvent(canonical);
-        const startsModelOutput =
-          parsedCanonical.kind === "text"
-          || parsedCanonical.kind === "thought"
-          || canonical.type === "tool.started"
-          || canonical.type === "plan.updated"
-          || canonical.type === "plan.completed";
-        const boundaryWasArmed = steeringBoundaryArmed;
-        if (canonical.type === "usage.updated") {
-          modelCallReadyForOutput = true;
-          if (pendingSteering.length > 0) steeringBoundaryArmed = true;
-        } else if (canonical.type === "tool.started") {
-          modelCallReadyForOutput = true;
-          if (pendingSteering.length > 0 && !boundaryWasArmed) {
-            steeringBoundaryArmed = true;
-          }
-        } else if (startsModelOutput) {
-          modelCallReadyForOutput = false;
+        let turn = canonical.turn_id
+          ? turnsByCanonicalId.get(canonical.turn_id)
+            ?? this.#turns.get(canonical.turn_id)
+          : undefined;
+        if (!turn && opts.partialHead) {
+          turn = makeHead(r.ts);
+          if (canonical.turn_id) turnsByCanonicalId.set(canonical.turn_id, turn);
+          this.#turns.set(turn.id, turn);
         }
-        if (
-          pendingSteering.length > 0
-          && startsModelOutput
-          && boundaryWasArmed
-        ) {
-          if (current) this.#turns.set(current.id, current);
-          current = pendingSteering.at(-1)!;
-          pendingSteering = [];
-          steeringBoundaryArmed = false;
-        }
-        if (!current && opts.partialHead) current = makeHead(r.ts);
-        if (!current) continue;
-        current.endedAt = Math.max(current.endedAt ?? current.startedAt, r.ts);
+        if (!turn) continue;
+        turn.endedAt = Math.max(turn.endedAt ?? turn.startedAt, r.ts);
         if (canonical.type === "turn.completed") {
-          current.status = "complete";
+          turn.status = "complete";
           // The stop reason is on disk and was being dropped, so a turn cut off
           // at a limit or declined came back from a restart looking like an
           // ordinary finished answer — the live view said one thing and the
@@ -3564,7 +3482,7 @@ export class SessionStore {
             ? canonical.data
             : undefined;
           if (typeof completedData?.["stop_reason"] === "string") {
-            current.stopReason = completedData["stop_reason"];
+            turn.stopReason = completedData["stop_reason"];
           }
           // A provider-owned session.running fact can precede the host-owned
           // turn terminal in the persisted stream (Pi reports exactly this).
@@ -3579,29 +3497,29 @@ export class SessionStore {
           continue;
         }
         if (canonical.type === "turn.cancelled") {
-          current.status = "cancelled";
+          turn.status = "cancelled";
           continue;
         }
         if (canonical.type === "turn.failed") {
-          current.status = "error";
+          turn.status = "error";
           const errorData = isPlainRecord(canonical.data)
             ? canonical.data
             : undefined;
-          current.errorMessage =
+          turn.errorMessage =
             typeof errorData?.message === "string"
               ? errorData.message
-              : current.errorMessage;
+              : turn.errorMessage;
           continue;
         }
         if (canonical.type === "session.error" && canonical.turn_id) {
-          current.status = "error";
+          turn.status = "error";
           const errorData = isPlainRecord(canonical.data)
             ? canonical.data
             : undefined;
-          current.errorMessage =
+          turn.errorMessage =
             typeof errorData?.message === "string"
               ? errorData.message
-              : current.errorMessage;
+              : turn.errorMessage;
           continue;
         }
 
@@ -3613,22 +3531,22 @@ export class SessionStore {
           if (split.notice) {
             notify(split.notice);
           }
-          current.assistantText = mergeStreamingText(
-            current.assistantText,
+          turn.assistantText = mergeStreamingText(
+            turn.assistantText,
             split.transcript,
           );
           if (split.transcript) {
-            this.#appendStreamEvent(current, "text", split.transcript, r.ts, {
+            this.#appendStreamEvent(turn, "text", split.transcript, r.ts, {
               messageId: parsedCanonical.messageId,
               phase: parsedCanonical.phase,
             });
           }
         } else if (parsedCanonical.kind === "thought") {
-          current.thoughtText = mergeStreamingText(
-            current.thoughtText,
+          turn.thoughtText = mergeStreamingText(
+            turn.thoughtText,
             parsedCanonical.text,
           );
-          this.#appendStreamEvent(current, "thought", parsedCanonical.text, r.ts, {
+          this.#appendStreamEvent(turn, "thought", parsedCanonical.text, r.ts, {
             messageId: parsedCanonical.messageId,
           });
         } else if (
@@ -3641,7 +3559,7 @@ export class SessionStore {
           || canonical.type === "plan.completed"
           || canonical.type === "plan.removed"
         ) {
-          current.events.push({ payload: canonical, receivedAt: r.ts });
+          turn.events.push({ payload: canonical, receivedAt: r.ts });
         }
         continue;
       }
@@ -3746,6 +3664,7 @@ export class SessionStore {
       }
     }
     if (current) this.#turns.set(current.id, current);
+    for (const turn of turnsByCanonicalId.values()) this.#turns.set(turn.id, turn);
     // A partial window cannot prove which subagent tabs are stale — their
     // lifecycle rows may live in pages that are not loaded yet.
     if (!opts.partialHead && canonicalNativeAgentIds.size > 0) {
@@ -3797,7 +3716,7 @@ export class SessionStore {
           this.#sessions.delete(viewSessionId);
         }
         for (const [turnId, turn] of this.#turns) {
-          if (turn.sessionId === viewSessionId) this.#turns.delete(turnId);
+          if (turn.sessionId === viewSessionId) this.#deleteTurn(turnId);
         }
       }
       this.#syncVisibleSideSession(sessionId);
@@ -4033,11 +3952,7 @@ export class SessionStore {
           }));
           break;
         }
-        const eventTurnId = this.#projectSteeringEventTurnId(
-          ev.session_id,
-          ev.turn_id,
-          ev.event,
-        );
+        const eventTurnId = ev.turn_id;
         const runtimeAdapter = resolveAgentRuntimeAdapter(
           this.#sessions.get(ev.session_id)?.agent_id,
         );
@@ -4268,9 +4183,8 @@ export class SessionStore {
           // URL/path from the initial tool_call. Normalize only after
           // reducing the turn so provider adapters receive the complete
           // logical tool event.
-          const tool = reduceTurn(
-            this.#turns.get(eventTurnId)?.events ?? [],
-          ).tools.find(
+          const turn = this.#turns.get(eventTurnId);
+          const tool = (turn ? this.projectTurn(turn) : undefined)?.tools.find(
             (candidate) => candidate.toolCallId === parsed.tool.toolCallId,
           ) ?? parsed.tool;
           // Native lifecycle patches are intentionally interpreted in their
@@ -4367,25 +4281,89 @@ export class SessionStore {
       }
       case "session.steering": {
         if (ev.outcome === "injected") {
-          const turn = this.#turns.get(ev.turn_id);
-          if (turn) {
-            this.#turns.set(ev.turn_id, {
-              ...turn,
-              status: "complete",
-              effectiveDelivery: ev.effective_delivery,
-              deliveryDegraded: ev.delivery_degraded ?? false,
-            });
+          const openmaEvent = ev.openma_event;
+          const data =
+            openmaEvent?.data && typeof openmaEvent.data === "object"
+              ? openmaEvent.data as Record<string, unknown>
+              : undefined;
+          const activeTurnId =
+            typeof data?.active_turn_id === "string"
+              ? data.active_turn_id
+              : ev.active_turn_id;
+          if (
+            openmaEvent?.type === "user.message"
+            && data?.input_kind === "steering"
+            && data?.outcome === "injected"
+            && activeTurnId
+          ) {
+            const turn = this.#turns.get(activeTurnId) ?? {
+              id: activeTurnId,
+              sessionId: ev.session_id,
+              promptText: "",
+              events: [],
+              assistantText: "",
+              thoughtText: "",
+              status: "running" as const,
+              startedAt: Date.now(),
+            };
+            const eventId = openmaEvent.event_id;
+            if (!turn.events.some((entry) =>
+              isPlainRecord(entry.payload) && entry.payload.event_id === eventId
+            )) {
+              this.#turns.set(activeTurnId, {
+                ...turn,
+                events: [
+                  ...turn.events,
+                  { payload: openmaEvent, receivedAt: Date.now() },
+                ],
+              });
+            }
+            if (ev.turn_id !== activeTurnId) this.#deleteTurn(ev.turn_id);
+          } else {
+            const turn = this.#turns.get(ev.turn_id);
+            if (turn) {
+              this.#turns.set(ev.turn_id, {
+                ...turn,
+                status: "complete",
+                effectiveDelivery: ev.effective_delivery,
+                deliveryDegraded: ev.delivery_degraded ?? false,
+              });
+            }
           }
-          this.#acceptSteeringTurn(
-            ev.session_id,
-            ev.active_turn_id,
-            ev.turn_id,
-          );
         } else if (ev.outcome === "startedNewTurn") {
-          const turn = this.#turns.get(ev.turn_id);
-          if (turn) {
+          const openmaEvent = ev.openma_event;
+          const data =
+            openmaEvent?.data && typeof openmaEvent.data === "object"
+              ? openmaEvent.data as Record<string, unknown>
+              : undefined;
+          const turn =
+            this.#turns.get(ev.turn_id)
+            ?? (openmaEvent?.type === "user.message"
+              ? {
+                  id: ev.turn_id,
+                  sessionId: ev.session_id,
+                  promptText: typeof data?.text === "string" ? data.text : ev.text,
+                  events: [],
+                  assistantText: "",
+                  thoughtText: "",
+                  status: "running" as const,
+                  startedAt: Date.now(),
+                }
+              : undefined);
+          if (
+            turn
+            && openmaEvent?.type === "user.message"
+            && data?.input_kind === "steering"
+            && data?.outcome === "startedNewTurn"
+          ) {
+            const eventId = openmaEvent.event_id;
             this.#turns.set(ev.turn_id, {
               ...turn,
+              events: turn.events.some((entry) =>
+                isPlainRecord(entry.payload) && entry.payload.event_id === eventId
+              )
+                ? turn.events
+                : [...turn.events, { payload: openmaEvent, receivedAt: Date.now() }],
               status: "running",
               endedAt: undefined,
             });
@@ -4409,14 +4387,11 @@ export class SessionStore {
         break;
       }
       case "session.tool_cancelled": {
-        const projectedTurnId = this.#projectSteeringEventTurnId(
-          ev.session_id,
-          ev.turn_id,
-          { sessionUpdate: "tool_call_update" },
-        );
-        const turn = this.#turns.get(projectedTurnId);
+        const turn = this.#turns.get(ev.turn_id);
         if (turn) {
-          turn.events.push({
+          this.#turns.set(ev.turn_id, {
+            ...turn,
+            events: [...turn.events, {
             payload: ev.openma_event ?? {
               schema_version: "oma.event.v1",
               event_id: `tool-cancelled:${ev.session_id}:${ev.turn_id}:${ev.tool_call_id}`,
@@ -4432,18 +4407,15 @@ export class SessionStore {
               },
             },
             receivedAt: Date.now(),
+            }],
           });
         }
         break;
       }
       case "session.cancelled": {
-        const projectedTurnId = this.#settleSteeringProjection(
-          ev.session_id,
-          ev.turn_id,
-        );
-        const turn = this.#turns.get(projectedTurnId);
+        const turn = this.#turns.get(ev.turn_id);
         if (turn) {
-          this.#turns.set(projectedTurnId, {
+          this.#turns.set(ev.turn_id, {
             ...turn,
             status: "cancelled",
             endedAt: Date.now(),
@@ -4462,11 +4434,7 @@ export class SessionStore {
         break;
       }
       case "session.complete": {
-        const projectedTurnId = this.#settleSteeringProjection(
-          ev.session_id,
-          ev.turn_id,
-        );
-        const turn = this.#turns.get(projectedTurnId);
+        const turn = this.#turns.get(ev.turn_id);
         if (turn) {
           const runtimeAdapter = resolveAgentRuntimeAdapter(
             this.#sessions.get(ev.session_id)?.agent_id,
@@ -4475,7 +4443,7 @@ export class SessionStore {
             this.#ingestNativeAgentUpdates(
               ev.session_id,
               runtimeAdapter.assistantNativeAgentUpdates(turn.assistantText),
-              { turnId: projectedTurnId },
+              { turnId: ev.turn_id },
             );
           }
           const assistantArtifacts = runtimeAdapter?.assistantArtifacts?.(
@@ -4489,7 +4457,7 @@ export class SessionStore {
               assistantArtifacts.sources,
             );
           }
-          this.#turns.set(projectedTurnId, {
+          this.#turns.set(ev.turn_id, {
             ...turn,
             // Streaming chunks compact into turn.events in place to avoid a
             // React render per token. Publish a fresh array at the terminal
@@ -4534,7 +4502,7 @@ export class SessionStore {
           ) continue;
           const turn = this.#turns.get(turnId);
           if (turn?.sessionId === ev.session_id && turn.status === "queued") {
-            this.#turns.delete(turnId);
+            this.#deleteTurn(turnId);
           }
         }
         for (const turnId of steeringTurnIds) {
@@ -4572,14 +4540,10 @@ export class SessionStore {
         const turnId = ev.turn_id
           ?? this.#sessions.get(ev.session_id)?.activeTurnId;
         if (turnId) {
-          const projectedTurnId = this.#settleSteeringProjection(
-            ev.session_id,
-            turnId,
-          );
-          const turn = this.#turns.get(projectedTurnId);
+          const turn = this.#turns.get(turnId);
           if (turn) {
             const sendFailed = turn.sendState === "pending" && turn.events.length === 0;
-            this.#turns.set(projectedTurnId, {
+            this.#turns.set(turnId, {
               ...turn,
               status: "error",
               errorMessage: message,
@@ -4636,34 +4600,13 @@ export class SessionStore {
           this.#sideActiveId = null;
         }
         this.#sessions.delete(ev.session_id);
-        const projectionPrefix = `${ev.session_id.length}:${ev.session_id}:`;
-        for (const key of this.#pendingSteeringTurns.keys()) {
-          if (key.startsWith(projectionPrefix)) {
-            this.#pendingSteeringTurns.delete(key);
-          }
-        }
-        for (const key of this.#steeringEventTargets.keys()) {
-          if (key.startsWith(projectionPrefix)) {
-            this.#steeringEventTargets.delete(key);
-          }
-        }
-        for (const key of this.#steeringBoundariesArmed) {
-          if (key.startsWith(projectionPrefix)) {
-            this.#steeringBoundariesArmed.delete(key);
-          }
-        }
-        for (const key of this.#modelCallsReadyForOutput) {
-          if (key.startsWith(projectionPrefix)) {
-            this.#modelCallsReadyForOutput.delete(key);
-          }
-        }
         this.#openmaEventsBySession.delete(ev.session_id);
         const noticeTimer = this.#noticeTimers.get(ev.session_id);
         if (noticeTimer) clearTimeout(noticeTimer);
         this.#noticeTimers.delete(ev.session_id);
         this.#autoOpenedHtmlBySession.delete(ev.session_id);
         for (const [tid, turn] of this.#turns) {
-          if (turn.sessionId === ev.session_id) this.#turns.delete(tid);
+          if (turn.sessionId === ev.session_id) this.#deleteTurn(tid);
         }
         break;
       }
@@ -5047,25 +4990,6 @@ function canonicalSessionAuth(value: unknown): SessionRow["auth"] {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function steeringProjectionKey(sessionId: string, activeTurnId: string): string {
-  return `${sessionId.length}:${sessionId}:${activeTurnId}`;
-}
-
-/** ACP has no standard "the next model call consumed this steer" update.
- * After `_session/steering` acknowledges `injected`, the first update that can
- * only be produced by a model call is the boundary. Tool progress/completion
- * deliberately does not qualify: it still belongs to the preceding call. */
-function isModelOutputBoundary(event: unknown): boolean {
-  const type = sessionUpdateType(event);
-  return (
-    type === "agent_thought_chunk"
-    || type === "agent_message_chunk"
-    || type === "tool_call"
-    || type === "plan"
-    || type === "plan_update"
-  );
 }
 
 function numberValue(value: unknown): number | undefined {

@@ -1,4 +1,9 @@
-import { parseAcpEvent, reduceTurn, type PlanEntry } from "./reduce-turn";
+import {
+  parseAcpEvent,
+  reduceTurn,
+  type PlanEntry,
+  type TurnRender,
+} from "./reduce-turn";
 import type { Turn } from "./session-types";
 
 export interface PlanDocumentPresentation {
@@ -15,24 +20,32 @@ export interface TaskListEntry {
   priority?: "high" | "medium" | "low";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /** Find the latest full plan snapshot emitted by an agent. ACP plan updates
  * replace the complete list, including an empty list that clears a previous
  * plan. */
-export function latestPlanForTurns(turns: readonly Turn[]): PlanEntry[] {
-  return latestStandardPlanSnapshot(turns)?.entries ?? [];
+type TurnProjector = (turn: Turn) => TurnRender;
+
+export function latestPlanForTurns(
+  turns: readonly Turn[],
+  projectTurn?: TurnProjector,
+): PlanEntry[] {
+  return latestStandardPlanSnapshot(turns, projectTurn)?.entries ?? [];
 }
 
 function latestStandardPlanSnapshot(
   turns: readonly Turn[],
+  projectTurn: TurnProjector = (turn) => reduceTurn(turn.events),
 ): { entries: PlanEntry[] } | undefined {
-  const events = turns.flatMap((turn) => turn.events ?? []);
-  const hasItemPlanLifecycle = events.some((event) => {
-    const parsed = parseAcpEvent(event.payload);
-    return parsed.kind === "plan" || parsed.kind === "plan_removed";
-  });
-  return hasItemPlanLifecycle
-    ? { entries: reduceTurn(events).plan }
-    : undefined;
+  let latest: { entries: PlanEntry[] } | undefined;
+  for (const turn of turns) {
+    const rendered = projectTurn(turn);
+    if (rendered.hasPlanLifecycle) latest = { entries: rendered.plan };
+  }
+  return latest;
 }
 
 /** Project provider-neutral ACP/OpenMA Plan snapshots into the shared
@@ -41,8 +54,9 @@ function latestStandardPlanSnapshot(
 export function latestTaskListForTurns(
   _agentId: string | undefined,
   turns: readonly Turn[],
+  projectTurn?: TurnProjector,
 ): TaskListEntry[] {
-  const standardPlan = latestStandardPlanSnapshot(turns);
+  const standardPlan = latestStandardPlanSnapshot(turns, projectTurn);
   if (standardPlan) {
     return standardPlan.entries.map((entry) => ({
       content: entry.content,
@@ -54,9 +68,43 @@ export function latestTaskListForTurns(
   return [];
 }
 
-/** Compatibility adapter for ACP plan-document events. The currently pinned
- * common package predates `plan_document`, so renderer presentation must
- * recognize the wire shape without treating Markdown as a task entry. */
+export function latestPlanDocumentForRender(
+  rendered: TurnRender,
+  agentId?: string,
+): PlanDocumentPresentation | undefined {
+  const document = rendered.planDocument;
+  if (document?.markdown) {
+    return {
+      ...(document.id ? { id: document.id } : {}),
+      ...(document.title ? { title: document.title } : {}),
+      markdown: document.markdown,
+    };
+  }
+  if (document?.uri) {
+    return {
+      ...(document.id ? { id: document.id } : {}),
+      title: document.title ?? "Plan file",
+      markdown: `[Open plan file](${document.uri})`,
+      uri: document.uri,
+    };
+  }
+  if (agentId !== "claude-acp") return undefined;
+  for (let index = rendered.tools.length - 1; index >= 0; index -= 1) {
+    const tool = rendered.tools[index]!;
+    if (tool.toolName !== "ExitPlanMode") continue;
+    const input = isRecord(tool.rawInput) ? tool.rawInput : {};
+    if (typeof input.plan !== "string") continue;
+    return {
+      id: tool.toolCallId,
+      sourceToolCallId: tool.toolCallId,
+      title: markdownTitle(input.plan) ?? "Plan",
+      markdown: input.plan,
+    };
+  }
+  return undefined;
+}
+
+/** Compatibility adapter for plan-document events used by one-shot callers. */
 export function latestPlanDocumentForEvents(
   events: readonly { payload: unknown }[],
   agentId?: string,
@@ -225,6 +273,10 @@ function planIdFrom(value: Record<string, unknown>): string | undefined {
   return typeof candidate === "string" && candidate.length > 0
     ? candidate
     : undefined;
+}
+
+function markdownTitle(markdown: string): string | undefined {
+  return markdown.match(/^\s*#\s+(.+?)\s*$/m)?.[1];
 }
 
 function unwrapSessionUpdate(value: unknown): Record<string, unknown> | undefined {
