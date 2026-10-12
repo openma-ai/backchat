@@ -18,6 +18,7 @@ import {
   openTurnProcess,
   persistSessionFixture,
   reloadRenderer,
+  waitForComposerSubmitReady,
   waitForRunnableHarness,
 } from "./helpers";
 
@@ -289,6 +290,7 @@ test.describe("user-visible storage persistence", () => {
       await expect(first.page.getByText("What can I help with?")).toBeVisible();
       const composer = first.page.locator("textarea").first();
       await composer.fill(prompt);
+      await waitForComposerSubmitReady(first.page);
       await composer.press("Enter");
 
       const liveTranscript = first.page.getByRole("log");
@@ -426,6 +428,7 @@ test.describe("user-visible storage persistence", () => {
 
       const composer = first.page.locator("textarea").first();
       await composer.fill(prompt);
+      await waitForComposerSubmitReady(first.page);
       await composer.press("Enter");
       await expect(
         first.page.locator('[data-session-turn-status="complete"]'),
@@ -874,6 +877,7 @@ test.describe("user-visible storage persistence", () => {
 
       const composer = first.page.locator("textarea").first();
       await composer.fill(prompt);
+      await waitForComposerSubmitReady(first.page);
       await composer.press("Enter");
 
       const liveTranscript = first.page.getByRole("log");
@@ -953,6 +957,7 @@ test.describe("user-visible storage persistence", () => {
 
       const composer = first.page.locator("textarea").first();
       await composer.fill(prompt);
+      await waitForComposerSubmitReady(first.page);
       await composer.press("Enter");
 
       const liveTranscript = first.page.getByRole("log");

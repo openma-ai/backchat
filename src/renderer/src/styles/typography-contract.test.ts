@@ -79,6 +79,10 @@ function themeCases(): Array<{ id: string; tokens: Record<string, string> }> {
 describe("renderer typography contract", () => {
   const css = readFileSync(stylesPath, "utf8");
 
+  it("orders Tailwind layers before defining shared component rules", () => {
+    expect(css.startsWith("@layer theme, base, components, utilities;\n")).toBe(true);
+  });
+
   it("defines the UI stack once and keeps a separate slogan serif", () => {
     expect(css.match(/--font-sans:/g)).toEqual(["--font-sans:", "--font-sans:", "--font-sans:"]);
     expect(css.match(/--font-mono:/g)?.length).toBeGreaterThanOrEqual(2);

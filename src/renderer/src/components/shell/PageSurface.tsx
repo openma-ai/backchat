@@ -12,7 +12,7 @@ export function PageSurface({
     <div
       data-slot="page-surface"
       className={cn(
-        "app-scrollbar h-full overflow-y-auto rounded-2xl bg-bg/80 shadow-card-soft",
+        "oma-scrollbar h-full overflow-y-auto rounded-2xl bg-bg/80 shadow-card-soft",
         className,
       )}
     >

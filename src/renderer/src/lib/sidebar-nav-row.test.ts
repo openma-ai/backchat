@@ -21,6 +21,12 @@ const settings = readFileSync(
 );
 
 describe("sidebar nav row", () => {
+  it("leaves row layout to the shared sidebar grid", () => {
+    expect(SIDEBAR_NAV_ROW_CLASS).toBe(
+      "sidebar-nav-row rounded-md text-ui transition-colors",
+    );
+  });
+
   it("uses the session row's selected and hover classes", () => {
     expect(sidebarNavRowStateClass({ active: true })).toBe(
       "app-selected-surface text-fg",
@@ -85,5 +91,46 @@ describe("sidebar nav row", () => {
     expect(settings).toContain("sidebarNavRowClass({ active: location.pathname");
     expect(settings).not.toContain("hover:bg-bg-surface");
     expect(settings).not.toContain("h-[var(--sidebar-row-h)]");
+  });
+
+  it("keeps selected rows on the opaque surface-selected token", () => {
+    const hoverRule = styles.slice(
+      styles.indexOf(
+        '.sidebar-navigation\n  .sidebar-grid-row:not([data-sidebar-row="new-chat"])',
+      ),
+      styles.indexOf(".sidebar-grid-row[data-sidebar-row=\"new-chat\"]"),
+    );
+    expect(hoverRule).not.toMatch(/:is\([^)]*\.app-selected-surface/);
+    expect(styles).toMatch(
+      /\.sidebar-navigation\s+\.sidebar-grid-row\.app-selected-surface\s*\{\s*background:\s*var\(--surface-selected\);/,
+    );
+    expect(styles).toMatch(/\.sidebar-new-chat-primary/);
+    expect(styles).toMatch(
+      /\.sidebar-grid-row\[data-sidebar-row="new-chat"\] > \.sidebar-new-chat-primary \{[^}]*grid-template-columns:\s*subgrid;/,
+    );
+    expect(styles).toMatch(
+      /\.sidebar-grid-row\[data-sidebar-row="new-chat"\] \[data-sidebar-grid="trailing"\] \{[^}]*align-self:\s*stretch;/,
+    );
+    expect(styles).toMatch(
+      /\.sidebar-section-header\.sidebar-grid-row \{[^}]*align-items:\s*stretch;/,
+    );
+    expect(styles).not.toContain(
+      '.sidebar-grid-row[data-sidebar-row="new-chat"]::before',
+    );
+    const newChat = sidebar.slice(
+      sidebar.indexOf('data-sidebar-row="new-chat"'),
+      sidebar.indexOf("sidebar-scroll-content"),
+    );
+    const primaryStart = newChat.indexOf("sidebar-new-chat-primary");
+    const primaryEnd = newChat.indexOf("</button>", primaryStart);
+    const trailing = newChat.indexOf('slot="trailing"');
+    expect(primaryStart).toBeGreaterThan(-1);
+    expect(newChat.indexOf('slot="icon"')).toBeGreaterThan(primaryStart);
+    expect(newChat.indexOf('slot="label"')).toBeGreaterThan(newChat.indexOf('slot="icon"'));
+    expect(primaryEnd).toBeGreaterThan(newChat.indexOf('slot="label"'));
+    expect(trailing).toBeGreaterThan(primaryEnd);
+    expect(styles).toMatch(
+      /\.sidebar-navigation \.sidebar-grid-row\.app-selected-surface \{[^}]*--surface-selected/,
+    );
   });
 });

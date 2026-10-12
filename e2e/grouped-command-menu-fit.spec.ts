@@ -1,0 +1,383 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { expect, test } from "./fixtures";
+import {
+  assertGroupedCommandGridAligned,
+  captureGroupedMenuGridEvidence,
+  measureGroupedCommandMenuGrid,
+} from "./grouped-command-menu-grid";
+import {
+  seedProjectPickerGridFixture,
+  seedWorkspacePickerFixture,
+} from "./grouped-command-menu-fit.shared";
+import { enableAgent, injectEvent, injectSession } from "./helpers";
+import { execFile as execFileCallback } from "node:child_process";
+import { mkdir as fsMkdir } from "node:fs/promises";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
+const artifactDir = "/opt/cursor/artifacts/screenshots/grouped-command-menu-fit";
+
+function manyGroupedModels() {
+  const providers = ["anthropic-proxy", "openai-codex", "devin"];
+  return providers.map((provider) => ({
+    group: provider,
+    name: provider,
+    options: Array.from({ length: 8 }, (_, index) => ({
+      value: `${provider}-${index}`,
+      name: `${provider} model ${index}`,
+    })),
+  }));
+}
+
+type ProjectPickerChromeMetrics = {
+  popoverHeight: number;
+  commandHeight: number;
+  searchRowHeight: number;
+  separatorTop: number | null;
+  bottomPaddingToPopover: number;
+  headingOffsetFromSearch: number | null;
+  headingFontSize: string;
+  headingFontWeight: string;
+  rowHeights: number[];
+};
+
+function measureProjectPickerChrome(panel: import("@playwright/test").Locator) {
+  return panel.evaluate(() => {
+    const scope =
+      (document.querySelector('[data-testid="composer-project-picker-panel"]') ??
+        document.querySelector(
+          '[data-slot="popover-content"][data-state="open"]',
+        )) as HTMLElement | null;
+    const popover = (scope?.closest("[data-slot='popover-content']") ??
+      scope) as HTMLElement | null;
+    if (!popover) {
+      return {
+        popoverHeight: 0,
+        commandHeight: 0,
+        searchRowHeight: 0,
+        separatorTop: null,
+        bottomPaddingToPopover: 0,
+        headingOffsetFromSearch: null,
+        headingFontSize: "",
+        headingFontWeight: "",
+        rowHeights: [],
+      };
+    }
+    const popoverRect = popover.getBoundingClientRect();
+    const relTop = (value: number) => Math.round(value - popoverRect.top);
+    const command = popover.querySelector(
+      '[data-slot="command"]',
+    ) as HTMLElement | null;
+    const search = popover.querySelector(
+      '[data-slot="command-input-wrapper"]',
+    ) as HTMLElement | null;
+    const separator = popover.querySelector(
+      '[data-slot="command-separator"]',
+    ) as HTMLElement | null;
+    const heading = popover.querySelector(
+      "[data-grouped-command-group-heading], [cmdk-group-heading]",
+    ) as HTMLElement | null;
+    const items = Array.from(
+      popover.querySelectorAll('[data-slot="command-item"]'),
+    ) as HTMLElement[];
+    const lastItem = items[items.length - 1];
+    const headingStyle = heading ? getComputedStyle(heading) : null;
+    const searchRect = search?.getBoundingClientRect();
+    const headingTextTop = heading
+      ? (() => {
+          const range = document.createRange();
+          range.selectNodeContents(heading);
+          return range.getBoundingClientRect().top;
+        })()
+      : null;
+    return {
+      popoverHeight: Math.round(popoverRect.height),
+      commandHeight: command
+        ? Math.round(command.getBoundingClientRect().height)
+        : 0,
+      searchRowHeight: searchRect ? Math.round(searchRect.height) : 0,
+      separatorTop: separator ? relTop(separator.getBoundingClientRect().top) : null,
+      bottomPaddingToPopover: lastItem
+        ? Math.round(popoverRect.bottom - lastItem.getBoundingClientRect().bottom)
+        : 0,
+      headingOffsetFromSearch:
+        searchRect && headingTextTop != null
+          ? Math.round(headingTextTop - searchRect.bottom)
+          : null,
+      headingFontSize: headingStyle?.fontSize ?? "",
+      headingFontWeight: headingStyle?.fontWeight ?? "",
+      rowHeights: items.map((item) =>
+        Math.round(item.getBoundingClientRect().height),
+      ),
+    };
+  });
+}
+
+test("project picker single grid (search + all rows)", async ({ page, home }) => {
+  test.setTimeout(120_000);
+  await seedProjectPickerGridFixture(page, home);
+  await enableAgent(page, "codex-acp");
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+  const panelByTestId = page.getByTestId("composer-project-picker-panel");
+  const panel = (await panelByTestId.count())
+    ? panelByTestId
+    : page.locator('[data-slot="popover-content"][data-state="open"]').last();
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+  await expect(panel.locator('[data-slot="command-item"]').first()).toBeVisible({
+    timeout: 10_000,
+  });
+
+  const grid = await measureGroupedCommandMenuGrid(panel);
+  const chrome = await measureProjectPickerChrome(panel);
+
+  const evidenceDir = process.env.PR56_EVIDENCE_DIR;
+  const label = process.env.PR56_EVIDENCE_LABEL ?? "project-picker-grid.png";
+  if (evidenceDir) {
+    await mkdir(evidenceDir, { recursive: true });
+    await captureGroupedMenuGridEvidence(
+      page,
+      panel,
+      join(evidenceDir, label),
+      join(evidenceDir, label.replace(/\.png$/i, ".metrics.json")),
+      { chrome },
+    );
+  }
+
+  expect(grid.rows.length).toBeGreaterThanOrEqual(6);
+  assertGroupedCommandGridAligned(grid);
+
+  expect(chrome.popoverHeight).toBe(203);
+  expect(chrome.separatorTop).toBe(137);
+  expect(chrome.bottomPaddingToPopover).toBe(5);
+  expect(chrome.rowHeights).toEqual([28, 28, 28, 28]);
+  expect(chrome.commandHeight).toBe(chrome.popoverHeight);
+});
+
+test("workspace picker popover matches main chrome", async ({ page, home }) => {
+  test.setTimeout(120_000);
+  await seedWorkspacePickerFixture(page, home);
+  await enableAgent(page, "codex-acp");
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+  await page.getByRole("option", { name: "Workspace fit", exact: true }).click();
+  const workspaceTrigger = page.locator('[data-composer-footer-control="workspace"]');
+  await expect(workspaceTrigger).toBeVisible({ timeout: 10_000 });
+  await workspaceTrigger.click();
+  const panel = page.getByTestId("composer-workspace-picker-panel");
+  const popover = (await panel.count())
+    ? panel.locator("xpath=ancestor::*[@data-slot='popover-content'][1]")
+    : page.locator('[data-slot="popover-content"][data-state="open"]').last();
+  await expect(popover).toBeVisible({ timeout: 10_000 });
+
+  const metrics = await popover.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    const popoverTop = rect.top;
+    const command = el.querySelector('[data-slot="command"]') as HTMLElement | null;
+    const itemNodes = el.querySelectorAll('[data-slot="command-item"]');
+    const lastItem = itemNodes[itemNodes.length - 1] as HTMLElement | undefined;
+    const commandRect = command?.getBoundingClientRect();
+    const lastRect = lastItem?.getBoundingClientRect();
+    const search = el.querySelector(
+      '[data-slot="command-input-wrapper"]',
+    ) as HTMLElement | null;
+    const searchRect = search?.getBoundingClientRect();
+    const rowHeights = Array.from(itemNodes).map((node) =>
+      Math.round(node.getBoundingClientRect().height),
+    );
+    return {
+      popoverHeight: Math.round(rect.height),
+      commandHeight: commandRect ? Math.round(commandRect.height) : 0,
+      searchRowHeight: searchRect ? Math.round(searchRect.height) : 0,
+      bottomPaddingToPopover: lastRect
+        ? Math.round(rect.bottom - lastRect.bottom)
+        : 0,
+      popoverSlackBelowCommand:
+        commandRect ? Math.round(rect.bottom - commandRect.bottom) : 0,
+      rowCount: itemNodes.length,
+      rowHeights,
+    };
+  });
+
+  const evidenceDir = process.env.PR56_EVIDENCE_DIR;
+  if (evidenceDir) {
+    await fsMkdir(evidenceDir, { recursive: true });
+    const label = process.env.PR56_EVIDENCE_LABEL ?? "workspace-picker.png";
+    await popover.screenshot({
+      path: join(evidenceDir, label),
+      animations: "disabled",
+    });
+    await writeFile(
+      join(evidenceDir, label.replace(/\.png$/i, ".metrics.json")),
+      `${JSON.stringify(metrics, null, 2)}\n`,
+      "utf8",
+    );
+  }
+
+  expect(metrics.popoverHeight).toBeLessThanOrEqual(220);
+  expect(metrics.popoverHeight).toBeGreaterThanOrEqual(100);
+  expect(metrics.searchRowHeight).toBe(36);
+  expect(metrics.bottomPaddingToPopover).toBeLessThanOrEqual(9);
+  expect(metrics.popoverSlackBelowCommand).toBe(0);
+  expect(metrics.commandHeight).toBe(metrics.popoverHeight);
+  expect(metrics.rowCount).toBeGreaterThanOrEqual(2);
+});
+
+test("host picker menu shrinks to few rows", async ({ page, home }) => {
+  test.setTimeout(120_000);
+  await mkdir(artifactDir, { recursive: true });
+
+  const repo = join(home, "host-fit-repo");
+  await mkdir(repo, { recursive: true });
+  await execFile("git", ["init", "--initial-branch=main", repo]);
+  await execFile("git", [
+    "-C",
+    repo,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.test",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "fixture",
+  ]);
+
+  await page.evaluate(async (path) => {
+    localStorage.setItem("backchat:workspace-intro-seen:v1", "1");
+    await window.backchat.projectSave({
+      project_id: "host-fit-demo",
+      name: "Host demo",
+      source_folders: [path],
+      primary_folder: path,
+    });
+  }, repo);
+  await page.reload();
+  await enableAgent(page, "codex-acp");
+  await page.getByTestId("new-chat-button").click();
+
+  const runtimeTrigger = page.locator('[data-composer-footer-control="runtime"]');
+  await runtimeTrigger.click();
+  const panel = page.getByTestId("composer-host-picker-panel");
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+
+  const box = await panel.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.height).toBeLessThan(220);
+
+  await page.screenshot({
+    path: join(artifactDir, "host-picker-fit-height.png"),
+    animations: "disabled",
+  });
+});
+
+test("model submenu shrinks when search filters to one row", async ({ page }) => {
+  await enableAgent(page, "codex-acp");
+  const sessionId = await injectSession(page, { agentId: "codex-acp" });
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: "menu-fit",
+    event: {
+      sessionUpdate: "config_option_update",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "openai-codex-2",
+          options: manyGroupedModels(),
+        },
+      ],
+    },
+  });
+
+  await page.getByRole("button", { name: /Run on|运行位置/ }).first().click();
+  await page.getByRole("menuitem", { name: /模型|Model/ }).first().hover();
+  const panel = page.getByTestId("composer-select-menu-panel");
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+
+  const fullHeight = (await panel.boundingBox())?.height ?? 0;
+  expect(fullHeight).toBeGreaterThan(120);
+
+  const search = panel.locator('input[type="search"], input[cmdk-input]');
+  await search.fill("devin 1");
+  await expect(panel.getByText("openai-codex model 0")).toHaveCount(0);
+
+  const filteredHeight = (await panel.boundingBox())?.height ?? 0;
+  expect(filteredHeight).toBeLessThan(fullHeight - 40);
+  expect(filteredHeight).toBeLessThan(220);
+});
+
+test("model submenu bottom aligns with primary run menu", async ({ page }) => {
+  await enableAgent(page, "codex-acp");
+  const sessionId = await injectSession(page, { agentId: "codex-acp" });
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: "menu-align",
+    event: {
+      sessionUpdate: "config_option_update",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "openai-codex-2",
+          options: manyGroupedModels(),
+        },
+      ],
+    },
+  });
+
+  await page.getByRole("button", { name: /Run on|运行位置/ }).first().click();
+  const primary = page.locator('[data-slot="dropdown-menu-content"]').last();
+  await expect(primary).toBeVisible();
+  await page.getByRole("menuitem", { name: /模型|Model/ }).first().hover();
+  const subPanel = page.getByTestId("composer-select-menu-panel");
+  await expect(subPanel).toBeVisible({ timeout: 10_000 });
+
+  const primaryBottom = await primary.evaluate((el) => el.getBoundingClientRect().bottom);
+  const subBottom = await subPanel.evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(Math.abs(primaryBottom - subBottom)).toBeLessThanOrEqual(3);
+});
+
+test("model submenu keeps the parent Model row highlighted while open", async ({
+  page,
+}) => {
+  await enableAgent(page, "codex-acp");
+  const sessionId = await injectSession(page, { agentId: "codex-acp" });
+  await injectEvent(page, {
+    type: "session.event",
+    session_id: sessionId,
+    turn_id: "menu-parent-highlight",
+    event: {
+      sessionUpdate: "config_option_update",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "openai-codex-2",
+          options: manyGroupedModels(),
+        },
+      ],
+    },
+  });
+
+  await page.getByRole("button", { name: /Run on|运行位置/ }).first().click();
+  const modelTrigger = page.getByRole("menuitem", { name: /模型|Model/ }).first();
+  await modelTrigger.hover();
+  const subPanel = page.getByTestId("composer-select-menu-panel");
+  await expect(subPanel).toBeVisible({ timeout: 10_000 });
+
+  const wash = await modelTrigger.evaluate((element) => {
+    const bg = getComputedStyle(element).backgroundColor;
+    return bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
+  });
+  expect(wash).toBe(true);
+});

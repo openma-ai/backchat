@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import { cn } from "@/lib/utils";
 
 export function FileOpenMenu({
@@ -36,7 +37,7 @@ export function FileOpenMenu({
           <ChevronDownIcon className="size-3.5 text-fg-muted" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="w-52 p-1.5">
+      <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-52 p-1.5">
         <DropdownMenuItem onSelect={onOpenDefault} className="h-8 gap-2 text-xs">
           <SquareArrowOutUpRightIcon className="size-3.5" />
           Default app

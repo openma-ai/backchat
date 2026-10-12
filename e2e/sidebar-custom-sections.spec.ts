@@ -18,7 +18,10 @@ test("organizes a chat in a custom section across reload and restores it when re
 
   const chat = page.getByRole("button", { name: "Section chat", exact: true });
   await chat.hover();
-  await chat.locator("..").getByRole("button", { name: "Session actions" }).click();
+  await chat
+    .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
+    .getByRole("button", { name: "Session actions" })
+    .click();
   await page.getByRole("menuitem", { name: "Move to section" }).hover();
   await page.getByRole("menuitem", { name: "Work", exact: true }).click();
 

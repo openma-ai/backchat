@@ -46,6 +46,7 @@ import {
   ComposerAuthControls,
   ComposerSessionStateSlot,
   InlineComposerOptionControls,
+  PermissionModeChip,
   SessionRunChip,
 } from "./ComposerSessionControls";
 
@@ -107,6 +108,31 @@ describe("InlineComposerOptionControls", () => {
     expect(html).not.toContain("disabled");
   });
 
+  it("renders a generic custom select option with its current value", () => {
+    const html = renderToStaticMarkup(
+      <InlineComposerOptionControls
+        disabled={false}
+        configOptions={[
+          {
+            id: "theme",
+            name: "Theme",
+            category: "custom",
+            type: "select",
+            currentValue: "dark",
+            options: [
+              { value: "dark", name: "Dark" },
+              { value: "light", name: "Light" },
+            ],
+          },
+        ]}
+        onSetConfigOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Theme");
+    expect(html).toContain("Dark");
+  });
+
   it("renders the Agent option like permission: icon plus current name, per-option icons in the menu", () => {
     const html = renderToStaticMarkup(
       <InlineComposerOptionControls
@@ -165,8 +191,8 @@ describe("InlineComposerOptionControls", () => {
     );
     const trigger = html.match(/<button\b[^>]*aria-label="Standard"[^>]*>/)?.[0];
 
-    expect(trigger).toContain("bg-transparent");
-    expect(trigger).not.toContain("focus-visible:bg-");
+    expect(trigger).toContain("composer-footer-trigger");
+    expect(trigger).not.toContain("data-[open-surface=none]:");
     expect(trigger).not.toMatch(/(?<![^\s"'])bg-\[var\(--control-bg-(?:hover|open)\)\]/);
   });
 });
@@ -256,6 +282,51 @@ describe("SessionRunChip", () => {
 
     expect(html).toContain("text-danger");
     expect(html).toContain("GPT-5.3-Codex-Spark");
+  });
+});
+
+describe("PermissionModeChip", () => {
+  it("hides workspace access for Codex and localizes the three approval modes", () => {
+    const html = renderToStaticMarkup(
+      <PermissionModeChip
+        disabled={false}
+        agentId="codex-acp"
+        harnessProbe={{
+          config_options: [{
+            id: "mode",
+            name: "Session mode",
+            category: "mode",
+            type: "select",
+            currentValue: "agent",
+            options: [
+              { value: "read-only", name: "Ask for approval" },
+              { value: "agent", name: "Approve for me" },
+              { value: "agent-full-access", name: "Full access" },
+            ],
+          }],
+        }}
+        configOptions={[
+          {
+            id: "mode",
+            name: "Session mode",
+            category: "mode",
+            type: "select",
+            currentValue: "agent",
+            options: [
+              { value: "read-only", name: "Ask for approval" },
+              { value: "agent", name: "Approve for me" },
+              { value: "agent-full-access", name: "Full access" },
+              { value: "workspace-access", name: "Workspace access" },
+            ],
+          },
+        ]}
+        onSetConfigOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("permission.codexApprove");
+    expect(html).not.toContain("Workspace access");
+    expect(html).not.toContain("workspace-access");
   });
 });
 

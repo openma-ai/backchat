@@ -18,6 +18,7 @@ export interface AgentSetupServiceDeps extends Omit<
 
 export interface AgentSetupService {
   warmup(): Promise<void>;
+  probeComposerHarness(agentId: string): Promise<AgentInfo[]>;
   refreshEnabledAgents(): Promise<AgentInfo[]>;
   listAgents(): Promise<AgentInfo[]>;
   installAgent(id: string): Promise<AgentInfo[]>;

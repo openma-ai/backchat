@@ -27,15 +27,18 @@ describe("agent and session lifecycle contract", () => {
     expect(ipc).toContain("agentSetup.warmup()");
     expect(ipc).toContain('process.env["BACKCHAT_E2E_SKIP_AGENT_WARMUP"]');
     expect(listHandler).toContain("await agentWarmup");
+    expect(listHandler).toContain("skipE2eLiveHarnessProbe");
     expect(gate).toContain('readiness: "ready"');
     expect(gate).toContain('readiness: "snapshot"');
-    expect(gate).toContain("return children;");
+    expect(gate).toContain("return children");
+    expect(gate).not.toContain("useAgentsLiveProbePending");
   });
 
-  it("allows full probes only for manual refresh and post-install/update", () => {
+  it("probes harnesses concurrently at startup and on manual refresh or install", () => {
     const settings = source("../renderer/src/pages/settings/Agents.tsx");
     const setup = source("../../packages/acp-agent-setup/src/index.ts");
     const sharedApi = source("../shared/api.ts");
+    const ipc = source("ipc.ts");
     const authBranch = setup.slice(
       setup.lastIndexOf("  async authenticateAgent("),
       setup.indexOf("private async refreshRegistry("),
@@ -44,14 +47,19 @@ describe("agent and session lifecycle contract", () => {
     expect(settings).toContain("agentsList({ refresh: true })");
     expect(settings).toContain('agentsList({ readiness: "snapshot" })');
     expect(settings).not.toContain("probeAgentIds:");
+    expect(setup).toContain("async warmup()");
+    expect(setup).toContain("Promise.all(agentIds.map");
+    expect(setup).toContain("ensureAgentLiveProbe");
     expect(setup).toContain("async refreshEnabledAgents()");
     expect(settings).not.toContain("agentProbe(");
-    expect(setup).toContain('capabilities: { target: "detected" }');
     expect(setup).toContain('capabilities: { target: "ids", ids: enabledAgentIds }');
     expect(setup).toContain('capabilities: { target: "ids", ids: [id] }');
     expect(authBranch).not.toContain("capabilities:");
     expect(sharedApi).not.toContain("probeAgentIds");
     expect(sharedApi).not.toContain("probeConfigOptions");
+    expect(sharedApi).toContain("liveProbeAgentId");
+    expect(ipc).toContain("probeComposerHarness");
+    expect(ipc).not.toContain("setStartupPriorityAgent");
   });
 
   it("requires explicit recent-run selection instead of a static default", () => {

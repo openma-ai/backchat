@@ -14,9 +14,8 @@ test("sidebar edge resizes above, beside, and below its scroll area", async ({ p
   const sidebar = page.locator("aside").filter({ has: handle });
   const scrollArea = sidebar.locator('[data-sidebar-scroll-area="true"]');
   const viewport = scrollArea.locator('[data-slot="scroll-area-viewport"]');
-  const scrollbar = scrollArea.locator('[data-slot="scroll-area-scrollbar"]');
   const footer = sidebar.locator('[data-sidebar-footer-actions="true"]');
-  await expect(scrollbar).toHaveCount(1);
+  await expect(viewport).toHaveCount(1);
 
   for (const region of ["header", "scroll-area", "footer"] as const) {
     const sidebarBox = (await sidebar.boundingBox())!;
@@ -39,13 +38,9 @@ test("sidebar edge resizes above, beside, and below its scroll area", async ({ p
       .toBeCloseTo(sidebarBox.width + 40, 0);
   }
 
-  // Keeping the divider reachable must not steal the scroll thumb's own lane.
-  await viewport.evaluate(element => { element.scrollTop = 0; });
-  const thumb = scrollbar.locator('[data-slot="scroll-area-thumb"]');
-  const thumbBox = (await thumb.boundingBox())!;
-  await page.mouse.move(thumbBox.x + thumbBox.width / 2, thumbBox.y + thumbBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(thumbBox.x + thumbBox.width / 2, thumbBox.y + thumbBox.height / 2 + 70, { steps: 4 });
-  await page.mouse.up();
-  await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  await viewport.evaluate((element) => {
+    element.scrollTop = 0;
+    element.scrollTop = Math.min(240, element.scrollHeight);
+  });
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 });

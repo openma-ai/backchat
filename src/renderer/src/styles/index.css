@@ -1,3 +1,5 @@
+@layer theme, base, components, utilities;
+
 /* ---------- Semantic application surfaces ----------
    Components name their role, never a shade number. The active theme owns the
    actual colors; these classes only map product roles onto that palette. */
@@ -128,6 +130,7 @@
 /* Product wrapper around the mature Button + Radix trigger primitives. The
    primitive owns semantics/keyboard behavior; this class owns shared density
    and state visuals. Plain focus never looks selected. */
+@layer components {
 .app-compact-control {
   height: var(--control-height-compact);
   min-height: var(--control-height-compact);
@@ -153,17 +156,9 @@
 }
 
 .app-compact-control[data-state="open"],
-.app-compact-control[aria-expanded="true"] {
+ .app-compact-control[aria-expanded="true"] {
   color: var(--control-fg-active);
   background: var(--control-bg-open);
-}
-
-/* Runtime is a location label, not a selected item. Opening its menu should
-   strengthen the foreground without painting a second active surface. */
-.runtime-location-control:hover,
-.runtime-location-control[data-state="open"],
-.runtime-location-control[aria-expanded="true"] {
-  background: transparent;
 }
 
 .app-compact-control:focus {
@@ -174,6 +169,7 @@
   outline: 2px solid var(--fg);
   outline-offset: 2px;
   box-shadow: none;
+}
 }
 
 .app-compact-control:focus-visible:not([data-state="open"]):not(
@@ -187,6 +183,87 @@
   pointer-events: none;
   color: var(--fg-disabled);
   opacity: 1;
+}
+
+@layer utilities {
+  button.composer-footer-trigger {
+    display: inline-flex;
+    height: var(--control-height-compact);
+    min-width: 0;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--control-gap-compact);
+    padding-inline: 0 var(--control-padding-inline);
+    border: 0;
+    border-radius: var(--control-radius);
+    outline: none;
+    color: var(--fg-muted);
+    background: transparent;
+    box-shadow: none;
+    user-select: none;
+    font-size: var(--type-caption-size);
+    font-weight: var(--font-weight-regular);
+    transition:
+      color var(--dur-quick) var(--ease-snap),
+      background-color var(--dur-quick) var(--ease-snap),
+      box-shadow var(--dur-quick) var(--ease-snap);
+  }
+
+  .composer-footer-trigger > [data-control-icon] {
+    display: grid;
+    width: var(--control-height-compact);
+    height: var(--control-height-compact);
+    flex: 0 0 var(--control-height-compact);
+    place-items: center;
+  }
+
+  .composer-footer-trigger > [data-control-icon] > svg {
+    width: var(--control-icon-size);
+    height: var(--control-icon-size);
+  }
+
+  button.composer-footer-trigger:hover {
+    color: var(--control-fg-active);
+    background: var(--control-bg-hover);
+  }
+
+  button.composer-footer-trigger[data-state="open"],
+  button.composer-footer-trigger[aria-expanded="true"] {
+    color: var(--fg-muted);
+    background: var(--control-bg-open);
+    outline: none;
+    box-shadow: none;
+  }
+
+  button.composer-footer-trigger[data-open-surface="none"]:is(
+      :hover,
+      [data-state="open"],
+      [aria-expanded="true"]
+    ) {
+    background: transparent;
+  }
+
+  button.composer-footer-trigger:focus {
+    outline: none;
+  }
+
+  button.composer-footer-trigger:focus-visible:not([data-state="open"]):not(
+      [aria-expanded="true"]
+    ) {
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
+    color: var(--fg-muted);
+    background: var(--control-bg-open);
+    box-shadow: none;
+  }
+
+  button.composer-footer-trigger:focus-visible:is(
+      [data-state="open"],
+      [aria-expanded="true"]
+    ) {
+    outline: none;
+    box-shadow: none;
+  }
 }
 
 /* Every sidebar row uses the same compact overflow affordance. Keeping its
@@ -229,8 +306,8 @@
 
 /* Keep the project row highlighted while its menu is open. Actions use the
    same compact circular hover/open treatment as session and pair rows. */
-.sidebar-project-surface:hover,
-.sidebar-project-row[data-menu-open="true"] > .sidebar-project-surface {
+.sidebar-project-row.sidebar-project-surface:hover,
+.sidebar-project-row[data-menu-open="true"] {
   color: var(--control-fg-active);
   background: var(--control-bg-hover);
 }
@@ -239,14 +316,6 @@
   outline-offset: -2px;
 }
 .sidebar-coordinator-row {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  height: var(--sidebar-row-h);
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  border-radius: 6px;
   color: var(--control-fg-rest);
   text-align: left;
   font-size: var(--type-ui-size);
@@ -272,7 +341,7 @@
   width: var(--control-icon-size);
   height: var(--control-icon-size);
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .sidebar-coordinator-icon > svg {
   width: 14px;
@@ -311,14 +380,49 @@
   outline-offset: -2px;
 }
 .sidebar-navigation .app-selected-surface {
-  font-weight: 600;
-  font-synthesis: weight style;
+  font-weight: 500;
 }
 .sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
   margin-top: 1px;
 }
 .sidebar-navigation .mt-0\.5 {
   margin-top: 1px;
+}
+/* --gap-adjacent (sidebar): twin rounded hover/selected washes that would touch. */
+.sidebar-section:has(> .sidebar-section-header:is(:hover, :focus-within))
+  > .animated-collapse[data-state="open"]
+  > :where(ul, div)
+  > li:first-child:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
+  margin-top: var(--gap-adjacent);
+}
+.sidebar-navigation
+  li:has(> .sidebar-grid-row.sidebar-project-row:is(:hover, [data-menu-open="true"]))
+  > .animated-collapse[data-state="open"]
+  > ul
+  > li:first-child:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
+  margin-top: var(--gap-adjacent);
+}
+.sidebar-navigation
+  .space-y-0\.5
+  > li:has(> .sidebar-grid-row:is(:hover, .app-selected-surface))
+  + li:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
+  margin-top: var(--gap-adjacent);
+}
+[data-composer-footer-controls="true"] {
+  gap: var(--control-gap-compact);
+}
+[data-composer-footer-controls="true"]:has(
+  .composer-footer-trigger:is(:hover, [data-state="open"], [aria-expanded="true"])
+) {
+  gap: var(--gap-adjacent);
+}
+.composer-toolbar-chip-row {
+  gap: var(--control-gap-compact);
+}
+.composer-toolbar-chip-row:has(
+  .composer-footer-trigger:is([data-state="open"], [aria-expanded="true"])
+) {
+  gap: var(--gap-adjacent);
 }
 .sidebar-section + .sidebar-section {
   margin-top: 1px;
@@ -328,29 +432,48 @@
 }
 /* Environment headings use the smaller label role; groups align with nav icons. */
 .sidebar-scroll-area nav > .sidebar-section + .sidebar-section {
-  margin-top: 20px;
+  margin-top: var(--sidebar-section-gap);
 }
 .sidebar-scroll-area nav > .sidebar-section > .sidebar-section-header > button {
   font-size: 12px;
-  font-weight: var(--font-weight-emphasis);
+  font-weight: var(--font-weight-medium);
   font-synthesis: weight style;
   color: var(--fg-muted);
 }
 .sidebar-section-header > button {
   color: var(--fg-muted);
 }
+.sidebar-section-heading {
+  font-size: var(--type-body-size);
+}
+.sidebar-section-heading-compact {
+  font-size: var(--type-caption-size);
+}
+
+/* Header toggles fill the 28px row so collapsed sections keep the 1px step. */
+.sidebar-section-header.sidebar-grid-row {
+  align-items: stretch;
+}
 .sidebar-section-header .sidebar-row-action:is(:hover, :focus-visible, [data-state="open"], [aria-expanded="true"]) {
   background: transparent;
 }
-.sidebar-scroll-area nav .sidebar-section .sidebar-section > .animated-collapse {
-  padding-left: 20px;
-}
+/* Nested conversation sections indent via sidebar grid depth, not ad-hoc padding. */
 .sidebar-section-header > button > span:last-child {
   display: inline-flex;
   width: 12px;
   justify-content: center;
 }
-
+.sidebar-section-header [data-sidebar-grid="trailing"] {
+  justify-content: center;
+}
+.sidebar-section-header [data-sidebar-section-header-action="true"] .sidebar-row-action {
+  width: var(--sidebar-row-action-size);
+  height: var(--sidebar-row-action-size);
+}
+.sidebar-section-header .sidebar-row-action > svg {
+  width: var(--sidebar-row-action-icon-size);
+  height: var(--sidebar-row-action-icon-size);
+}
 /* Every sidebar row centers its 16px glyph inside one 16px box, so icon
    edges and label starts stay on the same two rails from the nav rows at
    the top through sessions, pairs, projects, and the footer. */
@@ -397,6 +520,7 @@
    libraries expose different attributes, so this adapter normalizes those
    signals without allowing one trigger or roving-focus item to style a
    sibling component. */
+@layer components {
 .app-select-content {
   color: var(--fg);
   background: var(--surface-panel);
@@ -411,15 +535,29 @@
   background: transparent;
 }
 
-.app-select-focus:is(:focus, [data-highlighted], [data-selected="true"]) {
+.app-select-focus:is(:focus, [data-highlighted], [data-selected="true"]):not(
+    [data-checked="true"],
+    [data-state="checked"]
+  ),
+.app-select-focus[data-state="open"]:not([data-checked="true"], [data-state="checked"]) {
   color: var(--control-fg-active);
   background: var(--control-bg-hover);
 }
 
+/* Current value: trailing check only — never a selection wash. */
 .app-select-item[data-state="checked"],
-.app-select-item[data-checked="true"] {
-  color: var(--control-fg-active);
-  background: var(--control-bg-open);
+.app-select-item[data-checked="true"],
+.app-select-item[data-state="checked"]:hover,
+.app-select-item[data-checked="true"]:hover,
+.app-select-focus[data-state="checked"]:is(:focus, [data-highlighted], [data-selected="true"]),
+.app-select-focus[data-checked="true"]:is(:focus, [data-highlighted], [data-selected="true"]) {
+  color: var(--control-fg-rest);
+  background: var(--surface-selected);
+}
+
+.app-select-item[data-slot="dropdown-menu-item"][data-checked="true"]:focus,
+.app-select-item[data-slot="dropdown-menu-item"][data-state="checked"]:focus {
+  background: var(--surface-selected);
 }
 
 /* One wash at a time: while the cursor rests on another row, the current
@@ -437,6 +575,7 @@
 
 .app-select-separator {
   background: var(--border);
+}
 }
 
 .composer-radius {
@@ -575,8 +714,8 @@
 }
 
 .slash-command-section + .slash-command-section {
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: var(--gap-adjacent);
+  padding-top: var(--gap-adjacent);
 }
 
 .slash-command-section-label {
@@ -920,6 +1059,12 @@ html[data-theme-asset-empty-state="true"]
   .theme-empty-state-art
   .openma-home-mark {
   display: none;
+}
+
+.renderer-crash-mark-slot {
+  width: 100%;
+  min-height: 80px;
+  color: var(--fg-subtle);
 }
 
 .openma-home-mark {
@@ -1640,6 +1785,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   /* Desktop typography roles, authored at 100% window zoom. */
   --type-caption-size: 12px;
   --type-caption-leading: 18px;
+  --type-meta-size: 11px;
+  --type-small-size: 10px;
+  --type-micro-size: 9px;
   --type-ui-size: 13px;
   --type-ui-leading: 20px;
   --type-body-size: 14px;
@@ -1657,6 +1805,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      Regular wherever those local() names exist. 500 and 600 stay on
      their own faces. Code keeps an explicit 400. */
   --font-ui-weight: 430;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
   /* Selected text is 600. Medium stays 500. Linux Noto Sans SC and macOS
      PingFang publish a 500 face. Windows YaHei has no 500, so that request
      stays on Regular; only 600 uses YaHei Bold. */
@@ -1704,11 +1854,76 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --interaction-bg-active: var(--interaction-bg-hover);
   --control-bg-hover: var(--interaction-bg-hover);
   --control-bg-open: var(--interaction-bg-active);
+  --scrollbar-thumb: color-mix(in srgb, var(--fg-subtle) 72%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--fg-muted) 90%, transparent);
   --sidebar-row-action-size: 16px;
   --sidebar-row-action-icon-size: var(--control-icon-size);
   --sidebar-row-action-radius: calc(var(--sidebar-row-action-size) / 2);
-  --scrollbar-thumb: color-mix(in srgb, var(--fg-subtle) 72%, transparent);
-  --scrollbar-thumb-hover: color-mix(in srgb, var(--fg-muted) 90%, transparent);
+  /* Converged track (transcript nudged down, sidebar nudged up via thumb
+     inset). Transcript colors/reveal stay canonical; sidebar ≤ transcript. */
+  --oma-scrollbar-reference-size: 10px;
+  --oma-scrollbar-track-size: 9px;
+  --oma-scrollbar-thumb-border: 2px;
+  --oma-scrollbar-transcript-track-size: var(--oma-scrollbar-track-size);
+  --oma-scrollbar-transcript-thumb-border: var(--oma-scrollbar-thumb-border);
+  --oma-scrollbar-sidebar-track-size: var(--oma-scrollbar-track-size);
+  --oma-scrollbar-sidebar-thumb-border: var(--oma-scrollbar-thumb-border);
+  --oma-scrollbar-size: var(--oma-scrollbar-track-size);
+  --sidebar-content-padding-inline-start: 8px;
+  --sidebar-content-padding-inline-end: calc(
+    8px +
+      max(
+        0px,
+        min(
+            var(--oma-scrollbar-sidebar-track-size),
+            var(--oma-scrollbar-transcript-track-size)
+          ) - var(--oma-scrollbar-reference-size)
+      )
+  );
+  --sidebar-grid-icon-track: 16px;
+  --sidebar-grid-column-gap: 8px;
+  --sidebar-grid-nest-step: 16px;
+  --sidebar-grid-depth-base-inset: 4px;
+  --sidebar-grid-outline-width: 1px;
+  --sidebar-grid-no-trailing-end-inset: 4px;
+  --sidebar-section-gap: 20px;
+  --sidebar-grid-trailing-gap: 4px;
+  --sidebar-grid-trailing-track: var(--sidebar-row-action-size);
+  --sidebar-grid-trailing-track-double: calc(
+    2 * var(--sidebar-row-action-size) + var(--sidebar-grid-trailing-gap)
+  );
+  --sidebar-grid-trailing-track-host: max-content;
+  --menu-panel-padding: 4px;
+  --menu-item-padding-inline: 6px;
+  --menu-item-padding-block: 4px;
+  --menu-item-gap: 6px;
+  --menu-comfortable-item-padding-inline: 8px;
+  --menu-comfortable-item-padding-block: 6px;
+  --menu-comfortable-item-gap: 8px;
+  --menu-comfortable-icon-size: 16px;
+  --menu-comfortable-search-height: 2.25rem;
+  --menu-dropdown-panel-padding: 4px;
+  --menu-dropdown-item-padding-block: 6px;
+  --menu-context-min-width: 140px;
+  --menu-project-context-min-width: 180px;
+  --menu-provider-context-min-width: 164px;
+  --menu-submenu-min-width: 96px;
+  --composer-session-menu-width: 260px;
+  --resource-rail-width: 300px;
+  --resource-rail-top-offset: 52px;
+  --crash-mark-width: 86px;
+  --crash-mark-height: 76px;
+  --unread-indicator: oklch(0.62 0.16 240);
+  --oma-scrollbar-thumb: color-mix(
+    in srgb,
+    var(--chat-fg, var(--fg)) 30%,
+    transparent
+  );
+  --oma-scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--chat-fg, var(--fg)) 50%,
+    transparent
+  );
   --scroll-boundary-thickness: 0.5px;
   --scroll-boundary-color: color-mix(in srgb, var(--border) 72%, transparent);
 
@@ -1726,6 +1941,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   );
   --composer-card-border-width: 1px;
   --composer-card-padding-block: 10px;
+  /* When adjacent rounded/highlighted surfaces would touch: menus ↔ triggers,
+     sidebar parent/child washes, stacked footer chips, etc. Not list rhythm. */
+  --gap-adjacent: 6px;
   --composer-section-gap: 6px;
   --composer-card-padding-inline: var(--composer-card-padding-block);
   --composer-action-edge-inset: calc(
@@ -1743,6 +1961,8 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
      already part of the main-stage geometry. */
   --bottom-bar-gap-y: 6px;
   --composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);
+  --composer-menu-side-offset: var(--gap-adjacent);
+  --composer-picker-popover-gap: var(--gap-adjacent);
   --composer-card-footer-gap: var(--composer-footer-gap);
   --composer-body-min-height: 48px;
   --composer-resting-height: calc(
@@ -2050,6 +2270,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
 }
 
 @theme {
+  --text-meta: var(--type-meta-size);
+  --text-small: var(--type-small-size);
+  --text-micro: var(--type-micro-size);
   --text-caption: var(--type-caption-size);
   --text-caption--line-height: var(--type-caption-leading);
   --text-ui: var(--type-ui-size);
@@ -2340,35 +2563,59 @@ body,
   }
 }
 
-/* Subtle scrollbar — thumb is transparent by default. It fades in only
-   when the user hovers the scrollable region (or when the OS forces it
-   on via Settings → Appearance → "Show scroll bars" = Always). Without
-   this, every Conversation mount triggers a scrollTo() that briefly
-   shows the thumb, then the OS fades it out — visible as a one-frame
-   blip when first opening a chat. */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Shared overlay scrollbar — transcript owns reveal timing (scroll + idle
+   fade). Geometry and colors are tokenized once for every scroll surface. */
+.oma-scrollbar,
+.app-scrollbar,
+.chat-scrollbar,
+[data-slot="scroll-area-viewport"] {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 160ms var(--ease-soft);
 }
-::-webkit-scrollbar-track {
+.oma-scrollbar[data-chat-scrolling="true"],
+.app-scrollbar[data-chat-scrolling="true"],
+.chat-scrollbar[data-chat-scrolling="true"],
+[data-slot="scroll-area-viewport"][data-chat-scrolling="true"] {
+  scrollbar-color: var(--oma-scrollbar-thumb) transparent;
+}
+.oma-scrollbar::-webkit-scrollbar,
+.app-scrollbar::-webkit-scrollbar,
+.chat-scrollbar::-webkit-scrollbar,
+[data-slot="scroll-area-viewport"]::-webkit-scrollbar {
+  width: var(--oma-scrollbar-transcript-track-size);
+  height: var(--oma-scrollbar-transcript-track-size);
+}
+.oma-scrollbar::-webkit-scrollbar-track,
+.app-scrollbar::-webkit-scrollbar-track,
+.chat-scrollbar::-webkit-scrollbar-track,
+[data-slot="scroll-area-viewport"]::-webkit-scrollbar-track {
   background: transparent;
 }
-::-webkit-scrollbar-thumb {
+.oma-scrollbar::-webkit-scrollbar-thumb,
+.app-scrollbar::-webkit-scrollbar-thumb,
+.chat-scrollbar::-webkit-scrollbar-thumb,
+[data-slot="scroll-area-viewport"]::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  max-height: 50%;
+  border: var(--oma-scrollbar-transcript-thumb-border) solid transparent;
+  border-radius: 9999px;
   background: transparent;
-  border-radius: 4px;
-  /* Inset 2px so the thumb doesn't paint to the edge of the gutter —
-     keeps it from looking like a divider line when visible. */
   background-clip: padding-box;
-  border: 2px solid transparent;
-  transition: background var(--dur-base) var(--ease-soft);
+  transition: background 160ms var(--ease-soft);
 }
-*:hover > ::-webkit-scrollbar-thumb,
-*:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--fg) 20%, transparent);
+.oma-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb,
+.app-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb,
+.chat-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb,
+[data-slot="scroll-area-viewport"][data-chat-scrolling="true"]::-webkit-scrollbar-thumb {
+  background: var(--oma-scrollbar-thumb);
   background-clip: padding-box;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--fg) 40%, transparent);
+.oma-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover,
+.app-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover,
+.chat-scrollbar[data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover,
+[data-slot="scroll-area-viewport"][data-chat-scrolling="true"]::-webkit-scrollbar-thumb:hover {
+  background: var(--oma-scrollbar-thumb-hover);
   background-clip: padding-box;
 }
 
@@ -2389,8 +2636,6 @@ body,
   position: absolute;
   z-index: 40;
   inset-block: 0;
-  /* Radix writes right: 0 inline while calculating the track. Keep the full
-     hit lane on that edge; padding alone gives the painted thumb clearance. */
   inset-inline-end: 0 !important;
   width: 8px;
   padding-block: 0;
@@ -2419,6 +2664,502 @@ body,
   background: var(--scrollbar-thumb-hover);
 }
 
+/* One mesh for every sidebar row: icon | label | trailing action. */
+@layer components {
+.sidebar-grid-row {
+  --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track);
+  display: grid;
+  width: auto;
+  margin-inline-start: calc(var(--sidebar-depth) * var(--sidebar-grid-nest-step));
+  min-width: 0;
+  height: var(--sidebar-row-h);
+  align-items: center;
+  column-gap: var(--sidebar-grid-column-gap);
+  padding-inline-start: var(--sidebar-content-padding-inline-start);
+  padding-inline-end: var(--sidebar-content-padding-inline-end);
+  grid-template-columns:
+    var(--sidebar-grid-icon-track)
+    minmax(0, 1fr)
+    var(--sidebar-grid-trailing-effective);
+}
+.sidebar-grid-depth-root {
+  padding-inline-start: var(--sidebar-grid-depth-base-inset);
+}
+.sidebar-grid-row[data-sidebar-trailing-track="double"] {
+  --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track-double);
+}
+.sidebar-grid-row[data-sidebar-trailing-track="host"] {
+  --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track-host);
+}
+/* Rows with no trailing content release the reserved action column so labels
+   keep main's full clip width. */
+.sidebar-grid-row[data-sidebar-trailing-track="none"] {
+  padding-inline-end: calc(
+    var(--sidebar-content-padding-inline-end) +
+      var(--sidebar-grid-no-trailing-end-inset)
+  );
+  grid-template-columns:
+    var(--sidebar-grid-icon-track)
+    minmax(0, 1fr);
+}
+.sidebar-grid-row[data-sidebar-leading="none"] [data-sidebar-grid="label"] {
+  grid-column: 1 / span 2;
+}
+.sidebar-grid-row[data-sidebar-trailing-track="double"] [data-sidebar-grid="trailing"] {
+  display: grid;
+  grid-template-columns: var(--sidebar-row-action-size) var(--sidebar-row-action-size);
+  gap: var(--sidebar-grid-trailing-gap);
+  justify-content: end;
+  align-items: center;
+}
+/* One trailing control lands in the penultimate or last action column. */
+.sidebar-grid-row[data-sidebar-trailing-track="double"] [data-sidebar-grid="trailing"] > :only-child {
+  grid-column: 2;
+}
+.sidebar-grid-row[data-sidebar-trailing-track="double"]
+  [data-sidebar-grid="trailing"]
+  > :only-child[data-sidebar-grid-action="penultimate"] {
+  grid-column: 1;
+}
+.sidebar-grid-cell-icon,
+[data-sidebar-grid="icon"] {
+  grid-column: 1;
+  display: flex;
+  width: var(--sidebar-grid-icon-track);
+  align-items: center;
+  justify-content: flex-start;
+}
+.sidebar-grid-cell-label,
+[data-sidebar-grid="label"] {
+  grid-column: 2;
+  display: flex;
+  min-width: 0;
+  align-self: stretch;
+  align-items: center;
+}
+.sidebar-grid-cell-trailing,
+[data-sidebar-grid="trailing"] {
+  grid-column: 3;
+  display: flex;
+  width: 100%;
+  max-width: var(--sidebar-grid-trailing-effective);
+  align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
+}
+
+.menu-panel {
+  padding: var(--menu-panel-padding);
+}
+
+.menu-panel[data-slot="dropdown-menu-content"] {
+  padding: var(--menu-dropdown-panel-padding);
+}
+
+.menu-item {
+  gap: var(--menu-item-gap);
+  padding-inline: var(--menu-item-padding-inline);
+  padding-block: var(--menu-item-padding-block);
+}
+
+.menu-separator {
+  margin-block: var(--menu-item-padding-block);
+}
+
+[data-slot="command-separator"].menu-separator {
+  margin-inline: calc(-1 * var(--menu-panel-padding));
+}
+
+[data-slot="dropdown-menu-separator"].menu-separator {
+  margin-inline: calc(-1 * var(--menu-dropdown-panel-padding));
+}
+
+[data-slot="dropdown-menu-item"].menu-item {
+  padding-block: var(--menu-dropdown-item-padding-block);
+}
+
+.task-resource-rail {
+  right: var(--stage-inset);
+  max-height: calc(100vh - var(--resource-rail-top-offset) - var(--stage-inset));
+}
+
+/* Settings / form selects sharing GroupedCommandMenu (coordinator settings, etc.). */
+.grouped-command-field-trigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height-compact);
+  align-items: center;
+  gap: var(--sidebar-grid-column-gap);
+  padding-inline: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--composer-radius);
+  background: var(--surface-panel);
+  color: var(--control-fg-rest);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line-height);
+  outline: none;
+  transition:
+    border-color var(--dur-quick) var(--ease-snap),
+    background-color var(--dur-quick) var(--ease-snap);
+}
+
+.grouped-command-field-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--border) 70%, var(--fg));
+}
+
+.grouped-command-field-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.grouped-command-field[data-open="true"] .grouped-command-field-trigger {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-color: var(--border-strong);
+  outline: 2px solid var(--fg);
+  outline-offset: 0;
+}
+
+.grouped-command-field-trigger-leading {
+  display: flex;
+  width: var(--sidebar-grid-icon-track);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-subtle);
+}
+
+.grouped-command-field-popover {
+  overflow: visible;
+  border: none;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.grouped-command-field-popover .grouped-command-menu {
+  border-radius: 0 0 var(--composer-radius) var(--composer-radius);
+}
+
+/* Grouped command menus (project / workspace / host / model): icon | label | check mesh. */
+.grouped-command-menu {
+  --grouped-command-padding-inline: var(--menu-item-padding-inline);
+  --grouped-command-icon-track: var(--sidebar-grid-icon-track);
+  --grouped-command-icon-size: 14px;
+  --grouped-command-column-gap: var(--menu-item-gap);
+  --grouped-command-trailing-track: var(--sidebar-grid-icon-track);
+  --grouped-command-list-height: 288px;
+  --grouped-command-search-height: var(--control-height-compact);
+}
+
+.grouped-command-menu [data-slot="command-input-wrapper"] {
+  align-items: center;
+  border-block-end: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.grouped-command-menu [data-slot="command-input-wrapper"] > svg {
+  grid-column: 1;
+  box-sizing: border-box;
+  justify-self: start;
+  align-self: center;
+  width: var(--grouped-command-icon-track);
+  height: var(--grouped-command-icon-track);
+  max-width: var(--grouped-command-icon-track);
+  max-height: var(--grouped-command-icon-track);
+  padding: 1px;
+}
+
+.grouped-command-menu [data-slot="command-input"] {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.grouped-command-menu-scroll {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: var(--grouped-command-list-height);
+}
+
+.grouped-command-menu-scroll [data-slot="scroll-area-viewport"] {
+  height: auto;
+  max-height: var(--grouped-command-list-height);
+  scrollbar-gutter: auto;
+}
+
+.grouped-command-menu-scroll [data-slot="command-list"] {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  transition: none;
+}
+
+.grouped-command-menu [cmdk-list-sizer] {
+  min-height: 0;
+}
+
+/* Current value: checkmark only — never the gray hover/keyboard wash. */
+.grouped-command-menu [data-slot="command-item"][data-checked="true"],
+.grouped-command-menu [data-slot="command-item"][data-checked="true"]:hover,
+.grouped-command-menu [data-slot="command-item"][data-checked="true"][data-selected="true"],
+.grouped-command-menu .app-select-item[data-checked="true"],
+.grouped-command-menu .app-select-item[data-checked="true"]:hover,
+.grouped-command-menu .app-select-focus[data-checked="true"],
+.grouped-command-menu .app-select-focus[data-checked="true"]:hover {
+  background: var(--surface-selected);
+  color: var(--control-fg-rest);
+}
+
+/* cmdk seeds data-selected on open; wash only for hover or keyboard roving on other rows. */
+.grouped-command-menu:not([data-roving-active="true"]):not([data-has-query="true"])
+  [data-slot="command-item"][data-selected="true"]:not(:hover):not([data-checked="true"]),
+.grouped-command-menu:not([data-roving-active="true"]):not([data-has-query="true"])
+  .app-select-focus[data-selected="true"]:not(:hover):not([data-checked="true"]) {
+  background: transparent;
+  color: var(--control-fg-rest);
+}
+
+.grouped-command-menu
+  [data-slot="command-item"]:hover:not([data-checked="true"]),
+.grouped-command-menu[data-roving-active="true"]
+  [data-slot="command-item"][data-selected="true"]:not([data-checked="true"]),
+.grouped-command-menu[data-has-query="true"]
+  [data-slot="command-item"][data-selected="true"]:not([data-checked="true"]) {
+  background: var(--control-bg-hover);
+  color: var(--control-fg-active);
+}
+
+.grouped-command-menu [data-slot="command-group"] {
+  padding-inline: 0;
+}
+
+.grouped-command-menu [cmdk-group-heading] {
+  padding-inline-start: calc(
+    var(--grouped-command-padding-inline) + var(--grouped-command-icon-track) +
+      var(--grouped-command-column-gap)
+  );
+  padding-inline-end: var(--grouped-command-padding-inline);
+  padding-block: 6px 4px;
+}
+
+.grouped-command-menu [data-slot="command-item"] {
+  align-items: center;
+  column-gap: var(--grouped-command-column-gap);
+}
+
+.grouped-command-menu [data-grouped-command-grid="icon"] svg,
+.grouped-command-menu
+  [data-slot="command-item"]
+  [data-grouped-command-grid="icon"]
+  svg {
+  width: var(--grouped-command-icon-size);
+  height: var(--grouped-command-icon-size);
+  max-width: var(--grouped-command-icon-size);
+  max-height: var(--grouped-command-icon-size);
+  flex-shrink: 0;
+}
+
+
+.grouped-command-menu [data-grouped-command-grid="icon"] {
+  grid-column: 1;
+  display: inline-flex;
+  width: var(--grouped-command-icon-track);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+}
+
+.grouped-command-menu [data-grouped-command-grid="icon"] > * {
+  width: var(--grouped-command-icon-size);
+  height: var(--grouped-command-icon-size);
+  max-width: var(--grouped-command-icon-size);
+  max-height: var(--grouped-command-icon-size);
+}
+
+.grouped-command-menu [data-grouped-command-grid="label"] {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.grouped-command-menu [data-slot="command-item"] > .app-select-selected {
+  grid-column: 3;
+  margin-inline-start: 0;
+  justify-self: center;
+}
+
+/* Plain rows (host-picker account/manage) match main's DropdownMenuItem:
+   label sits at the row inset, no icon-track grid. */
+.grouped-command-menu [data-slot="command-item"].grouped-command-plain-item {
+  align-items: center;
+  column-gap: 0;
+}
+
+.grouped-command-menu [data-slot="command-empty"] {
+  display: flex;
+  min-height: calc(var(--grouped-command-list-height) - 16px);
+  align-items: center;
+  justify-content: center;
+}
+
+/* Hide provider headings when cmdk filtered every item in the group (ranking stays cmdk-owned). */
+.grouped-command-menu
+  [data-grouped-command-group-heading]:not(
+    :has(+ [data-slot="command-group"] [cmdk-item]:not([aria-disabled="true"]))
+  ) {
+  display: none;
+}
+
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"] {
+  width: 100%;
+}
+
+/* Host picker: scroll the dropdown shell like main (`max-h-[60vh] overflow-y-auto`), not inner ~288px cap. */
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  .grouped-command-menu-scroll,
+.grouped-command-menu[data-composer-select-menu-mode="host-picker"]
+  .grouped-command-menu-scroll
+  [data-slot="scroll-area-viewport"] {
+  max-height: none;
+  height: auto;
+  overflow: visible;
+}
+
+/* Project and workspace pickers share the comfortable menu density. */
+[data-menu-density="comfortable"] {
+  --menu-item-padding-inline: var(--menu-comfortable-item-padding-inline);
+  --menu-item-padding-block: var(--menu-comfortable-item-padding-block);
+  --menu-item-gap: var(--menu-comfortable-item-gap);
+}
+
+[data-menu-density="comfortable"] .grouped-command-menu {
+  --grouped-command-icon-size: var(--menu-comfortable-icon-size);
+  --grouped-command-search-height: var(--menu-comfortable-search-height);
+}
+
+[data-menu-density="comfortable"] .grouped-command-menu [data-slot="command-input-wrapper"] {
+  border-block-end: none;
+}
+}
+
+.sidebar-host-chrome,
+.sidebar-footer-chrome {
+  padding-inline: var(--sidebar-row-surface-inset);
+}
+
+/* Row hover/selected washes align with main (inset inside the rail). */
+.sidebar-navigation {
+  --sidebar-row-surface-inset: calc(
+    var(--sidebar-content-padding-inline-start) - var(--sidebar-grid-outline-width)
+  );
+}
+
+.sidebar-navigation
+  .sidebar-grid-row:not([data-sidebar-row="new-chat"]):not(
+    .app-selected-surface
+  ):is(:hover, [data-state="open"]) {
+  background: var(--control-bg-hover);
+}
+
+/* The wash follows the shared row surface inset while the cells stay pinned
+   to the parent tracks. */
+.sidebar-grid-row[data-sidebar-row="new-chat"] > .sidebar-new-chat-primary {
+  grid-column: 1 / 3;
+  display: grid;
+  grid-template-columns: subgrid;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  border-radius: var(--control-radius);
+  padding: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  position: relative;
+  isolation: isolate;
+  transition: color 0.15s ease;
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"]
+  > .sidebar-new-chat-primary::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(-1 * var(--sidebar-row-surface-inset));
+  inset-inline-end: calc(
+    var(--sidebar-grid-icon-track) - var(--control-gap-compact)
+  );
+  z-index: -1;
+  border-radius: var(--control-radius);
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"]
+  > .sidebar-new-chat-primary:is(:hover, :focus-visible)::before {
+  background: var(--control-bg-hover);
+}
+
+/* The focus ring wraps the wash, not the narrower grid box. */
+.sidebar-grid-row[data-sidebar-row="new-chat"]
+  > .sidebar-new-chat-primary:focus-visible {
+  outline: none;
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"]
+  > .sidebar-new-chat-primary:focus-visible::before {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* Trailing actions stay 16px glyphs, but their boxes share the row's top
+   edge with the full-height primary control. */
+.sidebar-grid-row[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"] {
+  align-self: stretch;
+  height: 100%;
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action {
+  height: 100%;
+}
+
+.sidebar-navigation .sidebar-grid-row.app-selected-surface {
+  background: var(--surface-selected);
+}
+
+@keyframes shimmer-text-sweep {
+  0% {
+    background-position: 120% center;
+  }
+  100% {
+    background-position: -20% center;
+  }
+}
+
+.shimmer-text,
+.composer-harness-probe-placeholder::placeholder {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--fg-muted) 88%, transparent) 0%,
+    color-mix(in srgb, var(--fg) 96%, transparent) 45%,
+    color-mix(in srgb, var(--fg-muted) 88%, transparent) 90%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: shimmer-text-sweep 2.4s var(--ease-soft) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text,
+  .composer-harness-probe-placeholder::placeholder {
+    animation: none;
+    color: var(--fg-muted);
+    background: none;
+  }
+}
+
 .sidebar-scroll-boundary {
   position: absolute;
   z-index: 30;
@@ -2441,48 +3182,6 @@ body,
 
 .sidebar-scroll-boundary-bottom {
   bottom: 0;
-}
-
-/* Primary content scroller — Codex-style short pill. App pages and chat
-   timelines share this exact treatment so route changes never swap between
-   native full-height bars and the product's compact scrollbar vocabulary.
-   Two parallel rules:
-   1. Standards `scrollbar-width` / `scrollbar-color` for the
-      overlay-style pill that macOS Chromium draws natively.
-   2. `::-webkit-scrollbar` pseudos as a fallback for "Always
-      show scroll bars" mode and Linux/Windows classic
-      scrollbars. Without these, classic-mode thumbs auto-size
-      to fill the entire track height, which loses the short
-      pill effect. The `min-height` + `max-height` clamp on
-      the thumb gives a fat short pill; the transparent
-      border insets it from the track edge so it visually
-      floats in the middle. */
-.app-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--fg) 30%, transparent) transparent;
-}
-.app-scrollbar::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-.app-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.app-scrollbar::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--fg) 30%, transparent);
-  border-radius: 9999px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-  /* Clamp thumb height between 40px and ~50% of the scroller
-     viewport. Without the floor, classic-mode scrollbars in
-     "Always show" mode make the thumb = track height when
-     content < viewport, which destroys the pill. */
-  min-height: 40px;
-  max-height: 50%;
-}
-.app-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--fg) 50%, transparent);
-  background-clip: padding-box;
 }
 
 /* BrandLoader dot pulse — wave from left to right via staggered animation-delay
@@ -2949,7 +3648,10 @@ textarea:disabled::selection {
 /* Disabled controls keep their fill. Inactive ink is a 2:1 glyph floor,
    not 3:1 or 4.5:1 — those sat on `fg-subtle`, so disabled icons looked
    enabled. Opacity would wash the glyph out. Switches and checkboxes draw
-   their own disabled chrome. */
+   their own disabled chrome. `[data-disabled]` can't be a bare presence
+   match: cmdk emits the attribute as "false" on enabled items, so the
+   exclusion below keeps every truthy spelling ("", "true") matching while
+   `data-disabled="false"` stays enabled ink. */
 :is(
   button,
   input,
@@ -2958,7 +3660,7 @@ textarea:disabled::selection {
   [role="menuitem"],
   [role="option"],
   [role="tab"]
-):is(:disabled, [aria-disabled="true"], [data-disabled]):not(
+):is(:disabled, [aria-disabled="true"], [data-disabled]:not([data-disabled="false"])):not(
   [role="switch"],
   [role="checkbox"],
   [data-disabled-hidden]

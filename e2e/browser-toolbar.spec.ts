@@ -64,6 +64,27 @@ test("browser chrome is compact and exposes real page controls", async ({ page, 
     ).toBeVisible();
 
     await browser.getByRole("button", { name: "Browser menu" }).click();
+    const browserMenu = page.locator('[data-slot="dropdown-menu-content"]').last();
+    await expect(browserMenu).toBeVisible();
+    const browserGeometry = await browserMenu.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const firstRow = el.querySelector('[data-slot="dropdown-menu-item"]')!;
+      const rowRect = firstRow.getBoundingClientRect();
+      const separator = el.querySelector('[data-slot="dropdown-menu-separator"]')!;
+      const separatorRect = separator.getBoundingClientRect();
+      return {
+        height: rect.height,
+        firstRowOffset: rowRect.y - rect.y,
+        separatorOffset: separatorRect.x - rect.x,
+        separatorWidth: separatorRect.width,
+        width: rect.width,
+      };
+    });
+    expect(Math.abs(browserGeometry.height - 470)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(browserGeometry.firstRowOffset - 7)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(browserGeometry.separatorOffset - 3)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(browserGeometry.separatorWidth - (browserGeometry.width - 6)))
+      .toBeLessThanOrEqual(0.5);
     await expect(page.getByRole("menuitem", { name: "Find in page" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Print" })).toBeVisible();
     await expect(page.getByText("Zoom", { exact: true })).toBeVisible();

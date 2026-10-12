@@ -1,6 +1,10 @@
 import { createServer, type ServerResponse } from "node:http";
 import { mkdir } from "node:fs/promises";
-import { expect, test } from "./fixtures";
+import { expect, test, type Locator } from "./fixtures";
+
+async function sidebarGridLabelCellLeft(cell: Locator) {
+  return cell.evaluate((element) => element.getBoundingClientRect().left);
+}
 
 test("tenant groups start collapsed above local and route new and continued sessions to their owner", async ({ app, page }) => {
   const calls: string[] = [];
@@ -45,12 +49,35 @@ test("tenant groups start collapsed above local and route new and continued sess
     const beta = nav.getByRole("button", { name: "Beta", exact: true });
     await expect(alpha).toHaveAttribute("aria-expanded", "false");
     await expect(beta).toHaveAttribute("aria-expanded", "false");
-    await expect(nav.getByRole("button", { name: "Local", exact: true })).toHaveAttribute("aria-expanded", "true");
-    expect(await nav.locator(':scope > section > div > button[aria-expanded]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")).slice(0, 3))).toEqual(["Alpha", "Beta", "Local"]);
+    const localRuntimeRow = page.getByTestId("sidebar-local-runtime-row");
+    await expect(localRuntimeRow).toHaveClass(/sidebar-grid-row/);
+    await expect(localRuntimeRow).toBeVisible();
+    const localLabelCell = localRuntimeRow.locator('[data-sidebar-grid="label"]');
+    const alphaLabelCell = alpha.locator('xpath=ancestor::*[@data-sidebar-grid="label"][1]');
+    const betaLabelCell = beta.locator('xpath=ancestor::*[@data-sidebar-grid="label"][1]');
+    const [localLabelLeft, alphaLabelLeft, betaLabelLeft] = await Promise.all([
+      sidebarGridLabelCellLeft(localLabelCell),
+      sidebarGridLabelCellLeft(alphaLabelCell),
+      sidebarGridLabelCellLeft(betaLabelCell),
+    ]);
+    expect(Math.abs(localLabelLeft - alphaLabelLeft)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(localLabelLeft - betaLabelLeft)).toBeLessThanOrEqual(0.75);
+    expect(
+      await nav
+        .locator("section.sidebar-section .sidebar-section-header button[aria-expanded]")
+        .evaluateAll((buttons) =>
+          buttons.map((b) => b.getAttribute("aria-label")).slice(0, 2),
+        ),
+    ).toEqual(["Alpha", "Beta"]);
     await mkdir("artifacts/tenant-sidebar", { recursive: true });
     await page.screenshot({ path: "artifacts/tenant-sidebar/collapsed.png" });
     await beta.click();
-    await nav.getByText("Beta task", { exact: true }).click();
+    const betaTask = nav.getByText("Beta task", { exact: true });
+    const betaTaskRow = betaTask.locator(
+      "xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' sidebar-grid-row ')]",
+    );
+    await expect(betaTaskRow).toHaveAttribute("data-sidebar-depth", "1");
+    await betaTask.click();
     await page.locator("textarea").fill("Continue B"); await page.locator("textarea").press("Enter");
     await expect.poll(() => calls.filter((c) => c === "Beta:POST:/v1/sessions/shared-id/events").length).toBe(1);
     await page.evaluate(() => window.backchat.openmaSelectWorkspace("Beta"));
@@ -63,7 +90,7 @@ test("tenant groups start collapsed above local and route new and continued sess
     await page.screenshot({ path: "artifacts/tenant-sidebar/expanded.png" });
     await page.evaluate(() => window.backchat.openmaLogout());
     await expect(alpha).toHaveCount(0); await expect(beta).toHaveCount(0);
-    await expect(nav.getByRole("button", { name: "Local", exact: true })).toBeVisible();
+    await expect(localRuntimeRow).toBeVisible();
   } finally {
     for (const stream of streams) stream.end(); server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
