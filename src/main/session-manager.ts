@@ -84,7 +84,10 @@ import type {
   ElicitationUrlRequestInfo,
   ElicitationUrlResponseInfo,
 } from "../shared/api.js";
-import { extractAcpSystemNotice } from "../shared/acp-system-notices.js";
+import {
+  extractAcpSystemNotice,
+  type AcpSystemNoticeContext,
+} from "../shared/acp-system-notices.js";
 import {
   isAuthenticationFailureMessage,
   isAuthenticationRequiredError,
@@ -1837,7 +1840,9 @@ export class SessionManager {
             setSessionTitle(p.session_id, title.trim().slice(0, 500));
           }
         }
-        const systemNotice = extractAcpSystemNotice(ev);
+        const systemNotice = extractAcpSystemNotice(ev, {
+          harness: sess.agentId,
+        });
         if (isUserVisibleAcpEvent(ev2) && !systemNotice) emittedVisibleOutput = true;
         if (tag === "agent_message_chunk" || tag === "agent_thought_chunk") {
           const c = ev2?.content;
@@ -1858,8 +1863,11 @@ export class SessionManager {
           if (!observedEventTypes.has(persistenceType)) {
             observedEventTypes.add(persistenceType);
             if (process.env.NODE_ENV !== "test") {
+              const route = acpEventUiRoute(ev, {
+                harness: sess.agentId,
+              });
               process.stderr.write(
-                `[acp-event] agent=${sess.agentId} type=${persistenceType} route=${acpEventUiRoute(ev)} ${acpEventShape(ev)}\n`,
+                `[acp-event] agent=${sess.agentId} type=${persistenceType} route=${route} ${acpEventShape(ev)}\n`,
               );
             }
           }
@@ -2474,6 +2482,7 @@ function acpEventShape(event: unknown): string {
 
 export function acpEventUiRoute(
   event: unknown,
+  context?: AcpSystemNoticeContext,
 ):
   | "transcript"
   | "composer_notice"
@@ -2485,7 +2494,7 @@ export function acpEventUiRoute(
   | "suppressed"
   | "unadapted"
   | "boundary" {
-  if (extractAcpSystemNotice(event)) return "composer_notice";
+  if (extractAcpSystemNotice(event, context)) return "composer_notice";
   if (!event || typeof event !== "object") return "boundary";
   const value = event as { sessionUpdate?: unknown };
   switch (value.sessionUpdate) {

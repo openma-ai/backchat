@@ -2,11 +2,16 @@ import {
   extractAcpSystemNotice as extractCommonAcpSystemNotice,
   type AcpSystemNotice,
 } from "@openma/common/session-events/acp";
+import { getAgentInteractionProfile } from "./agent-interaction.js";
 
 export type { AcpSystemNotice };
 
-const CODEX_SKILL_CONTEXT_WARNING =
-  /^Warning:\s*Skill descriptions were shortened to fit the (?:\d+%\s+)?skills context budget\./;
+export type AcpSystemNoticeContext = {
+  outOfTurn?: boolean;
+  harness?: string;
+  coalesced?: boolean;
+  phase?: string;
+};
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -14,46 +19,84 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-export function splitAcpSystemNoticeText(text: string): {
+/** In-turn classification requires Codex provenance plus a chunk that is
+ * exactly the warning envelope; out-of-turn needs Codex provenance and only
+ * the prefix. Coalesced splitting applies only to legacy rows. No wording
+ * allowlist is used. */
+export function splitAcpSystemNoticeText(
+  text: string,
+  context?: AcpSystemNoticeContext,
+): {
   notice?: string;
   transcript: string;
 } {
+  if (isModelOutputPhase(context?.phase)) {
+    return { transcript: text };
+  }
   const candidate = text.trimStart();
-  if (!CODEX_SKILL_CONTEXT_WARNING.test(candidate)) {
+  if (!/^Warning:[\t ]+\S/.test(candidate)) {
+    return { transcript: text };
+  }
+  if (
+    getAgentInteractionProfile(context?.harness).source !== "codex_product"
+  ) {
     return { transcript: text };
   }
   const paragraphBreak = candidate.search(/\r?\n[\t ]*\r?\n/);
   if (paragraphBreak < 0) {
-    return { notice: candidate.trim(), transcript: "" };
+    return context?.outOfTurn
+      ? { notice: candidate.trim(), transcript: "" }
+      : { transcript: text };
   }
+
   const separator = candidate.slice(paragraphBreak).match(/^\r?\n[\t ]*\r?\n/)?.[0]
     ?? "";
+  const transcript = candidate.slice(paragraphBreak + separator.length);
+  const hasTranscript = transcript.trim().length > 0;
+  if (!context?.outOfTurn && hasTranscript && !context?.coalesced) {
+    return { transcript: text };
+  }
   return {
     notice: candidate.slice(0, paragraphBreak).trim(),
-    transcript: candidate.slice(paragraphBreak + separator.length).trimStart(),
+    transcript: hasTranscript ? transcript.trimStart() : "",
   };
 }
 
-/** Preserve the common Codex warning classifier, accept the provider variant
- * that omits its percentage, and add Pi's structured warning signal. */
-export function extractAcpSystemNotice(event: unknown): AcpSystemNotice | null {
-  const common = extractCommonAcpSystemNotice(event);
-  if (common) return common;
+function isModelOutputPhase(phase?: string): boolean {
+  return phase === "final_answer" || phase === "commentary";
+}
+
+export function extractAcpSystemNotice(
+  event: unknown,
+  context?: AcpSystemNoticeContext,
+): AcpSystemNotice | null {
   const outer = record(event);
   const inner = record(outer?.update) ?? outer;
-  if (inner?.sessionUpdate !== "agent_message_chunk") return null;
-  const meta = record(inner._meta);
+  const meta = record(inner?._meta);
   const codex = record(meta?.codex);
+  const codexPhase = typeof codex?.phase === "string"
+    ? codex.phase
+    : undefined;
+  const noticeContext = {
+    ...context,
+    phase: context?.phase ?? codexPhase,
+  };
+  const phaseTagged = isModelOutputPhase(noticeContext.phase);
+  const piNotify = record(record(meta?.piAcp)?.notify);
+  const piLevel = piNotify?.level;
+  const piNotice = piLevel === "warning" || piLevel === "error";
+  const isMessageChunk = inner?.sessionUpdate === "agent_message_chunk";
+  const common = isMessageChunk && !phaseTagged && piNotice
+    ? extractCommonAcpSystemNotice(event)
+    : null;
+  if (common) return common;
+  if (!isMessageChunk) return null;
   const text = record(inner.content)?.text;
-  if (codex?.phase !== "final_answer" && typeof text === "string") {
-    const split = splitAcpSystemNoticeText(text);
+  if (typeof text === "string") {
+    const split = splitAcpSystemNoticeText(text, noticeContext);
     if (split.notice) {
       return { message: split.notice, tone: "warning" };
     }
   }
-  const notify = record(record(record(inner._meta)?.piAcp)?.notify);
-  if (notify?.level !== "warning") return null;
-  return typeof text === "string" && text.trim().length > 0
-    ? { message: text.trim(), tone: "warning" }
-    : null;
+  return null;
 }
