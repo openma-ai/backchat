@@ -80,6 +80,8 @@ async function measureFooterTrigger(trigger: Locator) {
     const chevron = element.querySelector("[data-control-chevron]");
     return {
       x: rect.x,
+      right: rect.right,
+      width: rect.width,
       labelX: labelRect?.x ?? null,
       iconGap:
         visualRight == null || !labelRect ? null : labelRect.x - visualRight,
@@ -215,8 +217,8 @@ test("composer footer chips match main geometry and typography", async ({ page, 
   expect(Math.abs(project.x - 484.55)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(project.labelX! - 514.55)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(project.iconGap! - 9.42)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(workspace.x - 614.27)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(workspace.labelX! - 644.27)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(workspace.x - project.right - 2)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(workspace.labelX! - workspace.x - 30)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(workspace.iconGap! - 10.82)).toBeLessThanOrEqual(0.5);
   const mutedColor = await readColorToken(page, "--fg-muted");
   for (const chip of [local, project, workspace]) {
