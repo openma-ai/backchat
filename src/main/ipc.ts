@@ -1,4 +1,5 @@
 import { ProjectCloudRouter } from './project-cloud.js';
+import { folderProjectOwners } from "./project-identity.js";
 import type { OpenmaAccount } from './openma-account.js';
 import { ProjectWorkService } from "./project-work.js";
 import { ProjectAgentBridge } from "./project-agent.js";
@@ -1020,6 +1021,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     unarchivePairSession(p.pair_id));
 
   ipcMain.handle(InvokeChannel.ProjectsList, (): ProjectInfo[] => listProjects());
+  ipcMain.handle(InvokeChannel.ProjectFolderOwners, (_e, p: { paths: string[] }) =>
+    folderProjectOwners(listProjects(), p.paths));
   ipcMain.handle(
     InvokeChannel.ProjectSave,
     (_e, p: ProjectSaveParams): ProjectInfo => saveProjectCommand({

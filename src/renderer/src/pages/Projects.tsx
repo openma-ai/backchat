@@ -312,14 +312,15 @@ export function ProjectEditor({
         setSection("agents");
         throw new Error("Choose an environment for both agents.");
       }
-      await window.backchat.projectSave({
+      // A new project for already-registered folders resolves to that project.
+      const project = await window.backchat.projectSave({
         project_id: draft.projectId,
         name: name.trim(),
         source_folders: folders,
         primary_folder: folders[0] ?? "",
       });
-      await window.backchat.projectWorkSave(draft);
-      await saved(draft.projectId);
+      await window.backchat.projectWorkSave({ ...draft, projectId: project.id });
+      await saved(project.id);
     } catch (e) {
       setError(errorText(e));
     } finally {

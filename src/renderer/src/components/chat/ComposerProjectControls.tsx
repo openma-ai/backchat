@@ -1,5 +1,5 @@
 import { ProjectIcon } from "@/components/ProjectIcon";
-import { useProjects } from "@/lib/projects-query";
+import { PROJECTS_QUERY_KEY, useFolderProjectOwners, useProjects } from "@/lib/projects-query";
 import { useRemovedProjectPaths } from "@/lib/removed-projects";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -12,7 +12,7 @@ import {
   XIcon,
 } from "@/components/Icons";
 import { toast } from "sonner";
-import type { ProjectInfo } from "@shared/projects";
+import { canonicalProjectFolder, type ProjectInfo } from "@shared/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
@@ -91,9 +91,12 @@ export function ProjectChipRow({
     [savedProjects],
   );
   const removedPaths = useRemovedProjectPaths();
-  const eligiblePersisted = persisted.filter(row => !removedPaths.includes(row.cwd ?? "") || savedProjects.some(project => project.source_folders.includes(row.cwd ?? "")));
-  const recents = selectRecentProjectPaths(eligiblePersisted).filter(path => !savedProjects.some(project => project.source_folders.includes(path)));
-  const selectedProject = savedProjects.find(project => project.id === projectId) ?? savedProjects.find(project => project.source_folders.includes(activeCwd));
+  const folderOwners = useFolderProjectOwners([activeCwd, ...persisted.map(row => row.cwd ?? "")]);
+  const ownsFolder = (project: ProjectInfo, path: string) =>
+    folderOwners[path] === project.id || project.source_folders.includes(canonicalProjectFolder(path));
+  const eligiblePersisted = persisted.filter(({ cwd }) => !cwd || !removedPaths.includes(cwd) || savedProjects.some(project => ownsFolder(project, cwd)));
+  const recents = selectRecentProjectPaths(eligiblePersisted).filter(path => !savedProjects.some(project => ownsFolder(project, path)));
+  const selectedProject = savedProjects.find(project => project.id === projectId) ?? savedProjects.find(project => ownsFolder(project, activeCwd));
   useEffect(() => {
     if (!isDraft || remoteTarget || !activeSession) return;
     if (activeCwd) {
@@ -140,7 +143,7 @@ export function ProjectChipRow({
         onOpenChange={(open) => {
           const nextOpen = isDraft && open;
           if (nextOpen) {
-            setProjectPickerValue(activeCwd || noProjectCommandValue);
+            setProjectPickerValue(selectedProject?.id ?? (activeCwd || noProjectCommandValue));
           }
           setProjectPickerOpen(nextOpen);
         }}
@@ -179,7 +182,7 @@ export function ProjectChipRow({
               commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}
-              initialHighlightValue={projectPickerValue || activeCwd || noProjectCommandValue}
+              initialHighlightValue={projectPickerValue || selectedProject?.id || activeCwd || noProjectCommandValue}
               menuResetKey={projectPickerOpen ? "open" : "closed"}
               groups={[
                 ...(projectsForPicker.length > 0
@@ -188,7 +191,7 @@ export function ProjectChipRow({
                         heading: t("sidebar.projects"),
                         items: projectsForPicker.map((project) => ({
                           id: project.id,
-                          value: project.primary_folder,
+                          value: project.id,
                           keywords: [project.name, ...project.source_folders],
                           checked: selectedProject?.id === project.id,
                           title: project.primary_folder,
@@ -254,25 +257,15 @@ export function ProjectChipRow({
                           try {
                             const path = await onPickCwd();
                             if (!path) return;
-                            const projects = await window.backchat.projectsList();
-                            if (
-                              !projects.some(
-                                (project) => project.primary_folder === path,
-                              )
-                            ) {
-                              const project = await window.backchat.projectSave({
-                                project_id: `proj-${crypto.randomUUID()}`,
-                                name: folderName(path),
-                                source_folders: [path],
-                                primary_folder: path,
-                              });
-                              projects.push(project);
-                            }
-                            queryClient.setQueryData<ProjectInfo[]>(
-                              ["projects"],
-                              projects,
-                            );
-                            onSetCwd(path);
+                            // The registry returns the project that already owns this folder.
+                            const project = await window.backchat.projectSave({
+                              project_id: `proj-${crypto.randomUUID()}`,
+                              name: folderName(path),
+                              source_folders: [path],
+                              primary_folder: path,
+                            });
+                            await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
+                            onSetCwd(project.primary_folder);
                           } catch (error) {
                             toast.error(t("project.createFailed"), {
                               description:

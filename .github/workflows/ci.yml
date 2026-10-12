@@ -40,7 +40,17 @@ jobs:
         run: pnpm run typecheck
 
       - name: Run curated contract and release-regression tests
-        run: pnpm run test:ci
+        run: >-
+          pnpm run test:ci --coverage --coverage.provider=v8
+          --coverage.reporter=lcov --coverage.reporter=text-summary
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Run script tests
         run: node --test scripts/*.test.mjs
@@ -59,6 +69,9 @@ jobs:
 
       - name: Run fast Electron e2e
         run: pnpm run test:e2e:fast
+
+      - name: Run project registry dedup e2e
+        run: pnpm exec playwright test e2e/project-dedup.spec.ts
 
       - name: Run OpenMA tenant and daemon e2e
         run: pnpm run test:e2e:openma
