@@ -114,6 +114,15 @@ export default defineConfig({
       "src/renderer/src/components/chat/ComposerContentParts.test.tsx",
       "src/renderer/src/components/chat/ComposerAskPanel.test.tsx",
       "src/shared/auth-errors.test.ts",
+      "src/shared/projects.test.ts",
+      "src/main/project-identity.test.ts",
+      "src/main/sql-store-project.test.ts",
+      "src/renderer/src/components/chat/ComposerProjectControls.test.tsx",
+      "src/renderer/src/components/chat/ComposerProjectControls.identity.test.tsx",
+      "src/renderer/src/pages/ProjectEditor.save.test.tsx",
+      "src/renderer/src/lib/projects-query.test.tsx",
+      "src/preload/project-folder-owners-preload.test.ts",
+      "src/main/project-ipc.test.ts",
     ],
     exclude: [
       ...configDefaults.exclude,
@@ -121,5 +130,11 @@ export default defineConfig({
       "**/pairchat-gui-contract.test.ts",
       "**/session-level-gui-contract.test.ts",
     ],
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "lcov"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["**/*.test.{ts,tsx}", "**/*.d.ts"],
+    },
   },
 });

@@ -542,6 +542,10 @@ export interface BackchatApi extends OpenmaAccountApi {
     import("./external-coordinator.js").ExternalCoordinatorRemoveResult
   >;
   projectsList(): Promise<ProjectInfo[]>;
+  /** Maps each path to the id of the project that owns it, comparing folders
+   *  the way the registry does (`~` expanded, symlinks resolved). Paths no
+   *  project owns are omitted. */
+  projectFolderOwners(p: { paths: string[] }): Promise<Record<string, string>>;
   onProjectsChanged(handler: () => void): () => void;
   projectSave(p: ProjectSaveParams): Promise<ProjectInfo>;
   projectDelete(p: { project_id: string }): Promise<void>;

@@ -1,3 +1,4 @@
+import { canonicalProjectFolder } from "@shared/projects";
 import { isPerSessionFolderPath, pathSegments } from "./project-path";
 
 export function selectRecentProjectPaths(
@@ -8,7 +9,7 @@ export function selectRecentProjectPaths(
   const seen = new Set<string>();
   const paths: string[] = [];
   for (const row of rows) {
-    const cwd = row.cwd?.trim();
+    const cwd = row.cwd && canonicalProjectFolder(row.cwd);
     // A session inside a workspace ran in a checkout (…/worktrees/<ws>/01-repo),
     // which is not a project folder anyone would pick again.
     const parts = pathSegments(cwd ?? "");
