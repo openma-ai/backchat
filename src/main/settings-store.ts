@@ -29,6 +29,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseToml, stringify as toToml } from "smol-toml";
 import { z } from "zod";
+import {
+  customAcpAgentFromConfigTomlRow,
+  migrateLegacyAcpAgents,
+} from "@openma/common/acp-harnesses/custom-agents";
 import { openmaRoot } from "./storage-root.js";
 
 // -------------------- Schema --------------------
@@ -95,7 +99,7 @@ const SettingsSchema = z.object({
      *  queue: a second prompt waits for the active agent loop to finish.
      *  Disabled preserves immediate concurrent prompt dispatch. */
     prompt_queue_enabled: z.boolean().default(true),
-  }),
+  }).prefault({}),
   appearance: z.object({
     light_theme_id: z.string().min(1).default("backchat-light"),
     dark_theme_id: z.string().min(1).default("backchat-dark"),
@@ -103,7 +107,7 @@ const SettingsSchema = z.object({
     language: z.enum(["system", "en", "zh-CN"]).default("system"),
     font_size: z.enum(["sm", "md", "lg"]).default("md"),
     density: z.enum(["compact", "default", "roomy"]).default("default"),
-  }),
+  }).prefault({}),
   browser: z.object({
     enabled: z.boolean().default(true),
     web_link_target: z.enum(["external", "in_app"]).default("external"),
@@ -161,6 +165,92 @@ export function migrateDeprecatedWorkspacePath(settings: Settings): {
   };
 }
 
+// -------------------- Custom ACP agents (shared ~/.oma store) --------------------
+
+// Custom agent definitions live in config.toml itself: a `[[agents]]` row
+// with `command_override` IS the shared definition both Backchat and Martty
+// read and write (schema owned by @openma/common/acp-harnesses/custom-agents).
+// Backchat only needs two pieces of shared logic here:
+//
+//   * `migrateLegacyAcpAgents` on load — folds Martty's old settings.json
+//     `harnesses[]` into config.toml rows once and strips the legacy key.
+//   * per-row reconciliation on set() — rows the user did not touch since
+//     load defer to what is on disk now, so a Martty-side add/edit/remove in
+//     the meantime is not clobbered by a stale in-memory copy.
+
+/** The `[[agents]]` rows currently on disk, or [] when the file is missing
+ *  or unparseable (an unparseable file is load()'s problem, not set()'s). */
+function agentRowsFromDisk(path: string): unknown[] {
+  try {
+    const config = parseToml(readFileSync(path, "utf8")) as Record<string, unknown>;
+    return Array.isArray(config.agents) ? config.agents : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Raw TOML row → schema-shaped override, normalizing env to [{name,value}]. */
+function agentOverrideFromTomlRow(row: unknown): AgentOverride | undefined {
+  const r = typeof row === "object" && row !== null ? (row as Record<string, unknown>) : undefined;
+  if (!r || typeof r.id !== "string" || !r.id) return undefined;
+  const def = customAcpAgentFromConfigTomlRow(row);
+  const out: AgentOverride = { id: r.id, env: [] };
+  if (typeof r.enabled === "boolean") out.enabled = r.enabled;
+  if (def) {
+    if (def.label !== def.id) out.label_override = def.label;
+    out.command_override = def.command;
+    if (def.args.length > 0) out.args_override = [...def.args];
+    out.env = Object.entries(def.env ?? {}).map(([name, value]) => ({ name, value }));
+  } else if (Array.isArray(r.env)) {
+    out.env = r.env.flatMap((entry) => {
+      const e = typeof entry === "object" && entry !== null
+        ? (entry as Record<string, unknown>)
+        : undefined;
+      return typeof e?.name === "string" && typeof e?.value === "string"
+        ? [{ name: e.name, value: e.value }]
+        : [];
+    });
+  }
+  return out;
+}
+
+/**
+ * Merge `next` agent rows with the rows on disk right now, per id:
+ *   - a row the user changed (or added) wins;
+ *   - a row untouched since load takes whatever is on disk — including its
+ *     absence, which is how a Martty-side remove propagates;
+ *   - a disk row never seen at load is a foreign add and is appended.
+ * `loaded` maps id → JSON of the row as load() normalized it.
+ */
+function reconcileAgentRows(
+  next: AgentOverride[],
+  diskRows: unknown[],
+  loaded: ReadonlyMap<string, string>,
+): AgentOverride[] {
+  const diskById = new Map<string, unknown>();
+  for (const row of diskRows) {
+    const id = typeof row === "object" && row !== null
+      ? (row as Record<string, unknown>).id
+      : undefined;
+    if (typeof id === "string" && id && !diskById.has(id)) diskById.set(id, row);
+  }
+  const merged = next.flatMap((row) => {
+    const disk = diskById.get(row.id);
+    diskById.delete(row.id);
+    if (JSON.stringify(row) !== loaded.get(row.id)) return [row]; // user edit/add
+    if (disk === undefined) return [];                            // removed externally
+    return [agentOverrideFromTomlRow(disk) ?? row];               // disk version wins
+  });
+  for (const row of diskById.values()) {
+    const id = (row as Record<string, unknown>).id as string;
+    if (!loaded.has(id)) {
+      const override = agentOverrideFromTomlRow(row);
+      if (override) merged.push(override);
+    }
+  }
+  return merged;
+}
+
 // -------------------- File location --------------------
 
 export const SETTINGS_DIR = openmaRoot();
@@ -172,6 +262,9 @@ type Listener = (s: Settings) => void;
 
 class SettingsStore {
   #current: Settings = DEFAULT_SETTINGS;
+  /** Agent rows as load()/set() last normalized them, id → JSON — the
+   *  "untouched" baseline set() reconciles against the file on disk. */
+  #loadedAgentRows = new Map<string, string>();
   #listeners = new Set<Listener>();
   /** Tail of the in-flight write chain — every `set()` awaits the prior
    *  write to keep on-disk state in sync with mutation order. */
@@ -183,13 +276,30 @@ class SettingsStore {
    *  show a notice + fall back to defaults rather than overwriting a
    *  syntactically broken file the user may have been editing. */
   async load(): Promise<Settings> {
+    // Fold Martty's legacy settings.json harnesses into config.toml rows.
+    // Runs before the file check so a config.toml it creates is seen below;
+    // a failure only means no migration happened, never a broken load.
+    try {
+      if (migrateLegacyAcpAgents(SETTINGS_DIR)) {
+        process.stderr.write(
+          "[settings] migrated Martty settings.json harnesses into config.toml agents\n",
+        );
+      }
+    } catch (e) {
+      process.stderr.write(
+        `! legacy agent migration failed: ${(e as Error).message}\n`,
+      );
+    }
     if (!existsSync(SETTINGS_FILE)) {
       await mkdir(SETTINGS_DIR, { recursive: true });
       await writeFile(SETTINGS_FILE, this.#serializeWithHeader(DEFAULT_SETTINGS), "utf-8");
+      this.#loadedAgentRows = new Map(
+        DEFAULT_SETTINGS.agents.map((row) => [row.id, JSON.stringify(row)]),
+      );
       this.#current = DEFAULT_SETTINGS;
       return this.#current;
     }
-    const raw = readFileSync(SETTINGS_FILE, "utf-8");
+    const raw = readFileSync(SETTINGS_FILE, "utf8");
     let parsed: unknown;
     try {
       parsed = parseToml(raw);
@@ -210,6 +320,9 @@ class SettingsStore {
     }
     const migration = migrateDeprecatedWorkspacePath(result.data);
     this.#current = migration.settings;
+    this.#loadedAgentRows = new Map(
+      migration.settings.agents.map((row) => [row.id, JSON.stringify(row)]),
+    );
     if (migration.changed || deprecatedAgentDefault) {
       await writeFile(
         SETTINGS_FILE,
@@ -235,9 +348,18 @@ class SettingsStore {
   }
 
   /** Replace the entire settings object. Used by the UI's "save" action on
-   *  the bulkier forms. Validates with the same schema as load(). */
+   *  the bulkier forms. Validates with the same schema as load(). Agent rows
+   *  reconcile per id against the file on disk first, so edits another app
+   *  (Martty) made to the shared store since load() are not clobbered. */
   async set(next: Settings): Promise<void> {
-    this.#current = SettingsSchema.parse(next);
+    const parsed = SettingsSchema.parse(next);
+    const agents = reconcileAgentRows(
+      parsed.agents,
+      agentRowsFromDisk(SETTINGS_FILE),
+      this.#loadedAgentRows,
+    );
+    this.#current = { ...parsed, agents };
+    this.#loadedAgentRows = new Map(agents.map((row) => [row.id, JSON.stringify(row)]));
     this.#emit();
     this.#writeTail = this.#writeTail.then(() =>
       writeFile(SETTINGS_FILE, this.#serializeWithHeader(this.#current), "utf-8").catch(
