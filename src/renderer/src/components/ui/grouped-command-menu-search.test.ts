@@ -69,7 +69,7 @@ describe("applyGroupedCommandMenuSearch", () => {
     expect(filtered.map((group) => group.heading)).toEqual(["Projects"]);
   });
 
-  it("scores indexed project values from the path segment after the index", () => {
+  it("orders browse and no-project results by search score", () => {
     const groups: GroupedCommandMenuGroup[] = [
       {
         items: [
@@ -94,6 +94,35 @@ describe("applyGroupedCommandMenuSearch", () => {
       (item) => item.id,
     );
     expect(ranked).toEqual(["none", "browse"]);
+  });
+
+  it("does not match across separate project search values", () => {
+    const root = "/tmp/backchat-e2e-x2qYe1";
+    const groups: GroupedCommandMenuGroup[] = [
+      {
+        items: [
+          {
+            id: "picker-01",
+            value: `${root}/picker-overflow-01`,
+            keywords: ["Picker 01", `${root}/picker-overflow-01`],
+            onSelect: () => {},
+            children: "Picker 01",
+          },
+          {
+            id: "picker-09",
+            value: `${root}/picker-overflow-09`,
+            keywords: ["Picker 09", `${root}/picker-overflow-09`],
+            onSelect: () => {},
+            children: "Picker 09",
+          },
+        ],
+      },
+    ];
+    expect(
+      applyGroupedCommandMenuSearch(groups, "Picker 01")[0]?.items.map(
+        (item) => item.id,
+      ),
+    ).toEqual(["picker-01"]);
   });
 });
 

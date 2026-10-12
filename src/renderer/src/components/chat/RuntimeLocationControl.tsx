@@ -33,10 +33,7 @@ import {
   composerFooterTriggerClass,
   composerFooterTriggerProps,
 } from "@/components/ui/composer-footer-trigger";
-import {
-  SidebarGridCell,
-  SidebarGridRow,
-} from "@/components/shell/SidebarGridRow";
+import { SidebarSectionHeading } from "@/components/shell/SidebarSectionHeading";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useMemo, useState } from "react";
@@ -278,32 +275,23 @@ export function RuntimeLocationControl({
     >
       <DropdownMenuTrigger asChild>
         {variant === "sidebar" ? (
-          <SidebarGridRow
+          <SidebarSectionHeading
+            trigger
             depth={0}
-            trailingTrack="single"
-            data-sidebar-local-runtime="true"
+            showDisclosure={false}
             data-testid="sidebar-local-runtime-row"
-            data-session-runtime-location="true"
-            title={title ?? t("chat.whereRuns")}
+            data-sidebar-local-runtime="true"
+            title={locationLabel}
+            open={menuOpen}
             className={cn(
-              "app-no-drag cursor-pointer rounded-md text-ui text-fg transition-colors",
+              "app-no-drag cursor-pointer transition-colors",
               "hover:bg-[var(--control-bg-hover)] focus-visible:bg-[var(--control-bg-hover)]",
               "data-[state=open]:bg-[var(--control-bg-hover)]",
               className,
             )}
-          >
-            <SidebarGridCell slot="icon">
-              <span className="sidebar-row-icon">
-                <Icon className="size-3.5" />
-              </span>
-            </SidebarGridCell>
-            <SidebarGridCell slot="label">
-              <span className={cn("min-w-0 truncate", labelCls)}>{locationLabel}</span>
-            </SidebarGridCell>
-            <SidebarGridCell slot="trailing" aria-hidden="true">
-              <ChevronDownIcon className="size-3 text-fg-subtle" />
-            </SidebarGridCell>
-          </SidebarGridRow>
+            data-session-runtime-location="true"
+            aria-label={title ?? t("chat.whereRuns")}
+          />
         ) : (
           <Button
             type="button"

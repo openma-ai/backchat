@@ -50,6 +50,7 @@ import {
   SidebarGridRow,
   type SidebarGridDepth,
 } from "@/components/shell/SidebarGridRow";
+import { SidebarSectionHeading } from "@/components/shell/SidebarSectionHeading";
 import { folderName, projectKeyForCwd } from "@/lib/project-path";
 import { useI18n } from "@/lib/i18n";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
@@ -720,8 +721,7 @@ export function Sidebar() {
         data-sidebar-scroll-area="true"
         className="sidebar-scroll-area min-h-0 flex-1"
       >
-      <div className="sidebar-scroll-content">
-
+      <div className="px-2 pt-px">
         <Link
           to="/scheduled"
           aria-label={t("sidebar.scheduled")}
@@ -744,8 +744,9 @@ export function Sidebar() {
           </SidebarGridCell>
           <SidebarGridCell slot="trailing" aria-hidden="true" />
         </Link>
+      </div>
 
-        <nav className="app-no-drag pt-5 pb-2">
+      <nav className="app-no-drag px-2 pt-5 pb-2">
         {openmaAccount?.user && openmaAccount.workspaces.map((workspace) => {
           const scope = openmaWorkspaceScope(openmaAccount, workspace.id);
           const rows = sessions.filter((row) => row.openma && sameOpenmaScope(row.openma, scope));
@@ -1057,15 +1058,14 @@ export function Sidebar() {
           })()}
           </div>
         </section>
-        </nav>
-      </div>
+      </nav>
       </ScrollArea>
 
       {/* Footer navigation and update affordance are independent hit targets.
           Opening the update popover never changes route or paints Settings as
           hovered; the fixed inset still matches the scrolling rows. */}
       <div
-        className="sidebar-footer-chrome shrink-0 pb-2 pt-[var(--bottom-bar-gap-y)]"
+        className="sidebar-footer-chrome shrink-0 pb-1.5 pt-[var(--bottom-bar-gap-y)]"
         data-sidebar-footer-actions="true"
       >
         <SidebarGridRow trailingTrack="host" className="rounded-md">
@@ -1185,7 +1185,7 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
   const pinned = rows.filter((row) => row.pinnedAt != null);
   const chats = rows.filter((row) => row.pinnedAt == null);
   const list = (items: SessionRow[]) => <ul className="m-0 list-none space-y-0.5 p-0">{items.map((row) => <li key={row.id}>{renderRow(row, 1)}</li>)}</ul>;
-  return <SidebarSection title={name} open={open} onToggle={() => setOpen(!open)} labelCls={labelCls}>
+  return <SidebarSection title={name} open={open} onToggle={() => setOpen(!open)} labelCls={labelCls} headingSize="compact">
       {enabled ? <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <SidebarGridRow as="button" type="button" depth={1}
@@ -1238,6 +1238,7 @@ function SidebarSection({
   icon,
   customSectionId,
   depth = 0,
+  headingSize,
 }: {
   title: string;
   open: boolean;
@@ -1248,57 +1249,24 @@ function SidebarSection({
   icon?: ReactNode;
   customSectionId?: string;
   depth?: SidebarGridDepth;
+  headingSize?: "default" | "compact";
 }) {
   return (
     <section className="sidebar-section" data-state={open ? "open" : "closed"} data-sidebar-custom-section={customSectionId}>
-      <SidebarGridRow
+      <SidebarSectionHeading
+        title={title}
+        open={open}
+        onToggle={onToggle}
+        labelCls={labelCls}
+        action={action}
+        icon={icon}
         depth={depth}
-        trailingTrack={action ? "double" : "none"}
-        leading={icon ? "icon" : "none"}
-        className="sidebar-section-header group/section rounded-md transition-colors hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]"
-      >
-        {icon ? <SidebarGridCell slot="icon"><span className="sidebar-row-icon">{icon}</span></SidebarGridCell> : null}
-        <SidebarGridCell slot="label">
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label={title}
-            aria-expanded={open}
-            className={cn(
-              "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 text-left",
-              "text-ui font-normal text-fg-subtle",
-              "hover:text-fg-muted",
-              "transition-colors duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
-            )}
-          >
-            <span className={cn("min-w-0 truncate", labelCls)}>{title}</span>
-            <span className={cn("inline-flex shrink-0", labelCls)}>
-              <ChevronRightIcon
-                aria-hidden="true"
-                className={cn(
-                  "size-3 transition-transform duration-[var(--motion-disclosure-duration)] ease-[var(--motion-disclosure-easing)]",
-                  open && "rotate-90",
-                  open &&
-                    "opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100",
-                )}
-              />
-            </span>
-          </button>
-        </SidebarGridCell>
-        {action ? (
-          <SidebarGridCell
-            slot="trailing"
-            className={cn(
-              labelCls.split(/\s+/).includes("hidden") && "hidden",
-              "opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100",
-            )}
-            data-sidebar-section-header-action="true"
-          >
-            {action}
-          </SidebarGridCell>
-        ) : null}
-      </SidebarGridRow>
-      <AnimatedCollapse open={open}>{children}</AnimatedCollapse>
+        headingSize={headingSize}
+        className="hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]"
+      />
+      <AnimatedCollapse open={open}>
+        <div className="sidebar-grid-depth-root">{children}</div>
+      </AnimatedCollapse>
     </section>
   );
 }
@@ -1443,15 +1411,12 @@ function ProjectCoordinatorRow({
     "sidebar-coordinator-row rounded-md",
     active && "app-selected-surface",
   );
-  const props = {
+  const rowProps = {
     "aria-label": `${t(hasCoordinator ? "project.openCoordinator" : "project.setupCoordinator")}: ${group.label}`,
     "aria-current": active ? "page" as const : undefined,
     "data-project-coordinator": group.key,
     "data-testid": "project-coordinator-row",
     "data-configured": hasCoordinator,
-    className: cn("sidebar-grid-row", rowClassName),
-    "data-sidebar-depth": "2",
-    "data-sidebar-trailing-track": hasCoordinator ? "single" : "none",
   };
   const content = <>
     <SidebarGridCell slot="icon">
@@ -1471,9 +1436,29 @@ function ProjectCoordinatorRow({
     )}
   </>;
   return group.projectId ? (
-    <Link to="/projects/$projectId" params={{ projectId: group.projectId }} {...props}>{content}</Link>
+    <SidebarGridRow
+      asChild
+      depth={2}
+      trailingTrack={hasCoordinator ? "single" : "none"}
+      className={rowClassName}
+      {...rowProps}
+    >
+      <Link to="/projects/$projectId" params={{ projectId: group.projectId }}>
+        {content}
+      </Link>
+    </SidebarGridRow>
   ) : (
-    <button type="button" onClick={onOpen} {...props}>{content}</button>
+    <SidebarGridRow
+      as="button"
+      type="button"
+      onClick={onOpen}
+      depth={2}
+      trailingTrack={hasCoordinator ? "single" : "none"}
+      className={rowClassName}
+      {...rowProps}
+    >
+      {content}
+    </SidebarGridRow>
   );
 }
 
@@ -1597,7 +1582,7 @@ function WorkspaceSidebarRow({
               <MoreHorizontalIcon aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[180px]">
+          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[var(--menu-project-context-min-width)]">
             <DropdownMenuItem
               onSelect={() =>
                 primaryPath ? void window.backchat.uiFsOpenPath({ path: primaryPath }) : undefined
@@ -1710,7 +1695,7 @@ function PairSidebarRow({
               <MoreHorizontalIcon aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[140px]">
+          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[var(--menu-context-min-width)]">
             <DropdownMenuItem
               onSelect={onRename}
               className="flex items-center gap-2 py-1 text-ui"
@@ -1807,7 +1792,7 @@ export function SessionRow({
       <ContextMenu.Trigger asChild>
         <SidebarGridRow
           depth={depth}
-          trailingTrack="double"
+          trailingTrack={hasSchedule && !running ? "double" : "single"}
           className={sidebarNavRowClass({
             active,
             errored,
@@ -1862,7 +1847,7 @@ export function SessionRow({
                 {!hasSchedule && !active && row.unread ? (
                   <span
                     className="size-1.5 justify-self-center rounded-full"
-                    style={{ backgroundColor: "oklch(0.62 0.16 240)" }}
+                    style={{ backgroundColor: "var(--unread-indicator)" }}
                   />
                 ) : (
                   <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -1882,7 +1867,7 @@ export function SessionRow({
                         <MoreHorizontalIcon aria-hidden="true" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[140px]">
+                    <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[var(--menu-context-min-width)]">
                       <DropdownMenuItem
                         onSelect={onRename}
                         className="flex items-center gap-2 py-1 text-ui"

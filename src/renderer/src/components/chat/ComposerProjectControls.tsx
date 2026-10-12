@@ -172,6 +172,7 @@ export function ProjectChipRow({
             <GroupedCommandMenu
               testId="composer-project-picker-panel"
               menuMode="project-picker"
+              density="comfortable"
               shrinkToContent
               nativeListScroll
               panelClassName="flex h-auto w-full flex-col p-0"
@@ -185,9 +186,9 @@ export function ProjectChipRow({
                   ? [
                       {
                         heading: t("sidebar.projects"),
-                        items: projectsForPicker.map((project, index) => ({
+                        items: projectsForPicker.map((project) => ({
                           id: project.id,
-                          value: `${String(index).padStart(4, "0")}\u0000${project.primary_folder}`,
+                          value: project.primary_folder,
                           keywords: [project.name, ...project.source_folders],
                           checked: selectedProject?.id === project.id,
                           title: project.primary_folder,
@@ -491,8 +492,9 @@ function WorkspaceChip({
         className={`${view === "create" ? "w-[360px]" : "w-[var(--composer-menu-width)]"} max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0`}>
         {view === "choose" ? (
           <GroupedCommandMenu
-            testId="composer-workspace-picker-panel"
-            menuMode="workspace-picker"
+              testId="composer-workspace-picker-panel"
+              menuMode="workspace-picker"
+              density="comfortable"
             shrinkToContent
             nativeListScroll
             menuResetKey={open ? "open" : "closed"}

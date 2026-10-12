@@ -262,6 +262,7 @@ test.describe("backchat smoke", () => {
   test("aligns the Settings icon with the primary sidebar icon track", async ({
       page,
   }) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
       const newChatIcon = page
         .locator(".sidebar-host-chrome .sidebar-grid-row")
         .first()
@@ -279,6 +280,12 @@ test.describe("backchat smoke", () => {
       const newChatCenter = newChatBox!.x + newChatBox!.width / 2;
       const settingsCenter = settingsBox!.x + settingsBox!.width / 2;
       expect(Math.abs(newChatCenter - settingsCenter)).toBeLessThanOrEqual(0.5);
+      const settingsRow = await page.getByRole("link", {
+        name: "Settings",
+        exact: true,
+      }).boundingBox();
+      expect(settingsRow).not.toBeNull();
+      expect(Math.abs(settingsRow!.y - 759)).toBeLessThanOrEqual(0.5);
   });
 
   test("uses the compact row-action matrix for every sidebar overflow menu", async ({
@@ -348,16 +355,38 @@ test.describe("backchat smoke", () => {
       for (const box of glyphBoxes) expect(box).not.toBeNull();
       const [projectGlyph, coordinatorGlyph, childGlyph] = glyphBoxes;
       const nestStep = await navigation.evaluate((element) =>
-        Number.parseFloat(getComputedStyle(element).getPropertyValue("--sidebar-grid-nest-step")),
+        Number.parseFloat(
+          getComputedStyle(element).getPropertyValue("--sidebar-grid-nest-step"),
+        ),
       );
-      expect(nestStep).toBeGreaterThan(0);
-      expect(Math.abs(projectIcon!.x - sectionIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
+      const depthBaseInset = await navigation.evaluate((element) =>
+        Number.parseFloat(
+          getComputedStyle(element).getPropertyValue("--sidebar-grid-depth-base-inset"),
+        ),
+      );
+      expect(
+        Math.abs(projectIcon!.x - sectionIcon!.x - nestStep - depthBaseInset),
+      ).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(coordinatorIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childIcon!.x - coordinatorIcon!.x)).toBeLessThanOrEqual(0.5);
+
+      const sectionGlyph = await navigation
+        .getByRole("button", { name: "Projects", exact: true })
+        .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
+        .locator(".sidebar-row-icon > *")
+        .first()
+        .boundingBox();
+      expect(sectionGlyph).not.toBeNull();
+      expect(
+        Math.abs(projectGlyph!.x - sectionGlyph!.x - nestStep - depthBaseInset),
+      ).toBeLessThanOrEqual(0.5);
       expect(Math.abs(coordinatorGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childGlyph!.x - coordinatorGlyph!.x)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(projectGlyph!.x - 43)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(coordinatorGlyph!.x - 59)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(childGlyph!.x - 59)).toBeLessThanOrEqual(0.5);
       expect(projectIcon!.width).toBeCloseTo(sectionIcon!.width, 3);
       expect(childIcon!.width).toBeCloseTo(sectionIcon!.width, 3);
   });
@@ -1031,6 +1060,19 @@ test.describe("backchat smoke", () => {
         expect(box).not.toBeNull();
         expect(box!.height).toBeLessThanOrEqual(28);
       }
+      const askEachTime = controls[1];
+      await askEachTime.focus();
+      await page.keyboard.press("Space");
+      const permissionMenu = page.getByRole("menu").last();
+      await expect(permissionMenu).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(permissionMenu).toBeHidden();
+      const closedChip = await askEachTime.evaluate((element) => ({
+        background: getComputedStyle(element).backgroundColor,
+        focusVisible: element.matches(":focus-visible"),
+      }));
+      expect(closedChip.background).toBe("rgba(0, 0, 0, 0)");
+      expect(closedChip.focusVisible).toBe(false);
   });
 
   test("keeps the runtime trigger background transparent while its menu is open", async ({

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 export function composerFooterTriggerClass(...extra: Array<string | undefined>) {
-  return cn("composer-footer-trigger min-w-0", ...extra);
+  return cn("composer-footer-trigger", ...extra);
 }
 
 export function composerFooterTriggerProps(openSurface: "filled" | "none" = "filled") {

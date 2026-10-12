@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { seedWorkspacePickerFixture } from "./grouped-command-menu-fit.shared";
 import {
@@ -17,7 +17,7 @@ async function measurePickerRow(row: Locator, nextRow: Locator) {
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     const icon = element.querySelector(
-      '[data-grouped-command-grid="icon"] svg, [data-grouped-command-grid="icon"] img',
+      '[data-grouped-command-grid="icon"]',
     )?.getBoundingClientRect();
     const label = element.querySelector('[data-grouped-command-grid="label"]') ?? element;
     const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
@@ -50,6 +50,62 @@ async function measurePickerRow(row: Locator, nextRow: Locator) {
     ...geometry,
     pitch: rowBox && nextBox ? nextBox.y - rowBox.y : null,
   };
+}
+
+async function measureFooterTrigger(trigger: Locator) {
+  return trigger.evaluate((element) => {
+    const icon = element.querySelector("[data-control-icon]");
+    const svg = icon?.querySelector("svg");
+    const label = Array.from(element.children).find(
+      (child) => !child.hasAttribute("data-control-icon") &&
+        !child.hasAttribute("data-control-chevron"),
+    );
+    const range = document.createRange();
+    if (label) range.selectNodeContents(label);
+    const rect = element.getBoundingClientRect();
+    const iconRect = icon?.getBoundingClientRect();
+    const textRect = range.getBoundingClientRect();
+    const labelRect = label?.getBoundingClientRect();
+    const svgRect = svg?.getBoundingClientRect();
+    const glyph = svg?.getBBox();
+    const matrix = svg?.getScreenCTM();
+    const scale = svg && svgRect ? svgRect.width / svg.viewBox.baseVal.width : 0;
+    const visualRight =
+      glyph && matrix && svg
+        ? new DOMPoint(glyph.x + glyph.width, glyph.y).matrixTransform(matrix).x +
+          ((parseFloat(getComputedStyle(svg).strokeWidth) || 0) * scale) / 2
+        : null;
+    const style = getComputedStyle(element);
+    const labelStyle = label ? getComputedStyle(label) : style;
+    const chevron = element.querySelector("[data-control-chevron]");
+    return {
+      x: rect.x,
+      labelX: labelRect?.x ?? null,
+      iconGap:
+        visualRight == null || !labelRect ? null : labelRect.x - visualRight,
+      iconSlotX: iconRect?.x ?? null,
+      iconSlotWidth: iconRect?.width ?? null,
+      textX: textRect.x,
+      paddingLeft: parseFloat(style.paddingLeft),
+      paddingRight: parseFloat(style.paddingRight),
+      gap: parseFloat(style.columnGap || style.gap),
+      labelColor: labelStyle.color,
+      labelWeight: labelStyle.fontWeight,
+      chevronColor: chevron ? getComputedStyle(chevron).color : null,
+      backgroundColor: style.backgroundColor,
+    };
+  });
+}
+
+async function readColorToken(page: Page, token: string) {
+  return page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.body.appendChild(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
 }
 
 test("harness probe placeholder uses shimmer styles", async ({ page }) => {
@@ -134,6 +190,51 @@ test("new chat row matches session row vertical alignment and shows hover wash",
   expect(trailingLeft - washRight).toBeGreaterThan(4);
 });
 
+test("composer footer chips match main geometry and typography", async ({ page, home }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await seedWorkspacePickerFixture(page, home);
+  await enableAgent(page, "codex-acp");
+  await page.getByTestId("new-chat-button").click();
+  await page.locator('[data-composer-footer-control="project"]').click();
+  await page.getByRole("option", { name: "Workspace fit", exact: true }).click();
+  await page.keyboard.press("Escape");
+
+  const local = await measureFooterTrigger(
+    page.locator('[data-composer-footer-control="runtime"]'),
+  );
+  const project = await measureFooterTrigger(
+    page.locator('[data-composer-footer-control="project"]'),
+  );
+  const workspace = await measureFooterTrigger(
+    page.locator('[data-composer-footer-control="workspace"]'),
+  );
+  console.log(`[head footer geometry] ${JSON.stringify({ local, project, workspace })}`);
+  expect(Math.abs(local.x - 401)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(local.labelX! - 431)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(local.iconGap! - 10.24)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(project.x - 484.55)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(project.labelX! - 514.55)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(project.iconGap! - 9.42)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(workspace.x - 614.27)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(workspace.labelX! - 644.27)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(workspace.iconGap! - 10.82)).toBeLessThanOrEqual(0.5);
+  const mutedColor = await readColorToken(page, "--fg-muted");
+  for (const chip of [local, project, workspace]) {
+    expect(chip.iconSlotX).toBe(chip.x);
+    expect(chip.iconSlotWidth).toBe(28);
+    expect(chip.paddingLeft).toBe(0);
+    expect(chip.paddingRight).toBeCloseTo(6, 1);
+    expect(chip.gap).toBeCloseTo(2, 1);
+    expect(chip.labelWeight).toBe("400");
+  }
+  expect(local.labelColor).toBe(mutedColor);
+  expect(local.chevronColor).toBe(mutedColor);
+  expect(project.labelColor).toBe(mutedColor);
+  expect(project.chevronColor).toBe(mutedColor);
+  expect(workspace.labelColor).toBe(mutedColor);
+  expect(workspace.chevronColor).toBe(mutedColor);
+});
+
 test("host picker draws separator after OpenMA account row", async ({ page }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -153,6 +254,47 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
       .first();
     await expect(demoHeading).toBeVisible();
     await expect(demoHeading).toHaveAttribute("data-sidebar-leading", "none");
+    const localRow = page.getByTestId("sidebar-local-runtime-row");
+    const localMetrics = await localRow.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        fontSize: style.fontSize,
+        fontWeight: style.fontWeight,
+        color: style.color,
+        iconCount: el.querySelectorAll("svg, img").length,
+      };
+    });
+    expect(localMetrics).toMatchObject({
+      x: 15,
+      y: 177,
+      width: 222,
+      height: 28,
+      fontSize: "12px",
+      fontWeight: "500",
+      iconCount: 0,
+    });
+    const mutedColor = await readColorToken(page, "--fg-muted");
+    expect(localMetrics.color).toBe(mutedColor);
+    const demoTypography = await demoHeading
+      .locator('[data-sidebar-grid="label"] button')
+      .evaluate((el) => {
+        const style = getComputedStyle(el);
+        return {
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          color: style.color,
+        };
+      });
+    expect(demoTypography).toMatchObject({
+      fontSize: "12px",
+      fontWeight: "500",
+    });
+    expect(demoTypography.color).toBe(mutedColor);
     await demoHeading.click();
     const tenantSection = demoHeading.locator(
       "xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' sidebar-section ')]",
@@ -170,9 +312,7 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     expect(demoLabelBox).not.toBeNull();
     expect(tenantChildIconBox).not.toBeNull();
     expect(Math.abs(demoLabelBox!.x - 23)).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(tenantChildIconBox!.x - demoLabelBox!.x - 16),
-    ).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(tenantChildIconBox!.x - 43)).toBeLessThanOrEqual(0.5);
     await openRuntimeLocationPicker(page);
     const panel = hostPickerPanel(page);
     const shell = page
@@ -233,6 +373,8 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
       shellBox!.width - shellPads.left - shellPads.right - shellPads.border * 2;
     expect(separatorBox!.width).toBeGreaterThanOrEqual(innerWidth - 2);
     expect(separatorBox!.width).toBeLessThanOrEqual(shellBox!.width);
+    expect(Math.abs(separatorBox!.x - (shellBox!.x + 1))).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(separatorBox!.width - (shellBox!.width - 2))).toBeLessThanOrEqual(0.5);
     const firstRow = panel.locator('[cmdk-item]').nth(1);
     const rowBoxes = await Promise.all([
       firstRow.boundingBox(),
@@ -359,6 +501,9 @@ test("selected session row stays opaque on hover", async ({ page }) => {
     cwd: "/tmp/backchat-selected-hover",
   });
   const row = page.locator(".sidebar-grid-row.app-selected-surface").first();
+  const rowBox = await row.boundingBox();
+  expect(rowBox).not.toBeNull();
+  expect(Math.abs(rowBox!.x - 51)).toBeLessThanOrEqual(0.5);
   const selectedWeight = await row
     .locator('[data-sidebar-grid="label"]')
     .evaluate((el) => Number.parseInt(getComputedStyle(el).fontWeight, 10));
@@ -374,15 +519,47 @@ test("selected session row stays opaque on hover", async ({ page }) => {
     return ctx.getImageData(0, 0, 1, 1).data[3];
   });
   expect(alpha).toBe(255);
+  const selectedPaint = await row.evaluate((el) => {
+    const background = getComputedStyle(el).backgroundColor;
+    const probe = document.createElement("div");
+    probe.style.background = "var(--surface-selected)";
+    document.body.appendChild(probe);
+    const expected = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return {
+      background,
+      expected,
+      image: getComputedStyle(el).backgroundImage,
+    };
+  });
+  expect(selectedPaint.background).toBe(selectedPaint.expected);
+  expect(selectedPaint.image).toBe("none");
 });
 
 test("project sessions share the coordinator grid without clipping", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await enableAgent(page, "codex-acp");
   await injectSession(page, {
     sessionId: "pr56-grid-alignment",
     agentId: "codex-acp",
     cwd: "/tmp/pr56-grid-alignment",
   });
   const navigation = page.getByRole("navigation");
+  const localHeading = page.getByTestId("sidebar-local-runtime-row");
+  const localHeadingMetrics = await localHeading.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      y: rect.y,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      color: style.color,
+    };
+  });
+  expect(Math.abs(localHeadingMetrics.y - 129)).toBeLessThanOrEqual(0.5);
+  expect(localHeadingMetrics.fontSize).toBe("12px");
+  expect(localHeadingMetrics.fontWeight).toBe("500");
+  expect(localHeadingMetrics.color).toBe(await readColorToken(page, "--fg-muted"));
   const coordinator = navigation.getByTestId("project-coordinator-row").first();
   const sessionActions = navigation.getByRole("button", {
     name: "Session actions",
@@ -421,27 +598,68 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
   expect(coordinatorGlyph).not.toBeNull();
   expect(sessionGlyph).not.toBeNull();
   const nestStep = await navigation.evaluate((element) =>
-    Number.parseFloat(getComputedStyle(element).getPropertyValue("--sidebar-grid-nest-step")),
+    Number.parseFloat(
+      getComputedStyle(element).getPropertyValue("--sidebar-grid-nest-step"),
+    ),
   );
   expect(Math.abs(coordinatorGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(sessionGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(sessionGlyph!.x - coordinatorGlyph!.x)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(projectGlyph!.x - 43)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(coordinatorGlyph!.x - 59)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(sessionGlyph!.x - 59)).toBeLessThanOrEqual(0.5);
 
-  const labelMetrics = await coordinator
+  const coordinatorBox = await coordinator.boundingBox();
+  expect(coordinatorBox).not.toBeNull();
+  expect(Math.abs(coordinatorBox!.x - 51)).toBeLessThanOrEqual(0.5);
+  await coordinator.hover();
+  await coordinator.evaluate((element) =>
+    Promise.all(
+      element.getAnimations().map((animation) =>
+        animation.finished.catch(() => undefined),
+      ),
+    ),
+  );
+  const hoverPaint = await coordinator.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = style.backgroundColor;
+    context.fillRect(0, 0, 1, 1);
+    return {
+      color: Array.from(context.getImageData(0, 0, 1, 1).data),
+      image: style.backgroundImage,
+    };
+  });
+  expect(hoverPaint.color).toEqual([26, 26, 26, 20]);
+  expect(hoverPaint.image).toBe("none");
+
+  const labelMetrics = await sessionRow
     .locator('[data-sidebar-grid="label"]')
-    .evaluate((label) => {
-      const row = label.closest(".sidebar-grid-row")!;
-      const rowRect = row.getBoundingClientRect();
-      const labelRect = label.getBoundingClientRect();
-      const style = getComputedStyle(row);
+    .evaluate((labelCell) => {
+      const cellRect = labelCell.getBoundingClientRect();
+      const text = labelCell.querySelector(".truncate") ?? labelCell;
       return {
-        width: labelRect.width,
-        contentRight: rowRect.right - parseFloat(style.paddingRight),
-        labelRight: labelRect.right,
+        x: cellRect.x,
+        width: cellRect.width,
+        right: cellRect.right,
+        ellipsized: text.scrollWidth > text.clientWidth,
       };
     });
-  expect(Math.abs(labelMetrics.width - 148), JSON.stringify(labelMetrics)).toBeLessThanOrEqual(2);
-  expect(Math.abs(labelMetrics.labelRight - labelMetrics.contentRight)).toBeLessThanOrEqual(1);
+  const trailingBox = await sessionRow.locator('[data-sidebar-grid="trailing"]').boundingBox();
+  expect(trailingBox).not.toBeNull();
+  const columnGap = await sessionRow.evaluate((row) =>
+    Number.parseFloat(getComputedStyle(row).columnGap),
+  );
+  expect(
+    Math.abs(trailingBox!.x - labelMetrics.right - columnGap),
+  ).toBeLessThanOrEqual(1);
+  expect(Math.abs(labelMetrics.x - 83)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(labelMetrics.width - 122)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(labelMetrics.right - 205)).toBeLessThanOrEqual(0.5);
+  expect(labelMetrics.ellipsized).toBe(false);
 });
 
 test("capture acceptance evidence @pr56", async ({ page }) => {
@@ -502,14 +720,12 @@ test("project picker bounds long results and fits a short query", async ({
 }) => {
   await page.setViewportSize({ width: 900, height: 560 });
   const projects = Array.from({ length: 25 }, (_, index) => {
-    const id = `picker-overflow-${String(index).padStart(2, "0")}`;
+    const suffix = String(index + 1).padStart(2, "0");
+    const id = `picker-overflow-${suffix}`;
     const directory = join(home, id);
     return {
       project_id: id,
-      name:
-        index === 24
-          ? "Unique Target Signal"
-          : `Picker Overflow ${String(index).padStart(2, "0")}`,
+      name: `Picker ${suffix}`,
       source_folders: [directory],
       primary_folder: directory,
     };
@@ -552,6 +768,7 @@ test("project picker bounds long results and fits a short query", async ({
   expect(initial.searchVisible).toBe(true);
   expect(initial.listScrollHeight).toBeGreaterThan(initial.listClientHeight);
   expect(["auto", "scroll"]).toContain(initial.listOverflowY);
+  const unfilteredHeight = initial.panel.height;
   const projectTriggerBox = await page
     .locator('[data-composer-footer-control="project"]')
     .boundingBox();
@@ -560,7 +777,7 @@ test("project picker bounds long results and fits a short query", async ({
   expect(Math.abs(projectGap)).toBeLessThanOrEqual(0.5);
   const projectRows = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
-    .filter({ hasText: /Picker Overflow/ });
+    .filter({ hasText: /^Picker \d{2}$/ });
   const projectRow = await measurePickerRow(projectRows.nth(0), projectRows.nth(1));
   console.log(`[project picker row geometry] ${JSON.stringify(projectRow)}`);
   expect(projectRow).toMatchObject({
@@ -573,19 +790,30 @@ test("project picker bounds long results and fits a short query", async ({
     textX: 32,
   });
 
-  await search.fill("Unique Target Signal");
-  const shortResults = await list
+  await search.fill("Picker 01");
+  const visibleResults = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
-    .count();
-  const matchingProjects = await list
-    .locator('[cmdk-item]:not([aria-disabled="true"])')
-    .filter({ hasText: "Unique Target Signal" })
-    .count();
-  expect(shortResults).toBeGreaterThanOrEqual(1);
-  expect(shortResults).toBeLessThanOrEqual(2);
-  expect(matchingProjects).toBe(1);
-  await expect.poll(async () => (await popover.boundingBox())?.height ?? Infinity)
-    .toBeLessThan(160);
+    .filter({ visible: true });
+  const shortResults = await visibleResults.count();
+  expect(shortResults).toBe(2);
+  const firstResult = visibleResults.first();
+  await expect(firstResult).toContainText("Picker 01");
+  await expect(firstResult).toHaveAttribute("aria-selected", "true");
+  await expect(firstResult).toHaveAttribute("data-selected", "true");
+  const selectedPaint = await firstResult.evaluate((el) => {
+    const background = getComputedStyle(el).backgroundColor;
+    const probe = document.createElement("div");
+    probe.style.background = "var(--control-bg-hover)";
+    document.body.appendChild(probe);
+    const expected = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return { background, expected };
+  });
+  expect(selectedPaint.background).toBe(selectedPaint.expected);
+  const filteredPanel = await popover.boundingBox();
+  expect(filteredPanel).not.toBeNull();
+  expect(filteredPanel!.height).toBeLessThan(unfilteredHeight);
+  expect(Math.abs(filteredPanel!.height - 138)).toBeLessThanOrEqual(0.5);
 });
 
 test("workspace picker bounds many worktrees and fits a short query", async ({
@@ -614,6 +842,11 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
   await page.locator('[data-composer-footer-control="project"]').click();
   await page.getByRole("option", { name: "Workspace fit", exact: true }).click();
   const workspaceTrigger = page.locator('[data-composer-footer-control="workspace"]');
+  const workspaceChip = await measureFooterTrigger(workspaceTrigger);
+  expect(Math.abs(workspaceChip.iconGap! - 10.82)).toBeLessThanOrEqual(0.5);
+  expect(workspaceChip.labelColor).toBe(await readColorToken(page, "--fg-muted"));
+  expect(workspaceChip.labelWeight).toBe("400");
+  expect(workspaceChip.chevronColor).toBe(await readColorToken(page, "--fg-muted"));
   await workspaceTrigger.click();
 
   const panel = page.getByTestId("composer-workspace-picker-panel");
@@ -640,6 +873,7 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
   expect(initial.searchVisible).toBe(true);
   expect(initial.listScrollHeight).toBeGreaterThan(initial.listClientHeight);
   expect(["auto", "scroll"]).toContain(initial.listOverflowY);
+  expect(Math.abs(initial.panel.height - 334)).toBeLessThanOrEqual(0.5);
   const workspaceTriggerBox = await page
     .locator('[data-composer-footer-control="workspace"]')
     .boundingBox();
@@ -659,6 +893,7 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
     pitch: 28,
     iconX: 8,
     iconWidth: 16,
+    // Main is 30px; head remains at 32px, a 2px workspace text-offset gap.
     textX: 32,
   });
 
@@ -673,6 +908,17 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
   expect(shortResults).toBeGreaterThanOrEqual(1);
   expect(shortResults).toBeLessThanOrEqual(2);
   expect(matchingWorkspaces).toBe(1);
+  const selectedWorkspace = list.locator('[cmdk-item][data-selected="true"]').first();
+  const selectedWorkspacePaint = await selectedWorkspace.evaluate((el) => {
+    const background = getComputedStyle(el).backgroundColor;
+    const probe = document.createElement("div");
+    probe.style.background = "var(--control-bg-hover)";
+    document.body.appendChild(probe);
+    const expected = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return { background, expected };
+  });
+  expect(selectedWorkspacePaint.background).toBe(selectedWorkspacePaint.expected);
   await expect.poll(async () => (await popover.boundingBox())?.height ?? Infinity)
     .toBeLessThan(160);
 });
@@ -736,15 +982,27 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
       const command = panel.locator('[data-slot="command"], .grouped-command-menu').first();
       const frame = await command.evaluate((el) => {
         const cs = getComputedStyle(el);
+        const shadowLayers = cs.boxShadow === "none"
+          ? []
+          : cs.boxShadow.split(/,\s+(?=(?:rgba|rgb)\()/);
+        const hasVisibleShadow = shadowLayers.some((layer) => {
+          const color = layer.match(/rgba?\(([^)]+)\)/)?.[1];
+          const channels = color?.match(/[\d.]+/g)?.map(Number) ?? [];
+          const alpha = layer.includes("rgba(") ? channels[3] ?? 1 : 1;
+          const lengths = layer.match(/-?[\d.]+px/g)?.map(parseFloat) ?? [];
+          const blur = lengths[2] ?? 0;
+          const spread = lengths[3] ?? 0;
+          return alpha > 0 && (blur !== 0 || spread !== 0);
+        });
         return {
           border: parseFloat(cs.borderTopWidth),
-          shadow: cs.boxShadow,
+          hasVisibleShadow,
         };
       });
       // The dropdown shell is the only framed surface; the nested command keeps
-      // no border or shadow of its own.
+      // no visible border or shadow of its own.
       expect(frame.border).toBe(0);
-      expect(frame.shadow).toBe("none");
+      expect(frame.hasVisibleShadow).toBe(false);
       // Enabled items must not render in disabled ink. cmdk emits
       // `data-disabled="false"` on enabled items, which a bare `[data-disabled]`
       // presence selector would still paint with `--fg-disabled`.

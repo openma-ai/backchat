@@ -11,7 +11,7 @@ export function BackchatCrashMark({ className }: { className?: string }) {
       viewBox="240 244 548 454"
       aria-hidden="true"
       className={cn(
-        "h-[76px] w-[86px] shrink-0 overflow-visible fill-current text-fg-subtle",
+        "h-[var(--crash-mark-height)] w-[var(--crash-mark-width)] shrink-0 overflow-visible fill-current text-fg-subtle",
         className,
       )}
     >

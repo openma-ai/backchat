@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Slot } from "radix-ui";
 import { cn } from "@/lib/utils";
 
 export type SidebarGridDepth = 0 | 1 | 2 | 3;
@@ -43,12 +44,17 @@ type SidebarGridRowCommonProps = {
 };
 
 type SidebarGridRowProps =
-  | (React.ComponentProps<"div"> & SidebarGridRowCommonProps & { as?: "div" })
-  | (React.ComponentProps<"button"> & SidebarGridRowCommonProps & { as: "button" });
+  | (React.ComponentProps<"div"> &
+      SidebarGridRowCommonProps & { as?: "div"; asChild?: false })
+  | (React.ComponentProps<"button"> &
+      SidebarGridRowCommonProps & { as: "button"; asChild?: false })
+  | (React.ComponentProps<"div"> &
+      SidebarGridRowCommonProps & { asChild: true; as?: undefined });
 
 export function SidebarGridRow(props: SidebarGridRowProps) {
   const {
     as,
+    asChild = false,
     depth = 0,
     trailingTrack = "single",
     leading = "icon",
@@ -59,7 +65,18 @@ export function SidebarGridRow(props: SidebarGridRowProps) {
     className: sidebarGridRowClassName({ depth, trailingTrack, className }),
     ...sidebarGridRowProps({ depth, trailingTrack, leading }),
     ...elementProps,
+    style: {
+      ...elementProps.style,
+      "--sidebar-depth": depth,
+    } as React.CSSProperties,
   };
+  if (asChild) {
+    return (
+      <Slot.Root
+        {...(rowProps as React.ComponentProps<typeof Slot.Root>)}
+      />
+    );
+  }
   return as === "button" ? (
     <button {...(rowProps as React.ComponentProps<"button">)} />
   ) : (

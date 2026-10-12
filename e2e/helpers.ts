@@ -290,7 +290,9 @@ export async function openPersistedSession(
   if (!(await session.isVisible())) {
     // Project labels are presentation data (and managed sessions use a
     // generated cwd), so fall back to expanding every collapsed project.
-    const collapsedProjects = navigation.locator('button[aria-expanded="false"]');
+    const collapsedProjects = navigation.locator(
+      'button[aria-expanded="false"]:not([aria-haspopup="menu"])',
+    );
     for (let index = 0; index < await collapsedProjects.count(); index += 1) {
       await collapsedProjects.nth(index).click();
       if (await session.isVisible()) break;

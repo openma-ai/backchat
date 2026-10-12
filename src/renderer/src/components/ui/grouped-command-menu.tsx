@@ -23,7 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 export const GROUPED_COMMAND_MENU_LIST_HEIGHT_PX = 288;
-export const GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX = 336;
+export const GROUPED_COMMAND_MENU_PANEL_HEIGHT_PX = 334;
 export const GROUPED_COMMAND_MENU_DROPDOWN_PANEL_HEIGHT_PX = 420;
 export const GROUPED_COMMAND_MENU_DROPDOWN_LIST_HEIGHT_PX = 360;
 
@@ -128,6 +128,7 @@ export function GroupedCommandMenu({
   panelClassName,
   testId = "grouped-command-menu-panel",
   menuMode = "grouped-command",
+  density = "default",
   insideDropdownMenu = false,
   listHeightPx = GROUPED_COMMAND_MENU_LIST_HEIGHT_PX,
   panelHeightPx,
@@ -149,6 +150,7 @@ export function GroupedCommandMenu({
   panelClassName?: string;
   testId?: string;
   menuMode?: string;
+  density?: "default" | "comfortable";
   insideDropdownMenu?: boolean;
   listHeightPx?: number;
   panelHeightPx?: number;
@@ -216,6 +218,11 @@ export function GroupedCommandMenu({
     [groups, searchQuery],
   );
 
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+    setCommandValue(displayedGroups[0]?.items[0]?.value ?? "");
+  }, [displayedGroups, searchQuery]);
+
   const popoverPicker =
     menuMode === "project-picker" || menuMode === "workspace-picker";
   const popoverAvailableHeight =
@@ -268,7 +275,10 @@ export function GroupedCommandMenu({
       }
       className={cn(
         "menu-item",
-        item.plain ? "grouped-command-plain-item text-sm" : "text-xs",
+        item.plain
+          ? "grouped-command-plain-item flex text-sm"
+          : "grid grid-cols-[var(--grouped-command-icon-track)_minmax(0,1fr)_var(--grouped-command-trailing-track)] text-xs",
+        "gap-0 gap-x-[var(--grouped-command-column-gap)] px-[var(--grouped-command-padding-inline)] py-[var(--menu-item-padding-block)]",
       )}
     >
       {item.children}
@@ -297,7 +307,7 @@ export function GroupedCommandMenu({
             >
               {group.heading}
             </div>
-            <CommandGroup className="!p-0">{items}</CommandGroup>
+            <CommandGroup className="p-0">{items}</CommandGroup>
           </div>
         </Fragment>
       );
@@ -305,7 +315,7 @@ export function GroupedCommandMenu({
     return (
       <Fragment key={key}>
         {group.separatorBefore ? <CommandSeparator /> : null}
-        <CommandGroup>{items}</CommandGroup>
+        <CommandGroup className="p-0">{items}</CommandGroup>
       </Fragment>
     );
   };
@@ -314,6 +324,7 @@ export function GroupedCommandMenu({
     <div
       data-testid={testId}
       data-composer-select-menu-mode={menuMode}
+      data-menu-density={density}
       className={cn(
         groupedCommandMenuPanelClassName({ maxHeightPx: effectivePanelHeightPx }),
         panelClassName,
@@ -327,8 +338,9 @@ export function GroupedCommandMenu({
         value={commandValue}
         onValueChange={setCommandValue}
         shouldFilter={shouldFilter}
+        data-has-query={searchQuery.length > 0}
         className={cn(
-          "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0 bg-transparent p-0 shadow-none ring-0",
+        "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! bg-transparent p-0 shadow-none ring-0",
           popoverPicker
             ? "h-auto min-h-0 flex-1"
             : shrinkToContent
@@ -341,6 +353,7 @@ export function GroupedCommandMenu({
       >
         {showSearch ? (
           <CommandInput
+            wrapperClassName="grid h-[var(--grouped-command-search-height)] grid-cols-[var(--grouped-command-icon-track)_minmax(0,1fr)] gap-0 gap-x-[var(--grouped-command-column-gap)] px-[var(--grouped-command-padding-inline)]"
             autoFocus={autoFocus}
             placeholder={searchPlaceholder}
             aria-label={searchInputAriaLabel ?? searchPlaceholder}

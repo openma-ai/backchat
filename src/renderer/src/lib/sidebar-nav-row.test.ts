@@ -21,6 +21,12 @@ const settings = readFileSync(
 );
 
 describe("sidebar nav row", () => {
+  it("leaves row layout to the shared sidebar grid", () => {
+    expect(SIDEBAR_NAV_ROW_CLASS).toBe(
+      "sidebar-nav-row rounded-md text-ui transition-colors",
+    );
+  });
+
   it("uses the session row's selected and hover classes", () => {
     expect(sidebarNavRowStateClass({ active: true })).toBe(
       "app-selected-surface text-fg",
@@ -96,7 +102,7 @@ describe("sidebar nav row", () => {
     );
     expect(hoverRule).not.toMatch(/:is\([^)]*\.app-selected-surface/);
     expect(styles).toMatch(
-      /\.sidebar-navigation\s+\.sidebar-grid-row\.app-selected-surface:is\(:hover/,
+      /\.sidebar-navigation\s+\.sidebar-grid-row\.app-selected-surface\s*\{\s*background:\s*var\(--surface-selected\);/,
     );
     expect(styles).toMatch(/\.sidebar-new-chat-primary/);
     expect(styles).toMatch(

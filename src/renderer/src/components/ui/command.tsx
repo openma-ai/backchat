@@ -58,10 +58,16 @@ function CommandDialog({
 
 function CommandInput({
   className,
+  wrapperClassName,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> & {
+  wrapperClassName?: string;
+}) {
   return (
-    <SearchField data-slot="command-input-wrapper">
+    <SearchField
+      data-slot="command-input-wrapper"
+      className={wrapperClassName}
+    >
       <CommandPrimitive.Input
         data-slot="command-input"
         className={className}
@@ -142,7 +148,7 @@ function CommandItem({
       asChild={asChild}
       data-slot="command-item"
       className={cn(
-        "app-select-item app-select-focus group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-muted data-selected:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-foreground",
+        "app-select-item app-select-focus group/command-item relative flex cursor-default items-center gap-[var(--menu-item-gap)] rounded-sm px-[var(--menu-item-padding-inline)] py-[var(--menu-item-padding-block)] text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-foreground",
         className
       )}
       {...props}

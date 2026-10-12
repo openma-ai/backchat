@@ -98,7 +98,7 @@ export function Topbar(_props: { onCancel: () => void }) {
             <MoreHorizontalIcon className="size-4" />
           </button>
         </DropdownMenuTrigger>
-         <DropdownMenuContent align="start" sideOffset={GAP_ADJACENT_PX} className="min-w-[164px]">
+         <DropdownMenuContent align="start" sideOffset={GAP_ADJACENT_PX} className="min-w-[var(--menu-provider-context-min-width)]">
           <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
             <span>{t("sidebar.rename")}</span>
           </DropdownMenuItem>

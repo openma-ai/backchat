@@ -9,6 +9,7 @@ import {
   SidebarGridCell,
   SidebarGridRow,
 } from "./SidebarGridRow";
+import { SidebarSectionHeading } from "./SidebarSectionHeading";
 
 vi.mock("@/components/AgentIcon", () => ({
   AgentIcon: () => null,
@@ -32,6 +33,7 @@ describe("sidebar grid primitives", () => {
     expect(html).toContain('data-sidebar-depth="1"');
     expect(html).toContain('data-sidebar-leading="none"');
     expect(html).toContain('data-sidebar-trailing-track="none"');
+    expect(html).toContain('style="--sidebar-depth:1"');
     expect(html).toContain('data-sidebar-grid="label"');
     expect(html).not.toContain('data-sidebar-grid="icon"');
     expect(html).not.toContain('data-sidebar-grid="trailing"');
@@ -52,6 +54,74 @@ describe("sidebar grid primitives", () => {
     expect(html).toContain('data-sidebar-grid="icon"');
     expect(html).toContain('data-sidebar-grid="label"');
     expect(html).toContain('data-sidebar-grid="trailing"');
+  });
+
+  it("applies shared depth props to a slotted row element", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(
+        SidebarGridRow,
+        { asChild: true, depth: 2, trailingTrack: "none" },
+        React.createElement("a", { href: "#coordinator" }, "Coordinator"),
+      ),
+    );
+
+    expect(html).toContain('<a href="#coordinator"');
+    expect(html).toContain('data-sidebar-depth="2"');
+    expect(html).toContain('style="--sidebar-depth:2"');
+  });
+});
+
+describe("sidebar section heading", () => {
+  it("renders an expandable section heading with its icon and action", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SidebarSectionHeading, {
+        title: "Projects",
+        open: true,
+        onToggle: () => undefined,
+        icon: React.createElement("span", null, "Project icon"),
+        action: React.createElement("button", null, "Add"),
+      }),
+    );
+
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('data-sidebar-grid="icon"');
+    expect(html).toContain('data-sidebar-grid="trailing"');
+    expect(html).toContain("Projects");
+    expect(html).toContain("Project icon");
+    expect(html).toContain("sidebar-section-heading font-normal text-fg-muted");
+    expect(html).not.toContain("hover:text-fg-muted");
+  });
+
+  it("supports compact headings for tenant sections", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SidebarSectionHeading, {
+        title: "Demo",
+        open: false,
+        headingSize: "compact",
+      }),
+    );
+
+    expect(html).toContain("sidebar-section-heading-compact font-medium");
+    expect(html).toContain("text-fg-muted");
+  });
+
+  it("renders Local as a plain dropdown-trigger heading", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SidebarSectionHeading, {
+        title: "Local",
+        open: false,
+        trigger: true,
+        showDisclosure: false,
+        "data-testid": "sidebar-local-runtime-row",
+      }),
+    );
+
+    expect(html.startsWith("<button")).toBe(true);
+    expect(html).toContain('data-sidebar-leading="none"');
+    expect(html).not.toContain('data-sidebar-grid="icon"');
+    expect(html).not.toContain("chevron");
+    expect(html).toContain("text-xs font-medium text-fg-muted");
+    expect(html).toContain("Local");
   });
 });
 
@@ -399,10 +469,9 @@ describe("groupSidebarSessions", () => {
   });
 
   it("keeps each section chevron directly beside its title", () => {
-    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const section = source.slice(
-      source.indexOf("function SidebarSection"),
-      source.indexOf("function ProjectSidebarRow"),
+    const section = readFileSync(
+      resolve(__dirname, "SidebarSectionHeading.tsx"),
+      "utf8",
     );
 
     expect(section).toContain('cn("min-w-0 truncate", labelCls)');
@@ -470,7 +539,7 @@ describe("groupSidebarSessions", () => {
     );
     const footer = source.slice(source.indexOf("{/* Footer navigation and update affordance"));
 
-    expect(footer).toContain('className="sidebar-footer-chrome shrink-0 pb-2 pt-[var(--bottom-bar-gap-y)]"');
+    expect(footer).toContain('className="sidebar-footer-chrome shrink-0 pb-1.5 pt-[var(--bottom-bar-gap-y)]"');
     expect(styles).toContain("--bottom-bar-gap-y: 6px;");
     expect(styles).toContain(
       "--composer-footer-gap: calc(var(--bottom-bar-gap-y) - 1px);",
@@ -622,26 +691,24 @@ describe("groupSidebarSessions", () => {
   });
 
   it("aligns section header trailing actions with row content inset tokens", () => {
-    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const source = readFileSync(
+      resolve(__dirname, "SidebarSectionHeading.tsx"),
+      "utf8",
+    );
     const styles = readFileSync(
       resolve(__dirname, "../../styles/index.css"),
       "utf8",
     );
-    const section = source.slice(
-      source.indexOf("function SidebarSection"),
-      source.indexOf("function ProjectSidebarRow"),
-    );
-
     expect(styles).toContain("--sidebar-content-padding-inline-start");
     expect(styles).toContain("--sidebar-content-padding-inline-end");
     expect(styles).toContain(".sidebar-grid-row");
     expect(styles).toContain('[data-sidebar-grid="trailing"]');
-    expect(section).toContain("data-sidebar-section-header-action");
-    expect(section).toContain("sidebar-section-header group/section");
-    expect(section).toContain("SidebarGridRow");
-    expect(section).toContain('slot="trailing"');
-    expect(section).not.toContain("mr-1 shrink-0");
-    expect(section).not.toContain("sidebar-section-header-trailing");
+    expect(source).toContain("data-sidebar-section-header-action");
+    expect(source).toContain("sidebar-section-header group/section");
+    expect(source).toContain("SidebarGridRow");
+    expect(source).toContain('slot="trailing"');
+    expect(source).not.toContain("mr-1 shrink-0");
+    expect(source).not.toContain("sidebar-section-header-trailing");
     expect(styles).toContain(".sidebar-section-header .sidebar-row-action > svg");
   });
 

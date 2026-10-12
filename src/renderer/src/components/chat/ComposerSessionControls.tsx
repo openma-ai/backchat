@@ -966,7 +966,7 @@ function InlineComposerOptionControl({
         align="start"
         sideOffset={GAP_ADJACENT_PX}
         collisionPadding={8}
-        className={groupedCommandMenuShellClassName("w-[260px]")}
+        className={groupedCommandMenuShellClassName("w-[var(--composer-session-menu-width)]")}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <ComposerSearchableSelectMenu
@@ -1072,7 +1072,7 @@ function SessionRunItem({
         >
           <span className="block truncate">{label}</span>
           {hint ? (
-            <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
+            <span className="block truncate text-meta text-fg-subtle">{hint}</span>
           ) : null}
         </GroupedCommandMenuLabelSlot>
       </>

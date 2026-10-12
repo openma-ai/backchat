@@ -34,7 +34,7 @@ function mapEntryToCommandItem(
       <GroupedCommandMenuLabelSlot>
         <span className="block truncate">{item.label}</span>
         {item.hint ? (
-          <span className="block truncate text-[11px] text-fg-subtle">{item.hint}</span>
+          <span className="block truncate text-meta text-fg-subtle">{item.hint}</span>
         ) : null}
       </GroupedCommandMenuLabelSlot>
     </>

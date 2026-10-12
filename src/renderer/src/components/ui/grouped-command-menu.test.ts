@@ -12,9 +12,9 @@ import {
 
 describe("groupedCommandMenuPanelClassName", () => {
   it("caps height without forcing a minimum panel height", () => {
-    const className = groupedCommandMenuPanelClassName({ maxHeightPx: 336 });
+    const className = groupedCommandMenuPanelClassName({ maxHeightPx: 334 });
     expect(className).toContain("h-auto");
-    expect(className).toContain("max-h-[min(336px");
+    expect(className).toContain("max-h-[min(334px");
     expect(className).not.toContain("min-h-[");
   });
 });
@@ -82,6 +82,7 @@ describe("grouped command menu styles", () => {
         searchPlaceholder: "Search projects",
         emptyMessage: "No projects",
         menuMode: "project-picker",
+        density: "comfortable",
         panelClassName: "p-0",
         shrinkToContent: true,
         nativeListScroll: true,
@@ -93,6 +94,7 @@ describe("grouped command menu styles", () => {
         searchPlaceholder: "Search workspaces",
         emptyMessage: "No workspaces",
         menuMode: "workspace-picker",
+        density: "comfortable",
         panelClassName: "p-0",
         shrinkToContent: true,
         nativeListScroll: true,
@@ -124,7 +126,7 @@ describe("grouped command menu styles", () => {
         searchPlaceholder: "Search agents",
         emptyMessage: "No agents",
         menuMode: "grouped-command-field",
-        panelHeightPx: 336,
+        panelHeightPx: 334,
         panelClassName:
           "max-h-[min(var(--grouped-command-field-panel-height),var(--radix-popover-content-available-height))]",
       }),
@@ -135,6 +137,7 @@ describe("grouped command menu styles", () => {
     expect(hostPicker.match(/data-slot="command-separator"/g)).toHaveLength(3);
     expect(grouped.match(/data-slot="command-separator"/g)).toHaveLength(2);
     for (const picker of [projectPicker, workspacePicker]) {
+      expect(picker).toContain('data-menu-density="comfortable"');
       expect(picker).toContain("radix-popover-content-available-height");
       expect(picker).toContain("oma-scrollbar min-h-0 flex-1");
     }
@@ -143,8 +146,10 @@ describe("grouped command menu styles", () => {
     );
     expect(modelPicker).toContain("oma-scrollbar max-h-[60vh] overflow-y-auto");
     expect(contentFitHostPicker).toContain("h-auto flex-none");
+    expect(projectPicker).toContain('data-has-query="false"');
+    expect(workspacePicker).toContain('data-has-query="false"');
     expect(groupedCommandField).toContain(
-      "max-height:min(336px, var(--radix-popover-content-available-height))",
+      "max-height:min(334px, var(--radix-popover-content-available-height))",
     );
   });
 

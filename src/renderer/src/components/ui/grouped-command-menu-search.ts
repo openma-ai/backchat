@@ -5,22 +5,16 @@ import type {
   GroupedCommandMenuItem,
 } from "./grouped-command-menu";
 
-function commandItemSearchValue(item: GroupedCommandMenuItem): string {
-  const raw = item.value;
-  const nullIndex = raw.indexOf("\0");
-  return nullIndex >= 0 ? raw.slice(nullIndex + 1) : raw;
-}
-
 export function scoreGroupedCommandMenuItem(
   item: GroupedCommandMenuItem,
   query: string,
 ): number {
   const trimmed = query.trim();
   if (!trimmed) return 1;
-  return defaultFilter(
-    commandItemSearchValue(item),
-    trimmed,
-    item.keywords ?? [],
+  return Math.max(
+    ...[item.value, ...(item.keywords ?? [])].map((value) =>
+      defaultFilter(value, trimmed),
+    ),
   );
 }
 
