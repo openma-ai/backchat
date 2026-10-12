@@ -1,11 +1,15 @@
+# Every line a pull request adds or changes must be covered by the curated
+# unit lane (`pnpm run test:ci:coverage`). Project coverage is
+# informational: older modules are below 100%.
 coverage:
   status:
-    project:
-      default:
-        informational: true
     patch:
       default:
         target: 100%
+        threshold: 0%
+    project:
+      default:
+        informational: true
 comment:
-  layout: "diff, files"
+  layout: "condensed_header, diff, files"
   require_changes: false
