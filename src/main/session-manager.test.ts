@@ -2002,6 +2002,10 @@ describe("SessionManager prompt queue", () => {
           sessionUpdate: "agent_message_chunk",
           content: { type: "text", text: `${warning}\n\n` },
         }],
+        promptEvents: [{
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: `${warning}\n\n` },
+        }],
       });
       mocks.runtimeStart.mockReset();
       mocks.runtimeStart.mockResolvedValueOnce(fake.session);
@@ -2018,6 +2022,15 @@ describe("SessionManager prompt queue", () => {
         agent_id: "codex-acp",
         cwd: "/repo",
       });
+      vi.stubEnv("NODE_ENV", "development");
+      const prompting = manager.prompt({
+        session_id: "sess-system-notice-log",
+        turn_id: "turn-system-notice-log",
+        text: "Continue",
+      });
+      await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+      fake.releaseNext();
+      await prompting;
       await flushAppLog();
 
       const raw = await readFile(join(root, "logs", "backchat.log"), "utf8");
@@ -2033,6 +2046,7 @@ describe("SessionManager prompt queue", () => {
         message: warning,
       }));
     } finally {
+      vi.unstubAllEnvs();
       configureAppLog(null);
       await rm(root, { recursive: true, force: true });
     }
@@ -2154,15 +2168,19 @@ describe("SessionManager prompt queue", () => {
   });
 
   it("classifies ACP event routes for boundary observability", () => {
-    expect(
-      acpEventUiRoute({
-        sessionUpdate: "agent_message_chunk",
-        content: {
-          type: "text",
-          text: "Warning: Skill descriptions were shortened to fit the skills context budget.",
-        },
-      }),
-    ).toBe("composer_notice");
+    const warning = {
+      sessionUpdate: "agent_message_chunk",
+      content: {
+        type: "text",
+        text: "Warning: Skill descriptions were shortened to fit the skills context budget.\n\n",
+      },
+    };
+    expect(acpEventUiRoute(warning, { harness: "codex-acp" })).toBe(
+      "composer_notice",
+    );
+    expect(acpEventUiRoute(warning, { harness: "claude-acp" })).toBe(
+      "transcript",
+    );
     expect(acpEventUiRoute({ sessionUpdate: "usage_update", used: 12 })).toBe(
       "session_state",
     );

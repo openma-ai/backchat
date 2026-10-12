@@ -12,9 +12,15 @@ const skillWarning =
   "Codex can still see every skill, but some descriptions are shorter. " +
   "Disable unused skills or plugins to leave more room for the rest.";
 
-function setupCompletedTurn(sessionId: string): SessionStore {
+const genuineReply =
+  "Warning: Back up your database first.\n\nThen run the migration.";
+
+function setupCompletedTurn(
+  sessionId: string,
+  agentId = "codex-acp",
+): SessionStore {
   const store = new SessionStore();
-  store.registerStarting(sessionId, "codex-acp", "Codex");
+  store.registerStarting(sessionId, agentId, agentId);
   store.registerTurn("turn-before-warning", sessionId, "Check this");
   store.apply({
     type: "session.event",
@@ -113,6 +119,31 @@ describe("SessionStore Codex harness notices", () => {
       turn.id === "turn-skill-warning"
     )?.assistantText).toBe("The project is ready.");
   });
+
+  it.each(["claude-acp", "codex-acp"] as const)(
+    "renders a warning-like in-turn reply from %s as assistant text",
+    (agentId) => {
+      const sessionId = `sess-live-warning-like-reply-${agentId}`;
+      const store = setupCompletedTurn(sessionId, agentId);
+      const turnId = `turn-warning-like-reply-${agentId}`;
+      store.registerTurn(turnId, sessionId, "Back up the database");
+      store.apply({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: genuineReply },
+        },
+      });
+
+      expect(store.get(sessionId)?.notice).toBeUndefined();
+      expect(
+        store.turnsFor(sessionId).find((turn) => turn.id === turnId)
+          ?.assistantText,
+      ).toBe(genuineReply);
+    },
+  );
 
   it("renders final-answer warning wording as assistant text", () => {
     const sessionId = "sess-live-final-warning";
@@ -256,6 +287,97 @@ describe("SessionStore Codex harness notices", () => {
     expect(store.turnsFor(sessionId)[0]?.assistantText).toBe(
       "The project is ready.",
     );
+  });
+
+  it("splits a coalesced legacy agent_message row with Codex provenance", () => {
+    const sessionId = "sess-replay-legacy-agent-message-warning";
+    const store = new SessionStore();
+    store.registerStarting(sessionId, "codex-acp", "Codex");
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "Inspect this" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "agent_message",
+        data: JSON.stringify({
+          text: `${skillWarning}\n\nThe project is ready.`,
+        }),
+        ts: 1_001,
+      },
+    ]);
+
+    expect(store.get(sessionId)?.notice).toMatchObject({
+      message: skillWarning,
+      tone: "warning",
+    });
+    expect(store.turnsFor(sessionId)[0]?.assistantText).toBe(
+      "The project is ready.",
+    );
+  });
+
+  it("classifies an exact warning envelope in legacy raw replay for Codex", () => {
+    const sessionId = "sess-replay-legacy-raw-warning";
+    const store = new SessionStore();
+    store.registerStarting(sessionId, "codex-acp", "Codex");
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "Inspect this" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify(diagnosticEvent()),
+        ts: 1_001,
+      },
+    ]);
+
+    expect(store.get(sessionId)?.notice).toMatchObject({
+      message: diagnosticWarning,
+      tone: "warning",
+    });
+    expect(store.turnsFor(sessionId)[0]?.assistantText).toBe("");
+  });
+
+  it("replays an in-turn Codex warning-like reply as assistant text", () => {
+    const sessionId = "sess-replay-warning-like-reply";
+    const store = new SessionStore();
+    store.registerStarting(sessionId, "codex-acp", "Codex");
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "Back up the database" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "openma_event",
+        data: JSON.stringify({
+          schema: "oma.event.v1",
+          event_id: "warning-like-reply",
+          session_id: sessionId,
+          turn_id: "turn-warning-like-reply",
+          source: { kind: "harness", harness: "codex-acp", adapter: "acp" },
+          occurred_at: "2026-10-10T00:00:01.000Z",
+          type: "agent.message_chunk",
+          data: { text: genuineReply },
+        }),
+        ts: 1_001,
+      },
+    ]);
+
+    expect(store.get(sessionId)?.notice).toBeUndefined();
+    expect(store.turnsFor(sessionId)[0]?.assistantText).toBe(genuineReply);
   });
 
   it("replays final-answer warning wording as assistant text", () => {

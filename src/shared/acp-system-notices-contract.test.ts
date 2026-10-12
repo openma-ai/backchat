@@ -27,26 +27,75 @@ function warningEvent(
 }
 
 describe("ACP harness system notices", () => {
-  it("classifies the Codex diagnostic envelope with or without a turn", () => {
+  it("classifies the diagnostic envelope out of turn or in-turn for Codex", () => {
     const event = warningEvent(`${diagnosticWarning}\n\n`);
 
     expect(extractAcpSystemNotice(event, { outOfTurn: true })).toEqual({
       message: diagnosticWarning,
       tone: "warning",
     });
-    expect(extractAcpSystemNotice(event, { outOfTurn: false })).toEqual({
+    expect(extractAcpSystemNotice(event, {
+      outOfTurn: false,
+      harness: "codex-acp",
+    })).toEqual({
       message: diagnosticWarning,
       tone: "warning",
     });
+    expect(extractAcpSystemNotice(event, {
+      outOfTurn: false,
+      harness: "claude-acp",
+    })).toBeNull();
+    expect(extractAcpSystemNotice(event, { outOfTurn: false })).toBeNull();
   });
 
-  it("splits any Codex warning wording from a coalesced transcript", () => {
-    expect(splitAcpSystemNoticeText(`${skillWarning}\n\n`)).toEqual({
+  it("splits Codex warning envelopes and coalesced legacy text", () => {
+    expect(splitAcpSystemNoticeText(`${skillWarning}\n\n`, {
+      harness: "codex-acp",
+    })).toEqual({
       notice: skillWarning,
       transcript: "",
     });
-    expect(splitAcpSystemNoticeText(`${skillWarning}\n\nThe project is ready.`)).toEqual({
+    const coalesced = `${skillWarning}\n\nThe project is ready.`;
+    expect(splitAcpSystemNoticeText(coalesced, {
+      harness: "codex-acp",
+      coalesced: true,
+    })).toEqual({
       notice: skillWarning,
+      transcript: "The project is ready.",
+    });
+    expect(splitAcpSystemNoticeText(coalesced, {
+      harness: "claude-acp",
+      coalesced: true,
+    })).toEqual({ transcript: coalesced });
+  });
+
+  it("keeps warning-like in-turn replies intact", () => {
+    const text = "Warning: Back up your database first.\n\nThen run the migration.";
+    const event = warningEvent(text);
+
+    expect(splitAcpSystemNoticeText(text, { harness: "codex-acp" })).toEqual({
+      transcript: text,
+    });
+    expect(extractAcpSystemNotice(event, { harness: "codex-acp" })).toBeNull();
+    expect(splitAcpSystemNoticeText(text, { harness: "claude-acp" })).toEqual({
+      transcript: text,
+    });
+    expect(extractAcpSystemNotice(event, { harness: "claude-acp" })).toBeNull();
+  });
+
+  it("classifies an out-of-turn warning without Codex provenance", () => {
+    expect(extractAcpSystemNotice(warningEvent(diagnosticWarning), {
+      harness: "claude-acp",
+      outOfTurn: true,
+    })).toEqual({
+      message: diagnosticWarning,
+      tone: "warning",
+    });
+    expect(splitAcpSystemNoticeText(
+      `${diagnosticWarning}\n\nThe project is ready.`,
+      { harness: "claude-acp", outOfTurn: true },
+    )).toEqual({
+      notice: diagnosticWarning,
       transcript: "The project is ready.",
     });
   });
@@ -56,15 +105,18 @@ describe("ACP harness system notices", () => {
     (phase) => {
       expect(extractAcpSystemNotice(warningEvent(`${skillWarning}\n\n`, {
         codex: { phase },
-      }))).toBeNull();
+      }), { harness: "codex-acp" })).toBeNull();
     },
   );
 
   it("does not classify an in-turn, unterminated warning-looking answer", () => {
     const text = "Warning: back up first";
-    expect(splitAcpSystemNoticeText(text)).toEqual({ transcript: text });
+    expect(splitAcpSystemNoticeText(text, { harness: "codex-acp" })).toEqual({
+      transcript: text,
+    });
     expect(extractAcpSystemNotice(warningEvent(text), {
       outOfTurn: false,
+      harness: "codex-acp",
     })).toBeNull();
   });
 

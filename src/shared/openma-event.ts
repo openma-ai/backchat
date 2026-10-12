@@ -450,6 +450,7 @@ function canonicalAcpUpdateEvent(
   if (rawType === "agent_message_chunk") {
     const notice = extractAcpSystemNotice(message.event, {
       outOfTurn: !message.turn_id,
+      harness: options.harness,
     });
     if (notice) {
       return createOpenMAEvent({

@@ -5,17 +5,24 @@ import {
 
 export type { AcpSystemNotice };
 
+export type AcpSystemNoticeContext = {
+  outOfTurn?: boolean;
+  harness?: string;
+  coalesced?: boolean;
+};
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
 }
 
-/** Codex harness warnings use a `Warning: ` prefix and paragraph separator,
- * or arrive as an unterminated out-of-turn event; no wording allowlist applies. */
+/** In-turn classification requires Codex provenance plus a chunk that is
+ * exactly the warning envelope; out-of-turn needs only the prefix. Coalesced
+ * splitting applies only to legacy rows. No wording allowlist is used. */
 export function splitAcpSystemNoticeText(
   text: string,
-  options?: { outOfTurn?: boolean },
+  context?: AcpSystemNoticeContext,
 ): {
   notice?: string;
   transcript: string;
@@ -25,42 +32,55 @@ export function splitAcpSystemNoticeText(
     return { transcript: text };
   }
   const paragraphBreak = candidate.search(/\r?\n[\t ]*\r?\n/);
-  if (paragraphBreak < 0) {
-    return options?.outOfTurn
-      ? { notice: candidate.trim(), transcript: "" }
-      : { transcript: text };
+  if (context?.outOfTurn) {
+    if (paragraphBreak < 0) {
+      return { notice: candidate.trim(), transcript: "" };
+    }
+  } else {
+    if (!isCodexHarness(context?.harness) || paragraphBreak < 0) {
+      return { transcript: text };
+    }
   }
+
   const separator = candidate.slice(paragraphBreak).match(/^\r?\n[\t ]*\r?\n/)?.[0]
     ?? "";
+  const transcript = candidate.slice(paragraphBreak + separator.length);
+  const hasTranscript = transcript.trim().length > 0;
+  if (!context?.outOfTurn && hasTranscript && !context?.coalesced) {
+    return { transcript: text };
+  }
   return {
     notice: candidate.slice(0, paragraphBreak).trim(),
-    transcript: candidate.slice(paragraphBreak + separator.length).trimStart(),
+    transcript: hasTranscript ? transcript.trimStart() : "",
   };
+}
+
+function isCodexHarness(harness?: string): boolean {
+  return /codex/i.test(harness ?? "");
 }
 
 export function extractAcpSystemNotice(
   event: unknown,
-  options?: { outOfTurn?: boolean },
+  context?: AcpSystemNoticeContext,
 ): AcpSystemNotice | null {
   const outer = record(event);
   const inner = record(outer?.update) ?? outer;
   const meta = record(inner?._meta);
   const codex = record(meta?.codex);
   const phaseTagged = codex?.phase === "final_answer" || codex?.phase === "commentary";
-  if (!phaseTagged) {
-    const common = extractCommonAcpSystemNotice(event);
-    if (common) return common;
-  }
+  const piNotify = record(record(meta?.piAcp)?.notify);
+  const piLevel = piNotify?.level;
+  const common = phaseTagged ? null : extractCommonAcpSystemNotice(event);
+  if (common && (piLevel === "warning" || piLevel === "error")) return common;
   if (inner?.sessionUpdate !== "agent_message_chunk") return null;
   const text = record(inner.content)?.text;
   if (!phaseTagged && typeof text === "string") {
-    const split = splitAcpSystemNoticeText(text, options);
+    const split = splitAcpSystemNoticeText(text, context);
     if (split.notice) {
       return { message: split.notice, tone: "warning" };
     }
   }
-  const notify = record(record(record(inner._meta)?.piAcp)?.notify);
-  if (notify?.level !== "warning") return null;
+  if (piLevel !== "warning") return null;
   return typeof text === "string" && text.trim().length > 0
     ? { message: text.trim(), tone: "warning" }
     : null;

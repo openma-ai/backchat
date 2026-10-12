@@ -67,6 +67,8 @@ test.describe("GUI bugfix batch evidence", () => {
       "Warning: Codex couldn't save diagnostic logs to its local database. " +
       "Use /feedback with logs included before closing Codex, or run " +
       "`codex doctor` for diagnostics.";
+    const genuineReply =
+      "Warning: Back up your database first.\n\nThen run the migration.";
     await injectEvent(page, {
       type: "session.event",
       session_id: sessionId,
@@ -97,6 +99,19 @@ test.describe("GUI bugfix batch evidence", () => {
     await expect(
       transcript.getByText("couldn't save diagnostic logs"),
     ).toHaveCount(0);
+
+    await injectEvent(page, {
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "turn-warning-like-reply",
+      event: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: genuineReply },
+      },
+    });
+    await expect(
+      transcript.getByText("Warning: Back up your database first."),
+    ).toBeVisible();
 
     await injectEvent(page, {
       type: "session.event",
