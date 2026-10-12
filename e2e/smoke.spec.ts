@@ -474,7 +474,9 @@ test.describe("backchat smoke", () => {
       await expect(popover).toBeVisible();
       await expect(popover).toHaveAttribute("data-side", "top");
       await expect(popover).toHaveAttribute("data-align", "start");
-      expect((await popover.boundingBox())?.width).toBeLessThanOrEqual(280);
+      await expect.poll(async () =>
+        (await popover.boundingBox())?.width ?? Infinity,
+      ).toBeLessThanOrEqual(280);
       await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
       await expect(popover.locator('[data-agent-update-label="codex-acp"]'))
         .toHaveText("Codex");
@@ -719,16 +721,15 @@ test.describe("backchat smoke", () => {
 
       await model.click();
       await expect(page.getByRole("menu")).toBeVisible();
-      await page.waitForTimeout(180);
-      const openBackground = await composited(model);
       // An open control paints its translucent wash over an opaque panel, so
       // the rendered result is opaque and distinct from the bare sidebar.
-      expect(openBackground.a).toBe(255);
-      expect(
-        Math.abs(openBackground.r - sidebarBackground.r)
-        + Math.abs(openBackground.g - sidebarBackground.g)
-        + Math.abs(openBackground.b - sidebarBackground.b),
-      ).toBeGreaterThan(0);
+      await expect.poll(async () => {
+        const openBackground = await composited(model);
+        return openBackground.a === 255
+          && Math.abs(openBackground.r - sidebarBackground.r)
+            + Math.abs(openBackground.g - sidebarBackground.g)
+            + Math.abs(openBackground.b - sidebarBackground.b) > 0;
+      }).toBe(true);
   });
 
   test("uses the shared compact width for the project selector", async ({ page }) => {
@@ -737,9 +738,9 @@ test.describe("backchat smoke", () => {
         has: page.getByPlaceholder("Choose project"),
       });
       await expect(projectMenu).toBeVisible();
-      const menuBox = await projectMenu.boundingBox();
-      expect(menuBox).not.toBeNull();
-      expect(menuBox!.width).toBeLessThanOrEqual(282);
+      await expect.poll(async () =>
+        (await projectMenu.boundingBox())?.width ?? Infinity,
+      ).toBeLessThanOrEqual(282);
   });
 
   test("opens the project selector on its single current choice", async ({ page }) => {
@@ -807,14 +808,18 @@ test.describe("backchat smoke", () => {
       // A completed tool in a running turn keeps an outer activity disclosure.
       // Compare primary activity summaries; expanded tool details are indented.
       const singleIcon = page.locator('[data-collapsible-event-count="1"] > button svg').first();
-      const [groupIconBox, singleIconBox] = await Promise.all([
-        groupIcon.boundingBox(),
-        singleIcon.boundingBox(),
-      ]);
-      expect(groupIconBox).not.toBeNull();
-      expect(singleIconBox).not.toBeNull();
       // A rotating progress icon changes its bounding-box edges, not its center.
-      expect(Math.abs((groupIconBox!.x + groupIconBox!.width / 2) - (singleIconBox!.x + singleIconBox!.width / 2))).toBeLessThanOrEqual(0.5);
+      await expect.poll(async () => {
+        const [groupIconBox, singleIconBox] = await Promise.all([
+          groupIcon.boundingBox(),
+          singleIcon.boundingBox(),
+        ]);
+        if (!groupIconBox || !singleIconBox) return Infinity;
+        return Math.abs(
+          (groupIconBox.x + groupIconBox.width / 2)
+          - (singleIconBox.x + singleIconBox.width / 2),
+        );
+      }).toBeLessThanOrEqual(0.5);
 
       await page.locator('[data-collapsible-event-count="1"] > button').click();
       const summary = singleTool.getByRole("button");
@@ -994,20 +999,27 @@ test.describe("backchat smoke", () => {
           };
         }),
       ));
-      await page.waitForTimeout(180);
-      const resting = await appearance();
+      let previousAppearance: Awaited<ReturnType<typeof appearance>> | undefined;
+      let resting: Awaited<ReturnType<typeof appearance>> | undefined;
+      await expect.poll(async () => {
+        const current = await appearance();
+        const previous = previousAppearance;
+        const isStable = !!previous
+          && current.every((style, index) =>
+            style.color === previous[index]?.color
+            && style.backgroundColor === previous[index]?.backgroundColor);
+        previousAppearance = current;
+        if (isStable) resting = current;
+        return isStable;
+      }).toBe(true);
 
       await runChip.hover();
-      await page.waitForTimeout(180);
-      const selectorHovered = await appearance();
-      expect(selectorHovered[0]).not.toEqual(resting[0]);
-      expect(selectorHovered[1]).toEqual(resting[1]);
+      await expect.poll(async () => (await appearance())[0]).not.toEqual(resting![0]);
+      await expect.poll(async () => (await appearance())[1]).toEqual(resting![1]);
 
       await page.mouse.move(0, 0);
       await submit.hover();
-      await page.waitForTimeout(180);
-      const submitHovered = await appearance();
-      expect(submitHovered[0]).toEqual(resting[0]);
+      await expect.poll(async () => (await appearance())[0]).toEqual(resting![0]);
   });
 
   test("keeps compact composer controls above a transparent runtime and context footer", async ({
@@ -1067,12 +1079,13 @@ test.describe("backchat smoke", () => {
       await expect(permissionMenu).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(permissionMenu).toBeHidden();
-      const closedChip = await askEachTime.evaluate((element) => ({
-        background: getComputedStyle(element).backgroundColor,
-        focusVisible: element.matches(":focus-visible"),
-      }));
-      expect(closedChip.background).toBe("rgba(0, 0, 0, 0)");
-      expect(closedChip.focusVisible).toBe(false);
+      await expect(askEachTime).toHaveCSS(
+        "background-color",
+        "rgba(0, 0, 0, 0)",
+      );
+      await expect.poll(() =>
+        askEachTime.evaluate((element) => element.matches(":focus-visible")),
+      ).toBe(false);
   });
 
   test("keeps the runtime trigger background transparent while its menu is open", async ({
@@ -1083,8 +1096,10 @@ test.describe("backchat smoke", () => {
 
       await runtime.click();
       await expect(page.getByRole("menu")).toBeVisible();
-      expect(await runtime.evaluate((element) => getComputedStyle(element).backgroundColor))
-        .toBe("rgba(0, 0, 0, 0)");
+      await expect(runtime).toHaveCSS(
+        "background-color",
+        "rgba(0, 0, 0, 0)",
+      );
   });
 
   test("keeps the context meter out of native text selection", async ({
@@ -1295,21 +1310,28 @@ test.describe("backchat smoke", () => {
         if (!editorBox || !currentBadgeBox) return 0;
         return editorBox.x - currentBadgeBox.x - currentBadgeBox.width;
       }).toBeGreaterThanOrEqual(4);
-      const [emptyEditorBox, emptyInputBox, badgeBox] = await Promise.all([
-        editor.boundingBox(),
-        commentInput.boundingBox(),
-        annotationBadge.boundingBox(),
-      ]);
+      let emptyEditorBox: NonNullable<Awaited<ReturnType<typeof editor.boundingBox>>> | null = null;
+      let emptyInputBox: NonNullable<Awaited<ReturnType<typeof commentInput.boundingBox>>> | null = null;
+      await expect.poll(async () => {
+        const [editorBox, inputBox, badgeBox] = await Promise.all([
+          editor.boundingBox(),
+          commentInput.boundingBox(),
+          annotationBadge.boundingBox(),
+        ]);
+        emptyEditorBox = editorBox;
+        emptyInputBox = inputBox;
+        return !!editorBox
+          && !!inputBox
+          && !!badgeBox
+          && editorBox.width >= 300
+          && Math.round(editorBox.width) <= 320
+          && editorBox.height >= 56;
+      }).toBe(true);
       expect(emptyEditorBox).not.toBeNull();
       expect(emptyInputBox).not.toBeNull();
-      expect(badgeBox).not.toBeNull();
-      expect(emptyEditorBox!.width).toBeGreaterThanOrEqual(300);
-      expect(Math.round(emptyEditorBox!.width)).toBeLessThanOrEqual(320);
-      expect(emptyEditorBox!.height).toBeGreaterThanOrEqual(56);
       await expect.poll(() => editor.evaluate((element) =>
         Number.parseFloat(getComputedStyle(element).borderRadius),
       )).toBe(16);
-      await page.waitForTimeout(250);
       await capture("response-annotation-empty-editor.png", "empty response annotation editor");
 
       await page.evaluate(() => {
@@ -1358,14 +1380,16 @@ test.describe("backchat smoke", () => {
       await expect.poll(() => editor.evaluate((element) =>
         Number.parseFloat(getComputedStyle(element).borderRadius),
       )).toBeLessThanOrEqual(16);
-      const [expandedEditorBox, expandedInputBox] = await Promise.all([
-        editor.boundingBox(),
-        commentInput.boundingBox(),
-      ]);
-      expect(expandedEditorBox).not.toBeNull();
-      expect(expandedInputBox).not.toBeNull();
-      expect(expandedEditorBox!.height).toBeGreaterThan(emptyEditorBox!.height + 40);
-      expect(expandedInputBox!.height).toBeGreaterThan(emptyInputBox!.height + 40);
+      await expect.poll(async () => {
+        const [expandedEditorBox, expandedInputBox] = await Promise.all([
+          editor.boundingBox(),
+          commentInput.boundingBox(),
+        ]);
+        return !!expandedEditorBox
+          && !!expandedInputBox
+          && expandedEditorBox.height > emptyEditorBox!.height + 40
+          && expandedInputBox.height > emptyInputBox!.height + 40;
+      }).toBe(true);
       await capture("response-annotation-editor.png", "response annotation editor");
       await saveButton.click();
       await expect(editor).toBeHidden();
@@ -1482,10 +1506,12 @@ test.describe("backchat smoke", () => {
       await page.getByRole("button", { name: "Header chat", exact: true }).click();
       await expect(page.getByText("Existing answer.", { exact: true })).toBeVisible();
       const title = header.getByText("Header chat", { exact: true });
-      expect(await regionOf(title)).toBe("drag");
-      expect(await regionOf(title.locator("xpath=.."))).toBe("drag");
       const taskActions = header.getByRole("button", { name: "Task actions", exact: true });
-      expect(await regionOf(taskActions)).toBe("no-drag");
+      await expect.poll(async () => [
+        await regionOf(title),
+        await regionOf(title.locator("xpath=..")),
+        await regionOf(taskActions),
+      ]).toEqual(["drag", "drag", "no-drag"]);
       await taskActions.click();
       await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
@@ -1493,7 +1519,7 @@ test.describe("backchat smoke", () => {
       const navigation = page.getByRole("navigation");
       await navigation.getByRole("button", { name: "Chats", exact: true }).hover();
       const createConversation = navigation.getByRole("button", { name: "New conversation", exact: true });
-      expect(await regionOf(createConversation)).toBe("no-drag");
+      await expect.poll(() => regionOf(createConversation)).toBe("no-drag");
       await createConversation.click();
       await expect(page.getByTestId("new-chat-button")).toHaveAttribute("aria-current", "page");
       await expect(page.locator(".composer-card").first()).toBeVisible();

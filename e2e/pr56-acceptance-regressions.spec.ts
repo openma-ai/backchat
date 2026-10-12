@@ -89,6 +89,22 @@ async function measureFooterTrigger(trigger: Locator) {
   });
 }
 
+function footerTriggerMatchesLayout(
+  chip: Awaited<ReturnType<typeof measureFooterTrigger>>,
+  mutedColor: string,
+) {
+  return chip.iconOffsetX === 0
+    && chip.iconSlotWidth === chip.controlHeight
+    && chip.iconSlotHeight === chip.controlHeight
+    && chip.labelOffset === chip.gap
+    && chip.paddingInlineStart === 0
+    && chip.paddingInlineEnd === 6
+    && chip.gap === 2
+    && chip.labelWeight === "400"
+    && chip.labelColor === mutedColor
+    && chip.chevronColor === mutedColor;
+}
+
 async function readColorToken(page: Page, token: string) {
   return page.evaluate((name) => {
     const probe = document.createElement("span");
@@ -109,8 +125,9 @@ test("harness probe placeholder uses shimmer styles", async ({ page }) => {
     el?.classList.add("composer-harness-probe-placeholder");
     el?.setAttribute("placeholder", "Checking Codex…");
   });
-  const animation = await textarea.evaluate((el) => getComputedStyle(el, "::placeholder").animationName);
-  expect(animation).toContain("shimmer-text-sweep");
+  await expect.poll(() =>
+    textarea.evaluate((el) => getComputedStyle(el, "::placeholder").animationName),
+  ).toContain("shimmer-text-sweep");
 });
 
 test("sidebar scrollbar thumb resolves paint tokens", async ({ page }) => {
@@ -131,14 +148,18 @@ test("sidebar row hover wash is inset from the rail edge", async ({ page }) => {
   expect(box).not.toBeNull();
   const row = page.getByTestId("sidebar-local-runtime-row");
   await row.hover();
-  const insetLeft = await row.evaluate((el) => {
+  await expect.poll(() => row.evaluate((el) => {
     const sidebar = el.closest(".sidebar-navigation") as HTMLElement;
     const rect = el.getBoundingClientRect();
     const sidebarBox = sidebar.getBoundingClientRect();
     return rect.left - sidebarBox.left;
-  });
-  expect(insetLeft).toBeGreaterThanOrEqual(6);
-  expect(insetLeft).toBeLessThanOrEqual(16);
+  })).toBeGreaterThanOrEqual(6);
+  await expect.poll(() => row.evaluate((el) => {
+    const sidebar = el.closest(".sidebar-navigation") as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const sidebarBox = sidebar.getBoundingClientRect();
+    return rect.left - sidebarBox.left;
+  })).toBeLessThanOrEqual(16);
 });
 
 test("new chat row matches session row vertical alignment and shows hover wash", async ({
@@ -167,7 +188,7 @@ test("new chat row matches session row vertical alignment and shows hover wash",
       return bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
     })
     .toBe(true);
-  const trailingAlpha = await trailing.evaluate((el) => {
+  await expect.poll(() => trailing.evaluate((el) => {
     const canvas = document.createElement("canvas");
     canvas.width = 1;
     canvas.height = 1;
@@ -175,11 +196,15 @@ test("new chat row matches session row vertical alignment and shows hover wash",
     ctx.fillStyle = getComputedStyle(el).backgroundColor;
     ctx.fillRect(0, 0, 1, 1);
     return ctx.getImageData(0, 0, 1, 1).data[3];
-  });
-  expect(trailingAlpha).toBe(0);
-  const washRight = newChatBox!.x + newChatBox!.width;
-  const trailingLeft = (await trailing.boundingBox())!.x;
-  expect(trailingLeft - washRight).toBeGreaterThan(4);
+  })).toBe(0);
+  await expect.poll(async () => {
+    const [washBox, trailingBox] = await Promise.all([
+      newChat.boundingBox(),
+      trailing.boundingBox(),
+    ]);
+    if (!washBox || !trailingBox) return -Infinity;
+    return trailingBox.x - (washBox.x + washBox.width);
+  }).toBeGreaterThan(4);
 });
 
 test("composer footer chips match main geometry and typography", async ({ page, home }) => {
@@ -191,35 +216,22 @@ test("composer footer chips match main geometry and typography", async ({ page, 
   await page.getByRole("option", { name: "Workspace fit", exact: true }).click();
   await page.keyboard.press("Escape");
 
-  const local = await measureFooterTrigger(
-    page.locator('[data-composer-footer-control="runtime"]'),
-  );
-  const project = await measureFooterTrigger(
-    page.locator('[data-composer-footer-control="project"]'),
-  );
-  const workspace = await measureFooterTrigger(
-    page.locator('[data-composer-footer-control="workspace"]'),
-  );
-  console.log(`[head footer geometry] ${JSON.stringify({ local, project, workspace })}`);
   const mutedColor = await readColorToken(page, "--fg-muted");
-  for (const chip of [local, project, workspace]) {
-    expect(chip.iconOffsetX).toBe(0);
-    expect(chip.iconSlotWidth).toBe(chip.controlHeight);
-    expect(chip.iconSlotHeight).toBe(chip.controlHeight);
-    expect(chip.labelOffset).toBe(chip.gap);
-    expect(chip.paddingInlineStart).toBe(0);
-    expect(chip.paddingInlineEnd).toBe(6);
-    expect(chip.gap).toBe(2);
-    expect(chip.labelWeight).toBe("400");
-  }
-  expect(project.x - local.right).toBe(2);
-  expect(workspace.x - project.right).toBe(2);
-  expect(local.labelColor).toBe(mutedColor);
-  expect(local.chevronColor).toBe(mutedColor);
-  expect(project.labelColor).toBe(mutedColor);
-  expect(project.chevronColor).toBe(mutedColor);
-  expect(workspace.labelColor).toBe(mutedColor);
-  expect(workspace.chevronColor).toBe(mutedColor);
+  const localTrigger = page.locator('[data-composer-footer-control="runtime"]');
+  const projectTrigger = page.locator('[data-composer-footer-control="project"]');
+  const workspaceTrigger = page.locator('[data-composer-footer-control="workspace"]');
+  await expect.poll(async () => {
+    const [local, project, workspace] = await Promise.all([
+      measureFooterTrigger(localTrigger),
+      measureFooterTrigger(projectTrigger),
+      measureFooterTrigger(workspaceTrigger),
+    ]);
+    return footerTriggerMatchesLayout(local, mutedColor)
+      && footerTriggerMatchesLayout(project, mutedColor)
+      && footerTriggerMatchesLayout(workspace, mutedColor)
+      && project.x - local.right === 2
+      && workspace.x - project.right === 2;
+  }).toBe(true);
 });
 
 test("host picker draws separator after OpenMA account row", async ({ page }) => {
@@ -242,46 +254,48 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     await expect(demoHeading).toBeVisible();
     await expect(demoHeading).toHaveAttribute("data-sidebar-leading", "none");
     const localRow = page.getByTestId("sidebar-local-runtime-row");
-    const localMetrics = await localRow.evaluate((el) => {
-      const rect = el.getBoundingClientRect();
-      const style = getComputedStyle(el);
-      return {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-        fontSize: style.fontSize,
-        fontWeight: style.fontWeight,
-        color: style.color,
-        iconCount: el.querySelectorAll("svg, img").length,
-      };
-    });
-    expect(localMetrics).toMatchObject({
+    const mutedColor = await readColorToken(page, "--fg-muted");
+    await expect.poll(() =>
+      localRow.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          color: style.color,
+          iconCount: el.querySelectorAll("svg, img").length,
+        };
+      }),
+    ).toMatchObject({
       x: 15,
       y: 177,
       width: 222,
       height: 28,
       fontSize: "12px",
       fontWeight: "500",
+      color: mutedColor,
       iconCount: 0,
     });
-    const mutedColor = await readColorToken(page, "--fg-muted");
-    expect(localMetrics.color).toBe(mutedColor);
-    const demoTypography = await demoHeading
-      .locator('[data-sidebar-grid="label"] button')
-      .evaluate((el) => {
-        const style = getComputedStyle(el);
-        return {
-          fontSize: style.fontSize,
-          fontWeight: style.fontWeight,
-          color: style.color,
-        };
-      });
-    expect(demoTypography).toMatchObject({
+    await expect.poll(() =>
+      demoHeading
+        .locator('[data-sidebar-grid="label"] button')
+        .evaluate((el) => {
+          const style = getComputedStyle(el);
+          return {
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            color: style.color,
+          };
+        }),
+    ).toMatchObject({
       fontSize: "12px",
       fontWeight: "500",
+      color: mutedColor,
     });
-    expect(demoTypography.color).toBe(mutedColor);
     await demoHeading.click();
     const tenantSection = demoHeading.locator(
       "xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' sidebar-section ')]",
@@ -289,35 +303,25 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     await expect(
       tenantSection.locator('.sidebar-grid-row[data-sidebar-depth="1"]'),
     ).toHaveCount(3);
-    const demoLabelBox = await demoHeading
-      .locator('[data-sidebar-grid="label"]')
-      .boundingBox();
-    const tenantChildIconBox = await tenantSection
-      .locator('.sidebar-grid-row[data-sidebar-depth="1"] .sidebar-row-icon')
-      .first()
-      .boundingBox();
-    expect(demoLabelBox).not.toBeNull();
-    expect(tenantChildIconBox).not.toBeNull();
-    expect(Math.abs(demoLabelBox!.x - 23)).toBeLessThanOrEqual(1);
-    expect(Math.abs(tenantChildIconBox!.x - 43)).toBeLessThanOrEqual(0.5);
+    await expect.poll(async () => {
+      const [demoLabelBox, tenantChildIconBox] = await Promise.all([
+        demoHeading.locator('[data-sidebar-grid="label"]').boundingBox(),
+        tenantSection
+          .locator('.sidebar-grid-row[data-sidebar-depth="1"] .sidebar-row-icon')
+          .first()
+          .boundingBox(),
+      ]);
+      return !!demoLabelBox
+        && !!tenantChildIconBox
+        && Math.abs(demoLabelBox.x - 23) <= 1
+        && Math.abs(tenantChildIconBox.x - 43) <= 0.5;
+    }).toBe(true);
     await openRuntimeLocationPicker(page);
     const panel = hostPickerPanel(page);
     const shell = page
       .locator('[data-slot="dropdown-menu-content"]')
       .filter({ has: panel });
     await expect(panel.locator('[data-slot="command-separator"]')).toHaveCount(1);
-    const padding = await shell.evaluate((el) => {
-      const style = getComputedStyle(el);
-      return {
-        top: parseFloat(style.paddingTop),
-        bottom: parseFloat(style.paddingBottom),
-        borderRadius: parseFloat(style.borderTopLeftRadius),
-      };
-    });
-    expect(padding.top).toBeGreaterThanOrEqual(3.5);
-    expect(padding.top).toBeLessThanOrEqual(4.5);
-    expect(padding.bottom).toBe(padding.top);
-    expect(padding.borderRadius).toBeGreaterThanOrEqual(7);
     await expect(panel.getByRole("option").filter({ hasNotText: /Manage|管理/ })).not.toHaveCount(0);
     const manage = panel.getByRole("option", { name: /Manage OpenMA|管理 OpenMA/i });
     const separatorsBetweenLocationsAndManage = await manage.evaluate((el) => {
@@ -331,63 +335,86 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
       return count;
     });
     expect(separatorsBetweenLocationsAndManage).toBe(0);
-    const shellBox = await shell.boundingBox();
-    expect(shellBox).not.toBeNull();
-    expect(Math.abs(shellBox!.height - 143)).toBeLessThanOrEqual(1);
-    expect(Math.abs(shellBox!.y - 618)).toBeLessThanOrEqual(1);
-    const triggerBox = await page
-      .locator('[data-composer-footer-control="runtime"]')
-      .first()
-      .boundingBox();
-    expect(triggerBox).not.toBeNull();
-    expect(Math.abs(triggerBox!.y - (shellBox!.y + shellBox!.height))).toBeLessThanOrEqual(1);
-    const borderWidth = await shell.evaluate((el) =>
-      parseFloat(getComputedStyle(el).borderTopWidth),
-    );
-    expect(borderWidth).toBeGreaterThanOrEqual(0.5);
-    expect(borderWidth).toBeLessThanOrEqual(1.5);
     const separator = panel.locator('[data-slot="command-separator"]').first();
-    const separatorBox = await separator.boundingBox();
-    const shellPads = await shell.evaluate((el) => {
-      const style = getComputedStyle(el);
-      return {
-        left: parseFloat(style.paddingLeft),
-        right: parseFloat(style.paddingRight),
-        border: parseFloat(style.borderLeftWidth),
-      };
-    });
-    const innerWidth =
-      shellBox!.width - shellPads.left - shellPads.right - shellPads.border * 2;
-    expect(separatorBox!.width).toBeGreaterThanOrEqual(innerWidth - 2);
-    expect(separatorBox!.width).toBeLessThanOrEqual(shellBox!.width);
-    expect(Math.abs(separatorBox!.x - (shellBox!.x + 1))).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(separatorBox!.width - (shellBox!.width - 2))).toBeLessThanOrEqual(0.5);
     const firstRow = panel.locator('[cmdk-item]').nth(1);
-    const rowBoxes = await Promise.all([
-      firstRow.boundingBox(),
-      panel.locator('[cmdk-item]').nth(2).boundingBox(),
-    ]);
-    expect(rowBoxes[0]).not.toBeNull();
-    expect(rowBoxes[1]).not.toBeNull();
-    expect(Math.abs(rowBoxes[1]!.y - rowBoxes[0]!.y - 28)).toBeLessThanOrEqual(1);
-    const rowPadding = await firstRow.evaluate((el) => {
-      const style = getComputedStyle(el);
-      return {
-        block: parseFloat(style.paddingTop),
-        gap: parseFloat(style.columnGap),
-      };
-    });
-    expect(rowPadding.block).toBe(4);
-    expect(rowPadding.gap).toBe(6);
-    const rowInset = await firstRow.evaluate((el) => {
-      const shellRect = el
-        .closest('[data-slot="dropdown-menu-content"]')!
-        .getBoundingClientRect();
-      const rowRect = el.getBoundingClientRect();
-      return rowRect.left - shellRect.left;
-    });
-    expect(rowInset).toBeGreaterThanOrEqual(4);
-    expect(rowInset).toBeLessThanOrEqual(6.5);
+    const runtimeTrigger = page
+      .locator('[data-composer-footer-control="runtime"]')
+      .first();
+    await expect.poll(async () => {
+      const [
+        padding,
+        shellBox,
+        triggerBox,
+        borderWidth,
+        separatorBox,
+        shellPads,
+        rowBoxes,
+        rowPadding,
+        rowInset,
+      ] = await Promise.all([
+          shell.evaluate((el) => {
+            const style = getComputedStyle(el);
+            return {
+              top: parseFloat(style.paddingTop),
+              bottom: parseFloat(style.paddingBottom),
+              borderRadius: parseFloat(style.borderTopLeftRadius),
+            };
+          }),
+          shell.boundingBox(),
+          runtimeTrigger.boundingBox(),
+          shell.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth)),
+          separator.boundingBox(),
+          shell.evaluate((el) => {
+            const style = getComputedStyle(el);
+            return {
+              left: parseFloat(style.paddingLeft),
+              right: parseFloat(style.paddingRight),
+              border: parseFloat(style.borderLeftWidth),
+            };
+          }),
+          Promise.all([
+            firstRow.boundingBox(),
+            panel.locator('[cmdk-item]').nth(2).boundingBox(),
+          ]),
+          firstRow.evaluate((el) => {
+            const style = getComputedStyle(el);
+            return {
+              block: parseFloat(style.paddingTop),
+              gap: parseFloat(style.columnGap),
+            };
+          }),
+          firstRow.evaluate((el) => {
+            const shellRect = el
+              .closest('[data-slot="dropdown-menu-content"]')!
+              .getBoundingClientRect();
+            const rowRect = el.getBoundingClientRect();
+            return rowRect.left - shellRect.left;
+          }),
+        ]);
+      if (!shellBox || !triggerBox || !separatorBox || !rowBoxes[0] || !rowBoxes[1]) {
+        return false;
+      }
+      const innerWidth =
+        shellBox.width - shellPads.left - shellPads.right - shellPads.border * 2;
+      return padding.top >= 3.5
+        && padding.top <= 4.5
+        && padding.bottom === padding.top
+        && padding.borderRadius >= 7
+        && Math.abs(shellBox.height - 143) <= 1
+        && Math.abs(shellBox.y - 618) <= 1
+        && Math.abs(triggerBox.y - (shellBox.y + shellBox.height)) <= 1
+        && borderWidth >= 0.5
+        && borderWidth <= 1.5
+        && separatorBox.width >= innerWidth - 2
+        && separatorBox.width <= shellBox.width
+        && Math.abs(separatorBox.x - (shellBox.x + 1)) <= 0.5
+        && Math.abs(separatorBox.width - (shellBox.width - 2)) <= 0.5
+        && Math.abs(rowBoxes[1].y - rowBoxes[0].y - 28) <= 1
+        && rowPadding.block === 4
+        && rowPadding.gap === 6
+        && rowInset >= 4
+        && rowInset <= 6.5;
+    }).toBe(true);
   } finally {
     await mock.close();
   }
@@ -496,31 +523,24 @@ test("selected session row stays opaque on hover", async ({ page }) => {
     .evaluate((el) => Number.parseInt(getComputedStyle(el).fontWeight, 10));
   expect(selectedWeight).toBe(500);
   await row.hover();
-  const alpha = await row.evaluate((el) => {
+  await expect.poll(() => row.evaluate((el) => {
     const canvas = document.createElement("canvas");
     canvas.width = 1;
     canvas.height = 1;
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = getComputedStyle(el).backgroundColor;
     ctx.fillRect(0, 0, 1, 1);
-    return ctx.getImageData(0, 0, 1, 1).data[3];
-  });
-  expect(alpha).toBe(255);
-  const selectedPaint = await row.evaluate((el) => {
+    const alpha = ctx.getImageData(0, 0, 1, 1).data[3];
     const background = getComputedStyle(el).backgroundColor;
     const probe = document.createElement("div");
     probe.style.background = "var(--surface-selected)";
     document.body.appendChild(probe);
     const expected = getComputedStyle(probe).backgroundColor;
     probe.remove();
-    return {
-      background,
-      expected,
-      image: getComputedStyle(el).backgroundImage,
-    };
-  });
-  expect(selectedPaint.background).toBe(selectedPaint.expected);
-  expect(selectedPaint.image).toBe("none");
+    return alpha === 255
+      && background === expected
+      && getComputedStyle(el).backgroundImage === "none";
+  })).toBe(true);
 });
 
 test("project sessions share the coordinator grid without clipping", async ({ page }) => {
@@ -600,14 +620,7 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
   expect(coordinatorBox).not.toBeNull();
   expect(Math.abs(coordinatorBox!.x - 51)).toBeLessThanOrEqual(0.5);
   await coordinator.hover();
-  await coordinator.evaluate((element) =>
-    Promise.all(
-      element.getAnimations().map((animation) =>
-        animation.finished.catch(() => undefined),
-      ),
-    ),
-  );
-  const hoverPaint = await coordinator.evaluate((el) => {
+  await expect.poll(() => coordinator.evaluate((el) => {
     const style = getComputedStyle(el);
     const canvas = document.createElement("canvas");
     canvas.width = 1;
@@ -619,34 +632,29 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
       color: Array.from(context.getImageData(0, 0, 1, 1).data),
       image: style.backgroundImage,
     };
-  });
-  expect(hoverPaint.color).toEqual([26, 26, 26, 20]);
-  expect(hoverPaint.image).toBe("none");
-
-  const labelMetrics = await sessionRow
-    .locator('[data-sidebar-grid="label"]')
-    .evaluate((labelCell) => {
-      const cellRect = labelCell.getBoundingClientRect();
-      const text = labelCell.querySelector(".truncate") ?? labelCell;
-      return {
-        x: cellRect.x,
-        width: cellRect.width,
-        right: cellRect.right,
-        ellipsized: text.scrollWidth > text.clientWidth,
-      };
-    });
-  const trailingBox = await sessionRow.locator('[data-sidebar-grid="trailing"]').boundingBox();
-  expect(trailingBox).not.toBeNull();
-  const columnGap = await sessionRow.evaluate((row) =>
-    Number.parseFloat(getComputedStyle(row).columnGap),
-  );
-  expect(
-    Math.abs(trailingBox!.x - labelMetrics.right - columnGap),
-  ).toBeLessThanOrEqual(1);
-  expect(Math.abs(labelMetrics.x - 83)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(labelMetrics.width - 122)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(labelMetrics.right - 205)).toBeLessThanOrEqual(0.5);
-  expect(labelMetrics.ellipsized).toBe(false);
+  })).toEqual({ color: [26, 26, 26, 20], image: "none" });
+  await expect.poll(async () => {
+    const [labelMetrics, trailingBox, columnGap] = await Promise.all([
+      sessionRow.locator('[data-sidebar-grid="label"]').evaluate((labelCell) => {
+        const cellRect = labelCell.getBoundingClientRect();
+        const text = labelCell.querySelector(".truncate") ?? labelCell;
+        return {
+          x: cellRect.x,
+          width: cellRect.width,
+          right: cellRect.right,
+          ellipsized: text.scrollWidth > text.clientWidth,
+        };
+      }),
+      sessionRow.locator('[data-sidebar-grid="trailing"]').boundingBox(),
+      sessionRow.evaluate((row) => Number.parseFloat(getComputedStyle(row).columnGap)),
+    ]);
+    return !!trailingBox
+      && Math.abs(trailingBox.x - labelMetrics.right - columnGap) <= 1
+      && Math.abs(labelMetrics.x - 83) <= 0.5
+      && Math.abs(labelMetrics.width - 122) <= 0.5
+      && Math.abs(labelMetrics.right - 205) <= 0.5
+      && !labelMetrics.ellipsized;
+  }).toBe(true);
 });
 
 test("capture acceptance evidence @pr56", async ({ page }) => {
@@ -675,7 +683,11 @@ test("capture acceptance evidence @pr56", async ({ page }) => {
     const shell = page
       .locator('[data-slot="dropdown-menu-content"]')
       .filter({ has: panel });
-    const box = await shell.boundingBox();
+    let box: NonNullable<Awaited<ReturnType<typeof shell.boundingBox>>> | null = null;
+    await expect.poll(async () => {
+      box = await shell.boundingBox();
+      return !!box && box.width > 0 && box.height > 0;
+    }).toBe(true);
     await page.screenshot({
       path: join(dir, "host-picker-after.png"),
       clip: {
@@ -738,36 +750,46 @@ test("project picker bounds long results and fits a short query", async ({
   await expect(popover).toBeVisible();
   await expect(search).toBeVisible();
 
-  const initial = await popover.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    const list = element.querySelector('[data-slot="command-list"]') as HTMLElement;
-    const input = element.querySelector('[data-slot="command-input-wrapper"]');
-    return {
-      panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      inside: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
-      searchVisible: !!input && input.getBoundingClientRect().height > 0,
-      listScrollHeight: list.scrollHeight,
-      listClientHeight: list.clientHeight,
-      listOverflowY: getComputedStyle(list).overflowY,
-    };
-  });
-  expect(initial.inside).toBe(true);
-  expect(initial.searchVisible).toBe(true);
-  expect(initial.listScrollHeight).toBeGreaterThan(initial.listClientHeight);
-  expect(["auto", "scroll"]).toContain(initial.listOverflowY);
-  const unfilteredHeight = initial.panel.height;
-  const projectTriggerBox = await page
-    .locator('[data-composer-footer-control="project"]')
-    .boundingBox();
-  const projectPopoverBox = await popover.boundingBox();
-  const projectGap = projectTriggerBox!.y - (projectPopoverBox!.y + projectPopoverBox!.height);
-  expect(Math.abs(projectGap)).toBeLessThanOrEqual(0.5);
+  let unfilteredHeight = Infinity;
+  await expect.poll(async () => {
+    const initial = await popover.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const list = element.querySelector('[data-slot="command-list"]') as HTMLElement;
+      const input = element.querySelector('[data-slot="command-input-wrapper"]');
+      return {
+        panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        inside:
+          rect.left >= 0
+          && rect.top >= 0
+          && rect.right <= innerWidth
+          && rect.bottom <= innerHeight,
+        searchVisible: !!input && input.getBoundingClientRect().height > 0,
+        listScrollHeight: list.scrollHeight,
+        listClientHeight: list.clientHeight,
+        listOverflowY: getComputedStyle(list).overflowY,
+      };
+    });
+    unfilteredHeight = initial.panel.height;
+    return initial.inside
+      && initial.searchVisible
+      && initial.listScrollHeight > initial.listClientHeight
+      && ["auto", "scroll"].includes(initial.listOverflowY);
+  }).toBe(true);
+  await expect.poll(async () => {
+    const [triggerBox, popoverBox] = await Promise.all([
+      page.locator('[data-composer-footer-control="project"]').boundingBox(),
+      popover.boundingBox(),
+    ]);
+    if (!triggerBox || !popoverBox) return false;
+    const gap = triggerBox.y - (popoverBox.y + popoverBox.height);
+    return Math.abs(gap) <= 0.5;
+  }).toBe(true);
   const projectRows = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
     .filter({ hasText: /^Picker \d{2}$/ });
-  const projectRow = await measurePickerRow(projectRows.nth(0), projectRows.nth(1));
-  console.log(`[project picker row geometry] ${JSON.stringify(projectRow)}`);
-  expect(projectRow).toMatchObject({
+  await expect.poll(() =>
+    measurePickerRow(projectRows.nth(0), projectRows.nth(1)),
+  ).toMatchObject({
     inlinePadding: 8,
     blockPadding: 6,
     height: 28,
@@ -781,26 +803,26 @@ test("project picker bounds long results and fits a short query", async ({
   const visibleResults = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
     .filter({ visible: true });
-  const shortResults = await visibleResults.count();
-  expect(shortResults).toBe(2);
+  await expect(visibleResults).toHaveCount(2);
   const firstResult = visibleResults.first();
   await expect(firstResult).toContainText("Picker 01");
   await expect(firstResult).toHaveAttribute("aria-selected", "true");
   await expect(firstResult).toHaveAttribute("data-selected", "true");
-  const selectedPaint = await firstResult.evaluate((el) => {
+  await expect.poll(() => firstResult.evaluate((el) => {
     const background = getComputedStyle(el).backgroundColor;
     const probe = document.createElement("div");
     probe.style.background = "var(--control-bg-hover)";
     document.body.appendChild(probe);
     const expected = getComputedStyle(probe).backgroundColor;
     probe.remove();
-    return { background, expected };
-  });
-  expect(selectedPaint.background).toBe(selectedPaint.expected);
-  const filteredPanel = await popover.boundingBox();
-  expect(filteredPanel).not.toBeNull();
-  expect(filteredPanel!.height).toBeLessThan(unfilteredHeight);
-  expect(Math.abs(filteredPanel!.height - 138)).toBeLessThanOrEqual(0.5);
+    return background === expected;
+  })).toBe(true);
+  await expect.poll(async () => {
+    const filteredPanel = await popover.boundingBox();
+    return !!filteredPanel
+      && filteredPanel.height < unfilteredHeight
+      && Math.abs(filteredPanel.height - 138) <= 0.5;
+  }).toBe(true);
 });
 
 test("workspace picker bounds many worktrees and fits a short query", async ({
@@ -829,14 +851,10 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
   await page.locator('[data-composer-footer-control="project"]').click();
   await page.getByRole("option", { name: "Workspace fit", exact: true }).click();
   const workspaceTrigger = page.locator('[data-composer-footer-control="workspace"]');
-  const workspaceChip = await measureFooterTrigger(workspaceTrigger);
-  expect(workspaceChip.iconOffsetX).toBe(0);
-  expect(workspaceChip.iconSlotWidth).toBe(workspaceChip.controlHeight);
-  expect(workspaceChip.iconSlotHeight).toBe(workspaceChip.controlHeight);
-  expect(workspaceChip.labelOffset).toBe(workspaceChip.gap);
-  expect(workspaceChip.labelColor).toBe(await readColorToken(page, "--fg-muted"));
-  expect(workspaceChip.labelWeight).toBe("400");
-  expect(workspaceChip.chevronColor).toBe(await readColorToken(page, "--fg-muted"));
+  const mutedColor = await readColorToken(page, "--fg-muted");
+  await expect.poll(async () =>
+    footerTriggerMatchesLayout(await measureFooterTrigger(workspaceTrigger), mutedColor),
+  ).toBe(true);
   await workspaceTrigger.click();
 
   const panel = page.getByTestId("composer-workspace-picker-panel");
@@ -846,37 +864,42 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
   await expect(popover).toBeVisible();
   await expect(search).toBeVisible();
 
-  const initial = await popover.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    const list = element.querySelector('[data-slot="command-list"]') as HTMLElement;
-    const input = element.querySelector('[data-slot="command-input-wrapper"]');
-    return {
-      panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      inside: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
-      searchVisible: !!input && input.getBoundingClientRect().height > 0,
-      listScrollHeight: list.scrollHeight,
-      listClientHeight: list.clientHeight,
-      listOverflowY: getComputedStyle(list).overflowY,
-    };
-  });
-  expect(initial.inside).toBe(true);
-  expect(initial.searchVisible).toBe(true);
-  expect(initial.listScrollHeight).toBeGreaterThan(initial.listClientHeight);
-  expect(["auto", "scroll"]).toContain(initial.listOverflowY);
-  expect(Math.abs(initial.panel.height - 334)).toBeLessThanOrEqual(0.5);
-  const workspaceTriggerBox = await page
-    .locator('[data-composer-footer-control="workspace"]')
-    .boundingBox();
-  const workspacePopoverBox = await popover.boundingBox();
-  const workspaceGap = workspaceTriggerBox!.y -
-    (workspacePopoverBox!.y + workspacePopoverBox!.height);
-  expect(Math.abs(workspaceGap)).toBeLessThanOrEqual(0.5);
+  await expect.poll(async () => {
+    const initial = await popover.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const list = element.querySelector('[data-slot="command-list"]') as HTMLElement;
+      const input = element.querySelector('[data-slot="command-input-wrapper"]');
+      return {
+        panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        inside: rect.left >= 0 && rect.top >= 0
+          && rect.right <= innerWidth && rect.bottom <= innerHeight,
+        searchVisible: !!input && input.getBoundingClientRect().height > 0,
+        listScrollHeight: list.scrollHeight,
+        listClientHeight: list.clientHeight,
+        listOverflowY: getComputedStyle(list).overflowY,
+      };
+    });
+    return initial.inside
+      && initial.searchVisible
+      && initial.listScrollHeight > initial.listClientHeight
+      && ["auto", "scroll"].includes(initial.listOverflowY)
+      && Math.abs(initial.panel.height - 334) <= 0.5;
+  }).toBe(true);
+  await expect.poll(async () => {
+    const [triggerBox, popoverBox] = await Promise.all([
+      workspaceTrigger.boundingBox(),
+      popover.boundingBox(),
+    ]);
+    if (!triggerBox || !popoverBox) return false;
+    const gap = triggerBox.y - (popoverBox.y + popoverBox.height);
+    return Math.abs(gap) <= 0.5;
+  }).toBe(true);
   const workspaceRows = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
     .filter({ hasText: /Workspace Overflow/ });
-  const workspaceRow = await measurePickerRow(workspaceRows.nth(0), workspaceRows.nth(1));
-  console.log(`[workspace picker row geometry] ${JSON.stringify(workspaceRow)}`);
-  expect(workspaceRow).toMatchObject({
+  await expect.poll(() =>
+    measurePickerRow(workspaceRows.nth(0), workspaceRows.nth(1)),
+  ).toMatchObject({
     inlinePadding: 8,
     blockPadding: 6,
     height: 28,
@@ -888,27 +911,25 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
   });
 
   await search.fill("Unique Workspace Signal");
-  const shortResults = await list
+  const shortResults = list.locator('[cmdk-item]:not([aria-disabled="true"])');
+  await expect.poll(async () => {
+    const count = await shortResults.count();
+    return count >= 1 && count <= 2;
+  }).toBe(true);
+  const matchingWorkspaces = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
-    .count();
-  const matchingWorkspaces = await list
-    .locator('[cmdk-item]:not([aria-disabled="true"])')
-    .filter({ hasText: "Unique Workspace Signal" })
-    .count();
-  expect(shortResults).toBeGreaterThanOrEqual(1);
-  expect(shortResults).toBeLessThanOrEqual(2);
-  expect(matchingWorkspaces).toBe(1);
+    .filter({ hasText: "Unique Workspace Signal" });
+  await expect(matchingWorkspaces).toHaveCount(1);
   const selectedWorkspace = list.locator('[cmdk-item][data-selected="true"]').first();
-  const selectedWorkspacePaint = await selectedWorkspace.evaluate((el) => {
+  await expect.poll(() => selectedWorkspace.evaluate((el) => {
     const background = getComputedStyle(el).backgroundColor;
     const probe = document.createElement("div");
     probe.style.background = "var(--control-bg-hover)";
     document.body.appendChild(probe);
     const expected = getComputedStyle(probe).backgroundColor;
     probe.remove();
-    return { background, expected };
-  });
-  expect(selectedWorkspacePaint.background).toBe(selectedWorkspacePaint.expected);
+    return background === expected;
+  })).toBe(true);
   await expect.poll(async () => (await popover.boundingBox())?.height ?? Infinity)
     .toBeLessThan(160);
 });
@@ -918,7 +939,7 @@ test("new chat hover wash matches the shared mesh button box", async ({ page }) 
   await enableAgent(page, "codex-acp");
   const newChat = page.getByTestId("new-chat-button");
   await newChat.hover();
-  const wash = await newChat.evaluate((el) => {
+  const readWash = () => newChat.evaluate((el) => {
     const r = el.getBoundingClientRect();
     const bcs = getComputedStyle(el, "::before");
     return {
@@ -931,27 +952,36 @@ test("new chat hover wash matches the shared mesh button box", async ({ page }) 
     };
   });
   // A single shape paints the wash; the button element itself stays transparent.
-  expect(wash.elementBg).toBe("rgba(0, 0, 0, 0)");
-  expect(wash.bg).not.toBe("rgba(0, 0, 0, 0)");
   // Main's wash ran 15→172 at 28px tall; cells stay on the x22/x46 mesh so the
   // icon keeps a visible gap to the wash's left edge.
-  expect(wash.left).toBeGreaterThanOrEqual(14.5);
-  expect(wash.left).toBeLessThanOrEqual(15.5);
-  expect(wash.right).toBeGreaterThanOrEqual(171.5);
-  expect(wash.right).toBeLessThanOrEqual(172.5);
-  expect(wash.bottom - wash.top).toBeGreaterThanOrEqual(27);
-  expect(wash.bottom - wash.top).toBeLessThanOrEqual(29);
+  await expect.poll(async () => {
+    const wash = await readWash();
+    const height = wash.bottom - wash.top;
+    return wash.elementBg === "rgba(0, 0, 0, 0)"
+      && wash.bg !== "rgba(0, 0, 0, 0)"
+      && wash.left >= 14.5
+      && wash.left <= 15.5
+      && wash.right >= 171.5
+      && wash.right <= 172.5
+      && height >= 27
+      && height <= 29;
+  }).toBe(true);
   const iconCell = page.locator('[data-sidebar-row="new-chat"] [data-sidebar-grid="icon"]');
   const labelCell = page.locator('[data-sidebar-row="new-chat"] [data-sidebar-grid="label"]');
-  const iconBox = await iconCell.boundingBox();
-  const labelBox = await labelCell.boundingBox();
-  expect(iconBox).not.toBeNull();
-  expect(labelBox).not.toBeNull();
-  expect(iconBox!.x).toBeGreaterThanOrEqual(21.5);
-  expect(iconBox!.x).toBeLessThanOrEqual(22.5);
-  expect(labelBox!.x).toBeGreaterThanOrEqual(45.5);
-  expect(labelBox!.x).toBeLessThanOrEqual(46.5);
-  expect(iconBox!.x - wash.left).toBeGreaterThanOrEqual(6.5);
+  await expect.poll(async () => {
+    const [wash, iconBox, labelBox] = await Promise.all([
+      readWash(),
+      iconCell.boundingBox(),
+      labelCell.boundingBox(),
+    ]);
+    return !!iconBox
+      && !!labelBox
+      && iconBox.x >= 21.5
+      && iconBox.x <= 22.5
+      && labelBox.x >= 45.5
+      && labelBox.x <= 46.5
+      && iconBox.x - wash.left >= 6.5;
+  }).toBe(true);
 });
 
 test("host picker panels draw a single framed surface", async ({ page }) => {
@@ -970,7 +1000,7 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
     ) => {
       await open();
       const command = panel.locator('[data-slot="command"], .grouped-command-menu').first();
-      const frame = await command.evaluate((el) => {
+      await expect.poll(() => command.evaluate((el) => {
         const cs = getComputedStyle(el);
         const shadowLayers = cs.boxShadow === "none"
           ? []
@@ -988,90 +1018,97 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
           border: parseFloat(cs.borderTopWidth),
           hasVisibleShadow,
         };
-      });
+      })).toEqual({ border: 0, hasVisibleShadow: false });
       // The dropdown shell is the only framed surface; the nested command keeps
       // no visible border or shadow of its own.
-      expect(frame.border).toBe(0);
-      expect(frame.hasVisibleShadow).toBe(false);
       // Enabled items must not render in disabled ink. cmdk emits
       // `data-disabled="false"` on enabled items, which a bare `[data-disabled]`
       // presence selector would still paint with `--fg-disabled`.
-      const ink = await panel.evaluate((el) => {
-        const disabledInk = getComputedStyle(el).getPropertyValue("--fg-disabled").trim()
-          || getComputedStyle(document.documentElement).getPropertyValue("--fg-disabled").trim();
-        const enabled = Array.from(
-          el.querySelectorAll('[cmdk-item][data-disabled="false"], [data-slot="command-item"][data-disabled="false"]'),
-        ).slice(0, 8);
-        return {
-          disabledInk,
-          colors: enabled.map((n) => getComputedStyle(n).color),
-        };
-      });
-      // token may be a hex/oklch keyword; compare rgb of a probe element instead
-      const probe = await page.evaluate((ink) => {
-        const probe = document.createElement("div");
-        probe.style.color = ink;
-        document.body.appendChild(probe);
-        const rgb = getComputedStyle(probe).color;
-        probe.remove();
-        return rgb;
-      }, ink.disabledInk);
-      for (const color of ink.colors) {
-        expect(color).not.toBe(probe);
-      }
+      await expect.poll(async () => {
+        const ink = await panel.evaluate((el) => {
+          const disabledInk = getComputedStyle(el).getPropertyValue("--fg-disabled").trim()
+            || getComputedStyle(document.documentElement)
+              .getPropertyValue("--fg-disabled").trim();
+          const enabled = Array.from(
+            el.querySelectorAll('[cmdk-item][data-disabled="false"], [data-slot="command-item"][data-disabled="false"]'),
+          ).slice(0, 8);
+          return {
+            disabledInk,
+            colors: enabled.map((n) => getComputedStyle(n).color),
+          };
+        });
+        const disabledColor = await page.evaluate((ink) => {
+          const probe = document.createElement("div");
+          probe.style.color = ink;
+          document.body.appendChild(probe);
+          const rgb = getComputedStyle(probe).color;
+          probe.remove();
+          return rgb;
+        }, ink.disabledInk);
+        return ink.colors.every((color) => color !== disabledColor);
+      }).toBe(true);
       const shell = page
         .locator('[data-slot="dropdown-menu-content"]')
         .filter({ has: panel });
-      const shellBox = await shell.boundingBox();
-      expect(shellBox).not.toBeNull();
       // Rows keep main's ~5px inset from the shell edge.
       const firstRow = panel.locator('[cmdk-item]').first();
-      const rowInset = await firstRow.evaluate((el) => {
-        const shellRect = el
-          .closest('[data-slot="dropdown-menu-content"]')!
-          .getBoundingClientRect();
-        return el.getBoundingClientRect().left - shellRect.left;
-      });
-      expect(rowInset).toBeGreaterThanOrEqual(4);
-      expect(rowInset).toBeLessThanOrEqual(6.5);
-      // The divider spans the shell's content box edge to edge.
       const separator = panel.locator('[data-slot="command-separator"]').first();
-      const sepBox = await separator.boundingBox();
-      const shellPads = await shell.evaluate((el) => {
-        const style = getComputedStyle(el);
-        return {
-          left: parseFloat(style.paddingLeft),
-          right: parseFloat(style.paddingRight),
-          border: parseFloat(style.borderLeftWidth),
-        };
-      });
-      const innerWidth =
-        shellBox!.width - shellPads.left - shellPads.right - shellPads.border * 2;
-      expect(sepBox).not.toBeNull();
-      expect(sepBox!.width).toBeGreaterThanOrEqual(innerWidth - 2);
-      // Account/manage rows render like main's plain DropdownMenuItems: the
-      // label sits at the row's padding inset (no icon-track indent) at the
-      // default item size (14px), not the grid rows' 12px label-column offset.
       const plainRows = panel.locator(".grouped-command-plain-item");
-      expect(await plainRows.count()).toBeGreaterThanOrEqual(1);
-      for (let i = 0; i < (await plainRows.count()); i++) {
-        const metrics = await plainRows.nth(i).evaluate((el) => {
+      await expect.poll(async () => {
+        const shellBox = await shell.boundingBox();
+        if (!shellBox) return false;
+        const rowInset = await firstRow.evaluate((el) => {
           const shellRect = el
             .closest('[data-slot="dropdown-menu-content"]')!
             .getBoundingClientRect();
-          const textEl = Array.from(el.querySelectorAll("span,div")).find(
-            (c) => c.textContent?.trim() && c.children.length === 0,
-          );
-          return {
-            labelInset: (textEl ?? el).getBoundingClientRect().left - shellRect.left,
-            fontSize: parseFloat(getComputedStyle(textEl ?? el).fontSize),
-          };
+          return el.getBoundingClientRect().left - shellRect.left;
         });
-        expect(metrics.labelInset).toBeGreaterThanOrEqual(10);
-        expect(metrics.labelInset).toBeLessThanOrEqual(16);
-        expect(metrics.fontSize).toBeGreaterThanOrEqual(13.5);
-        expect(metrics.fontSize).toBeLessThanOrEqual(14.5);
-      }
+        const [sepBox, shellPads] = await Promise.all([
+          separator.boundingBox(),
+          shell.evaluate((el) => {
+            const style = getComputedStyle(el);
+            return {
+              left: parseFloat(style.paddingLeft),
+              right: parseFloat(style.paddingRight),
+              border: parseFloat(style.borderLeftWidth),
+            };
+          }),
+        ]);
+        if (!sepBox) return false;
+        const innerWidth =
+          shellBox.width - shellPads.left - shellPads.right - shellPads.border * 2;
+        // The divider spans the shell's content box edge to edge.
+        const dividerFits = sepBox.width >= innerWidth - 2;
+        const plainCount = await plainRows.count();
+        if (plainCount < 1) return false;
+        // Account/manage rows render like main's plain DropdownMenuItems: the
+        // label sits at the row's padding inset (no icon-track indent) at the
+        // default item size (14px), not the grid rows' 12px label-column offset.
+        const plainMetrics = await Promise.all(
+          Array.from({ length: plainCount }, (_, index) =>
+            plainRows.nth(index).evaluate((el) => {
+              const shellRect = el
+                .closest('[data-slot="dropdown-menu-content"]')!
+                .getBoundingClientRect();
+              const textEl = Array.from(el.querySelectorAll("span,div")).find(
+                (c) => c.textContent?.trim() && c.children.length === 0,
+              );
+              return {
+                labelInset: (textEl ?? el).getBoundingClientRect().left - shellRect.left,
+                fontSize: parseFloat(getComputedStyle(textEl ?? el).fontSize),
+              };
+            }),
+          ),
+        );
+        return rowInset >= 4
+          && rowInset <= 6.5
+          && dividerFits
+          && plainMetrics.every((metrics) =>
+            metrics.labelInset >= 10
+              && metrics.labelInset <= 16
+              && metrics.fontSize >= 13.5
+              && metrics.fontSize <= 14.5);
+      }).toBe(true);
       await page.keyboard.press("Escape");
       await expect(shell).toBeHidden();
     };
@@ -1111,15 +1148,11 @@ test("composer footer menus open upward inside a short window", async ({ page })
       label: string,
     ) => {
       await expect(content).toBeVisible({ timeout: 10_000 });
-      const box = await content.boundingBox();
-      expect(box, `${label} bounds`).not.toBeNull();
-      expect(box!.y, `${label} top inside window`).toBeGreaterThanOrEqual(0);
-      expect(
-        box!.y + box!.height,
-        `${label} bottom inside window`,
-      ).toBeLessThanOrEqual(viewportH);
-      const side = await content.getAttribute("data-side");
-      expect(side, `${label} opens upward`).toBe("top");
+      await expect.poll(async () => {
+        const box = await content.boundingBox();
+        return !!box && box.y >= 0 && box.y + box.height <= viewportH;
+      }, { message: `${label} bounds` }).toBe(true);
+      await expect(content, `${label} opens upward`).toHaveAttribute("data-side", "top");
     };
 
     for (const theme of ["light", "dark"] as const) {
@@ -1137,27 +1170,16 @@ test("composer footer menus open upward inside a short window", async ({ page })
           '[data-slot="dropdown-menu-content"], [data-slot="popover-content"]',
         ).last();
         await expectInsideWindow(content, `footer ${control} menu`);
-        const openStyle = await trigger.evaluate((el) => {
-          const style = getComputedStyle(el);
-        return {
-          outlineStyle: style.outlineStyle,
-          boxShadow: style.boxShadow,
-        };
-      });
-        expect(openStyle.outlineStyle).toBe("none");
-        expect(openStyle.boxShadow).toBe("none");
+        await expect(trigger).toHaveCSS("outline-style", "none");
+        await expect(trigger).toHaveCSS("box-shadow", "none");
         await page.keyboard.press("Escape");
         await expect(content).toBeHidden();
       }
 
       const runTrigger = page.locator("[data-composer-run-trigger]");
       await runTrigger.click();
-      const runStyle = await runTrigger.evaluate((el) => {
-        const style = getComputedStyle(el);
-        return { outlineStyle: style.outlineStyle, boxShadow: style.boxShadow };
-      });
-      expect(runStyle.outlineStyle).toBe("none");
-      expect(runStyle.boxShadow).toBe("none");
+      await expect(runTrigger).toHaveCSS("outline-style", "none");
+      await expect(runTrigger).toHaveCSS("box-shadow", "none");
       const runMenu = page
         .locator('[data-slot="dropdown-menu-content"]')
         .first();
@@ -1167,21 +1189,22 @@ test("composer footer menus open upward inside a short window", async ({ page })
       await subTrigger.hover();
       const subMenu = page.locator('[data-slot="dropdown-menu-sub-content"]').first();
       await expect(subMenu).toBeVisible({ timeout: 10_000 });
-      const [menuBox, subBox] = await Promise.all([
-        runMenu.boundingBox(),
-        subMenu.boundingBox(),
-      ]);
-      expect(subBox).not.toBeNull();
-      expect(subBox!.y + subBox!.height).toBeLessThanOrEqual(viewportH);
-      expect(
-        Math.abs(menuBox!.y + menuBox!.height - (subBox!.y + subBox!.height)),
-      ).toBeLessThanOrEqual(3);
-      const subStyles = await subMenu.evaluate((el) => {
+      await expect.poll(async () => {
+        const [menuBox, subBox] = await Promise.all([
+          runMenu.boundingBox(),
+          subMenu.boundingBox(),
+        ]);
+        return !!menuBox
+          && !!subBox
+          && subBox.y + subBox.height <= viewportH
+          && Math.abs(
+            menuBox.y + menuBox.height - (subBox.y + subBox.height),
+          ) <= 3;
+      }).toBe(true);
+      await expect.poll(() => subMenu.evaluate((el) => {
         const cs = getComputedStyle(el);
-        return { overflow: cs.overflowY, maxHeight: cs.maxHeight };
-      });
-      expect(subStyles.overflow).toMatch(/hidden|auto/);
-      expect(subStyles.maxHeight).not.toBe("none");
+        return /hidden|auto/.test(cs.overflowY) && cs.maxHeight !== "none";
+      })).toBe(true);
       await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
 
@@ -1196,15 +1219,8 @@ test("composer footer menus open upward inside a short window", async ({ page })
         }
         await chip.click();
         await expect(chip).toHaveAttribute("data-state", "open");
-        const style = await chip.evaluate((el) => {
-          const computed = getComputedStyle(el);
-          return {
-            outlineStyle: computed.outlineStyle,
-            boxShadow: computed.boxShadow,
-          };
-        });
-        expect(style.outlineStyle).toBe("none");
-        expect(style.boxShadow).toBe("none");
+        await expect(chip).toHaveCSS("outline-style", "none");
+        await expect(chip).toHaveCSS("box-shadow", "none");
         await page.keyboard.press("Escape");
         await page.keyboard.press("Escape");
       }
