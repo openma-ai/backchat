@@ -2,8 +2,8 @@ import { createServer, type ServerResponse } from "node:http";
 import { mkdir } from "node:fs/promises";
 import { expect, test, type Locator } from "./fixtures";
 
-async function sidebarGridIconLeft(row: Locator) {
-  return row.locator('[data-sidebar-grid="icon"]').evaluate((cell) => cell.getBoundingClientRect().left);
+async function sidebarGridLabelCellLeft(cell: Locator) {
+  return cell.evaluate((element) => element.getBoundingClientRect().left);
 }
 
 test("tenant groups start collapsed above local and route new and continued sessions to their owner", async ({ app, page }) => {
@@ -49,13 +49,19 @@ test("tenant groups start collapsed above local and route new and continued sess
     const beta = nav.getByRole("button", { name: "Beta", exact: true });
     await expect(alpha).toHaveAttribute("aria-expanded", "false");
     await expect(beta).toHaveAttribute("aria-expanded", "false");
-    const hostRow = page.locator(".sidebar-host-chrome .sidebar-grid-row").first();
     const localRuntimeRow = page.getByTestId("sidebar-local-runtime-row");
     await expect(localRuntimeRow).toHaveClass(/sidebar-grid-row/);
     await expect(localRuntimeRow).toBeVisible();
-    expect(Math.abs(await sidebarGridIconLeft(hostRow) - await sidebarGridIconLeft(localRuntimeRow))).toBeLessThanOrEqual(
-      0.75,
-    );
+    const localLabelCell = localRuntimeRow.locator('[data-sidebar-grid="label"]');
+    const alphaLabelCell = alpha.locator('xpath=ancestor::*[@data-sidebar-grid="label"][1]');
+    const betaLabelCell = beta.locator('xpath=ancestor::*[@data-sidebar-grid="label"][1]');
+    const [localLabelLeft, alphaLabelLeft, betaLabelLeft] = await Promise.all([
+      sidebarGridLabelCellLeft(localLabelCell),
+      sidebarGridLabelCellLeft(alphaLabelCell),
+      sidebarGridLabelCellLeft(betaLabelCell),
+    ]);
+    expect(Math.abs(localLabelLeft - alphaLabelLeft)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(localLabelLeft - betaLabelLeft)).toBeLessThanOrEqual(0.75);
     expect(
       await nav
         .locator("section.sidebar-section .sidebar-section-header button[aria-expanded]")
