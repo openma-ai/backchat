@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ci = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
+const heavy = readFileSync(resolve(".github/workflows/ci-heavy.yml"), "utf8");
 const dmg = readFileSync(resolve(".github/workflows/build-dmg.yml"), "utf8");
 const codeql = readFileSync(resolve(".github/workflows/codeql.yml"), "utf8");
 const dependabot = readFileSync(resolve(".github/dependabot.yml"), "utf8");
@@ -21,13 +22,42 @@ describe("github ci", () => {
     expect(dmg).not.toMatch(/pnpm run test(?:\s|$)/);
   });
 
-  it("runs typecheck, the curated lane, and fast Electron e2e on pull requests", () => {
+  it("runs typecheck, the curated lane, and script tests on pull requests", () => {
     expect(ci).toMatch(/^\s*pull_request:/m);
     expect(ci).toContain("pnpm run typecheck");
     expect(ci).toContain("pnpm run test:ci");
-    expect(ci).toContain("pnpm run test:e2e:fast");
     expect(ci).toContain("node --test scripts/*.test.mjs");
+    expect(ci).not.toContain("test:e2e");
     expect(setup).toContain("pnpm install --frozen-lockfile");
+  });
+
+  it("gates pull request checks on code paths with dorny/paths-filter", () => {
+    for (const workflow of [ci, heavy]) {
+      expect(workflow).toContain("uses: dorny/paths-filter@v4");
+      expect(workflow).toContain("predicate-quantifier: 'some-with-excludes'");
+      expect(workflow).toContain("needs.changes.outputs.code == 'true'");
+    }
+  });
+
+  it("runs the macOS Electron e2e suites post-merge, on the full-ci label, or on dispatch", () => {
+    expect(heavy).toMatch(/^\s*pull_request:/m);
+    expect(heavy).toContain("labeled");
+    expect(heavy).toContain("workflow_dispatch");
+    expect(heavy).toMatch(/^\s*push:/m);
+    expect(heavy).toContain("full-ci");
+    expect(heavy).toContain("pnpm run test:e2e:fast");
+    expect(heavy).toContain("pnpm run test:e2e:openma");
+    expect(heavy).toContain("runs-on: macos-latest");
+    expect(heavy).toContain("contains(github.event.pull_request.labels.*.name, 'full-ci')");
+  });
+
+  it("opens or updates a ci-failure issue when a post-merge run fails", () => {
+    expect(heavy).toContain("issues: write");
+    expect(heavy).toContain("github.event_name != 'pull_request'");
+    expect(heavy).toContain("gh issue create");
+    expect(heavy).toContain("gh issue comment");
+    expect(heavy).toContain("ci-failure");
+    expect(heavy).toContain("actions/runs/${{ github.run_id }}");
   });
 
   it("uses official GitHub and pnpm setup actions", () => {
@@ -37,7 +67,8 @@ describe("github ci", () => {
     expect(setup).toMatch(/node-version:\s*['"]?24\b/);
     expect(ci).toContain("uses: actions/checkout@v7");
     expect(ci).toContain("uses: actions/dependency-review-action@v5");
-    expect(ci).toContain("uses: actions/upload-artifact@v7");
+    expect(heavy).toContain("uses: actions/checkout@v7");
+    expect(heavy).toContain("uses: actions/upload-artifact@v7");
     expect(ci).not.toContain("allow-unsafe-pr-checkout");
     expect(dmg).toContain("uses: actions/checkout@v7");
     expect(dmg).toContain("uses: actions/upload-artifact@v7");
