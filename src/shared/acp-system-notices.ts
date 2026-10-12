@@ -80,8 +80,5 @@ export function extractAcpSystemNotice(
       return { message: split.notice, tone: "warning" };
     }
   }
-  if (piLevel !== "warning") return null;
-  return typeof text === "string" && text.trim().length > 0
-    ? { message: text.trim(), tone: "warning" }
-    : null;
+  return null;
 }
