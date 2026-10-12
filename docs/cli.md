@@ -353,3 +353,7 @@ The control server is a local capability, not a network service.
 - Requests are not separately authenticated. Any process of the same user can
   call the API, the same way it can drive the app through the GUI. Root can
   bypass file permissions; that is outside this boundary.
+
+## CI path-filter check
+
+This docs-only edit must not run code checks.
