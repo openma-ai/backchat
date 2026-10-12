@@ -70,7 +70,7 @@ describe("logRendererCrash", () => {
     await flushAppLog();
 
     const [entry] = readLog();
-    expect(entry.errorId).toMatch(/^[0-9a-f]{8}$/);
+    expect(entry?.errorId).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it("reuses newCrashErrorId format for consistency with the crash page", () => {
@@ -119,10 +119,10 @@ describe("logRendererCrash", () => {
     await flushAppLog();
 
     const [entry] = readLog();
-    expect(entry.message).toBe("request failed: Bearer [redacted]");
-    expect(entry.stack).not.toContain("abc123");
-    expect(entry.url).not.toContain("tok-secret");
-    expect(entry.url).toContain("[redacted]");
+    expect(entry?.message).toBe("request failed: Bearer [redacted]");
+    expect(entry?.stack).not.toContain("abc123");
+    expect(entry?.url).not.toContain("tok-secret");
+    expect(entry?.url).toContain("[redacted]");
   });
 
   it("merges the cached route/session context when the report omits it", async () => {
@@ -163,9 +163,9 @@ describe("logRendererCrash", () => {
     await flushAppLog();
 
     const [entry] = readLog();
-    expect(entry.route).toBe("/chat/sess-1");
-    expect(entry.session_id).toBe("sess-1");
-    expect(entry.agent_id).toBeUndefined();
+    expect(entry?.route).toBe("/chat/sess-1");
+    expect(entry?.session_id).toBe("sess-1");
+    expect(entry?.agent_id).toBeUndefined();
   });
 
   it("drops the cached context once the webContents is gone", async () => {
@@ -175,7 +175,7 @@ describe("logRendererCrash", () => {
     await flushAppLog();
 
     const [entry] = readLog();
-    expect(entry.route).toBeUndefined();
+    expect(entry?.route).toBeUndefined();
   });
 
   it("survives a malformed IPC payload without throwing", async () => {
@@ -217,7 +217,7 @@ describe("logRendererConsoleError", () => {
         route: "/chat/sess-3",
       }),
     );
-    expect(entry.message).toBe("Uncaught TypeError: token=[redacted] is not a function");
+    expect(entry?.message).toBe("Uncaught TypeError: token=[redacted] is not a function");
   });
 
   it("omits optional fields that are absent", async () => {
@@ -228,8 +228,8 @@ describe("logRendererConsoleError", () => {
     expect(entry).toEqual(
       expect.objectContaining({ message: "plain error" }),
     );
-    expect(entry.source_id).toBeUndefined();
-    expect(entry.line).toBeUndefined();
+    expect(entry?.source_id).toBeUndefined();
+    expect(entry?.line).toBeUndefined();
   });
 });
 
@@ -261,7 +261,7 @@ describe("logChildProcessGone", () => {
     await flushAppLog();
 
     const [entry] = readLog();
-    expect(entry.process_type).toBe("unknown");
+    expect(entry?.process_type).toBe("unknown");
   });
 
   it("writes a minimal entry when only the type is known", async () => {

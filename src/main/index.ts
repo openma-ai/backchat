@@ -394,10 +394,9 @@ if (!gotLock) {
   registerBackchatProtocolClient();
 
   // GPU/utility/helper process exits — distinct from the renderer's own
-  // process, so they land under their own event name. 'Tab' is the
-  // renderer: render-process-gone already covers it.
+  // process, so they land under their own event name. Renderer exits come
+  // through render-process-gone instead and are logged there.
   app.on("child-process-gone", (_event, details) => {
-    if (details.type === "Tab") return;
     logChildProcessGone({
       type: details.type,
       reason: details.reason,
