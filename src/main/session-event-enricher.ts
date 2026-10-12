@@ -2,6 +2,7 @@ import type { SessionEventOut } from "../shared/session-events.js";
 import { attachOpenMAEvent } from "../shared/openma-event.js";
 import { rememberedPermissionDecision } from "./permission-policy.js";
 import { toolCallOutcome } from "../shared/tool-outcome.js";
+import { logAppEvent } from "./app-log.js";
 
 export function hasOpenMAEventSchema(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -136,6 +137,20 @@ export function createSessionEventEnricher(
           harness: harnessBySessionId.get(message.session_id),
           adapter: "acp",
         });
+    if (
+      message.type === "session.event"
+      && !message.openma_event
+      && attached.openma_event?.type === "system.notice"
+    ) {
+      const data = attached.openma_event.data as { message: string };
+      logAppEvent("acp.system_notice", {
+        session_id: message.session_id,
+        agent_id: harnessBySessionId.get(message.session_id),
+        turn_id: message.turn_id ?? "",
+        out_of_turn: !message.turn_id,
+        message: data.message,
+      });
+    }
     const sequenced = attached.openma_event
       ? {
           ...attached,

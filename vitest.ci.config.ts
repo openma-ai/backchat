@@ -103,5 +103,11 @@ export default defineConfig({
       "**/pairchat-gui-contract.test.ts",
       "**/session-level-gui-contract.test.ts",
     ],
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "lcov"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["**/*.test.{ts,tsx}", "**/*.d.ts"],
+    },
   },
 });

@@ -30,7 +30,10 @@ describe("ACP harness system notices", () => {
   it("classifies the diagnostic envelope out of turn or in-turn for Codex", () => {
     const event = warningEvent(`${diagnosticWarning}\n\n`);
 
-    expect(extractAcpSystemNotice(event, { outOfTurn: true })).toEqual({
+    expect(extractAcpSystemNotice(event, {
+      outOfTurn: true,
+      harness: "codex-acp",
+    })).toEqual({
       message: diagnosticWarning,
       tone: "warning",
     });
@@ -83,26 +86,27 @@ describe("ACP harness system notices", () => {
     expect(extractAcpSystemNotice(event, { harness: "claude-acp" })).toBeNull();
   });
 
-  it("classifies an out-of-turn warning without Codex provenance", () => {
+  it("does not classify an out-of-turn warning without Codex provenance", () => {
     expect(extractAcpSystemNotice(warningEvent(diagnosticWarning), {
       harness: "claude-acp",
       outOfTurn: true,
-    })).toEqual({
-      message: diagnosticWarning,
-      tone: "warning",
-    });
+    })).toBeNull();
     expect(splitAcpSystemNoticeText(
       `${diagnosticWarning}\n\nThe project is ready.`,
       { harness: "claude-acp", outOfTurn: true },
     )).toEqual({
-      notice: diagnosticWarning,
-      transcript: "The project is ready.",
+      transcript: `${diagnosticWarning}\n\nThe project is ready.`,
     });
   });
 
   it.each(["final_answer", "commentary"] as const)(
     "keeps phase-tagged %s text as model output",
     (phase) => {
+      const text = `${skillWarning}\n\n`;
+      expect(splitAcpSystemNoticeText(text, {
+        harness: "codex-acp",
+        phase,
+      })).toEqual({ transcript: text });
       expect(extractAcpSystemNotice(warningEvent(`${skillWarning}\n\n`, {
         codex: { phase },
       }), { harness: "codex-acp" })).toBeNull();
@@ -123,10 +127,18 @@ describe("ACP harness system notices", () => {
   it("classifies an unterminated warning only when the event is out of turn", () => {
     expect(splitAcpSystemNoticeText(diagnosticWarning, {
       outOfTurn: true,
+      harness: "codex-acp",
     })).toEqual({
       notice: diagnosticWarning,
       transcript: "",
     });
+  });
+
+  it("uses the registered Codex profile rather than a loose harness-name match", () => {
+    const text = `${diagnosticWarning}\n\n`;
+    expect(splitAcpSystemNoticeText(text, {
+      harness: "custom-codex-agent",
+    })).toEqual({ transcript: text });
   });
 
   it("does not classify a warning mentioned after the chunk prefix", () => {
@@ -144,6 +156,17 @@ describe("ACP harness system notices", () => {
     expect(extractAcpSystemNotice(warningEvent("Pi warning", {
       piAcp: { notify: { level: "warning" } },
     }))).toEqual({ message: "Pi warning", tone: "warning" });
+    expect(extractAcpSystemNotice(warningEvent("Pi error", {
+      piAcp: { notify: { level: "error" } },
+    }))).toMatchObject({ message: "Pi error" });
+    expect(extractAcpSystemNotice(warningEvent("Pi warning", {
+      codex: { phase: "commentary" },
+      piAcp: { notify: { level: "warning" } },
+    }), { harness: "codex-acp" })).toBeNull();
+    expect(extractAcpSystemNotice({
+      sessionUpdate: "turn_complete",
+      _meta: { piAcp: { notify: { level: "warning" } } },
+    })).toBeNull();
   });
 
   it("projects an empty-turn Codex warning as a canonical system notice", () => {

@@ -87,6 +87,23 @@ describe("SessionStore Codex harness notices", () => {
     },
   );
 
+  it("renders an out-of-turn warning from a non-Codex agent as transcript", () => {
+    const sessionId = "sess-live-claude-out-of-turn-warning";
+    const store = setupCompletedTurn(sessionId, "claude-acp");
+
+    store.apply({
+      type: "session.event",
+      session_id: sessionId,
+      turn_id: "",
+      event: diagnosticEvent(),
+    });
+
+    expect(store.get(sessionId)?.notice).toBeUndefined();
+    expect(store.turnsFor(sessionId).some((turn) =>
+      turn.assistantText.includes(diagnosticWarning)
+    )).toBe(true);
+  });
+
   it("splits an in-turn skill warning and keeps the following answer", () => {
     const sessionId = "sess-live-skill-warning";
     const store = setupCompletedTurn(sessionId);
@@ -345,6 +362,35 @@ describe("SessionStore Codex harness notices", () => {
       tone: "warning",
     });
     expect(store.turnsFor(sessionId)[0]?.assistantText).toBe("");
+  });
+
+  it("replays phase-tagged legacy raw text as assistant output", () => {
+    const sessionId = "sess-replay-legacy-raw-final-warning";
+    const store = new SessionStore();
+    store.registerStarting(sessionId, "codex-acp", "Codex");
+    const text = "Warning: keep a backup.\n\n";
+
+    store.replayHistory(sessionId, [
+      {
+        seq: 1,
+        type: "user_prompt",
+        data: JSON.stringify({ text: "Continue" }),
+        ts: 1_000,
+      },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify({
+          sessionUpdate: "agent_message_chunk",
+          _meta: { codex: { phase: "final_answer" } },
+          content: { type: "text", text },
+        }),
+        ts: 1_001,
+      },
+    ]);
+
+    expect(store.get(sessionId)?.notice).toBeUndefined();
+    expect(store.turnsFor(sessionId)[0]?.assistantText).toBe(text);
   });
 
   it("replays an in-turn Codex warning-like reply as assistant text", () => {

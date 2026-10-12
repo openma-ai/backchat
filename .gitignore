@@ -7,7 +7,6 @@ out
 !.env.example
 *.log
 .vite
-/coverage/
 .tsbuildinfo
 release/
 /build/bundled-npm-runtime.asar
@@ -18,3 +17,5 @@ playwright-report/
 
 # Generated tenant sidebar screenshots from Electron tests.
 /artifacts/tenant-sidebar/
+
+coverage/

@@ -40,15 +40,14 @@ jobs:
         run: pnpm run typecheck
 
       - name: Run curated contract and release-regression tests
-        run: >-
-          pnpm run test:ci --coverage --coverage.provider=v8
-          --coverage.reporter=lcov --coverage.reporter=text-summary
+        run: pnpm run test:ci:coverage
 
       - name: Upload coverage to Codecov
-        if: always()
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
+          flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 

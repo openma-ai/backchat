@@ -1989,66 +1989,50 @@ describe("SessionManager prompt queue", () => {
     }
   });
 
-  it("logs out-of-turn ACP warning chunks as system notices", async () => {
-    const root = await mkdtemp(join(tmpdir(), "backchat-system-notice-log-"));
-    configureAppLog(root);
-    try {
-      const warning =
-        "Warning: Codex couldn't save diagnostic logs to its local database. " +
-        "Use /feedback with logs included before closing Codex, or run " +
-        "`codex doctor` for diagnostics.";
-      const fake = createControllableAcpSession({
-        pendingEvents: [{
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: `${warning}\n\n` },
-        }],
-        promptEvents: [{
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: `${warning}\n\n` },
-        }],
-      });
-      mocks.runtimeStart.mockReset();
-      mocks.runtimeStart.mockResolvedValueOnce(fake.session);
-      const manager = new SessionManager({
-        send: vi.fn(),
-        resolveMcpServers: () => [],
-        buildCallbacks: () => ({}),
-        resolveDefaults: () => ({}),
-        resolveAgentOverride: () => undefined,
-      });
+  it("reports Codex harness notice routes in development mode", async () => {
+    const warning =
+      "Warning: Codex couldn't save diagnostic logs to its local database. " +
+      "Use /feedback with logs included before closing Codex, or run " +
+      "`codex doctor` for diagnostics.";
+    const fake = createControllableAcpSession({
+      promptEvents: [{
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: `${warning}\n\n` },
+      }],
+    });
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    const stderrWrite = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
+    try {
       await manager.start({
-        session_id: "sess-system-notice-log",
+        session_id: "sess-codex-notice-route",
         agent_id: "codex-acp",
         cwd: "/repo",
       });
       vi.stubEnv("NODE_ENV", "development");
       const prompting = manager.prompt({
-        session_id: "sess-system-notice-log",
-        turn_id: "turn-system-notice-log",
+        session_id: "sess-codex-notice-route",
+        turn_id: "turn-codex-notice-route",
         text: "Continue",
       });
       await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
       fake.releaseNext();
       await prompting;
-      await flushAppLog();
 
-      const raw = await readFile(join(root, "logs", "backchat.log"), "utf8");
-      const entries = raw.trim().split("\n").filter(Boolean).map((line) =>
-        JSON.parse(line) as Record<string, unknown>
+      expect(stderrWrite).toHaveBeenCalledWith(
+        expect.stringContaining("route=composer_notice"),
       );
-      expect(entries).toContainEqual(expect.objectContaining({
-        event: "acp.system_notice",
-        session_id: "sess-system-notice-log",
-        agent_id: "codex-acp",
-        turn_id: "",
-        out_of_turn: true,
-        message: warning,
-      }));
     } finally {
       vi.unstubAllEnvs();
-      configureAppLog(null);
-      await rm(root, { recursive: true, force: true });
+      stderrWrite.mockRestore();
     }
   });
 

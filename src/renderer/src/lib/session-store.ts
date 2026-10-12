@@ -3609,14 +3609,11 @@ export class SessionStore {
         // Turn event list. The reducer already understands the canonical
         // envelope, so replay does not need to reconstruct an ACP payload.
         if (parsedCanonical.kind === "text") {
-          const split =
-            parsedCanonical.phase === "final_answer"
-              || parsedCanonical.phase === "commentary"
-              ? { transcript: parsedCanonical.text }
-              : splitAcpSystemNoticeText(parsedCanonical.text, {
-                  outOfTurn: !canonical.turn_id,
-                  harness: this.#sessions.get(sessionId)?.agent_id,
-                });
+          const split = splitAcpSystemNoticeText(parsedCanonical.text, {
+            outOfTurn: !canonical.turn_id,
+            harness: this.#sessions.get(sessionId)?.agent_id,
+            phase: parsedCanonical.phase,
+          });
           if (split.notice) {
             notify(split.notice);
           }
@@ -3732,6 +3729,7 @@ export class SessionStore {
           if (parsed.kind === "text") {
             const split = splitAcpSystemNoticeText(parsed.text, {
               harness: this.#sessions.get(sessionId)?.agent_id,
+              phase: parsed.phase,
             });
             if (split.notice) {
               notify(split.notice);
@@ -3995,14 +3993,11 @@ export class SessionStore {
         const inner = sessionUpdateInner(ev.event);
         const updateType = sessionUpdateType(ev.event);
         let parsed = parseAcpEvent(semanticEvent);
-        if (
-          parsed.kind === "text"
-          && parsed.phase !== "final_answer"
-          && parsed.phase !== "commentary"
-        ) {
+        if (parsed.kind === "text") {
           const split = splitAcpSystemNoticeText(parsed.text, {
             outOfTurn: !ev.turn_id,
             harness: this.#sessions.get(ev.session_id)?.agent_id,
+            phase: parsed.phase,
           });
           if (split.notice) {
             this.#showNotice(ev.session_id, split.notice, "warning");
