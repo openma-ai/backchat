@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - main
+      - devin/1791789380-ci-heavy-fail-test
   pull_request:
     types:
       - opened
@@ -77,6 +78,9 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
+      - name: Deliberate failure for issue-path test
+        run: exit 1
+
       - name: Check out source
         uses: actions/checkout@v7
 
