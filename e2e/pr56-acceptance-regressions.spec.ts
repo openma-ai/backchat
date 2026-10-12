@@ -54,42 +54,32 @@ async function measurePickerRow(row: Locator, nextRow: Locator) {
 
 async function measureFooterTrigger(trigger: Locator) {
   return trigger.evaluate((element) => {
-    const icon = element.querySelector("[data-control-icon]");
-    const svg = icon?.querySelector("svg");
+    const iconSlot = element.querySelector("[data-control-icon]");
     const label = Array.from(element.children).find(
       (child) => !child.hasAttribute("data-control-icon") &&
         !child.hasAttribute("data-control-chevron"),
     );
-    const range = document.createRange();
-    if (label) range.selectNodeContents(label);
     const rect = element.getBoundingClientRect();
-    const iconRect = icon?.getBoundingClientRect();
-    const textRect = range.getBoundingClientRect();
+    const iconSlotRect = iconSlot?.getBoundingClientRect();
     const labelRect = label?.getBoundingClientRect();
-    const svgRect = svg?.getBoundingClientRect();
-    const glyph = svg?.getBBox();
-    const matrix = svg?.getScreenCTM();
-    const scale = svg && svgRect ? svgRect.width / svg.viewBox.baseVal.width : 0;
-    const visualRight =
-      glyph && matrix && svg
-        ? new DOMPoint(glyph.x + glyph.width, glyph.y).matrixTransform(matrix).x +
-          ((parseFloat(getComputedStyle(svg).strokeWidth) || 0) * scale) / 2
-        : null;
     const style = getComputedStyle(element);
     const labelStyle = label ? getComputedStyle(label) : style;
     const chevron = element.querySelector("[data-control-chevron]");
     return {
       x: rect.x,
       right: rect.right,
-      width: rect.width,
-      labelX: labelRect?.x ?? null,
-      iconGap:
-        visualRight == null || !labelRect ? null : labelRect.x - visualRight,
-      iconSlotX: iconRect?.x ?? null,
-      iconSlotWidth: iconRect?.width ?? null,
-      textX: textRect.x,
-      paddingLeft: parseFloat(style.paddingLeft),
-      paddingRight: parseFloat(style.paddingRight),
+      iconOffsetX: iconSlotRect ? iconSlotRect.x - rect.x : null,
+      iconSlotRight: iconSlotRect?.right ?? null,
+      iconSlotWidth: iconSlotRect?.width ?? null,
+      iconSlotHeight: iconSlotRect?.height ?? null,
+      labelOffset: iconSlotRect && labelRect
+        ? labelRect.x - iconSlotRect.right
+        : null,
+      controlHeight: parseFloat(
+        style.getPropertyValue("--control-height-compact"),
+      ),
+      paddingInlineStart: parseFloat(style.paddingInlineStart),
+      paddingInlineEnd: parseFloat(style.paddingInlineEnd),
       gap: parseFloat(style.columnGap || style.gap),
       labelColor: labelStyle.color,
       labelWeight: labelStyle.fontWeight,
@@ -211,24 +201,19 @@ test("composer footer chips match main geometry and typography", async ({ page, 
     page.locator('[data-composer-footer-control="workspace"]'),
   );
   console.log(`[head footer geometry] ${JSON.stringify({ local, project, workspace })}`);
-  expect(Math.abs(local.x - 401)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(local.labelX! - 431)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(local.iconGap! - 10.24)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(project.x - 484.55)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(project.labelX! - 514.55)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(project.iconGap! - 9.42)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(workspace.x - project.right - 2)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(workspace.labelX! - workspace.x - 30)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(workspace.iconGap! - 10.82)).toBeLessThanOrEqual(0.5);
   const mutedColor = await readColorToken(page, "--fg-muted");
   for (const chip of [local, project, workspace]) {
-    expect(chip.iconSlotX).toBe(chip.x);
-    expect(chip.iconSlotWidth).toBe(28);
-    expect(chip.paddingLeft).toBe(0);
-    expect(chip.paddingRight).toBeCloseTo(6, 1);
-    expect(chip.gap).toBeCloseTo(2, 1);
+    expect(chip.iconOffsetX).toBe(0);
+    expect(chip.iconSlotWidth).toBe(chip.controlHeight);
+    expect(chip.iconSlotHeight).toBe(chip.controlHeight);
+    expect(chip.labelOffset).toBe(chip.gap);
+    expect(chip.paddingInlineStart).toBe(0);
+    expect(chip.paddingInlineEnd).toBe(6);
+    expect(chip.gap).toBe(2);
     expect(chip.labelWeight).toBe("400");
   }
+  expect(project.x - local.right).toBe(2);
+  expect(workspace.x - project.right).toBe(2);
   expect(local.labelColor).toBe(mutedColor);
   expect(local.chevronColor).toBe(mutedColor);
   expect(project.labelColor).toBe(mutedColor);
@@ -845,7 +830,10 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
   await page.getByRole("option", { name: "Workspace fit", exact: true }).click();
   const workspaceTrigger = page.locator('[data-composer-footer-control="workspace"]');
   const workspaceChip = await measureFooterTrigger(workspaceTrigger);
-  expect(Math.abs(workspaceChip.iconGap! - 10.82)).toBeLessThanOrEqual(0.5);
+  expect(workspaceChip.iconOffsetX).toBe(0);
+  expect(workspaceChip.iconSlotWidth).toBe(workspaceChip.controlHeight);
+  expect(workspaceChip.iconSlotHeight).toBe(workspaceChip.controlHeight);
+  expect(workspaceChip.labelOffset).toBe(workspaceChip.gap);
   expect(workspaceChip.labelColor).toBe(await readColorToken(page, "--fg-muted"));
   expect(workspaceChip.labelWeight).toBe("400");
   expect(workspaceChip.chevronColor).toBe(await readColorToken(page, "--fg-muted"));
