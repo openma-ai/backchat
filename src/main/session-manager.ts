@@ -1536,6 +1536,18 @@ export class SessionManager {
     turnId: string,
     event: unknown,
   ): void {
+    const notice = extractAcpSystemNotice(event, {
+      outOfTurn: !turnId,
+    });
+    if (notice) {
+      logAppEvent("acp.system_notice", {
+        session_id: sess.id,
+        agent_id: sess.agentId,
+        turn_id: turnId,
+        out_of_turn: !turnId,
+        message: notice.message,
+      });
+    }
     if (isAvailableCommandsUpdate(event)) {
       sess.latestAvailableCommandsUpdate = event;
       const commands = availableCommandsFromUpdate(event);

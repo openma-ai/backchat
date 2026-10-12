@@ -5,26 +5,30 @@ import {
 
 export type { AcpSystemNotice };
 
-const CODEX_SKILL_CONTEXT_WARNING =
-  /^Warning:\s*Skill descriptions were shortened to fit the (?:\d+%\s+)?skills context budget\./;
-
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
 }
 
-export function splitAcpSystemNoticeText(text: string): {
+/** Codex harness warnings use a `Warning: ` prefix and paragraph separator,
+ * or arrive as an unterminated out-of-turn event; no wording allowlist applies. */
+export function splitAcpSystemNoticeText(
+  text: string,
+  options?: { outOfTurn?: boolean },
+): {
   notice?: string;
   transcript: string;
 } {
   const candidate = text.trimStart();
-  if (!CODEX_SKILL_CONTEXT_WARNING.test(candidate)) {
+  if (!/^Warning:[\t ]+\S/.test(candidate)) {
     return { transcript: text };
   }
   const paragraphBreak = candidate.search(/\r?\n[\t ]*\r?\n/);
   if (paragraphBreak < 0) {
-    return { notice: candidate.trim(), transcript: "" };
+    return options?.outOfTurn
+      ? { notice: candidate.trim(), transcript: "" }
+      : { transcript: text };
   }
   const separator = candidate.slice(paragraphBreak).match(/^\r?\n[\t ]*\r?\n/)?.[0]
     ?? "";
@@ -34,19 +38,23 @@ export function splitAcpSystemNoticeText(text: string): {
   };
 }
 
-/** Preserve the common Codex warning classifier, accept the provider variant
- * that omits its percentage, and add Pi's structured warning signal. */
-export function extractAcpSystemNotice(event: unknown): AcpSystemNotice | null {
-  const common = extractCommonAcpSystemNotice(event);
-  if (common) return common;
+export function extractAcpSystemNotice(
+  event: unknown,
+  options?: { outOfTurn?: boolean },
+): AcpSystemNotice | null {
   const outer = record(event);
   const inner = record(outer?.update) ?? outer;
-  if (inner?.sessionUpdate !== "agent_message_chunk") return null;
-  const meta = record(inner._meta);
+  const meta = record(inner?._meta);
   const codex = record(meta?.codex);
+  const phaseTagged = codex?.phase === "final_answer" || codex?.phase === "commentary";
+  if (!phaseTagged) {
+    const common = extractCommonAcpSystemNotice(event);
+    if (common) return common;
+  }
+  if (inner?.sessionUpdate !== "agent_message_chunk") return null;
   const text = record(inner.content)?.text;
-  if (codex?.phase !== "final_answer" && typeof text === "string") {
-    const split = splitAcpSystemNoticeText(text);
+  if (!phaseTagged && typeof text === "string") {
+    const split = splitAcpSystemNoticeText(text, options);
     if (split.notice) {
       return { message: split.notice, tone: "warning" };
     }

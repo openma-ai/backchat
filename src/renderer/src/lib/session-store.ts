@@ -3609,7 +3609,13 @@ export class SessionStore {
         // Turn event list. The reducer already understands the canonical
         // envelope, so replay does not need to reconstruct an ACP payload.
         if (parsedCanonical.kind === "text") {
-          const split = splitAcpSystemNoticeText(parsedCanonical.text);
+          const split =
+            parsedCanonical.phase === "final_answer"
+              || parsedCanonical.phase === "commentary"
+              ? { transcript: parsedCanonical.text }
+              : splitAcpSystemNoticeText(parsedCanonical.text, {
+                  outOfTurn: !canonical.turn_id,
+                });
           if (split.notice) {
             notify(split.notice);
           }
@@ -3983,8 +3989,14 @@ export class SessionStore {
         const inner = sessionUpdateInner(ev.event);
         const updateType = sessionUpdateType(ev.event);
         let parsed = parseAcpEvent(semanticEvent);
-        if (parsed.kind === "text") {
-          const split = splitAcpSystemNoticeText(parsed.text);
+        if (
+          parsed.kind === "text"
+          && parsed.phase !== "final_answer"
+          && parsed.phase !== "commentary"
+        ) {
+          const split = splitAcpSystemNoticeText(parsed.text, {
+            outOfTurn: !ev.turn_id,
+          });
           if (split.notice) {
             this.#showNotice(ev.session_id, split.notice, "warning");
             if (!split.transcript) break;
