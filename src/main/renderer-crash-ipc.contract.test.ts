@@ -1,0 +1,45 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+describe("renderer crash logging contract", () => {
+  it("registers the renderer crash log invoke channel end-to-end", () => {
+    const channels = readFileSync(
+      resolve(__dirname, "../shared/ipc-channels.ts"),
+      "utf8",
+    );
+    const api = readFileSync(resolve(__dirname, "../shared/api.ts"), "utf8");
+    const preload = readFileSync(
+      resolve(__dirname, "../preload/index.ts"),
+      "utf8",
+    );
+    const ipc = readFileSync(resolve(__dirname, "ipc.ts"), "utf8");
+    const entry = readFileSync(
+      resolve(__dirname, "../renderer/src/main.tsx"),
+      "utf8",
+    );
+
+    expect(channels).toContain('AppRendererCrashLog: "app:rendererCrashLog"');
+    expect(api).toContain("rendererCrashLog");
+    expect(preload).toContain("rendererCrashLog");
+    expect(ipc).toContain("InvokeChannel.AppRendererCrashLog");
+    expect(ipc).toContain("logRendererCrash(report, e.sender.id)");
+    expect(ipc).toContain("noteRendererCrashContext");
+    expect(entry).toContain("RendererErrorBoundary");
+    expect(entry).toContain("installRendererCrashHandlers");
+  });
+
+  it("wires Electron's process and load failure events to the log", () => {
+    const main = readFileSync(resolve(__dirname, "index.ts"), "utf8");
+
+    expect(main).toContain('"render-process-gone"');
+    expect(main).toContain('"unresponsive"');
+    expect(main).toContain('"did-fail-load"');
+    expect(main).toContain('"console-message"');
+    expect(main).toContain('"child-process-gone"');
+    expect(main).toContain("forgetRendererCrashContext");
+    expect(main).toContain("logRendererCrash");
+    expect(main).toContain("logRendererConsoleError");
+    expect(main).toContain("logChildProcessGone");
+  });
+});

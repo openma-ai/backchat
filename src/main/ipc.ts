@@ -81,6 +81,8 @@ import {
   latestPersistedOpenMAEventSequence,
 } from "./session-event-enricher.js";
 import { logAppEvent } from "./app-log.js";
+import { logRendererCrash, noteRendererCrashContext } from "./renderer-crash-log.js";
+import type { RendererCrashReport } from "../shared/renderer-crash.js";
 import { recordUpdateEvidence } from "./update-evidence.js";
 import { deliverSessionEvent } from "./session-event-delivery.js";
 import { join } from "node:path";
@@ -670,6 +672,23 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     process.stdout.write(`[ipc-ping] ${reply}\n`);
     return reply;
   });
+
+  ipcMain.handle(
+    InvokeChannel.AppRendererCrashLog,
+    (e, report: RendererCrashReport) => {
+      // The context outlives the report: render-process-gone and friends
+      // fire after the renderer is already dead, so they borrow the last
+      // route/session this webContents told us about.
+      if (report && typeof report === "object") {
+        noteRendererCrashContext(e.sender.id, {
+          route: report.route,
+          sessionId: report.session?.id,
+          agentId: report.session?.agentId,
+        });
+      }
+      logRendererCrash(report, e.sender.id);
+    },
+  );
 
   ipcMain.handle(
     InvokeChannel.AcpTerminalsList,

@@ -86,4 +86,28 @@ describe("sanitizeAuthenticationMessage", () => {
       "Internal error: turn failed: Authentication Fails, Your api key=[redacted] is invalid",
     );
   });
+
+  it.each([
+    ["Bearer sk-live-123456789", "Bearer [redacted]"],
+    ["token sk-live-123456789", "token sk-[redacted]"],
+    ["ghp_abcdefghij1234567890", "[redacted]"],
+    ["github_pat_11ABCDEFG0123456789", "[redacted]"],
+    ["xoxb-123456789012-abcdefghijkl", "[redacted]"],
+    ["AIzaSyA1234567890123456789012345678901", "[redacted]"],
+    ["AKIAIOSFODNN7EXAMPLE", "[redacted]"],
+    ["eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk", "[redacted]"],
+  ])("redacts credential-shaped tokens: %s", (input, expected) => {
+    expect(sanitizeAuthenticationMessage(input)).toContain(expected);
+    expect(sanitizeAuthenticationMessage(input)).not.toContain(input);
+  });
+
+  it.each([
+    ["access_token=tok-private", "access_token=[redacted]"],
+    ["refresh_token: tok-private", "refresh_token=[redacted]"],
+    ["client_secret=shh", "client_secret=[redacted]"],
+    ["password: hunter2", "password=[redacted]"],
+    ["authorization: tok-private", "authorization=[redacted]"],
+  ])("redacts key=value secrets: %s", (input, expected) => {
+    expect(sanitizeAuthenticationMessage(input)).toBe(expected);
+  });
 });

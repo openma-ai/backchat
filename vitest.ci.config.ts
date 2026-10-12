@@ -96,6 +96,13 @@ export default defineConfig({
       "src/renderer/src/components/chat/ComposerContentParts.test.tsx",
       "src/renderer/src/components/chat/ComposerAskPanel.test.tsx",
       "src/shared/auth-errors.test.ts",
+      "src/main/renderer-crash-log.test.ts",
+      "src/renderer/src/lib/renderer-crash-report.test.ts",
+      "src/renderer/src/lib/renderer-crash-report.node.test.ts",
+      "src/renderer/src/lib/renderer-crash-context.test.ts",
+      "src/renderer/src/components/RendererErrorBoundary.test.tsx",
+      "src/renderer/src/components/RendererCrashPage.test.tsx",
+      "src/renderer/src/components/RendererCrashFallback.test.tsx",
     ],
     exclude: [
       ...configDefaults.exclude,

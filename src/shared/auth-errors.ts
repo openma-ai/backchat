@@ -68,8 +68,14 @@ export function isAuthenticationFailureMessage(message: string | undefined): boo
 
 export function sanitizeAuthenticationMessage(message: string): string {
   return message
-    .replace(/\bBearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\b(Bearer|Basic)\s+\S+/gi, "$1 [redacted]")
     .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "sk-[redacted]")
-    .replace(/\b(api[\s_-]*key|token|secret)\s*[=:]\s*\S+/gi, "$1=[redacted]")
+    .replace(/\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{8,}\b/g, "[redacted]")
+    .replace(/\bxox[baprs]-[A-Za-z0-9-]+\b/g, "[redacted]")
+    .replace(/\bAIza[0-9A-Za-z_-]{30,}\b/g, "[redacted]")
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, "[redacted]")
+    .replace(/\bnpm_[A-Za-z0-9]{30,}\b/g, "[redacted]")
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted]")
+    .replace(/\b(api[\s_-]*key|(?:access|refresh|id)[\s_-]*token|token|secret|password|passwd|authorization|client[\s_-]*secret)\s*[=:]\s*\S+/gi, "$1=[redacted]")
     .slice(0, 4_000);
 }

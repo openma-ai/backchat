@@ -29,6 +29,7 @@ import {
   resolveBundledNpmCliPath,
 } from "./bundled-node-runtime.js";
 import { configureAppLog, logAppEvent } from "./app-log.js";
+import { forgetRendererCrashContext, logChildProcessGone, logRendererConsoleError, logRendererCrash } from "./renderer-crash-log.js";
 import { startAppUpdater } from "./app-updater.js";
 import { resolveRemoteDebugging } from "./remote-debugging.js";
 
@@ -254,6 +255,56 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
   windows.add(win);
   win.on("closed", () => windows.delete(win));
 
+  // Renderer process/load failures — the app can black-screen without these
+  // leaving a trace, so each becomes a structured event in backchat.log.
+  const webContentsId = win.webContents.id;
+  win.webContents.on("render-process-gone", (_event, details) => {
+    logRendererCrash(
+      {
+        source: "render-process-gone",
+        message: `Renderer process exited (${details.reason})`,
+        reason: details.reason,
+        exitCode: details.exitCode,
+      },
+      webContentsId,
+    );
+  });
+  win.webContents.on("unresponsive", () => {
+    logRendererCrash(
+      { source: "unresponsive", message: "Renderer became unresponsive" },
+      webContentsId,
+    );
+  });
+  win.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      // errorCode -3 is ERR_ABORTED: a navigation superseded before commit
+      // (reloads, HMR), not a failure.
+      if (!isMainFrame || errorCode === -3) return;
+      logRendererCrash(
+        {
+          source: "did-fail-load",
+          message: `Renderer failed to load: ${errorDescription} (${errorCode})`,
+          exitCode: errorCode,
+          url: validatedURL,
+        },
+        webContentsId,
+      );
+    },
+  );
+  win.webContents.on("console-message", (details) => {
+    if (details.level !== "error") return;
+    logRendererConsoleError(
+      {
+        message: details.message,
+        sourceId: details.sourceId,
+        lineNumber: details.lineNumber,
+      },
+      webContentsId,
+    );
+  });
+  win.webContents.on("destroyed", () => forgetRendererCrashContext(webContentsId));
+
   // Electron resets a pre-navigation zoom assignment on the first load, so
   // apply the default once the renderer exists. Later reloads retain the
   // user's View-menu zoom instead of forcing the default again.
@@ -341,6 +392,19 @@ if (!gotLock) {
   app.quit();
 } else {
   registerBackchatProtocolClient();
+
+  // GPU/utility/helper process exits — distinct from the renderer's own
+  // process, so they land under their own event name. 'Tab' is the
+  // renderer: render-process-gone already covers it.
+  app.on("child-process-gone", (_event, details) => {
+    if (details.type === "Tab") return;
+    logChildProcessGone({
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      name: details.name ?? details.serviceName,
+    });
+  });
 
   app.on("second-instance", (_event, argv) => {
     const link = findBackchatDeepLink(argv);

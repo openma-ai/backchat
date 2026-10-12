@@ -870,6 +870,15 @@ const en = {
   "update.channelStable": "Stable",
   "update.channelDev": "Development",
   "update.build": "build {build}",
+  "crash.title": "Something went wrong",
+  "crash.description":
+    "The interface hit an unexpected error. Reload the window or copy the error details.",
+  "crash.errorId": "Error ID {id}",
+  "crash.details": "Error details",
+  "crash.copy": "Copy error info",
+  "crash.copied": "Copied",
+  "crash.copyFailed": "Couldn't copy",
+  "crash.reload": "Reload",
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -1330,6 +1339,14 @@ const zhCN: Partial<Record<TranslationKey, string>> = {
   "chat.askAnything": "有什么想聊的？",
   "chat.starting": "正在启动…",
   "chat.sessionErrored": "会话出错，请新建对话。",
+  "crash.title": "出了点问题",
+  "crash.description": "界面遇到意外错误。请重新加载窗口，或复制错误信息以便排查。",
+  "crash.errorId": "错误编号 {id}",
+  "crash.details": "错误详情",
+  "crash.copy": "复制错误信息",
+  "crash.copied": "已复制",
+  "crash.copyFailed": "复制失败",
+  "crash.reload": "重新加载",
   "chat.addToQueue": "加入队列…",
   "chat.reply": "回复…",
   "chat.addInstructions": "添加说明…",

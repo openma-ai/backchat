@@ -6,6 +6,10 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeController } from "@/components/ThemeController";
 import { AppStartupGate } from "@/components/AppStartupGate";
+import { RendererErrorBoundary } from "@/components/RendererErrorBoundary";
+import { showRendererCrashFallback } from "@/components/RendererCrashFallback";
+import { installRendererCrashHandlers } from "@/lib/renderer-crash-report";
+import { rendererCrashContext } from "@/lib/renderer-crash-context";
 import { router } from "@/router";
 import { applyRendererOs } from "@/lib/os";
 import { applyStoredTheme } from "@/lib/theme";
@@ -33,18 +37,27 @@ const queryClient = new QueryClient({
 // it with ~/.oma/config.toml as soon as settings arrive over IPC.
 applyStoredTheme();
 
+// Forward uncaught renderer errors to backchat.log before React mounts — a
+// failure during startup still lands a structured event with an errorId.
+installRendererCrashHandlers({
+  context: rendererCrashContext,
+  onFatalCrash: showRendererCrashFallback,
+});
+
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ThemeController />
-        <AppStartupGate>
-          <RouterProvider router={router} />
-        </AppStartupGate>
-        <Toaster position="bottom-right" />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <RendererErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <ThemeController />
+          <AppStartupGate>
+            <RouterProvider router={router} />
+          </AppStartupGate>
+          <Toaster position="bottom-right" />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </RendererErrorBoundary>
   </StrictMode>,
 );
