@@ -258,12 +258,6 @@ export function SessionRunChip({
                   )}
                   title={agentLabel}
                 />
-                {authChecking && (
-                  <RefreshCwIcon
-                    className="absolute -right-1 -bottom-1 size-2.5 animate-spin text-info"
-                    aria-hidden="true"
-                  />
-                )}
               </span>
             </span>
             <TooltipProvider>
@@ -578,7 +572,9 @@ export function PermissionModeChip({
         className={cn(COMPOSER_TOOLBAR_CHIP_CLASS, meta.toneClass)}
         aria-label={label}
       >
-        <Icon className="size-3.5" />
+        <span data-control-icon>
+          <Icon className="size-3.5" />
+        </span>
         <span>{label}</span>
         <ChevronDownIcon className="size-3.5 opacity-70" />
       </DropdownMenuTrigger>
@@ -702,7 +698,9 @@ function SessionModeControl({
         aria-label={selectedPresentation.label}
         title={selectedPresentation.hint}
       >
-        <SelectedIcon className="size-3.5 shrink-0" />
+        <span data-control-icon>
+          <SelectedIcon className="size-3.5 shrink-0" />
+        </span>
         <span className="truncate">{selectedPresentation.label}</span>
         <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
       </DropdownMenuTrigger>
@@ -903,7 +901,9 @@ function InlineComposerOptionControl({
             "max-w-[180px] text-fg-muted",
           )}
         >
-          <SelectedIcon className="size-3.5 shrink-0" />
+          <span data-control-icon>
+            <SelectedIcon className="size-3.5 shrink-0" />
+          </span>
           <span className="truncate">{currentLabel}</span>
           <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
         </DropdownMenuTrigger>
@@ -954,7 +954,9 @@ function InlineComposerOptionControl({
           "max-w-[180px] text-fg-muted",
         )}
       >
-        <WrenchIcon className="size-3.5 shrink-0" />
+        <span data-control-icon>
+          <WrenchIcon className="size-3.5 shrink-0" />
+        </span>
         <span className="truncate">{option.name}</span>
         <span className="truncate text-fg-subtle">
           {selectedConfigOptionLabel(option)}

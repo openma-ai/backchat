@@ -8,7 +8,7 @@ export function SearchField({ className, children, ...props }: ComponentProps<"d
     <div
       data-slot="search-field"
       className={cn(
-        "flex h-9 min-w-0 shrink-0 items-center gap-2 px-2 text-fg-muted focus-within:text-fg [&>input::-webkit-search-cancel-button]:appearance-none [&>input::-webkit-search-decoration]:appearance-none [&>input]:h-full [&>input]:min-w-0 [&>input]:flex-1 [&>input]:border-0 [&>input]:bg-transparent [&>input]:p-0 [&>input]:text-xs [&>input]:text-fg [&>input]:shadow-none [&>input]:outline-none [&>input]:placeholder:text-fg-muted [&>input]:disabled:cursor-not-allowed [&>input]:disabled:opacity-50",
+        "flex h-9 min-w-0 shrink-0 items-center gap-2 px-2 text-fg-subtle focus-within:text-fg [&>input::-webkit-search-cancel-button]:appearance-none [&>input::-webkit-search-decoration]:appearance-none [&>input]:h-full [&>input]:min-w-0 [&>input]:flex-1 [&>input]:border-0 [&>input]:bg-transparent [&>input]:p-0 [&>input]:text-xs [&>input]:text-fg [&>input]:shadow-none [&>input]:outline-none [&>input]:placeholder:text-fg-faint [&>input]:disabled:cursor-not-allowed [&>input]:disabled:opacity-50",
         className,
       )}
       {...props}

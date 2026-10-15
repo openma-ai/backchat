@@ -5,7 +5,7 @@ import {
   themeAssetVariables,
   type ThemeModePreference,
 } from "@/lib/theme-plugin";
-import { disabledForeground } from "@/lib/text-roles";
+import { disabledForeground, faintForeground } from "@/lib/text-roles";
 import { themeStyle } from "@/themes";
 import { getSettings, patchSettings, useSettings } from "@/lib/settings-store";
 
@@ -40,13 +40,11 @@ export function applyThemeToRoot(
   for (const name of THEME_TOKEN_NAMES) {
     root.style.setProperty(`--${name}`, next.tokens[name]);
   }
+  const textSurfaces = [next.tokens.bg, next.tokens["bg-surface"], next.tokens["bg-sidebar"]];
+  root.style.setProperty("--fg-faint", faintForeground(next.tokens.fg, next.tokens.bg, textSurfaces));
   root.style.setProperty(
     "--fg-disabled",
-    disabledForeground(next.tokens.fg, next.tokens.bg, [
-      next.tokens.bg,
-      next.tokens["bg-surface"],
-      next.tokens["bg-sidebar"],
-    ]),
+    disabledForeground(next.tokens.fg, next.tokens.bg, textSurfaces),
   );
   const assetVariables = themeAssetVariables(next.assets);
   for (const [name, value] of Object.entries(assetVariables)) {

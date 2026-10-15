@@ -249,7 +249,7 @@ describe("settings surfaces render the shared box and row", () => {
     expect(rows.length).toBeGreaterThan(1);
     expect(view.host.querySelector(".sidebar-navigation")).not.toBeNull();
     expect(view.host.querySelector('a[href="/settings/activity"]')?.className).toContain(
-      "text-fg-muted",
+      "text-fg-subtle",
     );
     expect(view.host.querySelector('a[href="/settings/projects/$projectId"]')?.className).toContain(
       "app-selected-surface",

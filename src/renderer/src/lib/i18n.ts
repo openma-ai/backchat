@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useSettings } from "@/lib/settings-store";
+import { fileManagerName } from "@/lib/platform";
 
 export type Locale = "en" | "zh-CN";
 export type LanguagePreference = "system" | Locale;
@@ -143,7 +144,8 @@ const en = {
   "project.automaticIcon": "Use automatic icon",
   "sidebar.projectActions": "Project actions",
   "sidebar.startProjectChat": "New chat in project",
-  "sidebar.revealProject": "Reveal in Finder",
+  "sidebar.revealProject": "Reveal in {fileManager}",
+  "file.reveal": "Show in {fileManager}",
   "sidebar.archiveProjectChats": "Archive chats",
   "sidebar.removeProject": "Remove project",
   "sidebar.removeProjectTitle": "Remove {name}?",
@@ -153,7 +155,7 @@ const en = {
   "sidebar.archiveAll": "Archive all",
   "workspace.actions": "Workspace actions",
   "workspace.startChat": "New chat in workspace",
-  "workspace.reveal": "Reveal worktree in Finder",
+  "workspace.reveal": "Reveal workspace in {fileManager}",
   "workspace.delete": "Delete workspace",
   "workspace.managed": "Workspace",
   "workspace.external": "External worktree",
@@ -186,6 +188,9 @@ const en = {
   "workspace.creationNotice": "Creating worktrees on disk may take a moment. Your workspace stays available even if you haven’t sent a message yet.",
   "workspace.createFailed": "Couldn't create workspace",
   "workspace.picker": "Workspace",
+  "repoCard.findingReview": "Looking for a {kind}…",
+  "repoCard.noReview": "No {kind} for this branch",
+  "repoCard.notGit": "Not a Git repository",
   "project.create": "Create project",
   "project.searchProjects": "Search projects",
   "project.searchProjectsPlaceholder": "Search projects…",
@@ -249,6 +254,13 @@ const en = {
   "sidebar.renameDescription": "Choose a new name for this chat.",
   "sidebar.renameFailed": "Couldn't rename chat",
   "sidebar.archive": "Archive",
+  "sidebar.copy": "Copy",
+  "sidebar.emptyWorkspace": "No chats yet",
+  "sidebar.copySessionId": "Copy session ID",
+  "sidebar.copyWorkingDirectory": "Copy working directory",
+  "sidebar.sessionIdCopied": "Session ID copied",
+  "sidebar.workingDirectoryCopied": "Working directory copied",
+  "sidebar.copyFailed": "Couldn't copy",
   "topbar.taskActions": "Task actions",
   "topbar.openSideChat": "Open context fork",
   "topbar.endSession": "End session runtime",
@@ -1027,7 +1039,8 @@ const zhCN: Partial<Record<TranslationKey, string>> = {
   "project.automaticIcon": "恢复自动图标",
   "sidebar.projectActions": "项目操作",
   "sidebar.startProjectChat": "在项目中新建对话",
-  "sidebar.revealProject": "在 Finder 中显示",
+  "sidebar.revealProject": "在{fileManager}中显示",
+  "file.reveal": "在{fileManager}中显示",
   "sidebar.archiveProjectChats": "归档项目对话",
   "sidebar.removeProject": "移除项目",
   "sidebar.removeProjectTitle": "移除 {name}？",
@@ -1037,7 +1050,7 @@ const zhCN: Partial<Record<TranslationKey, string>> = {
   "sidebar.archiveAll": "全部归档",
   "workspace.actions": "工作区操作",
   "workspace.startChat": "在工作区中新建对话",
-  "workspace.reveal": "在 Finder 中显示工作树",
+  "workspace.reveal": "在{fileManager}中显示工作区",
   "workspace.delete": "删除工作区",
   "workspace.managed": "工作区",
   "workspace.external": "外部工作树",
@@ -1070,6 +1083,9 @@ const zhCN: Partial<Record<TranslationKey, string>> = {
   "workspace.creationNotice": "创建会在磁盘上生成 worktree，可能需要一些时间。即使尚未发送会话，也可以之后继续使用。",
   "workspace.createFailed": "无法创建工作区",
   "workspace.picker": "工作区",
+  "repoCard.findingReview": "正在查找 {kind}…",
+  "repoCard.noReview": "此分支暂无 {kind}",
+  "repoCard.notGit": "不是 Git 仓库",
   "project.create": "创建项目",
   "project.searchProjects": "搜索项目",
   "project.searchProjectsPlaceholder": "搜索项目…",
@@ -1132,6 +1148,13 @@ const zhCN: Partial<Record<TranslationKey, string>> = {
   "sidebar.renameDescription": "为这个对话设置一个新名称。",
   "sidebar.renameFailed": "无法重命名对话",
   "sidebar.archive": "归档",
+  "sidebar.copy": "复制",
+  "sidebar.emptyWorkspace": "暂无对话",
+  "sidebar.copySessionId": "复制会话 ID",
+  "sidebar.copyWorkingDirectory": "复制工作目录",
+  "sidebar.sessionIdCopied": "已复制会话 ID",
+  "sidebar.workingDirectoryCopied": "已复制工作目录",
+  "sidebar.copyFailed": "复制失败",
   "topbar.taskActions": "会话操作",
   "topbar.openSideChat": "打开上下文分支",
   "topbar.endSession": "终止会话运行",
@@ -1775,8 +1798,10 @@ export function translate(
 ): string {
   const message =
     catalogs[locale][key as TranslationKey] ?? en[key as TranslationKey] ?? key;
+  // Host-dependent words are filled here so no message hardcodes one OS.
+  const filled: Record<string, string | number> = { fileManager: fileManagerName(locale), ...values };
   return message.replace(/\{(\w+)\}/g, (_, name: string) =>
-    String(values[name] ?? `{${name}}`),
+    String(filled[name] ?? `{${name}}`),
   );
 }
 

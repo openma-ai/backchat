@@ -1,10 +1,13 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface AnimatedCollapseProps {
   open: boolean;
   children: ReactNode;
   className?: string;
+  /** Defer the body until the first open, then keep it mounted. The shell is
+   *  always rendered at 0fr, so even that first open animates. */
+  lazy?: boolean;
 }
 
 /**
@@ -16,7 +19,10 @@ export function AnimatedCollapse({
   open,
   children,
   className,
+  lazy = false,
 }: AnimatedCollapseProps) {
+  const [opened, setOpened] = useState(open);
+  if (open && !opened) setOpened(true);
   return (
     <div
       data-slot="animated-collapse"
@@ -25,7 +31,7 @@ export function AnimatedCollapse({
       inert={open ? undefined : true}
       className={cn("animated-collapse", className)}
     >
-      <div className="animated-collapse-inner">{children}</div>
+      <div className="animated-collapse-inner">{!lazy || opened ? children : null}</div>
     </div>
   );
 }

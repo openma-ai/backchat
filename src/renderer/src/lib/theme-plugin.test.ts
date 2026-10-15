@@ -400,6 +400,7 @@ describe("theme plugin contract", () => {
     expect([...properties.keys()].toSorted()).toEqual(
       [
         ...(THEME_TOKEN_NAMES ?? []).map((name) => `--${name}`),
+        "--fg-faint",
         "--fg-disabled",
         ...(THEME_ASSET_SLOTS ?? []).map((name) => `--theme-asset-${name}`),
       ].toSorted(),

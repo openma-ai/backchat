@@ -19,6 +19,15 @@ describe("ShimmerText", () => {
   it("defines a repeating sweep animation in global styles", () => {
     expect(styles).toContain("@keyframes shimmer-text-sweep");
     expect(styles).toContain(".shimmer-text");
-    expect(styles).toContain("composer-harness-probe-placeholder");
+    // ::placeholder never animates in Chromium; the sweep must target a real element.
+    expect(styles).not.toContain("::placeholder {\n  background-image");
+  });
+
+  it("forwards status semantics to the span", () => {
+    const html = renderToStaticMarkup(
+      <ShimmerText role="status" data-composer-harness-probe="true">Checking</ShimmerText>,
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain('data-composer-harness-probe="true"');
   });
 });

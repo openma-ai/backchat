@@ -62,11 +62,14 @@ export const TurnBlock = memo(function TurnBlock({
   onFork,
   forkLabel,
   onRetrySend,
+  defaultProcessOpen,
 }: {
   turn: Turn;
   onFork?: () => void;
   forkLabel?: string;
   onRetrySend?: (turn: Turn) => void;
+  /** Render a settled turn's process strip expanded on first mount. */
+  defaultProcessOpen?: boolean;
 }) {
   const { t } = useI18n();
   const rendered = sessionStore.projectTurn(turn);
@@ -198,6 +201,7 @@ export const TurnBlock = memo(function TurnBlock({
       thoughts="history"
       activityTools="all"
       collapsiblePrimitives={BACKCHAT_COLLAPSIBLE_PRIMITIVES}
+      defaultProcessOpen={defaultProcessOpen}
       labels={{
         workingFor: (seconds) => t("chat.workingFor", { seconds }),
         workedFor: (seconds) => t("chat.workedFor", { seconds }),
@@ -652,7 +656,8 @@ function TurnMetaActions({
         <time
           data-turn-timestamp={String(timestamp)}
           className={cn(
-            "text-xs leading-5 text-fg-subtle",
+            // Quaternary tier: the time is metadata the turn reads fine without.
+            "text-xs leading-5 text-fg-faint",
             align === "start" ? "mr-1" : "ml-1",
           )}
         >
@@ -708,7 +713,7 @@ function TurnFooter({
       // A fixed height, not a minimum: the actions layer is laid out even while
       // it is transparent, so the row grew by the height of a button the moment
       // there was an answer to copy — and everything below it moved.
-      className="-mt-1 grid h-7 grid-cols-1 grid-rows-1"
+      className="grid h-7 grid-cols-1 grid-rows-1"
     >
       <div
         className={cn(

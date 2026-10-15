@@ -15,7 +15,7 @@ vi.mock("@/components/AgentIcon", () => ({
   AgentIcon: () => null,
 }));
 
-import { groupSidebarSessions } from "./Sidebar";
+import { groupSidebarSessions, workspaceMetaLabel, workspaceRevealPath, type SidebarWorkspaceGroup } from "./Sidebar";
 import type { SessionRow } from "@/lib/session-store";
 import type { ProjectInfo } from "@shared/projects";
 import type { WorkspaceInfo } from "@shared/workspaces";
@@ -71,6 +71,26 @@ describe("sidebar grid primitives", () => {
   });
 });
 
+describe("worktree group label", () => {
+  const ws = (over: Partial<SidebarWorkspaceGroup>): SidebarWorkspaceGroup => ({
+    id: "ws", label: "backchat · mp9w5rjw", kind: "managed", branch: null, paths: ["/w/a"], sessions: [], ...over,
+  });
+
+  it("reveals the shared workspace folder, not the first repository checkout", () => {
+    const root = "/Users/me/.oma/worktrees/ws-fix-abc-7c6f";
+    expect(workspaceRevealPath({ paths: [`${root}/01-minimaxhub_benchmark`, `${root}/02-hilo-agent-opencode`] })).toBe(root);
+    expect(workspaceRevealPath({ paths: ["/Users/me/.oma/worktrees/sess-mp9w5rjw/01-backchat"] }))
+      .toBe("/Users/me/.oma/worktrees/sess-mp9w5rjw/01-backchat");
+    expect(workspaceRevealPath({ paths: [] })).toBeUndefined();
+  });
+
+  it("names a managed worktree by its name and an external one by its branch", () => {
+    expect(workspaceMetaLabel(ws({ label: "fix-abc", branch: "backchat/fix-abc-7c6f" }))).toBe("fix-abc");
+    expect(workspaceMetaLabel(ws({ branch: "backchat/legacy-mp9w5rjw" }))).toBe("mp9w5rjw");
+    expect(workspaceMetaLabel(ws({ kind: "external", label: "repo", branch: "feature/coord" }))).toBe("feature/coord");
+  });
+});
+
 describe("sidebar section heading", () => {
   it("renders an expandable section heading with its icon and action", () => {
     const html = renderToStaticMarkup(
@@ -88,7 +108,10 @@ describe("sidebar section heading", () => {
     expect(html).toContain('data-sidebar-grid="trailing"');
     expect(html).toContain("Projects");
     expect(html).toContain("Project icon");
-    expect(html).toContain("sidebar-section-heading font-normal text-fg-muted");
+    // Headings inherit the shared UI weight (430) and the row's color like
+    // every other row; the row owns the muted/hover color for icon + label.
+    expect(html).toContain("sidebar-section-heading transition-colors");
+    expect(html).not.toContain("font-normal");
     expect(html).not.toContain("hover:text-fg-muted");
   });
 
@@ -102,7 +125,8 @@ describe("sidebar section heading", () => {
     );
 
     expect(html).toContain("sidebar-section-heading-compact font-medium");
-    expect(html).toContain("text-fg-muted");
+    // Color comes from the row (.sidebar-grid-row), not the heading button.
+    expect(html).not.toContain("text-fg-muted");
   });
 
   it("renders Local as a plain dropdown-trigger heading", () => {
@@ -120,7 +144,9 @@ describe("sidebar section heading", () => {
     expect(html).toContain('data-sidebar-leading="none"');
     expect(html).not.toContain('data-sidebar-grid="icon"');
     expect(html).not.toContain("chevron");
-    expect(html).toContain("text-xs font-medium text-fg-muted");
+    expect(html).toContain("sidebar-grid-row w-full text-xs font-medium");
+    // Color comes from .sidebar-grid-row (tertiary tier), like every row.
+    expect(html).not.toContain("text-fg-muted");
     expect(html).toContain("Local");
   });
 });
@@ -394,15 +420,63 @@ describe("groupSidebarSessions", () => {
     expect(source).toContain('navigate({ to: "/" })');
   });
 
-  it("uses closed and open folder icons for project disclosure state", () => {
+  it("renders sections as icon-free labels over one flat project level", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const projectRow = source.slice(
       source.indexOf("function ProjectSidebarRow"),
       source.indexOf("function PairSidebarRow"),
     );
 
-    expect(source).toContain('openSectionKeys.has("projects") ? <FolderOpenIcon');
+    expect(source).not.toContain('openSectionKeys.has("projects") ? <FolderOpenIcon');
+    expect(source).not.toContain("sidebar-tree-branch");
+    expect(source).not.toContain("function WorkspaceSidebarRow");
+    expect(source).toContain("function WorkspaceGroupHeading");
     expect(projectRow).toContain("<ProjectIcon");
+    expect(projectRow).toContain("sidebar-project-label");
+    expect(projectRow).toContain('t("project.setupCoordinator")');
+  });
+
+  it("outdents worktree headings to the project depth, caret in the project-icon column", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const heading = source.slice(source.indexOf("function WorkspaceGroupHeading"));
+    const row = heading.slice(heading.indexOf("<SidebarGridRow"), heading.indexOf("<SidebarGridCell"));
+
+    expect(row).toContain("depth={0}");
+    expect(heading.indexOf("<DisclosureCaret")).toBeLessThan(heading.indexOf('slot="label"'));
+  });
+
+  it("lifts rows only for hover, open menus and keyboard focus, never for a retained mouse focus", () => {
+    // A clicked button keeps DOM focus (and Radix returns focus to the menu
+    // trigger on close), so :focus-within left rows washed and their actions
+    // shown after the pointer had gone. Keyboard intent is :focus-visible.
+    const css = readFileSync(resolve(__dirname, "../../styles/index.css"), "utf8");
+    const sidebarCss = css.split("\n").filter((line) => /sidebar/.test(line)).join("\n");
+    const sources = ["Sidebar.tsx", "SidebarSectionHeading.tsx"].map((file) =>
+      readFileSync(resolve(__dirname, file), "utf8"));
+
+    expect(sidebarCss).not.toContain(":focus-within");
+    for (const source of sources) expect(source).not.toContain("group-focus-within");
+    expect(css).toContain(".sidebar-grid-row:is(:hover, :has(:focus-visible)");
+  });
+
+  it("keeps worktree headings on the regular sidebar row tier rather than faint caption text", () => {
+    const css = readFileSync(resolve(__dirname, "../../styles/index.css"), "utf8");
+
+    expect(css).not.toContain(".sidebar-workspace-heading {");
+    expect(css).toMatch(/\.sidebar-project-label \{\s*font-size: 14px;/);
+  });
+
+  it("puts project and worktree rows behind a repository hover card instead of a native path tooltip", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const projectRow = source.slice(source.indexOf("function ProjectSidebarRow"), source.indexOf("function PairSidebarRow"));
+    const heading = source.slice(source.indexOf("function WorkspaceGroupHeading"));
+
+    expect(projectRow).toContain("<RepositoryHoverCard");
+    expect(projectRow).not.toContain("title={group.primaryRoot");
+    expect(heading).toContain("<RepositoryHoverCard");
+    expect(heading).toContain("paths={workspace.paths}");
+    const headingButton = heading.slice(heading.indexOf("<button", heading.indexOf("<RepositoryHoverCard")));
+    expect(headingButton.slice(0, headingButton.indexOf(">\n"))).not.toContain("title=");
   });
 
   it("reveals project actions on hover", () => {
@@ -647,7 +721,6 @@ describe("groupSidebarSessions", () => {
       "function SidebarSection",
       "function ProjectSidebarRow",
       "function ProjectCoordinatorRow",
-      "function WorkspaceSidebarRow",
       "function PairSidebarRow",
       "function SessionRow",
     ]) {
@@ -662,7 +735,7 @@ describe("groupSidebarSessions", () => {
     expect(source).toContain("sidebar-footer-chrome");
   });
 
-  it("keeps every row icon on one shared 16px rail", () => {
+  it("keeps every row icon on one shared icon-track rail", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const styles = readFileSync(
       resolve(__dirname, "../../styles/index.css"),
@@ -679,13 +752,13 @@ describe("groupSidebarSessions", () => {
       expect(source.slice(start, start + 2400)).toContain("sidebar-row-icon");
     }
     const coordinatorStart = source.indexOf("function ProjectCoordinatorRow");
-    const coordinatorEnd = source.indexOf("/** Workspace node.", coordinatorStart);
+    const coordinatorEnd = source.indexOf("/** A worktree inside a project:", coordinatorStart);
     const coordinator = source.slice(coordinatorStart, coordinatorEnd);
     expect(coordinator).toContain(
       '<SidebarGridCell slot="trailing" className={labelCls} aria-hidden="true">',
     );
     expect(coordinator).toContain(
-      '<WorkflowIcon className="size-3.5 shrink-0 text-fg-muted" />',
+      '<WorkflowIcon className="size-3.5 shrink-0" />',
     );
     expect(source).not.toContain('"inline-flex size-4 shrink-0');
   });

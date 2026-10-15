@@ -5,12 +5,16 @@ root=repo/'artifacts/icons'
 root.mkdir(parents=True, exist_ok=True)
 P=lambda d:f'<path d="{d}"/>'
 C=lambda x,y,r:f'<circle cx="{x}" cy="{y}" r="{r}"/>'
-R=lambda x,y,w,h,r=2:f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}"/>'
+# Container corner rule: centerline radius 3 for parts >= 12 units, 2 for 6-11, 1 below.
+R=lambda x,y,w,h,r=None:f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{corner(w,h) if r is None else r}"/>'
 icons={}
+def corner(w,h):
+ m=min(w,h)
+ return 3 if m>=12 else 2 if m>=6 else 1
 def add(name,label,use,body):icons[name]={'label':label,'use':use,'body':body}
 add('folder-closed','文件夹 · 收起','项目分组收起',P('M3 8V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Zm0 1h18'))
 add('folder-open','文件夹 · 展开','项目分组展开',P('M3 18V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2M3 19l3-8h16l-3 9H5a2 2 0 0 1-2-1Z'))
-add('compose','新建对话','固定顶部新建对话',P('M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4')+P('m10 11 8-8a1.4142135624 1.4142135624 0 0 1 2 2l-8 8-3 1 1-3Z'))
+add('compose','新建对话','固定顶部新建对话',P('M10 4H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3')+P('m10 11 8-8a1.4142135624 1.4142135624 0 0 1 2 2l-8 8-3 1 1-3Z'))
 add('search','搜索','固定顶部搜索',C(10.5,10.5,6)+P('m15 15 4.5 4.5'))
 add('chat','对话','对话分组与普通会话',P('M6 4h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H9l-4 3v-3a3 3 0 0 1-2-3V7a3 3 0 0 1 3-3Z'))
 add('coordination','编排','多 Agent 入口',C(12,5,2)+C(5,19,2)+C(19,19,2)+P('M12 7v5M5 17v-3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3'))
@@ -32,7 +36,7 @@ add('bell','通知','通知开启',P('M5 17c2-2 2-4 2-7a5 5 0 0 1 10 0c0 3 0 5 2
 add('bell-muted','通知静音','通知关闭',P('M10 5.4A5 5 0 0 1 17 10v1M7 9v1c0 3 0 5-2 7h9M10 21h4M3 3l18 18'))
 add('pin','置顶','置顶项目或对话',P('m14 3 7 7-3 1-4 4v3L6 10h3l4-4 1-3ZM10 14l-7 7'))
 add('pin-off','取消置顶','取消置顶操作','<defs><mask id="cut"><rect width="24" height="24" fill="white" stroke="none"/><path d="M3 3 21 21" stroke="black" stroke-width="4"/></mask></defs><g mask="url(#cut)">'+icons['pin']['body']+'</g>'+P('M3 3l18 18'))
-add('archive','归档','项目或对话归档',R(3,4,18,4,1)+P('M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8M9 12h6'))
+add('archive','归档','项目或对话归档',R(3,4,18,4,1)+P('M5 11v7a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-7M9 12h6'))
 add('trash','移除','移除项目入口',P('M4 6h16M9 6V3h6v3M6 9l1 12h10l1-12M12 10v7'))
 add('palette','项目图标','设置图标与颜色 / 项目可选图形',P('M21 12c0-5-4-9-9-9a9 9 0 1 0 4 17c2-1 0-3-1-4-1-2 2-3 4-3 1 0 2 0 2-1Z')+C(8,9,.5)+C(12,7,.5)+C(6,13,.5))
 add('plus','添加','添加项目或条目',P('M12 5v14M5 12h14'))
@@ -65,7 +69,7 @@ def rounded_polygon(points, trim=.45):
   for i,(a,b,c) in enumerate(corners))+'Z'
 
 replace('search',C(10.5,10.5,6.5)+P('M'+xy(point(10.5,10.5,6.5,45))+' L20 20'))
-replace('folder-closed',P('M3 8V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Zm0 1h18'))
+replace('folder-closed',P('M3 9V7a3 3 0 0 1 3-3h3l2 2h7a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9Zm0 1h18'))
 # Front flap is a sheared rounded rectangle: x' = x + .2*(20-y).
 # Top and bottom straight edges are both 14 units; side edges are parallel.
 # Keep baseline y20, x5..19. Allow the opened flap to extend to the right.
@@ -98,7 +102,7 @@ add('moon','深色主题','主题切换',P('M20.2 14.2A8.5 8.5 0 0 1 9.8 3.8a8.5
 add('moon-star','切换主题','主题切换',P('M19.8 14.5A8 8 0 0 1 9.5 4.2a8 8 0 1 0 10.3 10.3Z')+P('M18 3v4M16 5h4'))
 add('sun','浅色主题','主题切换',C(12,12,4)+P('M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5'))
 # Second concept group: clean vector reconstruction, no traced raster contours.
-add('server','服务器','远程运行位置',R(3,4,18,6)+R(3,14,18,6)+dot(17,7,.8)+dot(17,17,.8))
+add('server','服务器','远程运行位置',R(3,4,18,6,2)+R(3,14,18,6,2)+dot(17,7,.8)+dot(17,17,.8))
 review_stem=C(6,5,2)+C(6,19,2)+P('M6 7v10')
 add('review-open','待合并','PR / MR 开放',review_stem+C(18,19,2)+P('M18 17V9a4 4 0 0 0-4-4h-2m3-3-3 3 3 3'))
 add('review-merged','已合并','PR / MR 已合并',review_stem+C(18,19,2)+P('M18 17v-2c0-5-12-3-12-8'))
@@ -108,7 +112,7 @@ add('shield','权限','权限通用',shield)
 add('shield-ask','询问权限','每次询问',shield+P('M12 8v4')+dot(12,15,.8))
 add('shield-check','允许执行','自动批准',shield+P('m8.5 11.5 2.5 2.5 4.5-5'))
 add('shield-restricted','受限权限','只读',shield+P('M9 11.5h6'))
-file=P('M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-.586-1.414l-5-5A2 2 0 0 0 13 3Z')+P('M13 3v5a2 2 0 0 0 2 2h5')
+file=P('M13 3H7a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V10a2 2 0 0 0-.586-1.414l-5-5A2 2 0 0 0 13 3Z')+P('M13 3v5a2 2 0 0 0 2 2h5')
 add('file','文件','文件资源',file)
 add('file-text','文本文件','文本资源',file+P('M8 14h8M8 17h5'))
 add('browser','浏览器','浏览器工具面板',R(3,4,18,16)+P('M3 9h18')+dot(6,6.5,.6)+dot(9,6.5,.6))
@@ -116,6 +120,17 @@ add('panel-left','左侧栏','展开或收起左侧栏',R(3,4,18,16)+P('M9 4v16'
 add('panel-right','右侧栏','展开或收起右侧栏',R(3,4,18,16)+P('M15 4v16'))
 add('panel-top','顶部面板','顶部布局',R(3,4,18,16)+P('M3 10h18'))
 add('globe','网页','网址及网站资源',C(12,12,9)+P('M3 12h18M12 3c-5 4.5-5 13.5 0 18M12 3c5 4.5 5 13.5 0 18'))
+# Compose (Linear-style): frame open at the top-right. The open ends' round
+# caps (not their centerlines) stop on the x12 / y12 guides, so centerlines
+# end half a stroke short (x11.125, y12.875) plus a 45-degree pencil. The tip sits just past the
+# crossing of those gap lines, centered on it; the round end reaches the frame's
+# outer top-right corner (extremity 20.3,3.7). Body is uniform 2.0 wide
+# (r1.0, slightly heavier than the 1.75 frame); the last 2.0 units taper as a
+# curved (ogive) nose, cubic flanks tangent to the body, into a rounded tip (r0.3 at 11.29,12.71); the taper's midpoint sits on the
+# icon center (12,12). Thinner reads as a
+# needle, a shorter taper as a chisel, a sharper tip as a spike.
+replace('compose',P('M11.125 4H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-4.125')
+ +'<path d="M11.350 13.002C12.185 12.839 12.778 12.636 13.414 12.000L20.300 5.114A1 1 0 0 0 18.886 3.700L12.000 10.586C11.364 11.222 11.161 11.815 10.998 12.650A.3 .3 0 0 0 11.350 13.002Z" fill="currentColor" stroke="none"/>')
 # All interface glyphs share the same true centerline stroke.
 rebuilt=('compose','search','coordination','projects','schedule')
 def stroke(name): return 1.75

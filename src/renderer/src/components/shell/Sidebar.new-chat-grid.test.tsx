@@ -225,7 +225,7 @@ describe("new chat sidebar grid", () => {
     expect(headerRow?.querySelector('[data-sidebar-grid="icon"]')).toBeNull();
 
     const tenantRows = [...host.querySelectorAll<HTMLElement>(
-      '.sidebar-grid-row[data-sidebar-depth="1"]',
+      '.sidebar-grid-row[data-sidebar-depth="0"]',
     )];
     expect(tenantRows.some((row) => row.textContent?.includes("New chat"))).toBe(true);
     expect(tenantRows.some((row) => row.textContent?.includes("Pinned"))).toBe(true);
@@ -234,7 +234,7 @@ describe("new chat sidebar grid", () => {
     await act(async () => root.unmount());
   });
 
-  it("uses a trailing coordinator cell only for configured projects", async () => {
+  it("shows a coordinator row only for configured projects", async () => {
     const project: ProjectInfo = {
       id: "coordinator-project",
       name: "Coordinator project",
@@ -252,12 +252,13 @@ describe("new chat sidebar grid", () => {
       const { root, host } = await mount();
       await act(async () => {
         await vi.waitFor(() => {
+          expect(host.querySelector('[data-sidebar-project="project:coordinator-project"]')).not.toBeNull();
           const row = host.querySelector<HTMLElement>(
             '[data-testid="project-coordinator-row"]',
           );
-          expect(row?.getAttribute("data-configured")).toBe(
-            String(!!coordinatorAgent),
-          );
+          // Setup lives in the project menu; only a configured coordinator is a row.
+          if (coordinatorAgent) expect(row?.getAttribute("data-configured")).toBe("true");
+          else expect(row).toBeNull();
         });
       });
       return { root, host };
@@ -276,11 +277,7 @@ describe("new chat sidebar grid", () => {
     await act(async () => configured.root.unmount());
 
     const unconfigured = await renderCoordinator();
-    const unconfiguredRow = unconfigured.host.querySelector<HTMLElement>(
-      '[data-testid="project-coordinator-row"]',
-    );
-    expect(unconfiguredRow?.getAttribute("data-sidebar-trailing-track")).toBe("none");
-    expect(unconfiguredRow?.querySelector('[data-sidebar-grid="trailing"]')).toBeNull();
+    expect(unconfigured.host.querySelector('[data-testid="project-coordinator-row"]')).toBeNull();
     await act(async () => unconfigured.root.unmount());
   });
 
@@ -292,7 +289,8 @@ describe("new chat sidebar grid", () => {
     const signIn = [...host.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent?.includes("Sign in"));
     const row = signIn?.closest<HTMLElement>(".sidebar-grid-row");
-    expect(row?.getAttribute("data-sidebar-depth")).toBe("1");
+    // Section labels carry no icon, so their rows align with the label.
+    expect(row?.getAttribute("data-sidebar-depth")).toBe("0");
     expect(row?.getAttribute("data-sidebar-leading")).toBe("none");
     expect(row?.getAttribute("data-sidebar-trailing-track")).toBe("none");
     await act(async () => signIn?.click());
@@ -307,7 +305,7 @@ describe("new chat sidebar grid", () => {
 
     const retryRow = [...host.querySelectorAll<HTMLElement>(".sidebar-grid-row")]
       .find((row) => row.textContent?.includes("Tenant conversations unavailable"));
-    expect(retryRow?.getAttribute("data-sidebar-depth")).toBe("1");
+    expect(retryRow?.getAttribute("data-sidebar-depth")).toBe("0");
     await act(async () => retryRow?.click());
     expect(taskRefreshCalls).toBeGreaterThanOrEqual(2);
     await act(async () => root.unmount());

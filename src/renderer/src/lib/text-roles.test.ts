@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   DISABLED_ENABLED_GAP,
   DISABLED_SURFACE_CONTRAST,
+  FAINT_SURFACE_CONTRAST,
   TEXT_ROLE_MIN_GAP,
   contrastRatio,
   disabledForeground,
+  faintForeground,
   mixSrgb,
 } from "./text-roles";
 
@@ -42,6 +44,22 @@ describe("text role color math", () => {
     expect(contrastRatio(subtle, color)).toBeGreaterThanOrEqual(DISABLED_ENABLED_GAP);
     expect(contrastRatio("#141414", "#fcfcfc")).toBeGreaterThan(
       contrastRatio(color, "#fcfcfc") + TEXT_ROLE_MIN_GAP,
+    );
+  });
+
+  it("derives a quaternary color at 3:1 that sits between the hint ink and disabled", () => {
+    const surfaces = ["#fcfcfc", "#f3f3f3"];
+    const faint = faintForeground("#141414", "#fcfcfc", surfaces);
+    const disabled = disabledForeground("#141414", "#fcfcfc", surfaces);
+    const worst = Math.min(...surfaces.map((surface) => contrastRatio(faint, surface)));
+    expect(worst).toBeGreaterThanOrEqual(FAINT_SURFACE_CONTRAST);
+    // Weakest mix that clears the floor, not an arbitrary darker gray.
+    expect(worst).toBeLessThan(FAINT_SURFACE_CONTRAST + 0.1);
+    expect(contrastRatio("#5c5c5c", "#fcfcfc")).toBeGreaterThan(
+      contrastRatio(faint, "#fcfcfc") + TEXT_ROLE_MIN_GAP,
+    );
+    expect(contrastRatio(faint, "#fcfcfc")).toBeGreaterThan(
+      contrastRatio(disabled, "#fcfcfc") + TEXT_ROLE_MIN_GAP,
     );
   });
 

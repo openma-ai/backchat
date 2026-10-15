@@ -192,6 +192,7 @@ describe("TurnBlock", () => {
   it("preserves thought, tool rounds, interleaved text, answer, and footer in order", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
+        defaultProcessOpen
         turn={turn({
           status: "complete",
           events: [
@@ -1304,6 +1305,7 @@ describe("shell permission presentation", () => {
     const command = "echo PR28R2-REJECT-ME > pr28r2-shell-reject.txt";
     const html = renderToStaticMarkup(
       <TurnBlock
+        defaultProcessOpen
         turn={turn({
           id: "turn-deny",
           status: "complete",

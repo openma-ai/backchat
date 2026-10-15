@@ -41,10 +41,10 @@ describe("sidebar nav row", () => {
       "text-danger",
     );
     expect(sidebarNavRowStateClass({ active: false })).toBe(
-      "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
+      "text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg",
     );
     expect(sidebarNavRowStateClass({ active: false, errored: false })).toBe(
-      "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
+      "text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg",
     );
   });
 
@@ -72,8 +72,11 @@ describe("sidebar nav row", () => {
       /\.sidebar-navigation :is\(button, a\):focus-visible \{[^}]*outline-offset:\s*-2px;/,
     );
     expect(navigation).toMatch(
-      /\.sidebar-navigation \.space-y-0\\.5 > :not\(\[hidden\]\) ~ :not\(\[hidden\]\) \{[^}]*margin-top:\s*1px;/,
+      /\.sidebar-navigation \.space-y-0\\.5 > :not\(\[hidden\]\) ~ :not\(\[hidden\]\),\s*\.sidebar-navigation \.mt-0\\.5 \{[^}]*margin-top:\s*var\(--sidebar-row-step\);/,
     );
+    // Two rounded washes are kept apart by the 2px step, not by trimming paint.
+    expect(navigation).toMatch(/--sidebar-row-step:\s*2px;/);
+    expect(styles).not.toContain("--sidebar-twin-wash-trim");
     expect(settings).toContain('className="space-y-0.5"');
     expect(styles).toMatch(/\.sidebar-nav-row\s*\{[^}]*height:\s*var\(--sidebar-row-h\);/);
     expect(styles.indexOf("--sidebar-row-h: 28px")).toBe(

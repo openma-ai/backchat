@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 export function FileOpenMenu({
   path,
@@ -21,6 +22,7 @@ export function FileOpenMenu({
   onOpenDefault(): void;
   onReveal(): void;
 }) {
+  const { t } = useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -44,7 +46,7 @@ export function FileOpenMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onReveal} className="h-8 gap-2 text-xs">
           <FolderOpenIcon className="size-3.5" />
-          Show in Finder
+          {t("file.reveal")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -17,6 +17,7 @@ import { ContentPage, PAGE_SCAFFOLD_CLASS } from "@/components/shell/PageScaffol
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { composerBoxClass } from "@/lib/composer-box";
 import { sidebarNavRowClass } from "@/lib/sidebar-nav-row";
+import { SidebarGridCell, SidebarGridRow } from "@/components/shell/SidebarGridRow";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 type SettingsTab = {
@@ -104,21 +105,29 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
   return (
     <div className="sidebar-navigation flex h-full min-h-0 flex-col text-ui text-fg">
       <div className="app-drag-region h-[36px] shrink-0" />
-      <div className="px-2 pt-[var(--row-gap-y)]">
-        <button
+      <div className="sidebar-content-inset pt-[var(--row-gap-y)]">
+        <SidebarGridRow
+          as="button"
           type="button"
+          trailingTrack="none"
           onClick={backToApp}
           aria-label={t("settings.backToApp")}
           className={sidebarNavRowClass({
             active: false,
-            className: "app-no-drag mb-2 w-fit",
+            // Leaving settings is non-essential (Esc and the icon carry it):
+            // quaternary tier, one full step under the tertiary nav rows.
+            className: "app-no-drag mb-2 w-fit text-fg-faint",
           })}
         >
-          <span className="sidebar-row-icon">
-            <ArrowLeftIcon className="size-4" />
-          </span>
-          <span>{t("settings.backToApp")}</span>
-        </button>
+          <SidebarGridCell slot="icon">
+            <span className="sidebar-row-icon">
+              <ArrowLeftIcon />
+            </span>
+          </SidebarGridCell>
+          <SidebarGridCell slot="label">
+            <span className="min-w-0 truncate">{t("settings.backToApp")}</span>
+          </SidebarGridCell>
+        </SidebarGridRow>
 
         <SearchField className="app-no-drag mb-3">
           <input
@@ -136,28 +145,31 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
         data-settings-sidebar-scroll-area="true"
         className="sidebar-scroll-area app-no-drag min-h-0 flex-1"
       >
-        <nav className="px-2">
+        <nav className="sidebar-content-inset">
           {SECTION_ORDER.map((section) => {
             const items = visibleTabs.filter((tab) => tab.section === section);
             if (items.length === 0) return null;
             return (
-              <div key={section} className="mb-4">
-                <div className="mb-1.5 px-2 text-ui font-medium text-fg-subtle">{t(SECTION_LABELS[section])}</div>
+              <div key={section} className="sidebar-group">
+                <div className="sidebar-group-label">{t(SECTION_LABELS[section])}</div>
                 <ul className="space-y-0.5">
                   {items.map((tab) => {
                     const active = location.pathname === tab.to;
                     const Icon = tab.icon;
                     return (
                       <li key={tab.to}>
-                        <Link
-                          to={tab.to}
-                          className={sidebarNavRowClass({ active })}
-                        >
-                          <span className="sidebar-row-icon">
-                            <Icon className="size-4" />
-                          </span>
-                          <span>{t(tab.labelKey)}</span>
-                        </Link>
+                        <SidebarGridRow asChild trailingTrack="none" className={sidebarNavRowClass({ active })}>
+                          <Link to={tab.to}>
+                            <SidebarGridCell slot="icon">
+                              <span className="sidebar-row-icon">
+                                <Icon />
+                              </span>
+                            </SidebarGridCell>
+                            <SidebarGridCell slot="label">
+                              <span className="min-w-0 truncate">{t(tab.labelKey)}</span>
+                            </SidebarGridCell>
+                          </Link>
+                        </SidebarGridRow>
                       </li>
                     );
                   })}
@@ -165,12 +177,19 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
               </div>
             );
           })}
-          {!!projects.data?.length && <div className="mb-4">
-            <div className="mb-1.5 px-2 text-ui font-medium text-fg-subtle">{t("sidebar.projects")}</div>
+          {!!projects.data?.length && <div className="sidebar-group">
+            <div className="sidebar-group-label">{t("sidebar.projects")}</div>
             <ul className="space-y-0.5">{projects.data.filter(project => project.name.toLowerCase().includes(query.trim().toLowerCase())).map(project => <li key={project.id}>
-              <Link to="/settings/projects/$projectId" params={{ projectId: project.id }} className={sidebarNavRowClass({ active: location.pathname === `/settings/projects/${project.id}` })}>
-                <ProjectIcon identity={`project:${project.id}`} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} /><span className="truncate">{project.name}</span>
-              </Link>
+              <SidebarGridRow asChild trailingTrack="none" className={sidebarNavRowClass({ active: location.pathname === `/settings/projects/${project.id}` })}>
+                <Link to="/settings/projects/$projectId" params={{ projectId: project.id }}>
+                  <SidebarGridCell slot="icon">
+                    <ProjectIcon identity={`project:${project.id}`} name={project.name} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} className="sidebar-row-icon" />
+                  </SidebarGridCell>
+                  <SidebarGridCell slot="label">
+                    <span className="min-w-0 truncate">{project.name}</span>
+                  </SidebarGridCell>
+                </Link>
+              </SidebarGridRow>
             </li>)}</ul>
           </div>}
         </nav>

@@ -53,7 +53,7 @@ function ProjectSettingsForm({ project, view }: { project: ProjectInfo; view: Pr
       <SettingsSection title={t("project.settingsGeneral")}>
         <SettingsCard>
           <div className="flex items-end gap-3">
-            <button type="button" aria-label={t("project.iconTitle")} title={t("project.iconTitle")} onClick={() => setPicker(true)} className="flex size-8 shrink-0 items-center justify-center rounded-md p-1.5 hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-ring"><ProjectIcon identity={key} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} className="size-full" /></button>
+            <button type="button" aria-label={t("project.iconTitle")} title={t("project.iconTitle")} onClick={() => setPicker(true)} className="flex size-8 shrink-0 items-center justify-center rounded-md p-1.5 hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-ring"><ProjectIcon identity={key} name={project.name} sourceFolders={project.source_folders} primaryRoot={project.primary_folder} className="size-full" /></button>
             <div className="min-w-0 flex-1"><SettingsField label={t("project.settingsName")}><Input className="h-8 text-xs" required value={name} onChange={e => setName(e.target.value)} /></SettingsField></div>
           </div>
         </SettingsCard>

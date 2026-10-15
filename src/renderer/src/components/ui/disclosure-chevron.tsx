@@ -17,7 +17,9 @@ export function DisclosureChevron({
     >
       <ChevronRightIcon
         className={cn(
-          "size-3.5 text-fg-subtle transition-transform",
+          // Turns on the same tokens as the body's collapse, so the chevron
+          // and the content arrive together (as the sidebar caret does).
+          "size-3.5 text-fg-subtle transition-transform duration-[var(--motion-disclosure-duration)] ease-[var(--motion-disclosure-easing)]",
           open && "rotate-90",
         )}
       />

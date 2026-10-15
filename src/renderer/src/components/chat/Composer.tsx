@@ -25,6 +25,7 @@ import { useI18n } from "@/lib/i18n";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { removeSuggestionTemplateSlot, type ComposerSuggestionDraft } from "@/lib/home-suggestion-flow";
 import { AgentIcon } from "@/components/AgentIcon";
+import { ShimmerText } from "@/components/ui/ShimmerText";
 import { cn } from "@/lib/utils";
 import { describeRunningMessageAction } from "@/lib/composer-delivery";
 import { buildComposerSubmitText, canSubmitComposer, resolveComposerKeyAction } from "@/lib/composer-prompt";
@@ -337,6 +338,10 @@ export function Composer({
     auth: sessionAuth,
   };
   const authChecking = !isRemote && composerHarnessAuthChecking(liveProbePending, sessionAuthState);
+  const probedHarness = currentEnabledAgent?.label ?? currentAgent?.label ?? currentAgentId;
+  const harnessProbeText = authChecking && currentAgentId
+    ? t(slowAuthProbe ? "chat.harnessProbeSlow" : "chat.harnessProbeChecking", { harness: probedHarness })
+    : null;
   const authNeeded = !isRemote && composerAuthNeeded(liveAuth, sessionAuthState, {
     liveProbePending,
   });
@@ -1036,6 +1041,20 @@ export function Composer({
                   start of the first text line and the caret continues right
                   after it. text-indent only offsets the first line, so
                   wrapped lines reclaim the full width. */}
+              {/* The harness probe reads in the placeholder's place. A real
+                  element, not ::placeholder, because Chromium does not run
+                  animations on the placeholder pseudo-element. */}
+              {harnessProbeText && !selectedSkillCommand && !text && (
+                <ShimmerText
+                  role="status"
+                  aria-live="polite"
+                  data-composer-harness-probe="true"
+                  data-composer-harness-probe-agent={currentAgentId}
+                  className="pointer-events-none absolute left-0 top-0 max-w-full truncate font-chat text-body"
+                >
+                  {harnessProbeText}
+                </ShimmerText>
+              )}
               {selectedSkillCommand && (
                 <span
                   ref={skillChipRef}
@@ -1173,29 +1192,11 @@ export function Composer({
               placeholder={
                 selectedSkillCommand
                   ? t("chat.addInstructions")
-                  : authChecking && currentAgentId
-                    ? slowAuthProbe
-                      ? t("chat.harnessProbeSlow", {
-                          harness:
-                            currentEnabledAgent?.label ??
-                            currentAgent?.label ??
-                            currentAgentId,
-                        })
-                      : t("chat.harnessProbeChecking", {
-                          harness:
-                            currentEnabledAgent?.label ??
-                            currentAgent?.label ??
-                            currentAgentId,
-                        })
+                  : harnessProbeText
+                    ? ""
                     : authNeeded
                       ? t("chat.signInToChat")
                       : placeholder
-              }
-              data-composer-harness-probe={
-                authChecking && currentAgentId ? "true" : undefined
-              }
-              data-composer-harness-probe-agent={
-                authChecking && currentAgentId ? currentAgentId : undefined
               }
               disabled={!!disabled || authNeeded}
               rows={1}
@@ -1204,7 +1205,6 @@ export function Composer({
                 selectedSkillCommand
                   ? "min-h-[var(--control-height-compact)]"
                   : "min-h-[var(--composer-body-min-height)]",
-                authChecking && currentAgentId && "composer-harness-probe-placeholder",
               )}
             />
             </div>

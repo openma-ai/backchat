@@ -23,6 +23,7 @@ describe("FileOpenMenu", () => {
 
     expect(markup).toContain("Open in");
     expect(markup).toContain("Default app");
-    expect(markup).toContain("Show in Finder");
+    // The file manager is named per host OS, never a hardcoded Finder.
+    expect(markup).toMatch(/Show in (Finder|File Explorer|file manager)|在(访达|资源管理器|文件管理器)中显示/);
   });
 });

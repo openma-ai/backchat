@@ -112,7 +112,7 @@ export function ElicitationAskForm({
                     ...current,
                     [choiceOtherField.name]: event.currentTarget.value,
                   }))}
-                  className="h-6 w-full bg-transparent text-sm font-medium text-fg outline-none placeholder:text-fg-muted"
+                  className="h-6 w-full bg-transparent text-sm font-medium text-fg outline-none"
                 />
                 {choiceOtherField.description && (
                   <span className="block truncate text-[11px] leading-4 text-fg-subtle">

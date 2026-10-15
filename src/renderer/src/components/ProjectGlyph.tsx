@@ -1,6 +1,6 @@
 import { BoxIcon, DiamondIcon, HexagonIcon, LayersIcon, OrbitIcon, RadarIcon, ShapesIcon, SparklesIcon, RocketIcon, GlobeIcon, MountainIcon, SunIcon, MoonIcon, StarIcon, FlameIcon, LeafIcon, HeartIcon, GemIcon, CloudIcon, ZapIcon, CoffeeIcon, MusicIcon, CameraIcon, PaletteIcon, CodeIcon, TerminalIcon, DatabaseIcon, CpuIcon, ShieldIcon, CompassIcon, FlagIcon, AnchorIcon } from "./Icons";
 import * as CustomIcons from "./BackchatIcons";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 const legacyProjectGlyphs = [
   ["box", "方块", BoxIcon], ["diamond", "菱形", DiamondIcon], ["hexagon", "六边形", HexagonIcon], ["layers", "层叠", LayersIcon],
@@ -43,13 +43,47 @@ export function saveProjectIcon(key: string, value: ProjectIconChoice | null) {
   else localStorage.removeItem(storageKey(key));
   window.dispatchEvent(new Event("project-icon-changed"));
 }
-export function ProjectGlyph({ identity, choice }: { identity: string; choice?: ProjectIconChoice | null }) {
+/** Hues for the automatic letter tile. One lightness and chroma per theme
+ *  (see `.project-letter` in index.css), so no tile shouts over another. */
+export const PROJECT_LETTER_HUES = [30, 70, 145, 195, 250, 290, 340] as const;
+
+function identityHash(identity: string): number {
   let hash = 2166136261;
   for (const char of identity) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  return hash;
+}
+
+/** First letter or ideograph of the name, skipping punctuation such as a
+ *  leading dot or bracket. */
+export function projectInitial(name: string): string {
+  const match = name.match(/[\p{L}\p{N}]/u);
+  return (match?.[0] ?? "?").toLocaleUpperCase();
+}
+
+export function ProjectGlyph({ identity, name, choice }: {
+  identity: string;
+  /** Display name the automatic tile takes its letter from. */
+  name?: string;
+  choice?: ProjectIconChoice | null;
+}) {
   if (choice?.kind === "emoji") return <span aria-hidden="true" className="text-[14px] leading-none">{choice.emoji}</span>;
-  const Glyph = allProjectGlyphs.find(([name]) => choice?.kind === "icon" && name === choice.glyph)?.[2] ?? projectGlyphs[hash % projectGlyphs.length]![2];
-  const color = choice?.kind === "icon" ? choice.color : projectColors[Math.floor(hash / projectGlyphs.length) % projectColors.length];
-  return <Glyph aria-hidden="true" className="size-full" style={{ color }} data-project-glyph={choice?.kind === "icon" ? choice.glyph : projectGlyphs[hash % projectGlyphs.length]![0]} />;
+  const picked = choice?.kind === "icon" ? allProjectGlyphs.find(([glyph]) => glyph === choice.glyph) : undefined;
+  if (picked && choice?.kind === "icon") {
+    const Glyph = picked[2];
+    return <Glyph aria-hidden="true" className="size-full" style={{ color: choice.color }} data-project-glyph={choice.glyph} />;
+  }
+  const hue = PROJECT_LETTER_HUES[identityHash(identity) % PROJECT_LETTER_HUES.length]!;
+  const label = name || identity.split("/").filter(Boolean).pop() || identity;
+  return (
+    <span
+      aria-hidden="true"
+      className="project-letter"
+      style={{ "--project-hue": hue } as CSSProperties}
+      data-project-glyph="letter"
+    >
+      {projectInitial(label)}
+    </span>
+  );
 }
 
 export function useProjectIcon(key: string) {

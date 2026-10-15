@@ -52,7 +52,7 @@ describe("matchFontWeight", () => {
 describe("declared Backchat faces", () => {
   const css = readFileSync(fileURLToPath(new URL("../styles/index.css", import.meta.url)), "utf8");
 
-  it("pins resting 430 to Regular and keeps Medium for a 500 request", () => {
+  it("draws resting 430 with PingFang Medium so CJK matches SF 430", () => {
     const faces = declaredWeightFaces(css, "Backchat PingFang");
     expect(faces.map((item) => item.min)).toEqual([400, 430, 500, 600]);
     expect(matchFontWeight(430, faces)?.min).toBe(430);
@@ -61,9 +61,10 @@ describe("declared Backchat faces", () => {
     expect(faceSrc(css, "Backchat PingFang", 400)).toContain('local("PingFang SC Regular")');
     expect(faceSrc(css, "Backchat PingFang", 400)).toContain('local("PingFangSC-Regular")');
     expect(faceSrc(css, "Backchat PingFang", 400)).not.toContain("苹方");
-    const regular = faceSrc(css, "Backchat PingFang", 430);
-    expect(regular).toBe(faceSrc(css, "Backchat PingFang", 400));
-    expect(regular).not.toContain("Medium");
+    const resting = faceSrc(css, "Backchat PingFang", 430);
+    expect(resting).toBe(faceSrc(css, "Backchat PingFang", 500));
+    expect(resting).toContain('local("PingFang SC Medium")');
+    expect(resting).not.toContain("Regular");
     expect(faceSrc(css, "Backchat PingFang", 500)).toContain('local("PingFang SC Medium")');
     expect(faceSrc(css, "Backchat PingFang", 600)).toContain('local("PingFang SC Semibold")');
   });

@@ -1,6 +1,6 @@
 import { useProjects } from "@/lib/projects-query";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import { ChevronRightIcon as ChevronRightIcon, MoreIcon as MoreHorizontalIcon, ChatIcon as MessageSquareIcon, ChatsIcon as MessagesSquareIcon, PinIcon as PinIcon, PinOffIcon as PinOffIcon, SearchIcon as SearchIcon, SettingsIcon as Settings2Icon, ComposeIcon as SquarePenIcon, ArchiveIcon as ArchiveIcon, ScheduleIcon as CalendarClockIcon, FolderClosedIcon as FolderIcon, FolderOpenIcon as FolderOpenIcon, BranchIcon as GitBranchIcon, PlusIcon as PlusIcon, TrashIcon as Trash2Icon, ParticipantsIcon as UsersRoundIcon, CoordinationIcon as WorkflowIcon } from "@/components/BackchatIcons";
+import { ChevronRightIcon as ChevronRightIcon, MoreIcon as MoreHorizontalIcon, PinIcon as PinIcon, PinOffIcon as PinOffIcon, SearchIcon as SearchIcon, SettingsIcon as Settings2Icon, ComposeIcon as SquarePenIcon, ArchiveIcon as ArchiveIcon, ScheduleIcon as CalendarClockIcon, FolderOpenIcon as FolderOpenIcon, BranchIcon as GitBranchIcon, PlusIcon as PlusIcon, TrashIcon as Trash2Icon, ParticipantsIcon as UsersRoundIcon, CoordinationIcon as WorkflowIcon } from "@/components/BackchatIcons";
 import { rememberRemovedProject, useRemovedProjectPaths } from "@/lib/removed-projects";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ContextMenu } from "radix-ui";
+import { CopyIcon } from "@/components/Icons";
 import { toast } from "sonner";
 import {
   Loader2Icon,
@@ -42,6 +43,8 @@ import {
 import { AgentIcon } from "@/components/AgentIcon";
 import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { AnimatedCollapse } from "@/components/ui/animated-collapse";
+import { RepositoryHoverCard } from "./RepositoryHoverCard";
+import { DisclosureCaret } from "@/components/ui/disclosure-caret";
 import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSidebarCollapse } from "@/components/shell/AppShell";
@@ -66,11 +69,6 @@ import { RuntimeLocationControl } from "@/components/chat/RuntimeLocationControl
 import type { ProjectInfo } from "@shared/projects.js";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
 
 function readDisclosureKeys<T extends string>(key: string, fallback: T[]): Set<T> {
   try {
@@ -328,6 +326,33 @@ export function groupSidebarSessions(
   };
 }
 
+/** Short worktree name. A managed workspace goes by the name
+ *  the user gave it (its branch is generated, e.g. `backchat/fix-abc-7c6f`);
+ *  an external worktree goes by its branch. The "project · " prefix legacy
+ *  names repeat is dropped. */
+export function workspaceMetaLabel(workspace: SidebarWorkspaceGroup): string {
+  if (workspace.kind === "external" && workspace.branch) return workspace.branch;
+  const parts = workspace.label.split(" · ");
+  return parts[parts.length - 1] || workspace.branch || workspace.label;
+}
+
+/** Folder that "reveal worktree" opens. A multi-repo workspace keeps one
+ *  checkout per repository under a shared directory (`ws-…/01-a`,
+ *  `ws-…/02-b`); revealing the first checkout opened the same repository
+ *  for every worktree. Reveal the shared directory instead; a single
+ *  checkout is its own folder. */
+export function workspaceRevealPath(workspace: Pick<SidebarWorkspaceGroup, "paths">): string | undefined {
+  const paths = workspace.paths.filter(Boolean);
+  if (paths.length <= 1) return paths[0];
+  const split = paths.map((path) => path.replace(/\/+$/, "").split("/"));
+  const common: string[] = [];
+  for (let i = 0; split.every((parts) => i < parts.length - 1 && parts[i] === split[0]![i]); i += 1) {
+    common.push(split[0]![i]!);
+  }
+  const shared = common.join("/");
+  return shared && shared !== "" ? shared : paths[0];
+}
+
 /**
  * Sidebar — top row is a drag region reserved for macOS trafficLight
  * (the red/yellow/green chrome IS the brand mark; we don't draw a logo).
@@ -412,6 +437,7 @@ export function Sidebar() {
   const [openSectionKeys, setOpenSectionKeys] = useState<Set<SidebarSectionKey>>(
     () => readDisclosureKeys("backchat:sidebar-sections:v1", ["pinned", "pairs", "projects", "chats"]),
   );
+  useEffect(() => saveDisclosureKeys("backchat:sidebar-projects:v1", openProjectKeys), [openProjectKeys]);
   const [customSections, setCustomSections] = useState(readCustomSections);
   const [closedCustomSectionIds, setClosedCustomSectionIds] = useState<Set<string>>(
     () => readDisclosureKeys("backchat:closed-custom-sidebar-sections:v1", []),
@@ -419,7 +445,6 @@ export function Sidebar() {
   const [sectionDialog, setSectionDialog] = useState<{ kind: "create" } | { kind: "rename"; id: string } | null>(null);
   const [sectionName, setSectionName] = useState("");
   const [deleteSectionId, setDeleteSectionId] = useState<string | null>(null);
-  useEffect(() => saveDisclosureKeys("backchat:sidebar-projects:v1", openProjectKeys), [openProjectKeys]);
   useEffect(() => saveDisclosureKeys("backchat:sidebar-sections:v1", openSectionKeys), [openSectionKeys]);
   useEffect(() => { try { localStorage.setItem(CUSTOM_SECTIONS_KEY, JSON.stringify(customSections)); } catch { /* In-memory state still works. */ } }, [customSections]);
   useEffect(() => saveDisclosureKeys("backchat:closed-custom-sidebar-sections:v1", closedCustomSectionIds), [closedCustomSectionIds]);
@@ -631,6 +656,22 @@ export function Sidebar() {
     });
   };
   const sectionRowProps = { sections: customSections, onMoveToSection: moveSessionToSection };
+  const renderProjectSession = (s: SessionRow) => (
+    <SessionRow
+      row={s}
+      {...sectionRowProps}
+      depth={1}
+      agentIconUrl={agentIconUrls.get(s.agent_id)}
+      active={s.id === activeId && location.pathname.startsWith("/chat/")}
+      hasSchedule={scheduledSessionIds.has(s.id)}
+      labelCls={labelCls}
+      onSelect={() => onSelectSession(s.id)}
+      onRename={() => requestRename({ kind: "session", id: s.id, title: s.label })}
+      onArchive={() => void requestArchive([s.id])}
+      menuOpen={openMenuId === s.id}
+      onMenuOpenChange={(openMenu) => setOpenMenuId(openMenu ? s.id : null)}
+    />
+  );
 
   // Hide labels while collapsed; AppShell overflow-hidden clips during expand
   // so icons and labels appear together with the rail width animation.
@@ -665,7 +706,7 @@ export function Sidebar() {
         <SidebarGridRow
           trailingTrack="double"
           data-sidebar-row="new-chat"
-          className="rounded-md text-ui text-fg"
+          className="rounded-md text-ui text-fg-subtle"
         >
           <button
             type="button"
@@ -673,7 +714,12 @@ export function Sidebar() {
             onClick={goHome}
             aria-label={t("sidebar.newChat")}
             aria-current={newChatActive ? "page" : undefined}
-            className="sidebar-new-chat-primary app-no-drag text-ui text-fg"
+            className={cn(
+              "sidebar-new-chat-primary app-no-drag text-ui transition-colors",
+              // No selected wash on this row, so "current page" must not darken
+              // the text either; it would read as a heavier weight.
+              "text-fg-subtle hover:text-fg",
+            )}
           >
             <SidebarGridCell slot="icon">
               <span className="sidebar-row-icon">
@@ -721,7 +767,7 @@ export function Sidebar() {
         data-sidebar-scroll-area="true"
         className="sidebar-scroll-area min-h-0 flex-1"
       >
-      <div className="px-2 pt-px">
+      <div className="sidebar-content-inset">
         <Link
           to="/scheduled"
           aria-label={t("sidebar.scheduled")}
@@ -729,7 +775,7 @@ export function Sidebar() {
             "app-no-drag sidebar-grid-row mt-0.5 rounded-md text-ui",
             scheduledActive
               ? "app-selected-surface text-fg"
-              : "text-fg hover:bg-[var(--control-bg-hover)]",
+              : "text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg",
           )}
           data-sidebar-depth="0"
           data-sidebar-trailing-track="single"
@@ -746,7 +792,7 @@ export function Sidebar() {
         </Link>
       </div>
 
-      <nav className="app-no-drag px-2 pt-5 pb-2">
+      <nav className="sidebar-content-inset app-no-drag pt-5 pb-2">
         {openmaAccount?.user && openmaAccount.workspaces.map((workspace) => {
           const scope = openmaWorkspaceScope(openmaAccount, workspace.id);
           const rows = sessions.filter((row) => row.openma && sameOpenmaScope(row.openma, scope));
@@ -759,7 +805,10 @@ export function Sidebar() {
           />;
         })}
         <section className="sidebar-section">
-          <RuntimeLocationControl variant="sidebar" labelCls={labelCls} />
+          {/* The runtime switch is only a choice once OpenMA offers remote
+              locations; local-only, it was a "本机" layer over everything. The
+              composer keeps its own control. */}
+          {openmaAccount?.user && <RuntimeLocationControl variant="sidebar" labelCls={labelCls} />}
           <div>
           {(() => {
             const { pinned, projects, chats } = grouped;
@@ -768,7 +817,7 @@ export function Sidebar() {
                 {pinned.length > 0 && (
                   <SidebarSection
                     title={t("sidebar.pinned")}
-                    icon={<PinIcon className="size-3.5" />}
+                    headingSize="compact"
                     open={openSectionKeys.has("pinned")}
                     onToggle={() => toggleSection("pinned")}
                     labelCls={labelCls}
@@ -780,7 +829,8 @@ export function Sidebar() {
                           <SessionRow
                             row={s}
                             {...sectionRowProps}
-                            depth={1}
+                          {...sectionRowProps}
+                            depth={0}
                             agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             hasSchedule={scheduledSessionIds.has(s.id)}
@@ -803,6 +853,7 @@ export function Sidebar() {
                 {grouped.customSections.map((section) => {
                   const definition = customSections.find(item => item.id === section.id)!;
                   return <SidebarSection key={section.id} title={section.name}
+                    headingSize="compact"
                     customSectionId={section.id}
                     depth={0}
                     open={!closedCustomSectionIds.has(section.id)}
@@ -828,7 +879,7 @@ export function Sidebar() {
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {section.sessions.map((s) => <li key={s.id}>
                         <SessionRow row={s} {...sectionRowProps} currentSectionId={section.id}
-                          depth={1}
+                          depth={0}
                           agentIconUrl={agentIconUrls.get(s.agent_id)}
                           active={s.id === activeId && location.pathname.startsWith("/chat/")}
                           hasSchedule={scheduledSessionIds.has(s.id)} labelCls={labelCls}
@@ -844,7 +895,7 @@ export function Sidebar() {
                 {pairs.length > 0 && (
                   <SidebarSection
                     title={t("sidebar.pairs")}
-                    icon={<MessagesSquareIcon className="size-3.5" />}
+                    headingSize="compact"
                     open={openSectionKeys.has("pairs")}
                     onToggle={() => toggleSection("pairs")}
                     labelCls={labelCls}
@@ -855,7 +906,7 @@ export function Sidebar() {
                         <li key={p.id}>
                           <PairSidebarRow
                             row={p}
-                            depth={1}
+                            depth={0}
                             active={p.id === activePairId}
                             labelCls={labelCls}
                             onSelect={() => onSelectPair(p.id)}
@@ -874,7 +925,7 @@ export function Sidebar() {
                 )}
                 <SidebarSection
                   title={t("sidebar.projects")}
-                    icon={openSectionKeys.has("projects") ? <FolderOpenIcon className="size-3.5" /> : <FolderIcon className="size-3.5" />}
+                  headingSize="compact"
                   open={openSectionKeys.has("projects")}
                   onToggle={() => toggleSection("projects")}
                   labelCls={labelCls}
@@ -897,6 +948,7 @@ export function Sidebar() {
                       {projects.map((project) => {
                         const open = openProjectKeys.has(project.key);
                         const coordinator = project.projectId ? coordinatorsByProject.get(project.projectId) : undefined;
+                        const hasCoordinator = !!coordinator?.hasCoordinator;
                         return (
                           <li key={project.key}>
                             <ProjectSidebarRow
@@ -907,6 +959,8 @@ export function Sidebar() {
                               onNewChat={() =>
                                 onNewProjectChat(project)
                               }
+                              hasCoordinator={hasCoordinator}
+                              onSetupCoordinator={() => void onOpenProject(project)}
                               onArchiveChats={() => setProjectAction({ kind: "archive", project })}
                               onRemove={() => setProjectAction({ kind: "remove", project })}
                               menuOpen={openMenuId === `project:${project.key}`}
@@ -917,65 +971,58 @@ export function Sidebar() {
                               }
                             />
                             <AnimatedCollapse open={open}>
+                              {/* One indent level under the project. Worktrees group
+                                  their chats under a quiet collapsible label instead
+                                  of a nested tree level with its own icon. */}
                               <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0">
-                                <li>
-                                  <ProjectCoordinatorRow
-                                    group={project}
-                                    active={location.pathname === `/projects/${project.projectId}`}
-                                    hasCoordinator={!!coordinator?.hasCoordinator}
-                                    agentId={coordinator?.coordinatorAgent}
-                                    agentIconUrl={coordinator?.coordinatorAgent ? agentIconUrls.get(coordinator.coordinatorAgent) : undefined}
-                                    agentLabel={agents.find(agent => agent.id === coordinator?.coordinatorAgent)?.label ?? coordinator?.coordinatorAgent}
-                                    onOpen={() => void onOpenProject(project)}
-                                    labelCls={labelCls}
-                                  />
-                                </li>
-                                {project.sessions.map((s) => (
-                                  <li key={s.id}>
-                                    <SessionRow
-                                      row={s}
-                                      {...sectionRowProps}
-                                      depth={2}
-                                      agentIconUrl={agentIconUrls.get(s.agent_id)}
-                                      active={s.id === activeId && location.pathname.startsWith("/chat/")}
-                                      hasSchedule={scheduledSessionIds.has(s.id)}
+                                {hasCoordinator && (
+                                  <li>
+                                    <ProjectCoordinatorRow
+                                      group={project}
+                                      active={location.pathname === `/projects/${project.projectId}`}
+                                      agentId={coordinator?.coordinatorAgent}
+                                      agentIconUrl={coordinator?.coordinatorAgent ? agentIconUrls.get(coordinator.coordinatorAgent) : undefined}
+                                      agentLabel={agents.find(agent => agent.id === coordinator?.coordinatorAgent)?.label ?? coordinator?.coordinatorAgent}
+                                      onOpen={() => void onOpenProject(project)}
                                       labelCls={labelCls}
-                                      onSelect={() => onSelectSession(s.id)}
-                                      onRename={() =>
-                                        requestRename({ kind: "session", id: s.id, title: s.label })
-                                      }
-                                      onArchive={() => void requestArchive([s.id])}
-                                      menuOpen={openMenuId === s.id}
-                                      onMenuOpenChange={(openMenu) =>
-                                        setOpenMenuId(openMenu ? s.id : null)
-                                      }
                                     />
                                   </li>
+                                )}
+                                {!hasCoordinator && project.sessions.length === 0 && project.workspaces.length === 0 && (
+                                  <li>
+                                    <SidebarGridRow depth={1} leading="none" trailingTrack="none"
+                                      role="status" className="text-caption text-fg-faint"
+                                      data-sidebar-empty-project="true">
+                                      <SidebarGridCell slot="label"><span>{t("sidebar.emptyWorkspace")}</span></SidebarGridCell>
+                                    </SidebarGridRow>
+                                  </li>
+                                )}
+                                {project.sessions.map((s) => (
+                                  <li key={s.id}>{renderProjectSession(s)}</li>
                                 ))}
                                 {project.workspaces.map((ws) => {
                                   const wsKey = `${project.key}/${ws.id}`;
-                                  const wsOpen = !openProjectKeys.has(`closed:${wsKey}`);
+                                  // A worktree with chats starts open; an empty one starts
+                                  // closed and only reveals its empty hint when asked.
+                                  const wsEmpty = ws.sessions.length === 0;
+                                  const wsToggleKey = wsEmpty ? `open:${wsKey}` : `closed:${wsKey}`;
+                                  const wsOpen = openProjectKeys.has(wsToggleKey) === wsEmpty;
                                   return (
                                     <li key={ws.id}>
-                                      <WorkspaceSidebarRow
+                                      <WorkspaceGroupHeading
                                         workspace={ws}
                                         open={wsOpen}
                                         labelCls={labelCls}
                                         onToggle={() =>
                                           setOpenProjectKeys((prev) => {
                                             const next = new Set(prev);
-                                            const k = `closed:${wsKey}`;
-                                            if (next.has(k)) next.delete(k);
-                                            else next.add(k);
+                                            if (next.has(wsToggleKey)) next.delete(wsToggleKey);
+                                            else next.add(wsToggleKey);
                                             return next;
                                           })
                                         }
-                                        onNewChat={() =>
-                                          onNewProjectChat(project, ws.id)
-                                        }
-                                        onArchiveChats={() =>
-                                          void requestArchive(ws.sessions.map((s) => s.id))
-                                        }
+                                        onNewChat={() => onNewProjectChat(project, ws.id)}
+                                        onArchiveChats={() => void requestArchive(ws.sessions.map((s) => s.id))}
                                         onDelete={() => void onDeleteWorkspace(ws)}
                                         menuOpen={openMenuId === `workspace:${ws.id}`}
                                         onMenuOpenChange={(openMenu) =>
@@ -984,27 +1031,16 @@ export function Sidebar() {
                                       />
                                       <AnimatedCollapse open={wsOpen}>
                                         <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0">
-                                          {ws.sessions.map((s) => (
-                                            <li key={s.id}>
-                                              <SessionRow
-                                                row={s}
-                                                {...sectionRowProps}
-                                                depth={3}
-                                                agentIconUrl={agentIconUrls.get(s.agent_id)}
-                                                active={s.id === activeId && location.pathname.startsWith("/chat/")}
-                                                hasSchedule={scheduledSessionIds.has(s.id)}
-                                                labelCls={labelCls}
-                                                onSelect={() => onSelectSession(s.id)}
-                                                onRename={() =>
-                                                  requestRename({ kind: "session", id: s.id, title: s.label })
-                                                }
-                                                onArchive={() => void requestArchive([s.id])}
-                                                menuOpen={openMenuId === s.id}
-                                                onMenuOpenChange={(openMenu) =>
-                                                  setOpenMenuId(openMenu ? s.id : null)
-                                                }
-                                              />
+                                          {wsEmpty && (
+                                            <li>
+                                              <SidebarGridRow depth={1} leading="none" trailingTrack="none"
+                                                role="status" className="text-caption text-fg-faint">
+                                                <SidebarGridCell slot="label"><span>{t("sidebar.emptyWorkspace")}</span></SidebarGridCell>
+                                              </SidebarGridRow>
                                             </li>
+                                          )}
+                                          {ws.sessions.map((s) => (
+                                            <li key={s.id}>{renderProjectSession(s)}</li>
                                           ))}
                                         </ul>
                                       </AnimatedCollapse>
@@ -1021,7 +1057,7 @@ export function Sidebar() {
                 </SidebarSection>
                 <SidebarSection
                     title={t("sidebar.chats")}
-                    icon={<MessageSquareIcon className="size-3.5" />}
+                    headingSize="compact"
                     action={newConversationAction}
                     open={openSectionKeys.has("chats")}
                     onToggle={() => toggleSection("chats")}
@@ -1033,8 +1069,7 @@ export function Sidebar() {
                         <li key={s.id}>
                           <SessionRow
                             row={s}
-                            {...sectionRowProps}
-                            depth={1}
+                            depth={0}
                             agentIconUrl={agentIconUrls.get(s.agent_id)}
                             active={s.id === activeId && location.pathname.startsWith("/chat/")}
                             hasSchedule={scheduledSessionIds.has(s.id)}
@@ -1082,7 +1117,7 @@ export function Sidebar() {
                 "app-no-drag flex h-full min-w-0 flex-1 items-center rounded-sm text-ui transition-colors",
                 settingsActive
                   ? "app-selected-surface text-fg"
-                  : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
+                  : "text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg",
               )}
             >
               <span className={cn("min-w-0 truncate", labelCls)}>{t("sidebar.settings")}</span>
@@ -1184,13 +1219,13 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
   const choices = catalog.data ? openmaTargets(scope, catalog.data) : [];
   const pinned = rows.filter((row) => row.pinnedAt != null);
   const chats = rows.filter((row) => row.pinnedAt == null);
-  const list = (items: SessionRow[]) => <ul className="m-0 list-none space-y-0.5 p-0">{items.map((row) => <li key={row.id}>{renderRow(row, 1)}</li>)}</ul>;
+  const list = (items: SessionRow[]) => <ul className="m-0 list-none space-y-0.5 p-0">{items.map((row) => <li key={row.id}>{renderRow(row, 0)}</li>)}</ul>;
   return <SidebarSection title={name} open={open} onToggle={() => setOpen(!open)} labelCls={labelCls} headingSize="compact">
       {enabled ? <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <SidebarGridRow as="button" type="button" depth={1}
+          <SidebarGridRow as="button" type="button" depth={0}
             aria-label={t("sidebar.newTenantChat", { name })}
-            className="rounded-md text-left text-ui text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg">
+            className="rounded-md text-left text-ui text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg">
             <SidebarGridCell slot="icon"><span className="sidebar-row-icon"><PlusIcon className="size-3.5" /></span></SidebarGridCell>
             <SidebarGridCell slot="label"><span className={labelCls}>{t("sidebar.newChat")}</span></SidebarGridCell>
           </SidebarGridRow>
@@ -1204,24 +1239,24 @@ function TenantSidebarSection({ scope, name, enabled, labelCls, rows, renderRow 
           {!choices.length && <div role="status" className="px-2 py-2 text-ui text-fg-muted">{t(catalog.isFetching ? "openma.loadingLocations" : catalog.error ? "openma.locationsUnavailable" : "openma.noLocations")}</div>}
           {catalog.error && <DropdownMenuItem onSelect={(event) => { event.preventDefault(); void catalog.refetch(); }}>{t("sidebar.retryTenant")}</DropdownMenuItem>}
         </DropdownMenuContent>
-      </DropdownMenu> : <SidebarGridRow as="button" type="button" depth={1} leading="none" trailingTrack="none"
-        className="rounded-md text-left text-ui text-fg-muted hover:bg-[var(--control-bg-hover)]"
+      </DropdownMenu> : <SidebarGridRow as="button" type="button" depth={0} leading="none" trailingTrack="none"
+        className="rounded-md text-left text-ui text-fg-subtle hover:bg-[var(--control-bg-hover)]"
         onClick={() => void navigate({ to: "/settings/openma" })}>
         <SidebarGridCell slot="label"><span>{t("openma.signIn")}</span></SidebarGridCell>
       </SidebarGridRow>}
       {pinned.length > 0 && <>
-        <SidebarGridRow depth={1} leading="none" trailingTrack="none" className="text-ui text-fg-subtle">
+        <SidebarGridRow depth={0} leading="none" trailingTrack="none" className="text-ui text-fg-subtle">
           <SidebarGridCell slot="label"><span>{t("sidebar.pinned")}</span></SidebarGridCell>
         </SidebarGridRow>
         {list(pinned)}
       </>}
       {list(chats)}
-      {enabled && tasks.error && <SidebarGridRow as="button" type="button" depth={1} leading="none" trailingTrack="none"
-        className="text-left text-ui text-fg-muted hover:bg-[var(--control-bg-hover)]"
+      {enabled && tasks.error && <SidebarGridRow as="button" type="button" depth={0} leading="none" trailingTrack="none"
+        className="text-left text-ui text-fg-subtle hover:bg-[var(--control-bg-hover)]"
         onClick={() => void tasks.refetch()}>
         <SidebarGridCell slot="label"><span>{t("sidebar.tenantLoadFailed")}</span></SidebarGridCell>
       </SidebarGridRow>}
-      {enabled && !tasks.error && !rows.length && <SidebarGridRow depth={1} leading="none" trailingTrack="none"
+      {enabled && !tasks.error && !rows.length && <SidebarGridRow depth={0} leading="none" trailingTrack="none"
         role="status" className="text-caption text-fg-subtle">
         <SidebarGridCell slot="label"><span>{t(tasks.isPending ? "sidebar.loadingTenant" : "sidebar.emptyTenant")}</span></SidebarGridCell>
       </SidebarGridRow>}
@@ -1262,10 +1297,10 @@ function SidebarSection({
         icon={icon}
         depth={depth}
         headingSize={headingSize}
-        className="hover:bg-[var(--control-bg-hover)] focus-within:bg-[var(--control-bg-hover)]"
+        className="hover:bg-[var(--control-bg-hover)] has-[:focus-visible]:bg-[var(--control-bg-hover)]"
       />
       <AnimatedCollapse open={open}>
-        <div className="sidebar-grid-depth-root">{children}</div>
+        <div>{children}</div>
       </AnimatedCollapse>
     </section>
   );
@@ -1277,6 +1312,8 @@ function ProjectSidebarRow({
   labelCls,
   onToggle,
   onNewChat,
+  hasCoordinator,
+  onSetupCoordinator,
   onArchiveChats,
   onRemove,
   menuOpen,
@@ -1287,6 +1324,8 @@ function ProjectSidebarRow({
   labelCls: string;
   onToggle: () => void;
   onNewChat: () => void;
+  hasCoordinator: boolean;
+  onSetupCoordinator: () => void;
   onArchiveChats: () => void;
   onRemove: () => void;
   menuOpen: boolean;
@@ -1295,101 +1334,117 @@ function ProjectSidebarRow({
   const { t } = useI18n();
   const navigate = useNavigate();
   return (
-    <SidebarGridRow
-      depth={1}
-      trailingTrack="double"
-      className="app-no-drag sidebar-project-row sidebar-project-surface group rounded-md text-left text-ui text-fg-muted transition-colors"
-      data-sidebar-project={group.key}
-      data-menu-open={menuOpen || undefined}
+    <RepositoryHoverCard
+      title={group.label}
+      paths={[group.primaryRoot, ...group.sourceFolders]}
+      disabled={menuOpen}
     >
-      <SidebarGridCell slot="icon">
-        <ProjectIcon identity={group.key} sourceFolders={group.sourceFolders} primaryRoot={group.primaryRoot} className="sidebar-row-icon" />
-      </SidebarGridCell>
-      <SidebarGridCell slot="label">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={`${open ? t("project.collapse") : t("project.expand")}: ${group.label}`}
-          aria-expanded={open}
-          title={group.primaryRoot || group.label}
-          className="flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          <span className={cn("min-w-0 truncate", labelCls)}>{group.label}</span>
-        </button>
-      </SidebarGridCell>
-      <SidebarGridCell
-        slot="trailing"
-        className={cn(
-          "transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
-          labelCls,
-          menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-        )}
+      <SidebarGridRow
+        depth={0}
+        trailingTrack="double"
+        className="app-no-drag sidebar-project-row sidebar-project-surface group rounded-md text-left text-ui text-fg-subtle transition-colors"
+        data-sidebar-project={group.key}
+        data-menu-open={menuOpen || undefined}
       >
-        <button
-          type="button"
-          aria-label={t("sidebar.startProjectChat")}
-          title={t("sidebar.startProjectChat")}
-          data-sidebar-grid-action="penultimate"
-          onClick={onNewChat}
-          className="sidebar-row-action"
-        >
-          <SquarePenIcon aria-hidden="true" />
-        </button>
-        <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={t("sidebar.projectActions")}
-              data-sidebar-row-action="true"
-              data-sidebar-grid-action="last"
-              className="sidebar-row-action"
-            >
-              <MoreHorizontalIcon aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            sideOffset={GAP_ADJACENT_PX}
-            className="w-fit min-w-[160px]"
+        <SidebarGridCell slot="icon">
+          <ProjectIcon identity={group.key} name={group.label} sourceFolders={group.sourceFolders} primaryRoot={group.primaryRoot} className="sidebar-row-icon" />
+        </SidebarGridCell>
+        <SidebarGridCell slot="label">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={`${open ? t("project.collapse") : t("project.expand")}: ${group.label}`}
+            aria-expanded={open}
+            className="flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-ring"
           >
-            {group.projectId && <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/projects/$projectId", params: { projectId: group.projectId! } })} className="flex items-center gap-2 py-1 text-ui">
-              <Settings2Icon className="size-3.5" /><span>{t("project.settings")}</span>
-            </DropdownMenuItem>}
-            <DropdownMenuItem
-              onSelect={() =>
-                group.primaryRoot
-                  ? void window.backchat.uiFsOpenPath({ path: group.primaryRoot })
-                  : undefined
-              }
-              disabled={!group.primaryRoot}
-              className="flex items-center gap-2 py-1 text-ui"
+            <span className={cn("sidebar-project-label min-w-0 truncate", labelCls)}>{group.label}</span>
+          </button>
+        </SidebarGridCell>
+        <SidebarGridCell
+          slot="trailing"
+          className={cn(
+            "transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
+            labelCls,
+            menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
+          )}
+        >
+          <button
+            type="button"
+            aria-label={t("sidebar.startProjectChat")}
+            title={t("sidebar.startProjectChat")}
+            data-sidebar-grid-action="penultimate"
+            onClick={onNewChat}
+            className="sidebar-row-action"
+          >
+            <SquarePenIcon aria-hidden="true" />
+          </button>
+          <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={t("sidebar.projectActions")}
+                data-sidebar-row-action="true"
+                data-sidebar-grid-action="last"
+                className="sidebar-row-action"
+              >
+                <MoreHorizontalIcon aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={GAP_ADJACENT_PX}
+              className="w-fit min-w-[160px]"
             >
-              <FolderOpenIcon className="size-3.5" />
-              <span>{t("sidebar.revealProject")}</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
-            <DropdownMenuItem
-              onSelect={onArchiveChats}
-              className="flex items-center gap-2 py-1 text-ui"
-            >
-              <ArchiveIcon className="size-3.5" />
-              <span>{t("sidebar.archiveProjectChats")}</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onRemove} className="flex items-center gap-2 py-1 text-ui text-danger">
-              <Trash2Icon className="size-3.5" /><span>{t("sidebar.removeProject")}</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarGridCell>
-    </SidebarGridRow>
+              {group.projectId && <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/projects/$projectId", params: { projectId: group.projectId! } })} className="flex items-center gap-2 py-1 text-ui">
+                <Settings2Icon className="size-3.5" /><span>{t("project.settings")}</span>
+              </DropdownMenuItem>}
+              <DropdownMenuItem
+                onSelect={() =>
+                  group.primaryRoot
+                    ? void window.backchat.uiFsOpenPath({ path: group.primaryRoot })
+                    : undefined
+                }
+                disabled={!group.primaryRoot}
+                className="flex items-center gap-2 py-1 text-ui"
+              >
+                <FolderOpenIcon className="size-3.5" />
+                <span>{t("sidebar.revealProject")}</span>
+              </DropdownMenuItem>
+              {!hasCoordinator && (
+                <DropdownMenuItem
+                  onSelect={onSetupCoordinator}
+                  data-testid="project-setup-coordinator"
+                  className="flex items-center gap-2 py-1 text-ui"
+                >
+                  <WorkflowIcon className="size-3.5" />
+                  <span>{t("project.setupCoordinator")}</span>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
+              <DropdownMenuItem
+                onSelect={onArchiveChats}
+                className="flex items-center gap-2 py-1 text-ui"
+              >
+                <ArchiveIcon className="size-3.5" />
+                <span>{t("sidebar.archiveProjectChats")}</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={onRemove} className="flex items-center gap-2 py-1 text-ui text-danger">
+                <Trash2Icon className="size-3.5" /><span>{t("sidebar.removeProject")}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarGridCell>
+      </SidebarGridRow>
+    </RepositoryHoverCard>
   );
 }
 
+/** The project's configured coordinator, first under the project. An
+ *  unconfigured project offers setup from its menu instead of a row. */
 function ProjectCoordinatorRow({
   group,
   active,
-  hasCoordinator,
   agentId,
   agentIconUrl,
   agentLabel,
@@ -1398,7 +1453,6 @@ function ProjectCoordinatorRow({
 }: {
   group: SidebarProjectGroup;
   active: boolean;
-  hasCoordinator: boolean;
   agentId?: string;
   agentIconUrl?: string;
   agentLabel?: string;
@@ -1406,40 +1460,38 @@ function ProjectCoordinatorRow({
   labelCls: string;
 }) {
   const { t } = useI18n();
-  const label = t(hasCoordinator ? "project.coordinator" : "project.setupCoordinator");
+  const label = t("project.coordinator");
   const rowClassName = cn(
     "sidebar-coordinator-row rounded-md",
     active && "app-selected-surface",
   );
   const rowProps = {
-    "aria-label": `${t(hasCoordinator ? "project.openCoordinator" : "project.setupCoordinator")}: ${group.label}`,
+    "aria-label": `${t("project.openCoordinator")}: ${group.label}`,
     "aria-current": active ? "page" as const : undefined,
     "data-project-coordinator": group.key,
     "data-testid": "project-coordinator-row",
-    "data-configured": hasCoordinator,
+    "data-configured": true,
   };
   const content = <>
     <SidebarGridCell slot="icon">
-      <span className="sidebar-coordinator-icon" title={hasCoordinator ? agentLabel : undefined}>
-        {hasCoordinator && agentId ? (
+      <span className="sidebar-coordinator-icon" title={agentLabel}>
+        {agentId ? (
           <AgentIcon agentId={agentId} iconUrl={agentIconUrl} title={agentLabel} className="size-3.5" />
-        ) : <PlusIcon aria-hidden="true" />}
+        ) : <WorkflowIcon aria-hidden="true" />}
       </span>
     </SidebarGridCell>
     <SidebarGridCell slot="label">
-      <span className={cn("min-w-0 truncate font-medium", labelCls)}>{label}</span>
+      <span className={cn("min-w-0 truncate", labelCls)}>{label}</span>
     </SidebarGridCell>
-    {hasCoordinator && (
-      <SidebarGridCell slot="trailing" className={labelCls} aria-hidden="true">
-        <WorkflowIcon className="size-3.5 shrink-0 text-fg-muted" />
-      </SidebarGridCell>
-    )}
+    <SidebarGridCell slot="trailing" className={labelCls} aria-hidden="true">
+      <WorkflowIcon className="size-3.5 shrink-0" />
+    </SidebarGridCell>
   </>;
   return group.projectId ? (
     <SidebarGridRow
       asChild
-      depth={2}
-      trailingTrack={hasCoordinator ? "single" : "none"}
+      depth={1}
+      trailingTrack="single"
       className={rowClassName}
       {...rowProps}
     >
@@ -1452,8 +1504,8 @@ function ProjectCoordinatorRow({
       as="button"
       type="button"
       onClick={onOpen}
-      depth={2}
-      trailingTrack={hasCoordinator ? "single" : "none"}
+      depth={1}
+      trailingTrack="single"
       className={rowClassName}
       {...rowProps}
     >
@@ -1462,10 +1514,11 @@ function ProjectCoordinatorRow({
   );
 }
 
-/** Workspace node. Hovering the label reveals the worktrees behind it —
- *  one per repository the project spans — so the user knows which
- *  checkouts a chat under this node actually edits. */
-function WorkspaceSidebarRow({
+/** A worktree inside a project: a quiet collapsible label (caption size,
+ *  quaternary ink) over its chats. It sits at the project's depth with the
+ *  caret in the project-icon column, so it groups without adding an indent
+ *  level and the project tree stays two levels deep. */
+function WorkspaceGroupHeading({
   workspace,
   open,
   labelCls,
@@ -1487,134 +1540,104 @@ function WorkspaceSidebarRow({
   onMenuOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
-  const worktrees = workspace.info?.worktrees ?? [];
-  const primaryPath = workspace.paths[0];
+  const revealPath = workspaceRevealPath(workspace);
+  const label = workspaceMetaLabel(workspace);
   return (
-    <SidebarGridRow
-      depth={2}
-      trailingTrack="double"
-      className={cn(
-        "app-no-drag group rounded-md text-left text-ui",
-        "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg active:bg-[var(--control-bg-open)]",
-        "transition-colors",
-      )}
-      data-sidebar-workspace={workspace.id}
-      data-workspace-kind={workspace.kind}
+    <RepositoryHoverCard
+      title={`${t("workspace.picker")} · ${label}`}
+      paths={workspace.paths}
+      disabled={menuOpen}
     >
-      <SidebarGridCell slot="icon">
-        <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
-          <GitBranchIcon />
-        </span>
-      </SidebarGridCell>
-      <SidebarGridCell slot="label">
-        <HoverCard openDelay={350} closeDelay={80}>
-          <HoverCardTrigger asChild>
-            <button
-              type="button"
-              onClick={onToggle}
-              aria-label={workspace.label}
-              aria-expanded={open}
-              className="flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
-              <span className={cn("min-w-0 truncate", labelCls)}>
-                {workspace.label}
-              </span>
-            </button>
-          </HoverCardTrigger>
-          <HoverCardContent
-            side="right"
-            align="start"
-            sideOffset={GAP_ADJACENT_PX}
-            className="w-auto max-w-[360px] p-2 text-ui"
-          >
-            <div className="mb-1 flex items-center gap-2 text-fg">
-              <GitBranchIcon className="shrink-0 size-3.5 text-fg-subtle" />
-              <span className="truncate font-medium">{workspace.label}</span>
-              <span className="ml-auto shrink-0 text-fg-subtle">
-                {workspace.kind === "external" ? t("workspace.external") : t("workspace.managed")}
-              </span>
-            </div>
-            <ul className="m-0 list-none space-y-0.5 p-0">
-              {(worktrees.length > 0
-                ? worktrees.map((w) => ({ path: w.path, name: folderName(w.repoRoot), branch: w.branch, head: w.head }))
-                : workspace.paths.map((path) => ({ path, name: folderName(path), branch: null, head: "" }))
-              ).map((w) => (
-                <li key={w.path} className="flex items-center gap-2 text-fg-muted">
-                  <FolderIcon className="size-3 shrink-0 text-fg-subtle" />
-                  <span className="min-w-0 truncate text-fg" title={w.path}>{w.name}</span>
-                  <span className="shrink-0 text-fg-subtle">·</span>
-                  <span className="min-w-0 flex-1 truncate text-fg-muted" title={w.branch ?? w.head}>
-                    {w.branch ?? (w.head ? `${t("workspace.detached")} · ${w.head.slice(0, 7)}` : t("workspace.detached"))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </HoverCardContent>
-        </HoverCard>
-      </SidebarGridCell>
-      <SidebarGridCell
-        slot="trailing"
-        className={cn(
-          "transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
-          labelCls,
-          menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-        )}
+      <SidebarGridRow
+        depth={0}
+        trailingTrack="double"
+        className="sidebar-workspace-heading app-no-drag group rounded-md hover:bg-[var(--control-bg-hover)] transition-colors"
+        data-sidebar-workspace={workspace.id}
+        data-workspace-kind={workspace.kind}
+        data-menu-open={menuOpen || undefined}
       >
-        <button
-          type="button"
-          aria-label={t("workspace.startChat")}
-          title={t("workspace.startChat")}
-          data-sidebar-grid-action="penultimate"
-          onClick={onNewChat}
-          className="sidebar-row-action"
+        {/* Outdented one step: the caret sits in the project-icon column and the
+            label starts on the chats' icon rail, so the heading reads as a
+            divider over its chats rather than as another chat beside them. */}
+        <SidebarGridCell slot="icon">
+          <span className="sidebar-row-icon">
+            <DisclosureCaret open={open} />
+          </span>
+        </SidebarGridCell>
+        <SidebarGridCell slot="label">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={`${t("workspace.picker")}: ${workspace.label}`}
+            aria-expanded={open}
+            className="flex h-full min-w-0 flex-1 items-center gap-1 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            {/* Identity cue: the same branch glyph the composer's workspace
+                control uses, at caption size inline with the name, so the
+                label reads as "workspace fix-abc" and not as another chat. */}
+            <GitBranchIcon aria-hidden="true" className={cn("sidebar-workspace-glyph", labelCls)} />
+            <span className={cn("min-w-0 truncate", labelCls)}>{label}</span>
+          </button>
+        </SidebarGridCell>
+        <SidebarGridCell
+          slot="trailing"
+          className={cn(
+            "transition-opacity duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
+            labelCls,
+            menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
+          )}
         >
-          <SquarePenIcon aria-hidden="true" />
-        </button>
-        <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={t("workspace.actions")}
-              data-sidebar-row-action="true"
-              data-sidebar-grid-action="last"
-              className="sidebar-row-action"
-            >
-              <MoreHorizontalIcon aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[var(--menu-project-context-min-width)]">
-            <DropdownMenuItem
-              onSelect={() =>
-                primaryPath ? void window.backchat.uiFsOpenPath({ path: primaryPath }) : undefined
-              }
-              disabled={!primaryPath}
-              className="flex items-center gap-2 py-1 text-ui"
-            >
-              <FolderOpenIcon className="size-3.5" />
-              <span>{t("workspace.reveal")}</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
-            <DropdownMenuItem
-              onSelect={onArchiveChats}
-              disabled={workspace.sessions.length === 0}
-              className="flex items-center gap-2 py-1 text-ui"
-            >
-              <ArchiveIcon className="size-3.5" />
-              <span>{t("sidebar.archiveProjectChats")}</span>
-            </DropdownMenuItem>
-            {workspace.kind !== "external" && (
-              <DropdownMenuItem
-                onSelect={onDelete}
-                className="flex items-center gap-2 py-1 text-ui text-danger"
+          <button
+            type="button"
+            aria-label={t("workspace.startChat")}
+            title={t("workspace.startChat")}
+            data-sidebar-grid-action="penultimate"
+            onClick={onNewChat}
+            className="sidebar-row-action"
+          >
+            <SquarePenIcon aria-hidden="true" />
+          </button>
+          <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={t("workspace.actions")}
+                data-sidebar-row-action="true"
+                data-sidebar-grid-action="last"
+                className="sidebar-row-action"
               >
-                <Trash2Icon className="size-3.5" />
-                <span>{t("workspace.delete")}</span>
+                <MoreHorizontalIcon aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-fit min-w-[var(--menu-project-context-min-width)]">
+              <DropdownMenuItem
+                onSelect={() => revealPath ? void window.backchat.uiFsOpenPath({ path: revealPath }) : undefined}
+                disabled={!revealPath}
+                className="flex items-center gap-2 py-1 text-ui"
+              >
+                <FolderOpenIcon className="size-3.5" />
+                <span>{t("workspace.reveal")}</span>
               </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarGridCell>
-    </SidebarGridRow>
+              <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
+              <DropdownMenuItem
+                onSelect={onArchiveChats}
+                disabled={workspace.sessions.length === 0}
+                className="flex items-center gap-2 py-1 text-ui"
+              >
+                <ArchiveIcon className="size-3.5" />
+                <span>{t("sidebar.archiveProjectChats")}</span>
+              </DropdownMenuItem>
+              {workspace.kind !== "external" && (
+                <DropdownMenuItem onSelect={onDelete} className="flex items-center gap-2 py-1 text-ui text-danger">
+                  <Trash2Icon className="size-3.5" />
+                  <span>{t("workspace.delete")}</span>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarGridCell>
+      </SidebarGridRow>
+    </RepositoryHoverCard>
   );
 }
 
@@ -1646,12 +1669,12 @@ function PairSidebarRow({
         "app-no-drag group rounded-md text-left text-ui",
         active
           ? "app-selected-surface text-fg"
-          : "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg",
+          : "text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg",
         "transition-colors",
       )}
     >
       <SidebarGridCell slot="icon">
-        <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
+        <span className="sidebar-row-icon">
           <UsersRoundIcon />
         </span>
       </SidebarGridCell>
@@ -1674,7 +1697,7 @@ function PairSidebarRow({
           labelCls,
           menuOpen
             ? "opacity-100"
-            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+            : "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
         )}
       >
         {row.activeTurnId ? (
@@ -1780,6 +1803,15 @@ export function SessionRow({
   const errored = row.status === "errored";
   const pinned = row.pinnedAt != null;
   const setMenuOpen = onMenuOpenChange;
+  const workingDirectory = row.chosenCwd || row.cwd;
+  const copy = (value: string, done: string) => {
+    navigator.clipboard.writeText(value).then(
+      () => toast.success(done),
+      () => toast.error(t("sidebar.copyFailed")),
+    );
+  };
+  const copySessionId = () => copy(row.id, t("sidebar.sessionIdCopied"));
+  const copyWorkingDirectory = () => copy(workingDirectory, t("sidebar.workingDirectoryCopied"));
 
   // The two menu surfaces (DropdownMenu for the `…` button, ContextMenu
   // for right-click) use different Radix React contexts — Item/
@@ -1798,9 +1830,10 @@ export function SessionRow({
             errored,
             className: "group relative",
           })}
+          data-session-id={row.id}
         >
           <SidebarGridCell slot="icon">
-            <span className="sidebar-row-icon text-fg-muted group-hover:text-fg">
+            <span className="sidebar-row-icon">
               {row.agent_id ? (
                 <AgentIcon agentId={row.agent_id} iconUrl={agentIconUrl} className="size-3.5" title={row.agent_id} />
               ) : null}
@@ -1817,6 +1850,7 @@ export function SessionRow({
               <span className={cn("min-w-0 truncate text-left", labelCls)}>{row.label}</span>
               {row.externalClient ? <ExternalSourceBadge client={row.externalClient} /> : null}
             </button>
+
           </SidebarGridCell>
           <SidebarGridCell slot="trailing" className="relative">
             {running ? (
@@ -1892,6 +1926,20 @@ export function SessionRow({
                             onSelect={() => onMoveToSection(row.id, null)}>{t("sidebar.removeFromSection")}</DropdownMenuItem></>}
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>}
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger className="flex items-center gap-2 py-1 text-ui">
+                          <CopyIcon className="size-3.5" />
+                          <span>{t("sidebar.copy")}</span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="min-w-36">
+                          {workingDirectory && <DropdownMenuItem onSelect={copyWorkingDirectory} className="py-1 text-ui">
+                            {t("sidebar.copyWorkingDirectory")}
+                          </DropdownMenuItem>}
+                          <DropdownMenuItem onSelect={copySessionId} className="py-1 text-ui">
+                            {t("sidebar.copySessionId")}
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
                       <DropdownMenuSeparator className="my-1 h-px bg-border/60" />
                       <DropdownMenuItem
                         onSelect={onArchive}
@@ -1939,6 +1987,19 @@ export function SessionRow({
                 className="cursor-default rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent">{t("sidebar.removeFromSection")}</ContextMenu.Item>}
             </ContextMenu.SubContent></ContextMenu.Portal>
           </ContextMenu.Sub>}
+          <ContextMenu.Sub>
+            <ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent data-[state=open]:bg-accent">
+              <CopyIcon className="size-3.5" />
+              <span className="flex-1">{t("sidebar.copy")}</span>
+              <ChevronRightIcon className="size-3.5 text-fg-subtle" aria-hidden="true" />
+            </ContextMenu.SubTrigger>
+            <ContextMenu.Portal><ContextMenu.SubContent className="z-50 min-w-36 overflow-hidden rounded-md border border-border/60 bg-popover p-1 text-popover-foreground shadow-md">
+              {workingDirectory && <ContextMenu.Item onSelect={copyWorkingDirectory}
+                className="cursor-default rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent">{t("sidebar.copyWorkingDirectory")}</ContextMenu.Item>}
+              <ContextMenu.Item onSelect={copySessionId}
+                className="cursor-default rounded-md px-1.5 py-1 text-ui outline-none data-[highlighted]:bg-accent">{t("sidebar.copySessionId")}</ContextMenu.Item>
+            </ContextMenu.SubContent></ContextMenu.Portal>
+          </ContextMenu.Sub>
           <ContextMenu.Separator className="my-1 h-px bg-border/60" />
           <ContextMenu.Item
             onSelect={onArchive}

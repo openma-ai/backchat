@@ -194,7 +194,6 @@ export const AnnotationEditor = function AnnotationEditor({
             placeholder={t("annotation.commentPlaceholder")}
             className={cn(
               "min-w-0 flex-1 resize-none bg-transparent text-sm leading-6 text-fg outline-none",
-              "placeholder:text-fg-muted",
               hasComment ? "w-full py-1" : "py-0.5 pr-3",
             )}
           />
