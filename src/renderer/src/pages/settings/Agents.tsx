@@ -87,6 +87,8 @@ export function SettingsAgents() {
   const { data: agents = [], isLoading: agentsLoading, error: agentsError } = useQuery({
     queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList({ readiness: "snapshot" }),
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
   useEffect(() => {
     let cancelled = false;

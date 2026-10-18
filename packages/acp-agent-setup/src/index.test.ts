@@ -546,6 +546,8 @@ describe("acp agent setup sdk", () => {
       methodId: "terminal-login",
     });
     const probed = await service.probeComposerHarness("fake-agent");
+    expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
+    expect(probeAgentSessionConfigMock).toHaveBeenCalledOnce();
     expect(probed[0]?.auth).toMatchObject({
       status: "needs-auth",
       methodId: "terminal-login",

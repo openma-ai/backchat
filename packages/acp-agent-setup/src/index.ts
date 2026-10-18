@@ -192,6 +192,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   private probeCachePromise: Promise<Record<string, CachedAgentProbe>> | null = null;
   private probeCacheWrite: Promise<void> = Promise.resolve();
   private readonly authCache = new Map<string, AcpAgentSetupAuth>();
+  private readonly liveProbedAuthInputs = new Map<string, string>();
   private readonly inflightAgentProbes =
     new Map<string, { promise: Promise<void>; probeCapabilities: boolean }>();
   private readonly capabilityInspections =
@@ -206,11 +207,27 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   async probeComposerHarness(agentId: string): Promise<AcpAgentSetupInfo[]> {
     const id = agentId.trim();
     if (!id) return this.listAgents();
+    const inflight = this.inflightAgentProbes.get(id);
+    if (inflight) {
+      await inflight.promise;
+      return this.listAgentsWithLiveAuth(id);
+    }
+    if (await this.hasCurrentLiveProbe(id)) {
+      return this.listAgentsWithLiveAuth(id);
+    }
     await this.ensureAgentLiveProbe(id, {
       trigger: "manual",
       probeCapabilities: false,
     });
     return this.listAgentsWithLiveAuth(id);
+  }
+
+  private async hasCurrentLiveProbe(id: string): Promise<boolean> {
+    if (!this.liveProbedAuthInputs.has(id)) return false;
+    const entry = await this.detectCatalogEntry(id);
+    if (!entry) return false;
+    const currentKey = await computeAuthProbeInputsKey(entry, this.deps.probeCwd);
+    return this.liveProbedAuthInputs.get(id) === (currentKey ?? "");
   }
 
   private listAgentsWithLiveAuth(agentId: string): Promise<AcpAgentSetupInfo[]> {
@@ -264,14 +281,7 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       );
     }
 
-    const promise = this.collectAgentSnapshot({
-      trigger: options.trigger,
-      refreshRegistry: false,
-      auth: { target: "ids", ids: [agentId] },
-      capabilities: options.probeCapabilities
-        ? { target: "ids", ids: [agentId] }
-        : { target: "ids", ids: [] },
-    }).then(() => undefined).finally(() => {
+    const promise = this.probeSingleAgent(agentId, options).finally(() => {
       if (this.inflightAgentProbes.get(agentId)?.promise === promise) {
         this.inflightAgentProbes.delete(agentId);
       }
@@ -281,6 +291,123 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       probeCapabilities: options.probeCapabilities,
     });
     return promise;
+  }
+
+  private async probeSingleAgent(
+    agentId: string,
+    options: {
+      trigger: AgentSnapshotPlan["trigger"];
+      probeCapabilities: boolean;
+    },
+  ): Promise<void> {
+    const operationId = `setup-${this.nextOperationId++}`;
+    const detectedEntry = await this.detectCatalogEntry(agentId);
+    if (!detectedEntry) return;
+    await this.loadProbeCache();
+    const authInputsKey = await computeAuthProbeInputsKey(
+      detectedEntry,
+      this.deps.probeCwd,
+    );
+    let auth: AcpAgentSetupAuth | undefined = this.authCache.get(agentId);
+    let sessionConfig: ProbeAgentSessionConfigResult | undefined;
+    if (options.probeCapabilities) {
+      const startedAt = Date.now();
+      let outcome = "settled";
+      let errorDetail: string | undefined;
+      this.logSetupOperation({
+        operationId,
+        trigger: options.trigger,
+        scope: "full",
+        agentId,
+        outcome: "started",
+        durationMs: 0,
+      });
+      try {
+        sessionConfig = await this.probeSessionConfig(detectedEntry);
+        auth = setupAuthFromProbeStatus(sessionConfig.auth);
+        if (auth) {
+          this.authCache.set(agentId, auth);
+        } else {
+          this.authCache.delete(agentId);
+        }
+        this.liveProbedAuthInputs.set(agentId, authInputsKey ?? "");
+        this.capabilityInspections.set(agentId, {
+          status: setupAuthBlocksCapabilities(auth)
+            ? "blocked-auth"
+            : "ready",
+          inspected_at: new Date().toISOString(),
+        });
+      } catch (error) {
+        outcome = "degraded";
+        errorDetail = errorMessage(error);
+        this.capabilityInspections.set(agentId, {
+          status: "degraded",
+          error: errorDetail,
+          inspected_at: new Date().toISOString(),
+        });
+      } finally {
+        this.logSetupOperation({
+          operationId,
+          trigger: options.trigger,
+          scope: "full",
+          agentId,
+          outcome,
+          durationMs: Date.now() - startedAt,
+          ...(errorDetail ? { detail: errorDetail } : {}),
+        });
+      }
+    } else {
+      const startedAt = Date.now();
+      let outcome = "settled";
+      this.logSetupOperation({
+        operationId,
+        trigger: options.trigger,
+        scope: "auth",
+        agentId,
+        outcome: "started",
+        durationMs: 0,
+      });
+      try {
+        auth = await this.probeAuth(detectedEntry);
+        if (auth) {
+          this.authCache.set(agentId, auth);
+        } else {
+          this.authCache.delete(agentId);
+        }
+        this.liveProbedAuthInputs.set(agentId, authInputsKey ?? "");
+      } catch {
+        outcome = "degraded";
+      } finally {
+        this.logSetupOperation({
+          operationId,
+          trigger: options.trigger,
+          scope: "auth",
+          agentId,
+          outcome,
+          durationMs: Date.now() - startedAt,
+        });
+      }
+    }
+    const usableSessionConfig =
+      sessionConfig && !setupAuthBlocksCapabilities(auth)
+        ? sessionConfig
+        : undefined;
+    if (usableSessionConfig) {
+      await this.persistProbe(agentId, {
+        config_options: usableSessionConfig.configOptions,
+        available_commands: usableSessionConfig.availableCommands,
+        ...(usableSessionConfig.modes
+          ? { session_modes: usableSessionConfig.modes }
+          : {}),
+        ...(auth ? { auth } : {}),
+        ...(authInputsKey ? { auth_inputs_key: authInputsKey } : {}),
+      });
+    } else if (auth) {
+      await this.persistProbe(agentId, {
+        auth,
+        ...(authInputsKey ? { auth_inputs_key: authInputsKey } : {}),
+      });
+    }
   }
 
   private async repairRelocatedRegistryShims(): Promise<void> {
@@ -432,6 +559,9 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       const authInputsKey = detectedEntry
         ? await computeAuthProbeInputsKey(detectedEntry, this.deps.probeCwd)
         : undefined;
+      if (detectedEntry && (shouldProbeAuth || shouldProbeCapabilities)) {
+        this.liveProbedAuthInputs.set(entry.id, authInputsKey ?? "");
+      }
       if (
         !auth
         && !shouldProbeAuth
@@ -636,6 +766,8 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       throw new Error(`${entry.label} is not managed by ${this.managedByName()}`);
     }
     this.authCache.delete(id);
+    this.liveProbedAuthInputs.delete(id);
+    this.capabilityInspections.delete(id);
     return this.collectAgentSnapshot({
       ...NO_LIVE_PROBE_PLAN,
       trigger: "uninstall",
@@ -683,9 +815,14 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
         ...(existing?.supportsLogout ? { supportsLogout: true } : {}),
       };
       this.authCache.set(id, auth);
+      const keyPatch = await this.authInputsKeyPatch(id);
+      this.liveProbedAuthInputs.set(
+        id,
+        "auth_inputs_key" in keyPatch ? keyPatch.auth_inputs_key : "",
+      );
       await this.persistProbe(id, {
         auth,
-        ...(await this.authInputsKeyPatch(id)),
+        ...keyPatch,
       });
     }
     // Authentication is an explicit lifecycle of its own. Do not follow it
@@ -714,6 +851,11 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
       supportsLogout: true,
     };
     this.authCache.set(id, auth);
+    const keyPatch = await this.authInputsKeyPatch(id);
+    this.liveProbedAuthInputs.set(
+      id,
+      "auth_inputs_key" in keyPatch ? keyPatch.auth_inputs_key : "",
+    );
     await this.persistProbe(id, { auth });
     return this.listAgents();
   }
@@ -728,9 +870,14 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
   ): Promise<AcpAgentSetupAuth> {
     const auth = mergeObservedAuth(this.authCache.get(id), observation);
     this.authCache.set(id, auth);
+    const keyPatch = await this.authInputsKeyPatch(id);
+    this.liveProbedAuthInputs.set(
+      id,
+      "auth_inputs_key" in keyPatch ? keyPatch.auth_inputs_key : "",
+    );
     await this.persistProbe(id, {
       auth,
-      ...(await this.authInputsKeyPatch(id)),
+      ...keyPatch,
     });
     return auth;
   }
@@ -883,8 +1030,14 @@ class AcpAgentSetupServiceImpl implements AcpAgentSetupService {
     const cache = await this.loadProbeCache();
     const prev = cache[id];
     cache[id] = {
-      config_options: patch.config_options ?? prev?.config_options ?? [],
-      available_commands: patch.available_commands ?? prev?.available_commands ?? [],
+      config_options:
+        patch.config_options && (patch.config_options.length > 0 || !prev?.config_options?.length)
+          ? patch.config_options
+          : (prev?.config_options ?? []),
+      available_commands:
+        patch.available_commands && (patch.available_commands.length > 0 || !prev?.available_commands?.length)
+          ? patch.available_commands
+          : (prev?.available_commands ?? []),
       ...(patch.session_modes !== undefined
         ? { session_modes: patch.session_modes }
         : prev?.session_modes

@@ -64,7 +64,11 @@ import {
 } from "./ComposerContentParts";
 import { ComposerSlashCommandMenu } from "./ComposerSlashCommandMenu";
 import { useComposerSuggestionState } from "@/lib/composer-suggestion-state";
-import { useComposerHarnessLiveAuth, composerHarnessLiveAuthKey } from "@/lib/composer-harness-live-auth";
+import {
+  useComposerHarnessLiveAuth,
+  composerHarnessLiveAuthKey,
+  syncLiveSessionHarnessCache,
+} from "@/lib/composer-harness-live-auth";
 import {
   useComposerHarnessState,
   composerActionDisabled,
@@ -333,6 +337,24 @@ export function Composer({
     currentAgentId,
     !isRemote && !!currentAgentId,
   );
+  useEffect(() => {
+    if (isRemote || !sessionAgentId) return;
+    syncLiveSessionHarnessCache(queryClient, {
+      agentId: sessionAgentId,
+      configOptions,
+      availableCommands,
+      sessionAuth,
+      sessionAuthRequired,
+    });
+  }, [
+    availableCommands,
+    configOptions,
+    isRemote,
+    queryClient,
+    sessionAgentId,
+    sessionAuth,
+    sessionAuthRequired,
+  ]);
   const sessionAuthState = {
     authRequired: sessionAuthRequired,
     auth: sessionAuth,
