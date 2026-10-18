@@ -12,7 +12,9 @@ import { OpenmaProjectEnvironments } from "./openma-project-environments.js";
 import { OpenmaProjectService } from "./openma-project-service.js";
 import { setSessionRoot } from "./session-cwd.js";
 import { settingsStore } from "./settings-store.js";
-import { getProject, openSessionDb } from "./sql-store.js";
+import { eventIndexStatus, getProject, openSessionDb } from "./sql-store.js";
+import { terminateAllTerminals } from "./brokers.js";
+import { flushRepositoryImages } from "./ui-fs-broker.js";
 import { installAppMenu, sendToFocused } from "./menu.js";
 import { disposeAllUiTerminals } from "./ui-terminal-broker.js";
 import { openmaRoot } from "./storage-root.js";
@@ -503,6 +505,7 @@ if (!gotLock) {
     setSessionRoot(join(root, "sessions"));
     openSessionDb(join(root, "sessions.db"));
     logStartupStage("session_db_opened");
+    logAppEvent("app.event_indexes", { ...eventIndexStatus() });
     const openmaAccount = await registerOpenmaIpc(join(root, "backchat", "openma"));
     const projectEnvironments = new OpenmaProjectEnvironments(join(root, "backchat", "openma", "projects.db"), getProject);
     await browserHarnessMcpBridge.start();
@@ -628,7 +631,11 @@ const quitCoordinator = new QuitCoordinator({
     disposeAllUiTerminals();
     await Promise.allSettled([
       disposeSessionsForShutdown?.(), browserHarnessMcpBridge.stop(),
+      flushRepositoryImages(),
     ]);
+    // After sessions dispose (which signals their terminals): wait until every
+    // harness-spawned process group is gone, escalating to SIGKILL.
+    await terminateAllTerminals();
   },
   quit: () => app.quit(),
 });

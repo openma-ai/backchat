@@ -288,8 +288,14 @@ export class ProjectAgentBridge {
                 ...(userPrompt.clientId ? { client_id: userPrompt.clientId } : {}),
                 attachments,
               });
-            if (acpSessionId) self.#primedAcpSessions.add(acpSessionId);
             void promptPromise
+              .then(() => {
+                // Only a prompt the agent accepted and answered without a
+                // provider error has delivered the preamble. Resending it
+                // after a failure is harmless; skipping it is not.
+                if (acpSessionId && !promptError)
+                  self.#primedAcpSessions.add(acpSessionId);
+              })
               .catch((error) => {
                 if (!finished)
                   push(

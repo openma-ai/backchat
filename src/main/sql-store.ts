@@ -165,10 +165,15 @@ let _stmts: {
   deleteRow: StatementSync;
   appendEvent: StatementSync;
   canonicalEventExists: StatementSync;
+  latestOpenMAEventSeq: StatementSync;
   sessionEventCount: StatementSync;
   loadHistory: StatementSync;
   loadHistoryTail: StatementSync;
   loadHistoryBefore: StatementSync;
+  turnStartAtOrBefore: StatementSync;
+  loadHistoryRange: StatementSync;
+  hasRowsBetween: StatementSync;
+  countRowsBetween: StatementSync;
   saveSideWorkspace: StatementSync;
   listSideWorkspaces: StatementSync;
   deleteSideWorkspace: StatementSync;
@@ -221,9 +226,150 @@ let _stmts: {
 
 export function closeSessionDb(): void {
   _storageRoot = null;
+  _eventIndexStatus = null;
+  _transcriptOrdinals.clear();
+  _transcriptDirs.clear();
   const db = _db;
   _db = null;
+  _stmts = null;
   db?.close();
+}
+
+// -------------------- event indexes --------------------
+//
+// SQLite only uses an expression index when the query repeats the indexed
+// expression verbatim (https://www.sqlite.org/expridx.html). Every statement
+// that wants these indexes interpolates the constants below; the
+// EXPLAIN QUERY PLAN test in sql-store.test.ts guards the match.
+
+/** Canonical idempotency key. `json_valid` keeps malformed legacy rows from
+ *  aborting index builds and inserts; they index as NULL, which never
+ *  conflicts. */
+const OPENMA_EVENT_ID_EXPR =
+  "CASE WHEN json_valid(data) THEN json_extract(data, '$.event_id') ELSE NULL END";
+
+/** Canonical sequence clock, with the same acceptance rules as
+ *  `latestPersistedOpenMAEventSequence`: current or legacy schema key, and an
+ *  integer `seq`. Everything else indexes as NULL and is ignored by MAX. */
+const OPENMA_EVENT_SEQ_EXPR =
+  "CASE WHEN json_valid(data)"
+  + " AND (json_extract(data, '$.schema_version') = 'oma.event.v1'"
+  + " OR json_extract(data, '$.schema') = 'oma.event.v1')"
+  + " AND json_type(data, '$.seq') = 'integer'"
+  + " THEN json_extract(data, '$.seq') ELSE NULL END";
+
+const OPENMA_DEDUPE_SQL = `
+  SELECT 1 AS found FROM events
+  WHERE session_id = ? AND type = 'openma_event' AND ${OPENMA_EVENT_ID_EXPR} = ?
+  LIMIT 1`;
+
+const OPENMA_LATEST_SEQ_SQL = `
+  SELECT MAX(${OPENMA_EVENT_SEQ_EXPR}) AS latest FROM events
+  WHERE session_id = ? AND type = 'openma_event' AND ${OPENMA_EVENT_SEQ_EXPR} >= 0`;
+
+export interface EventIndexStatus {
+  /** `unique`: the database rejects duplicate canonical ids itself.
+   *  `fallback`: pre-existing duplicates prevented the unique index; appends
+   *  use an indexed pre-check instead. */
+  dedupe: "unique" | "fallback";
+  /** Duplicate `(session_id, event_id)` groups found while migrating. */
+  duplicates: number;
+  /** Time spent creating indexes during this open; 0 when already present. */
+  build_ms: number;
+}
+
+let _eventIndexStatus: EventIndexStatus | null = null;
+
+/** Idempotent. Never deletes rows: an old database that already holds
+ *  duplicate canonical ids keeps them and gets a non-unique index. */
+function ensureEventIndexes(db: DatabaseSync): EventIndexStatus {
+  const started = performance.now();
+  const existing = (db.prepare("PRAGMA index_list(events)").all() as Array<{
+    name: string;
+    unique: number;
+  }>).find((index) => index.name === "events_openma_event_id_idx");
+  let dedupe: EventIndexStatus["dedupe"] = "unique";
+  let duplicates = 0;
+  let built = false;
+  if (!existing) {
+    built = true;
+    try {
+      db.exec(`CREATE UNIQUE INDEX events_openma_event_id_idx
+        ON events(session_id, ${OPENMA_EVENT_ID_EXPR})
+        WHERE type = 'openma_event'`);
+    } catch (error) {
+      if (!/UNIQUE constraint failed/i.test(String(error))) throw error;
+      dedupe = "fallback";
+    }
+  } else if (existing.unique !== 1) {
+    dedupe = "fallback";
+  }
+  if (dedupe === "fallback") {
+    duplicates = Number((db.prepare(`
+      SELECT COUNT(*) AS count FROM (
+        SELECT 1 FROM events
+        WHERE type = 'openma_event' AND ${OPENMA_EVENT_ID_EXPR} IS NOT NULL
+        GROUP BY session_id, ${OPENMA_EVENT_ID_EXPR}
+        HAVING COUNT(*) > 1
+      )`).get() as { count: number | bigint }).count);
+    db.exec(`CREATE INDEX IF NOT EXISTS events_openma_event_id_idx
+      ON events(session_id, ${OPENMA_EVENT_ID_EXPR})
+      WHERE type = 'openma_event'`);
+  }
+  const hasSeqIndex = (db.prepare("PRAGMA index_list(events)").all() as Array<{
+    name: string;
+  }>).some((index) => index.name === "events_openma_seq_idx");
+  if (!hasSeqIndex) {
+    built = true;
+    db.exec(`CREATE INDEX events_openma_seq_idx
+      ON events(session_id, ${OPENMA_EVENT_SEQ_EXPR})
+      WHERE type = 'openma_event'`);
+  }
+  return {
+    dedupe,
+    duplicates,
+    build_ms: built ? Math.round(performance.now() - started) : 0,
+  };
+}
+
+export function eventIndexStatus(): EventIndexStatus {
+  if (!_eventIndexStatus) throw new Error("session-store: openSessionDb() not called");
+  return { ..._eventIndexStatus };
+}
+
+/** Query plans of the per-event lookups; a regression guard for the
+ *  exact-expression rule. */
+export function explainEventQueryPlans(): { dedupe: string[]; sequence: string[] } {
+  if (!_db) throw new Error("session-store: openSessionDb() not called");
+  const plan = (sql: string, ...args: string[]) =>
+    (_db!.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args) as Array<{ detail: string }>)
+      .map((row) => row.detail);
+  return {
+    dedupe: plan(OPENMA_DEDUPE_SQL, "s", "e"),
+    sequence: plan(OPENMA_LATEST_SEQ_SQL, "s"),
+  };
+}
+
+/** Highest persisted canonical `seq` for a session (0 when none). Same result
+ *  as `latestPersistedOpenMAEventSequence(loadHistory(id))`, answered from
+ *  `events_openma_seq_idx` instead of reading and parsing the whole log. */
+export function latestOpenMAEventSequence(session_id: string): number {
+  const row = stmts().latestOpenMAEventSeq.get(session_id) as
+    | { latest: number | bigint | null }
+    | undefined;
+  const latest = Number(row?.latest ?? 0);
+  return Number.isSafeInteger(latest) && latest > 0 ? latest : 0;
+}
+
+/** Per-session transcript ordinal (= row count) after the last append.
+ *  Seeded once from COUNT(*), then advanced in memory. */
+const _transcriptOrdinals = new Map<string, number>();
+/** Per-session transcript directory; `created_at` never changes. */
+const _transcriptDirs = new Map<string, string>();
+
+function forgetSessionCaches(session_id: string): void {
+  _transcriptOrdinals.delete(session_id);
+  _transcriptDirs.delete(session_id);
 }
 
 const EXTERNAL_COORDINATORS_SQL = `
@@ -525,6 +671,8 @@ export function openSessionDb(path: string): void {
       ON sessions(workspace_id);
   `);
 
+  _eventIndexStatus = ensureEventIndexes(db);
+
   _db = db;
   _storageRoot = deriveStorageRoot(path);
   _stmts = {
@@ -604,21 +752,15 @@ export function openSessionDb(path: string): void {
      *  transaction, so the caller only has to remove the on-disk
      *  session dir separately. */
     deleteRow: db.prepare(`DELETE FROM sessions WHERE id = ?`),
+    // DO NOTHING only absorbs the canonical-id unique index (seq is
+    // AUTOINCREMENT); FK and NOT NULL violations still throw.
     appendEvent: db.prepare(
       `INSERT INTO events (session_id, type, data, ts)
-       VALUES (?, ?, CAST(? AS TEXT), ?)`,
+       VALUES (?, ?, CAST(? AS TEXT), ?)
+       ON CONFLICT DO NOTHING`,
     ),
-    canonicalEventExists: db.prepare(`
-      SELECT 1 AS found
-      FROM events
-      WHERE session_id = ?
-        AND type = 'openma_event'
-        AND CASE
-          WHEN json_valid(data) THEN json_extract(data, '$.event_id')
-          ELSE NULL
-        END = ?
-      LIMIT 1
-    `),
+    canonicalEventExists: db.prepare(OPENMA_DEDUPE_SQL),
+    latestOpenMAEventSeq: db.prepare(OPENMA_LATEST_SEQ_SQL),
     sessionEventCount: db.prepare(
       `SELECT COUNT(*) AS count FROM events WHERE session_id = ?`,
     ),
@@ -630,6 +772,28 @@ export function openSessionDb(path: string): void {
     ),
     loadHistoryBefore: db.prepare(
       `SELECT * FROM events WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
+    ),
+    // A turn opens with the legacy `user_prompt` row and/or the canonical
+    // `user.message` (input_kind=prompt) envelope; the former, when present,
+    // immediately precedes the latter. Returns the newest opener at or below
+    // the given seq, preferring the `user_prompt` half of a pair.
+    turnStartAtOrBefore: db.prepare(`
+      SELECT seq, type FROM events
+      WHERE session_id = ? AND seq <= ?
+        AND (type = 'user_prompt' OR (
+          type = 'openma_event'
+          AND json_extract(data, '$.type') = 'user.message'
+          AND json_extract(data, '$.data.input_kind') = 'prompt'))
+      ORDER BY seq DESC LIMIT 2
+    `),
+    loadHistoryRange: db.prepare(
+      `SELECT * FROM events WHERE session_id = ? AND seq >= ? AND seq < ? ORDER BY seq ASC`,
+    ),
+    hasRowsBetween: db.prepare(
+      `SELECT 1 FROM events WHERE session_id = ? AND seq > ? AND seq < ? LIMIT 1`,
+    ),
+    countRowsBetween: db.prepare(
+      `SELECT COUNT(*) AS count FROM events WHERE session_id = ? AND seq >= ? AND seq < ?`,
     ),
     saveSideWorkspace: db.prepare(`
       INSERT INTO side_workspaces (task_id, state_json, updated_at)
@@ -1163,6 +1327,7 @@ export function listArchivedSessions(): PersistedSession[] {
  *  on-disk session directory (the SessionManager owns that path
  *  layout, not the SQL store). */
 export function deleteSession(id: string): void {
+  forgetSessionCaches(id);
   deleteSessionSourceFiles(id);
   stmts().deleteSideWorkspace.run(id);
   stmts().deleteRow.run(id);
@@ -1509,11 +1674,14 @@ export function appendEvent(
 ): void {
   const s = stmts();
   if (
-    type === "openma_event"
+    _eventIndexStatus?.dedupe === "fallback"
+    && type === "openma_event"
     && data !== null
     && typeof data === "object"
     && !Array.isArray(data)
   ) {
+    // Only databases that already held duplicates lack the unique index;
+    // there the indexed pre-check keeps appends idempotent.
     const eventId = (data as { event_id?: unknown }).event_id;
     if (
       typeof eventId === "string"
@@ -1524,20 +1692,31 @@ export function appendEvent(
   }
   const ts = Date.now();
   const serialized = serializeJsonForSqlite(data);
+  // Seed before inserting so the count does not include this row.
+  const ordinal = transcriptOrdinalBefore(session_id);
   // Bind event JSON as UTF-8 bytes and cast inside SQLite. Electron 42's
   // node:sqlite Utf8Value path can abort the entire main process for external
   // V8 strings whose reported UTF-16 length disagrees with their UTF-8 byte
   // length (observed in Claude ACP config option descriptions). Binding a
   // Uint8Array avoids that native string conversion while CAST preserves the
   // TEXT storage contract consumed by history, FTS, and transcript rebuilds.
-  s.appendEvent.run(session_id, type, serialized.bytes, ts);
-  const row = s.sessionEventCount.get(session_id) as { count: number | bigint };
+  const result = s.appendEvent.run(session_id, type, serialized.bytes, ts);
+  // A canonical retry hit the unique index: no row, no transcript line.
+  if (Number(result.changes) === 0) return;
+  _transcriptOrdinals.set(session_id, ordinal + 1);
   writeTranscriptEvent(session_id, {
-    seq: Number(row.count),
+    seq: ordinal + 1,
     type,
     ts,
     serializedData: serialized.bytes,
   });
+}
+
+function transcriptOrdinalBefore(session_id: string): number {
+  const cached = _transcriptOrdinals.get(session_id);
+  if (cached !== undefined) return cached;
+  const row = stmts().sessionEventCount.get(session_id) as { count: number | bigint };
+  return Number(row.count);
 }
 
 /** Batch-append in a single transaction. node:sqlite doesn't ship a
@@ -1549,6 +1728,8 @@ export function appendEventsTx(
 ): void {
   if (!_db) throw new Error("session-store: openSessionDb() not called");
   if (rows.length === 0) return;
+  // Bypasses the transcript ordinal; reseed from COUNT(*) on the next append.
+  _transcriptOrdinals.delete(session_id);
   const insert = stmts().appendEvent;
   const now = Date.now();
   _db.exec("BEGIN");
@@ -1596,7 +1777,43 @@ export function loadHistoryPage(
       ? stmts().loadHistoryTail.all(session_id, limit)
       : stmts().loadHistoryBefore.all(session_id, opts.before_seq, limit)
   ) as unknown as PersistedEvent[];
-  return rows.reverse();
+  rows.reverse();
+  // Extend the page back to the start of the turn it would otherwise cut, so
+  // pages hold whole turns and the renderer can prepend them without
+  // replaying the window. A single turn can hold tens of thousands of rows;
+  // beyond MAX_TURN_EXTENSION pages the window stays row-bounded and opens
+  // mid-turn, and the renderer folds the head fragment when its turn lands.
+  const oldest = rows[0];
+  if (!oldest) return rows;
+  const start = turnStartSeq(session_id, oldest.seq);
+  if (start === undefined || start >= oldest.seq) return rows;
+  const extension = stmts().countRowsBetween.get(session_id, start, oldest.seq) as { count: number };
+  if (extension.count > limit * MAX_TURN_EXTENSION) return rows;
+  const head = stmts().loadHistoryRange.all(
+    session_id,
+    start,
+    oldest.seq,
+  ) as unknown as PersistedEvent[];
+  return head.concat(rows);
+}
+
+/** Turn alignment may grow a page to at most this many extra pages. */
+const MAX_TURN_EXTENSION = 3;
+
+function turnStartSeq(session_id: string, seq: number): number | undefined {
+  const openers = stmts().turnStartAtOrBefore.all(session_id, seq) as Array<{
+    seq: number;
+    type: string;
+  }>;
+  const [newest, previous] = openers;
+  if (!newest) return undefined;
+  // A `user_prompt` row directly paired with its canonical envelope belongs
+  // to the same turn opener.
+  if (newest.type !== "user_prompt" && previous?.type === "user_prompt") {
+    const between = stmts().hasRowsBetween.get(session_id, previous.seq, newest.seq);
+    if (between === undefined) return previous.seq;
+  }
+  return newest.seq;
 }
 
 // -------------------- search --------------------
@@ -1662,25 +1879,34 @@ function writeTranscriptEvent(
 ): void {
   const root = _storageRoot;
   if (!root) throw new Error("session-store: storage root unavailable");
-  const session = stmts().getSession.get(sessionId) as unknown as
-    | PersistedSessionRow
-    | undefined;
-  if (!session) throw new Error(`session-store: missing session ${sessionId}`);
-
-  const dir = join(root, "transcripts", ...dateParts(session.created_at));
-  mkdirSync(dir, { recursive: true });
-  appendFileSync(
-    join(dir, `${sessionId}.jsonl`),
-    Buffer.concat([
-      Buffer.from(
-        `{"schema_version":"backchat.session_event.v1","seq":${event.seq},` +
-          `"type":${JSON.stringify(event.type)},"ts":${event.ts},"data":`,
-        "utf8",
-      ),
-      event.serializedData,
-      Buffer.from(',"source":"desktop"}\n', "utf8"),
-    ]),
-  );
+  let dir = _transcriptDirs.get(sessionId);
+  if (!dir) {
+    const session = stmts().getSession.get(sessionId) as unknown as
+      | PersistedSessionRow
+      | undefined;
+    if (!session) throw new Error(`session-store: missing session ${sessionId}`);
+    dir = join(root, "transcripts", ...dateParts(session.created_at));
+    mkdirSync(dir, { recursive: true });
+    _transcriptDirs.set(sessionId, dir);
+  }
+  const line = Buffer.concat([
+    Buffer.from(
+      `{"schema_version":"backchat.session_event.v1","seq":${event.seq},` +
+        `"type":${JSON.stringify(event.type)},"ts":${event.ts},"data":`,
+      "utf8",
+    ),
+    event.serializedData,
+    Buffer.from(',"source":"desktop"}\n', "utf8"),
+  ]);
+  const file = join(dir, `${sessionId}.jsonl`);
+  try {
+    appendFileSync(file, line);
+  } catch (error) {
+    // The cached directory was removed out from under us; recreate once.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(file, line);
+  }
 }
 
 /**

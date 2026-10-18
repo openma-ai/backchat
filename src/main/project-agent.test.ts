@@ -524,7 +524,31 @@ it("sets an explicit display label for project prompts without user text", async
   }
 });
 
-function projectAgentPromptRig() {
+it("resends the full preamble when the first prompt in an ACP session fails", async () => {
+  const { db, driver, prompts } = projectAgentPromptRig({ failFirstPrompt: true });
+  try {
+    const session = await createProjectAgentSession(driver);
+    await runProjectAgentTurn(driver, session, "failed-first", [
+      projectEvent("event:message:client-1", "project.message", {
+        text: "First user request",
+      }),
+    ]);
+    await runProjectAgentTurn(driver, session, "retry", [
+      projectEvent("event:message:client-2", "project.message", {
+        text: "Second user request",
+      }),
+    ]);
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]?.text).toContain(
+      "You are the coordinator for project Project Alpha.",
+    );
+  } finally {
+    db.close();
+  }
+});
+
+function projectAgentPromptRig(options: { failFirstPrompt?: boolean } = {}) {
   const db = new DatabaseSync(":memory:");
   const prompts: SessionPromptParams[] = [];
   let bridge!: ProjectAgentBridge;
@@ -540,6 +564,8 @@ function projectAgentPromptRig() {
       }),
       prompt: async (params) => {
         prompts.push(params);
+        if (options.failFirstPrompt && prompts.length === 1)
+          throw new Error("agent rejected the prompt");
         bridge.observe(
           createOpenMAEvent({
             event_id: `done-${params.turn_id}`,

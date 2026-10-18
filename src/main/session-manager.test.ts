@@ -402,6 +402,39 @@ describe("SessionManager prompt queue", () => {
     expect(manager.sessionCount()).toBe(1);
   });
 
+  it("resumes a persisted session on prompt instead of failing with no such session", async () => {
+    mocks.runtimeStart.mockReset();
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    vi.mocked(getSession).mockReturnValue({
+      id: "persisted-prompt", agent_id: "codex-acp", cwd: PROJECT_ROOT,
+      acp_session_id: "original-acp", title: "Retained conversation",
+      title_manually_set: 1, created_at: 1, last_used_at: 2,
+      archived_at: null, pinned_at: null, project_id: null,
+      additional_directories: [], workspace_id: null, pair_id: null,
+      parent_session_id: null, fork_kind: null,
+    });
+    const send = vi.fn();
+    const manager = new SessionManager({
+      send, resolveMcpServers: () => [], buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}), resolveAgentOverride: () => undefined,
+    });
+    const prompting = manager.prompt({
+      session_id: "persisted-prompt", turn_id: "turn-after-restart", text: "hello again",
+    });
+    await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+    fake.releaseNext();
+    await prompting;
+    vi.mocked(getSession).mockReset();
+
+    expect(mocks.runtimeStart).toHaveBeenCalledWith(expect.objectContaining({
+      resumeAcpSessionId: "original-acp",
+    }));
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: "session.error", message: "no such session",
+    }));
+  });
+
   it("does not report a persisted auth reconnect as successful when resume fails", async () => {
     mocks.runtimeStart.mockReset();
     mocks.runtimeStart.mockRejectedValueOnce(Object.assign(new Error("Authentication required"), { code: -32000 }));
@@ -865,6 +898,23 @@ describe("SessionManager prompt queue", () => {
     expect(observeSessionConfig).toHaveBeenCalledWith("dsh-acp", expect.objectContaining({
       config_options: [expect.objectContaining({ id: "model" })],
     }));
+
+    observeSessionConfig.mockClear();
+    fake.session.setConfigOption = vi.fn(async () => [{
+      id: "model",
+      name: "Model",
+      type: "select" as const,
+      currentValue: "deepseek-v4-pro",
+      options: [{ value: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }],
+    }]);
+    await manager.setConfigOption({
+      session_id: "sess-config-ready",
+      config_id: "model",
+      value: "deepseek-v4-pro",
+    });
+    expect(observeSessionConfig).toHaveBeenCalledWith("dsh-acp", {
+      config_options: [expect.objectContaining({ id: "model", currentValue: "deepseek-v4-pro" })],
+    });
   });
 
   it("classifies ACP auth_required prompt failures without hanging the turn", async () => {
