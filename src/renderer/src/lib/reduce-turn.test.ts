@@ -161,6 +161,7 @@ describe("reduceTurn ACP event compatibility", () => {
     );
     expect(out.timeline).toEqual([{
       kind: "thought",
+      segmentId: 0,
       text: "The user is asking me to calculate 37 + 58.\n\n37 + 58 = 95.",
     }]);
   });
@@ -264,9 +265,9 @@ describe("reduceTurn ACP event compatibility", () => {
 
     expect(out.assistantText).toBe("Before after.");
     expect(out.timeline).toEqual([
-      { kind: "assistant_text", text: "Before " },
+      { kind: "assistant_text", segmentId: 0, text: "Before " },
       { kind: "tool", toolCallId: "tool-1" },
-      { kind: "assistant_text", text: "after." },
+      { kind: "assistant_text", segmentId: 2, text: "after." },
     ]);
   });
 
@@ -288,11 +289,13 @@ describe("reduceTurn ACP event compatibility", () => {
       {
         kind: "assistant_text",
         phase: "commentary",
+        segmentId: 0,
         text: "I am checking the files.",
       },
       {
         kind: "assistant_text",
         phase: "final_answer",
+        segmentId: 1,
         text: "Done.",
       },
     ]);
