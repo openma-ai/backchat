@@ -116,6 +116,11 @@ const SettingsSchema = z.object({
   }).optional(),
   agents: z.array(AgentOverrideSchema).default([]),
   mcp_servers: z.array(McpServerSchema).default([]),
+  /** OTLP trace export, main process only (may hold credentials; never sent
+   *  to the renderer). Keys are `BACKCHAT_ENABLE_TELEMETRY` and the standard
+   *  `OTEL_*` trace-exporter variables; a key here wins over the
+   *  environment, an empty value cancels it. */
+  telemetry: z.record(z.string(), z.string()).optional(),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

@@ -244,6 +244,9 @@ export interface SessionPromptParams {
    *  back to the right turn in the UI. */
   turn_id: string;
   text: string;
+  /** W3C traceparent of the GUI action that sent this prompt; the turn span
+   *  joins that trace. */
+  traceparent?: string;
   /** User-visible text when `text` includes host-added coordinator instructions. */
   display_text?: string;
   /** Renderer turn id to reconcile with this prompt. Defaults to `turn_id`. */

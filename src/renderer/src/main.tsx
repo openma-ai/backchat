@@ -11,6 +11,7 @@ import { RendererErrorBoundary } from "@/components/RendererErrorBoundary";
 import { RendererCrashPage } from "@/components/RendererCrashPage";
 import { RendererCrashLegacyPreview } from "@/dev/RendererCrashLegacyPreview";
 import { installRendererCrashHandlers } from "@/lib/renderer-crash-report";
+import { installRendererTelemetry } from "@/lib/telemetry";
 import { router } from "@/router";
 import { applyRendererOs } from "@/lib/os";
 import { applyStoredTheme } from "@/lib/theme";
@@ -47,6 +48,13 @@ const DEMO_CRASH_COMPONENT_STACK = `
 // it with ~/.oma/config.toml as soon as settings arrive over IPC.
 applyStoredTheme();
 installRendererCrashHandlers();
+// Before the first render so `ui.startup` spans the whole first paint.
+const rendererTelemetry = installRendererTelemetry({
+  send: window.backchat?.telemetryExportSpans,
+  // Route patterns carry no ids, e.g. `/chat/$sessionId`.
+  route: () => router.state?.matches.at(-1)?.routeId,
+});
+if (rendererTelemetry) router.subscribe("onResolved", () => rendererTelemetry.markRouteReady());
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");

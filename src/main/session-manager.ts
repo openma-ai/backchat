@@ -187,6 +187,12 @@ interface RunPromptOptions {
 }
 
 export interface SessionManagerDeps {
+  /** Tracing hooks for start and prompt commands (spans for the output
+   *  stream are recorded where `send` is observed). */
+  tracing?: {
+    starting(params: SessionStartParams): void;
+    prompting(params: SessionPromptParams): void;
+  };
   send: Sender;
   acpBinDir?: string;
   acpInstallRoot?: string;
@@ -278,6 +284,7 @@ export interface SessionManagerDeps {
 
 export class SessionManager {
   #send: Sender;
+  readonly #tracing: SessionManagerDeps["tracing"];
   #resolveMcpServers: SessionManagerDeps["resolveMcpServers"];
   #buildCallbacks: SessionManagerDeps["buildCallbacks"];
   #requestElicitationForm: SessionManagerDeps["requestElicitationForm"];
@@ -302,6 +309,7 @@ export class SessionManager {
 
   constructor(deps: SessionManagerDeps) {
     this.#send = deps.send;
+    this.#tracing = deps.tracing;
     this.#resolveMcpServers = deps.resolveMcpServers;
     this.#buildCallbacks = deps.buildCallbacks;
     this.#requestElicitationForm = deps.requestElicitationForm;
@@ -599,6 +607,7 @@ export class SessionManager {
   }
 
   async start(p: SessionStartParams): Promise<SessionStartResult> {
+    this.#tracing?.starting(p);
     if (!this.#acceptingStarts) {
       return { status: "cancelled", session_id: p.session_id };
     }
@@ -858,7 +867,7 @@ export class SessionManager {
               session_id: p.session_id,
               agent_id: agent.id,
               line: sanitizeDiagnosticLine(line),
-            });
+            }, { level: "warn" });
           },
         },
         mcpServers,
@@ -1060,7 +1069,7 @@ export class SessionManager {
         agent_id: p.agent_id,
         total_ms: Date.now() - startRequestedAt,
         error: formatErrorChain(e),
-      });
+      }, { level: "error" });
       return this.#errorResult(
         p.session_id,
         e instanceof Error ? e.message : String(e),
@@ -1070,6 +1079,7 @@ export class SessionManager {
   }
 
   async prompt(p: SessionPromptParams): Promise<void> {
+    this.#tracing?.prompting(p);
     let sess = this.#sessions.get(p.session_id);
     if (!sess) {
       try {

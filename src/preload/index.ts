@@ -82,6 +82,8 @@ const api: BackchatApi = {
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
   rendererCrashLog: (report) =>
     ipcRenderer.invoke(InvokeChannel.AppRendererCrashLog, report),
+  telemetryExportSpans: (spans) =>
+    ipcRenderer.invoke(InvokeChannel.TelemetryExportSpans, spans) as Promise<number>,
 
   agentsList: (options) =>
     ipcRenderer.invoke(InvokeChannel.AgentsList, options) as Promise<AgentInfo[]>,

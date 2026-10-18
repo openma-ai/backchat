@@ -27,6 +27,7 @@ import {
   newSideDraftSession,
   sessionStore,
 } from "./session-store";
+import { withActionTrace } from "./ui-trace";
 
 export function resolveChatSubmitAgentId({
   target,
@@ -452,10 +453,14 @@ export function useChatSubmission({
         }
       }
 
-      await window.backchat.sessionPrompt({
+      await withActionTrace("prompt.send", {
+        "backchat.prompt.chars": text.length,
+        "backchat.prompt.retry": false,
+      }, ({ traceparent }) => window.backchat.sessionPrompt({
         session_id: target.id,
         turn_id: turnId,
         text,
+        ...(traceparent ? { traceparent } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(annotations.length > 0 ? { annotations } : {}),
         ...(sessionReferences.length > 0 ? { session_references: sessionReferences } : {}),
@@ -463,7 +468,7 @@ export function useChatSubmission({
         requested_delivery: delivery.requestedDelivery,
         effective_delivery: delivery.effectiveDelivery,
         delivery_degraded: delivery.degraded,
-      });
+      }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       sessionStore.failSend(turnId, message);
@@ -531,10 +536,14 @@ export async function retryFailedChatSend(turn: Turn): Promise<void> {
         return;
       }
     }
-    await window.backchat.sessionPrompt({
+    await withActionTrace("prompt.send", {
+      "backchat.prompt.chars": turn.promptText.length,
+      "backchat.prompt.retry": true,
+    }, ({ traceparent }) => window.backchat.sessionPrompt({
       session_id: turn.sessionId,
       turn_id: turn.id,
       text: turn.promptText,
+      ...(traceparent ? { traceparent } : {}),
       ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
       ...(turn.annotations?.length ? { annotations: turn.annotations } : {}),
       ...(turn.sessionReferences?.length ? { session_references: turn.sessionReferences } : {}),
@@ -542,7 +551,7 @@ export async function retryFailedChatSend(turn: Turn): Promise<void> {
       requested_delivery: turn.requestedDelivery,
       effective_delivery: turn.effectiveDelivery,
       delivery_degraded: turn.deliveryDegraded,
-    });
+    }));
   } catch (error) {
     sessionStore.failSend(
       turn.id,

@@ -30,7 +30,8 @@ import {
   resolveBundledNodeExecutablePath,
   resolveBundledNpmCliPath,
 } from "./bundled-node-runtime.js";
-import { configureAppLog, logAppEvent } from "./app-log.js";
+import { configureAppLog, flushAppLog, logAppEvent } from "./app-log.js";
+import { installMainTelemetry, type InstalledTelemetry } from "./telemetry/index.js";
 import { logRendererCrash } from "./renderer-crash-log.js";
 import { startAppUpdater } from "./app-updater.js";
 import { resolveRemoteDebugging } from "./remote-debugging.js";
@@ -70,6 +71,7 @@ const showE2eWindow = process.env["BACKCHAT_E2E_VISIBLE"] === "1";
 // same hidden title bar to prove the CSS drag region actually moves the window.
 const e2eHiddenTitleBar = testHooksEnabled && process.env["BACKCHAT_E2E_HIDDEN_TITLEBAR"] === "1";
 const pendingDeepLinks: BackchatDeepLink[] = [];
+let mainTelemetry: InstalledTelemetry | undefined;
 let disposeSessionsForShutdown: (() => Promise<void>) | null = null;
 let hasLocalProcesses = () => false;
 let startUpdater: (() => Promise<unknown>) | null = null;
@@ -471,6 +473,12 @@ if (!gotLock) {
     // session cwd helpers create their own subpaths on demand.
     const root = openmaRoot();
     configureAppLog(root);
+    // Before any session starts, so the first create_agent span is recorded.
+    mainTelemetry = installMainTelemetry({
+      serviceVersion: app.getVersion(),
+      settings: settingsStore.get().telemetry,
+    });
+    settingsStore.subscribe((settings) => void mainTelemetry?.applySettings(settings.telemetry));
     const logStartupStage = (stage: string) => logAppEvent("app.startup_stage", {
       stage, elapsed_ms: Math.round(performance.now() - startupStartedAt),
     });
@@ -515,11 +523,12 @@ if (!gotLock) {
     const powerManagement = new DesktopPowerManagement({
       blocker: powerSaveBlocker, monitor: powerMonitor,
       sessionExists: (id) => localSessionExists(id),
-      onError: (error) => logAppEvent("power.assertion_failed", { message: String(error) }),
+      onError: (error) => logAppEvent("power.assertion_failed", { message: String(error) }, { level: "warn" }),
       onResume: () => { openmaRunner?.resume(); resumeTaskObservers(); },
     });
     const ipcRuntime = await registerIpc({
       openmaAccount,
+      telemetry: mainTelemetry,
       registryCachePath: join(root, "registry-cache.json"),
       probeCachePath: join(root, "agent-probe-cache.json"),
       acpBinDir,
@@ -636,6 +645,9 @@ const quitCoordinator = new QuitCoordinator({
     // After sessions dispose (which signals their terminals): wait until every
     // harness-spawned process group is gone, escalating to SIGKILL.
     await terminateAllTerminals();
+    // Sessions closed their spans while disposing; export and log them.
+    await mainTelemetry?.telemetry.shutdown().catch(() => undefined);
+    await flushAppLog();
   },
   quit: () => app.quit(),
 });

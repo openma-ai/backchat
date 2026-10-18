@@ -467,6 +467,12 @@ export interface BackchatApi extends OpenmaAccountApi {
     report: import("./renderer-crash.js").RendererCrashReport,
   ): Promise<void>;
 
+  /** Hand finished renderer spans to the main process's trace pipeline.
+   *  Resolves to the number of spans accepted. */
+  telemetryExportSpans(
+    spans: import("./telemetry.js").RendererSpanWire[],
+  ): Promise<number>;
+
   /** All known ACP agents merged from the official registry + overlay,
    *  flagged by detection. Renderer uses this to power the agent picker. */
   agentsList(options?: AgentListOptions): Promise<AgentInfo[]>;

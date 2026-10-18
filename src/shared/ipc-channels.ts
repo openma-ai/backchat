@@ -44,6 +44,7 @@ export const InvokeChannel = {
   OpenmaOpenManagement: "openma:open-management",
   Ping: "app:ping",
   AppRendererCrashLog: "app:rendererCrashLog",
+  TelemetryExportSpans: "telemetry:exportSpans",
   AgentsList: "agents:list",
   AgentInstall: "agent:install",
   AgentUpgrade: "agent:upgrade",

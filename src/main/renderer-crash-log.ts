@@ -9,5 +9,5 @@ export function logRendererCrash(report: RendererCrashReport): void {
     ...(report.componentStack ? { component_stack: report.componentStack } : {}),
     ...(report.reason ? { reason: report.reason } : {}),
     ...(report.exitCode !== undefined ? { exit_code: report.exitCode } : {}),
-  });
+  }, { level: "error", component: "renderer" });
 }
