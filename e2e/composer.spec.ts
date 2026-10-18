@@ -27,8 +27,11 @@ test.describe("composer mentions and attachments", () => {
       expect(inputBox).not.toBeNull();
       expect(cardBox?.height ?? 0).toBeGreaterThanOrEqual(102);
       expect(cardBox?.height ?? Infinity).toBeLessThanOrEqual(106);
-      expect(inputBox?.height ?? 0).toBeGreaterThanOrEqual(47);
-      expect(inputBox?.height ?? Infinity).toBeLessThanOrEqual(50);
+      // The body sits 3px lower (--composer-body-offset-top) so placeholder
+      // text aligns with the reply column; the input gives up those 3px and
+      // the card keeps its resting height.
+      expect(inputBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(inputBox?.height ?? Infinity).toBeLessThanOrEqual(47);
       await capture("composer-resting-height.png", "compact resting composer");
   });
 
