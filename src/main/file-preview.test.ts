@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveLocalFilePreview } from "./file-preview";
+import { readLocalFileContent, resolveLocalFilePreview, TEXT_PREVIEW_MAX_BYTES } from "./file-preview";
 
 const temporaryRoots: string[] = [];
 
@@ -65,5 +65,47 @@ describe("resolveLocalFilePreview", () => {
       previewPath: sourcePath,
       kind,
     });
+  });
+});
+
+describe("readLocalFileContent", () => {
+  const fixture = async (name: string, content: string | Buffer) => {
+    const root = await mkdtemp(join(tmpdir(), "openma-file-content-"));
+    temporaryRoots.push(root);
+    const path = join(root, name);
+    await writeFile(path, content);
+    return path;
+  };
+
+  it("returns UTF-8 text with its size", async () => {
+    const path = await fixture("main.ts", "export const 值 = 1;\n");
+    const result = await readLocalFileContent(path);
+    expect(result).toMatchObject({ kind: "text", content: "export const 值 = 1;\n", truncated: false });
+  });
+
+  it("classifies a file with NUL bytes as binary", async () => {
+    const path = await fixture(".DS_Store", Buffer.from([0, 0, 0, 1, 66, 117, 100, 49]));
+    await expect(readLocalFileContent(path)).resolves.toEqual({ kind: "binary", size: 8 });
+  });
+
+  it("returns images as a data URL", async () => {
+    const path = await fixture("logo.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+    const result = await readLocalFileContent(path);
+    expect(result.kind).toBe("image");
+    expect(result.kind === "image" && result.dataUrl.startsWith("data:image/svg+xml;base64,")).toBe(true);
+  });
+
+  it("caps long text and marks it truncated", async () => {
+    const path = await fixture("big.log", "a".repeat(TEXT_PREVIEW_MAX_BYTES + 10));
+    const result = await readLocalFileContent(path);
+    expect(result.kind === "text" && result.content.length).toBe(TEXT_PREVIEW_MAX_BYTES);
+    expect(result.kind === "text" && result.truncated).toBe(true);
+  });
+
+  it("reports directories and missing files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openma-file-content-"));
+    temporaryRoots.push(root);
+    await expect(readLocalFileContent(root)).resolves.toEqual({ kind: "directory" });
+    await expect(readLocalFileContent(join(root, "nope.txt"))).resolves.toMatchObject({ kind: "error" });
   });
 });

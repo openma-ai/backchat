@@ -467,6 +467,8 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.UiFsOpenPath, p) as Promise<string>,
   uiFsRevealPath: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsRevealPath, p) as Promise<void>,
+  uiFsReadContent: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsReadContent, p) as ReturnType<BackchatApi["uiFsReadContent"]>,
   uiFsResolvePreview: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsResolvePreview, p) as Promise<{
       sourcePath: string;

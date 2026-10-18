@@ -489,6 +489,8 @@ export interface SideTab {
   /** Original local artifact behind a browser-renderable preview. The
    *  browser payload may point at a generated PDF/image sidecar. */
   sourcePath?: string;
+  /** Files tab: the file shown in the inline viewer beside the tree. */
+  previewPath?: string;
   /** Browser tabs populate this from Electron's page-favicon-updated event. */
   faviconUrl?: string;
   /** Provider-native subagents share this identity with their activity row. */

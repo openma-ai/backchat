@@ -801,6 +801,17 @@ export interface BackchatApi extends OpenmaAccountApi {
   uiFsRevealPath(p: { path: string }): Promise<void>;
 
   /** Return a browser-renderable local preview when one is available. */
+  /** File panel viewer: text (capped), image data URL, or a reason it
+   *  cannot be shown inline. */
+  uiFsReadContent(p: { path: string }): Promise<
+    | { kind: "text"; content: string; size: number; truncated: boolean }
+    | { kind: "image"; dataUrl: string; size: number }
+    | { kind: "binary"; size: number }
+    | { kind: "too-large"; size: number }
+    | { kind: "directory" }
+    | { kind: "error"; message: string }
+  >;
+
   uiFsResolvePreview(p: { path: string }): Promise<{
     sourcePath: string;
     previewPath: string;

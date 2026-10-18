@@ -996,7 +996,7 @@ export function Composer({
         <ComposerBrokerAsk ask={pendingAsk} onResolve={onResolveAsk} />
       ) : (
       <>
-      <div className="flex min-h-[var(--composer-body-min-height)] w-full flex-col items-start gap-1.5 px-1">
+      <div className="composer-body-inset flex min-h-[var(--composer-body-min-height)] w-full flex-col items-start gap-1.5">
         {attachments.length > 0 && (
           <AttachmentPreviewStrip
             attachments={attachments}

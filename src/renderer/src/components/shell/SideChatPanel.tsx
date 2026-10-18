@@ -37,6 +37,7 @@ import { useSettings } from "@/lib/settings-store";
 import { browserSettings } from "@shared/browser-settings.js";
 import { cn } from "@/lib/utils";
 import { previewLocalFile } from "@/lib/file-preview";
+import { FilePreviewPane } from "@/components/shell/FilePreviewPane";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { SCHEDULES_QUERY_KEY } from "@/lib/scheduled-task-presentation";
 import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
@@ -147,6 +148,12 @@ export function SideChatPanel() {
   } = useRightRailExpansion();
   const navigate = useNavigate();
   const canStartSideChat = !!mainActive && mainActive.status !== "draft";
+  // A fresh draft has no title yet; the pinned chip still names the surface.
+  const mainLabel = mainActive?.label?.trim() || t("sideChat.untitledMain");
+  // The file tree browses the task's project. A home draft with no project
+  // picked has nothing to browse, so the tile is disabled rather than
+  // silently opening $HOME.
+  const canBrowseFiles = !!mainActive?.cwd;
   const canForkSideChat =
     canStartSideChat
     && wholeSessionForkEnabled(mainActive?.forkSupport)
@@ -264,6 +271,7 @@ export function SideChatPanel() {
   const openTab = useCallback(
     async (type: SideTabType) => {
       if (type === "browser" && !browserEnabled) return;
+      if (type === "file" && !canBrowseFiles) return;
       // Side tools belong to the active task workspace. Home is used only
       // when there is no active task.
       const cwd =
@@ -297,7 +305,7 @@ export function SideChatPanel() {
         });
       }
     },
-    [browserEnabled, mainActive?.cwd, openSideChat],
+    [browserEnabled, canBrowseFiles, mainActive?.cwd, openSideChat],
   );
 
   const openSubagent = useCallback((activity: SubagentActivity) => {
@@ -368,21 +376,25 @@ export function SideChatPanel() {
         data-panel-titlebar="true"
         data-header-clears-left-chrome={expanded && leftSidebarCollapsed}
         className={cn(
-          "app-drag-region pointer-events-auto shrink-0 flex h-[var(--top-row-h)] items-start gap-[var(--chrome-gap)] pl-3 pr-[var(--chrome-gap)]",
-          expanded ? "bg-bg-sidebar" : "bg-transparent",
+          // Left inset mirrors the right one (the global toggle sits one
+          // chrome gap from the window edge), so the tab row is symmetric.
+          "app-drag-region pointer-events-auto shrink-0 flex h-[var(--top-row-h)] items-start gap-[var(--chrome-gap)] pl-[calc(var(--chrome-gap)/var(--zoom,1))] bg-transparent",
         )}
         style={{
-          // Expanded floats one stage inset below the window top; docked
-          // is flush (y=0), so it uses the chrome baseline directly.
-          paddingTop: expanded
-            ? "calc(var(--chrome-top) - var(--stage-inset))"
-            : "var(--chrome-top)",
-          // Docked loses the inset above it; grow the row so the body
-          // below stays where it was.
-          height: expanded ? undefined : "calc(var(--top-row-h) + var(--stage-inset))",
+          // Docked and expanded panels are both flush to the window top and
+          // right edge, so they share one geometry. The row is one stage
+          // inset taller than --top-row-h, matching the main header.
+          paddingTop: "var(--chrome-top)",
+          height: "calc(var(--top-row-h) + var(--stage-inset))",
+          // Expanded with the sidebar collapsed, the panel starts at the
+          // window edge: clear the traffic lights and sidebar/back/forward
+          // chrome exactly like the main header does.
           paddingLeft: expanded && leftSidebarCollapsed
-            ? "calc(var(--left-chrome-end) + var(--chrome-title-gap) - var(--stage-inset))"
+            ? "calc(var(--left-chrome-end) + var(--chrome-title-gap))"
             : undefined,
+          // Leave room for the global panel toggle pinned at the window's
+          // top-right; the header's own actions end one gap before it.
+          paddingRight: "calc(var(--chrome-gap) / var(--zoom, 1) + var(--chrome-size) + var(--chrome-gap))",
         }}
       >
         {/* The rail selects one surface at a time. Browser surfaces are
@@ -401,7 +413,7 @@ export function SideChatPanel() {
                 aria-selected={mainSelected}
                 data-pinned-main-session="true"
                 onClick={selectMain}
-                title={mainActive.label}
+                title={mainLabel}
                 className={cn(
                   "app-no-drag inline-flex h-[var(--row-h)] max-w-48 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs",
                   mainSelected
@@ -411,7 +423,7 @@ export function SideChatPanel() {
                 )}
               >
                 <MessageSquareIcon className="size-3.5 shrink-0 text-fg-subtle" />
-                <span className="truncate">{mainActive.label}</span>
+                <span className="truncate">{mainLabel}</span>
               </button>
               <span
                 aria-hidden="true"
@@ -436,7 +448,13 @@ export function SideChatPanel() {
                   <TabChip
                     key={tab.id}
                     tab={tab}
-                    label={activity ? subagentActivityLabel(activity) : tab.label}
+                    label={
+                      activity
+                        ? subagentActivityLabel(activity)
+                        : tab.type === "browser" && tab.payload === "about:blank"
+                          ? t("rightPanel.newTab")
+                          : tab.label
+                    }
                     active={!mainSelected && tab.id === activeTab?.id}
                     onPick={() => {
                       selectPanel();
@@ -514,6 +532,7 @@ export function SideChatPanel() {
             onPickProcess={openProcess}
             canStartSideChat={canStartSideChat}
             canForkSideChat={canForkSideChat}
+            canBrowseFiles={canBrowseFiles}
             browserEnabled={browserEnabled}
             artifacts={artifacts}
             subagents={subagents}
@@ -624,18 +643,49 @@ function ActiveTabBody({
     return <ChatView key={tab.payload} mode="side" />;
   }
   if (tab.type === "file") {
+    const previewPath = tab.previewPath;
+    // One stable element order (viewer slot, tree) so opening or closing
+    // the viewer never remounts the tree and loses its expansion state.
     return (
-      <FileTree
-        key={tab.payload}
-        rootPath={tab.payload}
-        onOpenFile={(path) => void previewLocalFile(path)}
-        onRootChange={(next) =>
-          sessionStore.patchSideTab(tab.id, {
-            payload: next,
-            label: deriveFileLabel(next),
-          })
-        }
-      />
+      <div className="flex h-full min-h-0" data-file-tab-layout={previewPath ? "split" : "tree"}>
+        {previewPath ? (
+          <div className="min-h-0 min-w-0 flex-1">
+            <FilePreviewPane
+              key={previewPath}
+              path={previewPath}
+              onClose={() => sessionStore.patchSideTab(tab.id, { previewPath: undefined })}
+            />
+          </div>
+        ) : null}
+        <div
+          className={cn(
+            "min-h-0",
+            previewPath
+              ? "w-[clamp(160px,32%,280px)] shrink-0 border-l border-border/55"
+              : "min-w-0 flex-1",
+          )}
+        >
+          <FileTree
+            key={tab.payload}
+            rootPath={tab.payload}
+            selectedPath={previewPath}
+            onOpenFile={(path) => {
+              if (sessionStore.active()?.openma) {
+                void previewLocalFile(path);
+                return;
+              }
+              sessionStore.patchSideTab(tab.id, { previewPath: path });
+            }}
+            onRootChange={(next) =>
+              sessionStore.patchSideTab(tab.id, {
+                payload: next,
+                label: deriveFileLabel(next),
+                previewPath: undefined,
+              })
+            }
+          />
+        </div>
+      </div>
     );
   }
   if (tab.type === "artifact") {

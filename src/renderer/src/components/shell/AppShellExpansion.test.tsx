@@ -77,9 +77,10 @@ describe("AppShell expanded right panel", () => {
 
     expect(markup).toContain('data-right-panel-expanded="true"');
     expect(markup).toContain(
-      "width:calc(100% - 240px - var(--stage-inset) * 2)",
+      "width:calc(100% - 240px - var(--stage-inset))",
     );
-    expect(markup).toContain("bottom:var(--stage-inset)");
+    // Expanded takes over the main region: flush to the window edges.
+    expect(markup).toMatch(/data-expanded-surface="panel" style="right:0;top:0;bottom:0/);
     expect(markup).toContain("padding-right:var(--stage-inset)");
     expect(markup).toContain(
       'data-expanded-surface="panel" style=',
@@ -91,8 +92,9 @@ describe("AppShell expanded right panel", () => {
     const expandedPanelClass = markup.match(
       /<aside class="([^"]+)" data-right-panel-expanded="true"/,
     )?.[1].split(/\s+/) ?? [];
-    expect(expandedPanelClass).toContain("bg-bg-sidebar");
-    expect(expandedPanelClass).not.toContain("bg-bg");
+    expect(expandedPanelClass).toContain("app-canvas-surface");
+    expect(expandedPanelClass).not.toContain("app-rail-surface");
+    expect(expandedPanelClass).not.toContain("rounded-r-2xl");
     expect(markup).not.toContain('<header class="app-drag-region');
     expect(expandedPanelMarkup).not.toContain("liquid-glass");
     expect(markup).not.toContain('aria-label="Resize side panel"');
@@ -107,7 +109,7 @@ describe("AppShell expanded right panel", () => {
     );
 
     expect(expandedMainMarkup).toContain("bottom:auto");
-    expect(expandedMainMarkup).toContain("height:var(--top-row-h)");
+    expect(expandedMainMarkup).toContain("height:calc(var(--top-row-h) + var(--stage-inset))");
     expect(expandedMainMarkup).toContain("pointer-events:auto");
     expect(expandedMainMarkup).not.toContain("pointer-events:none");
     expect(markup).not.toContain('<header class="app-drag-region');

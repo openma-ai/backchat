@@ -224,6 +224,11 @@ export const TurnBlock = memo(function TurnBlock({
 
   const view = (
     <AgentUITurnView
+      // chat-ui keeps a settled turn's process strip as it was while
+      // streaming (open). Remount once when the turn stops running so it
+      // re-initializes from defaultProcessOpen: each turn folds its work
+      // away when it finishes, leaving the answer.
+      key={turn.status === "running" ? "live" : "settled"}
       sessionId={turn.sessionId}
       turn={projectedTurn}
       frameStatus={sendFailed ? "error" : sendPending ? "completed" : turn.status}
@@ -379,9 +384,41 @@ export const TurnBlock = memo(function TurnBlock({
               tools={activityRendered.tools}
             />
             {sendPending ? (
-              <p className="text-xs text-fg-muted" data-user-echo-status="pending">
-                {t("chat.sending")}
-              </p>
+              <>
+                {/* Once the turn runs, chat-ui puts the "Working for" header
+                    above the "Thinking…" fallback. Hold that header's exact
+                    box (same classes, invisible) so "Sending…" already sits
+                    where "Thinking…" will appear and nothing shifts. */}
+                <div
+                  className="not-prose invisible"
+                  aria-hidden="true"
+                  inert
+                  data-send-pending-header-slot="true"
+                >
+                  {/* A button so the header's button-scoped rules (padding,
+                      hairline, row font) give it the identical height. */}
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    disabled
+                    className="chat-interactive-surface chat-reasoning-trigger activity-disclosure-row flex w-full select-none items-center gap-2 text-sm chat-interactive-surface--transcript"
+                  >
+                    <span className="chat-transcript-disclosure-summary min-w-0 flex-1 truncate text-left">
+                      {"\u00a0"}
+                    </span>
+                  </button>
+                </div>
+                {/* Same row as chat-ui's "Thinking…" fallback: the handoff
+                    swaps text without a size or height change. */}
+                <p
+                  className="min-h-6 truncate text-left font-chat text-[13px] leading-6 text-fg-muted"
+                  role="status"
+                  aria-live="polite"
+                  data-user-echo-status="pending"
+                >
+                  {t("chat.sending")}
+                </p>
+              </>
             ) : null}
             {stopNotice && (
               <p

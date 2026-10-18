@@ -29,6 +29,7 @@ export function RightPanelLauncher({
   onOpenSchedule,
   canStartSideChat,
   canForkSideChat = false,
+  canBrowseFiles = true,
   browserEnabled,
   artifacts,
   subagents,
@@ -44,6 +45,8 @@ export function RightPanelLauncher({
   canStartSideChat: boolean;
   /** When false, side chat starts fresh — do not promise fork inheritance. */
   canForkSideChat?: boolean;
+  /** False when the task has no project folder to browse. */
+  canBrowseFiles?: boolean;
   browserEnabled: boolean;
   artifacts: WorkspaceArtifacts;
   subagents: SubagentActivity[];
@@ -114,6 +117,7 @@ export function RightPanelLauncher({
           label={t("sideChat.file")}
           hint={t("sideChat.fileHint")}
           icon={<FolderIcon className="size-4" />}
+          disabled={!canBrowseFiles}
           onClick={() => onPick("file")}
         />
         {browserEnabled && (
@@ -293,14 +297,16 @@ function NewAction({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid min-h-11 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-3 rounded-lg py-1.5 text-left text-fg transition-colors hover:bg-bg-surface/60 disabled:cursor-not-allowed disabled:opacity-45"
+      className="group grid min-h-11 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-3 rounded-lg py-1.5 text-left text-fg transition-colors enabled:hover:bg-bg-surface/60 disabled:cursor-not-allowed"
     >
-      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-bg-surface/65 text-fg-subtle">
+      {/* The global disabled rule recolors the button to --fg-disabled; the
+          icon and hint set their own color, so they follow it explicitly. */}
+      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-bg-surface/65 text-fg-subtle group-disabled:text-[var(--fg-disabled)]">
         {icon}
       </span>
       <span data-launcher-label className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{label}</span>
-        <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
+        <span className="block truncate text-[11px] text-fg-subtle group-disabled:text-[var(--fg-disabled)]">{hint}</span>
       </span>
     </button>
   );

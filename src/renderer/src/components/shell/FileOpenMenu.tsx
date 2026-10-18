@@ -29,14 +29,18 @@ export function FileOpenMenu({
         <button
           type="button"
           aria-label={`Open ${path}`}
+          // The file surface's one primary action: solid ink, same height as
+          // the chrome controls so it lines up with the panel toggle above.
           className={cn(
-            "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/70",
-            "bg-bg-surface px-2.5 text-xs font-medium text-fg shadow-sm",
-            "hover:bg-bg-surface/80 transition-colors",
+            "inline-flex h-[var(--chrome-size)] shrink-0 items-center gap-1.5 rounded-lg",
+            "bg-fg px-2.5 text-xs font-medium text-bg",
+            "hover:bg-fg/85 transition-colors",
+            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+            "data-[state=open]:bg-fg/85",
           )}
         >
           Open in
-          <ChevronDownIcon className="size-3.5 text-fg-muted" />
+          <ChevronDownIcon className="size-3.5 opacity-70" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={GAP_ADJACENT_PX} className="w-52 p-1.5">

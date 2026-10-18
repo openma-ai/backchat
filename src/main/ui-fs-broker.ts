@@ -27,7 +27,7 @@ import {
   type PastedImageMimeType,
 } from "../shared/image-bytes.js";
 import type { PromptAttachment } from "../shared/session-events.js";
-import { resolveLocalFilePreview } from "./file-preview.js";
+import { readLocalFileContent, resolveLocalFilePreview } from "./file-preview.js";
 import { openmaRoot } from "./storage-root.js";
 import { compareGitBranches } from "./git-environment.js";
 
@@ -458,6 +458,11 @@ ipcMain.handle(
 ipcMain.handle(
   InvokeChannel.UiFsResolvePreview,
   (_e, p: { path: string }) => resolveLocalFilePreview(p.path),
+);
+
+ipcMain.handle(
+  InvokeChannel.UiFsReadContent,
+  (_e, p: { path: string }) => readLocalFileContent(p.path),
 );
 
 // Main owns repository artwork: persisted last-known-good, refreshed in the
