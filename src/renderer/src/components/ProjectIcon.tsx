@@ -24,7 +24,10 @@ export function ProjectIcon({ identity, name, sourceFolders, primaryRoot, classN
   const image = useQuery({
     queryKey: ["repository-image", root],
     queryFn: () => window.backchat.uiFsRepositoryImage({ path: root }),
-    staleTime: 30 * 60_000,
+    // Main keeps the last good image on disk and refreshes it in the
+    // background; the renderer only needs one answer per root.
+    staleTime: Infinity,
+    gcTime: Infinity,
     refetchOnWindowFocus: false,
     enabled: !iconChoice && !!root,
   });

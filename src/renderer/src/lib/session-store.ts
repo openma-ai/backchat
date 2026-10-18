@@ -45,10 +45,29 @@ import { forkPointsByTurn } from "./fork-point.js";
 import { sessionUsesManagedWorkspace } from "./fork-workspace";
 import {
   createOpenMAEvent,
-  reduceWorkItems,
+  createWorkItemProjector,
   type OpenMAEvent,
+  type WorkItemProjector,
+  type WorkItemRegistry,
   type WorkItemSnapshot,
 } from "@openma/common/session-events/openma";
+
+/** One session's canonical OpenMA log. Append-only with O(1) dedupe; the
+ *  WorkItem registry is projected incrementally as events arrive, and the
+ *  read views are cached until the next change. */
+interface OpenMAEventLog {
+  events: OpenMAEvent[];
+  ids: Set<string>;
+  workItems: WorkItemProjector;
+  eventsView?: readonly OpenMAEvent[];
+  workItemsView?: { registry: WorkItemRegistry; items: WorkItemSnapshot[] };
+}
+
+const EMPTY_OPENMA_EVENTS: readonly OpenMAEvent[] = [];
+
+function createOpenMAEventLog(): OpenMAEventLog {
+  return { events: [], ids: new Set(), workItems: createWorkItemProjector() };
+}
 import { setRightRailCollapsed } from "@/lib/right-rail";
 import {
   configOptionFromLegacySessionModes,
@@ -59,7 +78,6 @@ import {
 } from "./session-config-options";
 import {
   createBackchatTurnProjector,
-  mergeStreamingText,
   parseAcpEvent,
   sessionUpdateInner,
   sessionUpdateType,
@@ -123,6 +141,7 @@ import type {
   HistoryRow,
   HistoryWindowInfo,
   HistoryWindowState,
+  NativeAgentLifecycleFact,
   NativeSubagentMetadata,
   PairRow,
   PairTurnTarget,
@@ -139,6 +158,7 @@ import type {
   TaskBrowserWindow,
   TaskSideWorkspaceSnapshot,
   Turn,
+  TurnEvent,
   TurnDeliveryMeta,
   WorkspaceArtifacts,
   WorkspaceSourceRef,
@@ -169,6 +189,15 @@ export class SessionStore {
   #pendingAsksBeforeSession = new Map<string, BrokerAsk[]>();
   #turns = new Map<string, Turn>();
   #turnProjectionCache = new Map<string, TurnProjectionCacheEntry>();
+  /** Coalesced text/thought runs built by #appendStreamEvent, by event. */
+  #streamRuns = new WeakMap<TurnEvent, {
+    kind: "text" | "thought";
+    text: string;
+    messageId?: string;
+    phase?: "commentary" | "final_answer";
+  }>();
+  /** Turns created by the replay pass in progress; safe to extend in place. */
+  #replayOwnedTurns = new WeakSet<Turn>();
   /** Persisted rows currently materialized per session when history was
    *  opened as a tail window (see replayHistoryWindow / prependHistory). */
   #history = new Map<string, HistoryWindowState>();
@@ -216,7 +245,7 @@ export class SessionStore {
   #subagentsByParent = new Map<string, SubagentActivity[]>();
   /** Canonical OpenMA event stream received alongside the legacy ACP
    *  transport envelope. This is the migration seam for GUI projections. */
-  #openmaEventsBySession = new Map<string, OpenMAEvent[]>();
+  #openmaEventsBySession = new Map<string, OpenMAEventLog>();
   #nativeAgentContextByToolCall = new Map<
     string,
     NativeAgentContext & { parentSessionId: string }
@@ -305,7 +334,10 @@ export class SessionStore {
     },
   ): boolean {
     const last = turn.events.at(-1);
-    const parsedLast = last ? parseAcpEvent(last.payload) : null;
+    // A run this method built is read from its record. Re-parsing the merged
+    // payload would rescan the whole accumulated text on every token.
+    const run = last ? this.#streamRuns.get(last) : undefined;
+    const parsedLast = run ?? (last ? parseAcpEvent(last.payload) : null);
     const sameMessage =
       parsedLast?.kind === kind &&
       parsedLast.messageId === metadata?.messageId &&
@@ -313,8 +345,8 @@ export class SessionStore {
         (parsedLast.kind === "text" &&
           parsedLast.phase === metadata?.phase));
     if (sameMessage) {
-      const merged = mergeStreamingText(parsedLast.text, text);
-      turn.events[turn.events.length - 1] = {
+      const merged = parsedLast.text + text;
+      const event: TurnEvent = {
         payload: {
           sessionUpdate:
             kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
@@ -329,9 +361,11 @@ export class SessionStore {
         },
         receivedAt: last!.receivedAt,
       };
+      turn.events[turn.events.length - 1] = event;
+      this.#streamRuns.set(event, { ...metadata, kind, text: merged });
       return false;
     }
-    turn.events.push({
+    const event: TurnEvent = {
       payload: {
         sessionUpdate:
           kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
@@ -343,7 +377,9 @@ export class SessionStore {
         content: { type: "text", text },
       },
       receivedAt,
-    });
+    };
+    turn.events.push(event);
+    this.#streamRuns.set(event, { ...metadata, kind, text });
     return true;
   }
 
@@ -471,7 +507,11 @@ export class SessionStore {
           s.kind !== "pair" &&
           s.archivedAt == null,
       )
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort(
+        (a, b) =>
+          (b.lastUsedAt ?? b.createdAt) - (a.lastUsedAt ?? a.createdAt) ||
+          b.createdAt - a.createdAt,
+      );
   }
 
   get(id: string): SessionRow | undefined {
@@ -604,31 +644,40 @@ export class SessionStore {
     );
   }
 
-  openmaEventsFor(sessionId: string): OpenMAEvent[] {
-    return [...(this.#openmaEventsBySession.get(sessionId) ?? [])];
+  openmaEventsFor(sessionId: string): readonly OpenMAEvent[] {
+    const log = this.#openmaEventsBySession.get(sessionId);
+    if (!log) return EMPTY_OPENMA_EVENTS;
+    log.eventsView ??= log.events.slice();
+    return log.eventsView;
   }
 
+  /** Read-only and identity-stable until a WorkItem changes. Correlated
+   *  evidence (vendor/raw/monitor events) carries a work_item_id but is not a
+   *  lifecycle edge; the reducer only consumes `work_item.*` events. */
   workItemsFor(sessionId: string): WorkItemSnapshot[] {
-    const events = (this.#openmaEventsBySession.get(sessionId) ?? []).filter(
-      // Correlated evidence keeps its work_item_id for inspection and replay,
-      // but it is not itself a lifecycle edge. openma-common's generic
-      // reducer deliberately merges every correlated event, so keep these
-      // evidence-only records out of the GUI WorkItem projection.
-      (event) =>
-        event.type !== "vendor.event"
-        && event.type !== "raw.event"
-        && event.type !== "monitor.event",
-    );
-    return [...reduceWorkItems(events).items.values()];
+    const log = this.#openmaEventsBySession.get(sessionId);
+    if (!log) return [];
+    const registry = log.workItems.snapshot();
+    if (log.workItemsView?.registry !== registry) {
+      log.workItemsView = { registry, items: [...registry.items.values()] };
+    }
+    return log.workItemsView.items;
   }
 
   #ingestOpenMAEvent(
     event: OpenMAEvent,
     options: { persist?: boolean } = {},
   ): boolean {
-    const events = this.#openmaEventsBySession.get(event.session_id) ?? [];
-    if (events.some((existing) => existing.event_id === event.event_id)) return false;
-    this.#openmaEventsBySession.set(event.session_id, [...events, event]);
+    let log = this.#openmaEventsBySession.get(event.session_id);
+    if (!log) {
+      log = createOpenMAEventLog();
+      this.#openmaEventsBySession.set(event.session_id, log);
+    }
+    if (log.ids.has(event.event_id)) return false;
+    log.ids.add(event.event_id);
+    log.events.push(event);
+    log.eventsView = undefined;
+    log.workItems.apply(event);
     if (options.persist) {
       const persist =
         typeof window !== "undefined"
@@ -802,6 +851,22 @@ export class SessionStore {
           error_details: errorDetails,
           openma_event: event,
           ...(event.turn_id ? { turn_id: event.turn_id } : {}),
+        });
+        return true;
+      }
+      if (event.turn_id) {
+        // A provider failure inside one turn (capacity, bad request, stream
+        // drop) ends that turn; the ACP session is still alive and can take
+        // the next prompt. Same reducer as the live and auth paths, so replay
+        // and live agree and the chat is not locked behind "start a new chat".
+        this.apply({
+          type: "session.error",
+          session_id: event.session_id,
+          turn_id: event.turn_id,
+          message,
+          agent_id: agentId,
+          error_details: errorDetails,
+          openma_event: event,
         });
         return true;
       }
@@ -1040,7 +1105,13 @@ export class SessionStore {
     if (!activity) return true;
     const childTurnId = `${activity.viewSessionId}:turn`;
     const previous = this.#turns.get(childTurnId);
-    const turn: Turn = previous ?? {
+    // Copy a turn the UI may already hold once per replay pass, then extend
+    // the copy in place; copying per event made replay quadratic.
+    const owned = previous && this.#replayOwnedTurns.has(previous);
+    const turn: Turn = owned ? previous : previous ? {
+      ...previous,
+      events: [...previous.events],
+    } : {
       id: childTurnId,
       sessionId: activity.viewSessionId,
       promptText: activity.task,
@@ -1052,20 +1123,21 @@ export class SessionStore {
     };
     const parsed = parseAcpEvent(event);
     if (parsed.kind === "text") {
-      turn.assistantText = mergeStreamingText(turn.assistantText, parsed.text);
+      turn.assistantText += parsed.text;
       this.#appendStreamEvent(turn, "text", parsed.text, receivedAt, {
         messageId: parsed.messageId,
         phase: parsed.phase,
       });
     } else if (parsed.kind === "thought") {
-      turn.thoughtText = mergeStreamingText(turn.thoughtText, parsed.text);
+      turn.thoughtText += parsed.text;
       this.#appendStreamEvent(turn, "thought", parsed.text, receivedAt, {
         messageId: parsed.messageId,
       });
     } else {
       turn.events.push({ payload: event, receivedAt });
     }
-    this.#turns.set(childTurnId, { ...turn, events: [...turn.events] });
+    this.#replayOwnedTurns.add(turn);
+    this.#turns.set(childTurnId, turn);
     return true;
   }
 
@@ -2143,6 +2215,7 @@ export class SessionStore {
       && delivery?.intent === "steer"
       && delivery.effectiveDelivery === "llm_boundary";
     const isQueued = !!row?.activeTurnId && !isSteering;
+    const now = Date.now();
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
@@ -2168,7 +2241,7 @@ export class SessionStore {
       requestedDelivery: delivery?.requestedDelivery,
       effectiveDelivery: delivery?.effectiveDelivery,
       deliveryDegraded: delivery?.degraded,
-      startedAt: Date.now(),
+      startedAt: now,
     });
     this.#mutateSession(sessionId, (s) => ({
       ...s,
@@ -2177,12 +2250,37 @@ export class SessionStore {
         ? [...(s.queuedTurnIds ?? []), turnId]
         : s.queuedTurnIds,
       status: "running",
+      lastUsedAt: Math.max(s.lastUsedAt ?? s.createdAt, now),
     }));
     this.#recordSubagentActivity(sessionId, {
       task: promptText,
       status: "running",
     });
     this.#emit();
+  }
+
+  /** The host's queue snapshot is the authority on what is running. A turn
+   *  replayed from SQL whose terminal event never got persisted (a write that
+   *  failed with ENOSPC, a crash mid-turn) would otherwise stay "running"
+   *  forever. Once the host says it is not active, settle it as interrupted at
+   *  its last persisted event. Optimistic sends still awaiting the host's ack
+   *  are left alone. */
+  #settleOrphanedRunningTurns(
+    sessionId: string,
+    activeTurnId: string | undefined,
+    steeringTurnIds: readonly string[],
+  ): void {
+    const keep = new Set([activeTurnId, ...steeringTurnIds].filter(Boolean));
+    for (const turn of this.#turns.values()) {
+      if (turn.sessionId !== sessionId || turn.status !== "running") continue;
+      if (keep.has(turn.id) || turn.sendState === "pending") continue;
+      this.#turns.set(turn.id, {
+        ...turn,
+        status: "cancelled",
+        stopReason: turn.stopReason ?? "interrupted",
+        endedAt: turn.endedAt ?? turn.startedAt,
+      });
+    }
   }
 
   #markTurnRunning(turnId: string | undefined): void {
@@ -2596,12 +2694,12 @@ export class SessionStore {
       next.status = "running";
       next.endedAt = undefined;
       if (update.kind === "text" && update.text) {
-        next.assistantText = mergeStreamingText(next.assistantText, update.text);
+        next.assistantText += update.text;
         this.#appendStreamEvent(next, "text", update.text, now, {
           messageId: update.messageId,
         });
       } else if (update.kind === "thought" && update.text) {
-        next.thoughtText = mergeStreamingText(next.thoughtText, update.text);
+        next.thoughtText += update.text;
         this.#appendStreamEvent(next, "thought", update.text, now, {
           messageId: update.messageId,
         });
@@ -2669,8 +2767,10 @@ export class SessionStore {
         return parsed.kind === "tool_call" ? [parsed.tool.toolCallId] : [];
       }),
     );
-    const events = this.#openmaEventsBySession.get(sessionId) ?? [];
-    const items = reduceWorkItems(events).items;
+    const events = this.#openmaEventsBySession.get(sessionId)?.events ?? [];
+    const items = new Map(
+      this.workItemsFor(sessionId).map((item) => [item.id, item]),
+    );
     const runningBashStarts = events.filter((event) => {
       if (
         event.type !== "work_item.started"
@@ -3108,6 +3208,7 @@ export class SessionStore {
           projectScope: s.projectScope,
           kind: this.#isPairMember(r.id) ? "pair" : s.kind,
           createdAt: r.created_at || s.createdAt,
+          lastUsedAt: r.last_used_at || r.created_at || s.lastUsedAt || s.createdAt,
           pinnedAt: r.pinned_at ?? undefined,
           archivedAt: r.archived_at ?? undefined,
         }));
@@ -3131,6 +3232,7 @@ export class SessionStore {
         kind: this.#isPairMember(r.id) ? "pair" : undefined,
         status: "ready",
         createdAt: r.created_at,
+        lastUsedAt: r.last_used_at || r.created_at,
         pinnedAt: r.pinned_at ?? undefined,
         archivedAt: r.archived_at ?? undefined,
       });
@@ -3144,7 +3246,7 @@ export class SessionStore {
     const state = this.#history.get(sessionId);
     if (!state) return undefined;
     return {
-      oldestSeq: state.rows[0]?.seq,
+      oldestSeq: state.oldestSeq,
       hasMore: state.hasMore,
       loading: state.loading,
     };
@@ -3168,9 +3270,9 @@ export class SessionStore {
     this.#emit();
   }
 
-  /** Open a session from the newest rows only. The window may start in the
-   *  middle of a turn; the leading fragment renders as a prompt-less head
-   *  turn until prependHistory brings its user prompt into view. */
+  /** Open a session from the newest rows only. Main aligns the window to a
+   *  turn opener; a prompt-less head turn only appears for rows that precede
+   *  the first prompt of a log that still has older rows. */
   replayHistoryWindow(
     sessionId: string,
     rows: HistoryRow[],
@@ -3179,14 +3281,25 @@ export class SessionStore {
     this.#historyPending.delete(sessionId);
     if (!this.#shouldMaterializeHistoryFromSql(sessionId)) { this.#emit(); return; }
     this.#clearMaterializableTurns(sessionId);
-    this.#history.set(sessionId, { rows: [...rows], hasMore: opts.hasMore, loading: false });
-    this.#replayRows(sessionId, rows, { partialHead: opts.hasMore, notices: true });
+    const agentLifecycle = this.#replayRows(sessionId, rows, {
+      partialHead: opts.hasMore,
+      notices: true,
+    });
+    this.#history.set(sessionId, {
+      oldestSeq: rows[0]?.seq,
+      hasMore: opts.hasMore,
+      loading: false,
+      agentLifecycle,
+    });
+    if (!opts.hasMore) this.#pruneNonCanonicalSubagents(sessionId, agentLifecycle);
+    this.#emit();
   }
 
-  /** Page older rows in front of the current window. Turns are rebuilt from
-   *  the combined rows — a few thousand rows replay in milliseconds and it
-   *  keeps one code path for turn boundaries, steering and dedupe. Live turns
-   *  (non-replay ids) are preserved in place. */
+  /** Page older rows in front of the current window. A page holds whole
+   *  turns, so only the new rows are replayed: existing turn objects (and
+   *  their cached projections) are kept, which keeps React work proportional
+   *  to the page instead of the window. Session-level projections are
+   *  "latest wins" and keep the state the newer rows already produced. */
   prependHistory(
     sessionId: string,
     olderRows: HistoryRow[],
@@ -3196,49 +3309,81 @@ export class SessionStore {
     if (!state) return;
     state.loading = false;
     state.hasMore = opts.hasMore;
-    if (olderRows.length === 0) {
-      // Nothing older exists; the head fragment is now the real start.
-      if (!state.hasMore) this.#rebuildFromWindow(sessionId, state);
-      else this.#emit();
-      return;
+    const oldest = state.oldestSeq;
+    const rows = olderRows.filter((row) => oldest === undefined || row.seq < oldest);
+    if (rows.length > 0) {
+      state.oldestSeq = rows[0]!.seq;
+      state.agentLifecycle = [
+        ...this.#prependReplay(sessionId, rows, state.hasMore),
+        ...state.agentLifecycle,
+      ];
     }
-    const oldest = state.rows[0]?.seq;
-    state.rows = [
-      ...olderRows.filter((row) => oldest === undefined || row.seq < oldest),
-      ...state.rows,
-    ];
-    this.#rebuildFromWindow(sessionId, state);
+    if (!state.hasMore) this.#pruneNonCanonicalSubagents(sessionId, state.agentLifecycle);
+    this.#emit();
   }
 
-  #rebuildFromWindow(sessionId: string, state: HistoryWindowState): void {
-    // Drop replayed turns (and the child transcript turns they projected)
-    // but keep live turns, re-inserted after the rebuilt history so the
-    // Map's registration order still reads oldest → newest.
-    const live: Array<[string, Turn]> = [];
-    for (const [id, turn] of this.#turns) {
-      if (turn.sessionId !== sessionId) continue;
-      if (id.startsWith(`replay-${sessionId}-`)) this.#deleteTurn(id);
-      else {
-        live.push([id, turn]);
-        this.#deleteTurn(id);
-      }
-    }
-    for (const activity of this.#subagentsByParent.get(sessionId) ?? []) {
-      this.#deleteTurn(`${activity.viewSessionId}:turn`);
-    }
-    // Session-level projections (status, usage, title, subagent status) are
-    // "latest wins". The current row already reflects the newest rows plus
-    // any live events; older pages must not roll it back.
-    const sessionBefore = this.#sessions.get(sessionId);
+  #prependReplay(
+    sessionId: string,
+    rows: HistoryRow[],
+    partialHead: boolean,
+  ): NativeAgentLifecycleFact[] {
+    // Detach the newer turns (parent and subagent transcript turns) so the
+    // replay registers the older ones first; Map order reads oldest → newest.
     const activitiesBefore = this.#subagentsByParent.get(sessionId);
-    this.#replayRows(sessionId, state.rows, {
-      partialHead: state.hasMore,
+    const childTurnIds = new Set(
+      (activitiesBefore ?? []).map((activity) => `${activity.viewSessionId}:turn`),
+    );
+    const newer: Turn[] = [];
+    const newerChildren = new Map<string, Turn>();
+    for (const [id, turn] of this.#turns) {
+      if (turn.sessionId === sessionId) newer.push(turn);
+      else if (childTurnIds.has(id)) newerChildren.set(id, turn);
+      else continue;
+      this.#turns.delete(id);
+    }
+    const sessionBefore = this.#sessions.get(sessionId);
+    const agentLifecycle = this.#replayRows(sessionId, rows, {
+      partialHead,
       notices: false,
     });
     if (sessionBefore) this.#sessions.set(sessionId, sessionBefore);
-    if (activitiesBefore) this.#subagentsByParent.set(sessionId, activitiesBefore);
-    for (const [id, turn] of live) this.#turns.set(id, turn);
-    this.#emit();
+    // Pages are disjoint in seq, so a turn id present on both sides is one
+    // turn split by the boundary: the older page holds its start, the newer
+    // rows its continuation (a queueing harness can write a turn's tail,
+    // terminal included, after later prompts). Join them by id, in the older
+    // turn's position. The id-less legacy head continues the newest older turn.
+    const headId = `replay-${sessionId}-head`;
+    let owner: Turn | undefined;
+    for (const turn of this.#turns.values()) {
+      if (turn.sessionId === sessionId) owner = turn;
+    }
+    for (const turn of newer) {
+      const older = this.#turns.get(turn.id);
+      if (older && older !== turn) {
+        this.#turns.set(turn.id, foldHeadIntoTurn(older, turn));
+        this.#turnProjectionCache.delete(turn.id);
+      } else if (turn.id === headId && owner && owner.id !== headId) {
+        this.#turns.set(owner.id, foldHeadIntoTurn(owner, turn));
+        this.#turnProjectionCache.delete(headId);
+        this.#turnProjectionCache.delete(owner.id);
+      } else {
+        this.#turns.set(turn.id, turn);
+      }
+    }
+    for (const [id, turn] of newerChildren) {
+      const older = this.#turns.get(id);
+      this.#turns.delete(id);
+      this.#turns.set(id, older ? concatChildTranscriptTurns(older, turn) : turn);
+    }
+    // Activities first seen in the older page are added; the ones the newer
+    // rows already know keep their newer state.
+    if (activitiesBefore) {
+      const known = new Set(activitiesBefore.map((activity) => activity.childSessionId));
+      const discovered = (this.#subagentsByParent.get(sessionId) ?? [])
+        .filter((activity) => !known.has(activity.childSessionId));
+      this.#subagentsByParent.set(sessionId, [...discovered, ...activitiesBefore]);
+    }
+    return agentLifecycle;
   }
 
   #hasSessionTurns(sessionId: string): boolean {
@@ -3285,7 +3430,12 @@ export class SessionStore {
     if (!this.#shouldMaterializeHistoryFromSql(sessionId)) { this.#emit(); return; }
     this.#clearMaterializableTurns(sessionId);
     this.#history.delete(sessionId);
-    this.#replayRows(sessionId, rows, { partialHead: false, notices: true });
+    const agentLifecycle = this.#replayRows(sessionId, rows, {
+      partialHead: false,
+      notices: true,
+    });
+    this.#pruneNonCanonicalSubagents(sessionId, agentLifecycle);
+    this.#emit();
   }
 
   #clearMaterializableTurns(sessionId: string): void {
@@ -3300,16 +3450,18 @@ export class SessionStore {
     sessionId: string,
     rows: HistoryRow[],
     opts: { partialHead: boolean; notices: boolean },
-  ): void {
-    this.#turnProjectionCache.clear();
+  ): NativeAgentLifecycleFact[] {
+    this.#replayOwnedTurns = new WeakSet();
     const notify = (message: string) => {
       if (opts.notices) this.#showNotice(sessionId, message, "warning");
     };
-    // A window that opens mid-turn has no prompt row for its first events.
-    // Give them a prompt-less head turn instead of dropping them; the id is
-    // stable across rebuilds until the real prompt arrives and absorbs it.
-    const makeHead = (ts: number): Turn => ({
-      id: `replay-${sessionId}-head`,
+    // A window can hold rows of a turn whose prompt is in an older page:
+    // the window opened mid-turn, or a queueing harness wrote the turn's tail
+    // after later prompts. Keep those rows under the turn's own id as a
+    // prompt-less continuation; when the older page lands, prependHistory
+    // joins the two by id. Rows with no turn id share one legacy head.
+    const makeHead = (ts: number, turnId?: string): Turn => ({
+      id: turnId ?? `replay-${sessionId}-head`,
       sessionId,
       promptText: "",
       events: [],
@@ -3340,7 +3492,7 @@ export class SessionStore {
         .map(persistedEventFingerprint),
     );
     const richerCanonicalByRawOccurrence = new Map<string, OpenMAEvent>();
-    const canonicalNativeAgentIds = new Set<string>();
+    const agentLifecycle: NativeAgentLifecycleFact[] = [];
     for (const { canonical } of prepared) {
       if (canonical?.work_item_id) {
         const canonicalData = isPlainRecord(canonical.data)
@@ -3350,16 +3502,16 @@ export class SessionStore {
           canonical.type === "work_item.started"
           && canonicalData.kind === "agent"
         ) {
-          canonicalNativeAgentIds.add(canonical.work_item_id);
-        } else if (canonical.type === "work_item.reidentified") {
-          const previousId =
-            typeof canonicalData.previous_work_item_id === "string"
-              ? canonicalData.previous_work_item_id
-              : undefined;
-          if (previousId && canonicalNativeAgentIds.has(previousId)) {
-            canonicalNativeAgentIds.delete(previousId);
-            canonicalNativeAgentIds.add(canonical.work_item_id);
-          }
+          agentLifecycle.push({ type: "started", id: canonical.work_item_id });
+        } else if (
+          canonical.type === "work_item.reidentified"
+          && typeof canonicalData.previous_work_item_id === "string"
+        ) {
+          agentLifecycle.push({
+            type: "reidentified",
+            id: canonical.work_item_id,
+            previousId: canonicalData.previous_work_item_id,
+          });
         }
       }
       if (!canonical?.raw?.payload || !canonical.work_item_id) continue;
@@ -3417,10 +3569,11 @@ export class SessionStore {
                 (activeTurnId ? turnsByCanonicalId.get(activeTurnId) : undefined)
                 ?? (activeTurnId ? this.#turns.get(activeTurnId) : undefined);
               if (!activeTurn && opts.partialHead) {
-                activeTurn = makeHead(r.ts);
+                activeTurn = makeHead(r.ts, activeTurnId);
                 if (activeTurnId) {
                   turnsByCanonicalId.set(activeTurnId, activeTurn);
                 }
+                this.#turns.set(activeTurn.id, activeTurn);
               }
               if (activeTurn) {
                 activeTurn.events.push({ payload: canonical, receivedAt: r.ts });
@@ -3465,8 +3618,11 @@ export class SessionStore {
           ? turnsByCanonicalId.get(canonical.turn_id)
             ?? this.#turns.get(canonical.turn_id)
           : undefined;
-        if (!turn && opts.partialHead) {
-          turn = makeHead(r.ts);
+        // A canonical row with no turn_id is session-scoped (background
+        // processes, work items): it has no turn to continue, so it must not
+        // conjure a prompt-less head that sits "running" forever.
+        if (!turn && opts.partialHead && canonical.turn_id) {
+          turn = makeHead(r.ts, canonical.turn_id);
           if (canonical.turn_id) turnsByCanonicalId.set(canonical.turn_id, turn);
           this.#turns.set(turn.id, turn);
         }
@@ -3531,10 +3687,7 @@ export class SessionStore {
           if (split.notice) {
             notify(split.notice);
           }
-          turn.assistantText = mergeStreamingText(
-            turn.assistantText,
-            split.transcript,
-          );
+          turn.assistantText += split.transcript;
           if (split.transcript) {
             this.#appendStreamEvent(turn, "text", split.transcript, r.ts, {
               messageId: parsedCanonical.messageId,
@@ -3542,10 +3695,7 @@ export class SessionStore {
             });
           }
         } else if (parsedCanonical.kind === "thought") {
-          turn.thoughtText = mergeStreamingText(
-            turn.thoughtText,
-            parsedCanonical.text,
-          );
+          turn.thoughtText += parsedCanonical.text;
           this.#appendStreamEvent(turn, "thought", parsedCanonical.text, r.ts, {
             messageId: parsedCanonical.messageId,
           });
@@ -3642,10 +3792,7 @@ export class SessionStore {
             if (split.notice) {
               notify(split.notice);
             }
-            current.assistantText = mergeStreamingText(
-              current.assistantText,
-              split.transcript,
-            );
+            current.assistantText += split.transcript;
             if (split.transcript) {
               this.#appendStreamEvent(current, "text", split.transcript, r.ts, {
                 messageId: parsed.messageId,
@@ -3653,7 +3800,7 @@ export class SessionStore {
               });
             }
           } else if (parsed.kind === "thought") {
-            current.thoughtText = mergeStreamingText(current.thoughtText, parsed.text);
+            current.thoughtText += parsed.text;
             this.#appendStreamEvent(current, "thought", parsed.text, r.ts, {
               messageId: parsed.messageId,
             });
@@ -3665,63 +3812,74 @@ export class SessionStore {
     }
     if (current) this.#turns.set(current.id, current);
     for (const turn of turnsByCanonicalId.values()) this.#turns.set(turn.id, turn);
-    // A partial window cannot prove which subagent tabs are stale — their
-    // lifecycle rows may live in pages that are not loaded yet.
-    if (!opts.partialHead && canonicalNativeAgentIds.size > 0) {
-      // Side-workspace snapshots are restored before SQL history. Native
-      // subagent tabs are projections of canonical lifecycle events, so a
-      // hot reload must discard snapshot-only children that are absent from
-      // the replayed stream. Otherwise each reload accumulates another
-      // random view id and leaves stale "Running / Thinking" tabs beside a
-      // terminal child that has already completed.
-      const previousActivities = this.#subagentsByParent.get(sessionId) ?? [];
-      const canonicalActivities = previousActivities.filter((activity) =>
-        canonicalNativeAgentIds.has(activity.childSessionId),
-      );
-      const canonicalViewIds = new Set(
-        canonicalActivities.map((activity) => activity.viewSessionId),
-      );
-      const removedViewIds = new Set(
-        previousActivities
-          .filter((activity) => !canonicalNativeAgentIds.has(activity.childSessionId))
-          .map((activity) => activity.viewSessionId),
-      );
-      const previousTabs = this.#sideTabsByMain.get(sessionId) ?? [];
-      const seenCanonicalSubagentViews = new Set<string>();
-      const nextTabs = previousTabs.filter((tab) => {
-        if (tab.type !== "subagent") return true;
-        if (canonicalViewIds.has(tab.payload)) {
-          if (seenCanonicalSubagentViews.has(tab.payload)) return false;
-          seenCanonicalSubagentViews.add(tab.payload);
-          return true;
-        }
-        removedViewIds.add(tab.payload);
-        return false;
-      });
-      this.#subagentsByParent.set(sessionId, canonicalActivities);
-      if (nextTabs.length > 0) this.#sideTabsByMain.set(sessionId, nextTabs);
-      else this.#sideTabsByMain.delete(sessionId);
-      const activeTabId = this.#activeSideTabByMain.get(sessionId);
-      if (activeTabId && !nextTabs.some((tab) => tab.id === activeTabId)) {
-        const fallback = nextTabs.at(-1)?.id;
-        if (fallback) this.#activeSideTabByMain.set(sessionId, fallback);
-        else this.#activeSideTabByMain.delete(sessionId);
+    return agentLifecycle;
+  }
+
+  /** Side-workspace snapshots are restored before SQL history. Native
+   *  subagent tabs are projections of canonical lifecycle events, so once the
+   *  whole log has been replayed, discard snapshot-only children that are
+   *  absent from it. Otherwise each reload accumulates another random view
+   *  id and leaves stale "Running / Thinking" tabs beside a terminal child
+   *  that has already completed. A partial window cannot prove staleness —
+   *  lifecycle rows may live in pages that are not loaded yet. */
+  #pruneNonCanonicalSubagents(
+    sessionId: string,
+    agentLifecycle: readonly NativeAgentLifecycleFact[],
+  ): void {
+    const canonicalNativeAgentIds = canonicalNativeAgentIdsOf(agentLifecycle);
+    if (canonicalNativeAgentIds.size === 0) return;
+    // Side-workspace snapshots are restored before SQL history. Native
+    // subagent tabs are projections of canonical lifecycle events, so a
+    // hot reload must discard snapshot-only children that are absent from
+    // the replayed stream. Otherwise each reload accumulates another
+    // random view id and leaves stale "Running / Thinking" tabs beside a
+    // terminal child that has already completed.
+    const previousActivities = this.#subagentsByParent.get(sessionId) ?? [];
+    const canonicalActivities = previousActivities.filter((activity) =>
+      canonicalNativeAgentIds.has(activity.childSessionId),
+    );
+    const canonicalViewIds = new Set(
+      canonicalActivities.map((activity) => activity.viewSessionId),
+    );
+    const removedViewIds = new Set(
+      previousActivities
+        .filter((activity) => !canonicalNativeAgentIds.has(activity.childSessionId))
+        .map((activity) => activity.viewSessionId),
+    );
+    const previousTabs = this.#sideTabsByMain.get(sessionId) ?? [];
+    const seenCanonicalSubagentViews = new Set<string>();
+    const nextTabs = previousTabs.filter((tab) => {
+      if (tab.type !== "subagent") return true;
+      if (canonicalViewIds.has(tab.payload)) {
+        if (seenCanonicalSubagentViews.has(tab.payload)) return false;
+        seenCanonicalSubagentViews.add(tab.payload);
+        return true;
       }
-      for (const viewSessionId of removedViewIds) {
-        const row = this.#sessions.get(viewSessionId);
-        if (
-          row?.sideKind === "subagent"
-          && row.subagent?.parentSessionId === sessionId
-        ) {
-          this.#sessions.delete(viewSessionId);
-        }
-        for (const [turnId, turn] of this.#turns) {
-          if (turn.sessionId === viewSessionId) this.#deleteTurn(turnId);
-        }
-      }
-      this.#syncVisibleSideSession(sessionId);
+      removedViewIds.add(tab.payload);
+      return false;
+    });
+    this.#subagentsByParent.set(sessionId, canonicalActivities);
+    if (nextTabs.length > 0) this.#sideTabsByMain.set(sessionId, nextTabs);
+    else this.#sideTabsByMain.delete(sessionId);
+    const activeTabId = this.#activeSideTabByMain.get(sessionId);
+    if (activeTabId && !nextTabs.some((tab) => tab.id === activeTabId)) {
+      const fallback = nextTabs.at(-1)?.id;
+      if (fallback) this.#activeSideTabByMain.set(sessionId, fallback);
+      else this.#activeSideTabByMain.delete(sessionId);
     }
-    this.#emit();
+    for (const viewSessionId of removedViewIds) {
+      const row = this.#sessions.get(viewSessionId);
+      if (
+        row?.sideKind === "subagent"
+        && row.subagent?.parentSessionId === sessionId
+      ) {
+        this.#sessions.delete(viewSessionId);
+      }
+      for (const [turnId, turn] of this.#turns) {
+        if (turn.sessionId === viewSessionId) this.#deleteTurn(turnId);
+      }
+    }
+    this.#syncVisibleSideSession(sessionId);
   }
 
   // ------- Reducer driven by main → renderer push events -------
@@ -4047,29 +4205,19 @@ export class SessionStore {
             if (parsed.kind === "text") {
               turn.activeThoughtMessageId = undefined;
               turn.activeThoughtSegmentText = undefined;
-              const next = mergeStreamingText(turn.assistantText, text);
-              const delta = next.startsWith(turn.assistantText)
-                ? next.slice(turn.assistantText.length)
-                : "";
-              turn.assistantText = next;
-              if (delta) this.#emitStream(eventTurnId, { kind: "assistant", text: delta });
+              turn.assistantText += text;
+              if (text) this.#emitStream(eventTurnId, { kind: "assistant", text });
             } else {
               if (thoughtMessageChanged || thoughtSectionBreak) {
                 turn.activeThoughtMessageId = parsed.messageId;
                 turn.activeThoughtSegmentText = "";
               }
               if (!thoughtSectionBreak) {
-                turn.activeThoughtSegmentText = mergeStreamingText(
-                  turn.activeThoughtSegmentText ?? "",
-                  text,
-                );
+                turn.activeThoughtSegmentText =
+                  (turn.activeThoughtSegmentText ?? "") + text;
               }
-              const next = mergeStreamingText(turn.thoughtText, text);
-              const delta = next.startsWith(turn.thoughtText)
-                ? next.slice(turn.thoughtText.length)
-                : "";
-              turn.thoughtText = next;
-              if (delta) this.#emitStream(eventTurnId, { kind: "thought", text: delta });
+              turn.thoughtText += text;
+              if (text) this.#emitStream(eventTurnId, { kind: "thought", text });
             }
             // Preserve timeline ordering without retaining one array entry
             // per token. React is deliberately asleep in this branch; the
@@ -4085,6 +4233,7 @@ export class SessionStore {
                 ...(parsed.kind === "text" ? { phase: parsed.phase } : {}),
               },
             );
+            let ingestedWorkItemEvents = false;
             if (parsed.kind === "text" && runtimeAdapter?.assistantBackgroundWorkItemUpdates) {
               for (const update of runtimeAdapter.assistantBackgroundWorkItemUpdates(text)) {
                 for (const event of runtimeWorkItemUpdateToOpenMAEvents(update, {
@@ -4093,11 +4242,13 @@ export class SessionStore {
                   occurredAt: new Date().toISOString(),
                   adapter: runtimeAdapter.provider,
                 })) {
-                  this.#ingestOpenMAEvent(event, { persist: true });
+                  if (this.#ingestOpenMAEvent(event, { persist: true })) {
+                    ingestedWorkItemEvents = true;
+                  }
                 }
               }
             }
-            if (
+            const shouldPublishStreamMount =
               shouldMountThought ||
               assistantNeedsMount ||
               // A tool call breaks the text run, so the text after it is a new
@@ -4106,8 +4257,8 @@ export class SessionStore {
               // commentary segment invisible for as long as it streamed — it
               // appeared, already whole, at the next structural event.
               (parsed.kind === "text" && openedSegment) ||
-              (parsed.kind === "text" && wasShowingThought)
-            ) {
+              (parsed.kind === "text" && wasShowingThought);
+            if (shouldPublishStreamMount) {
               // Selectors shallow-compare Turn identities. Replace this one
               // object exactly once so the streaming answer or Reasoning
               // block actually mounts; later chunks keep mutating the
@@ -4116,9 +4267,17 @@ export class SessionStore {
                 ...turn,
                 events: [...turn.events],
               });
+            }
+            const isHighFrequencyStreamChunk =
+              ev.openma_event?.type === "agent.message_chunk" ||
+              ev.openma_event?.type === "agent.thinking";
+            if (
+              shouldPublishStreamMount ||
+              ingestedWorkItemEvents ||
+              (ev.openma_event && !isHighFrequencyStreamChunk)
+            ) {
               this.#emit();
             }
-            if (ev.openma_event) this.#emit();
             this.#acceptOptimisticSend(eventTurnId);
             return;
           }
@@ -4519,6 +4678,7 @@ export class SessionStore {
           }
         }
         this.#markTurnRunning(ev.active_turn_id ?? undefined);
+        this.#settleOrphanedRunningTurns(ev.session_id, ev.active_turn_id ?? undefined, steeringTurnIds);
         this.#mutateSession(ev.session_id, (s) => ({
           ...s,
           activeTurnId: ev.active_turn_id ?? undefined,
@@ -5019,6 +5179,52 @@ function activeSessionGoalUpdate(
   if (!update) return update;
   const status = update.status.trim().toLowerCase();
   return status === "complete" || status === "completed" ? null : update;
+}
+
+/** Subagent ids whose lifecycle is in the replayed log, following
+ *  reidentification from the provisional id to the final one. */
+function canonicalNativeAgentIdsOf(
+  facts: readonly NativeAgentLifecycleFact[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const fact of facts) {
+    if (fact.type === "started") ids.add(fact.id);
+    else if (ids.delete(fact.previousId)) ids.add(fact.id);
+  }
+  return ids;
+}
+
+/** A prompt-less continuation (newer rows of a turn that opened in an older
+ *  page) joins its turn: prompt-side fields come from the turn, progress and
+ *  terminal fields from the continuation, which holds the newer rows. */
+function foldHeadIntoTurn(owner: Turn, head: Turn): Turn {
+  return {
+    ...owner,
+    events: [...owner.events, ...head.events],
+    assistantText: owner.assistantText + head.assistantText,
+    thoughtText: owner.thoughtText + head.thoughtText,
+    activeThoughtMessageId: head.activeThoughtMessageId,
+    activeThoughtSegmentText: head.activeThoughtSegmentText,
+    status: head.status,
+    stopReason: head.stopReason ?? owner.stopReason,
+    errorMessage: head.errorMessage ?? owner.errorMessage,
+    effectiveDelivery: head.effectiveDelivery ?? owner.effectiveDelivery,
+    deliveryDegraded: head.deliveryDegraded ?? owner.deliveryDegraded,
+    endedAt: head.endedAt ?? owner.endedAt,
+  };
+}
+
+/** A subagent transcript that spans a page boundary: the older page's part
+ *  goes in front of what the newer rows already projected. */
+function concatChildTranscriptTurns(older: Turn, newer: Turn): Turn {
+  return {
+    ...newer,
+    promptText: newer.promptText || older.promptText,
+    events: [...older.events, ...newer.events],
+    assistantText: older.assistantText + newer.assistantText,
+    thoughtText: older.thoughtText + newer.thoughtText,
+    startedAt: Math.min(older.startedAt, newer.startedAt),
+  };
 }
 
 function safeParse(s: string): unknown {

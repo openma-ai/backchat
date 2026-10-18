@@ -19,6 +19,14 @@
   box-shadow: var(--shadow-sm);
 }
 
+
+/* Docked right rail: flat pane flush to the window edge. Same tone as the
+   chat canvas; a single hairline is the only separation. */
+.app-rail-docked {
+  background: var(--surface-canvas);
+  border-left: 1px solid var(--border);
+}
+
 .app-overlay-surface {
   background: var(--surface-panel);
   border: 1px solid var(--border);
@@ -278,24 +286,45 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: var(--sidebar-row-action-radius);
+  position: relative;
+  isolation: isolate;
   outline: none;
   color: var(--control-fg-rest);
   background: transparent;
-  transition:
-    color var(--dur-quick) var(--ease-snap),
-    background-color var(--dur-quick) var(--ease-snap);
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+
+/* The 16px box only sets the track; the wash is a standard row-height
+   rounded rectangle centered on the glyph, so every small action reads as
+   the same control instead of a dot or a stretched pill. */
+.sidebar-row-action::before {
+  content: "";
+  position: absolute;
+  /* A square centered on the glyph, never a pill: width tracks the height. */
+  left: 50%;
+  top: 50%;
+  width: var(--sidebar-row-action-wash-h);
+  height: var(--sidebar-row-action-wash-h);
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  border-radius: var(--sidebar-row-action-radius);
+  background: transparent;
+  pointer-events: none;
+  transition: background-color var(--dur-quick) var(--ease-snap);
 }
 
 .sidebar-row-action:hover,
-.sidebar-row-action:focus-visible {
-  color: var(--control-fg-active);
-  background: var(--control-bg-hover);
-}
-
+.sidebar-row-action:focus-visible,
 .sidebar-row-action[data-state="open"],
 .sidebar-row-action[aria-expanded="true"] {
   color: var(--control-fg-active);
+}
+
+.sidebar-row-action:is(:hover, :focus-visible)::before {
+  background: var(--control-bg-hover);
+}
+
+.sidebar-row-action:is([data-state="open"], [aria-expanded="true"])::before {
   background: var(--control-bg-open);
 }
 
@@ -304,14 +333,10 @@
   height: var(--sidebar-row-action-icon-size);
 }
 
-/* Keep the project row highlighted while its menu is open. Actions use the
-   same compact circular hover/open treatment as session and pair rows. */
-.sidebar-project-row.sidebar-project-surface:hover,
-.sidebar-project-row[data-menu-open="true"] {
+.sidebar-project-row.sidebar-project-surface:is(:hover, [data-state="open"], [data-menu-open="true"]) {
   color: var(--control-fg-active);
-  background: var(--control-bg-hover);
 }
-.sidebar-row-action:focus-visible {
+.sidebar-row-action:focus-visible::before {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
@@ -458,9 +483,6 @@
 /* Header toggles fill the 28px row so collapsed sections keep the 1px step. */
 .sidebar-section-header.sidebar-grid-row {
   align-items: stretch;
-}
-.sidebar-section-header .sidebar-row-action:is(:hover, :focus-visible, [data-state="open"], [aria-expanded="true"]) {
-  background: transparent;
 }
 /* Nested conversation sections indent via sidebar grid depth, not ad-hoc padding. */
 .sidebar-section-header > button > span:last-child {
@@ -1904,7 +1926,12 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --scrollbar-thumb-hover: color-mix(in srgb, var(--fg-muted) 90%, transparent);
   --sidebar-row-action-size: 16px;
   --sidebar-row-action-icon-size: var(--control-icon-size);
-  --sidebar-row-action-radius: calc(var(--sidebar-row-action-size) / 2);
+  /* Row actions sit inside rows that already wash on hover, so their own
+     wash is one step smaller and nests inside the row's. The header row
+     (no row wash) restores the full row height. */
+  --sidebar-row-action-radius: 5px;
+  --sidebar-row-action-wash-bleed: 3px;
+  --sidebar-row-action-wash-h: calc(var(--sidebar-row-h) - 6px);
   /* Converged track (transcript nudged down, sidebar nudged up via thumb
      inset). Transcript colors/reveal stay canonical; sidebar ≤ transcript. */
   --oma-scrollbar-reference-size: 10px;
@@ -2156,6 +2183,28 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
    header. Fade only the edge that still has hidden tabs; the fixed action
    group (+ / promote) sits outside this mask and stays crisp. Hide its native
    scrollbar so tab overflow never adds height to the header. */
+/* Hairline between side-panel tabs (browser-tab style). It sits in the 4px
+   gap before each tab and steps aside next to the active or hovered tab, so
+   a chip with its own fill never also carries a line. */
+.side-tab-chip + .side-tab-chip::before {
+  content: "";
+  position: absolute;
+  left: -2.5px;
+  top: 50%;
+  width: 1px;
+  height: 14px;
+  transform: translateY(-50%);
+  background: var(--border);
+  pointer-events: none;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.side-tab-chip[data-active] + .side-tab-chip::before,
+.side-tab-chip + .side-tab-chip[data-active]::before,
+.side-tab-chip:hover + .side-tab-chip::before,
+.side-tab-chip + .side-tab-chip:hover::before {
+  opacity: 0;
+}
+
 .side-tab-scroll {
   scrollbar-width: none;
 }
@@ -2756,6 +2805,38 @@ body,
 .sidebar-grid-row:is(:hover, :has(:focus-visible), [data-state="open"], [data-menu-open="true"]):not([role="status"]) {
   color: var(--sidebar-row-lift-ink, var(--fg));
 }
+/* One hover system for every sidebar row that has actions (project,
+   worktree, chat, pair, section heading). A row is "engaged" while the
+   pointer is on it, keyboard focus is inside it, or its menu is held open —
+   from ⋯ (data-menu-open) or right-click (Radix data-state="open"). Engaged
+   rows take the hover wash, reveal their actions and hide resting
+   indicators; all three switch together, so no row type drifts. */
+.sidebar-grid-row[data-sidebar-row-hover]:is(:hover, :has(:focus-visible)):not(.app-selected-surface) {
+  background: var(--control-bg-hover);
+}
+.sidebar-grid-row[data-sidebar-row-hover]:is([data-state="open"], [data-menu-open="true"]):not(.app-selected-surface) {
+  background: var(--control-bg-open, var(--control-bg-hover));
+}
+.sidebar-row-reveal {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.sidebar-row-rest {
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.sidebar-grid-row:is(:hover, :has(:focus-visible), [data-state="open"], [data-menu-open="true"]) .sidebar-row-reveal {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sidebar-grid-row:is(:hover, :has(:focus-visible), [data-state="open"], [data-menu-open="true"]) .sidebar-row-rest {
+  opacity: 0;
+}
+.sidebar-row-card {
+  /* Read-only: the card never takes the pointer, so leaving the row is
+     leaving the card and nothing under it is blocked. */
+  user-select: none;
+}
 /* No tree guides: nesting reads from the indent step and the tier of the
    text (Linear-style), with at most two levels under a section label. */
 .sidebar-grid-row[data-sidebar-trailing-track="double"] {
@@ -2847,6 +2928,13 @@ body,
   align-items: center;
   justify-content: flex-end;
   justify-self: end;
+}
+/* Trailing cells reuse the label's truncate class for the collapsed rail,
+   but must not clip the row-height action wash that bleeds past the 16px
+   glyph box. */
+.sidebar-grid-cell-trailing,
+[data-sidebar-grid="trailing"] {
+  overflow: visible;
 }
 
 .menu-panel {
@@ -3163,8 +3251,8 @@ body,
 /* Status rows ("No chats yet", loading) are text, not targets: no wash. */
 .sidebar-navigation
   .sidebar-grid-row:not([data-sidebar-row="new-chat"]):not(
-    [role="status"]
-  ):not(.app-selected-surface):is(:hover, [data-state="open"]) {
+    [data-sidebar-row="settings"]
+  ):not([role="status"]):not(.app-selected-surface):is(:hover, [data-state="open"]) {
   background: var(--control-bg-hover);
 }
 
@@ -3192,9 +3280,13 @@ body,
   content: "";
   position: absolute;
   inset-block: 0;
-  inset-inline-start: calc(-1 * var(--sidebar-row-surface-inset));
+  /* Start where every other row's wash starts: the row edge, i.e. one row
+     padding before the icon track. */
+  inset-inline-start: calc(-1 * var(--sidebar-content-padding-inline-start));
+  /* Reach toward the trailing actions, leaving one compact gap before the
+     search wash so the two never touch. */
   inset-inline-end: calc(
-    var(--sidebar-grid-icon-track) - var(--control-gap-compact)
+    -1 * (var(--sidebar-grid-column-gap) - var(--sidebar-row-action-wash-bleed, 4px) - var(--control-gap-compact))
   );
   z-index: -1;
   border-radius: var(--control-radius);
@@ -3217,19 +3309,88 @@ body,
   outline-offset: -2px;
 }
 
-/* Trailing actions stay 16px glyphs, but their boxes share the row's top
-   edge with the full-height primary control. */
+/* Reserve the entire highlight in the layout, not just the glyph. Two
+   simultaneously highlighted controls must still have a real 4px gap. */
+.sidebar-grid-row[data-sidebar-row="new-chat"] {
+  --sidebar-row-action-size: calc(var(--sidebar-row-h) - 4px);
+  --sidebar-grid-trailing-effective: calc(2 * var(--sidebar-row-action-size) + var(--sidebar-grid-trailing-gap));
+}
+
 .sidebar-grid-row[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"] {
   align-self: stretch;
   height: 100%;
+  /* Keep the two header actions in their own local rail. In the collapsed
+     sidebar the hidden label must never let one hover wash overlap the other. */
+  display: grid;
+  grid-template-columns: var(--sidebar-row-action-size) var(--sidebar-row-action-size);
+  gap: var(--sidebar-grid-trailing-gap);
+  justify-content: end;
+  align-items: center;
+  overflow: visible;
+  isolation: isolate;
 }
 
 .sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action {
-  height: 100%;
+  /* Hit box and wash are both 24px. Neither paints outside its own track. */
+  --sidebar-row-action-radius: 6px;
+  --sidebar-row-action-wash-bleed: 0px;
+  --sidebar-row-action-wash-h: calc(var(--sidebar-row-h) - 4px);
+  height: var(--sidebar-row-action-size);
 }
 
-.sidebar-navigation .sidebar-grid-row.app-selected-surface {
-  background: var(--surface-selected);
+/* Settings has two real adjacent surfaces: a primary matrix spanning the
+   icon + label tracks, and an independent update matrix. The host row is only
+   layout and never paints a background. */
+.sidebar-grid-row[data-sidebar-row="settings"],
+.sidebar-grid-row[data-sidebar-row="settings"]:is(:hover, [data-state="open"], [data-menu-open="true"]),
+.sidebar-grid-row[data-sidebar-row="settings"].app-selected-surface,
+.sidebar-navigation .sidebar-grid-row[data-sidebar-row="settings"]:is(:hover, [data-state="open"], [data-menu-open="true"]),
+.sidebar-navigation .sidebar-grid-row[data-sidebar-row="settings"].app-selected-surface {
+  background: transparent;
+}
+.sidebar-grid-row[data-sidebar-row="settings"] {
+  column-gap: var(--sidebar-grid-trailing-gap);
+}
+.sidebar-settings-primary {
+  grid-column: 1 / span 2;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: subgrid;
+  align-items: center;
+  height: 100%;
+  /* Bleed over the row padding so the wash's left edge matches every other
+     row; the matching padding keeps the icon on the shared rail. */
+  margin-inline-start: calc(-1 * var(--sidebar-content-padding-inline-start));
+  padding-inline-start: var(--sidebar-content-padding-inline-start);
+  border-radius: var(--control-radius);
+  background: transparent;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar-settings-primary:is(:hover, :has(:focus-visible)),
+.sidebar-settings-primary.app-selected-surface {
+  background: var(--control-bg-hover);
+}
+.sidebar-grid-row[data-sidebar-row="settings"] > [data-sidebar-grid="trailing"] {
+  position: relative;
+  z-index: 1;
+}
+.sidebar-update-action {
+  height: calc(var(--sidebar-row-h) - 4px);
+  min-width: calc(var(--sidebar-row-h) - 4px);
+  gap: var(--control-gap-compact);
+  padding-inline: var(--sidebar-grid-trailing-gap);
+  border-radius: var(--control-radius);
+  color: var(--fg-subtle);
+  transition: color var(--dur-quick) var(--ease-snap), background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar-update-action:is(:hover, :focus-visible),
+.sidebar-update-action[data-state="open"] {
+  background: var(--control-bg-hover);
+  color: var(--control-fg-active);
+}
+.sidebar-update-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 @keyframes shimmer-text-sweep {
@@ -3415,6 +3576,12 @@ body,
     opacity: 1;
   }
 }
+/* Transcript turns (from @openma/common) carry .reveal-in, but they remount
+   on send and again on the first streamed token; replaying the fade makes
+   the whole turn, prompt bubble included, blink. Turns appear in place. */
+article.reveal-in[data-turn-id] {
+  animation: none;
+}
 
 /* ---------- Reduced motion ----------
    WCAG 2.3.3 (AAA). Zeroing out the motion tokens lets every component that
@@ -3567,6 +3734,27 @@ header:not(.app-drag-region) .app-drag-region {
   transform: translateY(0);
 }
 
+/* Dense lists skip per-frame grid sizing; the heading stays responsive while
+   the large subtree enters as one paint rather than repeated layout passes. */
+.animated-collapse[data-motion="lightweight"] {
+  display: block;
+  grid-template-rows: none;
+  transition: opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    visibility 0s linear var(--motion-disclosure-duration);
+}
+.animated-collapse[data-motion="lightweight"][data-state="open"] {
+  transition: opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    visibility 0s linear 0s;
+}
+.animated-collapse[data-motion="lightweight"][data-state="closed"] {
+  height: 0;
+  overflow: hidden;
+}
+.animated-collapse[data-motion="lightweight"] > .animated-collapse-inner {
+  transform: none;
+  transition: none;
+}
+
 /* The side conversation lives on a glass surface, where the default
    near-white user bubble disappears into the panel. Keep this after the
    Tailwind utility layer so it can override the shared bg token without
@@ -3711,11 +3899,24 @@ header:not(.app-drag-region) .app-drag-region {
      distinct groupings without any rules or backgrounds. The time row adds
      ~8px of glyph slack, so the perceived turn gap is ~32px against a
      perceived paragraph gap of ~12px. */
+  /* The user's prompt sits in one band of air: the same gap above it (from
+     the previous turn's footer) and below it (to the answer), so the bubble
+     reads as a centered divider between two answers. */
+  [data-chat-column="turns"] {
+    --chat-prompt-gap: 40px;
+  }
   [data-chat-column="turns"] [data-turn-id] {
-    margin-bottom: 24px !important;
+    margin-bottom: var(--chat-prompt-gap) !important;
   }
   [data-chat-column="turns"] [data-turn-id] > :not(:last-child) {
     margin-bottom: 12px !important;
+  }
+  /* Component-level rhythm: the answer's footer row and the prompt's action
+     row are the same 28px component (always laid out, revealed on hover), so
+     the gap is measured between components — footer → bubble equals
+     prompt actions → answer. */
+  [data-chat-column="turns"] [data-turn-id] > [data-session-turn-prompt]:not(:last-child) {
+    margin-bottom: var(--chat-prompt-gap) !important;
   }
   [data-chat-column="turns"] > :last-child [data-turn-id],
   [data-chat-column="turns"] > [data-turn-id]:last-child {
@@ -3805,6 +4006,52 @@ textarea:disabled::selection {
   gap: var(--turn-block-gap);
   padding-top: var(--turn-block-gap);
 }
+/* An expanded tool group (Running / Ran … with dozens of rows) is capped
+   and scrolls inside, so the answer under it stays on screen. The group
+   markup comes from @openma/common; its panel is the element the trigger's
+   aria-controls points at. */
+:root {
+  --tool-group-max-h: min(320px, 40vh);
+}
+[data-tool-group-size] > [aria-controls] + [id] {
+  max-height: var(--tool-group-max-h);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 160ms var(--ease-soft);
+}
+[data-tool-group-size] > [aria-controls] + [id]:hover {
+  scrollbar-color: var(--oma-scrollbar-thumb) transparent;
+}
+/* Soft bottom edge only while more rows sit below; it clears once the
+   panel is scrolled to its end. Scroll-driven, so no JS listener. */
+@supports (animation-timeline: scroll()) {
+  [data-tool-group-size] > [aria-controls] + [id] {
+    --tool-group-fade: 0px;
+    mask-image: linear-gradient(
+      to bottom,
+      #000 calc(100% - var(--tool-group-fade)),
+      transparent
+    );
+    animation: tool-group-fade-out linear both;
+    animation-timeline: scroll(self);
+  }
+}
+@property --tool-group-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes tool-group-fade-out {
+  0%,
+  92% {
+    --tool-group-fade: 28px;
+  }
+  100% {
+    --tool-group-fade: 0px;
+  }
+}
 /* An empty process (nothing streamed yet) adds no band of its own; the
    "Thinking…" fallback then sits one gap under the header like any block. */
 [data-session-process-activity]:empty {
@@ -3818,14 +4065,27 @@ textarea:disabled::selection {
 [data-session-turn-response] .reasoning-collapse-inner > div > div:not(:empty) {
   padding-top: var(--turn-block-gap);
 }
+/* That wrapper already supplies the one gap under the header; the activity
+   list inside it must not add a second band. */
+[data-session-turn-response]
+  .reasoning-collapse-inner
+  > div
+  > div:not(:empty)
+  > [data-session-process-activity]:first-child {
+  padding-top: 0;
+}
 
 /* "Worked for" header: body-size text with the chevron right after it, over a
    full-width hairline that closes the process off from the answer. */
 [data-session-turn-response]
   button.chat-reasoning-trigger.activity-disclosure-row.activity-disclosure-row {
   min-height: 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
+  /* The hairline hugs its label; the process below keeps the full gap. */
+  padding-bottom: 4px;
+  /* Structural, not a state: chat-ui's open / mouse-focus rules clear
+     border-color on interactive surfaces (0,6,1), which hid the hairline
+     whenever the process was expanded or had just been clicked. */
+  border-bottom: 1px solid var(--border) !important;
 }
 [data-session-turn-response]
   button.chat-reasoning-trigger.activity-disclosure-row
@@ -3862,4 +4122,13 @@ textarea:disabled::selection {
   button.activity-disclosure-row
   .chat-transcript-disclosure-summary {
   flex: 0 1 auto;
+}
+
+[data-turn-id][data-search-highlight="true"] {
+  border-radius: 10px;
+  background-color: color-mix(in oklch, var(--brand) 8%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--brand) 28%, transparent);
+  transition:
+    background-color 320ms ease-out,
+    box-shadow 320ms ease-out;
 }

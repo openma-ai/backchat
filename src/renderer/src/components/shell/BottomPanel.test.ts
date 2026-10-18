@@ -9,7 +9,9 @@ describe("BottomPanel terminal cancellation contract", () => {
 
     expect(shell).toContain('"app-panel-surface rounded-2xl"');
     expect(panel).toContain("app-raised-surface");
-    expect(terminal).toContain('background: "var(--bg-surface)"');
+    // Bottom panel keeps the panel material; the flat side rail uses canvas.
+    expect(terminal).toContain('surface === "canvas" ? "var(--surface-canvas)" : "var(--bg-surface)"');
+    expect(terminal).toContain('surface = "panel"');
     expect(terminal).toContain("app-raised-surface");
   });
 

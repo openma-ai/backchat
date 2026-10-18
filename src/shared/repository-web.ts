@@ -6,6 +6,9 @@ export interface RepositoryWebLink {
   name: string;
   url: string;
   branchUrl: string | null;
+  /** The branch's PRs / MRs as the provider's own filtered list. A link,
+   *  not a lookup: it is right whether the branch has none, one or several. */
+  reviewsUrl: string | null;
 }
 
 /** Turn a clone address (as reported by task-environment, login already
@@ -51,5 +54,10 @@ export function repositoryWebLink(
     name,
     url,
     branchUrl: ref ? `${url}${provider === "github" ? "/tree/" : "/-/tree/"}${ref}` : null,
+    reviewsUrl: !branch
+      ? null
+      : provider === "github"
+        ? `${url}/pulls?q=${encodeURIComponent(`is:pr head:${branch}`)}`
+        : `${url}/-/merge_requests?scope=all&state=all&source_branch=${encodeURIComponent(branch)}`,
   };
 }

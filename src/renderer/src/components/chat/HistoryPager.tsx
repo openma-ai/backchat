@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
-import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
-import { useI18n } from "@/lib/i18n";
 import { loadOlderHistory } from "@/lib/history-paging";
 import { sessionStore, useSessionStore } from "@/lib/session-store";
+import { ConversationHistoryWindowStatus } from "./ConversationLoadingState";
 
 // Start fetching the previous page when the viewport comes within this
 // many pixels of the top, so the user rarely hits a hard edge.
@@ -62,7 +61,6 @@ function pinDuringSettle(
  *     scrollTop is shifted by the same delta after React commits.
  */
 export function HistoryPager({ sessionId }: { sessionId: string }) {
-  const { t } = useI18n();
   const stick = useStickToBottomContext();
   // The context object is recreated on every provider render; effects that
   // must run once per session read it through a ref instead of depending on it.
@@ -77,6 +75,7 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
   const loading = window?.loading ?? false;
   const oldestSeq = window?.oldestSeq;
   const [settling, setSettling] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const busy = useRef(false);
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
@@ -87,6 +86,7 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
   const requestOlder = useCallback(() => {
     if (!hasMore || loading || busy.current) return;
     busy.current = true;
+    setLoadError(null);
     setSettling(true);
     const scrollEl = stick.scrollRef.current;
     if (scrollEl) {
@@ -99,7 +99,10 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
       anchor.current = null;
       busy.current = false;
       setSettling(false);
-      toast.error(error instanceof Error ? error.message : "Couldn't load earlier messages");
+      const message =
+        error instanceof Error ? error.message : "Couldn't load earlier messages";
+      setLoadError(message);
+      toast.error(message);
     });
   }, [hasMore, loading, sessionId, stick]);
 
@@ -205,7 +208,7 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
   // observers (see ConversationTimeline for why).
   useEffect(() => {
     const scrollEl = stick.scrollRef.current;
-    if (!scrollEl || !hasMore) return;
+    if (!scrollEl || !hasMore || loadError) return;
     let raf = 0;
     const check = () => {
       raf = 0;
@@ -225,16 +228,14 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
       globalThis.clearTimeout(initial);
       if (raf !== 0) cancelAnimationFrame(raf);
     };
-  }, [hasMore, requestOlder, stick.scrollRef]);
+  }, [hasMore, loadError, requestOlder, stick.scrollRef]);
 
-  if (!loading && !settling) return null;
   return (
-    <div
-      role="status"
-      aria-label={t("chat.loadingEarlier")}
-      className="pointer-events-none absolute left-1/2 top-3 z-20 flex size-8 -translate-x-1/2 items-center justify-center rounded-full bg-bg/95 text-fg-muted shadow-sm"
-    >
-      <Spinner className="size-4" />
-    </div>
+    <ConversationHistoryWindowStatus
+      loading={loading}
+      settling={settling}
+      error={loadError}
+      onRetry={requestOlder}
+    />
   );
 }

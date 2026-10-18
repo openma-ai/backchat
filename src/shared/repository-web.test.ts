@@ -9,6 +9,7 @@ describe("repositoryWebLink", () => {
       name: "openma-ai/backchat",
       url: "https://github.com/openma-ai/backchat",
       branchUrl: "https://github.com/openma-ai/backchat/tree/devin/turn-projector",
+      reviewsUrl: "https://github.com/openma-ai/backchat/pulls?q=is%3Apr%20head%3Adevin%2Fturn-projector",
     });
   });
 
@@ -18,6 +19,7 @@ describe("repositoryWebLink", () => {
       name: "qa/minimaxhub_benchmark",
       url: "https://gitlab.xaminim.com/qa/minimaxhub_benchmark",
       branchUrl: "https://gitlab.xaminim.com/qa/minimaxhub_benchmark/-/tree/backchat/fix-abc-7c6f",
+      reviewsUrl: "https://gitlab.xaminim.com/qa/minimaxhub_benchmark/-/merge_requests?scope=all&state=all&source_branch=backchat%2Ffix-abc-7c6f",
     });
     // task-environment strips the login from scp remotes: git@host:path -> host:path
     expect(repositoryWebLink("gitlab.xaminim.com:data/team/hilo-agent-opencode.git", null)).toMatchObject({
@@ -36,6 +38,12 @@ describe("repositoryWebLink", () => {
     expect(repositoryWebLink("https://git.corp.dev/a/b.git", null)).toBeNull();
     expect(repositoryWebLink("/local/bare.git", null)).toBeNull();
     expect(repositoryWebLink(null, null)).toBeNull();
+  });
+
+  it("links a branch's reviews as a list, so the menu needs no lookup", () => {
+    expect(repositoryWebLink("https://github.com/a/b", "feat/x")?.reviewsUrl)
+      .toBe("https://github.com/a/b/pulls?q=is%3Apr%20head%3Afeat%2Fx");
+    expect(repositoryWebLink("https://github.com/a/b", null)?.reviewsUrl).toBeNull();
   });
 
   it("escapes branch characters without breaking the path separators", () => {

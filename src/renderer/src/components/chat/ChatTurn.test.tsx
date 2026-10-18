@@ -56,6 +56,11 @@ vi.mock("use-stick-to-bottom", () => ({
 }));
 
 import { TurnBlock } from "./ChatTurn";
+import {
+  ConversationErrorFallback,
+  ConversationHistoryWindowStatus,
+  ConversationSurfaceLoader,
+} from "./ConversationLoadingState";
 import { wrapScheduledTaskPrompt } from "@/lib/scheduled-task-presentation";
 
 function turn(overrides: Partial<Turn>): Turn {
@@ -372,17 +377,16 @@ describe("TurnBlock", () => {
         expect.objectContaining({ kind: "thinking", text: thought }),
       ]),
     );
-    // Completed process content stays mounted so nested disclosure choices
-    // survive a parent close/reopen, but the closed Radix surface is inert.
-    expect(html).toContain(thought);
-    expect(html).toContain("aria-expanded");
-    expect(html).toContain('aria-hidden="true" inert=""');
-    expect(html).toContain("lucide-brain");
+    // A closed process body is lazy-mounted: the thought stays in the
+    // projection (above) and renders once the disclosure opens.
+    expect(html).not.toContain(thought);
+    expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("<details");
     expect(html).not.toContain("bg-bg-surface");
     const triggerClass = html.match(
-      /data-slot="collapsible-trigger" class="([^"]+)"/,
+      /data-slot="collapsible-trigger"[^>]*\bclass="([^"]+)"/,
     )?.[1];
+    expect(triggerClass).toBeDefined();
     expect(triggerClass).not.toContain("sticky");
     expect(triggerClass).not.toContain("top-0");
     expect(triggerClass).not.toContain("bg-bg");
@@ -488,8 +492,13 @@ describe("TurnBlock", () => {
     expect(html).toContain('data-user-echo="failed"');
     expect(html).toContain("Ship it now");
     expect(html).toContain("coordinator offline");
+    // Retry is the footer's round icon action, not a bare text link in the
+    // stream; the failure itself is one quiet line.
     expect(html).toContain('data-user-echo-retry="true"');
-    expect(html).toContain("common.retry");
+    expect(html).toMatch(/data-user-echo-retry="true"[^>]*aria-label="common.retry"/);
+    expect(html).not.toMatch(/>common\.retry</);
+    expect(html).toContain('data-appearance="quiet"');
+    expect(html).not.toContain('data-appearance="surface"');
   });
 
   it("shows a lightweight thinking label for an empty running turn", () => {
@@ -796,7 +805,7 @@ describe("TurnBlock", () => {
 
     expect(html).toContain('data-tool-group-size="3"');
     expect(html).toMatch(
-      /data-tool-group-size="3"><button[^>]*aria-expanded="true"/,
+      /data-tool-group-size="3"><button[^>]*aria-expanded="false"/,
     );
     expect(html).toContain("tool.searching dialog");
     expect(html).toContain("tool.searched");
@@ -1389,7 +1398,7 @@ describe("scheduled task message bars", () => {
     expect(html).toContain("每天7点闹钟");
     expect(html).toContain("Daily at 7:00 AM");
     expect(html).toContain("scheduled.open");
-    expect(html).toContain("lucide-calendar-clock");
+    expect(html).toContain('data-backchat-icon="schedule"');
   });
 
   it("keeps a scheduled fire as a user message but renders the tag, not the raw XML", () => {
@@ -1416,5 +1425,122 @@ describe("scheduled task message bars", () => {
     );
     expect(html).not.toContain("&lt;scheduled_task");
     expect(html).not.toContain("<scheduled_task");
+  });
+
+  it("collapses long user prompts by default and exposes a show-more toggle", () => {
+    const longPrompt = Array.from({ length: 14 }, (_, i) => `Line ${i + 1} of the long prompt`).join("\n");
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          promptText: longPrompt,
+          assistantText: "Summarized.",
+          status: "complete",
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-prompt-collapse-toggle="true"');
+    expect(html).toContain("max-h-48 overflow-hidden");
+    expect(html).toContain("chat.showMore");
+  });
+
+  it("renders regenerate, stable onForkTurn, and user prompt edit actions when callbacks are supplied", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          promptText: "Refactor the message list",
+          assistantText: "Refactored.",
+          status: "complete",
+        })}
+        onForkTurn={() => undefined}
+        forkLabel="chat.forkFromHere"
+        onRegenerate={() => undefined}
+        onEditPrompt={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('data-turn-regenerate-action="true"');
+    expect(html).toContain('aria-label="chat.regenerate"');
+    expect(html).toContain('data-turn-fork-action="true"');
+    expect(html).toContain('data-fork-kind="message"');
+    // The prompt's actions use the same row primitive as the answer footer.
+    expect(html).toMatch(/data-user-prompt-actions="true"[^>]*>[\s\S]*data-turn-copy-action="true"/);
+    expect(html).toContain('data-prompt-edit-action="true"');
+  });
+});
+
+describe("ConversationLoadingState", () => {
+  it("renders a labeled history window status pill while loading or settling", () => {
+    const idle = renderToStaticMarkup(
+      <ConversationHistoryWindowStatus loading={false} settling={false} />,
+    );
+    const active = renderToStaticMarkup(
+      <ConversationHistoryWindowStatus loading={true} settling={false} />,
+    );
+
+    expect(idle).toBe("");
+    expect(active).toContain('role="status"');
+    expect(active).toContain('aria-label="chat.loadingEarlier"');
+    expect(active).toContain('data-history-window-status="loading"');
+    expect(active).toContain("chat.loadingEarlier");
+  });
+
+  it("renders a retryable error pill when paging earlier history fails", () => {
+    const html = renderToStaticMarkup(
+      <ConversationHistoryWindowStatus
+        loading={false}
+        settling={false}
+        error="Database locked"
+        onRetry={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('data-history-window-status="error"');
+    expect(html).toContain("Database locked");
+    expect(html).toContain('data-history-window-retry="true"');
+    expect(html).toContain("common.retry");
+  });
+
+  it("renders a unified surface loader and error fallback across conversation panes", () => {
+    const loader = renderToStaticMarkup(
+      <ConversationSurfaceLoader overlay compact label="chat.loadingHistory" />,
+    );
+    const errorFallback = renderToStaticMarkup(
+      <ConversationErrorFallback
+        overlay
+        compact
+        message="Failed to load conversation"
+        onRetry={() => undefined}
+      />,
+    );
+
+    expect(loader).toContain('data-chat-history-loading="true"');
+    expect(loader).toContain("app-canvas-surface");
+    expect(loader).toContain("chat.loadingHistory");
+    expect(errorFallback).toContain('data-chat-error-fallback="true"');
+    expect(errorFallback).toContain("Failed to load conversation");
+    expect(errorFallback).toContain('data-chat-error-retry="true"');
+  });
+
+  it("marks a failed turn with one quiet line and retries from the footer", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "error",
+          promptText: "Check logs",
+          errorMessage: "ACP connection closed",
+        })}
+        onRegenerate={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('data-turn-error-fallback="true"');
+    expect(html).toContain("ACP connection closed");
+    // No danger card and no second retry control inside the stream.
+    expect(html).toContain('data-appearance="quiet"');
+    expect(html).not.toContain('data-appearance="surface"');
+    expect(html).not.toContain('data-turn-error-retry="true"');
+    expect(html).toMatch(/data-turn-regenerate-action="true"[^>]*aria-label="common.retry"/);
   });
 });

@@ -8,6 +8,12 @@ export interface BrowserWebviewEventSource {
   executeJavaScript<T>(code: string): Promise<T>;
 }
 
+export interface BrowserWebviewLoadFailure {
+  errorCode: number;
+  errorDescription: string;
+  validatedURL: string;
+}
+
 export interface BrowserWebviewEventCallbacks {
   onNavigation(state: {
     canBack: boolean;
@@ -18,6 +24,7 @@ export interface BrowserWebviewEventCallbacks {
   onDomReady(state: { url: string; zoomFactor: number }): void;
   onMainFrameNavigationStart(): void;
   onLoadStop(): void;
+  onLoadFail?(failure: BrowserWebviewLoadFailure): void;
   onCacheFrame(): void;
 }
 
@@ -105,6 +112,22 @@ export function bindBrowserWebviewEvents(
     callbacks.onLoadStop();
     callbacks.onCacheFrame();
   };
+  const onLoadFail: EventListener = (event) => {
+    const failEvent = event as Event & {
+      errorCode?: number;
+      errorDescription?: string;
+      validatedURL?: string;
+      isMainFrame?: boolean;
+    };
+    if (failEvent.isMainFrame === false) return;
+    // -3 is ERR_ABORTED (e.g. rapid navigation or user stop); not a fatal page error.
+    if (failEvent.errorCode === -3) return;
+    callbacks.onLoadFail?.({
+      errorCode: failEvent.errorCode ?? -1,
+      errorDescription: failEvent.errorDescription || "Failed to load page",
+      validatedURL: failEvent.validatedURL || webview.getURL(),
+    });
+  };
 
   webview.addEventListener("did-navigate", onDidNavigate);
   webview.addEventListener("did-navigate-in-page", onDidNavigate);
@@ -113,6 +136,7 @@ export function bindBrowserWebviewEvents(
   webview.addEventListener("dom-ready", onDomReady);
   webview.addEventListener("did-start-navigation", onNavigationStart);
   webview.addEventListener("did-stop-loading", onLoadStop);
+  webview.addEventListener("did-fail-load", onLoadFail);
   return () => {
     webview.removeEventListener("did-navigate", onDidNavigate);
     webview.removeEventListener("did-navigate-in-page", onDidNavigate);
@@ -121,5 +145,6 @@ export function bindBrowserWebviewEvents(
     webview.removeEventListener("dom-ready", onDomReady);
     webview.removeEventListener("did-start-navigation", onNavigationStart);
     webview.removeEventListener("did-stop-loading", onLoadStop);
+    webview.removeEventListener("did-fail-load", onLoadFail);
   };
 }

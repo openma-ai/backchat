@@ -6,36 +6,32 @@ import { homeRelative, RepositoryCardBody } from "./RepositoryHoverCard";
 
 const path = "/Users/me/.oma/worktrees/ws-fix-7c6f/02-hilo-agent-opencode";
 
-function render(reviews: unknown[] | null) {
+function render(git: unknown | null) {
   const client = new QueryClient();
-  client.setQueryData(["git-upstream", path], [{
-    remote: "git@gitlab.xaminim.com:data/hilo-agent-opencode.git",
-    branch: "backchat/fix-7c6f",
-    repositoryUrl: "https://gitlab.xaminim.com/data/hilo-agent-opencode",
-  }]);
-  if (reviews) client.setQueryData(["git-reviews", path], { environmentId: null, checkouts: [{ path, reviews }] });
-  return renderToStaticMarkup(
+  if (git) client.setQueryData(["git-upstream", path], [git]);
+  const html = renderToStaticMarkup(
     <QueryClientProvider client={client}><RepositoryCardBody paths={[path]} /></QueryClientProvider>,
   );
+  return { html, client };
 }
 
 describe("RepositoryCardBody", () => {
-  it("links the GitLab repository, the branch tree and the branch's MR", () => {
-    const html = render([{
-      kind: "MR", number: 5452, title: "Fix skill attribution", state: "open", draft: false, checks: "unknown", review: "unknown",
-      url: "https://gitlab.xaminim.com/data/hilo-agent-opencode/-/merge_requests/5452",
-    }]);
-    expect(html).toContain('href="https://gitlab.xaminim.com/data/hilo-agent-opencode"');
-    expect(html).toContain('href="https://gitlab.xaminim.com/data/hilo-agent-opencode/-/tree/backchat/fix-7c6f"');
-    expect(html).toContain('href="https://gitlab.xaminim.com/data/hilo-agent-opencode/-/merge_requests/5452"');
-    expect(html).toContain("!5452");
-    expect(html).toContain('data-repository-review="open"');
-    expect(html).toContain('target="_blank"');
+  it("says where the checkout is and which branch it is on, and nothing more", () => {
+    const { html, client } = render({
+      remote: "git@gitlab.xaminim.com:data/hilo-agent-opencode.git",
+      branch: "backchat/fix-7c6f",
+    });
+    expect(html).toContain("backchat/fix-7c6f");
+    expect(html).toContain("~/.oma/worktrees/ws-fix-7c6f/02-hilo-agent-opencode");
+    // Links and reviews live in the row's menu; the card is read-only and
+    // never waits on a gh / glab lookup.
+    expect(html).not.toContain("<a ");
+    expect(html).not.toContain("data-repository-review");
+    expect(client.getQueryCache().find({ queryKey: ["git-reviews", path] })).toBeUndefined();
   });
 
-  it("says it is still looking while the review query is pending, and that there is none when empty", () => {
-    expect(render(null)).toContain('data-repository-review-status="pending"');
-    expect(render([])).toContain('data-repository-review-status="none"');
+  it("names a folder that is not a Git checkout", () => {
+    expect(render({ remote: null, branch: null }).html).toContain("data-repository-not-git");
   });
 
   it("shows home as ~", () => {

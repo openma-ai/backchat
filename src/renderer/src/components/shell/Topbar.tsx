@@ -166,7 +166,8 @@ export function PairTopbar() {
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
     queryFn: () => window.backchat.agentsList(),
-    staleTime: 60_000,
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
   const agentIconUrls = useMemo(
     () => new Map(agents.flatMap((agent) => agent.icon ? [[agent.id, agent.icon] as const] : [])),

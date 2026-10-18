@@ -40,12 +40,11 @@ function latestStandardPlanSnapshot(
   turns: readonly Turn[],
   projectTurn: TurnProjector = (turn) => reduceTurn(turn.events),
 ): { entries: PlanEntry[] } | undefined {
-  let latest: { entries: PlanEntry[] } | undefined;
-  for (const turn of turns) {
-    const rendered = projectTurn(turn);
-    if (rendered.hasPlanLifecycle) latest = { entries: rendered.plan };
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const rendered = projectTurn(turns[index]!);
+    if (rendered.hasPlanLifecycle) return { entries: rendered.plan };
   }
-  return latest;
+  return undefined;
 }
 
 /** Project provider-neutral ACP/OpenMA Plan snapshots into the shared

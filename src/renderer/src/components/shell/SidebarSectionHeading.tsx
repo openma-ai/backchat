@@ -90,7 +90,7 @@ export const SidebarSectionHeading = forwardRef<
           slot="trailing"
           className={cn(
             labelCls.split(/\s+/).includes("hidden") && "hidden",
-            "opacity-0 transition-opacity group-hover/section:opacity-100 group-has-[:focus-visible]/section:opacity-100",
+            "sidebar-row-reveal",
           )}
           data-sidebar-section-header-action="true"
         >

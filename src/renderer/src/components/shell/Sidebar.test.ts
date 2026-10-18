@@ -466,17 +466,38 @@ describe("groupSidebarSessions", () => {
     expect(css).toMatch(/\.sidebar-project-label \{\s*font-size: 14px;/);
   });
 
-  it("puts project and worktree rows behind a repository hover card instead of a native path tooltip", () => {
+  it("gives project, worktree, chat and pair rows the one sidebar card instead of native tooltips", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const projectRow = source.slice(source.indexOf("function ProjectSidebarRow"), source.indexOf("function PairSidebarRow"));
-    const heading = source.slice(source.indexOf("function WorkspaceGroupHeading"));
+    const projectRow = source.slice(source.indexOf("function ProjectSidebarRow"), source.indexOf("function ProjectCoordinatorRow"));
+    const heading = source.slice(source.indexOf("function WorkspaceGroupHeading"), source.indexOf("function PairSidebarRow"));
+    const pairRow = source.slice(source.indexOf("function PairSidebarRow"), source.indexOf("function SessionRow"));
+    const sessionRow = source.slice(source.indexOf("function SessionRow"));
 
-    expect(projectRow).toContain("<RepositoryHoverCard");
+    expect(source.match(/<SidebarHoverCard\b/g)).toHaveLength(1);
+    expect(projectRow).toContain("data-sidebar-card={`project:${group.key}`}");
+    expect(heading).toContain("data-sidebar-card={`workspace:${workspace.id}`}");
+    expect(pairRow).toContain("data-sidebar-card={`pair:${row.id}`}");
+    expect(sessionRow).toContain("data-sidebar-card={`session:${row.id}`}");
     expect(projectRow).not.toContain("title={group.primaryRoot");
-    expect(heading).toContain("<RepositoryHoverCard");
-    expect(heading).toContain("paths={workspace.paths}");
-    const headingButton = heading.slice(heading.indexOf("<button", heading.indexOf("<RepositoryHoverCard")));
-    expect(headingButton.slice(0, headingButton.indexOf(">\n"))).not.toContain("title=");
+    expect(sessionRow).not.toContain("title={row.lastError ?? row.label}");
+    expect(source).not.toContain("<RepositoryHoverCard");
+  });
+
+  it("gives every row that has a ⋯ menu the same menu on right-click", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    for (const [start, end] of [
+      ["function ProjectSidebarRow", "function ProjectCoordinatorRow"],
+      ["function WorkspaceGroupHeading", "function PairSidebarRow"],
+      ["function PairSidebarRow", "function SessionRow"],
+      ["function SessionRow", undefined],
+      ["function SidebarSection(", "function ProjectSidebarRow"],
+    ] as const) {
+      const body = source.slice(source.indexOf(start), end ? source.indexOf(end) : undefined);
+      expect(body, start).toContain("<RowContextMenu menu={menu}>");
+      expect(body, start).toMatch(/<RowMoreMenu menu=\{menu\}/);
+    }
+    // No row writes its menu twice by hand any more.
+    expect(source).not.toContain("ContextMenu.Item");
   });
 
   it("reveals project actions on hover", () => {
@@ -488,10 +509,8 @@ describe("groupSidebarSessions", () => {
 
     expect(projectRow).toContain('t("sidebar.projectActions")');
     expect(projectRow).toContain('t("sidebar.startProjectChat")');
-    expect(projectRow).toContain("group-hover:opacity-100");
-    expect(projectRow).toContain("<DropdownMenu");
-    expect(projectRow).toContain('slot="trailing"');
-    expect(projectRow).toContain("group-hover:opacity-100");
+    expect(projectRow).toContain('<SidebarGridCell slot="trailing" className={cn("sidebar-row-reveal", labelCls)}>');
+    expect(projectRow).toContain("<RowMoreMenu");
   });
 
   it("keeps project folders stateless and leaves activity on child sessions", () => {
@@ -574,7 +593,7 @@ describe("groupSidebarSessions", () => {
 
     expect(sessionRow).toContain('t("sidebar.rename")');
     expect(pairRow).toContain('t("sidebar.rename")');
-    expect(pairRow).toContain("<DropdownMenu");
+    expect(pairRow).toContain("<RowMoreMenu");
   });
 
   it("confirms archive when the chat still has a live scheduled task", () => {
@@ -596,7 +615,8 @@ describe("groupSidebarSessions", () => {
     expect(sessionRow).toContain('data-sidebar-schedule-indicator="true"');
     expect(sessionRow).toContain("pointer-events-none");
     expect(sessionRow).toContain("CalendarClockIcon");
-    expect(sessionRow).toContain("opacity-0 group-hover:opacity-100");
+    // Resting indicators give way to ⋯ through the shared engaged-row rule.
+    expect(sessionRow).toContain("sidebar-row-rest");
   });
 
   it("keeps the removed standalone multi-Agent launcher absent", () => {
@@ -749,7 +769,8 @@ describe("groupSidebarSessions", () => {
       "function SessionRow",
     ]) {
       const start = source.indexOf(component);
-      expect(source.slice(start, start + 2400)).toContain("sidebar-row-icon");
+      const next = source.indexOf("\nfunction ", start + 1);
+      expect(source.slice(start, next < 0 ? undefined : next)).toContain("sidebar-row-icon");
     }
     const coordinatorStart = source.indexOf("function ProjectCoordinatorRow");
     const coordinatorEnd = source.indexOf("/** A worktree inside a project:", coordinatorStart);
@@ -898,4 +919,27 @@ describe("removed projects", () => {
     const workspace = { id: "ws", project_id: "removed", kind: "managed", roots: [{ sourcePath: "/work/removed", effectivePath: "/wt/feature" }] } as never;
     expect(groupSidebarSessions([chat], [], [workspace], ["/work/removed"])).toMatchObject({ projects: [], chats: [chat] });
   });
+
+  it("orders pinned sessions by pinnedAt descending and keeps DropdownMenu mounted for running/unread rows", () => {
+    const olderPin = row({ id: "pin-older", pinnedAt: 100 });
+    const newerPin = row({ id: "pin-newer", pinnedAt: 200 });
+    const grouped = groupSidebarSessions([olderPin, newerPin]);
+    expect(grouped.pinned.map((s) => s.id)).toEqual(["pin-newer", "pin-older"]);
+
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const chatsSection = source.slice(source.indexOf('title={t("sidebar.chats")}'));
+    expect(chatsSection).toContain("{...sectionRowProps}");
+    expect(source).toContain('data-sidebar-unread-indicator="true"');
+  });
+});
+
+describe("sidebar menu cost contract", () => {
+  it("keeps every sidebar menu non-modal", () => {
+    const sources = ["Sidebar.tsx", "sidebar-menus.tsx"].map((file) => readFileSync(resolve(__dirname, file), "utf8"));
+    const roots = sources.flatMap((source) => source.match(/<(DropdownMenu|ContextMenu|ContextMenu\.Root)(?=[\s>])[^>]*>/g) ?? []);
+    // Sidebar's own header / tenant menus, plus the shared ⋯ and right-click.
+    expect(roots.length).toBeGreaterThanOrEqual(4);
+    for (const root of roots) expect(root).toContain("modal={false}");
+  });
+
 });

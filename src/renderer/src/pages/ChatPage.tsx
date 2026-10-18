@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef } from "react";
-import { useParams } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { ChatView } from "@/components/chat/ChatView";
+import {
+  ConversationErrorFallback,
+  ConversationSurfaceLoader,
+} from "@/components/chat/ConversationLoadingState";
 import { sessionStore, useSessionStore, type SessionRow } from "@/lib/session-store";
 import { openHistoryWindow } from "@/lib/history-paging";
 import { toast } from "sonner";
-import { OpenmaStartupLoader } from "@/components/OpenmaStartupLoader";
 import { useI18n } from "@/lib/i18n";
 
 /**
@@ -25,6 +28,7 @@ const PREWARMED = new Set<string>();
 
 export function ChatPage() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const activeId = useSessionStore(s => s.active()?.id);
   const params = useParams({ strict: false }) as { sessionId?: string };
   const routeSessionSelector = useMemo(() => {
@@ -32,17 +36,77 @@ export function ChatPage() {
     return (s: typeof sessionStore) => (sessionId ? s.get(sessionId) : undefined);
   }, [params.sessionId]);
   const routeSession = useSessionStore(routeSessionSelector);
+  const turnsCount = useSessionStore(
+    useMemo(
+      () => (s: typeof sessionStore) =>
+        params.sessionId ? s.turnsFor(params.sessionId).length : 0,
+      [params.sessionId],
+    ),
+  );
   const lastLoadedRef = useRef<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [missingRouteTimedOut, setMissingRouteTimedOut] = useState(false);
   const remoteId = routeSession?.openma ? routeSession.id : undefined;
+
+  useEffect(() => {
+    setLoadError(null);
+    setMissingRouteTimedOut(false);
+  }, [params.sessionId]);
+
+  useEffect(() => {
+    if (!params.sessionId || routeSession) {
+      setMissingRouteTimedOut(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (!sessionStore.get(params.sessionId!)) {
+        setMissingRouteTimedOut(true);
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [params.sessionId, routeSession]);
+
+  const loadRemoteTask = useCallback((taskId: string) => {
+    let active = true;
+    setLoadError(null);
+    const subscriptionId = crypto.randomUUID();
+    void window.backchat
+      .openmaTaskOpen(taskId, subscriptionId)
+      .then((snapshot) => {
+        if (active) sessionStore.applyOpenmaSnapshot(snapshot);
+      })
+      .catch((error) => {
+        if (!active) return;
+        const message =
+          error instanceof Error ? error.message : "Couldn't open OpenMA task";
+        setLoadError(message);
+        toast.error(message);
+      });
+    return () => {
+      active = false;
+      void window.backchat.openmaTaskDetach(taskId, subscriptionId).catch(() => {});
+    };
+  }, []);
+
   useEffect(() => {
     if (!remoteId) return;
-    let active = true;
-    const subscriptionId = crypto.randomUUID();
-    void window.backchat.openmaTaskOpen(remoteId, subscriptionId).then((snapshot) => {
-      if (active) sessionStore.applyOpenmaSnapshot(snapshot);
-    }).catch((error) => { if (active) toast.error(error instanceof Error ? error.message : "Couldn't open OpenMA task"); });
-    return () => { active = false; void window.backchat.openmaTaskDetach(remoteId, subscriptionId).catch(() => {}); };
-  }, [remoteId]);
+    return loadRemoteTask(remoteId);
+  }, [loadRemoteTask, remoteId]);
+
+  const loadLocalHistory = useCallback((sessionId: string) => {
+    lastLoadedRef.current = sessionId;
+    setLoadError(null);
+    void openHistoryWindow(sessionId)
+      .then(() => {
+        HISTORY_LOADED.add(sessionId);
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : "Couldn't load history";
+        setLoadError(message);
+        toast.error(message);
+      });
+  }, []);
 
   useEffect(() => {
     if (!params.sessionId) {
@@ -67,25 +131,48 @@ export function ChatPage() {
     // view pages older rows in as the user scrolls up.
     const sessionId = params.sessionId;
     if (!HISTORY_LOADED.has(sessionId)) {
-      lastLoadedRef.current = sessionId;
-      void openHistoryWindow(sessionId)
-        .then(() => {
-          HISTORY_LOADED.add(sessionId);
-        })
-        .catch((error) => {
-          toast.error(error instanceof Error ? error.message : "Couldn't load history");
-        });
+      loadLocalHistory(sessionId);
     }
-    if (!PREWARMED.has(params.sessionId) && prewarmSessionOnOpen(row)) {
-      PREWARMED.add(params.sessionId);
-    }
-  }, [params.sessionId, routeSession]);
+    const onFocusComposer = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.closest(".composer-card")) {
+        return;
+      }
+      if (
+        !PREWARMED.has(sessionId) &&
+        prewarmSessionOnOpen(sessionStore.get(sessionId))
+      ) {
+        PREWARMED.add(sessionId);
+      }
+    };
+    window.addEventListener("focusin", onFocusComposer);
+    return () => window.removeEventListener("focusin", onFocusComposer);
+  }, [loadLocalHistory, params.sessionId, routeSession]);
 
-  if (params.sessionId && (!routeSession || activeId !== params.sessionId)) {
+  if (params.sessionId && !routeSession && missingRouteTimedOut) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center text-fg-muted" data-chat-history-loading="true">
-        <OpenmaStartupLoader label={t("chat.loadingHistory")} />
-      </div>
+      <ConversationErrorFallback
+        message={t("chat.sessionErrored")}
+        onRetry={() => void navigate({ to: "/" })}
+      />
+    );
+  }
+  if (params.sessionId && (!routeSession || activeId !== params.sessionId)) {
+    return <ConversationSurfaceLoader label={t("chat.loadingHistory")} />;
+  }
+  if (loadError && turnsCount === 0 && params.sessionId) {
+    return (
+      <ConversationErrorFallback
+        message={loadError}
+        onRetry={() => {
+          if (remoteId) {
+            loadRemoteTask(remoteId);
+          } else if (params.sessionId) {
+            HISTORY_LOADED.delete(params.sessionId);
+            loadLocalHistory(params.sessionId);
+          }
+        }}
+      />
     );
   }
   return <ChatView />;

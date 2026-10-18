@@ -105,7 +105,7 @@ describe("sidebar nav row", () => {
     );
     expect(hoverRule).not.toMatch(/:is\([^)]*\.app-selected-surface/);
     expect(styles).toMatch(
-      /\.sidebar-navigation\s+\.sidebar-grid-row\.app-selected-surface\s*\{\s*background:\s*var\(--surface-selected\);/,
+      /\n\.app-selected-surface\s*\{[^}]*background:\s*var\(--surface-selected\);/,
     );
     expect(styles).toMatch(/\.sidebar-new-chat-primary/);
     expect(styles).toMatch(
@@ -132,8 +132,5 @@ describe("sidebar nav row", () => {
     expect(newChat.indexOf('slot="label"')).toBeGreaterThan(newChat.indexOf('slot="icon"'));
     expect(primaryEnd).toBeGreaterThan(newChat.indexOf('slot="label"'));
     expect(trailing).toBeGreaterThan(primaryEnd);
-    expect(styles).toMatch(
-      /\.sidebar-navigation \.sidebar-grid-row\.app-selected-surface \{[^}]*--surface-selected/,
-    );
   });
 });

@@ -4,9 +4,9 @@ import { injectEvent, injectSession } from "./helpers";
 /** Geometry of everything the work block renders above its live status line. */
 async function activityBoxes(page: import("@playwright/test").Page) {
   return page.evaluate(() => {
-    const content =
-      document.querySelector(".reasoning-collapse-inner .space-y-1") ??
-      document.querySelector(".reasoning-collapse-inner > div");
+    const content = document.querySelector(
+      "[data-session-process-activity]:not([hidden])",
+    );
     if (!content) return [];
     return Array.from(content.children)
       // Everything above the live row. That row is the turn's own report of what

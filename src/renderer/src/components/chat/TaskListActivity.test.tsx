@@ -1,3 +1,8 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -22,16 +27,22 @@ describe("TaskListActivity", () => {
   });
 
   it("renders a cancelled adapter task as terminal rather than pending", () => {
-    const html = renderToStaticMarkup(
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    act(() => root.render(
       <TaskListActivity
         items={[
           { label: "Keep this task", status: "in_progress" },
           { label: "Drop obsolete task", status: "cancelled" },
         ]}
       />,
-    );
+    ));
+    // The task list mounts when the plan is expanded.
+    act(() => host.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
 
-    expect(html).toContain('data-task-status="cancelled"');
-    expect(html).toContain("lucide-circle-slash");
+    expect(host.innerHTML).toContain('data-task-status="cancelled"');
+    expect(host.innerHTML).toContain("lucide-circle-slash");
+    act(() => root.unmount());
   });
 });

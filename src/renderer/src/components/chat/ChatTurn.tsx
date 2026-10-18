@@ -1,15 +1,11 @@
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
 import { turnStopNotice } from "@/lib/turn-stop-reason";
-import { memo, useMemo, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { memo, useMemo } from "react";
 import {
-  AtSignIcon,
-  CalendarClockIcon,
-  CheckIcon,
-  CopyIcon,
   GitBranchIcon,
   ListChecksIcon,
   Loader2Icon,
+  RotateCcwIcon,
   TargetIcon,
 } from "@/components/Icons";
 import { AgentUITurnView, projectAcpChatTurn } from "@openma/common/chat-ui";
@@ -47,29 +43,47 @@ import {
 } from "./ChatMarkdown";
 import { PlanDocumentActivity } from "./PlanDocumentActivity";
 import { TurnScheduleCards } from "./ScheduledTaskMessageBar";
-import {
-  parseScheduledTaskPrompt,
-  type ScheduledTaskPromptSurface,
-} from "@/lib/scheduled-task-presentation";
+import { parseScheduledTaskPrompt } from "@/lib/scheduled-task-presentation";
 import { inspectRawTurnEvents, RawEventInspector } from "./RawEventInspector";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { projectThoughtEvent, ThoughtEventRow } from "./ThoughtEventRow";
 import { ToolRow } from "./ToolPresentation";
+import {
+  ReferencedSessionPrompt,
+  ScheduledTaskUserPrompt,
+  TurnMetaActions,
+  TURN_ACTION_BUTTON,
+  TURN_ACTION_ICON,
+  UserPromptBubble,
+} from "./UserPromptBubble";
 import { BACKCHAT_COLLAPSIBLE_PRIMITIVES } from "@/components/ai-elements/reasoning";
 
 export const TurnBlock = memo(function TurnBlock({
   turn,
   onFork,
+  onForkTurn,
   forkLabel,
   onRetrySend,
+  onRegenerate,
+  onEditPrompt,
   defaultProcessOpen,
+  hideErrorNotice = false,
+  isLatest = true,
 }: {
   turn: Turn;
   onFork?: () => void;
+  onForkTurn?: (turnId: string) => void;
   forkLabel?: string;
   onRetrySend?: (turn: Turn) => void;
+  onRegenerate?: (turn: Turn) => void;
+  onEditPrompt?: (turn: Turn, nextPromptText: string) => void;
   /** Render a settled turn's process strip expanded on first mount. */
   defaultProcessOpen?: boolean;
+  /** The same error already stands above the composer; don't repeat it. */
+  hideErrorNotice?: boolean;
+  /** The newest turn keeps its footer actions visible; older ones show
+   *  them on hover. */
+  isLatest?: boolean;
 }) {
   const { t } = useI18n();
   const rendered = sessionStore.projectTurn(turn);
@@ -92,16 +106,20 @@ export const TurnBlock = memo(function TurnBlock({
     // A turn that stopped running will never receive another tool update, so
     // settle anything still mid-flight instead of spinning forever. This also
     // covers restarts, where the same events replay from disk unchanged.
-    const settled =
-      turn.status === "running"
-        ? rendered
-        : {
-            ...rendered,
-            tools: rendered.tools.map((tool) => ({
-              ...tool,
-              status: settleInterruptedToolStatus(tool.status),
-            })),
-          };
+    const needsToolSettle =
+      turn.status !== "running" &&
+      rendered.tools.some(
+        (tool) => settleInterruptedToolStatus(tool.status) !== tool.status,
+      );
+    const settled = needsToolSettle
+      ? {
+          ...rendered,
+          tools: rendered.tools.map((tool) => ({
+            ...tool,
+            status: settleInterruptedToolStatus(tool.status),
+          })),
+        }
+      : rendered;
     if (!planDocument?.sourceToolCallId) return settled;
     const sourceToolCallId = planDocument.sourceToolCallId;
     return {
@@ -192,6 +210,17 @@ export const TurnBlock = memo(function TurnBlock({
     Boolean(planDocument) ||
     rawEvents.length > 0 ||
     hasTurnSubagentLinks(activityRendered, subagents);
+  const resolvedOnFork = useMemo(
+    () => (onForkTurn ? () => onForkTurn(turn.id) : onFork),
+    [onFork, onForkTurn, turn.id],
+  );
+  const resolvedOnRegenerate = useMemo(
+    () => (onRegenerate ? () => onRegenerate(turn) : undefined),
+    [onRegenerate, turn],
+  );
+  // Every plain prompt uses one bubble so its time · copy (· edit) row is
+  // the same component, with the same footprint, on every turn.
+  const useCustomPromptRenderer = true;
 
   const view = (
     <AgentUITurnView
@@ -224,6 +253,17 @@ export const TurnBlock = memo(function TurnBlock({
             )}
           </>
         ),
+        ...(useCustomPromptRenderer
+          ? {
+              renderPrompt: ({ item }: { item: AgentUIMessageItem }) => (
+                <UserPromptBubble
+                  turn={turn}
+                  text={item.text}
+                  onEditPrompt={onEditPrompt}
+                />
+              ),
+            }
+          : {}),
         renderAssistant: ({ item, section, live, prefixSkip }) =>
           live ? (
             <StreamingMarkdown
@@ -289,8 +329,17 @@ export const TurnBlock = memo(function TurnBlock({
             />
           ) : null;
         },
-        renderError: ({ message }) => (
-          <StatusNotice tone="danger">{message ?? "Turn failed."}</StatusNotice>
+        // The turn did end in failure, so the stream keeps a mark — but one
+        // quiet line, not a card. Retry lives in the footer's icon row.
+        renderError: ({ message }) => hideErrorNotice ? null : (
+          <StatusNotice
+            tone="danger"
+            appearance="quiet"
+            data-turn-error-fallback="true"
+            title={message || undefined}
+          >
+            {message || t("chat.sessionErrored")}
+          </StatusNotice>
         ),
         renderResponseBeforeProcess: () =>
           commandInvocation && !hasSessionReferences && !scheduledPrompt ? (
@@ -334,16 +383,6 @@ export const TurnBlock = memo(function TurnBlock({
                 {t("chat.sending")}
               </p>
             ) : null}
-            {sendFailed && onRetrySend ? (
-              <button
-                type="button"
-                data-user-echo-retry="true"
-                className="text-xs text-fg-muted underline-offset-4 hover:text-fg hover:underline"
-                onClick={() => onRetrySend(turn)}
-              >
-                {t("common.retry")}
-              </button>
-            ) : null}
             {stopNotice && (
               <p
                 data-turn-stop-reason={turn.stopReason}
@@ -362,8 +401,12 @@ export const TurnBlock = memo(function TurnBlock({
           <TurnFooter
             turn={turn}
             isStreaming={isStreaming}
-            onFork={onFork}
+            onFork={resolvedOnFork}
             forkLabel={forkLabel}
+            onRegenerate={resolvedOnRegenerate}
+            failed={sendFailed || turn.status === "error"}
+            onRetrySend={sendFailed && onRetrySend ? () => onRetrySend(turn) : undefined}
+            isLatest={isLatest}
           />
         ),
       }}
@@ -464,91 +507,6 @@ function assistantSurfacePrefix(
   )}`;
 }
 
-function ScheduledTaskUserPrompt({
-  turn,
-  surface,
-}: {
-  turn: Turn;
-  surface: ScheduledTaskPromptSurface;
-}) {
-  return (
-    <div
-      className="group is-user mb-2 ml-auto flex w-full max-w-[95%] flex-col items-end gap-2"
-      data-session-turn-prompt="true"
-      data-scheduled-task-prompt="true"
-    >
-      <div className="is-user:dark ml-auto flex w-fit min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-lg bg-secondary px-3 py-2 text-sm text-foreground">
-        <p className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
-          <CalendarClockIcon className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate">{surface.name}</span>
-        </p>
-        {surface.prompt.length > 0 && (
-          <p className="whitespace-pre-wrap">{surface.prompt}</p>
-        )}
-      </div>
-      <div
-        data-session-turn-prompt-meta="true"
-        className="flex min-h-6 items-center justify-end gap-1"
-      >
-        <TurnMetaActions
-          timestamp={turn.startedAt}
-          copyText={surface.prompt}
-          align="end"
-        />
-      </div>
-    </div>
-  );
-}
-
-function ReferencedSessionPrompt({ turn }: { turn: Turn }) {
-  const navigate = useNavigate();
-  const { t } = useI18n();
-  const references = turn.sessionReferences ?? [];
-
-  return (
-    <div
-      className="group is-user mb-2 ml-auto flex w-full max-w-[95%] flex-col items-end gap-2"
-      data-session-turn-prompt="true"
-    >
-      <div className="ml-auto flex w-fit min-w-0 max-w-full flex-wrap items-center gap-1.5 overflow-hidden rounded-lg bg-secondary px-4 py-3 text-sm text-foreground">
-        {references.map((reference) => (
-          <button
-            key={reference.session_id}
-            type="button"
-            data-session-reference={reference.session_id}
-            aria-label={`${t("chat.openSessionReference")}: ${reference.title}`}
-            title={`${t("chat.openSessionReference")}: ${reference.title}`}
-            onClick={() => {
-              void navigate({
-                to: "/chat/$sessionId",
-                params: { sessionId: reference.session_id },
-              });
-            }}
-            className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg bg-info/10 px-2 text-xs font-medium text-info ring-1 ring-info/25 hover:bg-info/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
-          >
-            <AtSignIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="min-w-0 truncate">{reference.title}</span>
-          </button>
-        ))}
-        {turn.promptText && (
-          <p className="whitespace-pre-wrap">{turn.promptText}</p>
-        )}
-      </div>
-      {/* The prompt's own time and copy, mirrored to its side of the column. */}
-      <div
-        data-session-turn-prompt-meta="true"
-        className="flex min-h-6 items-center justify-end gap-1"
-      >
-        <TurnMetaActions
-          timestamp={turn.startedAt}
-          copyText={turn.promptText ?? ""}
-          align="end"
-        />
-      </div>
-    </div>
-  );
-}
-
 function TurnSubagentLinks({
   turn,
   renderedToolCallIds,
@@ -622,87 +580,38 @@ function subagentLinkLabel(activity: SubagentActivity): string {
   return subagentActivityLabel(activity);
 }
 
-/** The tail of a turn that is still producing output.
- *
- * It used to be dots alone, on the reasoning that repeating the word would read
- * as the agent starting over. In practice a bare "..." says nothing: the line has
- * to name the state it is reporting, and the animation is what makes it read as
- * ongoing rather than stalled. */
-/** The time a message landed plus the actions that belong to it. One row, so
- *  the prompt and the answer read as the same kind of thing on either side. */
-function TurnMetaActions({
-  timestamp,
-  copyText,
-  align,
-  children,
-}: {
-  timestamp?: number;
-  copyText: string;
-  align: "start" | "end";
-  children?: React.ReactNode;
-}) {
-  const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    if (!copyText) return;
-    void navigator.clipboard?.writeText(copyText).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    });
-  };
-  return (
-    <>
-      {timestamp !== undefined && (
-        <time
-          data-turn-timestamp={String(timestamp)}
-          className={cn(
-            // Quaternary tier: the time is metadata the turn reads fine without.
-            "text-xs leading-5 text-fg-faint",
-            align === "start" ? "mr-1" : "ml-1",
-          )}
-        >
-          {new Date(timestamp).toLocaleTimeString(undefined, {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </time>
-      )}
-      {copyText.length > 0 && (
-        <button
-          type="button"
-          data-turn-copy-action="true"
-          aria-label={copied ? t("chat.answerCopied") : t("chat.copyAnswer")}
-          title={copied ? t("chat.answerCopied") : t("chat.copyAnswer")}
-          onClick={copy}
-          className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {copied ? (
-            <CheckIcon className="size-4" aria-hidden="true" />
-          ) : (
-            <CopyIcon className="size-4" aria-hidden="true" />
-          )}
-        </button>
-      )}
-      {children}
-    </>
-  );
-}
-
 function TurnFooter({
   turn,
   isStreaming,
   onFork,
   forkLabel,
+  onRegenerate,
+  failed = false,
+  onRetrySend,
+  isLatest = true,
 }: {
   turn: Turn;
   isStreaming: boolean;
   onFork?: () => void;
   forkLabel?: string;
+  onRegenerate?: () => void;
+  /** The turn ended in an error: the redo action reads as Retry. */
+  failed?: boolean;
+  /** The prompt never reached the agent; retrying resends it as-is. */
+  onRetrySend?: () => void;
+  isLatest?: boolean;
 }) {
   const { t } = useI18n();
   const answer = turn.assistantText.trim();
   const canFork =
     Boolean(onFork) && turn.status === "complete" && answer.length > 0;
+  const redo = onRetrySend ?? onRegenerate;
+  const canRegenerate =
+    Boolean(redo) &&
+    !isStreaming &&
+    turn.promptText.trim().length > 0;
+  // ↻ only exists to retry a failure; the caller decides when that applies.
+  const redoLabel = failed ? t("common.retry") : t("chat.regenerate");
   const forkTitle = forkLabel ?? t("chat.continueInNewChat");
   const endedAt = turn.status === "running" ? undefined : turn.endedAt;
   const layer =
@@ -728,11 +637,29 @@ function TurnFooter({
           // Left, with the transcript's own text. The answer's own actions do not
           // belong on the prompt's side of the column.
           "justify-start gap-1",
-          isStreaming ? "pointer-events-none opacity-0" : "opacity-100",
+          isStreaming
+            ? "pointer-events-none opacity-0"
+            : isLatest
+              ? "opacity-100"
+              // Older turns: reveal on hover of the turn, like the prompt row.
+              : "pointer-events-none opacity-0 group-hover/turn:pointer-events-auto group-hover/turn:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100",
         )}
         aria-hidden={isStreaming ? true : undefined}
       >
         <TurnMetaActions timestamp={endedAt} copyText={answer} align="start">
+          {canRegenerate && (
+            <button
+              type="button"
+              data-turn-regenerate-action="true"
+              {...(onRetrySend ? { "data-user-echo-retry": "true" } : {})}
+              aria-label={redoLabel}
+              title={redoLabel}
+              onClick={redo}
+              className={TURN_ACTION_BUTTON}
+            >
+              <RotateCcwIcon className={TURN_ACTION_ICON} aria-hidden="true" />
+            </button>
+          )}
           {canFork && (
             <button
               type="button"
@@ -741,9 +668,9 @@ function TurnFooter({
               aria-label={forkTitle}
               title={forkTitle}
               onClick={onFork}
-              className="inline-flex size-7 items-center justify-center rounded-full text-fg-subtle transition-colors hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={TURN_ACTION_BUTTON}
             >
-              <GitBranchIcon className="size-4" aria-hidden="true" />
+              <GitBranchIcon className={TURN_ACTION_ICON} aria-hidden="true" />
             </button>
           )}
         </TurnMetaActions>

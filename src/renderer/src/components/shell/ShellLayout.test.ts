@@ -25,14 +25,15 @@ describe("ShellLayout route chrome", () => {
     const layout = readFileSync(resolve(__dirname, "ShellLayout.tsx"), "utf8");
     const shell = readFileSync(resolve(__dirname, "AppShell.tsx"), "utf8");
 
-    expect(layout).toContain(
-      "rightPanel={hasTaskChrome && !activeSession?.openma ? <SideChatPanel /> : undefined}",
-    );
+    // The right rail also attaches on home, bucketed by the draft session
+    // id so it follows the draft into the chat it becomes.
+    expect(layout).toContain("rightPanel={hasRightRail ? <SideChatPanel /> : undefined}");
+    expect(layout).toContain("const hasRightRail = (isChat || (isHome && !!activeSession)) && hasEnabledAgent");
     expect(layout).toContain(
       "bottomPanel={hasTaskChrome && !activeSession?.openma ? <BottomPanel /> : undefined}",
     );
     expect(layout).toContain("const hasTaskChrome = isChat && hasEnabledAgent;");
-    expect(shell).toContain("if (!isChatRoute) return null;");
+    expect(shell).toContain("if (!isChatRoute && !isHomeRoute) return null;");
   });
 
   it("places persistent back and forward navigation beside the traffic-light controls", () => {
@@ -72,8 +73,9 @@ describe("right rail visibility is per chat", () => {
     expect(layout).toContain("function useRightRailCollapseState(sessionId: string | null)");
     expect(layout).toContain("const collapsed = !openChats.has(bucket);");
     expect(layout).toContain(
-      "const rightRailCollapse = useRightRailCollapseState(\n    isChat ? activeSession?.id ?? null : null,\n  );",
+      "const railSessionId = isChat || isHome ? activeSession?.id ?? null : null;",
     );
+    expect(layout).toContain("const rightRailCollapse = useRightRailCollapseState(railSessionId);");
     expect(layout).toContain(
       "<RightRailCollapseContext.Provider value={rightRailCollapse}>",
     );

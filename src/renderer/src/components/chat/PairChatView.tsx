@@ -16,7 +16,7 @@
  */
 
 import { useI18n } from "@/lib/i18n";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import type {
   PromptAttachment,
@@ -25,6 +25,13 @@ import type {
 import { Composer } from "./ChatView";
 import { MarkdownCwdProvider } from "./ChatMarkdown";
 import { TurnBlock } from "./ChatTurn";
+import {
+  ConversationErrorBoundary,
+  ConversationErrorFallback,
+  ConversationSurfaceLoader,
+} from "./ConversationLoadingState";
+import { HistoryPager } from "./HistoryPager";
+import { openHistoryWindow } from "@/lib/history-paging";
 import { cn } from "@/lib/utils";
 import {
   Conversation,
@@ -64,14 +71,30 @@ export function PairChatView() {
     .map((m) => `${m.id}:${m.status}:${m.acp_session_id}:${m.activeTurnId ?? ""}`)
     .join("|");
 
+  const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
+  const retryMemberHistory = useCallback((sessionId: string) => {
+    PAIR_HISTORY_LOADED.add(sessionId);
+    setLoadErrors((current) => {
+      if (!(sessionId in current)) return current;
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
+    void openHistoryWindow(sessionId).catch((error: unknown) => {
+      PAIR_HISTORY_LOADED.delete(sessionId);
+      setLoadErrors((current) => ({
+        ...current,
+        [sessionId]:
+          error instanceof Error ? error.message : "Couldn't load history",
+      }));
+    });
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     for (const m of members) {
       if (!PAIR_HISTORY_LOADED.has(m.id)) {
-        PAIR_HISTORY_LOADED.add(m.id);
-        void window.backchat
-          .sessionsLoadHistory(m.id)
-          .then((rows) => sessionStore.replayHistory(m.id, rows));
+        retryMemberHistory(m.id);
       }
       if (
         !PAIR_PREWARMED.has(m.id) &&
@@ -88,7 +111,7 @@ export function PairChatView() {
         });
       }
     }
-  }, [memberLifecycleKey, members]);
+  }, [memberLifecycleKey, members, retryMemberHistory]);
 
   if (!pair) {
     return (
@@ -114,6 +137,8 @@ export function PairChatView() {
             key={m.id}
             session={m}
             showLeftDivider={index > 0}
+            loadError={loadErrors[m.id] ?? null}
+            onRetryLoad={() => retryMemberHistory(m.id)}
           />
         ))}
         {members.length === 0 && (
@@ -132,45 +157,76 @@ export function PairChatView() {
 function PairColumn({
   session,
   showLeftDivider,
+  loadError,
+  onRetryLoad,
 }: {
   session: SessionRow;
   showLeftDivider: boolean;
+  loadError?: string | null;
+  onRetryLoad?: () => void;
 }) {
   const { t } = useI18n();
   const turns = useSessionStore(
     useMemo(() => selectTurnsFor(session.id), [session.id]),
   );
+  const historyPending = useSessionStore(
+    useMemo(
+      () => (s: typeof sessionStore) => s.isHistoryPending(session.id),
+      [session.id],
+    ),
+  );
+  const loadingHistory =
+    session.status !== "draft" && historyPending && turns.length === 0;
 
   return (
     <section
       className={cn(
-        "flex min-h-0 min-w-0 flex-col",
+        "relative flex min-h-0 min-w-0 flex-col",
         showLeftDivider && "border-l border-border/60",
       )}
+      aria-busy={loadingHistory}
       aria-label={t("chat.pairPane")}
     >
-      <Conversation key={session.id} className="min-h-0 flex-1">
-        <ConversationContent
-          className={cn(
-            "w-full px-0 py-6",
-            "flex min-h-full flex-col",
-          )}
-        >
-          <MarkdownCwdProvider cwd={session.cwd}>
-            <div className={CHAT_TURN_FRAME_CLASS} data-chat-column="turns">
-              {turns.length === 0 && session.status !== "running" && (
-                <div className="flex min-h-[160px] items-center justify-center text-[12px] text-fg-subtle">
-                  {t("pair.noMessages")}
-                </div>
-              )}
-              {turns.map((t) => (
-                <TurnBlock key={t.id} turn={t} />
-              ))}
-            </div>
-          </MarkdownCwdProvider>
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
+      {loadingHistory && (
+        <ConversationSurfaceLoader
+          overlay
+          compact
+          label={t("chat.loadingHistory")}
+        />
+      )}
+      {!loadingHistory && loadError && turns.length === 0 && (
+        <ConversationErrorFallback
+          overlay
+          compact
+          message={loadError}
+          onRetry={onRetryLoad}
+        />
+      )}
+      <ConversationErrorBoundary resetKey={session.id} compact>
+        <Conversation key={session.id} className="min-h-0 flex-1">
+          <ConversationContent
+            className={cn(
+              "w-full px-0 py-6",
+              "flex min-h-full flex-col",
+            )}
+          >
+            <MarkdownCwdProvider cwd={session.cwd}>
+              <div className={CHAT_TURN_FRAME_CLASS} data-chat-column="turns">
+                {turns.length === 0 && !loadingHistory && !loadError && session.status !== "running" && (
+                  <div className="flex min-h-[160px] items-center justify-center text-[12px] text-fg-subtle">
+                    {t("pair.noMessages")}
+                  </div>
+                )}
+                {turns.map((t) => (
+                  <TurnBlock key={t.id} turn={t} />
+                ))}
+              </div>
+            </MarkdownCwdProvider>
+          </ConversationContent>
+          <HistoryPager sessionId={session.id} />
+          <ConversationScrollButton />
+        </Conversation>
+      </ConversationErrorBoundary>
     </section>
   );
 }

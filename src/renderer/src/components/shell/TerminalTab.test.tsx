@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@xterm/xterm", () => ({ Terminal: class Terminal {} }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class FitAddon {} }));
 vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: class WebglAddon {} }));
+vi.mock("@xterm/addon-search", () => ({ SearchAddon: class SearchAddon {} }));
+vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class WebLinksAddon {} }));
+vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: class Unicode11Addon {} }));
 
 import * as terminalTabModule from "./TerminalTab";
 

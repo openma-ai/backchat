@@ -6,6 +6,7 @@ let expandedMainSelected = false;
 let leftSidebarCollapsed = false;
 let sideTabs: Array<Record<string, unknown>> = [];
 let activeSideTab: Record<string, unknown> | null = null;
+let browserWindows: Array<Record<string, unknown>> = [];
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [] }),
@@ -22,7 +23,9 @@ vi.mock("@/components/shell/FileTree", () => ({
   FileTree: () => <div data-file-tree />,
 }));
 vi.mock("@/components/shell/BrowserTab", () => ({
-  BrowserTab: () => <div data-browser-tab />,
+  BrowserTab: ({ sessionId, tabId }: { sessionId: string; tabId: string }) => (
+    <div data-browser-tab={`${sessionId}:${tabId}`} />
+  ),
 }));
 vi.mock("@/components/shell/TerminalTab", () => ({
   TerminalTab: () => <div data-terminal-tab />,
@@ -73,7 +76,7 @@ vi.mock("@/lib/session-store", () => ({
   useSessionStore: (selector: string) => {
     if (selector === "sideTabs") return sideTabs;
     if (selector === "activeSideTab") return activeSideTab;
-    if (selector === "browserWindows") return [];
+    if (selector === "browserWindows") return browserWindows;
     if (selector === "active") {
       return {
         id: "session-1",
@@ -106,6 +109,28 @@ describe("SideChatPanel new-tab workspace", () => {
     leftSidebarCollapsed = false;
     sideTabs = [];
     activeSideTab = null;
+    browserWindows = [];
+  });
+
+  it("mounts webviews only for the current session's browser window", () => {
+    const tab = (id: string, url: string) => ({ id, type: "browser", payload: url, label: url });
+    const current = [tab("a", "https://a.test"), tab("b", "https://b.test")];
+    browserWindows = [
+      { taskId: "session-1", activeTabId: "a", tabs: current },
+      { taskId: "session-2", activeTabId: "c", tabs: [tab("c", "https://c.test")] },
+      { taskId: "session-3", activeTabId: "d", tabs: [tab("d", "https://d.test")] },
+    ];
+    sideTabs = current;
+    activeSideTab = current[0]!;
+
+    const html = renderToStaticMarkup(<SideChatPanel />);
+
+    // Every tab of the current window stays mounted, so switching between
+    // them never reloads; other sessions' guests are released.
+    expect(html).toContain('data-browser-tab="session-1:a"');
+    expect(html).toContain('data-browser-tab="session-1:b"');
+    expect(html).not.toContain('data-browser-tab="session-2:c"');
+    expect(html).not.toContain('data-browser-tab="session-3:d"');
   });
 
   it("shows New tab content without adding a tab when no resource tab is active", () => {
@@ -135,10 +160,9 @@ describe("SideChatPanel new-tab workspace", () => {
     expect(markup).not.toContain('aria-label="Expand panel"');
   });
 
-  it("keeps the close action in split view but removes it from expanded view", () => {
-    expect(renderToStaticMarkup(<SideChatPanel />)).toContain(
-      'aria-label="Close side panel"',
-    );
+  it("leaves the sticky close action to the global shell chrome", () => {
+    const markup = renderToStaticMarkup(<SideChatPanel />);
+    expect(markup).not.toContain('aria-label="Close side panel"');
 
     rightRailExpanded = true;
 

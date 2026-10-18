@@ -42,17 +42,24 @@ function ScrollArea({
     if (!showBoundaries) return
     const viewport = viewportRef.current
     if (!viewport) return
-    const frame = requestAnimationFrame(updateBoundaries)
-    const resizeObserver = new ResizeObserver(updateBoundaries)
+    // Boundaries read layout (scrollTop/scrollHeight). Coalesce every trigger
+    // into one read per frame, after the browser's own layout, instead of
+    // forcing a synchronous layout inside each DOM mutation.
+    let frame = requestAnimationFrame(updateBoundaries)
+    const schedule = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(updateBoundaries)
+    }
+    // Content height changes (rows mounting/unmounting, disclosure motion)
+    // all resize the content box, so a ResizeObserver covers them without a
+    // subtree MutationObserver.
+    const resizeObserver = new ResizeObserver(schedule)
     resizeObserver.observe(viewport)
     const content = viewport.firstElementChild
     if (content instanceof HTMLElement) resizeObserver.observe(content)
-    const mutationObserver = new MutationObserver(updateBoundaries)
-    mutationObserver.observe(viewport, { childList: true, subtree: true })
     return () => {
       cancelAnimationFrame(frame)
       resizeObserver.disconnect()
-      mutationObserver.disconnect()
     }
   }, [showBoundaries, updateBoundaries])
 

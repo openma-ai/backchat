@@ -1019,8 +1019,8 @@ describe("SessionStore history windows", () => {
       hasMore: false,
       loading: false,
     });
-    // Rebuilt from the full window: the head fragment folded into turn "a",
-    // and turn "b" kept its seq-based id so the view does not remount it.
+    // Only the older page replays: the head fragment folds into turn "a",
+    // and turn "b" keeps its id so the view does not remount it.
     expect(store.turnsFor(sessionId).map((t) => [t.id, t.promptText, t.assistantText])).toEqual([
       [`replay-${sessionId}-1`, "a", "A1A2"],
       [`replay-${sessionId}-4`, "b", "B1B2"],
@@ -1061,6 +1061,21 @@ describe("SessionStore history windows", () => {
     store.replayHistory(sessionId, rows.slice(2));
     expect(store.historyWindowFor(sessionId)).toBeUndefined();
     expect(store.turnsFor(sessionId).map((t) => t.id)).toEqual([`replay-${sessionId}-4`]);
+  });
+
+  test("prepending a page keeps the existing turn objects", () => {
+    const store = new SessionStore();
+    store.replayHistoryWindow(sessionId, rows.slice(3), { hasMore: true });
+    const [newer] = store.turnsFor(sessionId);
+    const projected = store.projectTurn(newer!);
+    store.prependHistory(sessionId, rows.slice(0, 3), { hasMore: false });
+    const turns = store.turnsFor(sessionId);
+    expect(turns.map((t) => t.id)).toEqual([
+      `replay-${sessionId}-1`,
+      `replay-${sessionId}-4`,
+    ]);
+    expect(turns[1]).toBe(newer);
+    expect(store.projectTurn(turns[1]!)).toBe(projected);
   });
 
   test("an empty older page closes the window without touching turns", () => {
@@ -1431,6 +1446,37 @@ describe("SessionStore performance invariants", () => {
     expect(store.getVersion()).toBe(afterFirstThought);
     expect(afterFirstSnapshot).not.toBe(beforeSnapshot);
     expect(afterSecondSnapshot).toBe(afterFirstSnapshot);
+  });
+
+  test("keeps the per-token cost flat as a streamed run grows", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-flat", "codex-acp", "Codex");
+    store.registerTurn("turn-flat", "sess-flat", "stream");
+    const tokens = ["the ", "#104", "4", " 表格", "| a |", "\n\n", "x"];
+    for (const sessionUpdate of ["agent_thought_chunk", "agent_message_chunk"]) {
+      const cost: number[] = [];
+      for (let i = 0; i < 30_000; i++) {
+        const start = performance.now();
+        store.apply({
+          type: "session.event",
+          session_id: "sess-flat",
+          turn_id: "turn-flat",
+          event: {
+            sessionUpdate,
+            messageId: "m1",
+            content: { type: "text", text: tokens[i % tokens.length] },
+          },
+        });
+        cost.push(performance.now() - start);
+      }
+      const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+      // Rescanning the accumulated run per token made the tail ~45x slower.
+      expect(mean(cost.slice(-3_000))).toBeLessThan(mean(cost.slice(2_000, 5_000)) * 4);
+    }
+    const [turn] = store.turnsFor("sess-flat");
+    expect(turn!.assistantText).toHaveLength(
+      Array.from({ length: 30_000 }, (_, i) => tokens[i % tokens.length]!).join("").length,
+    );
   });
 
   test("publishes the first assistant chunk so the streaming answer can mount", () => {
@@ -3114,6 +3160,79 @@ describe("SessionStore prompt queue state", () => {
     expect(steer?.deliveryDegraded).toBe(true);
     expect(store.get(sessionId)?.activeTurnId).toBe("turn-active-delivery");
     expect(store.get(sessionId)?.queuedTurnIds).toEqual(["turn-steer"]);
+  });
+
+  test("does not invent a running turn for session-scoped background-process rows", () => {
+    // Background process facts carry a work_item_id but no turn_id. In a window
+    // that opened mid-history they used to create a prompt-less "head" turn
+    // that stayed "running" below the real, completed last turn.
+    const store = new SessionStore();
+    const sessionId = "sess-bg-head";
+    const turnId = "turn-bg-head";
+    const ev = (type: string, extra: Record<string, unknown> = {}) => createOpenMAEvent({
+      event_id: `${type}-${Math.random()}`,
+      type: type as never,
+      session_id: sessionId,
+      source: { kind: "harness", harness: "pi-acp", adapter: "acp" },
+      occurred_at: "2026-08-05T00:00:01.000Z",
+      data: {},
+      ...extra,
+    });
+    store.replayHistoryWindow(sessionId, [
+      { seq: 10, type: "openma_event", data: JSON.stringify(ev("user.message", { turn_id: turnId, source: { kind: "user" }, data: { text: "go", input_kind: "prompt" } })), ts: 1_000 },
+      { seq: 11, type: "openma_event", data: JSON.stringify(ev("work_item.started", { work_item_id: "term-1", data: { kind: "bash", title: "ls" } })), ts: 1_100 },
+      { seq: 12, type: "openma_event", data: JSON.stringify(ev("work_item.completed", { work_item_id: "term-1", data: { kind: "bash" } })), ts: 1_200 },
+      { seq: 13, type: "openma_event", data: JSON.stringify(ev("turn.completed", { turn_id: turnId })), ts: 1_300 },
+    ], { hasMore: true });
+
+    const turns = store.turnsFor(sessionId);
+    expect(turns.map((t) => [t.id, t.status])).toEqual([[turnId, "complete"]]);
+  });
+
+  test("settles a replayed turn whose completion was never persisted once the host reports it idle", () => {
+    // A write failure (e.g. ENOSPC) can drop the turn's terminal event. The
+    // replayed turn must not stay "running" forever once the main process
+    // says nothing is active.
+    const store = new SessionStore();
+    const sessionId = "sess-dangling-replay";
+    const turnId = "turn-dangling";
+    const prompt = createOpenMAEvent({
+      event_id: "dangling-prompt",
+      type: "user.message",
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "user" },
+      occurred_at: "2026-08-05T00:00:00.000Z",
+      data: { text: "keep going", input_kind: "prompt" },
+    });
+    const chunk = createOpenMAEvent({
+      event_id: "dangling-chunk",
+      type: "agent.message_chunk",
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "harness", harness: "pi-acp", adapter: "acp" },
+      occurred_at: "2026-08-05T00:00:01.000Z",
+      seq: 2,
+      data: { text: "partial" },
+    });
+    store.replayHistoryWindow(sessionId, [
+      { seq: 1, type: "openma_event", data: JSON.stringify(prompt), ts: 1_000 },
+      { seq: 2, type: "openma_event", data: JSON.stringify(chunk), ts: 2_000 },
+    ], { hasMore: false });
+    expect(store.turnsFor(sessionId).at(-1)?.status).toBe("running");
+
+    store.apply({
+      type: "session.queue_update",
+      session_id: sessionId,
+      mode: "single",
+      active_turn_id: null,
+      queued: [],
+    });
+
+    const settled = store.turnsFor(sessionId).at(-1)!;
+    expect(settled.status).toBe("cancelled");
+    expect(settled.stopReason).toBe("interrupted");
+    expect(settled.endedAt).toBe(2_000);
   });
 
   test("applies main-process queue snapshots", () => {
