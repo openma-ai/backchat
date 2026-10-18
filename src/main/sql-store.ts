@@ -229,6 +229,7 @@ export function closeSessionDb(): void {
   _eventIndexStatus = null;
   _transcriptOrdinals.clear();
   _transcriptDirs.clear();
+  _persistedSessions.clear();
   const db = _db;
   _db = null;
   _stmts = null;
@@ -370,6 +371,23 @@ const _transcriptDirs = new Map<string, string>();
 function forgetSessionCaches(session_id: string): void {
   _transcriptOrdinals.delete(session_id);
   _transcriptDirs.delete(session_id);
+  _persistedSessions.delete(session_id);
+}
+
+/** Rows known to exist. Only confirmed rows are cached: a session whose start
+ * failed has no row yet and is re-checked if it is ever written. */
+const _persistedSessions = new Set<string>();
+
+/**
+ * Whether the session has a row events can attach to. A session row is
+ * written once its agent starts, so the start error of a session that never
+ * started has nothing to attach to (the failure itself is in the app log).
+ */
+export function hasPersistedSession(session_id: string): boolean {
+  if (_persistedSessions.has(session_id)) return true;
+  if (!stmts().getSession.get(session_id)) return false;
+  _persistedSessions.add(session_id);
+  return true;
 }
 
 const EXTERNAL_COORDINATORS_SQL = `

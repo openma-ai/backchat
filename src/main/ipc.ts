@@ -51,7 +51,7 @@ import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, latestOpenMAEventSequence, listArchivedSessions, listPairGroups, listProjects, listSessions, listSessionsForSidebar, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionExternalClient, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
+import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, hasPersistedSession, latestOpenMAEventSequence, listArchivedSessions, listPairGroups, listProjects, listSessions, listSessionsForSidebar, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionExternalClient, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
 import type { PersistedSession } from "./sql-store.js";
 import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
@@ -474,7 +474,12 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   };
   const persistCanonicalSessionEvent = (
     event: NonNullable<SessionEventOut["openma_event"]>,
-  ): void => appendEvent(event.session_id, "openma_event", event);
+  ): void => {
+    // A session that failed to start has no row; its start error is already
+    // in the app log (acp.session.start_error) and is shown live.
+    if (!hasPersistedSession(event.session_id)) return;
+    appendEvent(event.session_id, "openma_event", event);
+  };
   const logSessionPersistError = (
     error: unknown,
     event: NonNullable<SessionEventOut["openma_event"]>,
