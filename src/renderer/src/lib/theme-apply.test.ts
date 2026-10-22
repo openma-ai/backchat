@@ -20,7 +20,7 @@ function root(): ThemeRoot & { vars: Map<string, string> } {
 }
 
 describe("applyThemeToRoot", () => {
-  it("writes --fg-disabled for light and dark", () => {
+  it("writes the derived --fg-faint and --fg-disabled for light and dark", () => {
     for (const [light, dark, preference, systemDark] of [
       ["backchat-light", "backchat-dark", "light", false],
       ["backchat-light", "backchat-dark", "dark", true],
@@ -30,6 +30,7 @@ describe("applyThemeToRoot", () => {
       applyThemeToRoot(light, dark, preference, systemDark, target);
       const disabled = target.vars.get("--fg-disabled");
       expect(disabled, preference).toMatch(/^#[0-9a-f]{6}$/);
+      expect(target.vars.get("--fg-faint"), preference).toMatch(/^#[0-9a-f]{6}$/);
       expect(target.dataset.themeMode).toBe(preference);
     }
   });

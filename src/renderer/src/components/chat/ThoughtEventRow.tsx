@@ -8,40 +8,24 @@ import { useI18n } from "@/lib/i18n";
 import type { Turn } from "@/lib/session-store";
 import { StreamdownText } from "./ChatMarkdown";
 import { StreamingMarkdown } from "./StreamingMarkdown";
-import { StreamingThoughtProjection } from "./StreamingThoughtProjection";
 
 export type ThoughtEventProjection = ChatThoughtEventProjection;
 
 /** The atomic thought row owns the thought's presentation. Parent disclosures
  * project this exact state instead of interpreting thought events themselves. */
 export function projectThoughtEvent({
-  turnId,
-  text,
   live,
-  prefixSkip,
   liveFallback,
   completedLabel,
 }: {
-  turnId: string;
-  text: string;
   live: boolean;
-  prefixSkip: number;
   liveFallback: string;
   completedLabel: string;
 }): ThoughtEventProjection {
   return projectChatThoughtEvent({
-    text,
     live,
     liveFallback,
     completedLabel,
-    renderLiveSummary: (fallback) => (
-      <StreamingThoughtProjection
-        turnId={turnId}
-        prefixSkip={prefixSkip}
-        fallback={String(fallback)}
-        mode="body"
-      />
-    ),
   });
 }
 
@@ -64,10 +48,7 @@ export function ThoughtEventRow({
 }) {
   const { t } = useI18n();
   const projection = projectThoughtEvent({
-    turnId: turn.id,
-    text,
     live,
-    prefixSkip,
     liveFallback: t("chat.thinking"),
     completedLabel: t("chat.thoughtFor", { seconds: durationSeconds }),
   });

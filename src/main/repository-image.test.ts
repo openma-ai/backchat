@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { customRepositoryImage, readRepositoryImage } from "./repository-image.js";
+import { describe, expect, it, vi } from "vitest";
+import { createRepositoryImageCache, customRepositoryImage, readRepositoryImage } from "./repository-image.js";
 
 const image = "https://repository-images.githubusercontent.com/123/custom.png";
 describe("repository custom artwork", () => {
@@ -32,5 +32,70 @@ describe("repository custom artwork", () => {
   });
   it("falls back for missing CLI or inaccessible private repository", async () => {
     expect(await readRepositoryImage("/repo", async () => { throw new Error("unavailable"); })).toBeNull();
+  });
+});
+
+describe("main-owned repository image cache", () => {
+  const avatar = "https://avatars.githubusercontent.com/u/1?s=64";
+  const newer = "https://avatars.githubusercontent.com/u/2?s=64";
+
+  async function tempFile(): Promise<string> {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    return join(await mkdtemp(join(tmpdir(), "backchat-repo-image-")), "repository-images.json");
+  }
+
+  it("serves a persisted image after restart without calling gh", async () => {
+    const file = await tempFile();
+    let now = 1_000;
+    const first = createRepositoryImageCache({ file, read: async () => avatar, now: () => now });
+    expect(await first.get("/repo")).toBe(avatar);
+    await first.flush();
+
+    const read = vi.fn(async () => newer);
+    const second = createRepositoryImageCache({ file, read, now: () => now });
+    expect(await second.get("/repo")).toBe(avatar);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a stale image in the background and keeps the old one on failure", async () => {
+    const file = await tempFile();
+    let now = 0;
+    let fail = false;
+    const read = vi.fn(async () => {
+      if (fail) throw new Error("gh timed out");
+      return read.mock.calls.length <= 1 ? avatar : newer;
+    });
+    const cache = createRepositoryImageCache({
+      file, read, now: () => now, refreshAfterMs: 100, retryAfterFailureMs: 1_000,
+    });
+    expect(await cache.get("/repo")).toBe(avatar);
+
+    now = 500;
+    fail = true;
+    // Stale: answer immediately with the last good value, refresh behind.
+    expect(await cache.get("/repo")).toBe(avatar);
+    await cache.idle();
+    expect(read).toHaveBeenCalledTimes(2);
+    // The failure kept the good image and does not retry on every read.
+    expect(await cache.get("/repo")).toBe(avatar);
+    await cache.idle();
+    expect(read).toHaveBeenCalledTimes(2);
+
+    fail = false;
+    now = 1_600;
+    await cache.get("/repo");
+    await cache.idle();
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(await cache.get("/repo")).toBe(newer);
+  });
+
+  it("collapses concurrent first reads into one gh call", async () => {
+    const read = vi.fn(async () => avatar);
+    const cache = createRepositoryImageCache({ file: await tempFile(), read, now: () => 0 });
+    const results = await Promise.all([cache.get("/repo"), cache.get("/repo"), cache.get("/repo")]);
+    expect(results).toEqual([avatar, avatar, avatar]);
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });

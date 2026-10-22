@@ -16,8 +16,11 @@ vi.mock("@xterm/xterm", () => ({
     constructor(options: Record<string, unknown>) {
       constructed.push(options);
     }
+    unicode = { activeVersion: "6" };
     loadAddon() {}
     open() {}
+    clear() {}
+    selectAll() {}
     onData() { return { dispose() {} }; }
     attachCustomKeyEventHandler() {}
     write() {}
@@ -35,6 +38,16 @@ vi.mock("@xterm/addon-fit", () => ({
     proposeDimensions() { return { cols: 80, rows: 24 }; }
   },
 }));
+vi.mock("@xterm/addon-search", () => ({
+  SearchAddon: class SearchAddon {
+    onDidChangeResults() { return { dispose() {} }; }
+    findNext() { return false; }
+    findPrevious() { return false; }
+    clearDecorations() {}
+  },
+}));
+vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class WebLinksAddon {} }));
+vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: class Unicode11Addon {} }));
 vi.mock("@xterm/addon-webgl", () => ({
   WebglAddon: class WebglAddon {
     onContextLoss() {}

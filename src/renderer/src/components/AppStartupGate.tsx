@@ -1,12 +1,14 @@
 import { useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
+import { composerHarnessLiveAuthKey } from "@/lib/composer-harness-live-auth";
 export function AppStartupGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   useQuery({
     queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList({ readiness: "snapshot" }),
-    staleTime: 60_000,
+    staleTime: Infinity,
+    gcTime: Infinity,
     retry: false,
   });
 
@@ -19,6 +21,14 @@ export function AppStartupGate({ children }: { children: ReactNode }) {
           (current: typeof agents | undefined) =>
             mergeAgentsWithoutAuth(current ?? [], agents),
         );
+        for (const agent of agents) {
+          if (agent.detected) {
+            queryClient.setQueryData(
+              composerHarnessLiveAuthKey(agent.id),
+              agent.auth ?? null,
+            );
+          }
+        }
       }
     }).catch((error) => {
       console.error("Agent startup warmup failed", error);

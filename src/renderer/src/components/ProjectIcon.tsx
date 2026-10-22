@@ -1,53 +1,53 @@
 import { useState } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { ProjectGlyph, useProjectIcon } from "./ProjectGlyph";
 
-/** Shared project identity in navigation, pickers and settings. */
-export function ProjectIcon({ identity, sourceFolders, primaryRoot, className }: {
-  identity: string; sourceFolders: string[]; primaryRoot: string; className?: string;
+/** Shared project identity in navigation, pickers and settings.
+ *
+ *  One mark per project, in order of intent: the icon or emoji the user
+ *  chose, then the repository's own GitHub artwork (custom social image,
+ *  else the owner avatar; see main/repository-image.ts), then a letter tile
+ *  from the name. A multi-root project no longer stacks one mark per
+ *  source folder; the primary folder's repository speaks for it. */
+export function ProjectIcon({ identity, name, sourceFolders, primaryRoot, className }: {
+  identity: string;
+  /** Display name for the letter tile; defaults to the primary folder name. */
+  name?: string;
+  sourceFolders: string[];
+  primaryRoot: string;
+  className?: string;
 }) {
   const iconChoice = useProjectIcon(identity);
-  const paths = sourceFolders.length ? sourceFolders : [primaryRoot].filter(Boolean);
-  const images = useQueries({ queries: paths.slice(0, 2).map(path => ({
-    queryKey: ["repository-image", path],
-    queryFn: () => window.backchat.uiFsRepositoryImage({ path }),
-    staleTime: 30 * 60_000,
+  const root = primaryRoot || sourceFolders[0] || "";
+  const fallbackName = (root || identity).split("/").filter(Boolean).pop();
+  const image = useQuery({
+    queryKey: ["repository-image", root],
+    queryFn: () => window.backchat.uiFsRepositoryImage({ path: root }),
+    // Main keeps the last good image on disk and refreshes it in the
+    // background; the renderer only needs one answer per root.
+    staleTime: Infinity,
+    gcTime: Infinity,
     refetchOnWindowFocus: false,
-    enabled: !iconChoice,
-  })) });
-  const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
-  const [transparentImages, setTransparentImages] = useState<Set<string>>(() => new Set());
-  const icons = iconChoice ? [null] : images.length ? images.map(image => image.data ?? null) : [null];
+    enabled: !iconChoice && !!root,
+  });
+  const src = iconChoice ? null : image.data ?? null;
+  const [failed, setFailed] = useState<string | null>(null);
+  const showImage = !!src && failed !== src;
   return (
-        <span className={cn("relative inline-flex size-4 shrink-0 items-center justify-center", className)} aria-hidden="true">
-          {icons.map((src, index) => <span key={index} className={cn(
-            "relative inline-flex size-full items-center justify-center",
-            icons.length > 1 && "absolute !size-3",
-            icons.length > 1 && (index === 0 ? "-left-0.5 -top-0.5" : "left-1 top-1"),
-          )}>
-            {(!src || failedImages.has(src) || !transparentImages.has(src)) && <ProjectGlyph identity={paths[index] ?? identity} choice={iconChoice} />}
-            {src && !failedImages.has(src) && <img
-              src={src} alt="" crossOrigin="anonymous" referrerPolicy="no-referrer"
-              className={cn("absolute inset-0 size-full object-contain", !transparentImages.has(src) && "opacity-0")}
-              onLoad={event => {
-                try {
-                  const img = event.currentTarget;
-                  const canvas = document.createElement("canvas");
-                  canvas.width = 64; canvas.height = 64;
-                  const context = canvas.getContext("2d", { willReadFrequently: true });
-                  if (!context) throw new Error("Canvas unavailable");
-                  context.drawImage(img, 0, 0, 64, 64);
-                  const pixels = context.getImageData(0, 0, 64, 64).data;
-                  let transparent = 0;
-                  for (let i = 3; i < pixels.length; i += 4) if (pixels[i]! < 128) transparent++;
-                  if (transparent >= 64 * 64 * 0.05) setTransparentImages(previous => new Set(previous).add(src));
-                  else setFailedImages(previous => new Set(previous).add(src));
-                } catch { setFailedImages(previous => new Set(previous).add(src)); }
-              }}
-              onError={() => setFailedImages(previous => new Set(previous).add(src))}
-            />}
-          </span>)}
-        </span>
+    <span className={cn("relative inline-flex size-4 shrink-0 items-center justify-center", className)} aria-hidden="true">
+      {showImage ? (
+        <img
+          src={src}
+          alt=""
+          crossOrigin="anonymous"
+          referrerPolicy="no-referrer"
+          className="project-image"
+          onError={() => setFailed(src)}
+        />
+      ) : (
+        <ProjectGlyph identity={identity} name={name || fallbackName} choice={iconChoice} />
+      )}
+    </span>
   );
 }

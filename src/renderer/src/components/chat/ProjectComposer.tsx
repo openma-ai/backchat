@@ -65,6 +65,8 @@ export function ProjectComposer({
   const { data: agents } = useQuery({
     queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList(),
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
   const contextId = useId();
   const context = useComposerContextState({

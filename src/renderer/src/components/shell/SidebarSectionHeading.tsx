@@ -64,8 +64,7 @@ export const SidebarSectionHeading = forwardRef<
               "app-no-drag flex h-full min-w-0 flex-1 items-center gap-1 text-left",
               headingSize === "compact"
                 ? "sidebar-section-heading-compact font-medium"
-                : "sidebar-section-heading font-normal",
-              "text-fg-muted",
+                : "sidebar-section-heading",
               "transition-colors duration-[var(--dur-quick)] ease-[var(--ease-snap)]",
             )}
           >
@@ -78,7 +77,7 @@ export const SidebarSectionHeading = forwardRef<
                     "size-3 transition-transform duration-[var(--motion-disclosure-duration)] ease-[var(--motion-disclosure-easing)]",
                     open && "rotate-90",
                     open &&
-                      "opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100",
+                      "opacity-0 transition-opacity group-hover/section:opacity-100 group-has-[:focus-visible]/section:opacity-100",
                   )}
                 />
               </span>
@@ -91,7 +90,7 @@ export const SidebarSectionHeading = forwardRef<
           slot="trailing"
           className={cn(
             labelCls.split(/\s+/).includes("hidden") && "hidden",
-            "opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-within/section:opacity-100",
+            "sidebar-row-reveal",
           )}
           data-sidebar-section-header-action="true"
         >
@@ -112,7 +111,7 @@ export const SidebarSectionHeading = forwardRef<
         ref={ref}
         type="button"
         className={cn(
-          "sidebar-grid-row w-full text-xs font-medium text-fg-muted",
+          "sidebar-grid-row w-full text-xs font-medium",
           rowClassName,
         )}
         data-sidebar-depth={depth}

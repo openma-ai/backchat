@@ -249,6 +249,8 @@ export function ProjectEditor({
   const agents = useQuery({
     queryKey: ["agents"],
     queryFn: () => window.backchat.agentsList(),
+    staleTime: Infinity,
+    gcTime: Infinity,
     enabled: !creating,
   });
   const account = useQuery({

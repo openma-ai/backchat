@@ -536,20 +536,7 @@ export class SessionManager {
     if (!sess) {
       // A login recovery can happen after the app (or the failed child) has
       // exited. Restore the saved identity/workspace, without replaying a turn.
-      const saved = getSession(session_id);
-      if (!saved) throw new Error("no such session");
-      const result = await this.start({
-        session_id,
-        agent_id: saved.agent_id,
-        cwd: saved.cwd,
-        additional_directories: saved.additional_directories ?? undefined,
-        project_id: saved.project_id ?? undefined,
-        workspace_id: saved.workspace_id ?? undefined,
-        resume: saved.acp_session_id ? { acp_session_id: saved.acp_session_id } : undefined,
-      });
-      if (result.status !== "ready") {
-        throw new Error(result.status === "error" ? result.message : `ACP session restart ${result.status}`);
-      }
+      await this.#resumePersisted(session_id);
       this.#send({ type: "session.restarted", session_id });
       return { session_id, status: "restarted" };
     }
@@ -559,6 +546,32 @@ export class SessionManager {
     }
     await this.#restartSessionNow(sess);
     return { session_id, status: "restarted" };
+  }
+
+  /** Bring a persisted conversation back to life from its saved identity.
+   *
+   *  The renderer's row outlives the ACP child: an app or dev restart, a
+   *  crashed child, or a renderer that skipped its own start all leave a chat
+   *  the user can see but main does not hold. That is a cold session, not a
+   *  dead one — resume it on the saved ACP session id. */
+  async #resumePersisted(session_id: string): Promise<ActiveSession> {
+    const saved = getSession(session_id);
+    if (!saved) throw new Error("no such session");
+    const result = await this.start({
+      session_id,
+      agent_id: saved.agent_id,
+      cwd: saved.cwd,
+      additional_directories: saved.additional_directories ?? undefined,
+      project_id: saved.project_id ?? undefined,
+      workspace_id: saved.workspace_id ?? undefined,
+      resume: saved.acp_session_id ? { acp_session_id: saved.acp_session_id } : undefined,
+    });
+    if (result.status !== "ready") {
+      throw new Error(result.status === "error" ? result.message : `ACP session restart ${result.status}`);
+    }
+    const sess = this.#sessions.get(session_id);
+    if (!sess) throw new Error("no such session");
+    return sess;
   }
 
   #transition(
@@ -1057,15 +1070,19 @@ export class SessionManager {
   }
 
   async prompt(p: SessionPromptParams): Promise<void> {
-    const sess = this.#sessions.get(p.session_id);
+    let sess = this.#sessions.get(p.session_id);
     if (!sess) {
-      this.#send({
-        type: "session.error",
-        session_id: p.session_id,
-        turn_id: p.turn_id,
-        message: "no such session",
-      });
-      return;
+      try {
+        sess = await this.#resumePersisted(p.session_id);
+      } catch (e) {
+        this.#send({
+          type: "session.error",
+          session_id: p.session_id,
+          turn_id: p.turn_id,
+          message: e instanceof Error ? e.message : String(e),
+        });
+        return;
+      }
     }
     const requestedDelivery = p.requested_delivery ?? p.effective_delivery;
     if (
@@ -1544,6 +1561,15 @@ export class SessionManager {
           available_commands: commands,
         });
       }
+    }
+    const updateRecord = outOfBandUpdateRecord(event);
+    if (
+      updateRecord.sessionUpdate === "config_option_update"
+      && Array.isArray(updateRecord.configOptions)
+    ) {
+      void this.#observeLiveSessionConfig(sess.agentId, {
+        config_options: updateRecord.configOptions,
+      });
     }
     this.#send({
       type: "session.event",
@@ -2043,6 +2069,9 @@ export class SessionManager {
       return;
     }
     const configOptions = await sess.acp.setConfigOption(p.config_id, p.value);
+    void this.#observeLiveSessionConfig(sess.agentId, {
+      config_options: [...configOptions],
+    });
     this.#send({
       type: "session.event",
       session_id: p.session_id,

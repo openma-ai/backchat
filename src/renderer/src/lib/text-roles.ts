@@ -1,8 +1,25 @@
 /**
  * Text color roles for the renderer.
  *
+ * The ladder follows Linear's four readable tiers plus disabled:
+ *
+ *   fg          primary    selected rows, titles, body copy
+ *   fg-muted    secondary  supporting prose, values in a list
+ *   fg-subtle   tertiary   resting navigation rows, icons, group labels
+ *   fg-faint    quaternary non-essential metadata: timestamps, "back to app"
+ *   fg-disabled            inactive controls
+ *
  * Theme plugins own the first three rungs (`fg`, `fg-muted`, `fg-subtle`).
- * `fg-disabled` is derived here, not stored on the plugin. Inactive UI is
+ * `fg-faint` and `fg-disabled` are derived here, not stored on the plugin.
+ *
+ * `fg-faint` is a deliberate exception to AA 4.5:1. Linear's quaternary text
+ * sits at 3.7:1 (light) and 3.3–3.5:1 (dark). It holds 3:1 on every surface,
+ * the WCAG floor for large text and UI glyphs, and may only carry text the
+ * user can do without: something that repeats elsewhere, or a label whose
+ * row is still recognizable by its icon and position. Never body copy,
+ * form labels, errors, or anything a decision depends on.
+ *
+ * `fg-disabled`: inactive UI is
  * exempt from WCAG 1.4.3 and 1.4.11. Pushing it to 4.5:1 or 3:1 put it
  * next to `fg-subtle`, and enabled icons use that role, so a disabled
  * control looked on. The mix is the weakest ink that still holds 2:1 on
@@ -14,11 +31,14 @@
  * primary-text surface (`fg` only).
  */
 
-export const TEXT_ROLE_NAMES = ["fg", "fg-muted", "fg-subtle", "fg-disabled"] as const;
+export const TEXT_ROLE_NAMES = ["fg", "fg-muted", "fg-subtle", "fg-faint", "fg-disabled"] as const;
 export type TextRoleName = (typeof TEXT_ROLE_NAMES)[number];
 
 /** WCAG 2.1 AA for text under 18pt / 14pt bold. */
 export const WCAG_AA_NORMAL_TEXT = 4.5;
+
+/** Quaternary floor: WCAG large-text / UI-glyph contrast. See the header. */
+export const FAINT_SURFACE_CONTRAST = 3;
 
 /** Inactive components are exempt from 1.4.11. 2:1 keeps the glyph visible
  *  without sitting on top of the enabled icon color. */
@@ -39,11 +59,31 @@ export function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-/** Weakest legible disabled color for one theme. `amount` is the share of `foreground`. */
+/** Weakest legible disabled color for one theme. */
 export function disabledForeground(
   foreground: string,
   background: string,
   surfaces: readonly string[],
+): string {
+  return weakestForeground(foreground, background, surfaces, DISABLED_SURFACE_CONTRAST);
+}
+
+/** Quaternary text: the weakest mix that still holds 3:1 on every surface. */
+export function faintForeground(
+  foreground: string,
+  background: string,
+  surfaces: readonly string[],
+): string {
+  return weakestForeground(foreground, background, surfaces, FAINT_SURFACE_CONTRAST);
+}
+
+/** Weakest `foreground`/`background` mix that holds `floor` on every surface.
+ *  `amount` is the share of `foreground`. */
+function weakestForeground(
+  foreground: string,
+  background: string,
+  surfaces: readonly string[],
+  floor: number,
 ): string {
   let low = 0;
   let high = 1;
@@ -52,7 +92,7 @@ export function disabledForeground(
     const mid = (low + high) / 2;
     const color = mixSrgb(foreground, background, mid);
     const worst = worstContrast(color, surfaces);
-    if (worst >= DISABLED_SURFACE_CONTRAST) {
+    if (worst >= floor) {
       chosen = mid;
       high = mid;
     } else {
@@ -63,7 +103,7 @@ export function disabledForeground(
   let amount = chosen;
   let hex = mixSrgb(foreground, background, amount);
   for (let step = 0; step < 40; step += 1) {
-    if (worstContrast(hex, surfaces) >= DISABLED_SURFACE_CONTRAST) return hex;
+    if (worstContrast(hex, surfaces) >= floor) return hex;
     amount = Math.min(1, amount + 0.004);
     hex = mixSrgb(foreground, background, amount);
   }

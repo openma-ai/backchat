@@ -116,7 +116,13 @@ export function AppShell({
   className?: string;
 }) {
   useWindowResizePerformanceMode();
-  const { collapsed: leftCollapsed } = useSidebarCollapse();
+  const sidebarCollapse = useSidebarCollapse();
+  const { collapsed: leftCollapsed } = sidebarCollapse;
+  const sidebarPeek = useSidebarPeek(leftCollapsed);
+  // A collapsed sidebar can be peeked by hovering the window's left edge: it
+  // floats over the chat (main padding stays collapsed) until the pointer
+  // leaves it.
+  const leftHidden = leftCollapsed && !sidebarPeek.open;
   const { collapsed: rightCollapsed } = useRightRailCollapse();
   const { expanded: rightExpanded, mainSelected: expandedMainSelected } =
     useRightRailExpansion();
@@ -156,9 +162,11 @@ export function AppShell({
       frame = requestAnimationFrame(measure);
     };
     const resize = new ResizeObserver(schedule);
-    // Discover the transcript after async history loading, then observe sizes only.
+    // Discover the transcript after async history loading, then observe sizes
+    // only. Mutations fire per commit while a chat mounts; measuring here would
+    // force a synchronous layout inside each one, so defer to the next frame.
     const mount = new MutationObserver(() => {
-      measure();
+      schedule();
       if (shell.querySelector(".chat-composer-frame")) mount.disconnect();
     });
     mount.observe(shell, { childList: true, subtree: true });
@@ -221,34 +229,57 @@ export function AppShell({
           regardless of bottom panel state (the bottom panel is inset
           to the main column's x-range). */}
       <aside
+        data-sidebar-peek={leftCollapsed && sidebarPeek.open ? "true" : undefined}
+        ref={sidebarPeek.asideRef}
         className={cn(
           "absolute flex flex-col transform-gpu",
           "app-rail-surface theme-sidebar-background rounded-2xl [&::before]:rounded-[inherit]",
+          leftCollapsed && sidebarPeek.open && "shadow-lg",
         )}
         style={{
           left: "var(--stage-inset)",
           top: "var(--stage-inset)",
           bottom: "var(--stage-inset)",
           width: `${sidebarWidth}px`,
-          transform: leftCollapsed
+          transform: leftHidden
             ? `translateX(calc(-100% - var(--stage-inset))) scale(0.96)`
             : "translateX(0) scale(1)",
-          opacity: leftCollapsed ? 0 : 1,
+          opacity: leftHidden ? 0 : 1,
           transformOrigin: "left center",
           transition: SIDEBAR_TR,
-          pointerEvents: leftCollapsed ? "none" : "auto",
-          zIndex: 20,
+          pointerEvents: leftHidden ? "none" : "auto",
+          // A peeked sidebar floats above the chat and the right rail.
+          zIndex: leftCollapsed ? 40 : 20,
         }}
-        aria-hidden={leftCollapsed}
+        aria-hidden={leftHidden}
       >
         {/* Clip the contents, not the divider. The scroll area's overlay track
             has its own stacking order; keep it inside this content layer so
             it cannot cover the sidebar's full-height resize edge. */}
         <div className="relative z-0 min-h-0 flex-1 overflow-hidden rounded-[inherit]">
-          {sidebar}
+          {leftCollapsed ? (
+            // Inside a peek the sidebar renders as expanded (labels shown);
+            // the shell itself still treats the sidebar as collapsed.
+            <PeekedSidebarCollapse value={sidebarCollapse}>{sidebar}</PeekedSidebarCollapse>
+          ) : (
+            sidebar
+          )}
         </div>
         <RailResizer side="right" width={sidebarWidth} onResize={setSidebarWidth} onResizingChange={setResizing} />
       </aside>
+      {leftCollapsed && !sidebarPeek.open && (
+        // Invisible hot edge: resting the pointer on the window's left edge
+        // peeks the collapsed sidebar. Starts below the traffic-light row so
+        // the window controls and drag region keep working.
+        <div
+          aria-hidden="true"
+          data-sidebar-peek-edge="true"
+          className="absolute left-0 w-2"
+          style={{ top: "var(--top-row-h)", bottom: 0, zIndex: 39 }}
+          onPointerEnter={sidebarPeek.arm}
+          onPointerLeave={sidebarPeek.disarm}
+        />
+      )}
 
       {/* Right side-chat panel — mirror of the sidebar. Only mounts when
           a rightPanel prop is provided AND it's not collapsed. Collapsed
@@ -258,23 +289,28 @@ export function AppShell({
         <aside
           className={cn(
             "absolute flex flex-col overflow-hidden transform-gpu",
-            "app-rail-surface",
-            rightExpanded && !expandedMainSelected && "bg-bg-sidebar",
-            rightExpanded ? "rounded-r-2xl" : "rounded-2xl",
+            // Docked: a flat pane flush to the window edge, separated from
+            // the chat by one hairline (Codex-style). Expanded keeps the
+            // floating card because it overlays the main column.
+            rightExpanded
+              ? cn("app-rail-surface rounded-r-2xl", !expandedMainSelected && "bg-bg-sidebar")
+              : "app-rail-docked",
           )}
           data-right-panel-expanded={rightExpanded}
           data-right-panel-collapsed={rightCollapsed}
           data-expanded-surface={expandedMainSelected ? "main" : "panel"}
           style={{
-            right: "var(--stage-inset)",
-            top: "var(--stage-inset)",
+            right: rightExpanded ? "var(--stage-inset)" : 0,
+            top: rightExpanded ? "var(--stage-inset)" : 0,
             bottom: expandedMainSelected
               ? "auto"
               : rightExpanded
                 ? "var(--stage-inset)"
-                : bottomReservation,
+                : bottomCollapsed || !bottomPanel
+                  ? 0
+                  : bottomReservation,
             height: expandedMainSelected ? "var(--top-row-h)" : undefined,
-            width: rightExpanded ? expandedRailWidth : `${rightRailWidth}px`,
+            width: rightExpanded ? expandedRailWidth : `calc(${rightRailWidth}px + var(--stage-inset))`,
             transform: rightCollapsed
               ? `translateX(calc(100% + var(--stage-inset))) scale(0.96)`
               : "translateX(0) scale(1)",
@@ -473,7 +509,10 @@ function ChromeToggles({
 }) {
   const location = useLocation();
   const isChatRoute = location.pathname.startsWith("/chat/");
-  if (!isChatRoute) return null;
+  // Home's draft owns a right rail too (its state follows the draft into
+  // the new chat); only the bottom terminal stays chat-only.
+  const isHomeRoute = location.pathname === "/";
+  if (!isChatRoute && !isHomeRoute) return null;
   return (
     <>
       {rightPanel && <GlobalSideChatToggle />}
@@ -484,11 +523,9 @@ function ChromeToggles({
 
 function GlobalSideChatToggle() {
   const { collapsed, toggle } = useRightRailCollapse();
-  // When the panel is expanded, the toggle lives INSIDE the panel
-  // header (see SideChatPanel.tsx) — render nothing on the stage.
-  // When collapsed, the panel header isn't visible, so the stage
-  // toggle is the only way to re-open.
-  if (!collapsed) return null;
+  // Keep this in the global chrome, just like the left sidebar toggle. It
+  // must remain sticky while the rail content changes or scrolls; the panel
+  // itself no longer owns a second close button.
   return (
     <button
       type="button"
@@ -844,5 +881,102 @@ function RailResizer({
         side === "right" ? "-right-1.5" : "-left-1",
       )}
     />
+  );
+}
+
+/** Hover-peek state for the collapsed left sidebar. Entering the hot edge
+ *  arms a short open delay (so a pointer sweeping past the edge doesn't
+ *  flash it); leaving the peeked sidebar closes it after a grace period,
+ *  unless one of its menus is still open. Expanding the sidebar for real
+ *  resets the peek. */
+function useSidebarPeek(collapsed: boolean) {
+  const [open, setOpen] = React.useState(false);
+  const timer = React.useRef<number | null>(null);
+  const clear = () => {
+    if (timer.current != null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  React.useEffect(() => {
+    if (!collapsed) {
+      clear();
+      setOpen(false);
+    }
+  }, [collapsed]);
+  React.useEffect(() => clear, []);
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  const arm = React.useCallback(() => {
+    clear();
+    timer.current = window.setTimeout(() => setOpen(true), 120);
+  }, []);
+  const disarm = React.useCallback(() => {
+    clear();
+  }, []);
+  const hold = React.useCallback(() => {
+    clear();
+  }, []);
+  const release = React.useCallback(() => {
+    // Already counting down: pointermove fires continuously outside the
+    // sidebar, and re-arming each time would postpone the close forever.
+    if (timer.current != null) return;
+    timer.current = window.setTimeout(function closeWhenIdle() {
+      // A sidebar dropdown / context menu renders in a portal; keep the
+      // peek open while one is up so choosing an item still works.
+      if (document.querySelector('[role="menu"][data-state="open"]')) {
+        timer.current = window.setTimeout(closeWhenIdle, 300);
+        return;
+      }
+      setOpen(false);
+    }, 280);
+  }, []);
+  const asideRef = React.useRef<HTMLElement | null>(null);
+  // While peeked, the hover region is the sidebar card plus the window
+  // chrome row above/beside it (traffic lights, sidebar toggle, back /
+  // forward): those controls are siblings of the card, so pointerleave
+  // alone would close the peek the moment the pointer reached them.
+  React.useEffect(() => {
+    if (!open) return;
+    const inside = (x: number, y: number) => {
+      const r = asideRef.current?.getBoundingClientRect();
+      if (!r) return false;
+      return x <= r.right + 4 && (y <= r.top + 2 || (y >= r.top && y <= r.bottom));
+    };
+    const onMove = (e: PointerEvent) => {
+      if (inside(e.clientX, e.clientY)) hold();
+      else release();
+    };
+    const onLeaveWindow = () => release();
+    window.addEventListener("pointermove", onMove);
+    document.documentElement.addEventListener("pointerleave", onLeaveWindow);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      document.documentElement.removeEventListener("pointerleave", onLeaveWindow);
+    };
+  }, [open, hold, release]);
+  return React.useMemo(
+    () => ({ open, arm, disarm, asideRef }),
+    [open, arm, disarm],
+  );
+}
+
+function PeekedSidebarCollapse({
+  value,
+  children,
+}: {
+  value: React.ContextType<typeof SidebarCollapseContext>;
+  children: React.ReactNode;
+}) {
+  const peeked = React.useMemo(
+    () => ({ ...value, collapsed: false as CollapseState }),
+    [value],
+  );
+  return (
+    <SidebarCollapseContext.Provider value={peeked}>{children}</SidebarCollapseContext.Provider>
   );
 }

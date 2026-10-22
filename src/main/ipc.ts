@@ -51,7 +51,7 @@ import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
 import { PairManager } from "./pair-manager.js";
 import { settingsStore } from "./settings-store.js";
-import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, listArchivedSessions, listPairGroups, listProjects, listSessions, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionExternalClient, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
+import { appendEvent, appendEventsTx, archivePairSession, archiveSession, deleteProject, deleteSession, deleteSideWorkspace, getActivityStats, getProject, getSession, hasPersistedSession, latestOpenMAEventSequence, listArchivedSessions, listPairGroups, listProjects, listSessions, listSessionsForSidebar, listSideWorkspaces, loadHistory, loadHistoryPage, pinPairSession, pinSession, renameSession, savePairGroup, saveSideWorkspace, searchMessages, setSessionExternalClient, setSessionTitleIfEmpty, unarchivePairSession, unarchiveSession, unpinPairSession, unpinSession, upsertSession } from "./sql-store.js";
 import type { PersistedSession } from "./sql-store.js";
 import { enrichActivityStats } from "./activity-stats.js";
 import { removeSessionCwd } from "./session-cwd.js";
@@ -78,7 +78,6 @@ import { forwardSessionEventToPet } from "./pet-hook-bridge.js";
 import {
   createSessionEventEnricher,
   hasOpenMAEventSchema,
-  latestPersistedOpenMAEventSequence,
 } from "./session-event-enricher.js";
 import { logAppEvent } from "./app-log.js";
 import { logRendererCrash } from "./renderer-crash-log.js";
@@ -458,7 +457,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   // channels so the renderer can wire them to independent reducers.
   const enrichSessionEvent = createSessionEventEnricher(
     () => new Date().toISOString(),
-    (sessionId) => latestPersistedOpenMAEventSequence(loadHistory(sessionId)),
+    (sessionId) => latestOpenMAEventSequence(sessionId),
   );
   const publishSingle = (enriched: SessionEventOut) => {
     deps.sessionEventSink?.(enriched);
@@ -475,7 +474,12 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   };
   const persistCanonicalSessionEvent = (
     event: NonNullable<SessionEventOut["openma_event"]>,
-  ): void => appendEvent(event.session_id, "openma_event", event);
+  ): void => {
+    // A session that failed to start has no row; its start error is already
+    // in the app log (acp.session.start_error) and is shown live.
+    if (!hasPersistedSession(event.session_id)) return;
+    appendEvent(event.session_id, "openma_event", event);
+  };
   const logSessionPersistError = (
     error: unknown,
     event: NonNullable<SessionEventOut["openma_event"]>,
@@ -738,6 +742,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
           return runComposerLiveHarnessProbe(liveProbeAgentId);
         }
         return agentSetup.listAgents();
+      }
+      if (liveProbeAgentId && !options?.refresh && !skipE2eLiveHarnessProbe) {
+        return runComposerLiveHarnessProbe(liveProbeAgentId);
       }
       await agentWarmup;
       if (options?.refresh) {
@@ -1107,7 +1114,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   });
 
   ipcMain.handle(InvokeChannel.SessionsList, (_e, limit?: number):
-    PersistedSessionInfo[] => listSessions(limit).filter((s) => isLocalSession(s.id)).map(withProjectDirectories));
+    PersistedSessionInfo[] => (limit === undefined ? listSessionsForSidebar() : listSessions(limit)).filter((s) => isLocalSession(s.id)).map(withProjectDirectories));
   handleLocalSession(
     InvokeChannel.SessionsRename,
     (_e, p: { session_id: string; title: string }): void => {

@@ -19,7 +19,8 @@ export function sidebarNavRowStateClass(state: {
     return cn(errored && "text-danger", "app-selected-surface text-fg");
   }
   if (errored) return "text-danger";
-  return "text-fg-muted hover:bg-[var(--control-bg-hover)] hover:text-fg";
+  // Resting rows sit on the tertiary tier, as Linear's do (see text-roles.ts).
+  return "text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg";
 }
 
 export function sidebarNavRowClass(state: {

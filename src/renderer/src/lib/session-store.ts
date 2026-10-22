@@ -45,10 +45,29 @@ import { forkPointsByTurn } from "./fork-point.js";
 import { sessionUsesManagedWorkspace } from "./fork-workspace";
 import {
   createOpenMAEvent,
-  reduceWorkItems,
+  createWorkItemProjector,
   type OpenMAEvent,
+  type WorkItemProjector,
+  type WorkItemRegistry,
   type WorkItemSnapshot,
 } from "@openma/common/session-events/openma";
+
+/** One session's canonical OpenMA log. Append-only with O(1) dedupe; the
+ *  WorkItem registry is projected incrementally as events arrive, and the
+ *  read views are cached until the next change. */
+interface OpenMAEventLog {
+  events: OpenMAEvent[];
+  ids: Set<string>;
+  workItems: WorkItemProjector;
+  eventsView?: readonly OpenMAEvent[];
+  workItemsView?: { registry: WorkItemRegistry; items: WorkItemSnapshot[] };
+}
+
+const EMPTY_OPENMA_EVENTS: readonly OpenMAEvent[] = [];
+
+function createOpenMAEventLog(): OpenMAEventLog {
+  return { events: [], ids: new Set(), workItems: createWorkItemProjector() };
+}
 import { setRightRailCollapsed } from "@/lib/right-rail";
 import {
   configOptionFromLegacySessionModes,
@@ -58,11 +77,11 @@ import {
   type AcpSessionConfigOption,
 } from "./session-config-options";
 import {
-  mergeStreamingText,
+  createBackchatTurnProjector,
   parseAcpEvent,
-  reduceTurn,
   sessionUpdateInner,
   sessionUpdateType,
+  type TurnRender,
 } from "./reduce-turn";
 import type {
   NativeAgentContext,
@@ -122,6 +141,7 @@ import type {
   HistoryRow,
   HistoryWindowInfo,
   HistoryWindowState,
+  NativeAgentLifecycleFact,
   NativeSubagentMetadata,
   PairRow,
   PairTurnTarget,
@@ -138,6 +158,7 @@ import type {
   TaskBrowserWindow,
   TaskSideWorkspaceSnapshot,
   Turn,
+  TurnEvent,
   TurnDeliveryMeta,
   WorkspaceArtifacts,
   WorkspaceSourceRef,
@@ -150,6 +171,13 @@ export interface SessionStoreDependencies {
   readSessionGoalUpdate?: SessionGoalUpdateReader;
 }
 
+interface TurnProjectionCacheEntry {
+  projector: ReturnType<typeof createBackchatTurnProjector>;
+  applied: number;
+  first?: Turn["events"][number];
+  last?: Turn["events"][number];
+}
+
 export class SessionStore {
   static readonly NOTICE_DURATION_MS = 10_000;
 
@@ -160,20 +188,22 @@ export class SessionStore {
    *  Retain them by session id until the matching row is restored. */
   #pendingAsksBeforeSession = new Map<string, BrokerAsk[]>();
   #turns = new Map<string, Turn>();
+  #turnProjectionCache = new Map<string, TurnProjectionCacheEntry>();
+  /** Coalesced text/thought runs built by #appendStreamEvent, by event. */
+  #streamRuns = new WeakMap<TurnEvent, {
+    kind: "text" | "thought";
+    text: string;
+    messageId?: string;
+    phase?: "commentary" | "final_answer";
+  }>();
+  /** Turns created by the replay pass in progress; safe to extend in place. */
+  #replayOwnedTurns = new WeakSet<Turn>();
   /** Persisted rows currently materialized per session when history was
    *  opened as a tail window (see replayHistoryWindow / prependHistory). */
   #history = new Map<string, HistoryWindowState>();
   /** Sessions whose first history fetch is in flight. The chat view shows a
    *  loading surface instead of flashing the home empty state. */
   #historyPending = new Set<string>();
-  /** Steer input is visible immediately, but ACP keeps streaming the current
-   * model/tool cycle under the original prompt request. Hold the accepted
-   * steer until that model call completes, then project the next call's
-   * events onto its transcript row. */
-  #pendingSteeringTurns = new Map<string, string[]>();
-  #steeringEventTargets = new Map<string, string>();
-  #steeringBoundariesArmed = new Set<string>();
-  #modelCallsReadyForOutput = new Set<string>();
   /** Pair-chats. Each pair owns N member session ids; the members
    *  themselves live in `#sessions` like any other session — the pair
    *  is just metadata. Routing is by id: navigating to /pair/<id>
@@ -215,7 +245,7 @@ export class SessionStore {
   #subagentsByParent = new Map<string, SubagentActivity[]>();
   /** Canonical OpenMA event stream received alongside the legacy ACP
    *  transport envelope. This is the migration seam for GUI projections. */
-  #openmaEventsBySession = new Map<string, OpenMAEvent[]>();
+  #openmaEventsBySession = new Map<string, OpenMAEventLog>();
   #nativeAgentContextByToolCall = new Map<
     string,
     NativeAgentContext & { parentSessionId: string }
@@ -304,7 +334,10 @@ export class SessionStore {
     },
   ): boolean {
     const last = turn.events.at(-1);
-    const parsedLast = last ? parseAcpEvent(last.payload) : null;
+    // A run this method built is read from its record. Re-parsing the merged
+    // payload would rescan the whole accumulated text on every token.
+    const run = last ? this.#streamRuns.get(last) : undefined;
+    const parsedLast = run ?? (last ? parseAcpEvent(last.payload) : null);
     const sameMessage =
       parsedLast?.kind === kind &&
       parsedLast.messageId === metadata?.messageId &&
@@ -312,8 +345,8 @@ export class SessionStore {
         (parsedLast.kind === "text" &&
           parsedLast.phase === metadata?.phase));
     if (sameMessage) {
-      const merged = mergeStreamingText(parsedLast.text, text);
-      turn.events[turn.events.length - 1] = {
+      const merged = parsedLast.text + text;
+      const event: TurnEvent = {
         payload: {
           sessionUpdate:
             kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
@@ -328,9 +361,11 @@ export class SessionStore {
         },
         receivedAt: last!.receivedAt,
       };
+      turn.events[turn.events.length - 1] = event;
+      this.#streamRuns.set(event, { ...metadata, kind, text: merged });
       return false;
     }
-    turn.events.push({
+    const event: TurnEvent = {
       payload: {
         sessionUpdate:
           kind === "text" ? "agent_message_chunk" : "agent_thought_chunk",
@@ -342,7 +377,9 @@ export class SessionStore {
         content: { type: "text", text },
       },
       receivedAt,
-    });
+    };
+    turn.events.push(event);
+    this.#streamRuns.set(event, { ...metadata, kind, text });
     return true;
   }
 
@@ -415,7 +452,7 @@ export class SessionStore {
     const previous = this.#sessions.get(row.id);
     this.#sessions.set(row.id, { ...previous, ...row });
     const ids = new Set(turns.map((turn) => turn.id));
-    for (const [id, turn] of this.#turns) if (turn.sessionId === row.id && !ids.has(id)) this.#turns.delete(id);
+    for (const [id, turn] of this.#turns) if (turn.sessionId === row.id && !ids.has(id)) this.#deleteTurn(id);
     for (const turn of turns) {
       const old = this.#turns.get(turn.id);
       const corrected = !!old && (!turn.assistantText.startsWith(old.assistantText) || !turn.thoughtText.startsWith(old.thoughtText));
@@ -438,7 +475,7 @@ export class SessionStore {
       const owner = row.openma ?? row.executionTarget;
       if (owner && !scopes.some((scope) => scope.baseUrl === owner.baseUrl && scope.userId === owner.userId && scope.workspaceId === owner.workspaceId)) {
         this.#sessions.delete(id);
-        for (const [turnId, turn] of this.#turns) if (turn.sessionId === id) this.#turns.delete(turnId);
+        for (const [turnId, turn] of this.#turns) if (turn.sessionId === id) this.#deleteTurn(turnId);
       }
     }
     this.#emit();
@@ -470,7 +507,11 @@ export class SessionStore {
           s.kind !== "pair" &&
           s.archivedAt == null,
       )
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort(
+        (a, b) =>
+          (b.lastUsedAt ?? b.createdAt) - (a.lastUsedAt ?? a.createdAt) ||
+          b.createdAt - a.createdAt,
+      );
   }
 
   get(id: string): SessionRow | undefined {
@@ -533,7 +574,7 @@ export class SessionStore {
       sessionId: childId,
       inherited: true,
       status: turn.status === "running" ? "complete" : turn.status,
-      events: turn.events.map((event) => ({ ...event })),
+      events: turn.events,
     };
   }
 
@@ -563,37 +604,80 @@ export class SessionStore {
     return [...inherited, ...own];
   }
 
+  projectTurn = (turn: Turn): TurnRender => {
+    const events = turn.events;
+    const cached = this.#turnProjectionCache.get(turn.id);
+    if (
+      cached
+      && events[0] === cached.first
+      && events.length >= cached.applied
+      && (cached.applied === 0 || events[cached.applied - 1] === cached.last)
+    ) {
+      for (let index = cached.applied; index < events.length; index += 1) {
+        cached.projector.apply(events[index]!);
+      }
+      cached.applied = events.length;
+      cached.first = events[0];
+      cached.last = events.at(-1);
+      return cached.projector.snapshot();
+    }
+
+    const projector = createBackchatTurnProjector();
+    for (const event of events) projector.apply(event);
+    this.#turnProjectionCache.set(turn.id, {
+      projector,
+      applied: events.length,
+      first: events[0],
+      last: events.at(-1),
+    });
+    return projector.snapshot();
+  };
+
+  #deleteTurn(turnId: string): void {
+    this.#turnProjectionCache.delete(turnId);
+    this.#turns.delete(turnId);
+  }
+
   subagentsFor(parentSessionId: string): SubagentActivity[] {
     return [...(this.#subagentsByParent.get(parentSessionId) ?? [])].sort(
       (a, b) => a.startedAt - b.startedAt,
     );
   }
 
-  openmaEventsFor(sessionId: string): OpenMAEvent[] {
-    return [...(this.#openmaEventsBySession.get(sessionId) ?? [])];
+  openmaEventsFor(sessionId: string): readonly OpenMAEvent[] {
+    const log = this.#openmaEventsBySession.get(sessionId);
+    if (!log) return EMPTY_OPENMA_EVENTS;
+    log.eventsView ??= log.events.slice();
+    return log.eventsView;
   }
 
+  /** Read-only and identity-stable until a WorkItem changes. Correlated
+   *  evidence (vendor/raw/monitor events) carries a work_item_id but is not a
+   *  lifecycle edge; the reducer only consumes `work_item.*` events. */
   workItemsFor(sessionId: string): WorkItemSnapshot[] {
-    const events = (this.#openmaEventsBySession.get(sessionId) ?? []).filter(
-      // Correlated evidence keeps its work_item_id for inspection and replay,
-      // but it is not itself a lifecycle edge. openma-common's generic
-      // reducer deliberately merges every correlated event, so keep these
-      // evidence-only records out of the GUI WorkItem projection.
-      (event) =>
-        event.type !== "vendor.event"
-        && event.type !== "raw.event"
-        && event.type !== "monitor.event",
-    );
-    return [...reduceWorkItems(events).items.values()];
+    const log = this.#openmaEventsBySession.get(sessionId);
+    if (!log) return [];
+    const registry = log.workItems.snapshot();
+    if (log.workItemsView?.registry !== registry) {
+      log.workItemsView = { registry, items: [...registry.items.values()] };
+    }
+    return log.workItemsView.items;
   }
 
   #ingestOpenMAEvent(
     event: OpenMAEvent,
     options: { persist?: boolean } = {},
   ): boolean {
-    const events = this.#openmaEventsBySession.get(event.session_id) ?? [];
-    if (events.some((existing) => existing.event_id === event.event_id)) return false;
-    this.#openmaEventsBySession.set(event.session_id, [...events, event]);
+    let log = this.#openmaEventsBySession.get(event.session_id);
+    if (!log) {
+      log = createOpenMAEventLog();
+      this.#openmaEventsBySession.set(event.session_id, log);
+    }
+    if (log.ids.has(event.event_id)) return false;
+    log.ids.add(event.event_id);
+    log.events.push(event);
+    log.eventsView = undefined;
+    log.workItems.apply(event);
     if (options.persist) {
       const persist =
         typeof window !== "undefined"
@@ -767,6 +851,22 @@ export class SessionStore {
           error_details: errorDetails,
           openma_event: event,
           ...(event.turn_id ? { turn_id: event.turn_id } : {}),
+        });
+        return true;
+      }
+      if (event.turn_id) {
+        // A provider failure inside one turn (capacity, bad request, stream
+        // drop) ends that turn; the ACP session is still alive and can take
+        // the next prompt. Same reducer as the live and auth paths, so replay
+        // and live agree and the chat is not locked behind "start a new chat".
+        this.apply({
+          type: "session.error",
+          session_id: event.session_id,
+          turn_id: event.turn_id,
+          message,
+          agent_id: agentId,
+          error_details: errorDetails,
+          openma_event: event,
         });
         return true;
       }
@@ -1005,7 +1105,18 @@ export class SessionStore {
     if (!activity) return true;
     const childTurnId = `${activity.viewSessionId}:turn`;
     const previous = this.#turns.get(childTurnId);
-    const turn: Turn = previous ?? {
+    // Copy a turn the UI may already hold once per replay pass, then extend
+    // the copy in place; copying per event made replay quadratic. SQL is the
+    // transcript's source of truth: a held turn (restored from the side
+    // workspace snapshot on relaunch) keeps its identity and lifecycle, but
+    // its transcript is rebuilt from these rows rather than appended to.
+    const owned = previous && this.#replayOwnedTurns.has(previous);
+    const turn: Turn = owned ? previous : previous ? {
+      ...previous,
+      events: [],
+      assistantText: "",
+      thoughtText: "",
+    } : {
       id: childTurnId,
       sessionId: activity.viewSessionId,
       promptText: activity.task,
@@ -1017,20 +1128,21 @@ export class SessionStore {
     };
     const parsed = parseAcpEvent(event);
     if (parsed.kind === "text") {
-      turn.assistantText = mergeStreamingText(turn.assistantText, parsed.text);
+      turn.assistantText += parsed.text;
       this.#appendStreamEvent(turn, "text", parsed.text, receivedAt, {
         messageId: parsed.messageId,
         phase: parsed.phase,
       });
     } else if (parsed.kind === "thought") {
-      turn.thoughtText = mergeStreamingText(turn.thoughtText, parsed.text);
+      turn.thoughtText += parsed.text;
       this.#appendStreamEvent(turn, "thought", parsed.text, receivedAt, {
         messageId: parsed.messageId,
       });
     } else {
       turn.events.push({ payload: event, receivedAt });
     }
-    this.#turns.set(childTurnId, { ...turn, events: [...turn.events] });
+    this.#replayOwnedTurns.add(turn);
+    this.#turns.set(childTurnId, turn);
     return true;
   }
 
@@ -1294,7 +1406,7 @@ export class SessionStore {
     this.#autoOpenedHtmlBySession.delete(sessionId);
     this.#artifactsBySession.delete(sessionId);
     for (const [tid, turn] of this.#turns) {
-      if (turn.sessionId === sessionId) this.#turns.delete(tid);
+      if (turn.sessionId === sessionId) this.#deleteTurn(tid);
     }
     this.#emit();
   }
@@ -2103,10 +2215,12 @@ export class SessionStore {
     annotations: PromptAnnotation[] = [],
   ): void {
     const row = this.#sessions.get(sessionId);
-    const waitsForSteeringBoundary =
-      !!row?.activeTurnId && delivery?.effectiveDelivery === "llm_boundary";
-    const isQueued =
-      !!row?.activeTurnId && !waitsForSteeringBoundary;
+    const isSteering =
+      !!row?.activeTurnId
+      && delivery?.intent === "steer"
+      && delivery.effectiveDelivery === "llm_boundary";
+    const isQueued = !!row?.activeTurnId && !isSteering;
+    const now = Date.now();
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
@@ -2123,18 +2237,16 @@ export class SessionStore {
       thoughtText: "",
       status: isQueued
         ? "queued"
-        : waitsForSteeringBoundary
-          ? "complete"
-          : "running",
+        : "running",
       clientId: turnId,
       // The bubble is visible immediately. "Working" waits until the host
       // accepts the prompt (the first turn event, or a terminal boundary).
-      sendState: isQueued || waitsForSteeringBoundary ? undefined : "pending",
+      sendState: isQueued ? undefined : "pending",
       promptIntent: delivery?.intent,
       requestedDelivery: delivery?.requestedDelivery,
       effectiveDelivery: delivery?.effectiveDelivery,
       deliveryDegraded: delivery?.degraded,
-      startedAt: Date.now(),
+      startedAt: now,
     });
     this.#mutateSession(sessionId, (s) => ({
       ...s,
@@ -2143,12 +2255,37 @@ export class SessionStore {
         ? [...(s.queuedTurnIds ?? []), turnId]
         : s.queuedTurnIds,
       status: "running",
+      lastUsedAt: Math.max(s.lastUsedAt ?? s.createdAt, now),
     }));
     this.#recordSubagentActivity(sessionId, {
       task: promptText,
       status: "running",
     });
     this.#emit();
+  }
+
+  /** The host's queue snapshot is the authority on what is running. A turn
+   *  replayed from SQL whose terminal event never got persisted (a write that
+   *  failed with ENOSPC, a crash mid-turn) would otherwise stay "running"
+   *  forever. Once the host says it is not active, settle it as interrupted at
+   *  its last persisted event. Optimistic sends still awaiting the host's ack
+   *  are left alone. */
+  #settleOrphanedRunningTurns(
+    sessionId: string,
+    activeTurnId: string | undefined,
+    steeringTurnIds: readonly string[],
+  ): void {
+    const keep = new Set([activeTurnId, ...steeringTurnIds].filter(Boolean));
+    for (const turn of this.#turns.values()) {
+      if (turn.sessionId !== sessionId || turn.status !== "running") continue;
+      if (keep.has(turn.id) || turn.sendState === "pending") continue;
+      this.#turns.set(turn.id, {
+        ...turn,
+        status: "cancelled",
+        stopReason: turn.stopReason ?? "interrupted",
+        endedAt: turn.endedAt ?? turn.startedAt,
+      });
+    }
   }
 
   #markTurnRunning(turnId: string | undefined): void {
@@ -2187,7 +2324,7 @@ export class SessionStore {
       return;
     }
     const host = this.#turns.get(hostTurnId);
-    this.#turns.delete(optimistic.id);
+    this.#deleteTurn(optimistic.id);
     this.#turns.set(hostTurnId, host
       ? {
           ...host,
@@ -2311,109 +2448,6 @@ export class SessionStore {
       lastError: undefined,
     }));
     this.#emit();
-  }
-
-  #acceptSteeringTurn(
-    sessionId: string,
-    activeTurnId: string,
-    steeringTurnId: string,
-  ): void {
-    const key = steeringProjectionKey(sessionId, activeTurnId);
-    const pending = this.#pendingSteeringTurns.get(key) ?? [];
-    if (!pending.includes(steeringTurnId)) {
-      this.#pendingSteeringTurns.set(key, [...pending, steeringTurnId]);
-    }
-    const currentTarget = this.#steeringEventTargets.get(key) ?? activeTurnId;
-    const currentTurn = this.#turns.get(currentTarget);
-    if (
-      this.#modelCallsReadyForOutput.has(key)
-      || !currentTurn
-      || currentTurn.events.length === 0
-    ) {
-      this.#steeringBoundariesArmed.add(key);
-    }
-  }
-
-  #projectSteeringEventTurnId(
-    sessionId: string,
-    sourceTurnId: string,
-    event: unknown,
-  ): string {
-    const key = steeringProjectionKey(sessionId, sourceTurnId);
-    const current = this.#steeringEventTargets.get(key) ?? sourceTurnId;
-    const pending = this.#pendingSteeringTurns.get(key);
-    const type = sessionUpdateType(event);
-    if (type === "usage_update") {
-      this.#modelCallsReadyForOutput.add(key);
-      if (pending?.length) this.#steeringBoundariesArmed.add(key);
-      return current;
-    }
-    if (!isModelOutputBoundary(event)) return current;
-
-    const boundaryArmed = this.#steeringBoundariesArmed.has(key);
-    if (type === "tool_call") {
-      // A tool start is the tail of the model call that requested it. It only
-      // belongs to the steer when a prior completion already armed the next
-      // call; otherwise it arms the call that follows the tool result.
-      this.#modelCallsReadyForOutput.add(key);
-      if (pending?.length && !boundaryArmed) {
-        this.#steeringBoundariesArmed.add(key);
-      }
-    } else {
-      this.#modelCallsReadyForOutput.delete(key);
-    }
-    if (!pending?.length || !boundaryArmed) return current;
-
-    const next = pending.at(-1)!;
-    for (const completedId of [current, ...pending.slice(0, -1)]) {
-      if (completedId === next) continue;
-      const completed = this.#turns.get(completedId);
-      if (completed?.status === "running") {
-        this.#turns.set(completedId, {
-          ...completed,
-          events: [...completed.events],
-          activeThoughtMessageId: undefined,
-          activeThoughtSegmentText: undefined,
-          status: "complete",
-          endedAt: Date.now(),
-        });
-      }
-    }
-    this.#pendingSteeringTurns.delete(key);
-    this.#steeringBoundariesArmed.delete(key);
-    this.#steeringEventTargets.set(key, next);
-    const nextTurn = this.#turns.get(next);
-    if (nextTurn) {
-      this.#turns.set(next, {
-        ...nextTurn,
-        status: "running",
-        endedAt: undefined,
-      });
-    }
-    return next;
-  }
-
-  #settleSteeringProjection(
-    sessionId: string,
-    sourceTurnId: string,
-  ): string {
-    const key = steeringProjectionKey(sessionId, sourceTurnId);
-    const target = this.#steeringEventTargets.get(key) ?? sourceTurnId;
-    for (const pendingId of this.#pendingSteeringTurns.get(key) ?? []) {
-      const pending = this.#turns.get(pendingId);
-      if (pending?.status === "running") {
-        this.#turns.set(pendingId, {
-          ...pending,
-          status: "complete",
-          endedAt: Date.now(),
-        });
-      }
-    }
-    this.#pendingSteeringTurns.delete(key);
-    this.#steeringEventTargets.delete(key);
-    this.#steeringBoundariesArmed.delete(key);
-    this.#modelCallsReadyForOutput.delete(key);
-    return target;
   }
 
   #advanceAfterTurn(sessionId: string, turnId: string, opts?: { unread?: boolean }): void {
@@ -2665,12 +2699,12 @@ export class SessionStore {
       next.status = "running";
       next.endedAt = undefined;
       if (update.kind === "text" && update.text) {
-        next.assistantText = mergeStreamingText(next.assistantText, update.text);
+        next.assistantText += update.text;
         this.#appendStreamEvent(next, "text", update.text, now, {
           messageId: update.messageId,
         });
       } else if (update.kind === "thought" && update.text) {
-        next.thoughtText = mergeStreamingText(next.thoughtText, update.text);
+        next.thoughtText += update.text;
         this.#appendStreamEvent(next, "thought", update.text, now, {
           messageId: update.messageId,
         });
@@ -2738,8 +2772,10 @@ export class SessionStore {
         return parsed.kind === "tool_call" ? [parsed.tool.toolCallId] : [];
       }),
     );
-    const events = this.#openmaEventsBySession.get(sessionId) ?? [];
-    const items = reduceWorkItems(events).items;
+    const events = this.#openmaEventsBySession.get(sessionId)?.events ?? [];
+    const items = new Map(
+      this.workItemsFor(sessionId).map((item) => [item.id, item]),
+    );
     const runningBashStarts = events.filter((event) => {
       if (
         event.type !== "work_item.started"
@@ -3177,6 +3213,7 @@ export class SessionStore {
           projectScope: s.projectScope,
           kind: this.#isPairMember(r.id) ? "pair" : s.kind,
           createdAt: r.created_at || s.createdAt,
+          lastUsedAt: r.last_used_at || r.created_at || s.lastUsedAt || s.createdAt,
           pinnedAt: r.pinned_at ?? undefined,
           archivedAt: r.archived_at ?? undefined,
         }));
@@ -3200,6 +3237,7 @@ export class SessionStore {
         kind: this.#isPairMember(r.id) ? "pair" : undefined,
         status: "ready",
         createdAt: r.created_at,
+        lastUsedAt: r.last_used_at || r.created_at,
         pinnedAt: r.pinned_at ?? undefined,
         archivedAt: r.archived_at ?? undefined,
       });
@@ -3213,7 +3251,7 @@ export class SessionStore {
     const state = this.#history.get(sessionId);
     if (!state) return undefined;
     return {
-      oldestSeq: state.rows[0]?.seq,
+      oldestSeq: state.oldestSeq,
       hasMore: state.hasMore,
       loading: state.loading,
     };
@@ -3237,9 +3275,9 @@ export class SessionStore {
     this.#emit();
   }
 
-  /** Open a session from the newest rows only. The window may start in the
-   *  middle of a turn; the leading fragment renders as a prompt-less head
-   *  turn until prependHistory brings its user prompt into view. */
+  /** Open a session from the newest rows only. Main aligns the window to a
+   *  turn opener; a prompt-less head turn only appears for rows that precede
+   *  the first prompt of a log that still has older rows. */
   replayHistoryWindow(
     sessionId: string,
     rows: HistoryRow[],
@@ -3248,14 +3286,25 @@ export class SessionStore {
     this.#historyPending.delete(sessionId);
     if (!this.#shouldMaterializeHistoryFromSql(sessionId)) { this.#emit(); return; }
     this.#clearMaterializableTurns(sessionId);
-    this.#history.set(sessionId, { rows: [...rows], hasMore: opts.hasMore, loading: false });
-    this.#replayRows(sessionId, rows, { partialHead: opts.hasMore, notices: true });
+    const agentLifecycle = this.#replayRows(sessionId, rows, {
+      partialHead: opts.hasMore,
+      notices: true,
+    });
+    this.#history.set(sessionId, {
+      oldestSeq: rows[0]?.seq,
+      hasMore: opts.hasMore,
+      loading: false,
+      agentLifecycle,
+    });
+    if (!opts.hasMore) this.#pruneNonCanonicalSubagents(sessionId, agentLifecycle);
+    this.#emit();
   }
 
-  /** Page older rows in front of the current window. Turns are rebuilt from
-   *  the combined rows — a few thousand rows replay in milliseconds and it
-   *  keeps one code path for turn boundaries, steering and dedupe. Live turns
-   *  (non-replay ids) are preserved in place. */
+  /** Page older rows in front of the current window. A page holds whole
+   *  turns, so only the new rows are replayed: existing turn objects (and
+   *  their cached projections) are kept, which keeps React work proportional
+   *  to the page instead of the window. Session-level projections are
+   *  "latest wins" and keep the state the newer rows already produced. */
   prependHistory(
     sessionId: string,
     olderRows: HistoryRow[],
@@ -3265,49 +3314,81 @@ export class SessionStore {
     if (!state) return;
     state.loading = false;
     state.hasMore = opts.hasMore;
-    if (olderRows.length === 0) {
-      // Nothing older exists; the head fragment is now the real start.
-      if (!state.hasMore) this.#rebuildFromWindow(sessionId, state);
-      else this.#emit();
-      return;
+    const oldest = state.oldestSeq;
+    const rows = olderRows.filter((row) => oldest === undefined || row.seq < oldest);
+    if (rows.length > 0) {
+      state.oldestSeq = rows[0]!.seq;
+      state.agentLifecycle = [
+        ...this.#prependReplay(sessionId, rows, state.hasMore),
+        ...state.agentLifecycle,
+      ];
     }
-    const oldest = state.rows[0]?.seq;
-    state.rows = [
-      ...olderRows.filter((row) => oldest === undefined || row.seq < oldest),
-      ...state.rows,
-    ];
-    this.#rebuildFromWindow(sessionId, state);
+    if (!state.hasMore) this.#pruneNonCanonicalSubagents(sessionId, state.agentLifecycle);
+    this.#emit();
   }
 
-  #rebuildFromWindow(sessionId: string, state: HistoryWindowState): void {
-    // Drop replayed turns (and the child transcript turns they projected)
-    // but keep live turns, re-inserted after the rebuilt history so the
-    // Map's registration order still reads oldest → newest.
-    const live: Array<[string, Turn]> = [];
-    for (const [id, turn] of this.#turns) {
-      if (turn.sessionId !== sessionId) continue;
-      if (id.startsWith(`replay-${sessionId}-`)) this.#turns.delete(id);
-      else {
-        live.push([id, turn]);
-        this.#turns.delete(id);
-      }
-    }
-    for (const activity of this.#subagentsByParent.get(sessionId) ?? []) {
-      this.#turns.delete(`${activity.viewSessionId}:turn`);
-    }
-    // Session-level projections (status, usage, title, subagent status) are
-    // "latest wins". The current row already reflects the newest rows plus
-    // any live events; older pages must not roll it back.
-    const sessionBefore = this.#sessions.get(sessionId);
+  #prependReplay(
+    sessionId: string,
+    rows: HistoryRow[],
+    partialHead: boolean,
+  ): NativeAgentLifecycleFact[] {
+    // Detach the newer turns (parent and subagent transcript turns) so the
+    // replay registers the older ones first; Map order reads oldest → newest.
     const activitiesBefore = this.#subagentsByParent.get(sessionId);
-    this.#replayRows(sessionId, state.rows, {
-      partialHead: state.hasMore,
+    const childTurnIds = new Set(
+      (activitiesBefore ?? []).map((activity) => `${activity.viewSessionId}:turn`),
+    );
+    const newer: Turn[] = [];
+    const newerChildren = new Map<string, Turn>();
+    for (const [id, turn] of this.#turns) {
+      if (turn.sessionId === sessionId) newer.push(turn);
+      else if (childTurnIds.has(id)) newerChildren.set(id, turn);
+      else continue;
+      this.#turns.delete(id);
+    }
+    const sessionBefore = this.#sessions.get(sessionId);
+    const agentLifecycle = this.#replayRows(sessionId, rows, {
+      partialHead,
       notices: false,
     });
     if (sessionBefore) this.#sessions.set(sessionId, sessionBefore);
-    if (activitiesBefore) this.#subagentsByParent.set(sessionId, activitiesBefore);
-    for (const [id, turn] of live) this.#turns.set(id, turn);
-    this.#emit();
+    // Pages are disjoint in seq, so a turn id present on both sides is one
+    // turn split by the boundary: the older page holds its start, the newer
+    // rows its continuation (a queueing harness can write a turn's tail,
+    // terminal included, after later prompts). Join them by id, in the older
+    // turn's position. The id-less legacy head continues the newest older turn.
+    const headId = `replay-${sessionId}-head`;
+    let owner: Turn | undefined;
+    for (const turn of this.#turns.values()) {
+      if (turn.sessionId === sessionId) owner = turn;
+    }
+    for (const turn of newer) {
+      const older = this.#turns.get(turn.id);
+      if (older && older !== turn) {
+        this.#turns.set(turn.id, foldHeadIntoTurn(older, turn));
+        this.#turnProjectionCache.delete(turn.id);
+      } else if (turn.id === headId && owner && owner.id !== headId) {
+        this.#turns.set(owner.id, foldHeadIntoTurn(owner, turn));
+        this.#turnProjectionCache.delete(headId);
+        this.#turnProjectionCache.delete(owner.id);
+      } else {
+        this.#turns.set(turn.id, turn);
+      }
+    }
+    for (const [id, turn] of newerChildren) {
+      const older = this.#turns.get(id);
+      this.#turns.delete(id);
+      this.#turns.set(id, older ? concatChildTranscriptTurns(older, turn) : turn);
+    }
+    // Activities first seen in the older page are added; the ones the newer
+    // rows already know keep their newer state.
+    if (activitiesBefore) {
+      const known = new Set(activitiesBefore.map((activity) => activity.childSessionId));
+      const discovered = (this.#subagentsByParent.get(sessionId) ?? [])
+        .filter((activity) => !known.has(activity.childSessionId));
+      this.#subagentsByParent.set(sessionId, [...discovered, ...activitiesBefore]);
+    }
+    return agentLifecycle;
   }
 
   #hasSessionTurns(sessionId: string): boolean {
@@ -3354,13 +3435,18 @@ export class SessionStore {
     if (!this.#shouldMaterializeHistoryFromSql(sessionId)) { this.#emit(); return; }
     this.#clearMaterializableTurns(sessionId);
     this.#history.delete(sessionId);
-    this.#replayRows(sessionId, rows, { partialHead: false, notices: true });
+    const agentLifecycle = this.#replayRows(sessionId, rows, {
+      partialHead: false,
+      notices: true,
+    });
+    this.#pruneNonCanonicalSubagents(sessionId, agentLifecycle);
+    this.#emit();
   }
 
   #clearMaterializableTurns(sessionId: string): void {
     for (const [id, turn] of this.#turns) {
       if (turn.sessionId === sessionId && !turn.inherited) {
-        this.#turns.delete(id);
+        this.#deleteTurn(id);
       }
     }
   }
@@ -3369,21 +3455,24 @@ export class SessionStore {
     sessionId: string,
     rows: HistoryRow[],
     opts: { partialHead: boolean; notices: boolean },
-  ): void {
+  ): NativeAgentLifecycleFact[] {
+    this.#replayOwnedTurns = new WeakSet();
     const notify = (message: string) => {
       if (opts.notices) this.#showNotice(sessionId, message, "warning");
     };
-    // A window that opens mid-turn has no prompt row for its first events.
-    // Give them a prompt-less head turn instead of dropping them; the id is
-    // stable across rebuilds until the real prompt arrives and absorbs it.
-    const makeHead = (ts: number): Turn => ({
-      id: `replay-${sessionId}-head`,
+    // A window can hold rows of a turn whose prompt is in an older page:
+    // the window opened mid-turn, or a queueing harness wrote the turn's tail
+    // after later prompts. Keep those rows under the turn's own id as a
+    // prompt-less continuation; when the older page lands, prependHistory
+    // joins the two by id. Rows with no turn id share one legacy head.
+    const makeHead = (ts: number, turnId?: string): Turn => ({
+      id: turnId ?? `replay-${sessionId}-head`,
       sessionId,
       promptText: "",
       events: [],
       assistantText: "",
       thoughtText: "",
-      status: "complete",
+      status: "running",
       startedAt: ts,
       endedAt: ts,
     });
@@ -3408,7 +3497,7 @@ export class SessionStore {
         .map(persistedEventFingerprint),
     );
     const richerCanonicalByRawOccurrence = new Map<string, OpenMAEvent>();
-    const canonicalNativeAgentIds = new Set<string>();
+    const agentLifecycle: NativeAgentLifecycleFact[] = [];
     for (const { canonical } of prepared) {
       if (canonical?.work_item_id) {
         const canonicalData = isPlainRecord(canonical.data)
@@ -3418,16 +3507,16 @@ export class SessionStore {
           canonical.type === "work_item.started"
           && canonicalData.kind === "agent"
         ) {
-          canonicalNativeAgentIds.add(canonical.work_item_id);
-        } else if (canonical.type === "work_item.reidentified") {
-          const previousId =
-            typeof canonicalData.previous_work_item_id === "string"
-              ? canonicalData.previous_work_item_id
-              : undefined;
-          if (previousId && canonicalNativeAgentIds.has(previousId)) {
-            canonicalNativeAgentIds.delete(previousId);
-            canonicalNativeAgentIds.add(canonical.work_item_id);
-          }
+          agentLifecycle.push({ type: "started", id: canonical.work_item_id });
+        } else if (
+          canonical.type === "work_item.reidentified"
+          && typeof canonicalData.previous_work_item_id === "string"
+        ) {
+          agentLifecycle.push({
+            type: "reidentified",
+            id: canonical.work_item_id,
+            previousId: canonicalData.previous_work_item_id,
+          });
         }
       }
       if (!canonical?.raw?.payload || !canonical.work_item_id) continue;
@@ -3442,9 +3531,12 @@ export class SessionStore {
     }
 
     let current: Turn | null = null;
-    let pendingSteering: Turn[] = [];
-    let steeringBoundaryArmed = false;
-    let modelCallReadyForOutput = false;
+    const turnsByCanonicalId = new Map<string, Turn>();
+    // A legacy `user_prompt` row (pre-canonical histories) opens a turn but
+    // carries no turn id. The canonical rows that follow it carry the host
+    // turn id, so the first unknown id claims that turn instead of being
+    // dropped for having no canonical user.message.
+    let unclaimedLegacyTurn: Turn | null = null;
     for (const { row: r, data, canonical } of prepared) {
       if (canonical) {
         const canonicalRaw = canonical.raw?.payload;
@@ -3478,9 +3570,28 @@ export class SessionStore {
             : {};
           const inputKind = input.input_kind;
           if (inputKind === "prompt" || inputKind === "steering") {
-            if (current) this.#turns.set(current.id, current);
-            // Row seq keys the turn so ids survive a rebuild after paging.
-            const tid = `replay-${sessionId}-${r.seq}`;
+            const activeTurnId =
+              typeof input.active_turn_id === "string"
+                ? input.active_turn_id
+                : undefined;
+            if (inputKind === "steering" && input.outcome === "injected") {
+              let activeTurn =
+                (activeTurnId ? turnsByCanonicalId.get(activeTurnId) : undefined)
+                ?? (activeTurnId ? this.#turns.get(activeTurnId) : undefined);
+              if (!activeTurn && opts.partialHead) {
+                activeTurn = makeHead(r.ts, activeTurnId);
+                if (activeTurnId) {
+                  turnsByCanonicalId.set(activeTurnId, activeTurn);
+                }
+                this.#turns.set(activeTurn.id, activeTurn);
+              }
+              if (activeTurn) {
+                activeTurn.events.push({ payload: canonical, receivedAt: r.ts });
+                activeTurn.endedAt = Math.max(activeTurn.endedAt ?? activeTurn.startedAt, r.ts);
+              }
+              continue;
+            }
+            const tid = canonical.turn_id ?? `replay-${sessionId}-${r.seq}`;
             const next: Turn = {
               id: tid,
               sessionId,
@@ -3498,64 +3609,43 @@ export class SessionStore {
               events: [],
               assistantText: "",
               thoughtText: "",
-              status: "complete",
+              status: "running",
               startedAt: r.ts,
               endedAt: r.ts,
             };
             if (inputKind === "steering") {
-              this.#turns.set(tid, next);
-              pendingSteering.push(next);
-              if (
-                modelCallReadyForOutput
-                || !current
-                || current.events.length === 0
-              ) {
-                steeringBoundaryArmed = true;
-              }
-            } else {
-              pendingSteering = [];
-              steeringBoundaryArmed = false;
-              modelCallReadyForOutput = false;
-              current = next;
+              next.events.push({ payload: canonical, receivedAt: r.ts });
             }
+            if (canonical.turn_id) turnsByCanonicalId.set(canonical.turn_id, next);
+            this.#turns.set(tid, next);
+            current = next;
+            unclaimedLegacyTurn = null;
           }
           continue;
         }
 
         const parsedCanonical = parseAcpEvent(canonical);
-        const startsModelOutput =
-          parsedCanonical.kind === "text"
-          || parsedCanonical.kind === "thought"
-          || canonical.type === "tool.started"
-          || canonical.type === "plan.updated"
-          || canonical.type === "plan.completed";
-        const boundaryWasArmed = steeringBoundaryArmed;
-        if (canonical.type === "usage.updated") {
-          modelCallReadyForOutput = true;
-          if (pendingSteering.length > 0) steeringBoundaryArmed = true;
-        } else if (canonical.type === "tool.started") {
-          modelCallReadyForOutput = true;
-          if (pendingSteering.length > 0 && !boundaryWasArmed) {
-            steeringBoundaryArmed = true;
-          }
-        } else if (startsModelOutput) {
-          modelCallReadyForOutput = false;
+        let turn = canonical.turn_id
+          ? turnsByCanonicalId.get(canonical.turn_id)
+            ?? this.#turns.get(canonical.turn_id)
+          : undefined;
+        if (!turn && canonical.turn_id && unclaimedLegacyTurn) {
+          turn = unclaimedLegacyTurn;
+          turnsByCanonicalId.set(canonical.turn_id, turn);
+          unclaimedLegacyTurn = null;
         }
-        if (
-          pendingSteering.length > 0
-          && startsModelOutput
-          && boundaryWasArmed
-        ) {
-          if (current) this.#turns.set(current.id, current);
-          current = pendingSteering.at(-1)!;
-          pendingSteering = [];
-          steeringBoundaryArmed = false;
+        // A canonical row with no turn_id is session-scoped (background
+        // processes, work items): it has no turn to continue, so it must not
+        // conjure a prompt-less head that sits "running" forever.
+        if (!turn && opts.partialHead && canonical.turn_id) {
+          turn = makeHead(r.ts, canonical.turn_id);
+          if (canonical.turn_id) turnsByCanonicalId.set(canonical.turn_id, turn);
+          this.#turns.set(turn.id, turn);
         }
-        if (!current && opts.partialHead) current = makeHead(r.ts);
-        if (!current) continue;
-        current.endedAt = Math.max(current.endedAt ?? current.startedAt, r.ts);
+        if (!turn) continue;
+        turn.endedAt = Math.max(turn.endedAt ?? turn.startedAt, r.ts);
         if (canonical.type === "turn.completed") {
-          current.status = "complete";
+          turn.status = "complete";
           // The stop reason is on disk and was being dropped, so a turn cut off
           // at a limit or declined came back from a restart looking like an
           // ordinary finished answer — the live view said one thing and the
@@ -3564,7 +3654,7 @@ export class SessionStore {
             ? canonical.data
             : undefined;
           if (typeof completedData?.["stop_reason"] === "string") {
-            current.stopReason = completedData["stop_reason"];
+            turn.stopReason = completedData["stop_reason"];
           }
           // A provider-owned session.running fact can precede the host-owned
           // turn terminal in the persisted stream (Pi reports exactly this).
@@ -3579,29 +3669,29 @@ export class SessionStore {
           continue;
         }
         if (canonical.type === "turn.cancelled") {
-          current.status = "cancelled";
+          turn.status = "cancelled";
           continue;
         }
         if (canonical.type === "turn.failed") {
-          current.status = "error";
+          turn.status = "error";
           const errorData = isPlainRecord(canonical.data)
             ? canonical.data
             : undefined;
-          current.errorMessage =
+          turn.errorMessage =
             typeof errorData?.message === "string"
               ? errorData.message
-              : current.errorMessage;
+              : turn.errorMessage;
           continue;
         }
         if (canonical.type === "session.error" && canonical.turn_id) {
-          current.status = "error";
+          turn.status = "error";
           const errorData = isPlainRecord(canonical.data)
             ? canonical.data
             : undefined;
-          current.errorMessage =
+          turn.errorMessage =
             typeof errorData?.message === "string"
               ? errorData.message
-              : current.errorMessage;
+              : turn.errorMessage;
           continue;
         }
 
@@ -3613,22 +3703,16 @@ export class SessionStore {
           if (split.notice) {
             notify(split.notice);
           }
-          current.assistantText = mergeStreamingText(
-            current.assistantText,
-            split.transcript,
-          );
+          turn.assistantText += split.transcript;
           if (split.transcript) {
-            this.#appendStreamEvent(current, "text", split.transcript, r.ts, {
+            this.#appendStreamEvent(turn, "text", split.transcript, r.ts, {
               messageId: parsedCanonical.messageId,
               phase: parsedCanonical.phase,
             });
           }
         } else if (parsedCanonical.kind === "thought") {
-          current.thoughtText = mergeStreamingText(
-            current.thoughtText,
-            parsedCanonical.text,
-          );
-          this.#appendStreamEvent(current, "thought", parsedCanonical.text, r.ts, {
+          turn.thoughtText += parsedCanonical.text;
+          this.#appendStreamEvent(turn, "thought", parsedCanonical.text, r.ts, {
             messageId: parsedCanonical.messageId,
           });
         } else if (
@@ -3641,7 +3725,7 @@ export class SessionStore {
           || canonical.type === "plan.completed"
           || canonical.type === "plan.removed"
         ) {
-          current.events.push({ payload: canonical, receivedAt: r.ts });
+          turn.events.push({ payload: canonical, receivedAt: r.ts });
         }
         continue;
       }
@@ -3686,6 +3770,7 @@ export class SessionStore {
           startedAt: r.ts,
           endedAt: r.ts,
         };
+        unclaimedLegacyTurn = current;
       } else {
         if (!current && opts.partialHead) current = makeHead(r.ts);
         if (!current) continue;
@@ -3724,10 +3809,7 @@ export class SessionStore {
             if (split.notice) {
               notify(split.notice);
             }
-            current.assistantText = mergeStreamingText(
-              current.assistantText,
-              split.transcript,
-            );
+            current.assistantText += split.transcript;
             if (split.transcript) {
               this.#appendStreamEvent(current, "text", split.transcript, r.ts, {
                 messageId: parsed.messageId,
@@ -3735,7 +3817,7 @@ export class SessionStore {
               });
             }
           } else if (parsed.kind === "thought") {
-            current.thoughtText = mergeStreamingText(current.thoughtText, parsed.text);
+            current.thoughtText += parsed.text;
             this.#appendStreamEvent(current, "thought", parsed.text, r.ts, {
               messageId: parsed.messageId,
             });
@@ -3746,63 +3828,75 @@ export class SessionStore {
       }
     }
     if (current) this.#turns.set(current.id, current);
-    // A partial window cannot prove which subagent tabs are stale — their
-    // lifecycle rows may live in pages that are not loaded yet.
-    if (!opts.partialHead && canonicalNativeAgentIds.size > 0) {
-      // Side-workspace snapshots are restored before SQL history. Native
-      // subagent tabs are projections of canonical lifecycle events, so a
-      // hot reload must discard snapshot-only children that are absent from
-      // the replayed stream. Otherwise each reload accumulates another
-      // random view id and leaves stale "Running / Thinking" tabs beside a
-      // terminal child that has already completed.
-      const previousActivities = this.#subagentsByParent.get(sessionId) ?? [];
-      const canonicalActivities = previousActivities.filter((activity) =>
-        canonicalNativeAgentIds.has(activity.childSessionId),
-      );
-      const canonicalViewIds = new Set(
-        canonicalActivities.map((activity) => activity.viewSessionId),
-      );
-      const removedViewIds = new Set(
-        previousActivities
-          .filter((activity) => !canonicalNativeAgentIds.has(activity.childSessionId))
-          .map((activity) => activity.viewSessionId),
-      );
-      const previousTabs = this.#sideTabsByMain.get(sessionId) ?? [];
-      const seenCanonicalSubagentViews = new Set<string>();
-      const nextTabs = previousTabs.filter((tab) => {
-        if (tab.type !== "subagent") return true;
-        if (canonicalViewIds.has(tab.payload)) {
-          if (seenCanonicalSubagentViews.has(tab.payload)) return false;
-          seenCanonicalSubagentViews.add(tab.payload);
-          return true;
-        }
-        removedViewIds.add(tab.payload);
-        return false;
-      });
-      this.#subagentsByParent.set(sessionId, canonicalActivities);
-      if (nextTabs.length > 0) this.#sideTabsByMain.set(sessionId, nextTabs);
-      else this.#sideTabsByMain.delete(sessionId);
-      const activeTabId = this.#activeSideTabByMain.get(sessionId);
-      if (activeTabId && !nextTabs.some((tab) => tab.id === activeTabId)) {
-        const fallback = nextTabs.at(-1)?.id;
-        if (fallback) this.#activeSideTabByMain.set(sessionId, fallback);
-        else this.#activeSideTabByMain.delete(sessionId);
+    for (const turn of turnsByCanonicalId.values()) this.#turns.set(turn.id, turn);
+    return agentLifecycle;
+  }
+
+  /** Side-workspace snapshots are restored before SQL history. Native
+   *  subagent tabs are projections of canonical lifecycle events, so once the
+   *  whole log has been replayed, discard snapshot-only children that are
+   *  absent from it. Otherwise each reload accumulates another random view
+   *  id and leaves stale "Running / Thinking" tabs beside a terminal child
+   *  that has already completed. A partial window cannot prove staleness —
+   *  lifecycle rows may live in pages that are not loaded yet. */
+  #pruneNonCanonicalSubagents(
+    sessionId: string,
+    agentLifecycle: readonly NativeAgentLifecycleFact[],
+  ): void {
+    const canonicalNativeAgentIds = canonicalNativeAgentIdsOf(agentLifecycle);
+    if (canonicalNativeAgentIds.size === 0) return;
+    // Side-workspace snapshots are restored before SQL history. Native
+    // subagent tabs are projections of canonical lifecycle events, so a
+    // hot reload must discard snapshot-only children that are absent from
+    // the replayed stream. Otherwise each reload accumulates another
+    // random view id and leaves stale "Running / Thinking" tabs beside a
+    // terminal child that has already completed.
+    const previousActivities = this.#subagentsByParent.get(sessionId) ?? [];
+    const canonicalActivities = previousActivities.filter((activity) =>
+      canonicalNativeAgentIds.has(activity.childSessionId),
+    );
+    const canonicalViewIds = new Set(
+      canonicalActivities.map((activity) => activity.viewSessionId),
+    );
+    const removedViewIds = new Set(
+      previousActivities
+        .filter((activity) => !canonicalNativeAgentIds.has(activity.childSessionId))
+        .map((activity) => activity.viewSessionId),
+    );
+    const previousTabs = this.#sideTabsByMain.get(sessionId) ?? [];
+    const seenCanonicalSubagentViews = new Set<string>();
+    const nextTabs = previousTabs.filter((tab) => {
+      if (tab.type !== "subagent") return true;
+      if (canonicalViewIds.has(tab.payload)) {
+        if (seenCanonicalSubagentViews.has(tab.payload)) return false;
+        seenCanonicalSubagentViews.add(tab.payload);
+        return true;
       }
-      for (const viewSessionId of removedViewIds) {
-        const row = this.#sessions.get(viewSessionId);
-        if (
-          row?.sideKind === "subagent"
-          && row.subagent?.parentSessionId === sessionId
-        ) {
-          this.#sessions.delete(viewSessionId);
-        }
-        for (const [turnId, turn] of this.#turns) {
-          if (turn.sessionId === viewSessionId) this.#turns.delete(turnId);
-        }
-      }
-      this.#syncVisibleSideSession(sessionId);
+      removedViewIds.add(tab.payload);
+      return false;
+    });
+    this.#subagentsByParent.set(sessionId, canonicalActivities);
+    if (nextTabs.length > 0) this.#sideTabsByMain.set(sessionId, nextTabs);
+    else this.#sideTabsByMain.delete(sessionId);
+    const activeTabId = this.#activeSideTabByMain.get(sessionId);
+    if (activeTabId && !nextTabs.some((tab) => tab.id === activeTabId)) {
+      const fallback = nextTabs.at(-1)?.id;
+      if (fallback) this.#activeSideTabByMain.set(sessionId, fallback);
+      else this.#activeSideTabByMain.delete(sessionId);
     }
-    this.#emit();
+    for (const viewSessionId of removedViewIds) {
+      const row = this.#sessions.get(viewSessionId);
+      if (
+        row?.sideKind === "subagent"
+        && row.subagent?.parentSessionId === sessionId
+      ) {
+        this.#sessions.delete(viewSessionId);
+      }
+      for (const [turnId, turn] of this.#turns) {
+        if (turn.sessionId === viewSessionId) this.#deleteTurn(turnId);
+      }
+    }
+    this.#syncVisibleSideSession(sessionId);
   }
 
   // ------- Reducer driven by main → renderer push events -------
@@ -4033,11 +4127,7 @@ export class SessionStore {
           }));
           break;
         }
-        const eventTurnId = this.#projectSteeringEventTurnId(
-          ev.session_id,
-          ev.turn_id,
-          ev.event,
-        );
+        const eventTurnId = ev.turn_id;
         const runtimeAdapter = resolveAgentRuntimeAdapter(
           this.#sessions.get(ev.session_id)?.agent_id,
         );
@@ -4132,29 +4222,19 @@ export class SessionStore {
             if (parsed.kind === "text") {
               turn.activeThoughtMessageId = undefined;
               turn.activeThoughtSegmentText = undefined;
-              const next = mergeStreamingText(turn.assistantText, text);
-              const delta = next.startsWith(turn.assistantText)
-                ? next.slice(turn.assistantText.length)
-                : "";
-              turn.assistantText = next;
-              if (delta) this.#emitStream(eventTurnId, { kind: "assistant", text: delta });
+              turn.assistantText += text;
+              if (text) this.#emitStream(eventTurnId, { kind: "assistant", text });
             } else {
               if (thoughtMessageChanged || thoughtSectionBreak) {
                 turn.activeThoughtMessageId = parsed.messageId;
                 turn.activeThoughtSegmentText = "";
               }
               if (!thoughtSectionBreak) {
-                turn.activeThoughtSegmentText = mergeStreamingText(
-                  turn.activeThoughtSegmentText ?? "",
-                  text,
-                );
+                turn.activeThoughtSegmentText =
+                  (turn.activeThoughtSegmentText ?? "") + text;
               }
-              const next = mergeStreamingText(turn.thoughtText, text);
-              const delta = next.startsWith(turn.thoughtText)
-                ? next.slice(turn.thoughtText.length)
-                : "";
-              turn.thoughtText = next;
-              if (delta) this.#emitStream(eventTurnId, { kind: "thought", text: delta });
+              turn.thoughtText += text;
+              if (text) this.#emitStream(eventTurnId, { kind: "thought", text });
             }
             // Preserve timeline ordering without retaining one array entry
             // per token. React is deliberately asleep in this branch; the
@@ -4170,6 +4250,7 @@ export class SessionStore {
                 ...(parsed.kind === "text" ? { phase: parsed.phase } : {}),
               },
             );
+            let ingestedWorkItemEvents = false;
             if (parsed.kind === "text" && runtimeAdapter?.assistantBackgroundWorkItemUpdates) {
               for (const update of runtimeAdapter.assistantBackgroundWorkItemUpdates(text)) {
                 for (const event of runtimeWorkItemUpdateToOpenMAEvents(update, {
@@ -4178,11 +4259,13 @@ export class SessionStore {
                   occurredAt: new Date().toISOString(),
                   adapter: runtimeAdapter.provider,
                 })) {
-                  this.#ingestOpenMAEvent(event, { persist: true });
+                  if (this.#ingestOpenMAEvent(event, { persist: true })) {
+                    ingestedWorkItemEvents = true;
+                  }
                 }
               }
             }
-            if (
+            const shouldPublishStreamMount =
               shouldMountThought ||
               assistantNeedsMount ||
               // A tool call breaks the text run, so the text after it is a new
@@ -4191,8 +4274,8 @@ export class SessionStore {
               // commentary segment invisible for as long as it streamed — it
               // appeared, already whole, at the next structural event.
               (parsed.kind === "text" && openedSegment) ||
-              (parsed.kind === "text" && wasShowingThought)
-            ) {
+              (parsed.kind === "text" && wasShowingThought);
+            if (shouldPublishStreamMount) {
               // Selectors shallow-compare Turn identities. Replace this one
               // object exactly once so the streaming answer or Reasoning
               // block actually mounts; later chunks keep mutating the
@@ -4201,9 +4284,17 @@ export class SessionStore {
                 ...turn,
                 events: [...turn.events],
               });
+            }
+            const isHighFrequencyStreamChunk =
+              ev.openma_event?.type === "agent.message_chunk" ||
+              ev.openma_event?.type === "agent.thinking";
+            if (
+              shouldPublishStreamMount ||
+              ingestedWorkItemEvents ||
+              (ev.openma_event && !isHighFrequencyStreamChunk)
+            ) {
               this.#emit();
             }
-            if (ev.openma_event) this.#emit();
             this.#acceptOptimisticSend(eventTurnId);
             return;
           }
@@ -4268,9 +4359,8 @@ export class SessionStore {
           // URL/path from the initial tool_call. Normalize only after
           // reducing the turn so provider adapters receive the complete
           // logical tool event.
-          const tool = reduceTurn(
-            this.#turns.get(eventTurnId)?.events ?? [],
-          ).tools.find(
+          const turn = this.#turns.get(eventTurnId);
+          const tool = (turn ? this.projectTurn(turn) : undefined)?.tools.find(
             (candidate) => candidate.toolCallId === parsed.tool.toolCallId,
           ) ?? parsed.tool;
           // Native lifecycle patches are intentionally interpreted in their
@@ -4367,25 +4457,89 @@ export class SessionStore {
       }
       case "session.steering": {
         if (ev.outcome === "injected") {
-          const turn = this.#turns.get(ev.turn_id);
-          if (turn) {
-            this.#turns.set(ev.turn_id, {
-              ...turn,
-              status: "complete",
-              effectiveDelivery: ev.effective_delivery,
-              deliveryDegraded: ev.delivery_degraded ?? false,
-            });
+          const openmaEvent = ev.openma_event;
+          const data =
+            openmaEvent?.data && typeof openmaEvent.data === "object"
+              ? openmaEvent.data as Record<string, unknown>
+              : undefined;
+          const activeTurnId =
+            typeof data?.active_turn_id === "string"
+              ? data.active_turn_id
+              : ev.active_turn_id;
+          if (
+            openmaEvent?.type === "user.message"
+            && data?.input_kind === "steering"
+            && data?.outcome === "injected"
+            && activeTurnId
+          ) {
+            const turn = this.#turns.get(activeTurnId) ?? {
+              id: activeTurnId,
+              sessionId: ev.session_id,
+              promptText: "",
+              events: [],
+              assistantText: "",
+              thoughtText: "",
+              status: "running" as const,
+              startedAt: Date.now(),
+            };
+            const eventId = openmaEvent.event_id;
+            if (!turn.events.some((entry) =>
+              isPlainRecord(entry.payload) && entry.payload.event_id === eventId
+            )) {
+              this.#turns.set(activeTurnId, {
+                ...turn,
+                events: [
+                  ...turn.events,
+                  { payload: openmaEvent, receivedAt: Date.now() },
+                ],
+              });
+            }
+            if (ev.turn_id !== activeTurnId) this.#deleteTurn(ev.turn_id);
+          } else {
+            const turn = this.#turns.get(ev.turn_id);
+            if (turn) {
+              this.#turns.set(ev.turn_id, {
+                ...turn,
+                status: "complete",
+                effectiveDelivery: ev.effective_delivery,
+                deliveryDegraded: ev.delivery_degraded ?? false,
+              });
+            }
           }
-          this.#acceptSteeringTurn(
-            ev.session_id,
-            ev.active_turn_id,
-            ev.turn_id,
-          );
         } else if (ev.outcome === "startedNewTurn") {
-          const turn = this.#turns.get(ev.turn_id);
-          if (turn) {
+          const openmaEvent = ev.openma_event;
+          const data =
+            openmaEvent?.data && typeof openmaEvent.data === "object"
+              ? openmaEvent.data as Record<string, unknown>
+              : undefined;
+          const turn =
+            this.#turns.get(ev.turn_id)
+            ?? (openmaEvent?.type === "user.message"
+              ? {
+                  id: ev.turn_id,
+                  sessionId: ev.session_id,
+                  promptText: typeof data?.text === "string" ? data.text : ev.text,
+                  events: [],
+                  assistantText: "",
+                  thoughtText: "",
+                  status: "running" as const,
+                  startedAt: Date.now(),
+                }
+              : undefined);
+          if (
+            turn
+            && openmaEvent?.type === "user.message"
+            && data?.input_kind === "steering"
+            && data?.outcome === "startedNewTurn"
+          ) {
+            const eventId = openmaEvent.event_id;
             this.#turns.set(ev.turn_id, {
               ...turn,
+              events: turn.events.some((entry) =>
+                isPlainRecord(entry.payload) && entry.payload.event_id === eventId
+              )
+                ? turn.events
+                : [...turn.events, { payload: openmaEvent, receivedAt: Date.now() }],
               status: "running",
               endedAt: undefined,
             });
@@ -4409,14 +4563,11 @@ export class SessionStore {
         break;
       }
       case "session.tool_cancelled": {
-        const projectedTurnId = this.#projectSteeringEventTurnId(
-          ev.session_id,
-          ev.turn_id,
-          { sessionUpdate: "tool_call_update" },
-        );
-        const turn = this.#turns.get(projectedTurnId);
+        const turn = this.#turns.get(ev.turn_id);
         if (turn) {
-          turn.events.push({
+          this.#turns.set(ev.turn_id, {
+            ...turn,
+            events: [...turn.events, {
             payload: ev.openma_event ?? {
               schema_version: "oma.event.v1",
               event_id: `tool-cancelled:${ev.session_id}:${ev.turn_id}:${ev.tool_call_id}`,
@@ -4432,18 +4583,15 @@ export class SessionStore {
               },
             },
             receivedAt: Date.now(),
+            }],
           });
         }
         break;
       }
       case "session.cancelled": {
-        const projectedTurnId = this.#settleSteeringProjection(
-          ev.session_id,
-          ev.turn_id,
-        );
-        const turn = this.#turns.get(projectedTurnId);
+        const turn = this.#turns.get(ev.turn_id);
         if (turn) {
-          this.#turns.set(projectedTurnId, {
+          this.#turns.set(ev.turn_id, {
             ...turn,
             status: "cancelled",
             endedAt: Date.now(),
@@ -4462,11 +4610,7 @@ export class SessionStore {
         break;
       }
       case "session.complete": {
-        const projectedTurnId = this.#settleSteeringProjection(
-          ev.session_id,
-          ev.turn_id,
-        );
-        const turn = this.#turns.get(projectedTurnId);
+        const turn = this.#turns.get(ev.turn_id);
         if (turn) {
           const runtimeAdapter = resolveAgentRuntimeAdapter(
             this.#sessions.get(ev.session_id)?.agent_id,
@@ -4475,7 +4619,7 @@ export class SessionStore {
             this.#ingestNativeAgentUpdates(
               ev.session_id,
               runtimeAdapter.assistantNativeAgentUpdates(turn.assistantText),
-              { turnId: projectedTurnId },
+              { turnId: ev.turn_id },
             );
           }
           const assistantArtifacts = runtimeAdapter?.assistantArtifacts?.(
@@ -4489,7 +4633,7 @@ export class SessionStore {
               assistantArtifacts.sources,
             );
           }
-          this.#turns.set(projectedTurnId, {
+          this.#turns.set(ev.turn_id, {
             ...turn,
             // Streaming chunks compact into turn.events in place to avoid a
             // React render per token. Publish a fresh array at the terminal
@@ -4534,7 +4678,7 @@ export class SessionStore {
           ) continue;
           const turn = this.#turns.get(turnId);
           if (turn?.sessionId === ev.session_id && turn.status === "queued") {
-            this.#turns.delete(turnId);
+            this.#deleteTurn(turnId);
           }
         }
         for (const turnId of steeringTurnIds) {
@@ -4551,6 +4695,7 @@ export class SessionStore {
           }
         }
         this.#markTurnRunning(ev.active_turn_id ?? undefined);
+        this.#settleOrphanedRunningTurns(ev.session_id, ev.active_turn_id ?? undefined, steeringTurnIds);
         this.#mutateSession(ev.session_id, (s) => ({
           ...s,
           activeTurnId: ev.active_turn_id ?? undefined,
@@ -4572,14 +4717,10 @@ export class SessionStore {
         const turnId = ev.turn_id
           ?? this.#sessions.get(ev.session_id)?.activeTurnId;
         if (turnId) {
-          const projectedTurnId = this.#settleSteeringProjection(
-            ev.session_id,
-            turnId,
-          );
-          const turn = this.#turns.get(projectedTurnId);
+          const turn = this.#turns.get(turnId);
           if (turn) {
             const sendFailed = turn.sendState === "pending" && turn.events.length === 0;
-            this.#turns.set(projectedTurnId, {
+            this.#turns.set(turnId, {
               ...turn,
               status: "error",
               errorMessage: message,
@@ -4636,34 +4777,13 @@ export class SessionStore {
           this.#sideActiveId = null;
         }
         this.#sessions.delete(ev.session_id);
-        const projectionPrefix = `${ev.session_id.length}:${ev.session_id}:`;
-        for (const key of this.#pendingSteeringTurns.keys()) {
-          if (key.startsWith(projectionPrefix)) {
-            this.#pendingSteeringTurns.delete(key);
-          }
-        }
-        for (const key of this.#steeringEventTargets.keys()) {
-          if (key.startsWith(projectionPrefix)) {
-            this.#steeringEventTargets.delete(key);
-          }
-        }
-        for (const key of this.#steeringBoundariesArmed) {
-          if (key.startsWith(projectionPrefix)) {
-            this.#steeringBoundariesArmed.delete(key);
-          }
-        }
-        for (const key of this.#modelCallsReadyForOutput) {
-          if (key.startsWith(projectionPrefix)) {
-            this.#modelCallsReadyForOutput.delete(key);
-          }
-        }
         this.#openmaEventsBySession.delete(ev.session_id);
         const noticeTimer = this.#noticeTimers.get(ev.session_id);
         if (noticeTimer) clearTimeout(noticeTimer);
         this.#noticeTimers.delete(ev.session_id);
         this.#autoOpenedHtmlBySession.delete(ev.session_id);
         for (const [tid, turn] of this.#turns) {
-          if (turn.sessionId === ev.session_id) this.#turns.delete(tid);
+          if (turn.sessionId === ev.session_id) this.#deleteTurn(tid);
         }
         break;
       }
@@ -5049,25 +5169,6 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function steeringProjectionKey(sessionId: string, activeTurnId: string): string {
-  return `${sessionId.length}:${sessionId}:${activeTurnId}`;
-}
-
-/** ACP has no standard "the next model call consumed this steer" update.
- * After `_session/steering` acknowledges `injected`, the first update that can
- * only be produced by a model call is the boundary. Tool progress/completion
- * deliberately does not qualify: it still belongs to the preceding call. */
-function isModelOutputBoundary(event: unknown): boolean {
-  const type = sessionUpdateType(event);
-  return (
-    type === "agent_thought_chunk"
-    || type === "agent_message_chunk"
-    || type === "tool_call"
-    || type === "plan"
-    || type === "plan_update"
-  );
-}
-
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value
@@ -5095,6 +5196,52 @@ function activeSessionGoalUpdate(
   if (!update) return update;
   const status = update.status.trim().toLowerCase();
   return status === "complete" || status === "completed" ? null : update;
+}
+
+/** Subagent ids whose lifecycle is in the replayed log, following
+ *  reidentification from the provisional id to the final one. */
+function canonicalNativeAgentIdsOf(
+  facts: readonly NativeAgentLifecycleFact[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const fact of facts) {
+    if (fact.type === "started") ids.add(fact.id);
+    else if (ids.delete(fact.previousId)) ids.add(fact.id);
+  }
+  return ids;
+}
+
+/** A prompt-less continuation (newer rows of a turn that opened in an older
+ *  page) joins its turn: prompt-side fields come from the turn, progress and
+ *  terminal fields from the continuation, which holds the newer rows. */
+function foldHeadIntoTurn(owner: Turn, head: Turn): Turn {
+  return {
+    ...owner,
+    events: [...owner.events, ...head.events],
+    assistantText: owner.assistantText + head.assistantText,
+    thoughtText: owner.thoughtText + head.thoughtText,
+    activeThoughtMessageId: head.activeThoughtMessageId,
+    activeThoughtSegmentText: head.activeThoughtSegmentText,
+    status: head.status,
+    stopReason: head.stopReason ?? owner.stopReason,
+    errorMessage: head.errorMessage ?? owner.errorMessage,
+    effectiveDelivery: head.effectiveDelivery ?? owner.effectiveDelivery,
+    deliveryDegraded: head.deliveryDegraded ?? owner.deliveryDegraded,
+    endedAt: head.endedAt ?? owner.endedAt,
+  };
+}
+
+/** A subagent transcript that spans a page boundary: the older page's part
+ *  goes in front of what the newer rows already projected. */
+function concatChildTranscriptTurns(older: Turn, newer: Turn): Turn {
+  return {
+    ...newer,
+    promptText: newer.promptText || older.promptText,
+    events: [...older.events, ...newer.events],
+    assistantText: older.assistantText + newer.assistantText,
+    thoughtText: older.thoughtText + newer.thoughtText,
+    startedAt: Math.min(older.startedAt, newer.startedAt),
+  };
 }
 
 function safeParse(s: string): unknown {

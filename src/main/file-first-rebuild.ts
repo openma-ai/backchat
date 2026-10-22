@@ -95,9 +95,13 @@ export function rebuildSessionIndexFromTranscriptFiles(
       archived_at, pinned_at, pair_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  // ON CONFLICT DO NOTHING: an old transcript may repeat a canonical
+  // event_id; with events_openma_event_id_idx in place a plain INSERT would
+  // roll back the whole import.
   const insertEvent = db.prepare(`
     INSERT INTO events (session_id, type, data, ts)
     VALUES (?, ?, ?, ?)
+    ON CONFLICT DO NOTHING
   `);
 
   let pairsImported = 0;
@@ -156,13 +160,13 @@ export function rebuildSessionIndexFromTranscriptFiles(
       const existingEvents = eventCount.get(meta.sessionId) as { count: number };
       if (Number(existingEvents.count) > 0) continue;
       for (const event of readTranscriptEvents(meta, diagnostics)) {
-        insertEvent.run(
+        const inserted = insertEvent.run(
           meta.sessionId,
           event.type,
           JSON.stringify(event.data),
           event.ts,
         );
-        eventsImported += 1;
+        eventsImported += Number(inserted.changes);
       }
     }
     db.exec("COMMIT");

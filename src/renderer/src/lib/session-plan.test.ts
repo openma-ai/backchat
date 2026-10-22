@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  createBackchatTurnProjector,
+} from "./reduce-turn";
+import {
   latestPlanDocumentForEvents,
   latestPlanForTurns,
   latestTaskListForTurns,
@@ -65,6 +68,34 @@ describe("latestPlanForTurns", () => {
         } as never,
       ]),
     ).toEqual([]);
+  });
+
+  test("uses a store-owned projected plan when provided", () => {
+    const projector = createBackchatTurnProjector();
+    projector.apply({
+      payload: {
+        schema: "oma.event.v1",
+        event_id: "plan-from-store",
+        session_id: "sess-plan",
+        turn_id: "turn-plan",
+        source: { kind: "harness", harness: "codex-acp", adapter: "acp" },
+        occurred_at: "2026-08-06T00:00:00.000Z",
+        type: "plan.updated",
+        data: {
+          plan_id: "plan-1",
+          entries: [{ id: "step-1", content: "Run tests", status: "pending" }],
+        },
+      },
+    });
+
+    expect(
+      latestPlanForTurns(
+        [{ events: [] } as never],
+        () => projector.snapshot(),
+      ),
+    ).toEqual([
+      { id: "step-1", content: "Run tests", status: "pending", priority: undefined },
+    ]);
   });
 
   test("removes an item plan only when plan_removed names the same planId", () => {

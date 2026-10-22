@@ -1,8 +1,9 @@
-import { ChevronRightIcon, LightbulbIcon } from "@/components/Icons";
+import { LightbulbIcon } from "@/components/Icons";
 import { useState } from "react";
 
 import type { PlanDocumentPresentation } from "@/lib/session-plan";
-import { cn } from "@/lib/utils";
+import { AnimatedCollapse } from "@/components/ui/animated-collapse";
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import {
   ASSISTANT_MARKDOWN_CLASS,
   StreamdownText,
@@ -31,15 +32,9 @@ export function PlanDocumentActivity({
         <span className="min-w-0 flex-1 truncate text-fg-subtle">
           {document.title ?? "Markdown document"}
         </span>
-        <ChevronRightIcon
-          className={cn(
-            "size-3 shrink-0 text-fg-subtle transition-transform",
-            open && "rotate-90",
-          )}
-          aria-hidden="true"
-        />
+        <DisclosureChevron open={open} />
       </button>
-      {open && (
+      <AnimatedCollapse open={open} lazy>
         <div className="ml-5 mt-2" data-plan-document-content="true">
           <StreamdownText
             text={document.markdown}
@@ -49,7 +44,7 @@ export function PlanDocumentActivity({
             surfacePrefix={`plan-${document.id ?? "current"}`}
           />
         </div>
-      )}
+      </AnimatedCollapse>
     </div>
   );
 }

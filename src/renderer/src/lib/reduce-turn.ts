@@ -1,6 +1,7 @@
 import {
+  createTurnProjector as createCommonTurnProjector,
   parseAcpEvent as parseCommonAcpEvent,
-  reduceTurn as reduceCommonTurn,
+  type TurnRender as CommonTurnRender,
 } from "@openma/common/session-events/acp";
 
 export * from "@openma/common/session-events/acp";
@@ -83,7 +84,7 @@ function mergeProjectedPlanEntries(
 
 /**
  * Project the stable OpenMA event envelope onto the ACP presentation shape
- * understood by the renderer reducer bundled in @openma/common v0.4.0.
+ * used by the shared turn projector.
  *
  * The host deliberately sends both the canonical envelope and the raw ACP
  * payload. Canonical facts remain authoritative for replay and adapter
@@ -206,25 +207,36 @@ export function parseAcpEvent(event: unknown): ReturnType<typeof parseCommonAcpE
   return parseCommonAcpEvent(projectCanonicalEvent(event));
 }
 
-export function reduceTurn(
-  events: Parameters<typeof reduceCommonTurn>[0],
-): Omit<ReturnType<typeof reduceCommonTurn>, "plan"> & {
+export type TurnRender = Omit<CommonTurnRender, "plan" | "planDocument"> & {
   plan: ProjectedPlanEntry[];
   planDocument?: { id?: string; title?: string; markdown?: string; uri?: string };
+  hasPlanLifecycle: boolean;
+};
+
+export function createBackchatTurnProjector(): {
+  apply(entry: { payload: unknown }): void;
+  snapshot(): TurnRender;
 } {
+  const projector = createCommonTurnProjector();
   const outputByTool = new Map<string, string>();
   let canonicalPlanEntries: ProjectedPlanEntry[] | undefined;
   let canonicalPlanId: string | undefined;
   let planDocument:
     | { id?: string; title?: string; markdown?: string; uri?: string }
     | undefined;
-  const projected = events.map((entry) => {
+  let hasPlanLifecycle = false;
+  let version = 0;
+  let snapshotVersion = -1;
+  let snapshotCache: TurnRender | undefined;
+
+  const apply = (entry: { payload: unknown }): void => {
     const envelope = record(entry.payload);
     const data = canonicalData(entry.payload);
     if (
       envelope?.type === "plan.updated"
       || envelope?.type === "plan.completed"
     ) {
+      hasPlanLifecycle = true;
       const planId = typeof data?.plan_id === "string" ? data.plan_id : undefined;
       const entries = projectedPlanEntries(data?.entries);
       if (Array.isArray(data?.entries)) {
@@ -248,6 +260,7 @@ export function reduceTurn(
         };
       }
     } else if (envelope?.type === "plan.removed") {
+      hasPlanLifecycle = true;
       const removedId = typeof data?.plan_id === "string" ? data.plan_id : undefined;
       if (!removedId || removedId === planDocument?.id) {
         planDocument = undefined;
@@ -260,6 +273,7 @@ export function reduceTurn(
       const raw = record(envelope?.update) ?? envelope;
       const updateType = raw?.sessionUpdate ?? raw?.session_update;
       if (updateType === "plan" || updateType === "plan_update") {
+        hasPlanLifecycle = true;
         const plan = record(raw?.plan) ?? raw;
         const content = record(plan?.content);
         const rawEntries = Array.isArray(raw?.entries)
@@ -284,30 +298,23 @@ export function reduceTurn(
             : entries;
         }
       } else if (updateType === "plan_removed") {
+        hasPlanLifecycle = true;
         const removedId =
           typeof raw?.planId === "string" ? raw.planId
             : typeof raw?.plan_id === "string" ? raw.plan_id
               : typeof raw?.id === "string" ? raw.id
-                : undefined;
+              : undefined;
+        if (!removedId || removedId === planDocument?.id) {
+          planDocument = undefined;
+        }
         if (!removedId || removedId === canonicalPlanId) {
           canonicalPlanEntries = [];
           canonicalPlanId = undefined;
         }
       }
     }
-    const rawEnvelope = record(envelope?.update) ?? envelope;
-    const isPlanRemoval = envelope?.type === "plan.removed"
-      || (!data && (
-        rawEnvelope?.sessionUpdate === "plan_removed"
-        || rawEnvelope?.session_update === "plan_removed"
-      ));
-    // Plan removal is a structural state transition, not transcript prose.
-    // The pinned common reducer renders unknown plan-removal shapes as a
-    // generic note, so feed it a silent session update after the local plan
-    // tracker has applied the id-aware removal above.
-    const payload = isPlanRemoval
-      ? { sessionUpdate: "session_info_update" }
-      : projectCanonicalEvent(entry.payload);
+    const payload = projectCanonicalEvent(entry.payload);
+    let projectedEntry = { ...entry, payload };
     if (
       envelope
       && data
@@ -326,18 +333,37 @@ export function reduceTurn(
           ? `${outputByTool.get(toolCallId) ?? ""}${output.data}`
           : output.data;
         outputByTool.set(toolCallId, next);
-        return {
+        projectedEntry = {
           ...entry,
           payload: { ...projectedPayload, rawOutput: next },
         };
       }
     }
-    return { ...entry, payload };
-  }) as Parameters<typeof reduceCommonTurn>[0];
-  const reduced = reduceCommonTurn(projected);
-  return {
-    ...reduced,
-    plan: canonicalPlanEntries ?? reduced.plan,
-    ...(planDocument ? { planDocument } : {}),
+    projector.apply(projectedEntry);
+    version += 1;
   };
+
+  const snapshot = (): TurnRender => {
+    if (snapshotCache && snapshotVersion === version) return snapshotCache;
+    const reduced = projector.snapshot();
+    const nextSnapshot: TurnRender = {
+      ...reduced,
+      plan: canonicalPlanEntries ?? reduced.plan,
+      planDocument: planDocument ?? reduced.planDocument,
+      hasPlanLifecycle,
+    };
+    snapshotCache = nextSnapshot;
+    snapshotVersion = version;
+    return nextSnapshot;
+  };
+
+  return { apply, snapshot };
+}
+
+export function reduceTurn(
+  events: readonly { payload: unknown }[],
+): TurnRender {
+  const projector = createBackchatTurnProjector();
+  for (const event of events) projector.apply(event);
+  return projector.snapshot();
 }

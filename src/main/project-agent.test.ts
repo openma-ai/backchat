@@ -4,9 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Stream } from "effect";
 import { expect, it } from "vitest";
-import { createOpenMAEvent, type OpenMAEvent } from "@openmatter/agent";
+import {
+  createOpenMAEvent,
+  type AgentDriver,
+  type OpenMAEvent,
+} from "@openmatter/agent";
+import type {
+  ContextItem,
+  ContextProjection,
+  JsonValue,
+} from "@openmatter/core";
 import { ProjectAgentBridge } from "./project-agent.js";
 import { ProjectWorkspaceManager } from "./project-workspace.js";
+import type { SessionPromptParams } from "../shared/session-events.js";
 
 it.each(["coordinator", "worker"] as const)(
   "gives a %s its own readable memory path on create and resume",
@@ -112,7 +122,7 @@ it.each(["coordinator", "worker"] as const)(
         ),
       );
       expect(prompts).toHaveLength(1);
-      expect(prompts[0]).toContain(raw.memoryDirectory);
+      expect(prompts[0]).not.toContain(raw.memoryDirectory);
       expect(bridge.bindings.get("s")).toMatchObject({ projectId: "p", role, workThreadId: "thread" });
     } finally {
       db.close();
@@ -406,3 +416,256 @@ it("keeps a WorkThread workspace when its session generation changes", async () 
     db.close();
   }
 });
+
+it("sends the full coordinator preamble on a fresh ACP session's first prompt", async () => {
+  const { db, driver, prompts } = projectAgentPromptRig();
+  try {
+    const session = await createProjectAgentSession(driver);
+    await runProjectAgentTurn(driver, session, "fresh-first", [
+      projectEvent("event:message:client-1", "project.message", {
+        text: "First user request",
+      }),
+      contextItem("instructions", "project-instructions", {
+        instructions: "Stable project instructions",
+      }),
+    ]);
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.text).toContain(
+      "You are the coordinator for project Project Alpha.",
+    );
+    expect(prompts[0]?.text).toContain("Stable project instructions");
+    expect(prompts[0]?.display_text).toBe("First user request");
+  } finally {
+    db.close();
+  }
+});
+
+it("sends only the next event context after the first prompt in an ACP session", async () => {
+  const { db, driver, prompts } = projectAgentPromptRig();
+  const secondEvent = projectEvent("worker:completed", "project.worker.completed", {
+    result: "Second event payload",
+  });
+  try {
+    const session = await createProjectAgentSession(driver);
+    await runProjectAgentTurn(driver, session, "same-session-first", [
+      projectEvent("event:message:client-1", "project.message", {
+        text: "First user request",
+      }),
+      contextItem("instructions", "project-instructions", {
+        instructions: "Stable project instructions",
+      }),
+    ]);
+    await runProjectAgentTurn(driver, session, "same-session-second", [
+      secondEvent,
+      contextItem("instructions", "project-instructions", {
+        instructions: "Stable project instructions",
+      }),
+      contextItem("workspace", "project-workspaces", {
+        cwd: "/stable/workspace",
+      }),
+    ]);
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]?.text).toBe(
+      [
+        "New project work event follows.",
+        JSON.stringify({ context: [secondEvent] }),
+      ].join("\n\n"),
+    );
+    expect(prompts[1]?.text).not.toContain("You are the");
+    expect(prompts[1]?.display_text).toBe(
+      "Project event: project.worker.completed",
+    );
+  } finally {
+    db.close();
+  }
+});
+
+it("omits the coordinator preamble when the ACP session is resumed", async () => {
+  const { db, driver, prompts } = projectAgentPromptRig();
+  try {
+    const created = await createProjectAgentSession(driver);
+    const resumed = await Effect.runPromise(driver.resumeSession!(created));
+    const event = projectEvent("worker:resumed", "project.worker.resumed", {
+      result: "Resumed event payload",
+    });
+    await runProjectAgentTurn(driver, resumed, "resumed-first", [event]);
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.text).toBe(
+      [
+        "New project work event follows.",
+        JSON.stringify({ context: [event] }),
+      ].join("\n\n"),
+    );
+    expect(prompts[0]?.text).not.toContain("You are the");
+  } finally {
+    db.close();
+  }
+});
+
+it("sets an explicit display label for project prompts without user text", async () => {
+  const { db, driver, prompts } = projectAgentPromptRig();
+  try {
+    const session = await createProjectAgentSession(driver);
+    await runProjectAgentTurn(driver, session, "no-user-text", [
+      projectEvent("goal:continued", "project.goal.continue", {
+        internalPayload: "not display text",
+      }),
+    ]);
+
+    expect(prompts[0]?.display_text).toBe(
+      "Project event: project.goal.continue",
+    );
+    expect(prompts[0]?.display_text).not.toContain("not display text");
+  } finally {
+    db.close();
+  }
+});
+
+it("resends the full preamble when the first prompt in an ACP session fails", async () => {
+  const { db, driver, prompts } = projectAgentPromptRig({ failFirstPrompt: true });
+  try {
+    const session = await createProjectAgentSession(driver);
+    await runProjectAgentTurn(driver, session, "failed-first", [
+      projectEvent("event:message:client-1", "project.message", {
+        text: "First user request",
+      }),
+    ]);
+    await runProjectAgentTurn(driver, session, "retry", [
+      projectEvent("event:message:client-2", "project.message", {
+        text: "Second user request",
+      }),
+    ]);
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]?.text).toContain(
+      "You are the coordinator for project Project Alpha.",
+    );
+  } finally {
+    db.close();
+  }
+});
+
+function projectAgentPromptRig(options: { failFirstPrompt?: boolean } = {}) {
+  const db = new DatabaseSync(":memory:");
+  const prompts: SessionPromptParams[] = [];
+  let bridge!: ProjectAgentBridge;
+  bridge = new ProjectAgentBridge(
+    db,
+    {
+      start: async (params) => ({
+        status: "ready",
+        session_id: params.session_id,
+        agent_id: params.agent_id,
+        acp_session_id: params.resume?.acp_session_id ?? "remote-session",
+        cwd: params.cwd!,
+      }),
+      prompt: async (params) => {
+        prompts.push(params);
+        if (options.failFirstPrompt && prompts.length === 1)
+          throw new Error("agent rejected the prompt");
+        bridge.observe(
+          createOpenMAEvent({
+            event_id: `done-${params.turn_id}`,
+            session_id: params.session_id,
+            turn_id: params.turn_id,
+            seq: 1,
+            type: "turn.completed",
+            source: { kind: "harness", harness: "test" },
+            occurred_at: new Date().toISOString(),
+            data: {},
+          }),
+        );
+      },
+      cancel: () => {},
+      dispose: async () => {},
+      findSession: () => null,
+    },
+    {
+      prepare: async (_project, workThreadId) => ({
+        id: "workspace",
+        cwd: `/workspace/${workThreadId}`,
+        additionalDirectories: [],
+        branch: "thread",
+        worktrees: [],
+      }),
+    },
+  );
+
+  return {
+    db,
+    driver: bridge.driver(
+      "test",
+      {
+        id: "project",
+        name: "Project Alpha",
+        primary_folder: "/source",
+        source_folders: ["/source"],
+        created_at: 1,
+        updated_at: 1,
+      },
+      "coordinator",
+    ),
+    prompts,
+  };
+}
+
+async function createProjectAgentSession(driver: AgentDriver) {
+  return Effect.runPromise(
+    driver.createSession({
+      sessionId: "project-session",
+      bindingKey: "project-thread",
+      workThreadId: "project-thread",
+      generation: 1,
+      idempotencyKey: "project-session",
+    }),
+  );
+}
+
+async function runProjectAgentTurn(
+  driver: AgentDriver,
+  session: { readonly id: string; readonly raw?: JsonValue },
+  turnId: string,
+  items: ContextItem[],
+) {
+  await Effect.runPromise(
+    Stream.runDrain(
+      driver.turn({
+        session,
+        sessionId: session.id,
+        turnId,
+        afterSequence: 0,
+        context: {
+          schemaVersion: "0.1",
+          id: `context-${turnId}`,
+          scopeId: "project",
+          workThreadId: "project-thread",
+          triggerEventId: items.find((item) => item.kind === "event")?.id ?? turnId,
+          digest: "digest",
+          createdAt: new Date().toISOString(),
+          grants: [],
+          items,
+        } satisfies ContextProjection,
+        allow: [],
+      }),
+    ),
+  );
+}
+
+function contextItem(
+  id: string,
+  kind: string,
+  value: ContextItem["value"],
+): ContextItem {
+  return { id, kind, value, provenance: [] };
+}
+
+function projectEvent(
+  id: string,
+  type: string,
+  payload: ContextItem["value"],
+): ContextItem {
+  return contextItem(`context-${id}`, "event", { id, type, payload });
+}

@@ -27,8 +27,9 @@ import { CHAT_GENERATED_IMAGE_CLASS } from "@/lib/chat-layout";
 import type { ToolContentBlock, ToolEntry } from "@/lib/reduce-turn";
 import type { SubagentActivity } from "@/lib/session-store";
 import { resolveToolImageSource } from "@/lib/tool-content-source";
-import { cn } from "@/lib/utils";
+import { cn, preserveScrollAnchor } from "@/lib/utils";
 import { SubagentAvatar } from "@/components/SubagentAvatar";
+import { AnimatedCollapse } from "@/components/ui/animated-collapse";
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { ToolActivityIdentity, ToolInputBlock } from "./ToolActivityPrimitives";
 
@@ -50,8 +51,12 @@ function hasMcpAppResource(tool: ToolEntry): boolean {
   );
 }
 
-function toolLifecycleStatus(status: string, denied: boolean): {
-  value: "started" | "progress" | "completed" | "failed" | "cancelled" | "denied";
+function toolLifecycleStatus(
+  status: string,
+  denied: boolean,
+): {
+  value:
+    "started" | "progress" | "completed" | "failed" | "cancelled" | "denied";
   label: string;
 } {
   if (denied) return { value: "denied", label: "tool.denied" };
@@ -82,7 +87,8 @@ export function ToolRow({
   const status = tool.status ?? "pending";
   const denied = toolWasDenied(tool);
   const lifecycle = toolLifecycleStatus(status, denied);
-  const lifecycleLabel = lifecycle.value === "denied" ? t("tool.denied") : lifecycle.label;
+  const lifecycleLabel =
+    lifecycle.value === "denied" ? t("tool.denied") : lifecycle.label;
   const inProgress = status === "in_progress" || status === "pending";
   const verb = t(toolActivityVerbKey(tool));
   const target = pickToolActivityTarget(tool, (name) =>
@@ -108,23 +114,15 @@ export function ToolRow({
   const stick = useStickToBottomContext();
   const summaryRef = useRef<HTMLElement | null>(null);
 
+  // The body animates its height, so the anchor is held through the whole
+  // collapse (ResizeObserver per frame), not corrected once a frame later.
   const handleSummaryClick = (_event: ReactMouseEvent) => {
-    const scrollElement = stick.scrollRef.current;
-    const summaryElement = summaryRef.current;
-    if (!scrollElement || !summaryElement) {
-      setOpen((current) => !current);
-      return;
-    }
-
-    stick.stopScroll();
-    const before = summaryElement.getBoundingClientRect().top;
-    setOpen((current) => !current);
-    requestAnimationFrame(() => {
-      const after = summaryElement.getBoundingClientRect().top;
-      const delta = after - before;
-      if (Math.abs(delta) > 0.5) {
-        scrollElement.scrollTop += delta;
-      }
+    preserveScrollAnchor({
+      scrollElement: stick.scrollRef.current,
+      anchorElement: summaryRef.current,
+      contentElement: stick.contentRef.current,
+      update: () => setOpen((current) => !current),
+      stopScroll: stick.stopScroll,
     });
   };
 
@@ -188,40 +186,42 @@ export function ToolRow({
         )}
       </button>
 
-      {open && tool.rawInput !== undefined && (
-        <ToolInputBlock id={tool.toolCallId}>
-          {safeJson(tool.rawInput)}
-        </ToolInputBlock>
-      )}
+      {hasBody && (
+        <AnimatedCollapse open={open} lazy>
+          {tool.rawInput !== undefined && (
+            <ToolInputBlock id={tool.toolCallId}>
+              {safeJson(tool.rawInput)}
+            </ToolInputBlock>
+          )}
 
-      {hasBody && open && (
-        <div
-          className="ml-7 mt-1 space-y-1.5 overflow-y-auto text-[12px]"
-          style={{ maxHeight: "min(480px, 50vh)" }}
-        >
-          {tool.locations && tool.locations.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {tool.locations.map((location, index) =>
-                location.path ? (
-                  <span
-                    key={`${location.path}-${index}`}
-                    className="rounded bg-bg-surface/60 px-1.5 py-0.5 font-mono text-[11px] text-fg-muted"
-                    title={location.path}
-                  >
-                    {shortPath(location.path)}
-                    {location.line != null ? `:${location.line}` : ""}
-                  </span>
-                ) : null,
-              )}
-            </div>
-          )}
-          {bodyBlocks.map((block, index) => (
-            <ToolContentRenderer key={index} block={block} />
-          ))}
-          {bodyBlocks.length === 0 && tool.rawOutput !== undefined && (
-            <ToolRawOutputBody rawOutput={tool.rawOutput} />
-          )}
-        </div>
+          <div
+            className="ml-7 mt-1 space-y-1.5 overflow-y-auto text-[12px]"
+            style={{ maxHeight: "min(480px, 50vh)" }}
+          >
+            {tool.locations && tool.locations.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {tool.locations.map((location, index) =>
+                  location.path ? (
+                    <span
+                      key={`${location.path}-${index}`}
+                      className="rounded bg-bg-surface/60 px-1.5 py-0.5 font-mono text-[11px] text-fg-muted"
+                      title={location.path}
+                    >
+                      {shortPath(location.path)}
+                      {location.line != null ? `:${location.line}` : ""}
+                    </span>
+                  ) : null,
+                )}
+              </div>
+            )}
+            {bodyBlocks.map((block, index) => (
+              <ToolContentRenderer key={index} block={block} />
+            ))}
+            {bodyBlocks.length === 0 && tool.rawOutput !== undefined && (
+              <ToolRawOutputBody rawOutput={tool.rawOutput} />
+            )}
+          </div>
+        </AnimatedCollapse>
       )}
 
       {hoistedBlocks.length > 0 && (

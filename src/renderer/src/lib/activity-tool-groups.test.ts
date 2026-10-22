@@ -34,6 +34,7 @@ function rendered(
     assistantText: "",
     tools,
     plan: [],
+    hasPlanLifecycle: false,
     notes: [],
     timeline,
   };

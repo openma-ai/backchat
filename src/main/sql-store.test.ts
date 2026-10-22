@@ -1,11 +1,16 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse as parseToml } from "smol-toml";
 import {
   appendEvent,
   archiveSession,
+  closeSessionDb,
+  eventIndexStatus,
+  explainEventQueryPlans,
+  latestOpenMAEventSequence,
   getSession,
   loadHistory,
   loadHistoryPage,
@@ -211,5 +216,171 @@ describe("sql-store file-first write-through", () => {
       loadHistoryPage("sess_page", { before_seq: seq[1], limit: 3 }).map((r) => r.seq),
     ).toEqual(seq.slice(0, 1));
     expect(loadHistoryPage("sess_page", { before_seq: seq[0], limit: 3 })).toEqual([]);
+  });
+
+  it("extends a page back to the turn it would cut", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-sql-store-turn-page-"));
+    tempRoots.push(root);
+    openSessionDb(join(root, "sessions.db"));
+    upsertSession({
+      id: "sess_turns",
+      agent_id: "codex-acp",
+      cwd: join(root, "sessions", "sess_turns"),
+      acp_session_id: "acp_turns",
+      title: "",
+    });
+    const prompt = (text: string) => {
+      appendEvent("sess_turns", "user_prompt", { text });
+      appendEvent("sess_turns", "openma_event", {
+        type: "user.message",
+        data: { input_kind: "prompt", text },
+      });
+    };
+    const chunk = (text: string) =>
+      appendEvent("sess_turns", "openma_event", { type: "agent.message_chunk", data: { text } });
+    prompt("a");
+    chunk("a1");
+    prompt("b");
+    for (let i = 0; i < 5; i++) chunk(`b${i}`);
+    const seq = loadHistory("sess_turns").map((r) => r.seq);
+    // The 3 newest rows sit inside turn "b"; the page starts at its
+    // `user_prompt` row, not at its canonical envelope.
+    const tail = loadHistoryPage("sess_turns", { limit: 3 });
+    expect(tail.map((r) => r.seq)).toEqual(seq.slice(3));
+    expect(tail[0]!.type).toBe("user_prompt");
+    // The next page holds exactly turn "a".
+    expect(
+      loadHistoryPage("sess_turns", { before_seq: tail[0]!.seq, limit: 2 }).map((r) => r.seq),
+    ).toEqual(seq.slice(0, 3));
+  });
+
+  it("keeps a row-bounded page inside a turn too long to align", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-sql-store-long-turn-"));
+    tempRoots.push(root);
+    openSessionDb(join(root, "sessions.db"));
+    upsertSession({
+      id: "sess_long",
+      agent_id: "codex-acp",
+      cwd: join(root, "sessions", "sess_long"),
+      acp_session_id: "acp_long",
+      title: "",
+    });
+    appendEvent("sess_long", "user_prompt", { text: "long" });
+    for (let i = 0; i < 40; i++) {
+      appendEvent("sess_long", "openma_event", { type: "agent.message_chunk", data: { text: `${i}` } });
+    }
+    const seq = loadHistory("sess_long").map((r) => r.seq);
+    // 37 rows back to the opener exceed 3 extra pages of 4 rows.
+    expect(loadHistoryPage("sess_long", { limit: 4 }).map((r) => r.seq)).toEqual(seq.slice(-4));
+    // Within the budget the page still reaches the opener.
+    expect(loadHistoryPage("sess_long", { before_seq: seq[14], limit: 4 }).map((r) => r.seq))
+      .toEqual(seq.slice(0, 14));
+  });
+});
+
+describe("sql-store event append hot path", () => {
+  afterEach(() => {
+    closeSessionDb();
+  });
+
+  async function openFresh(prefix: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), prefix));
+    tempRoots.push(root);
+    // Earlier suites in this file leave the module-level handle open.
+    closeSessionDb();
+    openSessionDb(join(root, "sessions.db"));
+    upsertSession({
+      id: "sess_hot",
+      agent_id: "codex-acp",
+      cwd: join(root, "sessions", "sess_hot"),
+      acp_session_id: "acp_hot",
+      title: "",
+    });
+    return root;
+  }
+
+  function canonical(eventId: string, seq?: number): Record<string, unknown> {
+    return {
+      schema_version: "oma.event.v1",
+      event_id: eventId,
+      type: "agent.message_chunk",
+      session_id: "sess_hot",
+      ...(seq === undefined ? {} : { seq }),
+      data: { text: eventId },
+    };
+  }
+
+  async function transcriptLines(root: string): Promise<Array<{ seq: number; data: unknown }>> {
+    const created = getSession("sess_hot")!.created_at;
+    const d = new Date(created);
+    const path = join(
+      root,
+      "transcripts",
+      String(d.getUTCFullYear()),
+      String(d.getUTCMonth() + 1).padStart(2, "0"),
+      String(d.getUTCDate()).padStart(2, "0"),
+      "sess_hot.jsonl",
+    );
+    return (await readFile(path, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+  }
+
+  it("drops a duplicate canonical event without a SQL row or transcript line", async () => {
+    const root = await openFresh("backchat-sql-store-dedupe-");
+    appendEvent("sess_hot", "user_prompt", { text: "hi" });
+    appendEvent("sess_hot", "openma_event", canonical("evt-1"));
+    appendEvent("sess_hot", "openma_event", canonical("evt-1"));
+    appendEvent("sess_hot", "openma_event", canonical("evt-2"));
+
+    expect(loadHistory("sess_hot")).toHaveLength(3);
+    const lines = await transcriptLines(root);
+    // Transcript seq is the per-session ordinal; a dropped duplicate must not
+    // consume one.
+    expect(lines.map((line) => line.seq)).toEqual([1, 2, 3]);
+    expect(eventIndexStatus()).toMatchObject({ dedupe: "unique", duplicates: 0 });
+  });
+
+  it("serves dedupe and sequence seed lookups from the event indexes", async () => {
+    await openFresh("backchat-sql-store-plan-");
+    const plans = explainEventQueryPlans();
+    expect(plans.dedupe.join("\n")).toContain("USING INDEX events_openma_event_id_idx");
+    expect(plans.sequence.join("\n")).toContain("USING INDEX events_openma_seq_idx");
+  });
+
+  it("seeds the canonical sequence from the true maximum, not the last row", async () => {
+    await openFresh("backchat-sql-store-seq-");
+    expect(latestOpenMAEventSequence("sess_hot")).toBe(0);
+    appendEvent("sess_hot", "openma_event", canonical("a", 7));
+    appendEvent("sess_hot", "openma_event", canonical("b", 41));
+    appendEvent("sess_hot", "openma_event", canonical("c", 12));
+    appendEvent("sess_hot", "openma_event", { schema: "oma.event.v1", event_id: "d", seq: 52 });
+    appendEvent("sess_hot", "openma_event", canonical("e", -1));
+    appendEvent("sess_hot", "openma_event", { event_id: "f", seq: 99 });
+    appendEvent("sess_hot", "openma_event", canonical("g", 1.5));
+    appendEvent("sess_hot", "user_prompt", { seq: 500 });
+    expect(latestOpenMAEventSequence("sess_hot")).toBe(52);
+  });
+
+  it("falls back to a non-unique index when old rows already hold duplicates", async () => {
+    const root = await openFresh("backchat-sql-store-fallback-");
+    appendEvent("sess_hot", "openma_event", canonical("dup"));
+    closeSessionDb();
+
+    const raw = new DatabaseSync(join(root, "sessions.db"));
+    raw.exec("DROP INDEX IF EXISTS events_openma_event_id_idx");
+    raw.prepare(
+      "INSERT INTO events (session_id, type, data, ts) VALUES (?, 'openma_event', ?, ?)",
+    ).run("sess_hot", JSON.stringify(canonical("dup")), Date.now());
+    raw.close();
+
+    openSessionDb(join(root, "sessions.db"));
+    expect(eventIndexStatus()).toMatchObject({ dedupe: "fallback", duplicates: 1 });
+    // The migration never deletes evidence.
+    expect(loadHistory("sess_hot")).toHaveLength(2);
+    // Appends are still idempotent through the indexed pre-check.
+    appendEvent("sess_hot", "openma_event", canonical("dup"));
+    appendEvent("sess_hot", "openma_event", canonical("fresh"));
+    expect(loadHistory("sess_hot")).toHaveLength(3);
+    expect(explainEventQueryPlans().dedupe.join("\n"))
+      .toContain("USING INDEX events_openma_event_id_idx");
   });
 });

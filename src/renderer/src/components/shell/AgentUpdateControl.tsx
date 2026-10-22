@@ -223,7 +223,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
           title={triggerLabel}
           data-sidebar-agent-update-control="true"
           data-sidebar-agent-update-count={availableAgents.length || undefined}
-          className="app-no-drag inline-flex h-[var(--sidebar-row-h)] shrink-0 items-center justify-center gap-1 rounded-md px-2 text-small font-medium tabular-nums text-fg-muted transition-colors hover:bg-[var(--control-bg-hover)] hover:text-fg focus-visible:bg-[var(--control-bg-hover)] focus-visible:text-fg"
+          className="app-no-drag sidebar-update-action inline-flex shrink-0 items-center justify-center text-small font-medium tabular-nums"
         >
           {activeIds.size > 0 ? (
             <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />

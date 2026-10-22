@@ -19,6 +19,14 @@
   box-shadow: var(--shadow-sm);
 }
 
+
+/* Docked right rail: flat pane flush to the window edge. Same tone as the
+   chat canvas; a single hairline is the only separation. */
+.app-rail-docked {
+  background: var(--surface-canvas);
+  border-left: 1px solid var(--border);
+}
+
 .app-overlay-surface {
   background: var(--surface-panel);
   border: 1px solid var(--border);
@@ -278,24 +286,45 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: var(--sidebar-row-action-radius);
+  position: relative;
+  isolation: isolate;
   outline: none;
   color: var(--control-fg-rest);
   background: transparent;
-  transition:
-    color var(--dur-quick) var(--ease-snap),
-    background-color var(--dur-quick) var(--ease-snap);
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+
+/* The 16px box only sets the track; the wash is a standard row-height
+   rounded rectangle centered on the glyph, so every small action reads as
+   the same control instead of a dot or a stretched pill. */
+.sidebar-row-action::before {
+  content: "";
+  position: absolute;
+  /* A square centered on the glyph, never a pill: width tracks the height. */
+  left: 50%;
+  top: 50%;
+  width: var(--sidebar-row-action-wash-h);
+  height: var(--sidebar-row-action-wash-h);
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  border-radius: var(--sidebar-row-action-radius);
+  background: transparent;
+  pointer-events: none;
+  transition: background-color var(--dur-quick) var(--ease-snap);
 }
 
 .sidebar-row-action:hover,
-.sidebar-row-action:focus-visible {
-  color: var(--control-fg-active);
-  background: var(--control-bg-hover);
-}
-
+.sidebar-row-action:focus-visible,
 .sidebar-row-action[data-state="open"],
 .sidebar-row-action[aria-expanded="true"] {
   color: var(--control-fg-active);
+}
+
+.sidebar-row-action:is(:hover, :focus-visible)::before {
+  background: var(--control-bg-hover);
+}
+
+.sidebar-row-action:is([data-state="open"], [aria-expanded="true"])::before {
   background: var(--control-bg-open);
 }
 
@@ -304,31 +333,25 @@
   height: var(--sidebar-row-action-icon-size);
 }
 
-/* Keep the project row highlighted while its menu is open. Actions use the
-   same compact circular hover/open treatment as session and pair rows. */
-.sidebar-project-row.sidebar-project-surface:hover,
-.sidebar-project-row[data-menu-open="true"] {
+.sidebar-project-row.sidebar-project-surface:is(:hover, [data-state="open"], [data-menu-open="true"]) {
   color: var(--control-fg-active);
-  background: var(--control-bg-hover);
 }
-.sidebar-row-action:focus-visible {
+.sidebar-row-action:focus-visible::before {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
+/* Color, size and the hover/selected ink come from .sidebar-grid-row, so a
+   coordinator row sits on the same tier as every other row. */
 .sidebar-coordinator-row {
-  color: var(--control-fg-rest);
   text-align: left;
-  font-size: var(--type-ui-size);
-  line-height: var(--type-ui-leading);
   transition: color var(--dur-quick) var(--ease-snap),
     background-color var(--dur-quick) var(--ease-snap);
 }
 .sidebar-coordinator-row:hover {
-  color: var(--control-fg-active);
   background: var(--control-bg-hover);
 }
 .sidebar-coordinator-row[aria-current="page"] {
-  color: var(--control-fg-active);
+  color: var(--fg);
   background: var(--surface-selected);
 }
 .sidebar-coordinator-row:focus-visible {
@@ -368,6 +391,10 @@
    settings does not keep a separate 2px gap or an outward ring. */
 .sidebar-navigation {
   --sidebar-row-h: 28px;
+  /* Hover is a lighter step than selection (--surface-selected, 8%). At the
+     same 8% a hovered row next to the current one read as a second
+     selection. Menus held open keep the full step via --control-bg-open. */
+  --control-bg-hover: color-mix(in srgb, var(--fg) 4.5%, transparent);
 }
 
 .sidebar-nav-row {
@@ -382,47 +409,35 @@
 .sidebar-navigation .app-selected-surface {
   font-weight: 500;
 }
-.sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
-  margin-top: 1px;
+/* One fixed step between sidebar rows. At 2px two rounded washes (hover
+   next to selection, a section label over its first row) never touch, so
+   no state has to trim another's paint and hover never moves a row.
+   Tailwind v4 space-y also adds margin-block-end; clear it so the step is
+   exactly this top margin. */
+.sidebar-navigation {
+  --sidebar-row-step: 2px;
 }
+.sidebar-navigation .space-y-0\.5 > :not([hidden]) {
+  margin-block-end: 0;
+}
+.sidebar-navigation .space-y-0\.5 > :not([hidden]) ~ :not([hidden]),
 .sidebar-navigation .mt-0\.5 {
-  margin-top: 1px;
+  margin-top: var(--sidebar-row-step);
 }
-/* --gap-adjacent (sidebar): twin rounded hover/selected washes that would touch. */
-.sidebar-section:has(> .sidebar-section-header:is(:hover, :focus-within))
-  > .animated-collapse[data-state="open"]
-  > :where(ul, div)
-  > li:first-child:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
-  margin-top: var(--gap-adjacent);
-}
-.sidebar-navigation
-  li:has(> .sidebar-grid-row.sidebar-project-row:is(:hover, [data-menu-open="true"]))
-  > .animated-collapse[data-state="open"]
-  > ul
-  > li:first-child:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
-  margin-top: var(--gap-adjacent);
-}
-.sidebar-navigation
-  .space-y-0\.5
-  > li:has(> .sidebar-grid-row:is(:hover, .app-selected-surface))
-  + li:has(> .sidebar-grid-row:is(:hover, .app-selected-surface)) {
-  margin-top: var(--gap-adjacent);
-}
-[data-composer-footer-controls="true"] {
+/* Composer control rows keep one gap in every state: widening it on hover or
+   open moved every control after the one pointed at. Two washes that would
+   touch are separated the way the sidebar does it — the second is trimmed by
+   paint, not pushed by layout. */
+:is([data-composer-footer-controls="true"], .composer-toolbar-chip-row) {
   gap: var(--control-gap-compact);
 }
-[data-composer-footer-controls="true"]:has(
-  .composer-footer-trigger:is(:hover, [data-state="open"], [aria-expanded="true"])
-) {
-  gap: var(--gap-adjacent);
-}
-.composer-toolbar-chip-row {
-  gap: var(--control-gap-compact);
-}
-.composer-toolbar-chip-row:has(
-  .composer-footer-trigger:is([data-state="open"], [aria-expanded="true"])
-) {
-  gap: var(--gap-adjacent);
+:is([data-composer-footer-controls="true"], .composer-toolbar-chip-row)
+  > .composer-footer-trigger:is(:hover, [data-state="open"], [aria-expanded="true"])
+  + .composer-footer-trigger:is(:hover, [data-state="open"], [aria-expanded="true"]):not(:focus-visible) {
+  clip-path: inset(
+    0 0 0 calc(var(--gap-adjacent) - var(--control-gap-compact))
+    round var(--control-radius)
+  );
 }
 .sidebar-section + .sidebar-section {
   margin-top: 1px;
@@ -444,18 +459,30 @@
   color: var(--fg-muted);
 }
 .sidebar-section-heading {
-  font-size: var(--type-body-size);
+  font-size: var(--type-ui-size);
 }
+/* Group label above a block of rows (settings sections). Aligns with the
+   row icon rail and sits quieter than row text. */
+.sidebar-group-label {
+  padding-inline: var(--sidebar-content-padding-inline-start);
+  margin-block-end: 2px;
+  font-size: var(--type-meta-size);
+  line-height: 16px;
+  font-weight: var(--font-weight-medium);
+  color: var(--fg-subtle);
+}
+.sidebar-group + .sidebar-group {
+  margin-top: var(--sidebar-section-gap);
+}
+/* Section labels are the smallest text in the tree (see the sidebar type
+   ladder below); settings group labels are the same role. */
 .sidebar-section-heading-compact {
-  font-size: var(--type-caption-size);
+  font-size: var(--type-meta-size);
 }
 
 /* Header toggles fill the 28px row so collapsed sections keep the 1px step. */
 .sidebar-section-header.sidebar-grid-row {
   align-items: stretch;
-}
-.sidebar-section-header .sidebar-row-action:is(:hover, :focus-visible, [data-state="open"], [aria-expanded="true"]) {
-  background: transparent;
 }
 /* Nested conversation sections indent via sidebar grid depth, not ad-hoc padding. */
 .sidebar-section-header > button > span:last-child {
@@ -474,21 +501,59 @@
   width: var(--sidebar-row-action-icon-size);
   height: var(--sidebar-row-action-icon-size);
 }
-/* Every sidebar row centers its 16px glyph inside one 16px box, so icon
+/* Every sidebar row centers its glyph inside one icon-track box, so icon
    edges and label starts stay on the same two rails from the nav rows at
-   the top through sessions, pairs, projects, and the footer. */
+   the top through sessions, pairs, projects, settings, and the footer. */
 .sidebar-row-icon {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  width: var(--sidebar-grid-icon-track);
+  height: var(--sidebar-grid-icon-track);
+  flex: 0 0 var(--sidebar-grid-icon-track);
   align-items: center;
   justify-content: center;
 }
 
 .sidebar-row-icon > svg {
-  width: 16px;
-  height: 16px;
+  width: var(--sidebar-grid-icon-track);
+  height: var(--sidebar-grid-icon-track);
+}
+
+/* A disclosure caret in the icon column keeps its own 8px size; at the
+   14px glyph size a solid triangle outweighs every icon on the rail. */
+.sidebar-row-icon > [data-disclosure-caret] {
+  width: 8px;
+  height: 8px;
+}
+
+/* Automatic project mark: a tinted tile with the name's initial. Every
+   project shares one lightness and chroma per theme; only the hue
+   (--project-hue, from the identity hash) changes, so no project is louder
+   than another. Chosen icons/emoji bypass this. */
+.project-letter {
+  --project-tint: oklch(0.56 0.1 var(--project-hue));
+  display: inline-grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--project-tint) 16%, transparent);
+  color: var(--project-tint);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+}
+/* Repository artwork (GitHub social image or owner avatar) takes the same
+   rounded tile as the letter mark, so an opaque avatar sits on the rail
+   like every other project instead of as a hard square. */
+.project-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.dark .project-letter {
+  --project-tint: oklch(0.78 0.08 var(--project-hue));
+  background: color-mix(in oklch, var(--project-tint) 20%, transparent);
 }
 
 [data-composer-run-trigger] {
@@ -1798,12 +1863,15 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --type-code-leading: 22px;
   --type-heading-size: 15px;
   --type-heading-leading: 24px;
+  /* Tight prose rhythm for chat (14px/21px = 1.5, -0.02em tracking). */
+  --chat-prose-leading: 21px;
+  --chat-prose-letter-spacing: -0.02em;
   /* Codex desktop uses 430 for resting UI text. SF, Segoe UI Variable,
      and the bundled Noto Sans axis can draw it. On macOS that same 430
-     is the used font-weight, so SF follows its axis. The PingFang 430
-     face below uses the Regular file, so a 430 request resolves to
-     Regular wherever those local() names exist. 500 and 600 stay on
-     their own faces. Code keeps an explicit 400. */
+     is the used font-weight, so SF follows its axis. PingFang has no
+     430, and the PingFang 430 face below uses Medium, which sits closest
+     to SF 430 in stroke weight. 500 and 600 stay on their own faces.
+     Code keeps an explicit 400. */
   --font-ui-weight: 430;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
@@ -1858,7 +1926,12 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --scrollbar-thumb-hover: color-mix(in srgb, var(--fg-muted) 90%, transparent);
   --sidebar-row-action-size: 16px;
   --sidebar-row-action-icon-size: var(--control-icon-size);
-  --sidebar-row-action-radius: calc(var(--sidebar-row-action-size) / 2);
+  /* Row actions sit inside rows that already wash on hover, so their own
+     wash is one step smaller and nests inside the row's. The header row
+     (no row wash) restores the full row height. */
+  --sidebar-row-action-radius: 5px;
+  --sidebar-row-action-wash-bleed: 3px;
+  --sidebar-row-action-wash-h: calc(var(--sidebar-row-h) - 6px);
   /* Converged track (transcript nudged down, sidebar nudged up via thumb
      inset). Transcript colors/reveal stay canonical; sidebar ≤ transcript. */
   --oma-scrollbar-reference-size: 10px;
@@ -1880,10 +1953,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
           ) - var(--oma-scrollbar-reference-size)
       )
   );
-  --sidebar-grid-icon-track: 16px;
-  --sidebar-grid-column-gap: 8px;
-  --sidebar-grid-nest-step: 16px;
-  --sidebar-grid-depth-base-inset: 4px;
+  /* Linear-calibrated rails: 14px glyph, 6px icon-to-label, 18px per level. */
+  --sidebar-grid-icon-track: 14px;
+  --sidebar-grid-column-gap: 6px;
+  /* One indent step puts a child's icon under its parent's label start. */
+  --sidebar-grid-nest-step: calc(var(--sidebar-grid-icon-track) + var(--sidebar-grid-column-gap));
   --sidebar-grid-outline-width: 1px;
   --sidebar-grid-no-trailing-end-inset: 4px;
   --sidebar-section-gap: 20px;
@@ -2109,6 +2183,28 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
    header. Fade only the edge that still has hidden tabs; the fixed action
    group (+ / promote) sits outside this mask and stays crisp. Hide its native
    scrollbar so tab overflow never adds height to the header. */
+/* Hairline between side-panel tabs (browser-tab style). It sits in the 4px
+   gap before each tab and steps aside next to the active or hovered tab, so
+   a chip with its own fill never also carries a line. */
+.side-tab-chip + .side-tab-chip::before {
+  content: "";
+  position: absolute;
+  left: -2.5px;
+  top: 50%;
+  width: 1px;
+  height: 14px;
+  transform: translateY(-50%);
+  background: var(--border);
+  pointer-events: none;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.side-tab-chip[data-active] + .side-tab-chip::before,
+.side-tab-chip + .side-tab-chip[data-active]::before,
+.side-tab-chip:hover + .side-tab-chip::before,
+.side-tab-chip + .side-tab-chip:hover::before {
+  opacity: 0;
+}
+
 .side-tab-scroll {
   scrollbar-width: none;
 }
@@ -2152,11 +2248,11 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
    Chinese weights are packaged. macOS and Windows builds omit these files
    (see package.json build.mac/win.files). Italic is synthesized; there is
    no italic file. https://fonts.google.com/noto */
-/* PingFang SC ships Medium at 500. A request of 430 checks 500 before 400,
-   so raw PingFang SC would paint Medium while SF draws 430. An explicit
-   430 face uses the Regular file, so a 430 request resolves to Regular
-   wherever these local() names exist. 500 is its own face (Medium), and
-   600 is Semibold. Without the 500 face, font-medium collapses to Regular.
+/* PingFang SC ships Regular, Medium and Semibold only. Resting 430 text
+   uses Medium: Regular reads a full step lighter than SF at 430 beside it,
+   and Medium is what a raw PingFang 430 request resolves to anyway (430
+   checks 500 before 400), matching Codex. 500 is also Medium, so emphasis
+   that must stand out from body text uses 600 (Semibold).
    local() names are the English full name and the PostScript name.
    This Linux checkout cannot draw PingFang. The Simplified Chinese full
    name does not resolve in Chromium, so it is not listed. */
@@ -2172,7 +2268,7 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   font-style: normal;
   font-weight: 430;
   font-display: swap;
-  src: local("PingFang SC Regular"), local("PingFangSC-Regular");
+  src: local("PingFang SC Medium"), local("PingFangSC-Medium");
 }
 @font-face {
   font-family: "Backchat PingFang";
@@ -2320,7 +2416,9 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-fg-subtle: var(--fg-subtle);
-  /* Set by applyThemeToRoot from the active theme. See text-roles.ts. */
+  /* Set by applyThemeToRoot from the active theme. See text-roles.ts.
+     fg-faint is the 3:1 quaternary tier, for non-essential text only. */
+  --color-fg-faint: var(--fg-faint);
   --color-fg-disabled: var(--fg-disabled);
 
   --color-border: var(--border);
@@ -2447,13 +2545,15 @@ html[data-os="mac"] {
   --font-ui-weight: 430;
 }
 
-/* Chat prose uses the same family as the chrome. The alias exists so a
-   transcript cannot pick up a nested `font-mono` or a future display face. */
+/* Chat prose uses the same family as the chrome, with tighter tracking and
+   line-height and without auto-inserted CJK/Latin gaps. */
 [data-session-turn-prompt],
 [data-session-turn-answer] {
   font-family: var(--font-chat);
   font-kerning: normal;
-  line-height: var(--type-body-leading);
+  letter-spacing: var(--chat-prose-letter-spacing);
+  line-height: var(--chat-prose-leading);
+  text-autospace: no-autospace;
 }
 
 /* Resting text stays on a real 400/430 face. Emphasis opts back into
@@ -2509,13 +2609,16 @@ html[lang|="zh"] :is(
 /* Viewport lock — the AppShell sidebar + breadcrumb header are global frame
    elements that MUST NEVER scroll out of view. Pinning html/body/#root at
    exactly the viewport height forces every scroll to happen inside <main>
-   (the only `overflow-y: auto` container in the shell). */
+   (the only `overflow-y: auto` container in the shell).
+   `clip`, not `hidden`: a hidden box is still a scroll container, so a focus
+   or caret reveal could scroll #root sideways toward the off-screen
+   collapsed right rail and slide the whole shell left. Clip never scrolls. */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 /* Focus ring — neutral by default. @layer base lets per-element
@@ -2538,6 +2641,16 @@ body,
   body {
     -webkit-user-select: none;
     user-select: none;
+  }
+
+  /* Placeholders default to the tertiary tier. A browser default opacity
+     would wash them out, so the color is the token and fully opaque.
+     This must stay in a layer: unlayered, it outranked every
+     `placeholder:text-*` utility, so a field could not opt into
+     `fg-faint` (search) or anything else. */
+  ::placeholder {
+    color: var(--fg-subtle);
+    opacity: 1;
   }
 
   input,
@@ -2647,7 +2760,7 @@ body,
     padding-inline var(--dur-quick) var(--ease-snap);
 }
 .sidebar-scroll-area:hover [data-slot="scroll-area-scrollbar"],
-.sidebar-scroll-area:focus-within [data-slot="scroll-area-scrollbar"] {
+.sidebar-scroll-area:has(:focus-visible) [data-slot="scroll-area-scrollbar"] {
   opacity: 1;
 }
 .sidebar-scroll-area [data-slot="scroll-area-thumb"] {
@@ -2675,6 +2788,12 @@ body,
   height: var(--sidebar-row-h);
   align-items: center;
   column-gap: var(--sidebar-grid-column-gap);
+  /* One color per row: icon and label inherit it. Idle rows sit on the
+     tertiary tier, as Linear's do (#59595b, 6.1:1 measured); hover, open
+     menus and selection (utility classes) lift to --fg. */
+  color: var(--fg-subtle);
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-leading);
   padding-inline-start: var(--sidebar-content-padding-inline-start);
   padding-inline-end: var(--sidebar-content-padding-inline-end);
   grid-template-columns:
@@ -2682,9 +2801,47 @@ body,
     minmax(0, 1fr)
     var(--sidebar-grid-trailing-effective);
 }
-.sidebar-grid-depth-root {
-  padding-inline-start: var(--sidebar-grid-depth-base-inset);
+/* Lift only for pointer hover, open menus and keyboard focus. A clicked
+   button keeps DOM focus (Radix also hands it back to a closed menu's
+   trigger), so :focus-within would leave the row lifted after the pointer
+   has gone. Rows that want a softer lift set --sidebar-row-lift-ink. */
+.sidebar-grid-row:is(:hover, :has(:focus-visible), [data-state="open"], [data-menu-open="true"]):not([role="status"]) {
+  color: var(--sidebar-row-lift-ink, var(--fg));
 }
+/* One hover system for every sidebar row that has actions (project,
+   worktree, chat, pair, section heading). A row is "engaged" while the
+   pointer is on it, keyboard focus is inside it, or its menu is held open —
+   from ⋯ (data-menu-open) or right-click (Radix data-state="open"). Engaged
+   rows take the hover wash, reveal their actions and hide resting
+   indicators; all three switch together, so no row type drifts. */
+.sidebar-grid-row[data-sidebar-row-hover]:is(:hover, :has(:focus-visible)):not(.app-selected-surface) {
+  background: var(--control-bg-hover);
+}
+.sidebar-grid-row[data-sidebar-row-hover]:is([data-state="open"], [data-menu-open="true"]):not(.app-selected-surface) {
+  background: var(--control-bg-open, var(--control-bg-hover));
+}
+.sidebar-row-reveal {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.sidebar-row-rest {
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.sidebar-grid-row:is(:hover, :has(:focus-visible), [data-state="open"], [data-menu-open="true"]) .sidebar-row-reveal {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sidebar-grid-row:is(:hover, :has(:focus-visible), [data-state="open"], [data-menu-open="true"]) .sidebar-row-rest {
+  opacity: 0;
+}
+.sidebar-row-card {
+  /* Read-only: the card never takes the pointer, so leaving the row is
+     leaving the card and nothing under it is blocked. */
+  user-select: none;
+}
+/* No tree guides: nesting reads from the indent step and the tier of the
+   text (Linear-style), with at most two levels under a section label. */
 .sidebar-grid-row[data-sidebar-trailing-track="double"] {
   --sidebar-grid-trailing-effective: var(--sidebar-grid-trailing-track-double);
 }
@@ -2737,6 +2894,34 @@ body,
   align-self: stretch;
   align-items: center;
 }
+/* Sidebar type ladder (Linear): section labels are the smallest text in the
+   tree, project names the largest, chats and worktree labels in between.
+   Size, weight and ink carry the hierarchy so the tree needs no guides. */
+.sidebar-project-label {
+  font-size: 14px;
+}
+/* Worktree group row shares the chat row's 13px / --fg-subtle -> --fg tier
+   from .sidebar-grid-row; the caret and branch glyph mark its role. */
+/* Workspace identity glyph: caption-sized, inline before the name. */
+.sidebar-workspace-glyph {
+  width: 11px;
+  height: 11px;
+  flex: none;
+}
+/* Repository hover card: one 14px icon column so links, branch and review
+   rows share a text edge (status lines indent to it with pl-[28px]). */
+.repository-card-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+.repository-card-icon > svg {
+  width: 14px;
+  height: 14px;
+}
 .sidebar-grid-cell-trailing,
 [data-sidebar-grid="trailing"] {
   grid-column: 3;
@@ -2746,6 +2931,13 @@ body,
   align-items: center;
   justify-content: flex-end;
   justify-self: end;
+}
+/* Trailing cells reuse the label's truncate class for the collapsed rail,
+   but must not clip the row-height action wash that bleeds past the 16px
+   glyph box. */
+.sidebar-grid-cell-trailing,
+[data-sidebar-grid="trailing"] {
+  overflow: visible;
 }
 
 .menu-panel {
@@ -3035,6 +3227,9 @@ body,
 }
 
 [data-menu-density="comfortable"] .grouped-command-menu {
+  /* Comfortable pickers own their icon track. Inheriting the sidebar rail
+     (now 14px) shrank the 16px glyph and pulled every label 2px left. */
+  --grouped-command-icon-track: var(--menu-comfortable-icon-size);
   --grouped-command-icon-size: var(--menu-comfortable-icon-size);
   --grouped-command-search-height: var(--menu-comfortable-search-height);
 }
@@ -3044,8 +3239,11 @@ body,
 }
 }
 
+/* Every sidebar block (host chrome, scroll content, footer, settings) uses
+   the same inset, so all rows share one left edge and one icon rail. */
 .sidebar-host-chrome,
-.sidebar-footer-chrome {
+.sidebar-footer-chrome,
+.sidebar-content-inset {
   padding-inline: var(--sidebar-row-surface-inset);
 }
 
@@ -3056,10 +3254,11 @@ body,
   );
 }
 
+/* Status rows ("No chats yet", loading) are text, not targets: no wash. */
 .sidebar-navigation
   .sidebar-grid-row:not([data-sidebar-row="new-chat"]):not(
-    .app-selected-surface
-  ):is(:hover, [data-state="open"]) {
+    [data-sidebar-row="settings"]
+  ):not([role="status"]):not(.app-selected-surface):is(:hover, [data-state="open"]) {
   background: var(--control-bg-hover);
 }
 
@@ -3087,9 +3286,13 @@ body,
   content: "";
   position: absolute;
   inset-block: 0;
-  inset-inline-start: calc(-1 * var(--sidebar-row-surface-inset));
+  /* Start where every other row's wash starts: the row edge, i.e. one row
+     padding before the icon track. */
+  inset-inline-start: calc(-1 * var(--sidebar-content-padding-inline-start));
+  /* Reach toward the trailing actions, leaving one compact gap before the
+     search wash so the two never touch. */
   inset-inline-end: calc(
-    var(--sidebar-grid-icon-track) - var(--control-gap-compact)
+    -1 * (var(--sidebar-grid-column-gap) - var(--sidebar-row-action-wash-bleed, 4px) - var(--control-gap-compact))
   );
   z-index: -1;
   border-radius: var(--control-radius);
@@ -3112,19 +3315,88 @@ body,
   outline-offset: -2px;
 }
 
-/* Trailing actions stay 16px glyphs, but their boxes share the row's top
-   edge with the full-height primary control. */
+/* Reserve the entire highlight in the layout, not just the glyph. Two
+   simultaneously highlighted controls must still have a real 4px gap. */
+.sidebar-grid-row[data-sidebar-row="new-chat"] {
+  --sidebar-row-action-size: calc(var(--sidebar-row-h) - 4px);
+  --sidebar-grid-trailing-effective: calc(2 * var(--sidebar-row-action-size) + var(--sidebar-grid-trailing-gap));
+}
+
 .sidebar-grid-row[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"] {
   align-self: stretch;
   height: 100%;
+  /* Keep the two header actions in their own local rail. In the collapsed
+     sidebar the hidden label must never let one hover wash overlap the other. */
+  display: grid;
+  grid-template-columns: var(--sidebar-row-action-size) var(--sidebar-row-action-size);
+  gap: var(--sidebar-grid-trailing-gap);
+  justify-content: end;
+  align-items: center;
+  overflow: visible;
+  isolation: isolate;
 }
 
 .sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action {
-  height: 100%;
+  /* Hit box and wash are both 24px. Neither paints outside its own track. */
+  --sidebar-row-action-radius: 6px;
+  --sidebar-row-action-wash-bleed: 0px;
+  --sidebar-row-action-wash-h: calc(var(--sidebar-row-h) - 4px);
+  height: var(--sidebar-row-action-size);
 }
 
-.sidebar-navigation .sidebar-grid-row.app-selected-surface {
-  background: var(--surface-selected);
+/* Settings has two real adjacent surfaces: a primary matrix spanning the
+   icon + label tracks, and an independent update matrix. The host row is only
+   layout and never paints a background. */
+.sidebar-grid-row[data-sidebar-row="settings"],
+.sidebar-grid-row[data-sidebar-row="settings"]:is(:hover, [data-state="open"], [data-menu-open="true"]),
+.sidebar-grid-row[data-sidebar-row="settings"].app-selected-surface,
+.sidebar-navigation .sidebar-grid-row[data-sidebar-row="settings"]:is(:hover, [data-state="open"], [data-menu-open="true"]),
+.sidebar-navigation .sidebar-grid-row[data-sidebar-row="settings"].app-selected-surface {
+  background: transparent;
+}
+.sidebar-grid-row[data-sidebar-row="settings"] {
+  column-gap: var(--sidebar-grid-trailing-gap);
+}
+.sidebar-settings-primary {
+  grid-column: 1 / span 2;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: subgrid;
+  align-items: center;
+  height: 100%;
+  /* Bleed over the row padding so the wash's left edge matches every other
+     row; the matching padding keeps the icon on the shared rail. */
+  margin-inline-start: calc(-1 * var(--sidebar-content-padding-inline-start));
+  padding-inline-start: var(--sidebar-content-padding-inline-start);
+  border-radius: var(--control-radius);
+  background: transparent;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar-settings-primary:is(:hover, :has(:focus-visible)),
+.sidebar-settings-primary.app-selected-surface {
+  background: var(--control-bg-hover);
+}
+.sidebar-grid-row[data-sidebar-row="settings"] > [data-sidebar-grid="trailing"] {
+  position: relative;
+  z-index: 1;
+}
+.sidebar-update-action {
+  height: calc(var(--sidebar-row-h) - 4px);
+  min-width: calc(var(--sidebar-row-h) - 4px);
+  gap: var(--control-gap-compact);
+  padding-inline: var(--sidebar-grid-trailing-gap);
+  border-radius: var(--control-radius);
+  color: var(--fg-subtle);
+  transition: color var(--dur-quick) var(--ease-snap), background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar-update-action:is(:hover, :focus-visible),
+.sidebar-update-action[data-state="open"] {
+  background: var(--control-bg-hover);
+  color: var(--control-fg-active);
+}
+.sidebar-update-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 @keyframes shimmer-text-sweep {
@@ -3136,8 +3408,7 @@ body,
   }
 }
 
-.shimmer-text,
-.composer-harness-probe-placeholder::placeholder {
+.shimmer-text {
   background-image: linear-gradient(
     90deg,
     color-mix(in srgb, var(--fg-muted) 88%, transparent) 0%,
@@ -3152,8 +3423,7 @@ body,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shimmer-text,
-  .composer-harness-probe-placeholder::placeholder {
+  .shimmer-text {
     animation: none;
     color: var(--fg-muted);
     background: none;
@@ -3312,6 +3582,12 @@ body,
     opacity: 1;
   }
 }
+/* Transcript turns (from @openma/common) carry .reveal-in, but they remount
+   on send and again on the first streamed token; replaying the fade makes
+   the whole turn, prompt bubble included, blink. Turns appear in place. */
+article.reveal-in[data-turn-id] {
+  animation: none;
+}
 
 /* ---------- Reduced motion ----------
    WCAG 2.3.3 (AAA). Zeroing out the motion tokens lets every component that
@@ -3464,6 +3740,27 @@ header:not(.app-drag-region) .app-drag-region {
   transform: translateY(0);
 }
 
+/* Dense lists skip per-frame grid sizing; the heading stays responsive while
+   the large subtree enters as one paint rather than repeated layout passes. */
+.animated-collapse[data-motion="lightweight"] {
+  display: block;
+  grid-template-rows: none;
+  transition: opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    visibility 0s linear var(--motion-disclosure-duration);
+}
+.animated-collapse[data-motion="lightweight"][data-state="open"] {
+  transition: opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    visibility 0s linear 0s;
+}
+.animated-collapse[data-motion="lightweight"][data-state="closed"] {
+  height: 0;
+  overflow: hidden;
+}
+.animated-collapse[data-motion="lightweight"] > .animated-collapse-inner {
+  transform: none;
+  transition: none;
+}
+
 /* The side conversation lives on a glass surface, where the default
    near-white user bubble disappears into the panel. Keep this after the
    Tailwind utility layer so it can override the shared bg token without
@@ -3531,7 +3828,9 @@ header:not(.app-drag-region) .app-drag-region {
    composer begins. */
 [data-chat-surface] :is(.chat-markdown, .streaming-md) {
   font-size: var(--type-body-size);
-  line-height: var(--type-body-leading);
+  letter-spacing: var(--chat-prose-letter-spacing);
+  line-height: var(--chat-prose-leading);
+  text-autospace: no-autospace;
 }
 [data-chat-surface] :is(.chat-markdown, .streaming-md) :is(h1, h2, h3, h4, h5, h6) {
   font-size: var(--type-heading-size);
@@ -3567,10 +3866,20 @@ header:not(.app-drag-region) .app-drag-region {
   background: color-mix(in srgb, var(--fg) 5%, transparent);
 }
 [data-chat-surface] :is(.chat-markdown, .streaming-md) :is(p, ul, ol) {
-  margin-block: 4px;
+  margin-block: 3px;
 }
 [data-chat-surface] :is(.chat-markdown, .streaming-md) li {
-  margin-block: 1px;
+  margin-block: 0;
+}
+/* The rhythm above out-ranks the renderers' own edge trim, so restate it: a
+   document starts and ends flush with its container in both renderers. The
+   streaming one sits under extra wrappers, so the trim cannot be expressed
+   from the outside by depth. */
+[data-chat-surface] :is(.chat-markdown, .streaming-md) > :first-child {
+  margin-top: 0;
+}
+[data-chat-surface] :is(.chat-markdown, .streaming-md) > :last-child {
+  margin-bottom: 0;
 }
 [data-chat-surface] .chat-markdown--thought {
   font-size: var(--type-ui-size);
@@ -3578,7 +3887,10 @@ header:not(.app-drag-region) .app-drag-region {
 }
 /* Prompt bubble follows the same rhythm. */
 [data-session-turn-prompt] p {
-  line-height: var(--type-body-leading);
+  line-height: var(--chat-prose-leading);
+}
+[data-session-turn-prompt] p.whitespace-pre-wrap {
+  font-size: var(--type-body-size);
 }
 /* Last turn: no trailing margin; content padding shrinks to a hairline gap.
    The frame sets `!mb-8` from Tailwind's utilities layer, and important
@@ -3593,11 +3905,24 @@ header:not(.app-drag-region) .app-drag-region {
      distinct groupings without any rules or backgrounds. The time row adds
      ~8px of glyph slack, so the perceived turn gap is ~32px against a
      perceived paragraph gap of ~12px. */
+  /* The user's prompt sits in one band of air: the same gap above it (from
+     the previous turn's footer) and below it (to the answer), so the bubble
+     reads as a centered divider between two answers. */
+  [data-chat-column="turns"] {
+    --chat-prompt-gap: 40px;
+  }
   [data-chat-column="turns"] [data-turn-id] {
-    margin-bottom: 24px !important;
+    margin-bottom: var(--chat-prompt-gap) !important;
   }
   [data-chat-column="turns"] [data-turn-id] > :not(:last-child) {
     margin-bottom: 12px !important;
+  }
+  /* Component-level rhythm: the answer's footer row and the prompt's action
+     row are the same 28px component (always laid out, revealed on hover), so
+     the gap is measured between components — footer → bubble equals
+     prompt actions → answer. */
+  [data-chat-column="turns"] [data-turn-id] > [data-session-turn-prompt]:not(:last-child) {
+    margin-bottom: var(--chat-prompt-gap) !important;
   }
   [data-chat-column="turns"] > :last-child [data-turn-id],
   [data-chat-column="turns"] > [data-turn-id]:last-child {
@@ -3631,18 +3956,14 @@ textarea:disabled::selection {
 }
 
 /* Composer copy shares the response's reading tier. */
-[data-chat-surface] .composer-card textarea {
+[data-chat-surface] .composer-card textarea,
+.composer-card textarea {
   font-family: var(--font-chat);
   font-size: var(--type-body-size);
   font-weight: var(--font-ui-weight);
-  line-height: var(--type-body-leading);
-}
-
-/* Placeholders are the weaker text role. A browser default opacity
-   would wash them out, so the color is the token and fully opaque. */
-::placeholder {
-  color: var(--fg-subtle);
-  opacity: 1;
+  letter-spacing: var(--chat-prose-letter-spacing);
+  line-height: var(--chat-prose-leading);
+  text-autospace: no-autospace;
 }
 
 /* Disabled controls keep their fill. Inactive ink is a 2:1 glyph floor,
@@ -3667,4 +3988,153 @@ textarea:disabled::selection {
 ) {
   color: var(--fg-disabled);
   opacity: 1;
+}
+
+/* Turn rhythm. One block gap separates everything a reader scans in a turn:
+   the "Worked for" header, each process block (thought row, narration, tool
+   row), the answer, and the footer. Margins from markdown, wrappers and
+   utilities (py-0.5, mb-2, space-y-*, -mt-1) are neutralised here so the gap
+   is the only source of vertical space — unlayered, so utilities lose. */
+[data-session-turn-response] {
+  --turn-block-gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--turn-block-gap);
+}
+[data-session-turn-response] > *,
+[data-session-process-activity] > * {
+  margin-block: 0;
+  padding-block: 0;
+}
+[data-session-process-activity]:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--turn-block-gap);
+  padding-top: var(--turn-block-gap);
+}
+/* An expanded tool group (Running / Ran … with dozens of rows) is capped
+   and scrolls inside, so the answer under it stays on screen. The group
+   markup comes from @openma/common; its panel is the element the trigger's
+   aria-controls points at. */
+:root {
+  --tool-group-max-h: min(320px, 40vh);
+}
+[data-tool-group-size] > [aria-controls] + [id] {
+  max-height: var(--tool-group-max-h);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 160ms var(--ease-soft);
+}
+[data-tool-group-size] > [aria-controls] + [id]:hover {
+  scrollbar-color: var(--oma-scrollbar-thumb) transparent;
+}
+/* Soft bottom edge only while more rows sit below; it clears once the
+   panel is scrolled to its end. Scroll-driven, so no JS listener. */
+@supports (animation-timeline: scroll()) {
+  [data-tool-group-size] > [aria-controls] + [id] {
+    --tool-group-fade: 0px;
+    mask-image: linear-gradient(
+      to bottom,
+      #000 calc(100% - var(--tool-group-fade)),
+      transparent
+    );
+    animation: tool-group-fade-out linear both;
+    animation-timeline: scroll(self);
+  }
+}
+@property --tool-group-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes tool-group-fade-out {
+  0%,
+  92% {
+    --tool-group-fade: 28px;
+  }
+  100% {
+    --tool-group-fade: 0px;
+  }
+}
+/* An empty process (nothing streamed yet) adds no band of its own; the
+   "Thinking…" fallback then sits one gap under the header like any block. */
+[data-session-process-activity]:empty {
+  padding-top: 0;
+}
+/* The process extras slot is usually empty; its padding must not leave a
+   blank band under the last tool row. */
+[data-session-turn-response] .reasoning-collapse-inner > div {
+  padding-top: 0;
+}
+[data-session-turn-response] .reasoning-collapse-inner > div > div:not(:empty) {
+  padding-top: var(--turn-block-gap);
+}
+/* That wrapper already supplies the one gap under the header; the activity
+   list inside it must not add a second band. */
+[data-session-turn-response]
+  .reasoning-collapse-inner
+  > div
+  > div:not(:empty)
+  > [data-session-process-activity]:first-child {
+  padding-top: 0;
+}
+
+/* "Worked for" header: body-size text with the chevron right after it, over a
+   full-width hairline that closes the process off from the answer. */
+[data-session-turn-response]
+  button.chat-reasoning-trigger.activity-disclosure-row.activity-disclosure-row {
+  min-height: 0;
+  /* The hairline hugs its label; the process below keeps the full gap. */
+  padding-bottom: 4px;
+  /* Structural, not a state: chat-ui's open / mouse-focus rules clear
+     border-color on interactive surfaces (0,6,1), which hid the hairline
+     whenever the process was expanded or had just been clicked. */
+  border-bottom: 1px solid var(--border) !important;
+}
+[data-session-turn-response]
+  button.chat-reasoning-trigger.activity-disclosure-row
+  .chat-transcript-disclosure-summary {
+  flex: 0 1 auto;
+}
+
+/* Process rows sit one step under the narration: smaller, Regular (not the
+   resting 430 / PingFang Medium) and subtle, on the 24px line so the block
+   rhythm holds. Values only — chat-ui's row rules read these variables. The
+   chevron shows when the row is pointed at, focused, or open. */
+[data-session-turn-response] {
+  --chat-transcript-row-font-size: 13px;
+  --chat-transcript-row-line-height: 24px;
+  --chat-transcript-row-font-weight: var(--font-weight-regular);
+  --chat-transcript-row-fg: var(--fg-subtle);
+  /* TurnFooter's row (h-7); chat-ui reserves it while the turn streams. */
+  --chat-turn-footer-height: 28px;
+}
+/* Backchat's own tool rows (ToolPresentation) use the same values. */
+[data-session-turn-response] button.activity-disclosure-row {
+  font-size: var(--chat-transcript-row-font-size);
+  line-height: var(--chat-transcript-row-line-height);
+  font-weight: var(--chat-transcript-row-font-weight);
+}
+[data-session-process-activity]
+  .activity-disclosure-row[aria-expanded="false"]:not(:hover, :focus-visible)
+  .activity-disclosure-chevron {
+  opacity: 0;
+}
+/* Rows and the header keep their chevron right after the label, and answer
+   a pointer by darkening — no wash. */
+[data-session-process-activity]
+  button.activity-disclosure-row
+  .chat-transcript-disclosure-summary {
+  flex: 0 1 auto;
+}
+
+[data-turn-id][data-search-highlight="true"] {
+  border-radius: 10px;
+  background-color: color-mix(in oklch, var(--brand) 8%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--brand) 28%, transparent);
+  transition:
+    background-color 320ms ease-out,
+    box-shadow 320ms ease-out;
 }

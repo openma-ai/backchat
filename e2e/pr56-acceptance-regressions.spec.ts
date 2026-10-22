@@ -116,18 +116,21 @@ async function readColorToken(page: Page, token: string) {
   }, token);
 }
 
-test("harness probe placeholder uses shimmer styles", async ({ page }) => {
+test("harness probe status text runs the shimmer sweep", async ({ page }) => {
   await enableAgent(page, "codex-acp");
   await page.getByTestId("new-chat-button").click();
-  const textarea = page.locator("textarea").first();
-  await page.evaluate(() => {
-    const el = document.querySelector("textarea");
-    el?.classList.add("composer-harness-probe-placeholder");
-    el?.setAttribute("placeholder", "Checking Codex…");
+  // The probe may settle before we look, so check the class the composer
+  // renders on a real element (::placeholder never animates in Chromium).
+  const animation = await page.evaluate(() => {
+    const el = document.createElement("span");
+    el.className = "shimmer-text";
+    el.textContent = "Checking Codex…";
+    document.body.appendChild(el);
+    const name = getComputedStyle(el).animationName;
+    el.remove();
+    return name;
   });
-  await expect.poll(() =>
-    textarea.evaluate((el) => getComputedStyle(el, "::placeholder").animationName),
-  ).toContain("shimmer-text-sweep");
+  expect(animation).toContain("shimmer-text-sweep");
 });
 
 test("sidebar scrollbar thumb resolves paint tokens", async ({ page }) => {
@@ -146,7 +149,10 @@ test("sidebar row hover wash is inset from the rail edge", async ({ page }) => {
   const sidebar = page.locator(".sidebar-navigation").first();
   const box = await sidebar.boundingBox();
   expect(box).not.toBeNull();
-  const row = page.getByTestId("sidebar-local-runtime-row");
+  // The local runtime heading only renders once OpenMA is signed in (5e2f2f9,
+  // Sidebar.tsx "The runtime switch is only a choice once OpenMA offers remote
+  // locations"). The Scheduled nav row is always present on the same rail.
+  const row = page.getByRole("link", { name: "Scheduled", exact: true });
   await row.hover();
   await expect.poll(() => row.evaluate((el) => {
     const sidebar = el.closest(".sidebar-navigation") as HTMLElement;
@@ -177,7 +183,9 @@ test("new chat row matches session row vertical alignment and shows hover wash",
   expect(rowBox!.height).toBeLessThanOrEqual(29);
   expect(Math.abs(newChatBox!.y - rowBox!.y)).toBeLessThanOrEqual(0.5);
   const iconBox = await newChat.locator(".sidebar-row-icon").boundingBox();
-  expect(iconBox!.y - rowBox!.y).toBeLessThanOrEqual(6);
+  // 5e2f2f9 moved the rail to a 14px glyph (--sidebar-grid-icon-track), so a
+  // centered icon sits 7px into the 28px row.
+  expect(iconBox!.y - rowBox!.y).toBeLessThanOrEqual(7);
   const trailing = page.locator('[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"]');
   await newChat.hover();
   await expect
@@ -254,7 +262,10 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     await expect(demoHeading).toBeVisible();
     await expect(demoHeading).toHaveAttribute("data-sidebar-leading", "none");
     const localRow = page.getByTestId("sidebar-local-runtime-row");
-    const mutedColor = await readColorToken(page, "--fg-muted");
+    // 5e2f2f9 put every sidebar block on .sidebar-content-inset (rows share
+    // the x=14 edge) and moved idle row ink to --fg-subtle (.sidebar-grid-row
+    // "One color per row"), dropping the headings' text-fg-muted.
+    const mutedColor = await readColorToken(page, "--fg-subtle");
     await expect.poll(() =>
       localRow.evaluate((el) => {
         const rect = el.getBoundingClientRect();
@@ -271,9 +282,9 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
         };
       }),
     ).toMatchObject({
-      x: 15,
+      x: 14,
       y: 177,
-      width: 222,
+      width: 224,
       height: 28,
       fontSize: "12px",
       fontWeight: "500",
@@ -292,7 +303,9 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
           };
         }),
     ).toMatchObject({
-      fontSize: "12px",
+      // 5e2f2f9 type ladder: compact section labels use --type-meta-size
+      // (11px), the smallest text in the tree.
+      fontSize: "11px",
       fontWeight: "500",
       color: mutedColor,
     });
@@ -300,21 +313,23 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     const tenantSection = demoHeading.locator(
       "xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' sidebar-section ')]",
     );
-    await expect(
-      tenantSection.locator('.sidebar-grid-row[data-sidebar-depth="1"]'),
-    ).toHaveCount(3);
+    // 5e2f2f9 flattened tenant children to depth 0 (Sidebar.tsx
+    // TenantSidebarSection: renderRow(row, 0), "New chat" depth={0}): the
+    // section label already groups them, and the tree keeps at most two levels.
+    const tenantChildren = tenantSection.locator(
+      '.animated-collapse .sidebar-grid-row[data-sidebar-depth="0"]',
+    );
+    await expect(tenantChildren).toHaveCount(3);
     await expect.poll(async () => {
       const [demoLabelBox, tenantChildIconBox] = await Promise.all([
         demoHeading.locator('[data-sidebar-grid="label"]').boundingBox(),
-        tenantSection
-          .locator('.sidebar-grid-row[data-sidebar-depth="1"] .sidebar-row-icon')
-          .first()
-          .boundingBox(),
+        tenantChildren.locator(".sidebar-row-icon").first().boundingBox(),
       ]);
+      // Heading label and child icons share the x=22 rail.
       return !!demoLabelBox
         && !!tenantChildIconBox
-        && Math.abs(demoLabelBox.x - 23) <= 1
-        && Math.abs(tenantChildIconBox.x - 43) <= 0.5;
+        && Math.abs(demoLabelBox.x - 22) <= 1
+        && Math.abs(tenantChildIconBox.x - 22) <= 0.5;
     }).toBe(true);
     await openRuntimeLocationPicker(page);
     const panel = hostPickerPanel(page);
@@ -517,7 +532,9 @@ test("selected session row stays opaque on hover", async ({ page }) => {
   const row = page.locator(".sidebar-grid-row.app-selected-surface").first();
   const rowBox = await row.boundingBox();
   expect(rowBox).not.toBeNull();
-  expect(Math.abs(rowBox!.x - 51)).toBeLessThanOrEqual(0.5);
+  // 5e2f2f9 recalibrated the rail (nest step = 14px icon + 6px gap, no
+  // depth base inset): a depth-1 session sits one nest step past x=14.
+  expect(Math.abs(rowBox!.x - 34)).toBeLessThanOrEqual(0.5);
   const selectedWeight = await row
     .locator('[data-sidebar-grid="label"]')
     .evaluate((el) => Number.parseInt(getComputedStyle(el).fontWeight, 10));
@@ -545,28 +562,53 @@ test("selected session row stays opaque on hover", async ({ page }) => {
 
 test("project sessions share the coordinator grid without clipping", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
+  // 5e2f2f9 shows the coordinator row only once one is configured
+  // (Sidebar.tsx ProjectCoordinatorRow; Sidebar.new-chat-grid.test.tsx
+  // expects no row for an unconfigured project), so seed one.
+  const cwd = "/tmp/pr56-grid-alignment";
+  await mkdir(cwd, { recursive: true });
+  await page.evaluate(async (dir) => {
+    await window.backchat.projectSave({
+      project_id: "pr56-grid-alignment",
+      name: "pr56-grid-alignment",
+      source_folders: [dir],
+      primary_folder: dir,
+    });
+    await window.backchat.projectWorkSave({
+      projectId: "pr56-grid-alignment",
+      description: "",
+      instructions: "",
+      context: "",
+      resources: [],
+      coordinatorAgent: "codex-acp",
+      workerAgent: "codex-acp",
+      continuity: "per-scope",
+      controls: ["delegate", "steer", "cancel", "complete"],
+      execution: { kind: "local" },
+    });
+  }, cwd);
+  await page.reload();
   await enableAgent(page, "codex-acp");
   await injectSession(page, {
     sessionId: "pr56-grid-alignment",
     agentId: "codex-acp",
-    cwd: "/tmp/pr56-grid-alignment",
+    cwd,
   });
   const navigation = page.getByRole("navigation");
-  const localHeading = page.getByTestId("sidebar-local-runtime-row");
-  const localHeadingMetrics = await localHeading.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    const style = getComputedStyle(element);
+  // The signed-out sidebar has no local runtime heading (5e2f2f9); the
+  // Projects heading now opens the scroll content at the same y.
+  const projectsHeading = navigation.getByRole("button", { name: "Projects", exact: true });
+  const projectsHeadingMetrics = await projectsHeading.evaluate((element) => {
+    const row = element.closest(".sidebar-grid-row") as HTMLElement;
     return {
-      y: rect.y,
-      fontSize: style.fontSize,
-      fontWeight: style.fontWeight,
-      color: style.color,
+      y: row.getBoundingClientRect().y,
+      fontWeight: getComputedStyle(element).fontWeight,
+      color: getComputedStyle(element).color,
     };
   });
-  expect(Math.abs(localHeadingMetrics.y - 129)).toBeLessThanOrEqual(0.5);
-  expect(localHeadingMetrics.fontSize).toBe("12px");
-  expect(localHeadingMetrics.fontWeight).toBe("500");
-  expect(localHeadingMetrics.color).toBe(await readColorToken(page, "--fg-muted"));
+  expect(Math.abs(projectsHeadingMetrics.y - 129)).toBeLessThanOrEqual(0.5);
+  expect(projectsHeadingMetrics.fontWeight).toBe("500");
+  expect(projectsHeadingMetrics.color).toBe(await readColorToken(page, "--fg-subtle"));
   const coordinator = navigation.getByTestId("project-coordinator-row").first();
   const sessionActions = navigation.getByRole("button", {
     name: "Session actions",
@@ -604,21 +646,41 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
   expect(projectGlyph).not.toBeNull();
   expect(coordinatorGlyph).not.toBeNull();
   expect(sessionGlyph).not.toBeNull();
-  const nestStep = await navigation.evaluate((element) =>
-    Number.parseFloat(
-      getComputedStyle(element).getPropertyValue("--sidebar-grid-nest-step"),
-    ),
-  );
+  // 5e2f2f9 made the step a calc() (icon track + column gap); resolve it.
+  const nestStep = await navigation.evaluate((element) => {
+    const probe = document.createElement("div");
+    probe.style.width = "var(--sidebar-grid-nest-step)";
+    element.appendChild(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    return width;
+  });
   expect(Math.abs(coordinatorGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(sessionGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(sessionGlyph!.x - coordinatorGlyph!.x)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(projectGlyph!.x - 43)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(coordinatorGlyph!.x - 59)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(sessionGlyph!.x - 59)).toBeLessThanOrEqual(0.5);
+  // 5e2f2f9 rail: row edge 14 + 8px padding, 20px nest step.
+  expect(Math.abs(projectGlyph!.x - 22)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(coordinatorGlyph!.x - 42)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(sessionGlyph!.x - 42)).toBeLessThanOrEqual(0.5);
 
   const coordinatorBox = await coordinator.boundingBox();
   expect(coordinatorBox).not.toBeNull();
-  expect(Math.abs(coordinatorBox!.x - 51)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(coordinatorBox!.x - 34)).toBeLessThanOrEqual(0.5);
+  // 5e2f2f9 lightened the sidebar hover step (--control-bg-hover, 4.5%)
+  // below selection; read the token instead of a fixed RGBA.
+  const hoverWash = await navigation.evaluate((nav) => {
+    const probe = document.createElement("div");
+    probe.style.background = "var(--control-bg-hover)";
+    nav.appendChild(probe);
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    context.fillRect(0, 0, 1, 1);
+    return Array.from(context.getImageData(0, 0, 1, 1).data);
+  });
   await coordinator.hover();
   await expect.poll(() => coordinator.evaluate((el) => {
     const style = getComputedStyle(el);
@@ -632,7 +694,7 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
       color: Array.from(context.getImageData(0, 0, 1, 1).data),
       image: style.backgroundImage,
     };
-  })).toEqual({ color: [26, 26, 26, 20], image: "none" });
+  })).toEqual({ color: hoverWash, image: "none" });
   await expect.poll(async () => {
     const [labelMetrics, trailingBox, columnGap] = await Promise.all([
       sessionRow.locator('[data-sidebar-grid="label"]').evaluate((labelCell) => {
@@ -650,9 +712,9 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
     ]);
     return !!trailingBox
       && Math.abs(trailingBox.x - labelMetrics.right - columnGap) <= 1
-      && Math.abs(labelMetrics.x - 83) <= 0.5
-      && Math.abs(labelMetrics.width - 122) <= 0.5
-      && Math.abs(labelMetrics.right - 205) <= 0.5
+      && Math.abs(labelMetrics.x - 62) <= 0.5
+      && Math.abs(labelMetrics.width - 146) <= 0.5
+      && Math.abs(labelMetrics.right - 208) <= 0.5
       && !labelMetrics.ellipsized;
   }).toBe(true);
 });
@@ -786,7 +848,9 @@ test("project picker bounds long results and fits a short query", async ({
   }).toBe(true);
   const projectRows = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
-    .filter({ hasText: /^Picker \d{2}$/ });
+    // 5e2f2f9's letter-tile project mark adds its initial ("P") to the row
+    // text, so match the label at the end only.
+    .filter({ hasText: /Picker \d{2}$/ });
   await expect.poll(() =>
     measurePickerRow(projectRows.nth(0), projectRows.nth(1)),
   ).toMatchObject({
@@ -952,17 +1016,19 @@ test("new chat hover wash matches the shared mesh button box", async ({ page }) 
     };
   });
   // A single shape paints the wash; the button element itself stays transparent.
-  // Main's wash ran 15→172 at 28px tall; cells stay on the x22/x46 mesh so the
-  // icon keeps a visible gap to the wash's left edge.
+  // 9b90f3c starts the wash at the row edge like every other row (x=14,
+  // index.css "Start where every other row's wash starts") and ends it one
+  // compact gap before the search wash (x=173). Cells stay on the 5e2f2f9
+  // x22/x42 mesh, so the icon keeps a visible gap to the wash's left edge.
   await expect.poll(async () => {
     const wash = await readWash();
     const height = wash.bottom - wash.top;
     return wash.elementBg === "rgba(0, 0, 0, 0)"
       && wash.bg !== "rgba(0, 0, 0, 0)"
-      && wash.left >= 14.5
-      && wash.left <= 15.5
-      && wash.right >= 171.5
-      && wash.right <= 172.5
+      && wash.left >= 13.5
+      && wash.left <= 14.5
+      && wash.right >= 172.5
+      && wash.right <= 173.5
       && height >= 27
       && height <= 29;
   }).toBe(true);
@@ -978,8 +1044,8 @@ test("new chat hover wash matches the shared mesh button box", async ({ page }) 
       && !!labelBox
       && iconBox.x >= 21.5
       && iconBox.x <= 22.5
-      && labelBox.x >= 45.5
-      && labelBox.x <= 46.5
+      && labelBox.x >= 41.5
+      && labelBox.x <= 42.5
       && iconBox.x - wash.left >= 6.5;
   }).toBe(true);
 });

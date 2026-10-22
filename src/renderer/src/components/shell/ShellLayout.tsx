@@ -206,16 +206,20 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
     settings?.agents.some((agent) => agent.enabled) ?? false;
   const hasTaskChrome = isChat && hasEnabledAgent;
   const activeSession = useSessionStore(selectActive);
+  // Home (`/`) composes a draft session that keeps its id when the first
+  // prompt promotes it, so the right rail can open there too: its tabs and
+  // open state are bucketed by that draft id and simply carry over into
+  // the new chat.
+  const isHome = location.pathname === "/";
+  const railSessionId = isChat || isHome ? activeSession?.id ?? null : null;
+  const hasRightRail = (isChat || (isHome && !!activeSession)) && hasEnabledAgent
+    && !activeSession?.openma;
   useOpenmaTasks();
   const sidebarCollapse = usePersistedCollapse(COLLAPSE_KEY);
   // Side chat starts collapsed — users opt in via the rail toggle so
   // a first-launch window doesn't show two empty chat surfaces.
-  const rightRailCollapse = useRightRailCollapseState(
-    isChat ? activeSession?.id ?? null : null,
-  );
-  const rightExpansion = useRightRailExpansionState(
-    isChat ? activeSession?.id ?? null : null,
-  );
+  const rightRailCollapse = useRightRailCollapseState(railSessionId);
+  const rightExpansion = useRightRailExpansionState(railSessionId);
   // Bottom terminal panel — opt-in for the same reason.
   const bottomCollapse = usePersistedCollapse(BOTTOM_KEY, true);
 
@@ -315,7 +319,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
                 ) : location.pathname.startsWith("/projects/") ? <PageTopbarSlot /> : null
               }
               taskResources={hasTaskChrome || (isChat && !!activeSession?.openma)}
-              rightPanel={hasTaskChrome && !activeSession?.openma ? <SideChatPanel /> : undefined}
+              rightPanel={hasRightRail ? <SideChatPanel /> : undefined}
               bottomPanel={hasTaskChrome && !activeSession?.openma ? <BottomPanel /> : undefined}
             >
               {children}

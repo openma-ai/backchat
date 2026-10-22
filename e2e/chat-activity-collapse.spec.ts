@@ -58,8 +58,9 @@ test("collapses completed activity continuously instead of flashing closed", asy
     turn_id: turnId,
   });
 
-  await expect(trigger).toHaveAttribute("aria-expanded", "false");
-  await trigger.click();
+  // Settling leaves the process as the reader saw it; collapsing on stop
+  // moved the answer. The reader closes it.
+  await expect(process).toHaveAttribute("data-session-process-state", "complete");
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
   await expect(content).toBeVisible();
   await content.locator(":scope > .reasoning-collapse-inner").evaluate(

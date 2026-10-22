@@ -123,6 +123,9 @@ test.describe("message fork with the local fake ACP agent", () => {
     await expect(footers.nth(1).locator("[data-turn-fork-action='true']")).toHaveCount(1);
     await capture("fork-level-message.png", "one fork button on each reply, including the last");
 
+    // Older turns reveal their footer actions on hover of the turn (9b90f3c);
+    // Playwright hit-tests before it moves the pointer, so hover the turn first.
+    await footers.nth(0).hover();
     await forks.nth(0).click();
     const draft = page.locator(".new-chat-page textarea").last();
     await expect(draft).toBeVisible();

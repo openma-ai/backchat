@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { parseAcpEvent, reduceTurn, sanitizeThoughtText } from "./reduce-turn";
+import {
+  createBackchatTurnProjector,
+  parseAcpEvent,
+  reduceTurn,
+  sanitizeThoughtText,
+} from "./reduce-turn";
 
 test("projects canonical OpenMA transcript and tool envelopes for the pinned reducer", () => {
   const canonical = (type: string, data: Record<string, unknown>) => ({
@@ -40,6 +45,86 @@ test("projects canonical OpenMA transcript and tool envelopes for the pinned red
   });
 });
 
+test("projects incremental canonical plans, tool output, and injected input", () => {
+  const canonical = (type: string, data: Record<string, unknown>) => ({
+    schema: "oma.event.v1",
+    event_id: `${type}:${JSON.stringify(data)}`,
+    session_id: "sess-incremental",
+    turn_id: "turn-running",
+    source: { kind: "harness", harness: "codex-acp", adapter: "acp" },
+    occurred_at: "2026-08-06T00:00:00.000Z",
+    type,
+    data,
+  });
+  const entries = [
+    canonical("agent.thinking", { text: "Thinking", message_id: "thought-1" }),
+    canonical("tool.started", {
+      tool_call_id: "tool-1",
+      title: "Read",
+      kind: "read",
+      status: "in_progress",
+    }),
+    canonical("tool.progress", {
+      tool_call_id: "tool-1",
+      output: { kind: "terminal", data: "one", append: false },
+    }),
+    canonical("tool.progress", {
+      tool_call_id: "tool-1",
+      output: { kind: "terminal", data: "two", append: true },
+    }),
+    {
+      ...canonical("user.message", {
+        text: "Change direction",
+        input_kind: "steering",
+        outcome: "injected",
+        active_turn_id: "turn-running",
+      }),
+      turn_id: "turn-steering",
+    },
+    canonical("plan.updated", {
+      plan_id: "plan-1",
+      representation: "markdown",
+      document: {
+        id: "plan-1",
+        title: "Next",
+        markdown: "# Next\n\nRun the tests.",
+      },
+      entries: [{ id: "step-1", content: "Run the tests", status: "pending" }],
+    }),
+  ].map((payload) => ({ payload }));
+  const projector = createBackchatTurnProjector();
+  const prefix: typeof entries = [];
+
+  for (const entry of entries) {
+    prefix.push(entry);
+    projector.apply(entry);
+    expect(projector.snapshot()).toEqual(reduceTurn(prefix));
+  }
+
+  expect(parseAcpEvent(entries[4]!.payload)).toMatchObject({
+    kind: "user_input",
+    text: "Change direction",
+    clientId: "turn-steering",
+  });
+  expect(projector.snapshot()).toMatchObject({
+    tools: [{ toolCallId: "tool-1", rawOutput: "onetwo" }],
+    plan: [{ id: "step-1", content: "Run the tests" }],
+    planDocument: {
+      id: "plan-1",
+      title: "Next",
+      markdown: "# Next\n\nRun the tests.",
+    },
+    hasPlanLifecycle: true,
+  });
+  expect(projector.snapshot().timeline).toContainEqual(
+    expect.objectContaining({
+      kind: "user_input",
+      text: "Change direction",
+      clientId: "turn-steering",
+    }),
+  );
+});
+
 function render(...payloads: unknown[]) {
   return reduceTurn(payloads.map((payload) => ({ payload })));
 }
@@ -76,6 +161,7 @@ describe("reduceTurn ACP event compatibility", () => {
     );
     expect(out.timeline).toEqual([{
       kind: "thought",
+      segmentId: 0,
       text: "The user is asking me to calculate 37 + 58.\n\n37 + 58 = 95.",
     }]);
   });
@@ -179,9 +265,9 @@ describe("reduceTurn ACP event compatibility", () => {
 
     expect(out.assistantText).toBe("Before after.");
     expect(out.timeline).toEqual([
-      { kind: "assistant_text", text: "Before " },
+      { kind: "assistant_text", segmentId: 0, text: "Before " },
       { kind: "tool", toolCallId: "tool-1" },
-      { kind: "assistant_text", text: "after." },
+      { kind: "assistant_text", segmentId: 2, text: "after." },
     ]);
   });
 
@@ -203,11 +289,13 @@ describe("reduceTurn ACP event compatibility", () => {
       {
         kind: "assistant_text",
         phase: "commentary",
+        segmentId: 0,
         text: "I am checking the files.",
       },
       {
         kind: "assistant_text",
         phase: "final_answer",
+        segmentId: 1,
         text: "Done.",
       },
     ]);

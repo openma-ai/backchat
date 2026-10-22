@@ -1,6 +1,5 @@
 import {
   CheckSquareIcon,
-  ChevronRightIcon,
   CircleSlashIcon,
   ListChecksIcon,
   Loader2Icon,
@@ -8,6 +7,8 @@ import {
 } from "@/components/Icons";
 import { useState } from "react";
 
+import { AnimatedCollapse } from "@/components/ui/animated-collapse";
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { cn } from "@/lib/utils";
 
 export function TaskListActivity({
@@ -22,8 +23,7 @@ export function TaskListActivity({
   const current =
     items.find((item) => item.status === "in_progress") ??
     items.find(
-      (item) =>
-        item.status !== "completed" && item.status !== "cancelled",
+      (item) => item.status !== "completed" && item.status !== "cancelled",
     ) ??
     items.at(-1);
   const [open, setOpen] = useState(false);
@@ -44,24 +44,19 @@ export function TaskListActivity({
         <span className="shrink-0 text-fg-subtle tabular-nums">
           {terminal} / {total}
         </span>
-        <ChevronRightIcon
-          className={cn(
-            "size-3 shrink-0 text-fg-subtle transition-transform",
-            open && "rotate-90",
-          )}
-          aria-hidden="true"
-        />
+        <DisclosureChevron open={open} />
       </button>
-      <ul className="ml-5 mt-1 space-y-0.5" hidden={!open}>
+      <AnimatedCollapse open={open}>
+        <ul className="ml-5 mt-1 space-y-0.5">
           {items.map((item, index) => {
             const Icon =
               item.status === "completed"
                 ? CheckSquareIcon
                 : item.status === "cancelled"
                   ? CircleSlashIcon
-                : item.status === "in_progress"
-                  ? Loader2Icon
-                  : SquareIcon;
+                  : item.status === "in_progress"
+                    ? Loader2Icon
+                    : SquareIcon;
             return (
               <li
                 key={index}
@@ -75,17 +70,16 @@ export function TaskListActivity({
                       ? "text-success"
                       : item.status === "cancelled"
                         ? "text-fg-subtle"
-                      : item.status === "in_progress"
-                        ? "animate-spin text-fg-muted"
-                        : "text-fg-subtle",
+                        : item.status === "in_progress"
+                          ? "animate-spin text-fg-muted"
+                          : "text-fg-subtle",
                   )}
                   aria-hidden="true"
                 />
                 <span
                   className={cn(
                     "min-w-0 flex-1 leading-5",
-                    item.status === "completed" ||
-                    item.status === "cancelled"
+                    item.status === "completed" || item.status === "cancelled"
                       ? "text-fg-muted line-through"
                       : item.status === "in_progress"
                         ? "text-fg"
@@ -98,6 +92,7 @@ export function TaskListActivity({
             );
           })}
         </ul>
+      </AnimatedCollapse>
     </div>
   );
 }

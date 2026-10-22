@@ -1,4 +1,3 @@
-import { PanelRightIcon } from "@/components/Icons";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -57,6 +56,7 @@ import {
   type SubagentActivity,
 } from "@/lib/session-store";
 import { wholeSessionForkEnabled } from "@/lib/fork-support";
+import { openHistoryWindow } from "@/lib/history-paging";
 import type { AcpTerminalInfo } from "@shared/api.js";
 import type { ScheduleInfo } from "@shared/schedules.js";
 
@@ -356,11 +356,6 @@ export function SideChatPanel() {
     }
     sessionStore.closeSideTab(tab.id);
   }, []);
-  const closeRail = useCallback(() => {
-    setExpanded(false);
-    toggleRail();
-  }, [setExpanded, toggleRail]);
-
   return (
     <div
       data-expanded-main-selected={expanded && mainSelected}
@@ -377,7 +372,14 @@ export function SideChatPanel() {
           expanded ? "bg-bg-sidebar" : "bg-transparent",
         )}
         style={{
-          paddingTop: "calc(var(--chrome-top) - var(--stage-inset))",
+          // Expanded floats one stage inset below the window top; docked
+          // is flush (y=0), so it uses the chrome baseline directly.
+          paddingTop: expanded
+            ? "calc(var(--chrome-top) - var(--stage-inset))"
+            : "var(--chrome-top)",
+          // Docked loses the inset above it; grow the row so the body
+          // below stays where it was.
+          height: expanded ? undefined : "calc(var(--top-row-h) + var(--stage-inset))",
           paddingLeft: expanded && leftSidebarCollapsed
             ? "calc(var(--left-chrome-end) + var(--chrome-title-gap) - var(--stage-inset))"
             : undefined,
@@ -493,21 +495,7 @@ export function SideChatPanel() {
               <Maximize2Icon className="size-3.5" />
             )}
           </button>
-          {!expanded && (
-            <button
-              type="button"
-              onClick={closeRail}
-              aria-label={t("sideChat.closePanel")}
-              title={t("sideChat.closePanel")}
-              className={cn(
-                "app-no-drag relative z-20 inline-flex size-6 shrink-0 items-center justify-center rounded-md",
-                "text-fg-subtle hover:bg-bg-surface/60 hover:text-fg",
-                "transition-colors",
-              )}
-            >
-              <PanelRightIcon className="size-3.5" />
-            </button>
-          )}
+
         </div>
       </div>
 
@@ -543,7 +531,14 @@ export function SideChatPanel() {
             onManageSchedules={() => void navigate({ to: "/scheduled" })}
           />
         )}
-        {browserWindows.flatMap((browserWindow) =>
+        {/* Only the current session's browser window keeps live guests. Every
+            tab in it stays mounted so switching tabs never reloads; other
+            sessions' webviews are released and reload from their saved URL
+            when that session is opened again. The agent's browser tools run
+            in their own windows, so nothing in the background depends on them. */}
+        {browserWindows
+          .filter((browserWindow) => browserWindow.taskId === (mainActive?.id ?? null))
+          .flatMap((browserWindow) =>
           browserWindow.tabs.map((tab) => {
             const visible =
               (mainActive?.id ?? null) === browserWindow.taskId && activeTab?.id === tab.id;
@@ -594,6 +589,8 @@ export function SideChatPanel() {
   );
 }
 
+const SIDE_HISTORY_LOADED = new Set<string>();
+
 function ActiveTabBody({
   tab,
   schedules,
@@ -603,6 +600,22 @@ function ActiveTabBody({
   schedules: ScheduleInfo[];
   onManageSchedules: () => void;
 }) {
+  useEffect(() => {
+    if (tab.type !== "chat" && tab.type !== "subagent") return;
+    const sid = tab.payload;
+    if (!sid || SIDE_HISTORY_LOADED.has(sid)) return;
+    const row = sessionStore.get(sid);
+    if (!row || row.status === "draft" || row.openma) return;
+    if (sessionStore.turnsFor(sid).length > 0 || sessionStore.historyWindowFor(sid)) {
+      SIDE_HISTORY_LOADED.add(sid);
+      return;
+    }
+    SIDE_HISTORY_LOADED.add(sid);
+    void openHistoryWindow(sid).catch(() => {
+      SIDE_HISTORY_LOADED.delete(sid);
+    });
+  }, [tab.payload, tab.type]);
+
   // Switch on tab.type. Each branch is a discrete component. The key
   // prop on the ChatView (for chat tabs) makes React unmount + remount
   // on tab swap so the streaming-markdown channel re-attaches to the
@@ -638,7 +651,7 @@ function ActiveTabBody({
     }
     return (
       <div className="h-full px-3 pb-3">
-        <TerminalTab key={tab.payload} terminalId={tab.payload} />
+        <TerminalTab key={tab.payload} terminalId={tab.payload} surface="canvas" />
       </div>
     );
   }
@@ -1074,8 +1087,9 @@ function TabChip({
   const Icon = tab.type === "subagent" ? null : ICON_BY_TYPE[tab.type];
   return (
     <div
+      data-active={active || undefined}
       className={cn(
-        "app-no-drag group relative inline-flex h-[var(--row-h)] w-32 shrink-0 items-center rounded-md pl-2 pr-1 text-xs select-none",
+        "side-tab-chip app-no-drag group relative inline-flex h-[var(--row-h)] w-32 shrink-0 items-center rounded-md pl-2 pr-1 text-xs select-none",
         // Active tab: an opaque bordered surface with a small shadow, leaving
         // the panel visible around all four sides. Inactive: transparent until hover, with the
         // foreground color still visible enough to be a click target

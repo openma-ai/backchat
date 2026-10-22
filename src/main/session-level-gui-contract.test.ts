@@ -182,7 +182,7 @@ describe("session level GUI contract", () => {
     expect(nativeSource).not.toContain("agentId:");
   });
 
-  it("keeps every task browser window and its tabs mounted", () => {
+  it("keeps every tab of the current task browser window mounted", () => {
     const sidePanelSource = readFileSync(
       resolve(
         __dirname,
@@ -199,7 +199,12 @@ describe("session level GUI contract", () => {
     );
 
     expect(sidePanelSource).toContain("selectBrowserWindows");
-    expect(sidePanelSource).toContain("browserWindows.flatMap");
+    // Only the current task's window keeps live guests; within it every tab
+    // stays mounted so switching tabs never reloads.
+    expect(sidePanelSource).toMatch(
+      /browserWindows\s*\.filter\(\(browserWindow\) => browserWindow\.taskId === \(mainActive\?\.id \?\? null\)\)\s*\.flatMap\(/,
+    );
+    expect(sidePanelSource).toContain("browserWindow.tabs.map");
     expect(sidePanelSource).toContain("onBrowserToolTabCommand");
     expect(sidePanelSource).toContain("patchSideTabForTask");
     expect(browserTabSource).toContain("bindBrowserViewRegistration");

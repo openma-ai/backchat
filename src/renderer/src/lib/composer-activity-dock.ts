@@ -7,6 +7,7 @@ import {
   latestTaskListForTurns,
   type TaskListEntry,
 } from "./session-plan";
+import type { TurnRender } from "./reduce-turn";
 import type { Turn } from "./session-types";
 
 export interface ComposerActivityLabels {
@@ -48,13 +49,18 @@ export interface ComposerSessionActivityInput
   extends Omit<ComposerActivityInput, "tasks"> {
   agentId?: string;
   turns: readonly Turn[];
+  projectTurn?: (turn: Turn) => TurnRender;
 }
 
 export function composerActivityModulesForSession(
   input: ComposerSessionActivityInput,
 ): ComposerActivityModule[] {
   return composerActivityModules({
-    tasks: latestTaskListForTurns(input.agentId, input.turns),
+    tasks: latestTaskListForTurns(
+      input.agentId,
+      input.turns,
+      input.projectTurn,
+    ),
     workItems: input.workItems,
     openmaEvents: input.openmaEvents,
     labels: input.labels,

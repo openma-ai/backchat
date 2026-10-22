@@ -13,11 +13,13 @@ import {
 import {
   DISABLED_ENABLED_GAP,
   DISABLED_SURFACE_CONTRAST,
+  FAINT_SURFACE_CONTRAST,
   TEXT_CONTRAST_SURFACES,
   TEXT_ROLE_MIN_GAP,
   WCAG_AA_NORMAL_TEXT,
   contrastRatio,
   disabledForeground,
+  faintForeground,
 } from "@/lib/text-roles";
 
 const rendererRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -137,8 +139,12 @@ describe("renderer typography contract", () => {
     expect(css).toContain("text-autospace: normal;");
     expect(css).toContain("text-spacing-trim: space-all;");
     expect(css).toContain("line-break: strict;");
+    expect(css).toContain("--type-body-size: 14px;");
     expect(css).toContain("--type-body-leading: 24px;");
+    expect(css).toContain("--type-heading-size: 15px;");
     expect(css).toContain("--type-code-leading: 22px;");
+    expect(css).toContain("--chat-prose-leading: 21px;");
+    expect(css).toContain("--chat-prose-letter-spacing: -0.02em;");
     expect(css).toContain('html[lang|="zh"]');
     expect(css).toContain("text-autospace: no-autospace;");
     expect(css).not.toContain("[data-chat-surface] .composer-card textarea:focus-visible");
@@ -200,6 +206,18 @@ describe("renderer typography contract", () => {
     expect(violations).toEqual([]);
   });
 
+  it("keeps the global placeholder color inside a cascade layer", () => {
+    // An unlayered rule outranks every Tailwind layer, which silently
+    // disabled every `placeholder:text-*` utility in the app.
+    const css = readFileSync(stylesPath, "utf8");
+    const at = css.search(/^::placeholder \{/m);
+    expect(at, "top-level ::placeholder rule must not exist").toBe(-1);
+    const layered = css.match(/^  ::placeholder \{\n    color: var\(--fg-subtle\);/m);
+    expect(layered).not.toBeNull();
+    const before = css.slice(0, layered!.index);
+    expect(before.lastIndexOf("@layer base {")).toBeGreaterThan(before.lastIndexOf("@layer components {"));
+  });
+
   it("applies the derived disabled role from the theme runtime", () => {
     const themeRuntime = readFileSync(
       fileURLToPath(new URL("../lib/theme.ts", import.meta.url)),
@@ -207,6 +225,8 @@ describe("renderer typography contract", () => {
     );
     expect(themeRuntime).toContain('disabledForeground');
     expect(themeRuntime).toContain('"--fg-disabled"');
+    expect(themeRuntime).toContain("faintForeground");
+    expect(themeRuntime).toContain('"--fg-faint"');
   });
 
   it("keeps every text role at AA with a visible step between roles", () => {
@@ -224,16 +244,22 @@ describe("renderer typography contract", () => {
     for (const theme of cases) {
       const surfaces = TEXT_CONTRAST_SURFACES.map((name) => theme.tokens[name]!);
       const disabled = disabledForeground(theme.tokens.fg!, theme.tokens.bg!, surfaces);
+      const faint = faintForeground(theme.tokens.fg!, theme.tokens.bg!, surfaces);
       const roles = {
         fg: theme.tokens.fg!,
         "fg-muted": theme.tokens["fg-muted"]!,
         "fg-subtle": theme.tokens["fg-subtle"]!,
+        "fg-faint": faint,
         "fg-disabled": disabled,
+      };
+      const floors: Record<string, number> = {
+        "fg-faint": FAINT_SURFACE_CONTRAST,
+        "fg-disabled": DISABLED_SURFACE_CONTRAST,
       };
       for (const surfaceName of TEXT_CONTRAST_SURFACES) {
         const surface = theme.tokens[surfaceName]!;
         for (const [role, color] of Object.entries(roles)) {
-          const floor = role === "fg-disabled" ? DISABLED_SURFACE_CONTRAST : WCAG_AA_NORMAL_TEXT;
+          const floor = floors[role] ?? WCAG_AA_NORMAL_TEXT;
           expect(
             contrastRatio(color, surface),
             `${theme.id} ${role} on ${surfaceName}`,
@@ -248,11 +274,13 @@ describe("renderer typography contract", () => {
         fg: contrastRatio(roles.fg, theme.tokens.bg!),
         muted: contrastRatio(roles["fg-muted"], theme.tokens.bg!),
         subtle: contrastRatio(roles["fg-subtle"], theme.tokens.bg!),
+        faint: contrastRatio(roles["fg-faint"], theme.tokens.bg!),
         disabled: contrastRatio(roles["fg-disabled"], theme.tokens.bg!),
       };
       expect(onCanvas.fg, theme.id).toBeGreaterThan(onCanvas.muted + 1);
       expect(onCanvas.muted, theme.id).toBeGreaterThan(onCanvas.subtle + TEXT_ROLE_MIN_GAP);
-      expect(onCanvas.subtle, theme.id).toBeGreaterThan(onCanvas.disabled + TEXT_ROLE_MIN_GAP);
+      expect(onCanvas.subtle, theme.id).toBeGreaterThan(onCanvas.faint + TEXT_ROLE_MIN_GAP);
+      expect(onCanvas.faint, theme.id).toBeGreaterThan(onCanvas.disabled + TEXT_ROLE_MIN_GAP);
     }
   });
 });

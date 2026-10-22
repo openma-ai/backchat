@@ -6,7 +6,7 @@ settings:
 
 overrides:
   '@ai-sdk/provider-utils@4.0.27': 4.0.33
-  '@openma/common': github:openma-ai/openma-common#v0.7.9
+  '@openma/common': github:openma-ai/openma-common#v0.10.0
   '@openmatter/agent': github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent
   '@openmatter/agent-claude': github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-claude
   '@openmatter/agent-mock': github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-mock
@@ -50,6 +50,12 @@ importers:
       '@fontsource/noto-sans-sc':
         specifier: ^5.3.0
         version: 5.3.0
+      '@headless-tree/core':
+        specifier: 1.8.0
+        version: 1.8.0
+      '@headless-tree/react':
+        specifier: 1.8.0
+        version: 1.8.0(@headless-tree/core@1.8.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@hono/node-server':
         specifier: 1.19.15
         version: 1.19.15(hono@4.13.9)
@@ -69,8 +75,8 @@ importers:
         specifier: workspace:*
         version: link:packages/acp-agent-setup
       '@openma/common':
-        specifier: github:openma-ai/openma-common#v0.7.9
-        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        specifier: github:openma-ai/openma-common#v0.10.0
+        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/ddd3b3c2fe769c8058ed680c9f1a4a74512b045a(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openma/sdk':
         specifier: workspace:*
         version: link:packages/openma-sdk
@@ -149,6 +155,15 @@ importers:
       '@tabler/icons-react':
         specifier: ^3.47.0
         version: 3.47.0(react@19.2.7)
+      '@xterm/addon-search':
+        specifier: 0.15.0
+        version: 0.15.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-unicode11':
+        specifier: 0.8.0
+        version: 0.8.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-web-links':
+        specifier: 0.11.0
+        version: 0.11.0(@xterm/xterm@5.5.0)
       ai:
         specifier: ^6.0.194
         version: 6.0.194(zod@4.4.3)
@@ -188,6 +203,9 @@ importers:
       lucide:
         specifier: 1.17.0
         version: 1.17.0
+      material-icon-theme:
+        specifier: 5.39.0
+        version: 5.39.0
       motion:
         specifier: ^12.40.0
         version: 12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -352,8 +370,8 @@ importers:
         specifier: ^1.3.0
         version: 1.3.0(zod@4.4.3)
       '@openma/common':
-        specifier: github:openma-ai/openma-common#v0.7.9
-        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        specifier: github:openma-ai/openma-common#v0.10.0
+        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/ddd3b3c2fe769c8058ed680c9f1a4a74512b045a(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       tar:
         specifier: ^7.5.22
         version: 7.5.22
@@ -374,8 +392,8 @@ importers:
         specifier: workspace:*
         version: link:../acp
       '@openma/common':
-        specifier: github:openma-ai/openma-common#v0.7.9
-        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05(@anthropic-ai/sdk@0.120.0(zod@4.6.5))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        specifier: github:openma-ai/openma-common#v0.10.0
+        version: https://codeload.github.com/openma-ai/openma-common/tar.gz/ddd3b3c2fe769c8058ed680c9f1a4a74512b045a(@anthropic-ai/sdk@0.120.0(zod@4.6.5))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -1537,6 +1555,16 @@ packages:
       '@modelcontextprotocol/sdk':
         optional: true
 
+  '@headless-tree/core@1.8.0':
+    resolution: {integrity: sha512-mTTTzA94KzIYbJ2605IIcAZiJ075qe4FiPHop72KKC/XXe7gv7CBGY/WIB7k8CmlDnJEZulp8nm6pmGXLenu5A==}
+
+  '@headless-tree/react@1.8.0':
+    resolution: {integrity: sha512-T0IOukZUzRVwCCNzeDr5YxS+5eTjGLCBCItq00qUWDrSzOqawYZwyIZVSNhCdRfea47R1qDHkvca+8hxZ8mvYQ==}
+    peerDependencies:
+      '@headless-tree/core': '*'
+      react: '*'
+      react-dom: '*'
+
   '@hono/node-server@1.19.15':
     resolution: {integrity: sha512-Za2ai6TLdKjUvnur+eenO6nuYYipVAEhyCAdaV8IRvmU9kK8crOZUSYvIXn72E4f8fJqyAbpcJuTsYYmZp9Deg==}
     engines: {node: '>=18.14.1'}
@@ -1874,9 +1902,25 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05':
-    resolution: {gitHosted: true, integrity: sha512-gddjGa3ed/uOfu84HyurCIIdo9lv3+kWciMY5zpSTqzNbOZ1Awt+3lQId3NMqyRPjP7GzoV1LqW2DNNqdbG7kw==, tarball: https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05}
-    version: 0.7.9
+  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/b3f2f0935010931bc0bbc32254d6147a452ea12a':
+    resolution: {gitHosted: true, integrity: sha512-Z4MY5l7b9fNb1uCZHzH31TgWF8aWTVi43oH5OEtdnt8iE6UMd3MuSxYXMB7vzqvgyoYY7KBesPtTkcR31/pv5Q==, tarball: https://codeload.github.com/openma-ai/openma-common/tar.gz/b3f2f0935010931bc0bbc32254d6147a452ea12a}
+    version: 0.8.0
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@anthropic-ai/sdk': 0.120.x
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      '@anthropic-ai/sdk':
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+
+  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/ddd3b3c2fe769c8058ed680c9f1a4a74512b045a':
+    resolution: {gitHosted: true, integrity: sha512-6D585zk8A5XB/jScKyL84MRo1qx1bAE0onOwM8HLL3vRFh6PNH9oZMi51+BBwdUdfAAay5pkuRJvdb1c3kaO1Q==, tarball: https://codeload.github.com/openma-ai/openma-common/tar.gz/ddd3b3c2fe769c8058ed680c9f1a4a74512b045a}
+    version: 0.10.0
     engines: {node: '>=20'}
     peerDependencies:
       '@anthropic-ai/sdk': 0.120.x
@@ -3739,6 +3783,21 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^5.0.0
 
+  '@xterm/addon-search@0.15.0':
+    resolution: {integrity: sha512-ZBZKLQ+EuKE83CqCmSSz5y1tx+aNOCUaA7dm6emgOX+8J9H1FWXZyrKfzjwzV+V14TV3xToz1goIeRhXBS5qjg==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
+  '@xterm/addon-unicode11@0.8.0':
+    resolution: {integrity: sha512-LxinXu8SC4OmVa6FhgwsVCBZbr8WoSGzBl2+vqe8WcQ6hb1r6Gj9P99qTNdPiFPh4Ceiu2pC8xukZ6+2nnh49Q==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
+  '@xterm/addon-web-links@0.11.0':
+    resolution: {integrity: sha512-nIHQ38pQI+a5kXnRaTgwqSHnX7KE6+4SVoceompgHL26unAxdfP6IPqUTSYPQgSwM56hsElfoNrrW5V7BUED/Q==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
   '@xterm/addon-webgl@0.18.0':
     resolution: {integrity: sha512-xCnfMBTI+/HKPdRnSOHaJDRqEpq2Ugy8LEj9GiY4J3zJObo3joylIFaMvzBwbYRg8zLtkO0KQaStCeSfoaI2/w==}
     peerDependencies:
@@ -5394,6 +5453,10 @@ packages:
   matcher@3.0.0:
     resolution: {integrity: sha512-OkeDaAZ/bQCxeFAozM55PKcKU0yJMPGifLwV4Qgjitu+5MoAfSQN4lsLJeXZ1b8w0x+/Emda6MZgXS1jvsapng==}
     engines: {node: '>=10'}
+
+  material-icon-theme@5.39.0:
+    resolution: {integrity: sha512-6dUQXJgNBlklaILIOlCZXhSBTsBmLkt11XMoTY7Uyb4ZikelGgZHOY4AdOWBA+SXz51cVWfOVnTHrTwGM91eYw==}
+    engines: {vscode: ^1.55.0}
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -8298,6 +8361,14 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  '@headless-tree/core@1.8.0': {}
+
+  '@headless-tree/react@1.8.0(@headless-tree/core@1.8.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      '@headless-tree/core': 1.8.0
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+
   '@hono/node-server@1.19.15(hono@4.13.9)':
     dependencies:
       hono: 4.13.9
@@ -8724,7 +8795,7 @@ snapshots:
   '@openai/codex@0.147.0-win32-x64':
     optional: true
 
-  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/b3f2f0935010931bc0bbc32254d6147a452ea12a(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
       '@agentclientprotocol/sdk': 1.3.0(zod@4.6.5)
       '@radix-ui/react-collapsible': 1.1.20(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -8748,7 +8819,7 @@ snapshots:
       - '@types/react-dom'
       - supports-color
 
-  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05(@anthropic-ai/sdk@0.120.0(zod@4.6.5))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/ddd3b3c2fe769c8058ed680c9f1a4a74512b045a(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
       '@agentclientprotocol/sdk': 1.3.0(zod@4.6.5)
       '@radix-ui/react-collapsible': 1.1.20(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -8757,6 +8828,32 @@ snapshots:
       fflate: 0.8.3
       lucide-react: 1.28.0(react@19.2.7)
       npm: 11.17.0
+      smol-toml: 1.9.0
+      streamdown: 2.5.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      streaming-markdown: 0.2.15
+      tailwind-merge: 3.6.0
+      tar: 7.5.22
+      use-stick-to-bottom: 1.1.4(react@19.2.7)
+      zod: 4.6.5
+    optionalDependencies:
+      '@anthropic-ai/sdk': 0.120.0(zod@4.4.3)
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+    transitivePeerDependencies:
+      - '@types/react'
+      - '@types/react-dom'
+      - supports-color
+
+  '@openma/common@https://codeload.github.com/openma-ai/openma-common/tar.gz/ddd3b3c2fe769c8058ed680c9f1a4a74512b045a(@anthropic-ai/sdk@0.120.0(zod@4.6.5))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+    dependencies:
+      '@agentclientprotocol/sdk': 1.3.0(zod@4.6.5)
+      '@radix-ui/react-collapsible': 1.1.20(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@tanstack/react-virtual': 3.14.13(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      clsx: 2.1.1
+      fflate: 0.8.3
+      lucide-react: 1.28.0(react@19.2.7)
+      npm: 11.17.0
+      smol-toml: 1.9.0
       streamdown: 2.5.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       streaming-markdown: 0.2.15
       tailwind-merge: 3.6.0
@@ -8774,7 +8871,7 @@ snapshots:
 
   '@openmatter/agent-claude@https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent-claude(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@openma/common': https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@openma/common': https://codeload.github.com/openma-ai/openma-common/tar.gz/b3f2f0935010931bc0bbc32254d6147a452ea12a(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/agent': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/core': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/core(effect@3.22.2)
       effect: 3.22.2
@@ -8800,7 +8897,7 @@ snapshots:
 
   '@openmatter/agent@https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@openma/common': https://codeload.github.com/openma-ai/openma-common/tar.gz/afc628e5d624cc1aa61625185a1348bb87f32c05(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@openma/common': https://codeload.github.com/openma-ai/openma-common/tar.gz/b3f2f0935010931bc0bbc32254d6147a452ea12a(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/core': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/core(effect@3.22.2)
       effect: 3.22.2
     transitivePeerDependencies:
@@ -10769,6 +10866,18 @@ snapshots:
   '@xmldom/xmldom@0.9.12': {}
 
   '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/addon-search@0.15.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/addon-unicode11@0.8.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/addon-web-links@0.11.0(@xterm/xterm@5.5.0)':
     dependencies:
       '@xterm/xterm': 5.5.0
 
@@ -12743,6 +12852,10 @@ snapshots:
     dependencies:
       escape-string-regexp: 4.0.0
     optional: true
+
+  material-icon-theme@5.39.0:
+    dependencies:
+      chroma-js: 3.2.0
 
   math-intrinsics@1.1.0: {}
 

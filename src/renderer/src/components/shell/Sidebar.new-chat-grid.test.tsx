@@ -172,6 +172,12 @@ async function waitForText(host: HTMLElement, text: string): Promise<void> {
   });
 }
 
+/** Tenant sections start collapsed, and a collapsed body is not mounted. */
+async function openTenant(host: HTMLElement, name = "Demo"): Promise<void> {
+  await waitForText(host, name);
+  await act(async () => host.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!.click());
+}
+
 describe("new chat sidebar grid", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
@@ -210,6 +216,22 @@ describe("new chat sidebar grid", () => {
     await act(async () => root.unmount());
   });
 
+  it("opens sidebar menus without hiding or scroll-locking the rest of the app", async () => {
+    // A modal Radix menu marks every sibling aria-hidden and locks body scroll;
+    // in the real window that restyles ~800 nodes per open/close.
+    const sibling = document.createElement("main");
+    document.body.appendChild(sibling);
+    const { root, host } = await mount();
+    const trigger = host.querySelector<HTMLButtonElement>('button[aria-label="Sidebar options"]')!;
+    await act(async () => {
+      trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    });
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(document.body.hasAttribute("data-scroll-locked")).toBe(false);
+    expect(sibling.getAttribute("aria-hidden")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
   it("renders tenant conversations and iconless rows on the shared grid", async () => {
     installBackchat(accountWithStatus("signed_in"));
     sessionStore.seedOpenmaTasks([
@@ -217,7 +239,7 @@ describe("new chat sidebar grid", () => {
       openmaTask("tenant-chat", "Tenant conversation"),
     ]);
     const { root, host } = await mount();
-    await waitForText(host, "Demo");
+    await openTenant(host);
 
     const header = host.querySelector('button[aria-label="Demo"]');
     const headerRow = header?.closest<HTMLElement>(".sidebar-grid-row");
@@ -225,7 +247,7 @@ describe("new chat sidebar grid", () => {
     expect(headerRow?.querySelector('[data-sidebar-grid="icon"]')).toBeNull();
 
     const tenantRows = [...host.querySelectorAll<HTMLElement>(
-      '.sidebar-grid-row[data-sidebar-depth="1"]',
+      '.sidebar-grid-row[data-sidebar-depth="0"]',
     )];
     expect(tenantRows.some((row) => row.textContent?.includes("New chat"))).toBe(true);
     expect(tenantRows.some((row) => row.textContent?.includes("Pinned"))).toBe(true);
@@ -234,7 +256,7 @@ describe("new chat sidebar grid", () => {
     await act(async () => root.unmount());
   });
 
-  it("uses a trailing coordinator cell only for configured projects", async () => {
+  it("shows a coordinator row only for configured projects", async () => {
     const project: ProjectInfo = {
       id: "coordinator-project",
       name: "Coordinator project",
@@ -252,12 +274,13 @@ describe("new chat sidebar grid", () => {
       const { root, host } = await mount();
       await act(async () => {
         await vi.waitFor(() => {
+          expect(host.querySelector('[data-sidebar-project="project:coordinator-project"]')).not.toBeNull();
           const row = host.querySelector<HTMLElement>(
             '[data-testid="project-coordinator-row"]',
           );
-          expect(row?.getAttribute("data-configured")).toBe(
-            String(!!coordinatorAgent),
-          );
+          // Setup lives in the project menu; only a configured coordinator is a row.
+          if (coordinatorAgent) expect(row?.getAttribute("data-configured")).toBe("true");
+          else expect(row).toBeNull();
         });
       });
       return { root, host };
@@ -276,23 +299,21 @@ describe("new chat sidebar grid", () => {
     await act(async () => configured.root.unmount());
 
     const unconfigured = await renderCoordinator();
-    const unconfiguredRow = unconfigured.host.querySelector<HTMLElement>(
-      '[data-testid="project-coordinator-row"]',
-    );
-    expect(unconfiguredRow?.getAttribute("data-sidebar-trailing-track")).toBe("none");
-    expect(unconfiguredRow?.querySelector('[data-sidebar-grid="trailing"]')).toBeNull();
+    expect(unconfigured.host.querySelector('[data-testid="project-coordinator-row"]')).toBeNull();
     await act(async () => unconfigured.root.unmount());
   });
 
   it("uses a label-only sign-in row for a workspace still signing in", async () => {
     installBackchat(accountWithStatus("signing_in", "tenant-signing"));
     const { root, host } = await mount();
+    await openTenant(host);
     await waitForText(host, "Sign in");
 
     const signIn = [...host.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent?.includes("Sign in"));
     const row = signIn?.closest<HTMLElement>(".sidebar-grid-row");
-    expect(row?.getAttribute("data-sidebar-depth")).toBe("1");
+    // Section labels carry no icon, so their rows align with the label.
+    expect(row?.getAttribute("data-sidebar-depth")).toBe("0");
     expect(row?.getAttribute("data-sidebar-leading")).toBe("none");
     expect(row?.getAttribute("data-sidebar-trailing-track")).toBe("none");
     await act(async () => signIn?.click());
@@ -303,11 +324,12 @@ describe("new chat sidebar grid", () => {
     taskRefreshMode = "error";
     installBackchat(accountWithStatus("signed_in", "tenant-error"));
     const { root, host } = await mount();
+    await openTenant(host);
     await waitForText(host, "Tenant conversations unavailable");
 
     const retryRow = [...host.querySelectorAll<HTMLElement>(".sidebar-grid-row")]
       .find((row) => row.textContent?.includes("Tenant conversations unavailable"));
-    expect(retryRow?.getAttribute("data-sidebar-depth")).toBe("1");
+    expect(retryRow?.getAttribute("data-sidebar-depth")).toBe("0");
     await act(async () => retryRow?.click());
     expect(taskRefreshCalls).toBeGreaterThanOrEqual(2);
     await act(async () => root.unmount());
@@ -317,6 +339,7 @@ describe("new chat sidebar grid", () => {
     taskRefreshMode = "pending";
     installBackchat(accountWithStatus("signed_in", "tenant-pending"));
     const pending = await mount();
+    await openTenant(pending.host);
     await waitForText(pending.host, "Loading tenant conversations");
     expect([...pending.host.querySelectorAll('[role="status"]')]
       .some((row) => row.textContent?.includes("Loading tenant conversations"))).toBe(true);
@@ -325,6 +348,7 @@ describe("new chat sidebar grid", () => {
     taskRefreshMode = "success";
     installBackchat(accountWithStatus("signed_in", "tenant-empty"));
     const empty = await mount();
+    await openTenant(empty.host);
     await waitForText(empty.host, "No tenant conversations");
     expect([...empty.host.querySelectorAll('[role="status"]')]
       .some((row) => row.textContent?.includes("No tenant conversations"))).toBe(true);

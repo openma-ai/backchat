@@ -131,6 +131,8 @@ export interface SessionRow {
     }>;
   };
   createdAt: number;
+  /** Wall-clock ms of the latest user/agent activity in this session. */
+  lastUsedAt?: number;
   /** turn_id of the in-flight prompt, if any. */
   activeTurnId?: string;
   /** FIFO prompts submitted while `activeTurnId` is still running.
@@ -557,11 +559,22 @@ export interface HistoryRow {
   ts: number;
 }
 
-/** Store-internal bookkeeping for a session opened as a tail window. */
+/** A native subagent identity fact observed in persisted history. */
+export type NativeAgentLifecycleFact =
+  | { type: "started"; id: string }
+  | { type: "reidentified"; id: string; previousId: string };
+
+/** Store-internal bookkeeping for a session opened as a tail window. Pages
+ *  are whole turns (main aligns page boundaries to turn openers), so each
+ *  page projects on its own and is prepended without replaying the window. */
 export interface HistoryWindowState {
-  rows: HistoryRow[];
+  /** seq of the oldest loaded row; undefined when the window is empty. */
+  oldestSeq: number | undefined;
   hasMore: boolean;
   loading: boolean;
+  /** Subagent identity facts from every loaded page, oldest first. Stale
+   *  subagent tabs can only be pruned once the window reaches the log start. */
+  agentLifecycle: NativeAgentLifecycleFact[];
 }
 
 /** What the chat view needs to page older history in. */

@@ -1,4 +1,4 @@
-import { readRepositoryImage } from "./repository-image.js";
+import { createRepositoryImageCache, type RepositoryImageCache } from "./repository-image.js";
 import { readGitEnvironment } from "./git-environment.js";
 import { cursorRepositoryUrl } from "./cursor-cloud-git.js";
 /**
@@ -460,7 +460,20 @@ ipcMain.handle(
   (_e, p: { path: string }) => resolveLocalFilePreview(p.path),
 );
 
-ipcMain.handle(InvokeChannel.UiFsRepositoryImage, (_e, p: { path: string }) => readRepositoryImage(p.path));
+// Main owns repository artwork: persisted last-known-good, refreshed in the
+// background, so renderer reloads and restarts show avatars without `gh`.
+let repositoryImages: RepositoryImageCache | null = null;
+ipcMain.handle(InvokeChannel.UiFsRepositoryImage, (_e, p: { path: string }) => {
+  repositoryImages ??= createRepositoryImageCache({
+    file: join(openmaRoot(), "backchat", "repository-images.json"),
+  });
+  return repositoryImages.get(p.path);
+});
+
+/** Quit barrier: persist a refresh that landed inside the write debounce. */
+export function flushRepositoryImages(): Promise<void> {
+  return repositoryImages?.flush().catch(() => {}) ?? Promise.resolve();
+}
 
 ipcMain.handle(
   InvokeChannel.UiFsGitBranch,

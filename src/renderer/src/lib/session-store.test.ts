@@ -751,6 +751,70 @@ describe("SessionStore replay", () => {
     });
   });
 
+  test("rebuilds a restored native Agent transcript from SQL instead of appending to it", () => {
+    // Relaunch restores the side workspace (including the child's transcript
+    // turn) before the parent's SQL history is replayed. Replay is the
+    // transcript's source of truth and must not stack on the snapshot.
+    const sessionId = "sess-replay-native-restored";
+    const turnId = "turn-replay-native-restored";
+    const childId = "claude-child-restored";
+    const ready = {
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-native-restored",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    } as const;
+    const event = (
+      event_id: string,
+      type: "work_item.started" | "agent.message_chunk" | "agent.thinking" | "work_item.completed",
+      data: Record<string, unknown>,
+    ) => createOpenMAEvent({
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "harness" as const, harness: "claude", adapter: "claude" },
+      event_id,
+      type,
+      occurred_at: "2026-08-05T00:00:01.000Z",
+      work_item_id: childId,
+      parent_id: "task-parent-restored",
+      data,
+    });
+    const rows = [
+      { type: "user_prompt", data: { text: "delegate this" } },
+      { type: "openma_event", data: event("start", "work_item.started", { kind: "agent", title: "Inspect" }) },
+      { type: "openma_event", data: event("think", "agent.thinking", { text: "Looking." }) },
+      { type: "openma_event", data: event("say", "agent.message_chunk", { text: "Child found the boundary." }) },
+      { type: "openma_event", data: event("done", "work_item.completed", { kind: "agent" }) },
+    ].map((row, index) => ({
+      seq: index + 1,
+      type: row.type,
+      data: JSON.stringify(row.data),
+      ts: (index + 1) * 1_000,
+    }));
+
+    const before = new SessionStore();
+    before.apply(ready);
+    before.replayHistoryWindow(sessionId, rows, { hasMore: false });
+
+    const after = new SessionStore();
+    after.apply(ready);
+    after.hydrateSideWorkspaces(before.sideWorkspaceSnapshots());
+    after.replayHistoryWindow(sessionId, rows, { hasMore: false });
+
+    const activity = after.subagentsFor(sessionId)[0]!;
+    const [child] = after.turnsFor(activity.viewSessionId);
+    expect(child).toMatchObject({
+      assistantText: "Child found the boundary.",
+      thoughtText: "Looking.",
+    });
+    expect(
+      after.projectTurn(child!).timeline
+        .filter((item) => item.kind === "assistant_text")
+        .map((item) => (item as { text: string }).text),
+    ).toEqual(["Child found the boundary."]);
+  });
+
   test("collapses a replayed native Agent provisional id into its reidentified terminal child", () => {
     const sessionId = "sess-replay-native-reidentified";
     const turnId = "turn-replay-native-reidentified";
@@ -998,6 +1062,7 @@ describe("SessionStore history windows", () => {
   test("opens mid-turn with a prompt-less head turn and pages older rows in", () => {
     const store = new SessionStore();
     store.replayHistoryWindow(sessionId, rows.slice(2), { hasMore: true });
+    expect(store.projectTurn(store.turnsFor(sessionId)[0]!).assistantText).toBe("A2");
 
     expect(store.historyWindowFor(sessionId)).toEqual({
       oldestSeq: 3,
@@ -1018,12 +1083,13 @@ describe("SessionStore history windows", () => {
       hasMore: false,
       loading: false,
     });
-    // Rebuilt from the full window: the head fragment folded into turn "a",
-    // and turn "b" kept its seq-based id so the view does not remount it.
+    // Only the older page replays: the head fragment folds into turn "a",
+    // and turn "b" keeps its id so the view does not remount it.
     expect(store.turnsFor(sessionId).map((t) => [t.id, t.promptText, t.assistantText])).toEqual([
       [`replay-${sessionId}-1`, "a", "A1A2"],
       [`replay-${sessionId}-4`, "b", "B1B2"],
     ]);
+    expect(store.projectTurn(store.turnsFor(sessionId)[0]!).assistantText).toBe("A1A2");
   });
 
   test("paging older rows never rolls session-level state back", () => {
@@ -1061,6 +1127,21 @@ describe("SessionStore history windows", () => {
     expect(store.turnsFor(sessionId).map((t) => t.id)).toEqual([`replay-${sessionId}-4`]);
   });
 
+  test("prepending a page keeps the existing turn objects", () => {
+    const store = new SessionStore();
+    store.replayHistoryWindow(sessionId, rows.slice(3), { hasMore: true });
+    const [newer] = store.turnsFor(sessionId);
+    const projected = store.projectTurn(newer!);
+    store.prependHistory(sessionId, rows.slice(0, 3), { hasMore: false });
+    const turns = store.turnsFor(sessionId);
+    expect(turns.map((t) => t.id)).toEqual([
+      `replay-${sessionId}-1`,
+      `replay-${sessionId}-4`,
+    ]);
+    expect(turns[1]).toBe(newer);
+    expect(store.projectTurn(turns[1]!)).toBe(projected);
+  });
+
   test("an empty older page closes the window without touching turns", () => {
     const store = new SessionStore();
     store.replayHistoryWindow(sessionId, rows, { hasMore: true });
@@ -1088,6 +1169,128 @@ describe("SessionStore history windows", () => {
     expect(store.turnsFor(sessionId)[0]).toMatchObject({
       promptText: "from cli",
     });
+  });
+});
+
+describe("SessionStore turn projection cache", () => {
+  test("extends copied event arrays and rebuilds when the last applied event is replaced", () => {
+    const store = new SessionStore();
+    const first = {
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "first" },
+        messageId: "first",
+      },
+      receivedAt: 1,
+    };
+    const second = {
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "second" },
+        messageId: "second",
+      },
+      receivedAt: 2,
+    };
+    const base = {
+      id: "turn-copied",
+      sessionId: "session-copied",
+      promptText: "prompt",
+      assistantText: "",
+      thoughtText: "",
+      status: "running" as const,
+      startedAt: 1,
+      events: [first],
+    };
+
+    expect(store.projectTurn(base).assistantText).toBe("first");
+    const copied = { ...base, events: [...base.events, second] };
+    expect(store.projectTurn(copied).assistantText).toBe("firstsecond");
+
+    const replaced = {
+      ...copied,
+      events: [
+        first,
+        {
+          payload: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "replacement" },
+            messageId: "replacement",
+          },
+          receivedAt: 3,
+        },
+      ],
+    };
+    expect(store.projectTurn(replaced).assistantText).toBe("firstreplacement");
+  });
+
+  test("rebuilds when paging prepends an older event to a turn", () => {
+    const store = new SessionStore();
+    const turn = {
+      id: "turn-prepend",
+      sessionId: "session-prepend",
+      promptText: "prompt",
+      assistantText: "",
+      thoughtText: "",
+      status: "complete" as const,
+      startedAt: 1,
+      events: [{
+        payload: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "newer" },
+          messageId: "newer",
+        },
+        receivedAt: 2,
+      }],
+    };
+
+    expect(store.projectTurn(turn).timeline.map((item) =>
+      item.kind === "assistant_text" ? item.text : item.kind,
+    )).toEqual(["newer"]);
+    const prepended = {
+      ...turn,
+      events: [{
+        payload: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "older" },
+          messageId: "older",
+        },
+        receivedAt: 1,
+      }, ...turn.events],
+    };
+
+    expect(store.projectTurn(prepended).timeline.map((item) =>
+      item.kind === "assistant_text" ? item.text : item.kind,
+    )).toEqual(["older", "newer"]);
+  });
+
+  test("keeps per-turn projections independent while switching sessions mid-stream", () => {
+    const store = new SessionStore();
+    const applyText = (sessionId: string, turnId: string, text: string) => {
+      store.apply({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: turnId,
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      });
+    };
+
+    store.registerTurn("turn-a", "session-a", "prompt A");
+    store.setActive("session-a");
+    applyText("session-a", "turn-a", "A1");
+    expect(store.projectTurn(store.turnsFor("session-a")[0]!).assistantText).toBe("A1");
+
+    store.registerTurn("turn-b", "session-b", "prompt B");
+    store.setActive("session-b");
+    applyText("session-b", "turn-b", "B1");
+    expect(store.projectTurn(store.turnsFor("session-b")[0]!).assistantText).toBe("B1");
+
+    store.setActive("session-a");
+    applyText("session-a", "turn-a", "A2");
+    expect(store.projectTurn(store.turnsFor("session-a")[0]!).assistantText).toBe("A1A2");
+    expect(store.projectTurn(store.turnsFor("session-b")[0]!).assistantText).toBe("B1");
   });
 });
 
@@ -1307,6 +1510,37 @@ describe("SessionStore performance invariants", () => {
     expect(store.getVersion()).toBe(afterFirstThought);
     expect(afterFirstSnapshot).not.toBe(beforeSnapshot);
     expect(afterSecondSnapshot).toBe(afterFirstSnapshot);
+  });
+
+  test("keeps the per-token cost flat as a streamed run grows", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-flat", "codex-acp", "Codex");
+    store.registerTurn("turn-flat", "sess-flat", "stream");
+    const tokens = ["the ", "#104", "4", " 表格", "| a |", "\n\n", "x"];
+    for (const sessionUpdate of ["agent_thought_chunk", "agent_message_chunk"]) {
+      const cost: number[] = [];
+      for (let i = 0; i < 30_000; i++) {
+        const start = performance.now();
+        store.apply({
+          type: "session.event",
+          session_id: "sess-flat",
+          turn_id: "turn-flat",
+          event: {
+            sessionUpdate,
+            messageId: "m1",
+            content: { type: "text", text: tokens[i % tokens.length] },
+          },
+        });
+        cost.push(performance.now() - start);
+      }
+      const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+      // Rescanning the accumulated run per token made the tail ~45x slower.
+      expect(mean(cost.slice(-3_000))).toBeLessThan(mean(cost.slice(2_000, 5_000)) * 4);
+    }
+    const [turn] = store.turnsFor("sess-flat");
+    expect(turn!.assistantText).toHaveLength(
+      Array.from({ length: 30_000 }, (_, i) => tokens[i % tokens.length]!).join("").length,
+    );
   });
 
   test("publishes the first assistant chunk so the streaming answer can mount", () => {
@@ -2922,6 +3156,10 @@ describe("SessionStore prompt queue state", () => {
 
     expect(store.get(sessionId)?.activeTurnId).toBe("turn-active");
     expect(store.get(sessionId)?.queuedTurnIds).toEqual(["turn-queued"]);
+    expect(store.turnsFor(sessionId).map((turn) => [turn.id, turn.promptText])).toEqual([
+      ["turn-active", "first"],
+      ["turn-queued", "second"],
+    ]);
     expect(store.turnsFor(sessionId).map((turn) => turn.status)).toEqual([
       "running",
       "queued",
@@ -2986,6 +3224,79 @@ describe("SessionStore prompt queue state", () => {
     expect(steer?.deliveryDegraded).toBe(true);
     expect(store.get(sessionId)?.activeTurnId).toBe("turn-active-delivery");
     expect(store.get(sessionId)?.queuedTurnIds).toEqual(["turn-steer"]);
+  });
+
+  test("does not invent a running turn for session-scoped background-process rows", () => {
+    // Background process facts carry a work_item_id but no turn_id. In a window
+    // that opened mid-history they used to create a prompt-less "head" turn
+    // that stayed "running" below the real, completed last turn.
+    const store = new SessionStore();
+    const sessionId = "sess-bg-head";
+    const turnId = "turn-bg-head";
+    const ev = (type: string, extra: Record<string, unknown> = {}) => createOpenMAEvent({
+      event_id: `${type}-${Math.random()}`,
+      type: type as never,
+      session_id: sessionId,
+      source: { kind: "harness", harness: "pi-acp", adapter: "acp" },
+      occurred_at: "2026-08-05T00:00:01.000Z",
+      data: {},
+      ...extra,
+    });
+    store.replayHistoryWindow(sessionId, [
+      { seq: 10, type: "openma_event", data: JSON.stringify(ev("user.message", { turn_id: turnId, source: { kind: "user" }, data: { text: "go", input_kind: "prompt" } })), ts: 1_000 },
+      { seq: 11, type: "openma_event", data: JSON.stringify(ev("work_item.started", { work_item_id: "term-1", data: { kind: "bash", title: "ls" } })), ts: 1_100 },
+      { seq: 12, type: "openma_event", data: JSON.stringify(ev("work_item.completed", { work_item_id: "term-1", data: { kind: "bash" } })), ts: 1_200 },
+      { seq: 13, type: "openma_event", data: JSON.stringify(ev("turn.completed", { turn_id: turnId })), ts: 1_300 },
+    ], { hasMore: true });
+
+    const turns = store.turnsFor(sessionId);
+    expect(turns.map((t) => [t.id, t.status])).toEqual([[turnId, "complete"]]);
+  });
+
+  test("settles a replayed turn whose completion was never persisted once the host reports it idle", () => {
+    // A write failure (e.g. ENOSPC) can drop the turn's terminal event. The
+    // replayed turn must not stay "running" forever once the main process
+    // says nothing is active.
+    const store = new SessionStore();
+    const sessionId = "sess-dangling-replay";
+    const turnId = "turn-dangling";
+    const prompt = createOpenMAEvent({
+      event_id: "dangling-prompt",
+      type: "user.message",
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "user" },
+      occurred_at: "2026-08-05T00:00:00.000Z",
+      data: { text: "keep going", input_kind: "prompt" },
+    });
+    const chunk = createOpenMAEvent({
+      event_id: "dangling-chunk",
+      type: "agent.message_chunk",
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "harness", harness: "pi-acp", adapter: "acp" },
+      occurred_at: "2026-08-05T00:00:01.000Z",
+      seq: 2,
+      data: { text: "partial" },
+    });
+    store.replayHistoryWindow(sessionId, [
+      { seq: 1, type: "openma_event", data: JSON.stringify(prompt), ts: 1_000 },
+      { seq: 2, type: "openma_event", data: JSON.stringify(chunk), ts: 2_000 },
+    ], { hasMore: false });
+    expect(store.turnsFor(sessionId).at(-1)?.status).toBe("running");
+
+    store.apply({
+      type: "session.queue_update",
+      session_id: sessionId,
+      mode: "single",
+      active_turn_id: null,
+      queued: [],
+    });
+
+    const settled = store.turnsFor(sessionId).at(-1)!;
+    expect(settled.status).toBe("cancelled");
+    expect(settled.stopReason).toBe("interrupted");
+    expect(settled.endedAt).toBe(2_000);
   });
 
   test("applies main-process queue snapshots", () => {
@@ -3101,7 +3412,7 @@ describe("SessionStore prompt queue state", () => {
     ]);
   });
 
-  test("settles an injected steering input without completing the active turn", () => {
+  test("routes an injected steering input inline to the active turn", () => {
     const store = new SessionStore();
     const sessionId = "steering-input-session";
     store.registerStarting(sessionId, "claude-acp", "Steering input");
@@ -3137,11 +3448,27 @@ describe("SessionStore prompt queue state", () => {
       requested_delivery: "llm_boundary",
       effective_delivery: "llm_boundary",
       outcome: "injected",
+      openma_event: createOpenMAEvent({
+        event_id: "injected-steering",
+        session_id: sessionId,
+        turn_id: "turn-steer",
+        source: { kind: "user" },
+        occurred_at: "2026-08-06T00:00:00.000Z",
+        type: "user.message",
+        data: {
+          text: "change direction",
+          input_kind: "steering",
+          outcome: "injected",
+          active_turn_id: "turn-active",
+        },
+      }),
     });
 
     expect(store.turnsFor(sessionId).map((turn) => [turn.id, turn.status])).toEqual([
       ["turn-active", "running"],
-      ["turn-steer", "complete"],
+    ]);
+    expect(store.projectTurn(store.turnsFor(sessionId)[0]!).timeline).toEqual([
+      { kind: "user_input", text: "change direction", clientId: "turn-steer" },
     ]);
     expect(store.get(sessionId)).toMatchObject({
       status: "running",
@@ -3177,9 +3504,25 @@ describe("SessionStore prompt queue state", () => {
       requested_delivery: "llm_boundary",
       effective_delivery: "llm_boundary",
       outcome: "startedNewTurn",
+      openma_event: createOpenMAEvent({
+        event_id: "started-new-turn-steering",
+        session_id: sessionId,
+        turn_id: "turn-steer",
+        source: { kind: "user" },
+        occurred_at: "2026-08-06T00:00:00.000Z",
+        type: "user.message",
+        data: {
+          text: "continue after the race",
+          input_kind: "steering",
+          outcome: "startedNewTurn",
+          active_turn_id: "turn-previous",
+        },
+      }),
     });
 
-    expect(store.turnsFor(sessionId)[0]?.status).toBe("running");
+    expect(store.turnsFor(sessionId).map((turn) => [turn.id, turn.promptText, turn.status])).toEqual([
+      ["turn-steer", "continue after the race", "running"],
+    ]);
     expect(store.get(sessionId)).toMatchObject({
       status: "running",
       activeTurnId: "turn-steer",

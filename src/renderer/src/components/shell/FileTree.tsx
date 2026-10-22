@@ -1,196 +1,121 @@
+import { useMemo, useState } from "react";
+import { useTree } from "@headless-tree/react";
+import { asyncDataLoaderFeature, hotkeysCoreFeature, selectionFeature } from "@headless-tree/core";
+import { ContextMenu } from "radix-ui";
 import { useI18n } from "@/lib/i18n";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ChevronRightIcon,
-  ChevronDownIcon,
-  FileIcon,
-  FolderIcon,
-  FolderOpenIcon,
-} from "@/components/Icons";
+import { fileIconUrl, folderIconUrl } from "@/lib/file-icons";
+import { ChevronRightIcon, FolderOpenIcon, RefreshCwIcon, ListTreeIcon, CopyIcon } from "@/components/Icons";
 import { cn } from "@/lib/utils";
 
-/**
- * FileTree — single-cwd lazy-expand file browser shown in a side
- * panel tab. Reads directory entries via the UiFsListDir IPC; clicking
- * a folder toggles its expanded state and fetches children on first
- * expand. Files route through the shared preview/open lifecycle.
- *
- * Performance: each directory is fetched once per expand cycle and
- * cached in component state. Re-collapse keeps the cache so re-expand
- * is instant; future PR can invalidate on FS watcher events.
- *
- * Root change: the cwd label is a button that opens the native
- * "Choose folder" picker (Electron dialog.showOpenDialog). The new
- * path is bubbled up via `onRootChange` so the side panel can patch
- * the tab payload — a remount with a new `rootPath` flushes the
- * cached children.
- */
-export function FileTree({
-  rootPath,
-  onRootChange,
-  onOpenFile,
-}: {
+type Entry = { name: string; isDir: boolean; error?: string };
+
+/** The filesystem remains lazy; headless-tree owns recursive expansion,
+ * selection, focus, ARIA and keyboard navigation. No nested React row state. */
+export function FileTree(props: {
+  rootPath: string;
+  onRootChange?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
+}) {
+  // Changing roots resets the data cache as well as selection/expansion.
+  return <FileTreeRoot key={props.rootPath} {...props} />;
+}
+
+function FileTreeRoot({ rootPath, onRootChange, onOpenFile }: {
   rootPath: string;
   onRootChange?: (path: string) => void;
   onOpenFile?: (path: string) => void;
 }) {
   const { t } = useI18n();
-  const onPickRoot = useCallback(async () => {
-    const next = await window.backchat.uiFsPickDir({ defaultPath: rootPath });
-    if (next && next !== rootPath) onRootChange?.(next);
-  }, [rootPath, onRootChange]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const rootName = rootPath.replace(/\/$/, "").split("/").pop() || rootPath;
+  const cache = useMemo(() => new Map<string, Entry>([[rootPath, { name: rootName, isDir: true }]]), [rootPath, rootName]);
+  const tree = useTree<Entry>({
+    rootItemId: rootPath,
+    getItemName: (item) => item.getItemData().name,
+    isItemFolder: (item) => item.getItemData().isDir,
+    onPrimaryAction: (item) => {
+      if (!item.isFolder() && !item.getItemData().error) onOpenFile?.(item.getId());
+    },
+    dataLoader: {
+      getItem: (id) => cache.get(id) ?? { name: id.split("/").pop() || id, isDir: false },
+      getChildrenWithData: async (path) => {
+        try {
+          const entries = await window.backchat.uiFsListDir({ path });
+          const failures = entries.filter((entry) => entry.error);
+          setErrors((previous) => ({ ...previous, [path]: failures.map((entry) => entry.error).join("\n") }));
+          return entries.filter((entry) => !entry.error).map((entry) => {
+            const id = `${path.replace(/\/$/, "")}/${entry.name}`;
+            cache.set(id, entry);
+            return { id, data: entry };
+          });
+        } catch (error) {
+          setErrors((previous) => ({ ...previous, [path]: String(error) }));
+          return [];
+        }
+      },
+    },
+    features: [asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
+  });
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([rootPath, ...tree.getState().expandedItems].filter((id, index, all) => all.indexOf(id) === index)
+        .map((id) => tree.getItemInstance(id).invalidateChildrenIds()));
+    } finally { setRefreshing(false); }
+  };
+  const light = typeof document !== "undefined" && !document.documentElement.classList.contains("dark");
+  const actionClass = "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const menuClass = "app-select-item app-select-focus flex items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none data-[highlighted]:bg-accent";
+  const items = tree.getItems();
+  const loading = tree.getState().loadingItemChildrens.length > 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-xs">
-      <button
-        type="button"
-        onClick={onPickRoot}
-        className={cn(
-          "shrink-0 flex items-center gap-1.5 px-3 pt-3 pb-2",
-          "font-mono text-[11px] text-fg-subtle hover:text-fg",
-          "transition-colors",
-          "text-left",
-        )}
-        title={t("settings.chooseFolder")}
-      >
-        <FolderOpenIcon className="size-3.5 shrink-0" />
-        <span className="truncate">{rootPath}</span>
-      </button>
-      <div className="oma-scrollbar flex-1 min-h-0 overflow-y-auto px-2 pb-3">
-        <DirNode
-          key={rootPath}
-          path={rootPath}
-          depth={0}
-          initiallyExpanded
-          onOpenFile={onOpenFile}
-        />
+    <div className="flex h-full min-h-0 flex-col text-xs" data-file-tree="headless-tree">
+      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left text-fg-muted hover:text-fg" title={rootPath}
+          onClick={async () => {
+            const next = await window.backchat.uiFsPickDir({ defaultPath: rootPath });
+            if (next && next !== rootPath) onRootChange?.(next);
+          }}>
+          <FolderOpenIcon className="size-4 shrink-0" /><span className="truncate font-medium">{rootName}</span>
+        </button>
+        <button type="button" title={t("fileTree.collapseAll")} aria-label={t("fileTree.collapseAll")} className={actionClass} onClick={() => tree.applySubStateUpdate("expandedItems", [])}><ListTreeIcon className="size-3.5" /></button>
+        <button type="button" title={t("fileTree.refresh")} aria-label={t("fileTree.refresh")} className={actionClass} disabled={refreshing} onClick={() => void refresh()}><RefreshCwIcon className="size-3.5" /></button>
+      </div>
+      <div {...tree.getContainerProps(rootName)} className="oma-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3 outline-none">
+        {items.map((item) => {
+          const data = item.getItemData();
+          const path = item.getId();
+          const level = item.getItemMeta().level;
+          const folder = item.isFolder();
+          return (
+            <ContextMenu.Root key={item.getKey()}>
+              <ContextMenu.Trigger asChild>
+                <button {...item.getProps()} type="button" title={path}
+                  className={cn("relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left text-fg-muted hover:bg-[var(--control-bg-hover)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring", item.isSelected() && "bg-[var(--control-bg-hover)] text-fg")}
+                  style={{ paddingLeft: level * 16 + 4 }}>
+                  {Array.from({ length: level }, (_, i) => <span key={i} aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-px bg-border" style={{ left: i * 16 + 11 }} />)}
+                  <span className="flex size-3.5 shrink-0 items-center justify-center">{folder && <ChevronRightIcon className={cn("size-3 transition-transform", item.isExpanded() && "rotate-90")} />}</span>
+                  <img alt="" draggable={false} className="size-4 shrink-0" src={folder ? folderIconUrl(data.name, item.isExpanded(), light) : fileIconUrl(data.name, light)} />
+                  <span className="truncate">{data.name}</span>
+                  {item.isLoading() && <span className="ml-auto text-fg-subtle">…</span>}
+                </button>
+              </ContextMenu.Trigger>
+              <ContextMenu.Portal>
+                <ContextMenu.Content className="app-select-content z-50 min-w-44 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-border">
+                  {!folder && <ContextMenu.Item className={menuClass} onSelect={() => onOpenFile?.(path)}>{t("fileTree.open")}</ContextMenu.Item>}
+                  <ContextMenu.Item className={menuClass} onSelect={() => void window.backchat.uiFsRevealPath({ path })}>{t("fileTree.revealInFinder")}</ContextMenu.Item>
+                  <ContextMenu.Item className={menuClass} onSelect={() => void navigator.clipboard.writeText(path)}><CopyIcon className="size-3.5" />{t("fileTree.copyPath")}</ContextMenu.Item>
+                  <ContextMenu.Item className={menuClass} onSelect={() => void navigator.clipboard.writeText(path.slice(rootPath.replace(/\/$/, "").length + 1))}>{t("fileTree.copyRelativePath")}</ContextMenu.Item>
+                </ContextMenu.Content>
+              </ContextMenu.Portal>
+            </ContextMenu.Root>
+          );
+        })}
+        {Object.entries(errors).filter(([, message]) => message).map(([path, message]) => <p key={path} role="alert" className="px-2 py-2 text-danger" title={path}>{message}</p>)}
+        {!items.length && <p className="px-3 py-4 text-fg-subtle">{loading ? t("fileTree.loading") : errors[rootPath] ? null : t("fileTree.empty")}</p>}
       </div>
     </div>
-  );
-}
-
-type Entry = { name: string; isDir: boolean; error?: string };
-
-/** Recursive node. `initiallyExpanded` is true only for the root —
- *  every nested folder starts collapsed so the user opens the tree
- *  level by level. */
-function DirNode({
-  path,
-  depth,
-  initiallyExpanded = false,
-  onOpenFile,
-}: {
-  path: string;
-  depth: number;
-  initiallyExpanded?: boolean;
-  onOpenFile?: (path: string) => void;
-}) {
-  const [expanded] = useState(initiallyExpanded);
-  const [entries, setEntries] = useState<Entry[] | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  // Fetch on first expand. Re-collapse keeps the cache; re-expand
-  // reuses it. No refresh button in v1 — close the tab + reopen if
-  // contents changed on disk.
-  useEffect(() => {
-    if (!expanded || entries !== null) return;
-    setLoading(true);
-    void window.backchat
-      .uiFsListDir({ path })
-      .then((rows) => {
-        setEntries(rows);
-        setLoading(false);
-      })
-      .catch((e) => {
-        setEntries([{ name: `<${String(e)}>`, isDir: false, error: String(e) }]);
-        setLoading(false);
-      });
-  }, [expanded, entries, path]);
-
-  return (
-    <>
-      {entries === null && !expanded ? null : (
-        <ul>
-          {(entries ?? []).map((entry) => (
-            <FsRow
-              key={entry.name}
-              path={path}
-              entry={entry}
-              depth={depth}
-              onOpenFile={onOpenFile}
-            />
-          ))}
-          {loading && (
-            <li
-              className="px-2 py-0.5 text-fg-subtle"
-              style={{ paddingLeft: `${depth * 12 + 24}px` }}
-            >
-              Loading…
-            </li>
-          )}
-        </ul>
-      )}
-    </>
-  );
-}
-
-function FsRow({
-  path,
-  entry,
-  depth,
-  onOpenFile,
-}: {
-  path: string;
-  entry: Entry;
-  depth: number;
-  onOpenFile?: (path: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const childPath = useMemo(
-    () => (path.endsWith("/") ? path + entry.name : path + "/" + entry.name),
-    [path, entry.name],
-  );
-  const onClick = useCallback(() => {
-    if (entry.isDir) {
-      setExpanded((v) => !v);
-      return;
-    }
-    if (!entry.error) onOpenFile?.(childPath);
-  }, [childPath, entry.error, entry.isDir, onOpenFile]);
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className={cn(
-          "flex w-full items-center gap-1.5 rounded px-2 py-0.5 text-left",
-          "hover:bg-bg-surface/60",
-          entry.error && "text-fg-subtle italic",
-          "transition-colors",
-        )}
-        style={{ paddingLeft: `${depth * 12 + 4}px` }}
-        title={entry.error ?? childPath}
-      >
-        <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-fg-subtle">
-          {entry.isDir ? (
-            expanded ? (
-              <ChevronDownIcon className="size-3.5" />
-            ) : (
-              <ChevronRightIcon className="size-3.5" />
-            )
-          ) : null}
-        </span>
-        {entry.isDir ? (
-          <FolderIcon className="size-3.5 shrink-0 text-fg-subtle" />
-        ) : (
-          <FileIcon className="size-3.5 shrink-0 text-fg-subtle" />
-        )}
-        <span className="truncate">{entry.name}</span>
-      </button>
-      {entry.isDir && expanded && (
-        <DirNode path={childPath} depth={depth + 1} onOpenFile={onOpenFile} />
-      )}
-    </li>
   );
 }

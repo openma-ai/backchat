@@ -8,7 +8,8 @@ export function ComposerHarnessLiveAuthWarmup() {
   const { data: agents } = useQuery<AgentInfo[]>({
     queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList({ readiness: "snapshot" }),
-    staleTime: 60_000,
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
   const defaultAgentId = agents?.[0]?.id ?? "";
   useComposerHarnessLiveAuth(defaultAgentId, defaultAgentId.length > 0);

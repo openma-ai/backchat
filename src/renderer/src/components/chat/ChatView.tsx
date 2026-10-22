@@ -1,6 +1,6 @@
 import {
+  useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -13,9 +13,20 @@ import type { AgentUITurnState } from "@openma/common/agent-ui";
 import { GoalEditDialog } from "./GoalEditDialog";
 import { toast } from "sonner";
 import { Message, MessageContent } from "@/components/ai-elements/message";
+import { CHAT_SCROLL_BUTTON_CIRCLE_CLASS } from "@/components/ai-elements/conversation";
 import { Badge } from "@/components/ui/badge";
 import { StatusNotice } from "@/components/ui/status-notice";
-import { OpenmaStartupLoader } from "@/components/OpenmaStartupLoader";
+import { environmentErrorKind } from "@/lib/environment-error";
+import { cn } from "@/lib/utils";
+import {
+  ConversationErrorBoundary,
+  ConversationErrorFallback,
+  ConversationSurfaceLoader,
+} from "./ConversationLoadingState";
+import {
+  useSessionFirstScreenPaint,
+  useSessionSearchJump,
+} from "./useChatTranscriptLifecycle";
 import {
   selectActive,
   selectOpenMAEventsFor,
@@ -36,6 +47,7 @@ import { resolveThemeText } from "@/lib/theme-plugin";
 import { getThemePlugin } from "@/themes";
 import { ConversationTimeline } from "./ConversationTimeline";
 import { HistoryPager } from "./HistoryPager";
+import { FollowOnSend } from "./FollowOnSend";
 import { ResponseAnnotationController } from "./ResponseAnnotations";
 import { ProjectChipRow } from "./ComposerProjectControls";
 import { MarkdownCwdProvider } from "./ChatMarkdown";
@@ -208,8 +220,10 @@ export function ChatView({
     return isSide ? selectSideActive : selectActive;
   }, [boundSessionId, isSide]);
   const active = useSessionStore(activeSelector);
-  useEffect(() => {
+  const [boundLoadError, setBoundLoadError] = useState<string | null>(null);
+  const loadBoundSessionHistory = useCallback(() => {
     if (!binding) return;
+    setBoundLoadError(null);
     sessionStore.ensureBoundSession({
       id: binding.sessionId,
       agentId: binding.agentId,
@@ -217,9 +231,13 @@ export function ChatView({
       label: binding.label,
       projectId: binding.projectId,
     });
-    if (binding.loadHistory) void openHistoryWindow(binding.sessionId);
-    // Primitives only: the binding object is rebuilt by the project page.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (binding.loadHistory) {
+      void openHistoryWindow(binding.sessionId).catch((error: unknown) => {
+        setBoundLoadError(
+          error instanceof Error ? error.message : "Couldn't load history",
+        );
+      });
+    }
   }, [
     binding?.sessionId,
     binding?.agentId,
@@ -228,6 +246,9 @@ export function ChatView({
     binding?.projectId,
     binding?.loadHistory,
   ]);
+  useEffect(() => {
+    loadBoundSessionHistory();
+  }, [loadBoundSessionHistory]);
   const turnsSelector = useMemo(
     () =>
       active
@@ -276,28 +297,12 @@ export function ChatView({
   const navigate = useNavigate();
   const isNativeSubagent = active?.sideKind === "subagent";
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const [paintedSessionId, setPaintedSessionId] = useState<string | null>(null);
   const persistedSessionId = active && active.status !== "draft" ? active.id : null;
-  const loadingFirstScreen = !!persistedSessionId
-    && (historyPending || paintedSessionId !== persistedSessionId);
-  useLayoutEffect(() => {
-    if (!persistedSessionId || historyPending) {
-      setPaintedSessionId(null);
-      return;
-    }
-    // Mount the transcript behind the loader, then settle its initial viewport
-    // before revealing it. A request resolving is not a rendered first screen.
-    let revealFrame = 0;
-    const layoutFrame = requestAnimationFrame(() => {
-      const scroller = transcriptRef.current?.closest(".chat-scrollbar");
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-      revealFrame = requestAnimationFrame(() => setPaintedSessionId(persistedSessionId));
-    });
-    return () => {
-      cancelAnimationFrame(layoutFrame);
-      cancelAnimationFrame(revealFrame);
-    };
-  }, [persistedSessionId, historyPending]);
+  const loadingFirstScreen = useSessionFirstScreenPaint({
+    persistedSessionId,
+    historyPending,
+    transcriptRef,
+  });
 
   const canForkCurrentSession = !isSide
     && active?.status !== "draft"
@@ -309,20 +314,23 @@ export function ChatView({
     () => forkPointsByTurn(transcriptTurns),
     [transcriptTurns],
   );
-  const continueInNewChat = () => {
+  const continueInNewChat = useCallback(() => {
     if (!active || !canForkCurrentSession) return;
     const forkId = sessionStore.newMainForkDraft(active.id);
     if (!forkId) return;
     void navigate({ to: "/" });
-  };
-  const forkFromTurn = (turnId: string) => {
-    if (!active || !canForkFromMessage) return;
-    const point = messageForkPoints.get(turnId);
-    if (!point) return;
-    const forkId = sessionStore.newMainForkDraft(active.id, point);
-    if (!forkId) return;
-    void navigate({ to: "/" });
-  };
+  }, [active, canForkCurrentSession, navigate]);
+  const forkFromTurn = useCallback(
+    (turnId: string) => {
+      if (!active || !canForkFromMessage) return;
+      const point = messageForkPoints.get(turnId);
+      if (!point) return;
+      const forkId = sessionStore.newMainForkDraft(active.id, point);
+      if (!forkId) return;
+      void navigate({ to: "/" });
+    },
+    [active, canForkFromMessage, messageForkPoints, navigate],
+  );
   const latestForkableTurnId = canForkCurrentSession && !active?.activeTurnId
     ? [...transcriptTurns].reverse().find((turn) => turn.status === "complete")?.id
     : undefined;
@@ -373,18 +381,45 @@ export function ChatView({
       setEchoes((current) => insertOptimisticEcho(current, echo));
     },
   });
-  const retrySend = (turn: Turn) => {
-    if (turn.id.startsWith("echo:") && turn.clientId) {
-      setEchoes((current) => current.filter((echo) => echo.clientId !== turn.clientId));
-      void onSubmit(turn.promptText, turn.attachments ?? []);
-      return;
-    }
-    if (binding?.deliver) {
-      void retryBoundChatSend(turn, binding.deliver);
-      return;
-    }
-    void retryFailedChatSend(turn);
-  };
+  const retrySend = useCallback(
+    (turn: Turn) => {
+      if (turn.id.startsWith("echo:") && turn.clientId) {
+        setEchoes((current) =>
+          current.filter((echo) => echo.clientId !== turn.clientId),
+        );
+        void onSubmit(turn.promptText, turn.attachments ?? []);
+        return;
+      }
+      if (binding?.deliver) {
+        void retryBoundChatSend(turn, binding.deliver);
+        return;
+      }
+      void retryFailedChatSend(turn);
+    },
+    [binding?.deliver, onSubmit],
+  );
+  const regenerateTurn = useCallback(
+    (turn: Turn) => {
+      const prompt = turn.promptText.trim();
+      if (!prompt) return;
+      void onSubmit(prompt, turn.attachments ?? []);
+    },
+    [onSubmit],
+  );
+  const editTurnPrompt = useCallback(
+    (turn: Turn, nextPromptText: string) => {
+      const trimmed = nextPromptText.trim();
+      if (!trimmed) return;
+      void onSubmit(trimmed, turn.attachments ?? []);
+    },
+    [onSubmit],
+  );
+  useSessionSearchJump({
+    sessionId: active?.id,
+    loadingFirstScreen,
+    transcriptTurns,
+    transcriptRef,
+  });
   useEffect(() => {
     if (visibleEchoes !== echoes) setEchoes(visibleEchoes);
   }, [echoes, visibleEchoes]);
@@ -474,8 +509,29 @@ export function ChatView({
       onRequestAuth={() => setAuthSetupOpen(true)}
     />
   );
+  // An error from the machine (e.g. a full disk) will fail the next send too,
+  // so it stands above the composer; the turn itself only keeps a quiet line.
+  const lastTurn = turns[turns.length - 1];
+  const environmentError = environmentErrorKind(
+    lastTurn?.sendState === "failed"
+      ? (lastTurn.sendError ?? lastTurn.errorMessage)
+      : lastTurn?.status === "error"
+        ? lastTurn.errorMessage
+        : active?.status === "errored"
+          ? active.lastError
+          : undefined,
+  );
+  // The composer notice already carries the last turn's failure (session
+  // errored or environment error); the turn must not say it a second time.
+  const composerShowsTurnError = !active?.authRequired
+    && (environmentError === "diskFull" || active?.status === "errored")
+    && (lastTurn?.status === "error" || lastTurn?.sendState === "failed");
   const composerNotice =
-    active?.authRequired ? null : active?.status === "errored" ? (
+    active?.authRequired ? null : environmentError === "diskFull" ? (
+      <StatusNotice tone="danger" appearance="quiet" data-composer-environment-error="diskFull">
+        {t("chat.diskFull")}
+      </StatusNotice>
+    ) : active?.status === "errored" ? (
       <StatusNotice tone="danger" appearance="quiet">
         {active.lastError ?? t("chat.sessionErrored")}
       </StatusNotice>
@@ -541,6 +597,7 @@ export function ChatView({
     () => composerActivityModulesForSession({
       agentId: active?.agent_id,
       turns,
+      projectTurn: sessionStore.projectTurn,
       workItems,
       openmaEvents,
       labels: {
@@ -555,7 +612,7 @@ export function ChatView({
         events: t("chat.activityEvents"),
       },
     }),
-    [active?.agent_id, openmaEvents, t, turns, workItems],
+    [active?.agent_id, openmaEvents, sessionStore.projectTurn, t, turns, workItems],
   );
   const queueCallbacks =
     active && showPromptQueue
@@ -662,11 +719,24 @@ export function ChatView({
       data-chat-binding={binding ? "coordinator" : mode}
     >
       {loadingFirstScreen && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center app-canvas-surface"
-          data-chat-history-loading="true">
-          <OpenmaStartupLoader label={t("chat.loadingHistory")} />
-        </div>
+        <ConversationSurfaceLoader
+          overlay
+          compact={isSide}
+          label={t("chat.loadingHistory")}
+        />
       )}
+      {!loadingFirstScreen && boundLoadError && turns.length === 0 && (
+        <ConversationErrorFallback
+          overlay
+          compact={isSide}
+          message={boundLoadError}
+          onRetry={loadBoundSessionHistory}
+        />
+      )}
+      <ConversationErrorBoundary
+        resetKey={active?.id ?? binding?.sessionId ?? null}
+        compact={isSide}
+      >
       <div className="flex h-full min-h-0 flex-1 flex-col"
         style={loadingFirstScreen ? { visibility: "hidden" } : undefined}
         inert={loadingFirstScreen}>
@@ -695,6 +765,12 @@ export function ChatView({
             const sourceTurn = turnsById.get(turn.id);
             if (!sourceTurn) return null;
             const messagePoint = messageForkPoints.get(sourceTurn.id);
+            // ↻ means "retry after a failure", and only for the latest
+            // exchange. Editing the prompt is likewise last-turn only.
+            const isLastTurn = sourceTurn.id === lastTurn?.id;
+            const lastTurnFailed = isLastTurn
+              && (sourceTurn.status === "error" || sourceTurn.sendState === "failed");
+            const canRedoLast = isLastTurn && !isSide && !isNativeSubagent && !hasActiveTurn;
             const completedAnswer = sourceTurn.status === "complete"
               && sourceTurn.assistantText.trim().length > 0;
             // One button. Message fork wins on every completed reply,
@@ -710,34 +786,35 @@ export function ChatView({
             return (
               <TurnBlock
                 turn={sourceTurn}
-                onRetrySend={retrySend}
-                onFork={
-                  forkFromMessage
-                    ? () => forkFromTurn(sourceTurn.id)
-                    : forkWholeSession
-                      ? continueInNewChat
-                      : undefined
-                }
+                hideErrorNotice={composerShowsTurnError && sourceTurn.id === lastTurn?.id}
+                isLatest={isLastTurn}
+                onRetrySend={isLastTurn ? retrySend : undefined}
+                onForkTurn={forkFromMessage ? forkFromTurn : undefined}
+                onFork={forkWholeSession ? continueInNewChat : undefined}
                 forkLabel={forkFromMessage ? t("chat.forkFromHere") : undefined}
+                onRegenerate={canRedoLast && lastTurnFailed ? regenerateTurn : undefined}
+                onEditPrompt={canRedoLast ? editTurnPrompt : undefined}
               />
             );
           }}
           slots={{
-            empty: binding ? null : (
-              <EmptyStateIntro
-                hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
-                selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}
-                onSelectSuggestion={selectHomeSuggestion}
-                onSuggestion={
-                  isSide ||
-                  isNativeSubagent ||
-                  homeSuggestionPhase === "dismissed"
-                    ? undefined
-                    : (prompt) => {
-                        fillSuggestionPrefix(prompt);
-                      }
-                }
-              />
+            empty: (
+              binding ? null : (
+                <EmptyStateIntro
+                  hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
+                  selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}
+                  onSelectSuggestion={selectHomeSuggestion}
+                  onSuggestion={
+                    isSide ||
+                    isNativeSubagent ||
+                    homeSuggestionPhase === "dismissed"
+                      ? undefined
+                      : (prompt) => {
+                          fillSuggestionPrefix(prompt);
+                        }
+                  }
+                />
+              )
             ),
             homeBeforeComposer:
               binding ? null : homeSuggestionPhase === "choosing" &&
@@ -777,11 +854,23 @@ export function ChatView({
                 onAskInSideChat={askInSideChat}
               />
             ) : null,
+            renderScrollButton: ({ onClick, className, icon }) => (
+              <button
+                type="button"
+                aria-label={t("chat.scrollToBottom")}
+                data-chat-scroll-to-bottom="true"
+                onClick={onClick}
+                className={cn(className, CHAT_SCROLL_BUTTON_CIRCLE_CLASS)}
+              >
+                {icon}
+              </button>
+            ),
             conversationOverlay:
-              !isSide && (active || binding) ? (
+              active || binding ? (
                 <>
                   <HistoryPager sessionId={(binding?.sessionId ?? active?.id)!} />
-                  <ConversationTimeline turns={transcriptTurns} />
+                  <FollowOnSend tailTurnId={transcriptTurns.at(-1)?.id} />
+                  {!isSide && <ConversationTimeline turns={transcriptTurns} />}
                 </>
               ) : null,
             emptyAfter: !isSide && !binding ? (
@@ -790,6 +879,7 @@ export function ChatView({
           }}
         />
       </div>
+      </ConversationErrorBoundary>
     </div>
   );
 }

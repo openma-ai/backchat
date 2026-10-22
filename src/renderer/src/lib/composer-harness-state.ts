@@ -157,7 +157,8 @@ export function useComposerHarnessState({
   const { data: agents = [] } = useQuery({
     queryKey: AGENTS_QUERY_KEY,
     queryFn: () => window.backchat.agentsList(),
-    staleTime: 60_000,
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
   const harness = useMemo(
     () =>

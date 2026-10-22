@@ -1,10 +1,10 @@
 import { sessionStore } from "./session-store";
 
 /** Rows per page. Persisted rows are mostly single-token stream chunks
- *  (a few characters each), so ~800 rows is a screen or two of rendered
+ *  (a few characters each), so ~1600 rows is a screen or two of rendered
  *  blocks while staying far below the tens of thousands of rows a long
  *  goal session accumulates. */
-export const HISTORY_PAGE_ROWS = 800;
+export const HISTORY_PAGE_ROWS = 1600;
 
 /** Open a persisted session from its newest rows. */
 export async function openHistoryWindow(sessionId: string): Promise<void> {
@@ -40,5 +40,31 @@ export async function loadOlderHistory(sessionId: string): Promise<boolean> {
   } catch (error) {
     sessionStore.setHistoryLoading(sessionId, false);
     throw error;
+  }
+}
+
+export interface SessionSearchJumpTarget {
+  sessionId: string;
+  seq: number;
+  ts: number;
+  query: string;
+}
+
+let pendingSearchJump: SessionSearchJumpTarget | null = null;
+
+export function requestSessionSearchJump(target: SessionSearchJumpTarget): void {
+  pendingSearchJump = target;
+}
+
+export function peekSessionSearchJump(
+  sessionId: string | undefined,
+): SessionSearchJumpTarget | null {
+  if (!sessionId || !pendingSearchJump) return null;
+  return pendingSearchJump.sessionId === sessionId ? pendingSearchJump : null;
+}
+
+export function clearSessionSearchJump(sessionId: string): void {
+  if (pendingSearchJump?.sessionId === sessionId) {
+    pendingSearchJump = null;
   }
 }

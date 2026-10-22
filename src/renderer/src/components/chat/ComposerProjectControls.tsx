@@ -156,7 +156,7 @@ export function ProjectChipRow({
             title={activeCwd || t("chat.chooseProjectFolder")}
           >
             <span data-control-icon>
-              {selectedProject ? <ProjectIcon identity={`project:${selectedProject.id}`} sourceFolders={selectedProject.source_folders} primaryRoot={selectedProject.primary_folder} /> : <FolderOpenIcon />}
+              {selectedProject ? <ProjectIcon identity={`project:${selectedProject.id}`} name={selectedProject.name} sourceFolders={selectedProject.source_folders} primaryRoot={selectedProject.primary_folder} /> : <FolderOpenIcon />}
             </span>
             <span className="max-w-[200px] truncate">{cwdLabel}</span>
             {isDraft && <ChevronDownIcon data-control-chevron />}
@@ -202,6 +202,7 @@ export function ProjectChipRow({
                                 <ProjectIcon
                                   className="!size-3.5"
                                   identity={`project:${project.id}`}
+                                  name={project.name}
                                   sourceFolders={project.source_folders}
                                   primaryRoot={project.primary_folder}
                                 />

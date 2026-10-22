@@ -39,6 +39,7 @@ import { AgentIcon } from "@/components/AgentIcon";
 import type { SearchHitInfo } from "@shared/api.js";
 import type { OpenmaTask } from "@shared/openma";
 import { useOpenmaAccount } from "@/lib/openma-account";
+import { requestSessionSearchJump } from "@/lib/history-paging";
 
 /** Lives in localStorage; ring of last opened session ids, MRU. */
 const RECENT_KEY = "openma:recent-sessions";
@@ -148,11 +149,22 @@ export function CommandPalette() {
     .filter((s): s is NonNullable<typeof s> => !!s)
     .slice(0, 5);
 
-  const goSession = (id: string) => {
-    const remote = hits.find((hit) => hit.session_id === id)?.openma;
+  const goSession = (
+    id: string,
+    hit?: { seq: number; ts: number; query?: string },
+  ) => {
+    const remote = hits.find((item) => item.session_id === id)?.openma;
     if (remote) {
       if (!(JSON.parse(scope ?? "[]") as string[]).includes(JSON.stringify([remote.baseUrl, remote.userId, remote.workspaceId]))) return;
       sessionStore.seedOpenmaTasks([remote]);
+    }
+    if (hit && hit.seq > 0) {
+      requestSessionSearchJump({
+        sessionId: id,
+        seq: hit.seq,
+        ts: hit.ts,
+        query: hit.query ?? query.trim(),
+      });
     }
     sessionStore.setActive(id);
     pushRecent(id);
@@ -221,7 +233,13 @@ export function CommandPalette() {
                   <Command.Item
                     key={`${h.session_id}-${h.seq}`}
                     value={`search-${h.session_id}-${h.seq}`}
-                    onSelect={() => goSession(h.session_id)}
+                    onSelect={() =>
+                      goSession(h.session_id, {
+                        seq: h.seq,
+                        ts: h.ts,
+                        query: query.trim(),
+                      })
+                    }
                     className={itemClass}
                   >
                     <CmdSlot>

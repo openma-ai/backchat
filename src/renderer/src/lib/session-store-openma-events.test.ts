@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { createOpenMAEvent } from "@openma/common/session-events/openma";
 import { attachOpenMAEvent } from "@shared/openma-event.js";
@@ -2083,5 +2085,629 @@ describe("SessionStore canonical OpenMA events", () => {
       lastError: undefined,
       auth: { status: "needs-auth", message: "Authentication required" },
     });
+  });
+});
+
+describe("SessionStore turn-scoped provider errors", () => {
+  // Recorded from sess-drglvie2: a provider capacity error ends one turn with
+  // a turn-scoped session.error and no turn.failed. The ACP session is fine.
+  const sessionId = "sess-turn-error";
+  const source = { kind: "harness", harness: "pi-acp", adapter: "acp" } as const;
+  const userMessage = createOpenMAEvent({
+    event_id: "turn-error-user",
+    type: "user.message",
+    session_id: sessionId,
+    turn_id: "turn-capacity",
+    source,
+    occurred_at: "2026-10-13T13:41:13.000Z",
+    data: { text: "continue", input_kind: "prompt" },
+  });
+  const capacityError = createOpenMAEvent({
+    event_id: "turn-error-session-error",
+    type: "session.error",
+    session_id: sessionId,
+    turn_id: "turn-capacity",
+    source,
+    occurred_at: "2026-10-13T13:41:19.000Z",
+    data: {
+      message: "Internal error: Devin stream error: We are currently experiencing capacity issues with this serving model.",
+      error_details: { code: -32603, data: { pi: { assistantError: true, failure: "unknown" } } },
+    },
+  });
+  const ready = {
+    type: "session.ready",
+    session_id: sessionId,
+    acp_session_id: "acp-turn-error",
+    agent_id: "pi-acp",
+    cwd: "/tmp/project",
+  } as const;
+
+  it("keeps the chat usable when history ends in a turn-scoped error", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.replayHistory(sessionId, [userMessage, capacityError].map((event, index) => ({
+      seq: index + 1,
+      type: "openma_event",
+      data: JSON.stringify(event),
+      ts: index + 1,
+    })));
+
+    expect(store.turnsFor(sessionId).map((turn) => turn.status)).toEqual(["error"]);
+    expect(store.get(sessionId)?.status).toBe("ready");
+  });
+
+  it("keeps the chat usable when a live turn ends in a turn-scoped error", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.apply({ type: "session.event", session_id: sessionId, turn_id: "turn-capacity", openma_event: userMessage } as never);
+    store.apply({ type: "session.event", session_id: sessionId, turn_id: "turn-capacity", openma_event: capacityError } as never);
+
+    expect(store.get(sessionId)?.status).not.toBe("errored");
+  });
+
+  it("still locks the chat for a session-wide error", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    const { turn_id: _turn, ...sessionWide } = capacityError;
+    store.replayHistory(sessionId, [{
+      seq: 1,
+      type: "openma_event",
+      data: JSON.stringify({ ...sessionWide, data: { message: "agent binary missing" } }),
+      ts: 1,
+    }]);
+
+    expect(store.get(sessionId)).toMatchObject({ status: "errored", lastError: "agent binary missing" });
+  });
+});
+
+describe("SessionStore replay of a legacy prompt row with canonical turn content", () => {
+  // Histories written before the canonical user.message existed (and the
+  // fixtures that model them) open the turn with a bare `user_prompt` row,
+  // which carries no turn id. The canonical rows that follow carry the host
+  // turn id, and must still land on the turn that prompt opened.
+  const sessionId = "sess-legacy-prompt";
+  const turnId = "turn-legacy-prompt";
+  const source = { kind: "harness", harness: "claude-acp", adapter: "acp" } as const;
+  const canonical = (eventId: string, type: string, data: Record<string, unknown>) => ({
+    schema: "oma.event.v1",
+    event_id: eventId,
+    session_id: sessionId,
+    turn_id: turnId,
+    source,
+    occurred_at: "2026-08-06T00:00:00.000Z",
+    type,
+    data,
+  });
+
+  it("keeps the canonical thought, text and terminal on the prompt's turn", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-legacy-prompt",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+    const rows = [
+      { type: "user_prompt", data: { text: "calculate" } },
+      { type: "openma_event", data: canonical("t1", "agent.thinking", { text: "37 + 58", message_id: "m" }) },
+      { type: "openma_event", data: canonical("t2", "agent.thinking", { text: " = 95.", message_id: "m" }) },
+      { type: "openma_event", data: canonical("a1", "agent.message_chunk", { text: "95", message_id: "m" }) },
+      { type: "openma_event", data: canonical("done", "turn.completed", { stop_reason: "end_turn" }) },
+    ];
+    store.replayHistory(sessionId, rows.map((row, index) => ({
+      seq: index + 1,
+      type: row.type,
+      data: JSON.stringify(row.data),
+      ts: index + 1,
+    })));
+
+    const turns = store.turnsFor(sessionId);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({
+      promptText: "calculate",
+      thoughtText: "37 + 58 = 95.",
+      assistantText: "95",
+      status: "complete",
+      stopReason: "end_turn",
+    });
+  });
+});
+
+type RecordedEvent = {
+  seq: number;
+  type: string;
+  event_id?: string;
+  session_id?: string;
+  turn_id?: string;
+  occurred_at?: string;
+  data: Record<string, unknown>;
+  raw?: { payload?: unknown };
+};
+
+function recordedGuardianEvents(): RecordedEvent[] {
+  return JSON.parse(
+    readFileSync(
+      resolve(__dirname, "__fixtures__/sess-guardian-interleave.anon.json"),
+      "utf8",
+    ),
+  ) as RecordedEvent[];
+}
+
+function routedTurnId(event: RecordedEvent): string | undefined {
+  if (
+    event.type === "user.message"
+    && event.data.input_kind === "steering"
+    && event.data.outcome === "injected"
+    && typeof event.data.active_turn_id === "string"
+  ) {
+    return event.data.active_turn_id;
+  }
+  return event.turn_id;
+}
+
+function firstArrivalTimelineKeys(
+  events: readonly RecordedEvent[],
+  turnId: string,
+): string[] {
+  const items: string[] = [];
+  const seenTools = new Set<string>();
+  let openSegment: string | undefined;
+  for (const event of events) {
+    if (routedTurnId(event) !== turnId) continue;
+    if (
+      event.type === "user.message"
+      && event.data.input_kind === "steering"
+      && event.data.outcome === "injected"
+    ) {
+      items.push(`user_input:${event.turn_id}`);
+      openSegment = undefined;
+      continue;
+    }
+    if (event.type === "agent.thinking" || event.type === "agent.message_chunk") {
+      const key = [
+        event.type,
+        typeof event.data.message_id === "string" ? event.data.message_id : "anonymous",
+        typeof event.data.phase === "string" ? event.data.phase : "",
+      ].join(":");
+      if (key !== openSegment) {
+        items.push(`segment:${event.type}`);
+        openSegment = key;
+      }
+      continue;
+    }
+    if (event.type.startsWith("tool.")) {
+      const toolCallId = event.data.tool_call_id;
+      if (typeof toolCallId !== "string") continue;
+      if (!seenTools.has(toolCallId)) {
+        items.push(`tool:${toolCallId}`);
+        seenTools.add(toolCallId);
+        openSegment = undefined;
+      }
+    }
+  }
+  return items;
+}
+
+function projectedTimelineKeys(timeline: ReturnType<typeof reduceTurn>["timeline"]): string[] {
+  return timeline.map((item) => {
+    if (item.kind === "tool") return `tool:${item.toolCallId}`;
+    if (item.kind === "user_input") return `user_input:${item.clientId}`;
+    return item.kind === "thought"
+      ? "segment:agent.thinking"
+      : "segment:agent.message_chunk";
+  });
+}
+
+/** Drive the live reducer with the same events, as main would push them. */
+function liveStoreFrom(events: readonly RecordedEvent[], sessionId: string): SessionStore {
+  const live = new SessionStore();
+  live.apply({
+    type: "session.ready",
+    session_id: sessionId,
+    acp_session_id: "acp-fixture",
+    agent_id: "codex-acp",
+    cwd: "/fixture",
+  });
+
+  for (const event of events) {
+    const data = event.data;
+    if (event.type === "user.message" && data.input_kind === "prompt") {
+      live.registerTurn(
+        event.turn_id!,
+        sessionId,
+        typeof data.text === "string" ? data.text : "",
+      );
+    } else if (
+      event.type === "user.message"
+      && data.input_kind === "steering"
+      && data.outcome === "injected"
+    ) {
+      live.apply({
+        type: "session.steering",
+        session_id: sessionId,
+        turn_id: event.turn_id!,
+        active_turn_id: String(data.active_turn_id),
+        text: String(data.text ?? ""),
+        requested_delivery: "llm_boundary",
+        effective_delivery: "llm_boundary",
+        outcome: "injected",
+        openma_event: event,
+      } as Parameters<SessionStore["apply"]>[0]);
+    } else if (event.type === "turn.completed") {
+      live.apply({
+        type: "session.complete",
+        session_id: sessionId,
+        turn_id: event.turn_id!,
+        stop_reason: typeof data.stop_reason === "string"
+          ? data.stop_reason
+          : undefined,
+      });
+    } else if (
+      event.turn_id
+      && (event.type.startsWith("agent.") || event.type.startsWith("tool.") || event.type.startsWith("plan."))
+    ) {
+      live.apply(attachOpenMAEvent({
+        type: "session.event",
+        session_id: sessionId,
+        turn_id: event.turn_id,
+        event: event.raw?.payload ?? event,
+      }, event as never));
+    }
+  }
+  return live;
+}
+
+describe("SessionStore recorded Guardian interleave", () => {
+  it("replays prompt turns and steers in first-arrival order with stable tool positions", () => {
+    const events = recordedGuardianEvents().sort((a, b) => a.seq - b.seq);
+    const sessionId = "sess_fixture";
+    const rows = events.map((event) => ({
+      seq: event.seq,
+      type: "openma_event",
+      data: JSON.stringify(event),
+      ts: Date.parse(event.occurred_at ?? "") || event.seq,
+    }));
+    const replayed = new SessionStore();
+    replayed.replayHistory(sessionId, rows);
+    const turns = replayed.turnsFor(sessionId);
+    const promptTurnIds = events
+      .filter((event) =>
+        event.type === "user.message" && event.data.input_kind === "prompt"
+      )
+      .map((event) => event.turn_id);
+
+    expect(turns.map((turn) => turn.id)).toEqual(promptTurnIds);
+    expect(turns).toHaveLength(2);
+    expect(turns.map((turn) => turn.status)).toEqual(["complete", "complete"]);
+    for (const turn of turns) {
+      const rendered = replayed.projectTurn(turn);
+      const expected = firstArrivalTimelineKeys(events, turn.id);
+      expect(projectedTimelineKeys(rendered.timeline)).toEqual(expected);
+      expect(new Set(rendered.tools.map((tool) => tool.toolCallId)).size)
+        .toBe(rendered.tools.length);
+      expect(rendered.tools.map((tool) => `tool:${tool.toolCallId}`))
+        .toEqual(expected.filter((key) => key.startsWith("tool:")));
+    }
+
+    const steers = events.filter((event) =>
+      event.type === "user.message"
+      && event.data.input_kind === "steering"
+      && event.data.outcome === "injected"
+    );
+    const activeTurnId = String(steers[0]?.data.active_turn_id);
+    const activeTurn = turns.find((turn) => turn.id === activeTurnId)!;
+    const activeTimeline = replayed.projectTurn(activeTurn).timeline;
+    const userInputs = activeTimeline.filter((item) => item.kind === "user_input");
+    expect(userInputs.map((item) => item.kind === "user_input" ? item.clientId : ""))
+      .toEqual(steers.map((event) => event.turn_id));
+    expect(activeTimeline.filter((item) => item.kind === "tool").map((item) => item.toolCallId))
+      .toContain("guardian_assessment:call_55a19ca7a0");
+    expect(
+      replayed.projectTurn(activeTurn).tools
+        .filter((tool) => tool.title === "Guardian Review")
+        .map((tool) => tool.toolCallId),
+    ).toContain("guardian_assessment:call_55a19ca7a0");
+  });
+
+  it("matches live incremental projection with replay and keeps the footer boundary terminal", () => {
+    const events = recordedGuardianEvents().sort((a, b) => a.seq - b.seq);
+    const sessionId = "sess_fixture";
+    const rows = events.map((event) => ({
+      seq: event.seq,
+      type: "openma_event",
+      data: JSON.stringify(event),
+      ts: Date.parse(event.occurred_at ?? "") || event.seq,
+    }));
+    const replayed = new SessionStore();
+    replayed.replayHistory(sessionId, rows);
+    const live = liveStoreFrom(events, sessionId);
+
+    const replayedTurns = replayed.turnsFor(sessionId);
+    const liveTurns = live.turnsFor(sessionId);
+    expect(liveTurns.map((turn) => turn.id)).toEqual(replayedTurns.map((turn) => turn.id));
+    for (const replayedTurn of replayedTurns) {
+      const liveTurn = liveTurns.find((turn) => turn.id === replayedTurn.id)!;
+      expect(live.projectTurn(liveTurn)).toEqual(replayed.projectTurn(replayedTurn));
+    }
+
+    const unfinished = new SessionStore();
+    unfinished.replayHistory(
+      sessionId,
+      rows.filter((row) => {
+        const event = JSON.parse(row.data) as RecordedEvent;
+        return !(event.type === "turn.completed" && event.turn_id === "turn_ab678cc0d5");
+      }),
+    );
+    expect(
+      unfinished.turnsFor(sessionId).find((turn) => turn.id === "turn_ab678cc0d5")?.status,
+    ).toBe("running");
+    expect(replayed.turnsFor(sessionId).find((turn) => turn.id === "turn_ab678cc0d5")?.status)
+      .toBe("complete");
+  });
+});
+
+/** Seeded PRNG so a failing seed reproduces exactly. */
+function seededRandom(seed: number) {
+  let state = seed >>> 0;
+  const next = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const int = (min: number, max: number) => min + Math.floor(next() * (max - min + 1));
+  const pick = <T,>(items: readonly T[]): T => items[int(0, items.length - 1)]!;
+  return { next, int, pick };
+}
+
+const CHAOS_TOKENS = ["#104", "4", "00", "\n\n", "表格", " ", "x", "**粗**", "`code`", "| a |", "🙂", "done."];
+
+/** A random but well-formed Codex-like session: thoughts, commentary,
+ *  long-running and Guardian tools that finish out of order, injected
+ *  steers, then a final answer and the terminal. */
+function chaosSession(seed: number): RecordedEvent[] {
+  const rng = seededRandom(seed);
+  const events: RecordedEvent[] = [];
+  let seq = 0;
+  const push = (turnId: string, type: string, data: Record<string, unknown>) => {
+    seq += 1;
+    events.push({
+      schema: "oma.event.v1",
+      schema_version: "oma.event.v1",
+      event_id: `evt-${seed}-${seq}`,
+      session_id: "sess_chaos",
+      turn_id: turnId,
+      source: { kind: "harness", harness: "codex", adapter: "acp" },
+      occurred_at: new Date(1_800_000_000_000 + seq).toISOString(),
+      type,
+      data,
+      seq,
+    } as RecordedEvent);
+  };
+  const run = (turnId: string, type: "agent.thinking" | "agent.message_chunk", messageId: string, phase?: string) => {
+    for (let i = rng.int(1, 6); i > 0; i--) {
+      const text = rng.pick(CHAOS_TOKENS);
+      push(turnId, type, {
+        text,
+        content: { type: "text", text },
+        message_id: messageId,
+        ...(phase ? { phase } : {}),
+      });
+    }
+  };
+  for (let turn = 0, turns = rng.int(1, 3); turn < turns; turn++) {
+    const turnId = `turn-${seed}-${turn}`;
+    push(turnId, "user.message", { text: `prompt ${turn}`, input_kind: "prompt" });
+    push(turnId, "session.running", { thread_status: { type: "active", activeFlags: [] } });
+    const open: string[] = [];
+    let message = 0;
+    let tool = 0;
+    for (let step = rng.int(3, 20); step > 0; step--) {
+      const action = rng.pick(["thought", "thought", "commentary", "commentary", "tool", "guardian", "finish", "progress", "steer"]);
+      if (action === "thought") run(turnId, "agent.thinking", `th-${turn}-${message++}`);
+      else if (action === "commentary") run(turnId, "agent.message_chunk", `msg-${turn}-${message++}`, "commentary");
+      else if (action === "tool" || action === "guardian") {
+        const id = action === "guardian"
+          ? `guardian_assessment:call-${turn}-${tool++}`
+          : `call-${turn}-${tool++}`;
+        push(turnId, "tool.started", {
+          tool_call_id: id,
+          title: action === "guardian" ? "Guardian Review" : "Tool",
+          kind: action === "guardian" ? "think" : "execute",
+          status: "in_progress",
+        });
+        open.push(id);
+      } else if ((action === "finish" || action === "progress") && open.length) {
+        const index = rng.int(0, open.length - 1);
+        const id = open[index]!;
+        if (action === "progress") push(turnId, "tool.progress", { tool_call_id: id });
+        else {
+          open.splice(index, 1);
+          push(turnId, rng.next() < 0.8 ? "tool.completed" : "tool.failed", {
+            tool_call_id: id,
+            status: "completed",
+            outcome: "ok",
+          });
+        }
+      } else if (action === "steer") {
+        push(`steer-${seed}-${seq}`, "user.message", {
+          text: "steer",
+          input_kind: "steering",
+          active_turn_id: turnId,
+          prompt_intent: "steer",
+          requested_delivery: "llm_boundary",
+          effective_delivery: "llm_boundary",
+          delivery_degraded: false,
+          outcome: "injected",
+        });
+      }
+    }
+    for (const id of open) push(turnId, "tool.completed", { tool_call_id: id, status: "completed", outcome: "ok" });
+    run(turnId, "agent.message_chunk", `final-${turn}`, "final_answer");
+    push(turnId, "session.idle", { thread_status: { type: "idle" } });
+    push(turnId, "turn.completed", { stop_reason: "end_turn" });
+  }
+  return events;
+}
+
+/** Text of each projected segment, in first-arrival order: chunks of one
+ *  uninterrupted run concatenate verbatim. */
+function firstArrivalSegmentTexts(events: readonly RecordedEvent[], turnId: string): string[] {
+  const texts: string[] = [];
+  let openSegment: string | undefined;
+  for (const event of events) {
+    if (routedTurnId(event) !== turnId) continue;
+    if (event.type === "agent.thinking" || event.type === "agent.message_chunk") {
+      const key = [event.type, event.data.message_id, event.data.phase ?? ""].join(":");
+      if (key !== openSegment) texts.push("");
+      texts[texts.length - 1] += String(event.data.text);
+      openSegment = key;
+    } else if (event.type === "user.message" && event.data.input_kind === "steering") {
+      openSegment = undefined;
+    } else if (event.type === "tool.started") {
+      openSegment = undefined;
+    }
+  }
+  return texts;
+}
+
+describe("SessionStore chaos: block order and text across live and replay", () => {
+  it("keeps human reading order, verbatim text and a terminal footer for random sessions", () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      const events = chaosSession(seed);
+      const sessionId = "sess_chaos";
+      const rows = events.map((event) => ({
+        seq: event.seq,
+        type: "openma_event",
+        data: JSON.stringify(event),
+        ts: event.seq,
+      }));
+      const replayed = new SessionStore();
+      replayed.replayHistory(sessionId, rows);
+      const live = liveStoreFrom(events, sessionId);
+      const promptTurnIds = events
+        .filter((event) => event.type === "user.message" && event.data.input_kind === "prompt")
+        .map((event) => event.turn_id);
+
+      expect(replayed.turnsFor(sessionId).map((turn) => turn.id), `seed ${seed}: replay turns`)
+        .toEqual(promptTurnIds);
+      expect(live.turnsFor(sessionId).map((turn) => turn.id), `seed ${seed}: live turns`)
+        .toEqual(promptTurnIds);
+      for (const turnId of promptTurnIds) {
+        const replayTurn = replayed.turnsFor(sessionId).find((turn) => turn.id === turnId)!;
+        const liveTurn = live.turnsFor(sessionId).find((turn) => turn.id === turnId)!;
+        const rendered = replayed.projectTurn(replayTurn);
+        expect(projectedTimelineKeys(rendered.timeline), `seed ${seed} ${turnId}: order`)
+          .toEqual(firstArrivalTimelineKeys(events, turnId!));
+        expect(
+          rendered.timeline
+            .filter((item) => item.kind === "thought" || item.kind === "assistant_text")
+            .map((item) => (item as { text: string }).text),
+          `seed ${seed} ${turnId}: text`,
+        ).toEqual(firstArrivalSegmentTexts(events, turnId!));
+        // The final answer is the last block, after every tool and commentary.
+        expect(rendered.timeline.at(-1), `seed ${seed} ${turnId}: final answer last`)
+          .toMatchObject({ kind: "assistant_text", phase: "final_answer" });
+        expect(replayTurn.status, `seed ${seed} ${turnId}: terminal`).toBe("complete");
+        expect(live.projectTurn(liveTurn), `seed ${seed} ${turnId}: live equals replay`)
+          .toEqual(rendered);
+      }
+    }
+  });
+});
+
+/** Interleave the turns of a chaos session the way a queueing harness writes
+ *  them (pi-acp): turn N+1 may open while turn N is still streaming, so a
+ *  turn's tail — including its terminal — can land after later prompts.
+ *  Openers keep their order; each turn keeps its own event order. Steers
+ *  travel with the turn they are injected into. */
+function interleavedChaosSession(seed: number): RecordedEvent[] {
+  const rng = seededRandom(seed * 7919);
+  const source = chaosSession(seed);
+  const owner = (event: RecordedEvent) =>
+    event.type === "user.message" && event.data.input_kind === "steering"
+      ? String(event.data.active_turn_id)
+      : event.turn_id!;
+  const order: string[] = [];
+  const queues = new Map<string, RecordedEvent[]>();
+  for (const event of source) {
+    const id = owner(event);
+    if (!queues.has(id)) { queues.set(id, []); order.push(id); }
+    queues.get(id)!.push(event);
+  }
+  const merged: RecordedEvent[] = [];
+  let opened = 0;
+  while (merged.length < source.length) {
+    const eligible = order.filter((id, index) =>
+      queues.get(id)!.length > 0 && index <= opened);
+    const id = rng.pick(eligible);
+    const event = queues.get(id)!.shift()!;
+    if (order.indexOf(id) === opened && event.type === "user.message") opened += 1;
+    merged.push(event);
+  }
+  return merged.map((event, index) => ({ ...event, seq: index + 1 }));
+}
+
+/** main's loadHistoryPage: the `limit` newest rows before `before`, grown
+ *  back to the newest prompt opener at or before the oldest row unless that
+ *  costs more than three extra pages. */
+function pageRows(
+  rows: readonly { seq: number; type: string; data: string; ts: number }[],
+  limit: number,
+  before?: number,
+) {
+  const older = rows.filter((row) => before === undefined || row.seq < before);
+  const page = older.slice(-limit);
+  const oldest = page[0];
+  if (!oldest) return page;
+  const opener = [...older].reverse().find((row) => {
+    if (row.seq > oldest.seq) return false;
+    const event = JSON.parse(row.data) as RecordedEvent;
+    return event.type === "user.message" && event.data.input_kind === "prompt";
+  });
+  if (!opener || opener.seq >= oldest.seq) return page;
+  const head = older.filter((row) => row.seq >= opener.seq && row.seq < oldest.seq);
+  return head.length > limit * 3 ? page : [...head, ...page];
+}
+
+describe("SessionStore chaos: paging interleaved turns", () => {
+  it("projects every turn the same whether the log is replayed whole or paged", () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      const events = interleavedChaosSession(seed);
+      const sessionId = "sess_chaos";
+      const rows = events.map((event) => ({
+        seq: event.seq,
+        type: "openma_event",
+        data: JSON.stringify(event),
+        ts: event.seq,
+      }));
+      const whole = new SessionStore();
+      whole.replayHistory(sessionId, rows);
+      const expected = whole.turnsFor(sessionId);
+
+      const limit = seededRandom(seed * 104729).int(3, 40);
+      const paged = new SessionStore();
+      let page = pageRows(rows, limit);
+      paged.replayHistoryWindow(sessionId, page, { hasMore: page.length >= limit });
+      for (let guard = 0; page.length >= limit && guard < 1000; guard++) {
+        page = pageRows(rows, limit, paged.historyWindowFor(sessionId)!.oldestSeq);
+        paged.prependHistory(sessionId, page, { hasMore: page.length >= limit });
+      }
+      const actual = paged.turnsFor(sessionId);
+      const label = `seed ${seed} (page ${limit})`;
+
+      expect(actual.map((turn) => turn.id), `${label}: turns`)
+        .toEqual(expected.map((turn) => turn.id));
+      expect(actual.map((turn) => turn.status), `${label}: status`)
+        .toEqual(expected.map((turn) => turn.status));
+      for (const [index, turn] of actual.entries()) {
+        expect(
+          projectedTimelineKeys(paged.projectTurn(turn).timeline),
+          `${label} ${turn.id}: blocks`,
+        ).toEqual(projectedTimelineKeys(whole.projectTurn(expected[index]!).timeline));
+      }
+    }
   });
 });

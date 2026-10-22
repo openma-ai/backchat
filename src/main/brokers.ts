@@ -366,6 +366,10 @@ export function createTerminal(
     cwd: p.cwd ?? sessionCwd,
     env,
     stdio: ["pipe", "pipe", "pipe"],
+    // POSIX: make the child a process-group leader so termination reaches
+    // everything it starts (`npm run dev` servers, `&` jobs). Windows has no
+    // process groups here, and `detached` would open a console window.
+    detached: GROUP_KILL,
   });
   const terminalId = `term-${nextTerminalId++}-${Math.random().toString(36).slice(2, 6)}`;
   const rec: PtyRecord = {
@@ -530,11 +534,7 @@ export function killTerminal(params: unknown): Record<string, never> {
   const rec = ptys.get(p.terminalId);
   if (!rec || rec.exited) return {};
   rec.terminationReason = "user_kill";
-  try {
-    rec.proc.kill("SIGTERM");
-  } catch {
-    /* already gone */
-  }
+  void terminateTerminal(rec);
   return {};
 }
 
@@ -543,12 +543,95 @@ export function releaseTerminal(params: unknown): Record<string, never> {
   const rec = ptys.get(p.terminalId);
   if (rec) {
     if (!rec.exited) rec.terminationReason = "released";
-    try {
-      rec.proc.kill("SIGTERM");
-    } catch { /* gone */ }
+    void terminateTerminal(rec);
     ptys.delete(p.terminalId);
   }
   return {};
+}
+
+// -------------------- Process-group termination ------------------------
+
+const GROUP_KILL = process.platform !== "win32";
+/** Grace period between SIGTERM and SIGKILL. */
+const TERMINATE_GRACE_MS = 3_000;
+/** Upper bound on waiting for the kernel to reap a SIGKILLed group. */
+const KILL_REAP_MS = 1_000;
+/** Terminations still waiting for their group to disappear. */
+const pendingTerminations = new Set<Promise<void>>();
+const terminations = new WeakMap<PtyRecord, Promise<void>>();
+
+/** Signal the terminal's whole process group (POSIX) or the direct child
+ *  (Windows). Returns false once nothing is left to signal. */
+function signalTerminal(rec: PtyRecord, signal: NodeJS.Signals): boolean {
+  const pid = rec.proc.pid;
+  if (pid === undefined) return false;
+  try {
+    // Negative pid = the group we created with `detached: true`; never an
+    // unrelated process.
+    if (GROUP_KILL) process.kill(-pid, signal);
+    else if (!rec.exited) rec.proc.kill(signal);
+    else return false;
+    return true;
+  } catch {
+    return false; // ESRCH: group already empty
+  }
+}
+
+function groupAlive(rec: PtyRecord): boolean {
+  const pid = rec.proc.pid;
+  if (pid === undefined) return false;
+  if (!GROUP_KILL) return !rec.exited;
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** SIGTERM the group, then SIGKILL it if anything survives the grace
+ *  period. The direct child exiting is not enough: grandchildren (dev
+ *  servers) keep the group, and the ports, alive. Idempotent per record. */
+function terminateTerminal(rec: PtyRecord): Promise<void> {
+  const existing = terminations.get(rec);
+  if (existing) return existing;
+  if (!signalTerminal(rec, "SIGTERM")) return Promise.resolve();
+  const done = new Promise<void>((resolve) => {
+    const started = Date.now();
+    let killed = false;
+    const poll = setInterval(() => {
+      const elapsed = Date.now() - started;
+      // After SIGKILL, keep waiting until the kernel has reaped the group so
+      // "terminated" really means gone; cap it in case of an unkillable
+      // (uninterruptible-sleep) process.
+      if (!groupAlive(rec) || elapsed >= TERMINATE_GRACE_MS + KILL_REAP_MS) {
+        clearInterval(poll);
+        resolve();
+        return;
+      }
+      if (!killed && elapsed >= TERMINATE_GRACE_MS) {
+        killed = true;
+        signalTerminal(rec, "SIGKILL");
+      }
+    }, 50);
+    poll.unref?.();
+  });
+  terminations.set(rec, done);
+  pendingTerminations.add(done);
+  void done.finally(() => pendingTerminations.delete(done));
+  return done;
+}
+
+/** Quit barrier: terminate every terminal group and wait (bounded by the
+ *  grace period) until none is left, so the app does not exit while
+ *  harness-spawned processes still hold ports. */
+export async function terminateAllTerminals(): Promise<void> {
+  for (const [id, rec] of ptys) {
+    if (!rec.exited) rec.terminationReason ??= "session_disposed";
+    void terminateTerminal(rec);
+    ptys.delete(id);
+  }
+  await Promise.all([...pendingTerminations]);
 }
 
 // -------------------- Per-session cancellation -------------------------
@@ -576,7 +659,7 @@ export function cancelPendingFor(sessionId: string): void {
   for (const [id, rec] of ptys) {
     if (rec.sessionId === sessionId) {
       rec.terminationReason = "session_disposed";
-      try { rec.proc.kill("SIGTERM"); } catch { /* gone */ }
+      void terminateTerminal(rec);
       ptys.delete(id);
     }
   }

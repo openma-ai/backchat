@@ -13,6 +13,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  CircleAlertIcon,
   Code2Icon,
   ExternalLinkIcon,
   FileTextIcon,
@@ -191,6 +192,11 @@ export function BrowserTab({
   const [canFwd, setCanFwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<{
+    errorCode: number;
+    errorDescription: string;
+    validatedURL: string;
+  } | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [zoomFactor, setZoomFactor] = useState(1);
@@ -470,10 +476,15 @@ export function BrowserTab({
         void cancelPickerRef.current();
         setLoading(true);
         setReady(false);
+        setLoadError(null);
       },
       onLoadStop: () => {
         setLoading(false);
         setReady(true);
+      },
+      onLoadFail: (failure) => {
+        setLoading(false);
+        setLoadError(failure);
       },
       onCacheFrame: cacheCurrentFrame,
     });
@@ -951,7 +962,7 @@ export function BrowserTab({
           src={normalizeBrowserUrl(initialUrl || "about:blank")}
           className={cn(
             "h-full w-full bg-bg",
-            (resizeSnapshot || showingBlankPage) && "invisible",
+            (resizeSnapshot || showingBlankPage || !!loadError) && "invisible",
           )}
           // partition: in-memory only (no on-disk persistence). Each
           // tab uses the same partition so cookies survive tab swap
@@ -965,6 +976,42 @@ export function BrowserTab({
           // content still goes through the standard partition sandbox.
           webpreferences="allowFileAccess=yes,contextIsolation=yes"
         />
+        {loadError && !showingBlankPage && (
+          <div
+            role="alert"
+            data-browser-error-fallback="true"
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-bg px-6 text-center"
+          >
+            <div className="flex max-w-sm flex-col items-center rounded-xl border border-border-strong bg-bg-surface px-5 py-4 shadow-sm">
+              <span className="inline-flex size-9 items-center justify-center rounded-full bg-danger/10 text-danger">
+                <CircleAlertIcon className="size-4" aria-hidden="true" />
+              </span>
+              <p className="mt-2.5 text-sm font-medium text-fg">
+                {t("crash.title")}
+              </p>
+              <p className="mt-1 break-all font-mono text-[11px] leading-4 text-fg-subtle">
+                {loadError.validatedURL || currentUrl}
+              </p>
+              <p className="mt-1.5 text-xs leading-5 text-fg-muted">
+                {loadError.errorDescription} ({loadError.errorCode})
+              </p>
+              <div className="mt-3.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  data-browser-error-retry="true"
+                  onClick={() => {
+                    setLoadError(null);
+                    webviewRef.current?.reload();
+                  }}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border-strong bg-bg px-2.5 text-xs font-medium text-fg shadow-2xs transition-colors hover:bg-bg-bubble focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <RotateCwIcon className="size-3.5" aria-hidden="true" />
+                  <span>{t("common.retry")}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {isPickingElement && !resizeSnapshot && (
           <div
             data-browser-annotation-overlay
