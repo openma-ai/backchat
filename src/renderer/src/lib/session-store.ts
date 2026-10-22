@@ -1106,11 +1106,16 @@ export class SessionStore {
     const childTurnId = `${activity.viewSessionId}:turn`;
     const previous = this.#turns.get(childTurnId);
     // Copy a turn the UI may already hold once per replay pass, then extend
-    // the copy in place; copying per event made replay quadratic.
+    // the copy in place; copying per event made replay quadratic. SQL is the
+    // transcript's source of truth: a held turn (restored from the side
+    // workspace snapshot on relaunch) keeps its identity and lifecycle, but
+    // its transcript is rebuilt from these rows rather than appended to.
     const owned = previous && this.#replayOwnedTurns.has(previous);
     const turn: Turn = owned ? previous : previous ? {
       ...previous,
-      events: [...previous.events],
+      events: [],
+      assistantText: "",
+      thoughtText: "",
     } : {
       id: childTurnId,
       sessionId: activity.viewSessionId,
