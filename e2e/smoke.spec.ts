@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { expect, test } from "./fixtures";
 import { enableAgent, injectEvent, injectSession, persistSessionFixture } from "./helpers";
 
@@ -291,6 +292,30 @@ test.describe("backchat smoke", () => {
   test("uses the compact row-action matrix for every sidebar overflow menu", async ({
       page,
   }) => {
+      // 5e2f2f9 only renders a coordinator row once one is configured
+      // (Sidebar.tsx ProjectCoordinatorRow), so seed one for the grid check.
+      await mkdir("/tmp/sidebar-row-actions", { recursive: true });
+      await page.evaluate(async () => {
+        await window.backchat.projectSave({
+          project_id: "sidebar-row-actions",
+          name: "sidebar-row-actions",
+          source_folders: ["/tmp/sidebar-row-actions"],
+          primary_folder: "/tmp/sidebar-row-actions",
+        });
+        await window.backchat.projectWorkSave({
+          projectId: "sidebar-row-actions",
+          description: "",
+          instructions: "",
+          context: "",
+          resources: [],
+          coordinatorAgent: "codex-acp",
+          workerAgent: "codex-acp",
+          continuity: "per-scope",
+          controls: ["delegate", "steer", "cancel", "complete"],
+          execution: { kind: "local" },
+        });
+      });
+      await page.reload();
       await injectSession(page, {
         sessionId: "sidebar-row-action",
         agentId: "codex-acp",
@@ -311,23 +336,29 @@ test.describe("backchat smoke", () => {
         expect(sessionActions).toBeAttached(),
       ]);
 
+      // 9b90f3c keeps the 16px track but paints the wash on ::before as an
+      // 18px rounded square (row height - 10px, 5px radius) so every row
+      // action reads as one control, never a dot or a pill (index.css
+      // ".sidebar-row-action::before").
       const matrices = await Promise.all([projectActions, sessionActions].map(
         (action) => action.evaluate((element) => {
           const style = getComputedStyle(element);
+          const wash = getComputedStyle(element, "::before");
           return {
             width: Math.round(Number.parseFloat(style.width)),
             height: Math.round(Number.parseFloat(style.height)),
-            radius: Math.round(Number.parseFloat(style.borderRadius)),
+            washWidth: Math.round(Number.parseFloat(wash.width)),
+            washHeight: Math.round(Number.parseFloat(wash.height)),
+            washRadius: Math.round(Number.parseFloat(wash.borderRadius)),
           };
         }),
       ));
 
       expect(matrices).toEqual([
-        { width: 16, height: 16, radius: 8 },
-        { width: 16, height: 16, radius: 8 },
+        { width: 16, height: 16, washWidth: 18, washHeight: 18, washRadius: 5 },
+        { width: 16, height: 16, washWidth: 18, washHeight: 18, washRadius: 5 },
       ]);
 
-      // Main nests project sessions in ul.pl-4 beside the coordinator row.
       const projectRow = projectActions.locator(
         "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
       );
@@ -335,18 +366,15 @@ test.describe("backchat smoke", () => {
       const sessionRow = sessionActions.locator(
         "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
       );
+      // 5e2f2f9 dropped the Projects heading icon (compact text label) and the
+      // depth base inset; nesting is one calc() step (icon track + gap).
       const iconBoxes = await Promise.all([
-        navigation
-          .getByRole("button", { name: "Projects", exact: true })
-          .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
-          .locator('[data-sidebar-grid="icon"]')
-          .boundingBox(),
         projectRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
         coordinatorRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
         sessionRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
       ]);
       for (const box of iconBoxes) expect(box).not.toBeNull();
-      const [sectionIcon, projectIcon, coordinatorIcon, childIcon] = iconBoxes;
+      const [projectIcon, coordinatorIcon, childIcon] = iconBoxes;
       const glyphBoxes = await Promise.all([
         projectRow.locator(".sidebar-row-icon > *").first().boundingBox(),
         coordinatorRow.locator(".sidebar-coordinator-icon > *").first().boundingBox(),
@@ -354,41 +382,31 @@ test.describe("backchat smoke", () => {
       ]);
       for (const box of glyphBoxes) expect(box).not.toBeNull();
       const [projectGlyph, coordinatorGlyph, childGlyph] = glyphBoxes;
-      const nestStep = await navigation.evaluate((element) =>
-        Number.parseFloat(
-          getComputedStyle(element).getPropertyValue("--sidebar-grid-nest-step"),
-        ),
-      );
-      const depthBaseInset = await navigation.evaluate((element) =>
-        Number.parseFloat(
-          getComputedStyle(element).getPropertyValue("--sidebar-grid-depth-base-inset"),
-        ),
-      );
-      expect(
-        Math.abs(projectIcon!.x - sectionIcon!.x - nestStep - depthBaseInset),
-      ).toBeLessThanOrEqual(0.5);
+      const [nestStep, iconTrack] = await navigation.evaluate((element) => {
+        const measure = (value: string) => {
+          const probe = document.createElement("div");
+          probe.style.width = value;
+          element.appendChild(probe);
+          const width = probe.getBoundingClientRect().width;
+          probe.remove();
+          return width;
+        };
+        return [
+          measure("var(--sidebar-grid-nest-step)"),
+          measure("var(--sidebar-grid-icon-track)"),
+        ];
+      });
       expect(Math.abs(childIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(coordinatorIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childIcon!.x - coordinatorIcon!.x)).toBeLessThanOrEqual(0.5);
-
-      const sectionGlyph = await navigation
-        .getByRole("button", { name: "Projects", exact: true })
-        .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
-        .locator(".sidebar-row-icon > *")
-        .first()
-        .boundingBox();
-      expect(sectionGlyph).not.toBeNull();
-      expect(
-        Math.abs(projectGlyph!.x - sectionGlyph!.x - nestStep - depthBaseInset),
-      ).toBeLessThanOrEqual(0.5);
       expect(Math.abs(coordinatorGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childGlyph!.x - coordinatorGlyph!.x)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(projectGlyph!.x - 43)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(coordinatorGlyph!.x - 59)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(childGlyph!.x - 59)).toBeLessThanOrEqual(0.5);
-      expect(projectIcon!.width).toBeCloseTo(sectionIcon!.width, 3);
-      expect(childIcon!.width).toBeCloseTo(sectionIcon!.width, 3);
+      expect(Math.abs(projectGlyph!.x - 22)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(coordinatorGlyph!.x - 42)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(childGlyph!.x - 42)).toBeLessThanOrEqual(0.5);
+      expect(projectIcon!.width).toBeCloseTo(iconTrack, 3);
+      expect(childIcon!.width).toBeCloseTo(iconTrack, 3);
   });
 
   test("keeps equal space around the runtime row", async ({ page }) => {
