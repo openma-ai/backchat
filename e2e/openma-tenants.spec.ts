@@ -76,7 +76,8 @@ test("tenant groups start collapsed above local and route new and continued sess
     const betaTaskRow = betaTask.locator(
       "xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' sidebar-grid-row ')]",
     );
-    await expect(betaTaskRow).toHaveAttribute("data-sidebar-depth", "1");
+    // Tenant headings group their children on the flat rail (5e2f2f9).
+    await expect(betaTaskRow).toHaveAttribute("data-sidebar-depth", "0");
     await betaTask.click();
     await page.locator("textarea").fill("Continue B"); await page.locator("textarea").press("Enter");
     await expect.poll(() => calls.filter((c) => c === "Beta:POST:/v1/sessions/shared-id/events").length).toBe(1);
@@ -90,7 +91,9 @@ test("tenant groups start collapsed above local and route new and continued sess
     await page.screenshot({ path: "artifacts/tenant-sidebar/expanded.png" });
     await page.evaluate(() => window.backchat.openmaLogout());
     await expect(alpha).toHaveCount(0); await expect(beta).toHaveCount(0);
-    await expect(localRuntimeRow).toBeVisible();
+    // Signed-out local-only mode has no redundant runtime heading (5e2f2f9).
+    await expect(localRuntimeRow).toHaveCount(0);
+    await expect(nav.getByRole("button", { name: "Projects", exact: true })).toBeVisible();
   } finally {
     for (const stream of streams) stream.end(); server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -189,6 +189,11 @@ test("desktop login selects a workspace without registering the machine", async 
     expect(await readFile(join(folder, "runner-output.txt"), "utf8")).toBe("Created in the linked project");
     expect((await page.evaluate(() => window.backchat.openmaTasksRefresh())).map((task) => task.id)).toEqual([taskId]);
     await page.reload();
+    // Tenant sections start collapsed and mount their rows when expanded.
+    const betaSection = page.locator('[data-sidebar-scroll-area] nav')
+      .getByRole("button", { name: "Beta", exact: true });
+    await expect(betaSection).toHaveAttribute("aria-expanded", "false");
+    await betaSection.click();
     await expect(page.getByText("Runner linked task", { exact: true })).toHaveCount(1);
     expect(await page.evaluate(async (id) => (await window.backchat.sessionsList()).some((session) => session.id === id), localId)).toBe(false);
     emit({ type: "user.message", content: [{ type: "text", text: "Approve a project artifact" }] });
