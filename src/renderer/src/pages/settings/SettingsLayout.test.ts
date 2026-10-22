@@ -17,6 +17,13 @@ describe("settings sidebar", () => {
     expect(source).not.toContain("settings.chatSettings");
   });
 
+  it("does not blank the settings outlet on every tab change", async () => {
+    const source = await readFile(new URL("./SettingsLayout.tsx", import.meta.url), "utf8");
+    expect(source).toContain("<Outlet />");
+    expect(source).not.toContain("requestAnimationFrame");
+    expect(source).not.toContain("readyPath");
+  });
+
   it("puts the local activity dashboard in the primary settings section", async () => {
     const source = await readFile(new URL("./SettingsLayout.tsx", import.meta.url), "utf8");
     expect(source).toContain('to: "/settings/activity"');

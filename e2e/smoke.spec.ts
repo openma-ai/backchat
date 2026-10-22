@@ -544,9 +544,13 @@ test.describe("backchat smoke", () => {
         code: getComputedStyle(element.querySelector("code")!).fontFamily,
       }));
 
+      expect(families.prose).toContain("-apple-system");
       expect(families.prose).toContain("PingFang SC");
-      expect(families.prose).not.toContain("Geist Variable");
-      expect(families.code).toContain("JetBrains Mono Variable");
+      expect(families.prose).toContain("Microsoft YaHei UI");
+      expect(families.prose).not.toContain("Geist");
+      expect(families.code).toContain("ui-monospace");
+      expect(families.code).toContain("PingFang SC");
+      expect(families.code).not.toContain("JetBrains");
   });
 
   test("keeps runtime location out of the model menu", async ({ page, bridge }) => {

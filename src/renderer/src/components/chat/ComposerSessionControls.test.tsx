@@ -129,7 +129,7 @@ describe("InlineComposerOptionControls", () => {
       />,
     );
 
-    expect(html).toContain("lucide-chevron-down");
+    expect(html).toContain('data-backchat-icon="chevron-down"');
     expect(html).toContain("Standard");
     expect(html).toContain('data-dsh-preset-icon="standard"');
     expect(html).toContain('data-dsh-preset-icon="code"');

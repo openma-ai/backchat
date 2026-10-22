@@ -16,6 +16,7 @@ const fakeEntry: KnownAgentEntry = {
 const probeAgentAuthStatusMock = vi.fn();
 const probeAgentSessionConfigMock = vi.fn();
 const authenticateAgentMock = vi.fn();
+const logoutAcpAgentMock = vi.fn();
 const installAcpRegistryAgentMock = vi.fn();
 const getKnownAgentsMock = vi.fn(() => [fakeEntry]);
 
@@ -55,6 +56,7 @@ vi.mock("@open-managed-agents-desktop/acp/installer", async (importOriginal) => 
 
 vi.mock("@open-managed-agents-desktop/acp/probe", () => ({
   authenticateAgent: authenticateAgentMock,
+  logoutAcpAgent: logoutAcpAgentMock,
   probeAgentSessionConfig: probeAgentSessionConfigMock,
   probeAgentAuthStatus: probeAgentAuthStatusMock,
 }));
@@ -66,6 +68,7 @@ describe("acp agent setup sdk", () => {
     probeAgentAuthStatusMock.mockReset();
     probeAgentSessionConfigMock.mockReset();
     authenticateAgentMock.mockReset();
+    logoutAcpAgentMock.mockReset();
     installAcpRegistryAgentMock.mockReset();
     getKnownAgentsMock.mockReset();
     getKnownAgentsMock.mockReturnValue([fakeEntry]);
@@ -675,6 +678,80 @@ describe("acp agent setup sdk", () => {
     });
   });
 
+  it("keeps advertised logout support when sign-in completes without another probe", async () => {
+    const root = join(tmpdir(), `sdk-auth-logout-${process.pid}-${Date.now()}`);
+    const deps = {
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(root, "registry.json"),
+      probeCachePath: join(root, "probe-cache.json"),
+      getEnabledAgentIds: () => ["fake-agent"],
+    };
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "needs-auth",
+        methodId: "deepseek",
+        methodName: "DeepSeek API key",
+        supportsLogout: true,
+        methods: [{ id: "deepseek", name: "DeepSeek API key", type: "agent" }],
+      },
+    });
+    const service = createAcpAgentSetupService(deps);
+    const before = await service.refreshEnabledAgents();
+    expect(before[0]?.auth).toMatchObject({
+      status: "needs-auth",
+      supportsLogout: true,
+      methodId: "deepseek",
+    });
+
+    probeAgentSessionConfigMock.mockClear();
+    probeAgentAuthStatusMock.mockClear();
+    authenticateAgentMock.mockResolvedValue({ status: "completed" });
+    const after = await service.authenticateAgent("fake-agent", { methodId: "deepseek" });
+    expect(probeAgentSessionConfigMock).not.toHaveBeenCalled();
+    expect(probeAgentAuthStatusMock).not.toHaveBeenCalled();
+    expect(after[0]?.auth).toMatchObject({
+      status: "configured",
+      methodId: "deepseek",
+      methodName: "DeepSeek API key",
+      supportsLogout: true,
+      methods: [{ id: "deepseek", name: "DeepSeek API key", type: "agent" }],
+    });
+
+    const restored = await createAcpAgentSetupService(deps).listAgents();
+    expect(restored[0]?.auth).toMatchObject({
+      status: "configured",
+      supportsLogout: true,
+      methodId: "deepseek",
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("does not invent logout support when the probe never advertised it", async () => {
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "needs-auth",
+        methodId: "deepseek",
+        methods: [{ id: "deepseek", name: "DeepSeek API key", type: "agent" }],
+      },
+    });
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-auth-no-logout-${process.pid}-${Date.now()}.json`),
+      getEnabledAgentIds: () => ["fake-agent"],
+    });
+    await service.refreshEnabledAgents();
+    authenticateAgentMock.mockResolvedValue({ status: "completed" });
+    const after = await service.authenticateAgent("fake-agent", { methodId: "deepseek" });
+    expect(after[0]?.auth?.status).toBe("configured");
+    expect(after[0]?.auth?.supportsLogout).toBeUndefined();
+  });
+
   it("forwards authenticate form values without a follow-up capability probe", async () => {
     authenticateAgentMock.mockResolvedValue({ status: "completed" });
 
@@ -710,6 +787,104 @@ describe("acp agent setup sdk", () => {
       status: "configured",
       methodId: "custom-endpoint",
     });
+  });
+
+  it("logs out through ACP and keeps the advertised methods", async () => {
+    logoutAcpAgentMock.mockResolvedValue(undefined);
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "configured",
+        methodId: "anthropic",
+        methodName: "Anthropic",
+        supportsLogout: true,
+        methods: [{ id: "anthropic", name: "Anthropic", type: "agent" }],
+      },
+    });
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-logout-${process.pid}-${Date.now()}.json`),
+      getEnabledAgentIds: () => ["fake-agent"],
+    });
+    await service.refreshEnabledAgents();
+    const agents = await service.logoutAgent("fake-agent");
+    expect(logoutAcpAgentMock).toHaveBeenCalledWith(expect.objectContaining({
+      agent: expect.objectContaining({ command: "/tmp/fake-agent" }),
+    }));
+    expect(agents[0]?.auth).toMatchObject({
+      status: "needs-auth",
+      supportsLogout: true,
+      methodId: "anthropic",
+      methods: [{ id: "anthropic", name: "Anthropic", type: "agent" }],
+    });
+  });
+
+  it("does not record a logout when the agent refuses the ACP method", async () => {
+    logoutAcpAgentMock.mockRejectedValue(new Error("This agent does not support ACP logout."));
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-logout-refuse-${process.pid}-${Date.now()}.json`),
+    });
+    await expect(service.logoutAgent("fake-agent")).rejects.toThrow(/does not support ACP logout/);
+  });
+
+  it("logs out through an explicit probe directory when nothing is cached", async () => {
+    logoutAcpAgentMock.mockResolvedValue(undefined);
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-logout-cwd-${process.pid}-${Date.now()}.json`),
+      probeCwd: "/tmp/backchat-probe-cwd",
+    });
+    const agents = await service.logoutAgent("fake-agent");
+    expect(logoutAcpAgentMock).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: "/tmp/backchat-probe-cwd",
+    }));
+    expect(agents[0]?.auth).toMatchObject({
+      status: "needs-auth",
+      supportsLogout: true,
+      message: "Logged out. Sign in again to continue.",
+    });
+    expect(agents[0]?.auth?.methodId).toBeUndefined();
+    expect(agents[0]?.auth?.methodName).toBeUndefined();
+    expect(agents[0]?.auth?.methods).toBeUndefined();
+  });
+
+  it("keeps an advertised logout capability on the probed auth snapshot", async () => {
+    probeAgentSessionConfigMock.mockResolvedValue({
+      configOptions: [],
+      availableCommands: [],
+      auth: {
+        status: "configured",
+        methodId: "deepseek",
+        methodName: "DeepSeek",
+        supportsLogout: true,
+        methods: [{ id: "deepseek", name: "DeepSeek", type: "agent" }],
+      },
+    });
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-logout-flag-${process.pid}-${Date.now()}.json`),
+      getEnabledAgentIds: () => ["fake-agent"],
+    });
+    await service.refreshEnabledAgents();
+    const observed = await service.observeAuth("fake-agent", { status: "configured" });
+    expect(observed.supportsLogout).toBe(true);
+    expect((await service.listAgents())[0]?.auth?.supportsLogout).toBe(true);
+  });
+
+  it("refuses logout for an unknown agent", async () => {
+    const service = createAcpAgentSetupService({
+      acpBinDir: "/tmp/sdk-acp-bin",
+      acpInstallRoot: "/tmp/sdk-acp-root",
+      registryCachePath: join(tmpdir(), `sdk-logout-missing-${process.pid}-${Date.now()}.json`),
+    });
+    await expect(service.logoutAgent("missing-agent")).rejects.toThrow(/not available/);
+    expect(logoutAcpAgentMock).not.toHaveBeenCalled();
   });
 
   it("warms up every detected agent capability inspection in parallel", async () => {

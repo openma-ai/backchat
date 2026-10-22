@@ -91,6 +91,8 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.AgentUninstall, id) as Promise<AgentInfo[]>,
   agentAuthenticate: (p) =>
     ipcRenderer.invoke(InvokeChannel.AgentAuthenticate, p) as Promise<AgentInfo[]>,
+  agentLogout: (p) =>
+    ipcRenderer.invoke(InvokeChannel.AgentLogout, p) as Promise<AgentInfo[]>,
   sessionStart: (p: SessionStartParams) =>
     ipcRenderer.invoke(InvokeChannel.SessionStart, p) as Promise<SessionStartResult>,
   sessionPrompt: (p: SessionPromptParams) =>

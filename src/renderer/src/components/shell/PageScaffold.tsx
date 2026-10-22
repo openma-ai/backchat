@@ -3,7 +3,8 @@ import { PageSurface } from "@/components/shell/PageSurface";
 import { cn } from "@/lib/utils";
 
 /** Outer inset used by settings and other content pages inside PageSurface. */
-export const PAGE_INSET_CLASS = "w-full px-8 pb-16 pt-20";
+/** Top inset matches the sidebar's first-row gap (`--row-gap-y`), not an 80px moat. */
+export const PAGE_INSET_CLASS = "w-full px-8 pb-16 pt-[var(--row-gap-y)]";
 
 /** Inner column: slightly narrower than the old 960px settings measure. */
 export const PAGE_SCAFFOLD_CLASS = "mx-auto max-w-[800px] space-y-8 text-xs";

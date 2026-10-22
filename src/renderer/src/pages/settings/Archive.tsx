@@ -4,6 +4,7 @@ import { ArchiveRestoreIcon, Trash2Icon } from "@/components/Icons";
 import { PageScaffold } from "@/components/shell/PageScaffold";
 import { useI18n } from "@/lib/i18n";
 import { StatusNotice } from "@/components/ui/status-notice";
+import { composerBoxClass } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 import { sessionStore } from "@/lib/session-store";
 import type { PersistedSessionInfo } from "@shared/api.js";
@@ -125,13 +126,13 @@ export function Archive() {
       )}
 
       {rows !== null && !error && rows.length === 0 && (
-        <div className="rounded-xl border border-border/45 bg-bg/70 px-3 py-8 text-center text-xs text-fg-subtle shadow-card-soft">
+        <div className={composerBoxClass({ className: "px-3 py-8 text-center text-xs text-fg-subtle" })}>
           No archived sessions.
         </div>
       )}
 
       {rows !== null && rows.length > 0 && (
-        <ul className="overflow-hidden rounded-xl border border-border/45 bg-bg/70 shadow-card-soft">
+        <ul className={composerBoxClass({ className: "overflow-hidden" })}>
           {rows.map((r) => {
             const label = r.title || r.id;
             const isConfirming = confirmingDelete === r.id;

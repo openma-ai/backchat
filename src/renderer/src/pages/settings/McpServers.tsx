@@ -4,6 +4,7 @@ import { useState } from "react";
 import { EyeIcon, EyeOffIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "@/components/Icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { composerBoxClass } from "@/lib/composer-box";
 import { cn } from "@/lib/utils";
 import { useSettings, patchSettings } from "@/lib/settings-store";
 import type { SettingsMcpServer } from "@shared/settings.js";
@@ -62,13 +63,13 @@ export function SettingsMcpServers() {
       )}
 
       {editing === null && servers.length === 0 && (
-        <div className="rounded-xl border border-border/45 bg-bg/70 p-5 text-center text-xs text-fg-muted shadow-card-soft">
+        <div className={composerBoxClass({ className: "p-5 text-center text-xs text-fg-muted" })}>
           No MCP servers configured yet.
         </div>
       )}
 
       {editing === null && servers.length > 0 && (
-        <ul className="overflow-hidden rounded-xl border border-border/45 bg-bg/70 shadow-card-soft">
+        <ul className={composerBoxClass({ className: "overflow-hidden" })}>
           {servers.map((s) => (
             <li key={s.id} className="flex min-h-10 items-center gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-bg-surface/50 [&+&]:border-t [&+&]:border-border/35">
               <Badge variant="secondary" className="text-[11px] uppercase">
@@ -237,7 +238,7 @@ function ServerForm({
   const pairLabel = isStdio ? "Environment variable" : "Header";
 
   return (
-    <form onSubmit={save} className="space-y-3 rounded-xl border border-border/45 bg-bg/70 p-3 text-xs shadow-card-soft">
+    <form onSubmit={save} className={composerBoxClass({ className: "space-y-3 p-3 text-xs" })}>
       <div className="flex items-center justify-between">
         <h2 className="text-xs font-medium text-fg">
           {initial ? `Edit ${initial.name}` : "Add MCP server"}

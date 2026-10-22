@@ -371,6 +371,7 @@ export interface SessionAuthState {
   message: string;
   methodId?: string;
   methodName?: string;
+  supportsLogout?: boolean;
   methods?: Array<{
     id: string;
     name?: string;

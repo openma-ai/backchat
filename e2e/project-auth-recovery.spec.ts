@@ -58,8 +58,11 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
       projectId,
     });
     await page.reload();
-    await page.getByRole("link", { name: "Projects", exact: true }).click();
-    await page.locator(".project-card").filter({ hasText: "Auth recovery project" }).click();
+    const coordinator = page.getByRole("link", { name: "Open project coordinator: Auth recovery project" });
+    const expand = page.getByRole("button", { name: "Expand project: Auth recovery project" });
+    await coordinator.or(expand).first().waitFor();
+    if (await expand.isVisible()) await expand.click();
+    await coordinator.click();
     const composer = page.getByLabel("Message coordinator", { exact: true });
     const send = page.getByRole("button", { name: "Send (Enter)", exact: true });
     const signIn = page.getByRole("button", { name: "Sign in", exact: true });
@@ -92,10 +95,15 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
       await page.reload();
       await page.getByRole("link", { name: "Open project coordinator: Auth recovery project", exact: true }).click();
     }
+    const setupTitle = page.getByText("Set up Codex", { exact: true });
+    if (await setupTitle.isVisible()) {
+      await page.getByRole("button", { name: "Close", exact: true }).first().click();
+      await expect(setupTitle).toBeHidden();
+    }
     await expect(signIn).toBeVisible();
     await expect(checkSignIn).toBeVisible();
     const draft = "Continue after login, keeping the same coordinator.";
-    await composer.fill(draft);
+    await expect(composer).toBeDisabled();
     await expect(send).toBeDisabled();
     if (recovery === "Check sign-in") {
       await page.screenshot({ path: "artifacts/projects-work/auth-required.png", scale: "css" });
@@ -114,7 +122,7 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
       await expect(checkSignIn).toBeEnabled();
       await expect(signIn).toBeVisible();
       await expect(send).toBeDisabled();
-      await expect(composer).toHaveValue(draft);
+      await expect(composer).toBeDisabled();
       // This marker is the fake agent's credential store in the isolated test
       // home, equivalent to completing its login externally.
       await writeFile(authStatePath, "recovered");
@@ -123,7 +131,8 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
 
     await expect(signIn).toBeHidden({ timeout: 15000 });
     await expect(checkSignIn).toBeHidden();
-    await expect(composer).toHaveValue(draft);
+    await expect(composer).toBeEnabled();
+    await composer.fill(draft);
     await expect(send).toBeEnabled();
     await expect.poll(async () => (await authEvents()).slice(eventsBeforeRecovery.length).some((event) =>
       ["session/resume", "session/load"].includes(event.method) && event.sessionId === original.acpId,
@@ -133,7 +142,7 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
     const recovered = await view();
     expect(recovered.facts.sessions.filter((session) => session.agentId === "coordinator").map((session) => session.id)).toEqual([original.id]);
     expect(recovered.facts.turns.map((turn) => turn.state)).toEqual(["completed", "failed"]);
-    await expect(page.locator(".project-transcript")).toContainText("Remember the original coordinator history.");
+    await expect(page.getByText("Remember the original coordinator history.", { exact: true })).toBeVisible();
 
     await send.click();
     await expect(composer).toHaveValue("");
@@ -149,7 +158,7 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
     await expect(composer).toBeVisible();
     await expect(signIn).toBeHidden();
     await expect(checkSignIn).toBeHidden();
-    await expect(page.locator(".project-transcript")).toContainText(draft);
+    await expect(page.getByText(draft, { exact: true })).toBeVisible();
     expect((await view()).facts.turns.map((turn) => turn.state)).toEqual(["completed", "failed", "completed"]);
   });
 }
