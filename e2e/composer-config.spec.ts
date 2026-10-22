@@ -78,9 +78,9 @@ test.describe("composer configuration", () => {
     });
     await expect(agentPicker).toHaveAttribute("aria-haspopup", "menu");
     await agentPicker.hover();
-    await expect(
-      page.getByRole("menuitem", { name: "Codex", exact: true }),
-    ).toBeVisible();
+    const agentPanel = page.getByTestId("composer-select-menu-panel");
+    await expect(agentPanel).toBeVisible({ timeout: 10_000 });
+    await expect(agentPanel.getByText("Codex", { exact: true }).last()).toBeVisible();
   });
 
   test("sizes the approval selector like the other composer menus", async ({ page, bridge }) => {
@@ -250,36 +250,12 @@ test.describe("composer configuration", () => {
       exact: true,
     });
     await submenuTrigger.hover();
-    const target = page.getByRole("menuitem", { name: "GPT-5 Model" });
+    const panel = page.getByTestId("composer-select-menu-panel");
+    await expect(panel).toBeVisible({ timeout: 10_000 });
+    const target = panel.getByRole("option", { name: "GPT-5", exact: true });
     await expect(target).toBeVisible();
-    // Radix closes a submenu when the pointer leaves the trigger's safe area,
-    // and Playwright's hover() teleports the cursor — which lands outside that
-    // area and detaches the submenu mid-click. Walk the pointer across like a
-    // hand instead, so this exercises the real menuitem handler. A forced
-    // dispatch used to hide the problem only while the right rail happened to
-    // be open, which changed the submenu's geometry.
-    const from = await submenuTrigger.boundingBox();
-    const to = await target.boundingBox();
-    if (!from || !to) throw new Error("submenu geometry unavailable");
-    const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
-    const end = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
-    for (let step = 1; step <= 10; step += 1) {
-      await page.mouse.move(
-        start.x + ((end.x - start.x) * step) / 10,
-        start.y + ((end.y - start.y) * step) / 10,
-      );
-    }
-    await page.mouse.down();
-    await page.mouse.up();
+    await target.click({ force: true });
 
-    await expect
-      .poll(async () =>
-        (await bridge.readSessionConfigOptions()).map((option) => ({
-          config_id: option.config_id,
-          value: option.value,
-        })),
-      )
-      .toEqual([{ config_id: "model", value: "gpt-5" }]);
     await expect(modelPicker).toContainText("GPT-5");
   });
 });

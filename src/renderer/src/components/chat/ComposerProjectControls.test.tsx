@@ -7,7 +7,21 @@ vi.mock("@tanstack/react-query", () => ({
   useQueries: () => [{ data: null }],
   useQuery: ({ queryKey }: { queryKey: string[] }) => ({
     data:
-      queryKey[0] === "sessions-for-recent-cwds"
+      queryKey[0] === "workspaces"
+        ? [
+            {
+              id: "live-workspace",
+              kind: "live",
+              worktrees: [
+                {
+                  repoRoot: "/Users/mini/work/alpha",
+                  path: "/Users/mini/work/alpha",
+                  branch: "main",
+                },
+              ],
+            },
+          ]
+        : queryKey[0] === "sessions-for-recent-cwds"
         ? [
             { cwd: "/Users/mini/work/alpha" },
             { cwd: "/Users/mini/work/beta" },
@@ -46,7 +60,13 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 
 vi.mock("@/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PopoverContent: ({
+    children,
+    sideOffset,
+  }: {
+    children: React.ReactNode;
+    sideOffset?: number;
+  }) => <div data-side-offset={sideOffset}>{children}</div>,
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
@@ -74,13 +94,14 @@ describe("ProjectChipRow", () => {
     expect(html).toContain("chat.recentDirectories");
     expect(html).toContain("Browse…");
     expect(html).toContain("No project");
+    expect(html).toContain('data-side-offset="0"');
     expect(html.match(/data-slot="dropdown-menu"/g)).toHaveLength(1);
     expect(html.indexOf('data-composer-footer-control="runtime"')).toBeLessThan(
       html.indexOf('data-composer-footer-control="project"'),
     );
   });
 
-  it("keeps the closed project trigger transparent", () => {
+  it("uses the shared composer footer trigger", () => {
     const html = renderToStaticMarkup(
       <ProjectChipRow
         isDraft
@@ -94,7 +115,24 @@ describe("ProjectChipRow", () => {
     const trigger = html.match(
       /<button[^>]*data-composer-footer-control="project"[^>]*>/,
     )?.[0];
-    expect(trigger).toContain("app-compact-control");
-    expect(trigger).toContain("bg-transparent");
+    expect(trigger).toContain("composer-footer-trigger");
+  });
+
+  it("anchors the workspace picker to its composer chip", () => {
+    const html = renderToStaticMarkup(
+      <ProjectChipRow
+        isDraft
+        projectId="alpha-project"
+        activeCwd="/Users/mini/work/alpha"
+        onPickCwd={async () => null}
+        onSetCwd={() => undefined}
+        onClearCwd={() => undefined}
+        onSetWorkspace={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('data-composer-footer-control="workspace"');
+    expect(html).toContain('data-testid="composer-workspace-picker-panel"');
+    expect(html.match(/data-side-offset="0"/g)).toHaveLength(2);
   });
 });

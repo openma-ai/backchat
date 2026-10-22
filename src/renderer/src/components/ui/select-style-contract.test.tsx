@@ -98,7 +98,7 @@ describe("select primitive visual contract", () => {
     expect(css).toContain("background: var(--control-bg-hover);");
     expect(css).toContain('.app-select-item[data-state="checked"],');
     expect(css).toContain('.app-select-item[data-checked="true"]');
-    expect(css).toContain("background: var(--control-bg-open);");
+    expect(css).toContain("background: transparent;");
     expect(css).toContain(".app-select-separator {");
   });
 

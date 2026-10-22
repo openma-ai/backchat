@@ -60,12 +60,18 @@ it("blocks a configured session on an auth error without an auth payload and cle
     authRequired: true,
     auth: { status: "needs-auth", message: "Internal error" },
   });
-  expect(composerAuthNeeded(agent, failed)).toBe(true);
+  expect(composerAuthNeeded(
+    { status: "needs-auth", message: "Authentication required" },
+    failed,
+  )).toBe(true);
 
   store.apply(ready);
   const recovered = store.get(ready.session_id);
   expect(recovered).toMatchObject({ authRequired: false, auth: { status: "configured" } });
   // Project facts retain the original failed turn; the new runtime's successful
   // handshake supersedes that historical evidence without deleting it.
-  expect(composerAuthNeeded(agent, { ...recovered, authRequired: true })).toBe(false);
+  expect(composerAuthNeeded(
+    { status: "needs-auth", message: "Authentication required" },
+    { ...recovered, authRequired: true },
+  )).toBe(false);
 });

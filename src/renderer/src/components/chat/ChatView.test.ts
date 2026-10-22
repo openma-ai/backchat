@@ -54,6 +54,22 @@ describe("chat module boundaries", () => {
     expect(composer).toContain('t("chat.signInToChat")');
     expect(composer).toContain("composerActionDisabled");
     expect(composer).toContain('agentsList({ refresh: true })');
+    expect(composer).toContain("authChecking={authChecking}");
+    expect(composer).toContain(
+      "supportsLogout={sessionSupportsLogout || currentAgent?.auth?.supportsLogout === true}",
+    );
+    expect(composer).toContain("onOpenAuth={onRequestAuth}");
+    const controls = readFileSync(
+      resolve(__dirname, "ComposerSessionControls.tsx"),
+      "utf8",
+    );
+    expect(controls).toContain("ComposerSearchableSelectMenu");
+    expect(controls).toContain('t("auth.switchAccount")');
+    expect(controls).toContain('t("chat.signIn")');
+    expect(composerAuth).toContain("useComposerHarnessLiveAuth");
+    expect(composerAuth).toContain("canOfferAuthLogout");
+    expect(composerAuth).toContain("if (!open || !settings || !agent) return null");
+    expect(composerAuth).not.toContain("composerAuthNeeded");
     expect(composerAuth).toContain("open");
     expect(composerAuth).toContain("AgentAuthSetupPanel");
     expect(composerAuth).toContain("AGENTS_QUERY_KEY");
@@ -584,7 +600,7 @@ describe("home suggestions", () => {
     // Highlights answer the pointer or the open menu — a plain click must
     // not leave any chip painted, so pointer focus never styles a trigger.
     expect(controlsSource).not.toContain("focus:bg-");
-    expect(runTrigger).toContain("app-compact-control");
+    expect(runTrigger).toContain("composer-footer-trigger");
   });
 
   it("uses distinct runtime icons for local, cloud, and other machines", () => {
@@ -613,8 +629,9 @@ describe("home suggestions", () => {
     expect(runtimeControl).toContain("ServerIcon");
     expect(runtimeControl).toContain("choice.runtimeName");
     expect(runtimeControl).toContain("choice.environmentName");
-    expect(runtimeControl).toContain("disabled={offline}");
-    expect(runtimeControl).toContain("!locked && choices.map");
+    expect(runtimeControl).toContain("disabled: offline");
+    expect(runtimeControl).toContain("if (!locked)");
+    expect(runtimeControl).toContain("for (const { target: choice, offline } of choices)");
   });
 });
 

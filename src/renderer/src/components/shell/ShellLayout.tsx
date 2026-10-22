@@ -1,6 +1,7 @@
 import {PageTopbarProvider, PageTopbarSlot} from "./PageTopbar";
 import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { OmaScrollbarActivity } from "@/components/OmaScrollbarActivity";
 import {
   AppShell,
   SidebarCollapseContext,
@@ -301,6 +302,7 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
         <RightRailExpansionContext.Provider value={rightExpansion}>
           <BottomBarCollapseContext.Provider value={bottomCollapse}>
             <PageTopbarProvider>
+            <OmaScrollbarActivity />
             <AppShell
               sidebar={isSettings
                 ? <SettingsSidebar returnTo={returnToAppRef.current} />

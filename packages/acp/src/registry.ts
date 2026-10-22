@@ -150,9 +150,16 @@ export async function detectEntry(
     return null;
   }
   let command = managedCommand;
+  const baseEntry = resolveKnownAgent(entry.id);
+  const baseArgsKey = baseEntry?.spec.args?.join("\0") ?? "";
+  const entryArgsKey = entry.spec.args?.join("\0") ?? "";
+  const customSpawnArgs =
+    entryArgsKey.length > 0 && entryArgsKey !== baseArgsKey;
   let args =
     managedCommand && entry.installSource === "registry"
-      ? undefined
+      ? customSpawnArgs
+        ? entry.spec.args
+        : undefined
       : entry.spec.args;
   if (!command && entry.systemCommand) {
     command = await resolveCommandInDirs(

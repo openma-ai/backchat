@@ -198,7 +198,7 @@ export function CommandPalette() {
           </SearchField>
 
           <Command.List
-            className="overflow-y-auto p-1"
+            className="oma-scrollbar overflow-y-auto p-1"
             // cmdk auto-sets --cmdk-list-height to the measured rendered
             // height. Use it as the actual height with a transition so
             // size changes (item count grows / shrinks) animate smoothly

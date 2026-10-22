@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * token, so both sidebars have to render inside `.sidebar-navigation`.
  */
 export const SIDEBAR_NAV_ROW_CLASS =
-  "sidebar-nav-row flex w-full items-center gap-2 rounded-md px-2 text-ui transition-colors";
+  "sidebar-nav-row rounded-md text-ui transition-colors";
 
 /** Selected and hover classes copied from the session row. */
 export function sidebarNavRowStateClass(state: {

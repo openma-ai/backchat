@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import { measureSubmenuBottomAlignOffset } from "@/components/ui/dropdown-menu-sub-content-align"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -35,6 +37,7 @@ function DropdownMenuContent({
   className,
   align = "start",
   sideOffset = 4,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
@@ -42,8 +45,9 @@ function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         align={align}
-        className={cn("app-select-content z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+        className={cn("oma-scrollbar app-select-content menu-panel z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>
@@ -73,7 +77,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "app-select-item app-select-focus group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
+        "app-select-item app-select-focus menu-item group/dropdown-menu-item relative flex cursor-default items-center rounded-md text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
         className
       )}
       {...props}
@@ -185,7 +189,7 @@ function DropdownMenuSeparator({
   return (
     <DropdownMenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("app-select-separator -mx-1 my-1 h-px bg-border", className)}
+      className={cn("app-select-separator menu-separator h-px bg-border", className)}
       {...props}
     />
   )
@@ -226,7 +230,7 @@ function DropdownMenuSubTrigger({
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
-        "app-select-item app-select-focus flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "app-select-item app-select-focus flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-open:bg-accent data-open:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -239,14 +243,143 @@ function DropdownMenuSubTrigger({
   )
 }
 
+type DropdownMenuSubContentProps = React.ComponentProps<
+  typeof DropdownMenuPrimitive.SubContent
+> & {
+  side?: "top" | "right" | "bottom" | "left"
+  align?: "start" | "center" | "end"
+}
+
 function DropdownMenuSubContent({
   className,
+  collisionPadding = 8,
+  side = "right",
+  align = "end",
+  sideOffset = 4,
+  alignOffset: alignOffsetProp,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+}: DropdownMenuSubContentProps) {
+  // Measure before the first paint: the popper computes its position once at
+  // mount, so an offset set in a ref callback arrives one render too late.
+  const [alignOffset, setAlignOffset] = useState(() =>
+    measureSubmenuBottomAlignOffset(),
+  );
+  const nodeRef = useRef<HTMLDivElement | null>(null);
+  const appliedDyRef = useRef(0);
+  const lastResidualRef = useRef(Number.NaN);
+  const stableFramesRef = useRef(0);
+  const syncBottomWithParentMenu = useCallback(() => {
+    const trigger = document.querySelector(
+      '[data-slot="dropdown-menu-sub-trigger"][data-state="open"]',
+    );
+    const parentMenu = trigger?.closest('[data-slot="dropdown-menu-content"]');
+    setAlignOffset(measureSubmenuBottomAlignOffset());
+    const node = nodeRef.current;
+    if (!node || !(parentMenu instanceof HTMLElement)) return false;
+    // Radix popper positions the submenu's wrapper; before it resolves the
+    // wrapper sits at a translate(0px,-200%) hide sentinel — correcting on a
+    // hidden or unpositioned rect would fold garbage into the delta.
+    const wrapper = node.parentElement;
+    if (
+      !(wrapper instanceof HTMLElement) ||
+      wrapper.style.cssText.includes("-200%") ||
+      !(wrapper.style.transform || wrapper.style.left || wrapper.style.top)
+    ) {
+      return false;
+    }
+    // The popper's mount-time compute can race the parent popper settling;
+    // correct only once the rendered gap has stopped moving (a few identical
+    // frames), folding it into the CSS `translate` property — untouched by
+    // popper's `transform` — so both bottoms stay flush.
+    const residual =
+      parentMenu.getBoundingClientRect().bottom -
+      node.getBoundingClientRect().bottom;
+    if (residual === lastResidualRef.current) {
+      stableFramesRef.current += 1;
+    } else {
+      stableFramesRef.current = 0;
+      lastResidualRef.current = residual;
+    }
+    if (stableFramesRef.current < 6) return false;
+    if (Math.abs(residual) <= 0.5) return true;
+    appliedDyRef.current += residual;
+    node.style.translate = `0 ${appliedDyRef.current}px`;
+    stableFramesRef.current = 0;
+    lastResidualRef.current = Number.NaN;
+    return false;
+  }, []);
+
+  const setRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      nodeRef.current = node;
+      syncBottomWithParentMenu();
+    },
+    [syncBottomWithParentMenu],
+  );
+
+  useLayoutEffect(() => {
+    // The popper may position the submenu after mount and the open animation
+    // keeps the rect moving; keep correcting each frame for a short window so
+    // the bottoms end flush once everything settles.
+    let raf = 0;
+    let deadline = performance.now() + 2000;
+    const tick = () => {
+      if (performance.now() > deadline) {
+        // Never converged — correct once with a fresh measurement.
+        const node = nodeRef.current;
+        const trig = document.querySelector(
+          '[data-slot="dropdown-menu-sub-trigger"][data-state="open"]',
+        );
+        const parent = trig?.closest('[data-slot="dropdown-menu-content"]');
+        if (node && parent instanceof HTMLElement) {
+          const residual =
+            parent.getBoundingClientRect().bottom -
+            node.getBoundingClientRect().bottom;
+          if (Math.abs(residual) > 0.5) {
+            appliedDyRef.current += residual;
+            node.style.translate = `0 ${appliedDyRef.current}px`;
+          }
+        }
+        return;
+      }
+      syncBottomWithParentMenu();
+      raf = requestAnimationFrame(tick);
+    };
+    syncBottomWithParentMenu();
+    raf = requestAnimationFrame(tick);
+    const observer = new ResizeObserver(() => {
+      deadline = performance.now() + 250;
+    });
+    const trigger = document.querySelector(
+      '[data-slot="dropdown-menu-sub-trigger"][data-state="open"]',
+    );
+    const parentMenu = trigger?.closest('[data-slot="dropdown-menu-content"]');
+    if (parentMenu instanceof HTMLElement) {
+      observer.observe(parentMenu);
+    }
+    if (nodeRef.current) {
+      observer.observe(nodeRef.current);
+    }
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
+  }, [syncBottomWithParentMenu]);
+
+  const popperPlacement = {
+    side,
+    align,
+    sideOffset,
+    alignOffset: alignOffsetProp ?? alignOffset,
+    collisionPadding,
+  } as React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>
+
   return (
     <DropdownMenuPrimitive.SubContent
+      ref={setRefs}
       data-slot="dropdown-menu-sub-content"
-      className={cn("z-50 min-w-[96px] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+      className={cn("z-50 h-auto min-w-[var(--menu-submenu-min-width)] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+      {...popperPlacement}
       {...props}
     />
   )

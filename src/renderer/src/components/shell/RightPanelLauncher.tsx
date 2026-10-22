@@ -94,7 +94,7 @@ export function RightPanelLauncher({
       id="new-tab-page-panel"
       role="tabpanel"
       data-right-panel-launcher-list
-      className="h-full overflow-y-auto pb-8 pt-3"
+      className="oma-scrollbar h-full overflow-y-auto pb-8 pt-3"
     >
       <section
         data-new-actions

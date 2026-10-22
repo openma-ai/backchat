@@ -14,10 +14,12 @@ import { CheckIcon } from "@/components/Icons"
 
 function Command({
   className,
+  ref,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
+      ref={ref}
       data-slot="command"
       className={cn(
         "app-select-content flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground",
@@ -56,10 +58,16 @@ function CommandDialog({
 
 function CommandInput({
   className,
+  wrapperClassName,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> & {
+  wrapperClassName?: string;
+}) {
   return (
-    <SearchField data-slot="command-input-wrapper">
+    <SearchField
+      data-slot="command-input-wrapper"
+      className={wrapperClassName}
+    >
       <CommandPrimitive.Input
         data-slot="command-input"
         className={className}
@@ -71,13 +79,15 @@ function CommandInput({
 
 function CommandList({
   className,
+  ref,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return (
     <CommandPrimitive.List
+      ref={ref}
       data-slot="command-list"
       className={cn(
-        "no-scrollbar max-h-72 scroll-py-1 overflow-x-hidden overflow-y-auto outline-none",
+        "oma-scrollbar max-h-72 scroll-py-1 overflow-x-hidden overflow-y-auto outline-none",
         className
       )}
       {...props}
@@ -121,7 +131,7 @@ function CommandSeparator({
   return (
     <CommandPrimitive.Separator
       data-slot="command-separator"
-      className={cn("app-select-separator mx-2 my-1 h-px shrink-0 bg-border", className)}
+      className={cn("app-select-separator menu-separator h-px shrink-0 bg-border", className)}
       {...props}
     />
   )
@@ -130,19 +140,27 @@ function CommandSeparator({
 function CommandItem({
   className,
   children,
+  asChild,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Item>) {
   return (
     <CommandPrimitive.Item
+      asChild={asChild}
       data-slot="command-item"
       className={cn(
-        "app-select-item app-select-focus group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-muted data-selected:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-foreground",
+        "app-select-item app-select-focus group/command-item relative flex cursor-default items-center gap-[var(--menu-item-gap)] rounded-sm px-[var(--menu-item-padding-inline)] py-[var(--menu-item-padding-block)] text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-foreground",
         className
       )}
       {...props}
     >
-      {children}
-      <CheckIcon className="app-select-selected ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
+      {asChild ? (
+        children
+      ) : (
+        <>
+          {children}
+          <CheckIcon className="app-select-selected ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
+        </>
+      )}
     </CommandPrimitive.Item>
   )
 }

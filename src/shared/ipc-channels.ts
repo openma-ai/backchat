@@ -43,6 +43,7 @@ export const InvokeChannel = {
   OpenmaUnlinkProject: "openma:unlink-project",
   OpenmaOpenManagement: "openma:open-management",
   Ping: "app:ping",
+  AppRendererCrashLog: "app:rendererCrashLog",
   AgentsList: "agents:list",
   AgentInstall: "agent:install",
   AgentUpgrade: "agent:upgrade",

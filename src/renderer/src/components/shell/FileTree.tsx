@@ -56,7 +56,7 @@ export function FileTree({
         <FolderOpenIcon className="size-3.5 shrink-0" />
         <span className="truncate">{rootPath}</span>
       </button>
-      <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-3">
+      <div className="oma-scrollbar flex-1 min-h-0 overflow-y-auto px-2 pb-3">
         <DirNode
           key={rootPath}
           path={rootPath}
