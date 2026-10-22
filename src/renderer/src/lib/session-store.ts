@@ -1106,11 +1106,16 @@ export class SessionStore {
     const childTurnId = `${activity.viewSessionId}:turn`;
     const previous = this.#turns.get(childTurnId);
     // Copy a turn the UI may already hold once per replay pass, then extend
-    // the copy in place; copying per event made replay quadratic.
+    // the copy in place; copying per event made replay quadratic. SQL is the
+    // transcript's source of truth: a held turn (restored from the side
+    // workspace snapshot on relaunch) keeps its identity and lifecycle, but
+    // its transcript is rebuilt from these rows rather than appended to.
     const owned = previous && this.#replayOwnedTurns.has(previous);
     const turn: Turn = owned ? previous : previous ? {
       ...previous,
-      events: [...previous.events],
+      events: [],
+      assistantText: "",
+      thoughtText: "",
     } : {
       id: childTurnId,
       sessionId: activity.viewSessionId,
@@ -3527,6 +3532,11 @@ export class SessionStore {
 
     let current: Turn | null = null;
     const turnsByCanonicalId = new Map<string, Turn>();
+    // A legacy `user_prompt` row (pre-canonical histories) opens a turn but
+    // carries no turn id. The canonical rows that follow it carry the host
+    // turn id, so the first unknown id claims that turn instead of being
+    // dropped for having no canonical user.message.
+    let unclaimedLegacyTurn: Turn | null = null;
     for (const { row: r, data, canonical } of prepared) {
       if (canonical) {
         const canonicalRaw = canonical.raw?.payload;
@@ -3609,6 +3619,7 @@ export class SessionStore {
             if (canonical.turn_id) turnsByCanonicalId.set(canonical.turn_id, next);
             this.#turns.set(tid, next);
             current = next;
+            unclaimedLegacyTurn = null;
           }
           continue;
         }
@@ -3618,6 +3629,11 @@ export class SessionStore {
           ? turnsByCanonicalId.get(canonical.turn_id)
             ?? this.#turns.get(canonical.turn_id)
           : undefined;
+        if (!turn && canonical.turn_id && unclaimedLegacyTurn) {
+          turn = unclaimedLegacyTurn;
+          turnsByCanonicalId.set(canonical.turn_id, turn);
+          unclaimedLegacyTurn = null;
+        }
         // A canonical row with no turn_id is session-scoped (background
         // processes, work items): it has no turn to continue, so it must not
         // conjure a prompt-less head that sits "running" forever.
@@ -3754,6 +3770,7 @@ export class SessionStore {
           startedAt: r.ts,
           endedAt: r.ts,
         };
+        unclaimedLegacyTurn = current;
       } else {
         if (!current && opts.partialHead) current = makeHead(r.ts);
         if (!current) continue;

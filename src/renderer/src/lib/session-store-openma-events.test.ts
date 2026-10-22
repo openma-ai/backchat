@@ -2160,6 +2160,60 @@ describe("SessionStore turn-scoped provider errors", () => {
   });
 });
 
+describe("SessionStore replay of a legacy prompt row with canonical turn content", () => {
+  // Histories written before the canonical user.message existed (and the
+  // fixtures that model them) open the turn with a bare `user_prompt` row,
+  // which carries no turn id. The canonical rows that follow carry the host
+  // turn id, and must still land on the turn that prompt opened.
+  const sessionId = "sess-legacy-prompt";
+  const turnId = "turn-legacy-prompt";
+  const source = { kind: "harness", harness: "claude-acp", adapter: "acp" } as const;
+  const canonical = (eventId: string, type: string, data: Record<string, unknown>) => ({
+    schema: "oma.event.v1",
+    event_id: eventId,
+    session_id: sessionId,
+    turn_id: turnId,
+    source,
+    occurred_at: "2026-08-06T00:00:00.000Z",
+    type,
+    data,
+  });
+
+  it("keeps the canonical thought, text and terminal on the prompt's turn", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-legacy-prompt",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+    const rows = [
+      { type: "user_prompt", data: { text: "calculate" } },
+      { type: "openma_event", data: canonical("t1", "agent.thinking", { text: "37 + 58", message_id: "m" }) },
+      { type: "openma_event", data: canonical("t2", "agent.thinking", { text: " = 95.", message_id: "m" }) },
+      { type: "openma_event", data: canonical("a1", "agent.message_chunk", { text: "95", message_id: "m" }) },
+      { type: "openma_event", data: canonical("done", "turn.completed", { stop_reason: "end_turn" }) },
+    ];
+    store.replayHistory(sessionId, rows.map((row, index) => ({
+      seq: index + 1,
+      type: row.type,
+      data: JSON.stringify(row.data),
+      ts: index + 1,
+    })));
+
+    const turns = store.turnsFor(sessionId);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({
+      promptText: "calculate",
+      thoughtText: "37 + 58 = 95.",
+      assistantText: "95",
+      status: "complete",
+      stopReason: "end_turn",
+    });
+  });
+});
+
 type RecordedEvent = {
   seq: number;
   type: string;

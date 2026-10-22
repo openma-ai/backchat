@@ -2679,13 +2679,16 @@ html[lang|="zh"] :is(
 /* Viewport lock — the AppShell sidebar + breadcrumb header are global frame
    elements that MUST NEVER scroll out of view. Pinning html/body/#root at
    exactly the viewport height forces every scroll to happen inside <main>
-   (the only `overflow-y: auto` container in the shell). */
+   (the only `overflow-y: auto` container in the shell).
+   `clip`, not `hidden`: a hidden box is still a scroll container, so a focus
+   or caret reveal could scroll #root sideways toward the off-screen
+   collapsed right rail and slide the whole shell left. Clip never scrolls. */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 /* Focus ring — neutral by default. @layer base lets per-element
@@ -3294,6 +3297,9 @@ body,
 }
 
 [data-menu-density="comfortable"] .grouped-command-menu {
+  /* Comfortable pickers own their icon track. Inheriting the sidebar rail
+     (now 14px) shrank the 16px glyph and pulled every label 2px left. */
+  --grouped-command-icon-track: var(--menu-comfortable-icon-size);
   --grouped-command-icon-size: var(--menu-comfortable-icon-size);
   --grouped-command-search-height: var(--menu-comfortable-search-height);
 }

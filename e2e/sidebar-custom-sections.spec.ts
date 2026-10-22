@@ -30,6 +30,10 @@ test("organizes a chat in a custom section across reload and restores it when re
   await reloadRenderer(page);
   await expect(section.getByRole("button", { name: "Section chat", exact: true })).toBeVisible();
 
+  // Row actions reveal on hover and take no pointer until then
+  // (.sidebar-row-reveal, 9b90f3c), so point at the heading first like a user.
+  const heading = section.locator(".sidebar-section-header").first();
+  await heading.hover();
   await section.getByRole("button", { name: "Section actions" }).click();
   await page.getByRole("menuitem", { name: "Rename section" }).click();
   const rename = page.getByRole("dialog", { name: "Rename section" });
@@ -37,6 +41,7 @@ test("organizes a chat in a custom section across reload and restores it when re
   await rename.getByRole("button", { name: "Save" }).click();
   await expect(section.getByRole("button", { name: "Research", exact: true })).toBeVisible();
 
+  await heading.hover();
   await section.getByRole("button", { name: "Section actions" }).click();
   await page.getByRole("menuitem", { name: "Delete section" }).click();
   const remove = page.getByRole("dialog", { name: "Delete section" });

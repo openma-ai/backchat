@@ -751,6 +751,70 @@ describe("SessionStore replay", () => {
     });
   });
 
+  test("rebuilds a restored native Agent transcript from SQL instead of appending to it", () => {
+    // Relaunch restores the side workspace (including the child's transcript
+    // turn) before the parent's SQL history is replayed. Replay is the
+    // transcript's source of truth and must not stack on the snapshot.
+    const sessionId = "sess-replay-native-restored";
+    const turnId = "turn-replay-native-restored";
+    const childId = "claude-child-restored";
+    const ready = {
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-replay-native-restored",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    } as const;
+    const event = (
+      event_id: string,
+      type: "work_item.started" | "agent.message_chunk" | "agent.thinking" | "work_item.completed",
+      data: Record<string, unknown>,
+    ) => createOpenMAEvent({
+      session_id: sessionId,
+      turn_id: turnId,
+      source: { kind: "harness" as const, harness: "claude", adapter: "claude" },
+      event_id,
+      type,
+      occurred_at: "2026-08-05T00:00:01.000Z",
+      work_item_id: childId,
+      parent_id: "task-parent-restored",
+      data,
+    });
+    const rows = [
+      { type: "user_prompt", data: { text: "delegate this" } },
+      { type: "openma_event", data: event("start", "work_item.started", { kind: "agent", title: "Inspect" }) },
+      { type: "openma_event", data: event("think", "agent.thinking", { text: "Looking." }) },
+      { type: "openma_event", data: event("say", "agent.message_chunk", { text: "Child found the boundary." }) },
+      { type: "openma_event", data: event("done", "work_item.completed", { kind: "agent" }) },
+    ].map((row, index) => ({
+      seq: index + 1,
+      type: row.type,
+      data: JSON.stringify(row.data),
+      ts: (index + 1) * 1_000,
+    }));
+
+    const before = new SessionStore();
+    before.apply(ready);
+    before.replayHistoryWindow(sessionId, rows, { hasMore: false });
+
+    const after = new SessionStore();
+    after.apply(ready);
+    after.hydrateSideWorkspaces(before.sideWorkspaceSnapshots());
+    after.replayHistoryWindow(sessionId, rows, { hasMore: false });
+
+    const activity = after.subagentsFor(sessionId)[0]!;
+    const [child] = after.turnsFor(activity.viewSessionId);
+    expect(child).toMatchObject({
+      assistantText: "Child found the boundary.",
+      thoughtText: "Looking.",
+    });
+    expect(
+      after.projectTurn(child!).timeline
+        .filter((item) => item.kind === "assistant_text")
+        .map((item) => (item as { text: string }).text),
+    ).toEqual(["Child found the boundary."]);
+  });
+
   test("collapses a replayed native Agent provisional id into its reidentified terminal child", () => {
     const sessionId = "sess-replay-native-reidentified";
     const turnId = "turn-replay-native-reidentified";
