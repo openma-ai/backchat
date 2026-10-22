@@ -125,6 +125,70 @@
   padding-inline: var(--composer-card-padding-inline);
 }
 
+/* A right-panel title row ends its trailing action exactly under the global
+   panel toggle pinned at the window's top-right. Docked, the panel is flush
+   to the window edge; expanded, it floats one stage inset in. */
+/* Start edge mirrors a tab chip (titlebar inset + chip pl-2), so the file
+   icon and name sit on the same column as the chip's icon and label. */
+.side-panel-title-row {
+  padding-inline-start: calc(var(--chrome-gap) / var(--zoom, 1) + 0.5rem);
+  padding-inline-end: calc(var(--chrome-gap) / var(--zoom, 1));
+}
+
+/* File viewer: shiki emits both themes as --shiki-light/--shiki-dark on
+   each token; pick by mode. Line numbers are a CSS counter in a sticky
+   gutter so horizontal scroll keeps them in view and copy skips them. */
+.file-preview-code pre {
+  margin: 0;
+  padding: 10px 0 16px;
+  min-width: max-content;
+  background: transparent !important;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  tab-size: 4;
+  counter-reset: file-line;
+}
+.file-preview-code code {
+  font: inherit;
+}
+.file-preview-code .line {
+  display: inline-block;
+  min-width: 100%;
+  padding-inline-end: 16px;
+}
+.file-preview-code .line::before {
+  counter-increment: file-line;
+  content: counter(file-line);
+  position: sticky;
+  left: 0;
+  display: inline-block;
+  box-sizing: content-box;
+  width: var(--file-preview-gutter, 2ch);
+  padding-inline: calc(var(--chrome-gap) / var(--zoom, 1) + 0.5rem) 14px;
+  background: var(--bg);
+  color: var(--fg-subtle);
+  text-align: right;
+  user-select: none;
+}
+.file-preview-code span[style] {
+  color: var(--shiki-light);
+}
+.dark .file-preview-code span[style] {
+  color: var(--shiki-dark);
+}
+
+/* Typed text starts on the transcript's text column (the answer's left
+   edge), not on the card's control inset. */
+.composer-body-inset {
+  padding-top: var(--composer-body-offset-top);
+  padding-inline: calc(
+    var(--chat-turn-content-inset) - var(--composer-frame-padding-inline) -
+      var(--composer-action-edge-inset)
+  );
+}
+
 .composer-footer-row-inset {
   padding-inline: var(--composer-footer-padding-inline);
 }
@@ -2038,10 +2102,16 @@ html[data-theme-asset-suggestion-unblock-icon="true"]
   --composer-menu-side-offset: var(--gap-adjacent);
   --composer-picker-popover-gap: var(--gap-adjacent);
   --composer-card-footer-gap: var(--composer-footer-gap);
-  --composer-body-min-height: 48px;
+  /* The body sits 3px below the card's padding edge so the first line's
+     glyph top lands ~18px from the border, matching the text's left inset
+     and the footer's bottom. The body is 3px shorter to compensate, so the
+     resting card height is unchanged. */
+  --composer-body-offset-top: 3px;
+  --composer-body-min-height: 45px;
   --composer-resting-height: calc(
     var(--composer-card-border-width) + var(--composer-card-border-width) +
       var(--composer-card-padding-block) + var(--composer-card-padding-block) +
+      var(--composer-body-offset-top) +
       var(--composer-body-min-height) + var(--composer-section-gap) +
       var(--control-height-compact)
   );
@@ -3702,42 +3772,84 @@ header:not(.app-drag-region) .app-drag-region {
   app-region: no-drag !important;
 }
 
-/* Shared intrinsic-height disclosure. CSS grid can interpolate 0fr → 1fr
-   without measuring content in JavaScript, which keeps nested sidebar rows
-   smooth even when their count changes. */
+/* A disclosure that cannot toggle right now (the process strip while the
+   turn is running) does not advertise a chevron it would ignore. */
+button[data-chat-turn-disclosure-trigger]:disabled .activity-disclosure-chevron {
+  display: none;
+}
+
+/* ---------- The one disclosure motion ----------
+   Every expand/collapse in the app is the same animation: intrinsic height
+   auto <-> 0 plus opacity, on --motion-disclosure-duration/-easing, played
+   identically in both directions. Three mechanisms feed into it:
+     - .animated-collapse (backchat rows, sidebar groups): data-state.
+     - .reasoning-collapse-inner (chat-ui process/thought collapsibles):
+       chat-ui already animates height/opacity from the same tokens.
+     - chat-ui panels toggled with the `hidden` attribute (tool groups,
+       thought bodies, the process activity list): `display` transitions
+       discretely so closing plays out before display:none lands, and
+       @starting-style gives opening a 0-height first frame. */
+.animated-collapse,
+[data-collapsible-event-count] > [id],
+[data-thought-block] > [data-thought-stream-body],
+[data-session-process-activity] {
+  interpolate-size: allow-keywords;
+  /* clip, not hidden: nested focus rings may draw slightly outside. */
+  overflow: clip;
+  overflow-clip-margin: 2px;
+}
+
 .animated-collapse {
-  display: grid;
-  grid-template-rows: 0fr;
+  display: block;
+  height: 0;
   opacity: 0;
   visibility: hidden;
   transition:
-    grid-template-rows var(--motion-disclosure-duration)
-      var(--motion-disclosure-easing),
+    height var(--motion-disclosure-duration) var(--motion-disclosure-easing),
     opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
     visibility 0s linear var(--motion-disclosure-duration);
 }
-
 .animated-collapse[data-state="open"] {
-  grid-template-rows: 1fr;
+  height: auto;
   opacity: 1;
   visibility: visible;
   transition:
-    grid-template-rows var(--motion-disclosure-duration)
-      var(--motion-disclosure-easing),
+    height var(--motion-disclosure-duration) var(--motion-disclosure-easing),
     opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
     visibility 0s linear 0s;
 }
-
 .animated-collapse-inner {
   min-height: 0;
-  overflow: hidden;
-  transform: translateY(-2px);
-  transition: transform var(--motion-disclosure-duration)
-    var(--motion-disclosure-easing);
 }
 
-.animated-collapse[data-state="open"] > .animated-collapse-inner {
-  transform: translateY(0);
+[data-collapsible-event-count] > [id],
+[data-thought-block] > [data-thought-stream-body],
+[data-session-process-activity] {
+  height: auto;
+  opacity: 1;
+  transition:
+    height var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    opacity var(--motion-disclosure-duration) var(--motion-disclosure-easing),
+    margin-block-start var(--motion-disclosure-duration)
+      var(--motion-disclosure-easing),
+    display var(--motion-disclosure-duration) allow-discrete;
+}
+[data-collapsible-event-count] > [id][hidden],
+[data-thought-block] > [data-thought-stream-body][hidden],
+[data-session-process-activity][hidden] {
+  display: none;
+  height: 0;
+  opacity: 0;
+  margin-block-start: 0;
+}
+@starting-style {
+  [data-collapsible-event-count] > [id]:not([hidden]),
+  [data-thought-block] > [data-thought-stream-body]:not([hidden]),
+  [data-session-process-activity]:not([hidden]) {
+    height: 0;
+    opacity: 0;
+    margin-block-start: 0;
+  }
 }
 
 /* Dense lists skip per-frame grid sizing; the heading stays responsive while
@@ -4068,7 +4180,13 @@ textarea:disabled::selection {
 [data-session-turn-response] .reasoning-collapse-inner > div {
   padding-top: 0;
 }
-[data-session-turn-response] .reasoning-collapse-inner > div > div:not(:empty) {
+/* Pad only when the wrapper holds something visible. A just-started turn
+   mounts an empty activity list here; counting that as content put a blank
+   band between "Working for" and "Thinking…" that a settled turn never has. */
+[data-session-turn-response]
+  .reasoning-collapse-inner
+  > div
+  > div:has(> :not(:empty):not([hidden])) {
   padding-top: var(--turn-block-gap);
 }
 /* That wrapper already supplies the one gap under the header; the activity
@@ -4076,7 +4194,7 @@ textarea:disabled::selection {
 [data-session-turn-response]
   .reasoning-collapse-inner
   > div
-  > div:not(:empty)
+  > div
   > [data-session-process-activity]:first-child {
   padding-top: 0;
 }

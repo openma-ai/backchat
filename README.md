@@ -29,7 +29,7 @@ that make each harness useful. Bring multiple agents into one conversation and
 keep the built-in browser, files, terminal, MCP Apps, and Codex plugins close.
 
 <p align="center">
-  <img src="artifacts/theme-system/default-spec-v1.png" alt="Backchat home screen with project and agent selection" width="900" />
+  <img src="artifacts/readme/hero.png" alt="Backchat conversation with grouped tool activity and a file preview in the side panel" width="900" />
 </p>
 
 ## Why Backchat
@@ -56,17 +56,17 @@ keep the built-in browser, files, terminal, MCP Apps, and Codex plugins close.
 
 ## A few things you can see
 
-These are representative UI snapshots from the current artifact/E2E suite.
+These snapshots come from the E2E suite (`e2e/readme-screenshots.spec.ts`).
 
 <table>
   <tr>
     <td width="50%">
-      <img src="artifacts/activity-states/06-complete-expanded.png" alt="Completed turn with expanded tool activity" />
-      <p align="center"><sub>Readable activity history with grouped tool calls.</sub></p>
+      <img src="artifacts/readme/activity.png" alt="Completed turn with expanded tool activity" />
+      <p align="center"><sub>Each turn folds its work into one readable activity line.</sub></p>
     </td>
     <td width="50%">
-      <img src="artifacts/interactive-containers/01-inline.png" alt="Interactive MCP App rendered inline with the chat" />
-      <p align="center"><sub>Interactive MCP Apps rendered directly in a turn.</sub></p>
+      <img src="artifacts/readme/dark.png" alt="Backchat in dark mode with a highlighted file preview" />
+      <p align="center"><sub>Light and dark themes, with syntax-highlighted file previews.</sub></p>
     </td>
   </tr>
   <tr>
@@ -75,8 +75,8 @@ These are representative UI snapshots from the current artifact/E2E suite.
       <p align="center"><sub>Pop out a live result when the work needs more room.</sub></p>
     </td>
     <td width="50%">
-      <img src="artifacts/theme-system/appearance-plugin-workbench.png" alt="Backchat appearance settings with the Workbench theme" />
-      <p align="center"><sub>Theme, language, density, and font settings are first-class.</sub></p>
+      <img src="artifacts/interactive-containers/01-inline.png" alt="Interactive MCP App rendered inline with the chat" />
+      <p align="center"><sub>Interactive MCP Apps rendered directly in a turn.</sub></p>
     </td>
   </tr>
 </table>

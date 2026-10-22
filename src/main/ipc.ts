@@ -46,6 +46,8 @@ import type {
   PairStartParams,
 } from "../shared/pair-events.js";
 import type { Settings, SettingsMcpServer } from "../shared/settings.js";
+import type { Settings as StoredSettings } from "./settings-store.js";
+import { rendererSettings } from "./renderer-settings.js";
 import type { CreateScheduleInput, UpdateScheduleInput } from "../shared/schedules.js";
 import { createAgentSetupService, launchTerminalAuth } from "./agent-setup.js";
 import { SessionManager } from "./session-manager.js";
@@ -81,6 +83,7 @@ import {
 } from "./session-event-enricher.js";
 import { logAppEvent } from "./app-log.js";
 import { logRendererCrash } from "./renderer-crash-log.js";
+import type { InstalledTelemetry } from "./telemetry/index.js";
 import type { RendererCrashReport } from "../shared/renderer-crash.js";
 import { recordUpdateEvidence } from "./update-evidence.js";
 import { deliverSessionEvent } from "./session-event-delivery.js";
@@ -148,6 +151,8 @@ import { formatSessionHistory } from "./session-history-tool.js";
 
 interface RegisterDeps {
   openmaAccount?: OpenmaAccount;
+  /** Main-process tracing; absent in tests and when telemetry is not installed. */
+  telemetry?: Pick<InstalledTelemetry, "sessionTracing" | "ingestRendererSpans">;
   /** Path used to cache the live ACP registry JSON. Phase 1 stub returns the
    *  overlay-only set; later phases pass `app.getPath('userData')/...` */
   registryCachePath: string;
@@ -363,7 +368,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       : agentSetup.warmup().then(() => {
           logAppEvent("app.agent_warmup", { outcome: "ready", duration_ms: Math.round(performance.now() - agentWarmupStartedAt) });
         }).catch((error) => {
-          logAppEvent("app.agent_warmup", { outcome: "error", duration_ms: Math.round(performance.now() - agentWarmupStartedAt), message: error instanceof Error ? error.message : String(error) });
+          logAppEvent("app.agent_warmup", { outcome: "error", duration_ms: Math.round(performance.now() - agentWarmupStartedAt), message: error instanceof Error ? error.message : String(error) }, { level: "warn" });
           process.stderr.write(`! ACP agent warmup failed: ${error instanceof Error ? error.message : String(error)}\n`);
         });
   const requestedChromeExtensionBridgePort = Number(
@@ -489,7 +494,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         event_id: event.event_id,
         event_type: event.type,
         error: error instanceof Error ? error.message : String(error),
-      });
+      }, { level: "error" });
   };
   setBrokerSessionEventSink((msg) => {
     const enriched = enrichSessionEvent(msg);
@@ -518,7 +523,9 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   let pairManager: PairManager | null = null;
   let projectAgents: ProjectAgentBridge | undefined;
   let projectMcp: ProjectMcpBridge | undefined;
+  const sessionTracing = deps.telemetry?.sessionTracing;
   const send = (msg: SessionEventOut) => {
+    sessionTracing?.observe(msg);
     for (const event of streamEventsFromSession(msg)) publishControlLiveEvent(event);
     deps.sessionActivitySink?.(msg);
     const enriched = enrichSessionEvent(msg);
@@ -541,6 +548,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
 
   const sessionManager = new SessionManager({
     send,
+    ...(sessionTracing ? { tracing: sessionTracing } : {}),
     acpBinDir: deps.acpBinDir,
     acpInstallRoot: deps.acpInstallRoot,
     // MCP servers come from settings now — Phase 8 finishes the per-agent
@@ -711,6 +719,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     (_e, report: RendererCrashReport) => {
       logRendererCrash(report);
     },
+  );
+  ipcMain.handle(
+    InvokeChannel.TelemetryExportSpans,
+    (_e, spans: unknown) => deps.telemetry?.ingestRendererSpans(spans) ?? 0,
   );
 
   ipcMain.handle(
@@ -1245,10 +1257,14 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
   );
 
   // ---- Settings ----
-  ipcMain.handle(InvokeChannel.SettingsGet, (): Settings => settingsStore.get());
+  ipcMain.handle(InvokeChannel.SettingsGet, (): Settings => rendererSettings(settingsStore.get()));
   ipcMain.handle(
     InvokeChannel.SettingsPatch,
-    (_e, partial: Partial<Settings>) => settingsStore.patch(partial),
+    // Telemetry export (endpoint, credentials) is edited in config.toml only.
+    (_e, partial: Partial<StoredSettings>) => {
+      const { telemetry: _telemetry, ...allowed } = partial;
+      return settingsStore.patch(allowed);
+    },
   );
   ipcMain.handle(
     InvokeChannel.McpAppResolve,
@@ -1301,7 +1317,7 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       void mcpAppRuntime.close();
     }
     for (const w of BrowserWindow.getAllWindows()) {
-      if (!w.isDestroyed()) w.webContents.send(PushChannel.SettingsChanged, s);
+      if (!w.isDestroyed()) w.webContents.send(PushChannel.SettingsChanged, rendererSettings(s));
     }
   });
 

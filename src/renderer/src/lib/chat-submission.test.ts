@@ -20,7 +20,7 @@ describe("chat submission decisions", () => {
     expect(source).not.toContain("waitForSessionReady");
     expect(source).toContain('startResult.status !== "ready"');
     expect(source.indexOf("await window.backchat.sessionStart({")).toBeLessThan(
-      source.indexOf("await window.backchat.sessionPrompt({"),
+      source.indexOf("window.backchat.sessionPrompt({"),
     );
     expect(source.indexOf("onOptimisticEcho?.(")).toBeGreaterThan(0);
     expect(source.indexOf("onOptimisticEcho?.(")).toBeLessThan(
@@ -30,7 +30,7 @@ describe("chat submission decisions", () => {
       source.indexOf("await window.backchat.sessionStart({"),
     );
     expect(source.indexOf("if (deliver)")).toBeLessThan(
-      source.indexOf("await window.backchat.sessionPrompt({"),
+      source.indexOf("window.backchat.sessionPrompt({"),
     );
   });
 

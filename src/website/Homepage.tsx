@@ -12,8 +12,8 @@ import {
   TerminalSquare,
   UsersRound,
 } from "lucide-react";
-import homeScreenshotUrl from "../../artifacts/theme-system/default-spec-v1.png";
-import activityScreenshotUrl from "../../artifacts/activity-states/06-complete-expanded.png";
+import homeScreenshotUrl from "../../artifacts/readme/hero.png";
+import activityScreenshotUrl from "../../artifacts/readme/activity.png";
 import pipScreenshotUrl from "../../artifacts/interactive-containers/03-picture-in-picture.png";
 import { BrandLockup } from "./BrandLockup";
 import { homepageCopy } from "./homepage-copy";

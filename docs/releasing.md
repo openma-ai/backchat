@@ -9,7 +9,7 @@ GitHub Release after its packaged runtime, signature, and first-prompt checks.
 1. Pin Git dependencies in `package.json` and `pnpm-workspace.yaml`, regenerate
    `pnpm-lock.yaml`, and verify a frozen install. OpenMatter is currently consumed
    through one immutable Git commit for every package subdirectory. The shared
-   `@openma/common` dependency uses an immutable release tag.
+   `@openma/common` dependency is pinned to an exact npm release.
 2. Run `pnpm typecheck`, `pnpm test:ci`,
    `node --test scripts/*.test.mjs`, `pnpm build`, and `pnpm test:e2e:fast`.
 3. For Pi coordinator changes, run the opt-in real adapter test described in

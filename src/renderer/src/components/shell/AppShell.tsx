@@ -197,9 +197,11 @@ export function AppShell({
   const bottomReservation = bottomCollapsed || !bottomPanel
     ? "var(--stage-inset)"
     : "calc(var(--bottom-panel-h) + var(--stage-inset) * 2)";
+  // Expanded, the panel *is* the main region: it fills exactly the area the
+  // chat column owns (right of the sidebar card, flush to the window edges).
   const expandedRailWidth = leftCollapsed
-    ? "calc(100% - var(--stage-inset) * 2)"
-    : `calc(100% - ${sidebarWidth}px - var(--stage-inset) * 2)`;
+    ? "100%"
+    : `calc(100% - ${sidebarWidth}px - var(--stage-inset))`;
 
   return (
     <div
@@ -290,26 +292,24 @@ export function AppShell({
           className={cn(
             "absolute flex flex-col overflow-hidden transform-gpu",
             // Docked: a flat pane flush to the window edge, separated from
-            // the chat by one hairline (Codex-style). Expanded keeps the
-            // floating card because it overlays the main column.
-            rightExpanded
-              ? cn("app-rail-surface rounded-r-2xl", !expandedMainSelected && "bg-bg-sidebar")
-              : "app-rail-docked",
+            // the chat by one hairline (Codex-style). Expanded takes over the
+            // main region with the same canvas tone and no card chrome.
+            rightExpanded ? "app-canvas-surface" : "app-rail-docked",
           )}
           data-right-panel-expanded={rightExpanded}
           data-right-panel-collapsed={rightCollapsed}
           data-expanded-surface={expandedMainSelected ? "main" : "panel"}
           style={{
-            right: rightExpanded ? "var(--stage-inset)" : 0,
-            top: rightExpanded ? "var(--stage-inset)" : 0,
+            right: 0,
+            top: 0,
             bottom: expandedMainSelected
               ? "auto"
               : rightExpanded
-                ? "var(--stage-inset)"
+                ? 0
                 : bottomCollapsed || !bottomPanel
                   ? 0
                   : bottomReservation,
-            height: expandedMainSelected ? "var(--top-row-h)" : undefined,
+            height: expandedMainSelected ? "calc(var(--top-row-h) + var(--stage-inset))" : undefined,
             width: rightExpanded ? expandedRailWidth : `calc(${rightRailWidth}px + var(--stage-inset))`,
             transform: rightCollapsed
               ? `translateX(calc(100% + var(--stage-inset))) scale(0.96)`
@@ -538,15 +538,11 @@ function GlobalSideChatToggle() {
         "transition-colors",
       )}
       style={{
-        // Mirror the left toggle's y. The right toggle slides with the
-        // rail's outer edge so it sits inside the stage gap when open
-        // and reaches the viewport edge when collapsed — same visual
-        // anchor (rail's left edge ± inset) at both states.
-        right: collapsed
-          ? "calc(var(--chrome-gap) / var(--zoom, 1))"
-          : "calc(var(--right-rail-w) + var(--stage-inset) + var(--chrome-gap) / var(--zoom, 1))",
+        // Mirror of the left sidebar toggle: pinned to the window's top-right
+        // corner in every state. The panel header reserves this slot
+        // (see SideChatPanel titlebar padding), so nothing moves under it.
+        right: "calc(var(--chrome-gap) / var(--zoom, 1))",
         top: "var(--chrome-top)",
-        transition: "right 280ms cubic-bezier(0.32, 0.72, 0, 1)",
       }}
     >
       <PanelRightIcon className="size-3.5" />

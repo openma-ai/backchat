@@ -207,7 +207,7 @@ describe("SideChatPanel new-tab workspace", () => {
 
     expect(markup).toContain('data-header-clears-left-chrome="true"');
     expect(markup).toContain(
-      "padding-left:calc(var(--left-chrome-end) + var(--chrome-title-gap) - var(--stage-inset))",
+      "padding-left:calc(var(--left-chrome-end) + var(--chrome-title-gap));",
     );
   });
 

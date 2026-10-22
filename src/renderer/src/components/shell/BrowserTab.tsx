@@ -1,4 +1,6 @@
 import { SearchField } from "@/components/ui/search-field";
+import { BrowserNewTabPage } from "@/components/shell/BrowserNewTabPage";
+import { recordBrowserVisit, updateBrowserVisitMeta } from "@/lib/browser-history";
 import { useI18n } from "@/lib/i18n";
 import {
   useCallback,
@@ -183,6 +185,8 @@ export function BrowserTab({
   activeRef.current = active;
   const onUrlChangeRef = useRef(onUrlChange);
   const onPageMetaRef = useRef(onPageMeta);
+  // The page whose title/favicon events arrive next, for the visit history.
+  const visitedUrlRef = useRef("");
   onUrlChangeRef.current = onUrlChange;
   onPageMetaRef.current = onPageMeta;
   const [urlInput, setUrlInput] = useState(initialUrl);
@@ -464,9 +468,14 @@ export function BrowserTab({
         setCanFwd(canForward);
         setUrlInput(url);
         setCurrentUrl(url);
+        visitedUrlRef.current = url;
+        recordBrowserVisit(url);
         onUrlChangeRef.current?.(url);
       },
-      onPageMeta: (meta) => onPageMetaRef.current?.(meta),
+      onPageMeta: (meta) => {
+        updateBrowserVisitMeta(visitedUrlRef.current, meta);
+        onPageMetaRef.current?.(meta);
+      },
       onDomReady: ({ url, zoomFactor: nextZoomFactor }) => {
         setCurrentUrl(url);
         setZoomFactor(nextZoomFactor);
@@ -795,15 +804,17 @@ export function BrowserTab({
       {/* A local artifact is a document surface, not a browser address bar.
           Keep preview and native file actions in the same stable title row. */}
       {localSourcePath ? (
-        <div className="flex h-11 shrink-0 items-center gap-3 border-b border-border/55 px-4">
-          <FileTextIcon className="size-4 shrink-0 text-fg-muted" />
-          <div className="min-w-0 flex flex-1 items-baseline gap-2">
-            <span className="truncate text-xs font-medium text-fg">
-              {localFileName(localSourcePath)}
-            </span>
-            <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
-              {localFileExtension(localSourcePath)}
-            </span>
+        <div className="side-panel-title-row flex h-11 shrink-0 items-center gap-3 border-b border-border/55">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <FileTextIcon className="size-3.5 shrink-0 text-fg-muted" />
+            <div className="min-w-0 flex flex-1 items-baseline gap-2">
+              <span className="truncate text-xs font-medium text-fg">
+                {localFileName(localSourcePath)}
+              </span>
+              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
+                {localFileExtension(localSourcePath)}
+              </span>
+            </div>
           </div>
           <FileOpenMenu
             path={localSourcePath}
@@ -976,6 +987,11 @@ export function BrowserTab({
           // content still goes through the standard partition sandbox.
           webpreferences="allowFileAccess=yes,contextIsolation=yes"
         />
+        {showingBlankPage && !localSourcePath && !resizeSnapshot && (
+          <div className="absolute inset-0 z-10 bg-bg">
+            <BrowserNewTabPage sessionId={sessionId} onOpen={navigateTo} />
+          </div>
+        )}
         {loadError && !showingBlankPage && (
           <div
             role="alert"

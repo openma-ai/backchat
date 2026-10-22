@@ -15,15 +15,18 @@ export function FileTree(props: {
   rootPath: string;
   onRootChange?: (path: string) => void;
   onOpenFile?: (path: string) => void;
+  /** File shown in the viewer; seeds the tree selection on mount. */
+  selectedPath?: string;
 }) {
   // Changing roots resets the data cache as well as selection/expansion.
   return <FileTreeRoot key={props.rootPath} {...props} />;
 }
 
-function FileTreeRoot({ rootPath, onRootChange, onOpenFile }: {
+function FileTreeRoot({ rootPath, onRootChange, onOpenFile, selectedPath }: {
   rootPath: string;
   onRootChange?: (path: string) => void;
   onOpenFile?: (path: string) => void;
+  selectedPath?: string;
 }) {
   const { t } = useI18n();
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -32,6 +35,11 @@ function FileTreeRoot({ rootPath, onRootChange, onOpenFile }: {
   const cache = useMemo(() => new Map<string, Entry>([[rootPath, { name: rootName, isDir: true }]]), [rootPath, rootName]);
   const tree = useTree<Entry>({
     rootItemId: rootPath,
+    // A remount (tab switch) reopens the folders leading to the viewed file.
+    initialState: {
+      selectedItems: selectedPath ? [selectedPath] : [],
+      expandedItems: ancestorsWithin(rootPath, selectedPath),
+    },
     getItemName: (item) => item.getItemData().name,
     isItemFolder: (item) => item.getItemData().isDir,
     onPrimaryAction: (item) => {
@@ -118,4 +126,11 @@ function FileTreeRoot({ rootPath, onRootChange, onOpenFile }: {
       </div>
     </div>
   );
+}
+
+function ancestorsWithin(rootPath: string, path: string | undefined): string[] {
+  const root = rootPath.replace(/\/$/, "");
+  if (!path || !path.startsWith(`${root}/`)) return [];
+  const parts = path.slice(root.length + 1).split("/").slice(0, -1);
+  return parts.map((_, index) => `${root}/${parts.slice(0, index + 1).join("/")}`);
 }

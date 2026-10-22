@@ -82,6 +82,8 @@ const api: BackchatApi = {
   ping: (msg) => ipcRenderer.invoke(InvokeChannel.Ping, msg),
   rendererCrashLog: (report) =>
     ipcRenderer.invoke(InvokeChannel.AppRendererCrashLog, report),
+  telemetryExportSpans: (spans) =>
+    ipcRenderer.invoke(InvokeChannel.TelemetryExportSpans, spans) as Promise<number>,
 
   agentsList: (options) =>
     ipcRenderer.invoke(InvokeChannel.AgentsList, options) as Promise<AgentInfo[]>,
@@ -465,6 +467,8 @@ const api: BackchatApi = {
     ipcRenderer.invoke(InvokeChannel.UiFsOpenPath, p) as Promise<string>,
   uiFsRevealPath: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsRevealPath, p) as Promise<void>,
+  uiFsReadContent: (p) =>
+    ipcRenderer.invoke(InvokeChannel.UiFsReadContent, p) as ReturnType<BackchatApi["uiFsReadContent"]>,
   uiFsResolvePreview: (p) =>
     ipcRenderer.invoke(InvokeChannel.UiFsResolvePreview, p) as Promise<{
       sourcePath: string;

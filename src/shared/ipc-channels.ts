@@ -44,6 +44,7 @@ export const InvokeChannel = {
   OpenmaOpenManagement: "openma:open-management",
   Ping: "app:ping",
   AppRendererCrashLog: "app:rendererCrashLog",
+  TelemetryExportSpans: "telemetry:exportSpans",
   AgentsList: "agents:list",
   AgentInstall: "agent:install",
   AgentUpgrade: "agent:upgrade",
@@ -179,6 +180,7 @@ export const InvokeChannel = {
   /** Resolve a local file to an in-app preview, preserving the source
    *  path as the native Open in target. */
   UiFsResolvePreview: "uiFs:resolvePreview",
+  UiFsReadContent: "uiFs:readContent",
   /** Read the current git branch for a workspace dir. Returns the
    *  branch name (e.g. "main"), or null if the path isn't a git
    *  repo or the read fails. Used by the composer's branch chip. */
