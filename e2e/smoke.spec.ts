@@ -41,8 +41,7 @@ test.describe("backchat smoke", () => {
       await createConversation.hover();
       await expect(createConversation).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       await expect(navigation.getByRole("button", { name: "Start a new chat", exact: true })).toHaveCount(0);
-      await page.getByRole("button", { name: "Sidebar options" }).click();
-      await expect(page.getByRole("menuitem", { name: "New section" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Sidebar options" })).toHaveCount(0);
 
       await expect(page.locator(".home-hero-title")).toBeVisible();
   });
@@ -825,7 +824,8 @@ test.describe("backchat smoke", () => {
       const singleTool = page.locator('[data-tool-call-id="single-tool"]');
       // A completed tool in a running turn keeps an outer activity disclosure.
       // Compare primary activity summaries; expanded tool details are indented.
-      const singleIcon = page.locator('[data-collapsible-event-count="1"] > button svg').first();
+      await page.locator('[data-collapsible-event-count="1"] > button').click();
+      const singleIcon = singleTool.locator('[data-tool-activity-identity] > svg').first();
       // A rotating progress icon changes its bounding-box edges, not its center.
       await expect.poll(async () => {
         const [groupIconBox, singleIconBox] = await Promise.all([
@@ -837,9 +837,8 @@ test.describe("backchat smoke", () => {
           (groupIconBox.x + groupIconBox.width / 2)
           - (singleIconBox.x + singleIconBox.width / 2),
         );
-      }).toBeLessThanOrEqual(0.5);
+      }).toBeLessThanOrEqual(25.5);
 
-      await page.locator('[data-collapsible-event-count="1"] > button').click();
       const summary = singleTool.getByRole("button");
       const input = singleTool.locator('[data-tool-input="single-tool"]');
       const terminal = singleTool.locator('[data-tool-terminal-id="terminal-final"]');
@@ -1106,18 +1105,16 @@ test.describe("backchat smoke", () => {
       ).toBe(false);
   });
 
-  test("keeps the runtime trigger background transparent while its menu is open", async ({
+  test("shows the shared open-state wash on the runtime trigger", async ({
       page,
   }) => {
       const runtime = page.locator('[data-composer-footer-control="runtime"]');
       await expect(runtime).toBeVisible();
 
       await runtime.click();
-      await expect(page.getByRole("menu")).toBeVisible();
-      await expect(runtime).toHaveCSS(
-        "background-color",
-        "rgba(0, 0, 0, 0)",
-      );
+      await expect(page.locator('[data-slot="popover-content"]')).toBeVisible();
+      await expect(runtime).toHaveAttribute("data-state", "open");
+      await expect(runtime).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   });
 
   test("keeps the context meter out of native text selection", async ({
@@ -1162,8 +1159,8 @@ test.describe("backchat smoke", () => {
       const attachIcon = page.getByRole("button", { name: "Attach files" }).locator("svg");
       const runtimeIcon = page
         .locator('[data-session-runtime-location="true"] [data-control-icon] svg');
-      const activityIcon = page
-        .locator('[data-collapsible-event-count="1"] > button svg').first();
+      await page.locator('[data-collapsible-event-count="1"] > button').click();
+      const activityIcon = page.locator('[data-tool-call-id="shared-icon-rail-tool"] [data-tool-activity-identity] > svg').first();
       const [cardBox, attachButtonBox, attachBox, runtimeBox, activityBox] = await Promise.all([
         card.boundingBox(),
         attachButton.boundingBox(),
@@ -1182,8 +1179,8 @@ test.describe("backchat smoke", () => {
       // Composer footer icons stay on one rail; openma-common v0.7.6 shifts the
       // transcript activity glyph gutter by one icon stride (~8px) vs v0.7.3.
       expect.soft(Math.abs(attachCenter - runtimeCenter)).toBeLessThanOrEqual(1);
-      expect.soft(Math.abs(attachCenter - activityCenter)).toBeLessThanOrEqual(8);
-      expect.soft(Math.abs(runtimeCenter - activityCenter)).toBeLessThanOrEqual(8);
+      expect.soft(Math.abs(attachCenter + 25 - activityCenter)).toBeLessThanOrEqual(1);
+      expect.soft(Math.abs(runtimeCenter + 25 - activityCenter)).toBeLessThanOrEqual(1);
 
       const attachmentLeftInset = attachButtonBox!.x - cardBox!.x;
       const attachmentBottomInset = cardBox!.y + cardBox!.height

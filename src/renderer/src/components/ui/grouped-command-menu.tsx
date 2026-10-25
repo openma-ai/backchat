@@ -341,7 +341,7 @@ export function GroupedCommandMenu({
         shouldFilter={shouldFilter}
         data-has-query={searchQuery.length > 0}
         className={cn(
-        "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! bg-transparent p-0 shadow-none ring-0",
+        "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0! bg-transparent p-0 shadow-none ring-0",
           popoverPicker
             ? "h-auto min-h-0 flex-1"
             : shrinkToContent

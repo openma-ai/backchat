@@ -10,6 +10,6 @@ export function ComposerPickerMenu(props: Omit<ComponentProps<typeof GroupedComm
     shrinkToContent
     nativeListScroll
     panelClassName="flex h-auto w-full flex-col overflow-hidden p-0"
-    commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
+    commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground border-0! shadow-none ring-0"
   />;
 }
