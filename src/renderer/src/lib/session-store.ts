@@ -1,3 +1,4 @@
+import { patchAssociation, patchSessionMessage, wireSessionId, wireRecord, type SubagentAssociation } from "./subagent-sessions";
 /**
  * Renderer-side session store. Main-session history and task-scoped right-rail
  * workspaces are mirrored to SQLite through the preload API; this class keeps
@@ -45,6 +46,7 @@ import { forkPointsByTurn } from "./fork-point.js";
 import { sessionUsesManagedWorkspace } from "./fork-workspace";
 import {
   createOpenMAEvent,
+  createVendorEvent,
   createWorkItemProjector,
   type OpenMAEvent,
   type WorkItemProjector,
@@ -179,6 +181,81 @@ interface TurnProjectionCacheEntry {
 }
 
 export class SessionStore {
+  #rfdAppliedEvents = new Set<string>();
+  #rfdAssociations = new Map<string, SubagentAssociation>();
+  #rfdKey(root: string, child: string): string { return JSON.stringify([root, child]); }
+  #rfdView(root: string, child: string): string | undefined {
+    const association = this.#rfdAssociations.get(this.#rfdKey(root, child));
+    if (!association) return undefined;
+    return [...this.#sessions.values()].find((row) => row.subagentAssociation === association)?.id;
+  }
+  #applySubagentSession(root: string, event: unknown, turnId?: string): boolean {
+    const outer = wireRecord(event);
+    const update = outer.update ? wireRecord(outer.update) : outer;
+    const wireId = wireSessionId(event);
+    if (!wireId) return false;
+    const rootRow = this.#sessions.get(root);
+    if (!rootRow) return false;
+    const parentView = wireId === rootRow.acp_session_id ? root : this.#rfdView(root, wireId);
+    if (update.sessionUpdate === "subagent_update") {
+      if (!parentView || typeof update.sessionId !== "string" || update.sessionId === rootRow.acp_session_id) return true;
+      const key = this.#rfdKey(root, update.sessionId);
+      const previous = this.#rfdAssociations.get(key);
+      const next = patchAssociation(previous, wireId, update);
+      if (!next) return true;
+      this.#rfdAssociations.set(key, next);
+      const parentAgent = this.#sessions.get(root)?.agent_id;
+      const provider = parentAgent === "dsh-acp" ? "dsh" : "claude";
+      const state = next.state;
+      const status = state?.state === "running" || state?.state === "requires_action" ? "running"
+        : state?.state === "idle" && state.stopReason === "cancelled" ? "cancelled"
+        : state?.state === "idle" && state.stopReason === "error" ? "error"
+        : state?.state === "idle" && state.stopReason === "end_turn" ? "complete" : "unknown";
+      this.#upsertNativeSubagentActivity(parentView, {
+        provider, operation: "subagent_spawn", childId: next.sessionId,
+        toolCallId: `rfd:${next.sessionId}`, task: next.description ?? "",
+        nickname: next.title ?? undefined, status,
+      });
+      const activity = this.#subagentsByParent.get(parentView)?.find((item) => item.childSessionId === next.sessionId);
+      if (activity) {
+        this.#mutateSession(activity.viewSessionId, (row) => ({ ...row,
+          acp_session_id: next.sessionId, subagentAssociation: next,
+          label: next.title ?? next.sessionId,
+        }));
+      }
+      return true;
+    }
+    if (!parentView) return wireId !== rootRow.acp_session_id;
+    if (update.sessionUpdate === "session_message" || update.sessionUpdate === "session_message_chunk") {
+      this.#mutateSession(parentView, (row) => {
+        const messages = [...(row.sessionMessages ?? [])];
+        const index = messages.findIndex((message) => message.messageId === update.messageId);
+        const message = patchSessionMessage(index < 0 ? undefined : messages[index], update);
+        if (!message) return row;
+        if (index < 0) messages.push(message); else messages[index] = message;
+        return { ...row, sessionMessages: messages };
+      });
+      return true;
+    }
+    if (parentView === root) return false;
+    if (update.sessionUpdate === "config_option_update" || update.sessionUpdate === "session_info_update" || update.sessionUpdate === "usage_update") {
+      if (update.sessionUpdate === "config_option_update") this.#mutateSession(parentView, (row) => ({ ...row, configOptions: normalizeAgentConfigOptions(update.configOptions) ?? [] }));
+      else this.#applyAcpSessionMetadata(parentView, String(update.sessionUpdate), update);
+      return true;
+    }
+    const childTurn = `${parentView}:turn`;
+    const previousTurn = this.#turns.get(childTurn);
+    if (!previousTurn) return true;
+    const parsed = parseAcpEvent(update);
+    const now = Date.now();
+    const nextTurn = { ...previousTurn, events: [...previousTurn.events] };
+    if (parsed.kind === "text") { nextTurn.assistantText += parsed.text; this.#appendStreamEvent(nextTurn, "text", parsed.text, now); }
+    else if (parsed.kind === "thought") { nextTurn.thoughtText += parsed.text; this.#appendStreamEvent(nextTurn, "thought", parsed.text, now); }
+    else nextTurn.events.push({ payload: update, receivedAt: now });
+    this.#turns.set(childTurn, nextTurn);
+    return true;
+  }
+
   static readonly NOTICE_DURATION_MS = 10_000;
 
   #readSessionGoalUpdate: SessionGoalUpdateReader;
@@ -934,6 +1011,7 @@ export class SessionStore {
 
   #canonicalNativeProvider(event: OpenMAEvent): NativeAgentProvider {
     const harness = event.source.harness?.toLowerCase() ?? "";
+    if (harness === "dsh" || harness === "dsh-acp") return "dsh";
     if (harness.includes("codex")) return "codex";
     if (harness.includes("opencode")) return "opencode";
     if (harness.includes("kilo")) return "kilo";
@@ -2647,10 +2725,10 @@ export class SessionStore {
         update.parentToolUseId,
       );
       const childId =
-        context?.childId ?? `${update.provider}:${update.parentToolUseId}`;
+        update.childId ?? context?.childId ?? `${update.provider}:${update.parentToolUseId}`;
       const lifecycle: NativeAgentUpdate = {
         provider: update.provider,
-        operation: "claude_agent",
+        operation: update.provider === "dsh" ? "subagent_spawn" : "claude_agent",
         toolCallId: update.parentToolUseId,
         childId,
         status: "running",
@@ -2977,6 +3055,7 @@ export class SessionStore {
         parentSessionId,
         task: update.task ?? prev?.task,
         agentType: update.agentType ?? prev?.native?.agentType,
+        asyncLaunched: update.asyncLaunched ?? existingContext?.asyncLaunched,
       });
     }
   }
@@ -3490,6 +3569,11 @@ export class SessionStore {
         canonical: parsePersistedOpenMAEvent(data),
       };
     });
+    const rfdRawEvidence = new Set(prepared.flatMap(({ canonical }) => {
+      const vendor = wireRecord(canonical?.data);
+      return canonical?.type === "vendor.event" && vendor.namespace === "subagent_sessions"
+        ? [persistedEventFingerprint(vendor.data)] : [];
+    }));
     const canonicalRawEvidence = new Set(
       prepared
         .map(({ canonical }) => canonical?.raw?.payload)
@@ -3539,6 +3623,16 @@ export class SessionStore {
     let unclaimedLegacyTurn: Turn | null = null;
     for (const { row: r, data, canonical } of prepared) {
       if (canonical) {
+        if (canonical.raw?.payload && rfdRawEvidence.has(persistedEventFingerprint(canonical.raw.payload))) continue;
+        const vendor = wireRecord(canonical.data);
+        if (canonical.type === "vendor.event" && vendor.namespace === "subagent_sessions") {
+          this.#ingestOpenMAEvent(canonical);
+          if (!this.#rfdAppliedEvents.has(canonical.event_id)) {
+            this.#rfdAppliedEvents.add(canonical.event_id);
+            this.#applySubagentSession(sessionId, vendor.data, canonical.turn_id);
+          }
+          continue;
+        }
         const canonicalRaw = canonical.raw?.payload;
         const richerCanonical = canonicalRaw !== undefined
           ? richerCanonicalByRawOccurrence.get(
@@ -4029,6 +4123,18 @@ export class SessionStore {
         break;
       }
       case "session.event": {
+        if (this.#applySubagentSession(ev.session_id, ev.event, ev.turn_id)) {
+          const rfdEventId = `subagent-session:${crypto.randomUUID()}`;
+          this.#rfdAppliedEvents.add(rfdEventId);
+          this.#ingestOpenMAEvent(createVendorEvent({
+            event_id: rfdEventId,
+            session_id: ev.session_id, ...(ev.turn_id ? { turn_id: ev.turn_id } : {}),
+            source: { kind: "harness", harness: this.#sessions.get(ev.session_id)?.agent_id ?? "acp" },
+            occurred_at: new Date().toISOString(), harness: "acp", namespace: "subagent_sessions",
+            name: "update", data: ev.event,
+          }), { persist: true });
+          break;
+        }
         if (
           ev.openma_event
           && this.#applyCanonicalSessionProjection(ev.openma_event)
@@ -4144,6 +4250,15 @@ export class SessionStore {
           // not to the parent session usage snapshot. The same rule keeps
           // nested text/thought/tool updates out of the parent transcript.
           break;
+        }
+        // Lifecycle metadata is session-scoped, not an ACP turn boundary (I1/I5).
+        // Consume it before the generic metadata handler returns early.
+        if (updateType === "session_info_update") {
+          this.#ingestNativeAgentUpdates(
+            ev.session_id,
+            runtimeAdapter?.nativeAgentRawUpdates(ev.event) ?? [],
+            { turnId: eventTurnId },
+          );
         }
         if (
           this.#applyAcpSessionMetadata(ev.session_id, updateType, inner)

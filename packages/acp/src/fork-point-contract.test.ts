@@ -1,9 +1,8 @@
+import { TestAgentConnection as AgentSideConnection, type TestAgent as Agent } from "./legacy-agent-test-helper.js";
 import {
-  AgentSideConnection,
   PROTOCOL_VERSION,
   ndJsonStream,
-  type Agent,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import {
   acpForkRequestMeta,
   type AcpForkPoint,

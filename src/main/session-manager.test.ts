@@ -1668,6 +1668,7 @@ describe("SessionManager prompt queue", () => {
 
     expect(mocks.runtimeStart).toHaveBeenCalledWith(
       expect.objectContaining({
+        clientCapabilityOverlay: { subagents: {} },
         sessionRequestMeta: {
           claudeCode: {
             emitRawSDKMessages: [

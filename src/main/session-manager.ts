@@ -872,6 +872,8 @@ export class SessionManager {
         },
         mcpServers,
         additionalDirectories,
+        ...(["claude-acp", "dsh-acp"].includes(agent.id)
+          ? { clientCapabilityOverlay: { subagents: {} } } : {}),
         ...(sessionRequestMetaForHarness(agent.id)
           ? { sessionRequestMeta: sessionRequestMetaForHarness(agent.id) }
           : {}),
@@ -1563,7 +1565,9 @@ export class SessionManager {
     turnId: string,
     event: unknown,
   ): void {
-    if (isAvailableCommandsUpdate(event)) {
+    const eventWireId = eventRecord(eventRecord(event)?.["_openma.acp.notification"])?.session_id;
+    const rootEvent = !eventWireId || eventWireId === sess.acp.acpSessionId;
+    if (rootEvent && isAvailableCommandsUpdate(event)) {
       sess.latestAvailableCommandsUpdate = event;
       const commands = availableCommandsFromUpdate(event);
       if (commands) {
@@ -1574,7 +1578,7 @@ export class SessionManager {
     }
     const updateRecord = outOfBandUpdateRecord(event);
     if (
-      updateRecord.sessionUpdate === "config_option_update"
+      rootEvent && updateRecord.sessionUpdate === "config_option_update"
       && Array.isArray(updateRecord.configOptions)
     ) {
       void this.#observeLiveSessionConfig(sess.agentId, {
@@ -1867,7 +1871,9 @@ export class SessionManager {
         const ev2 = ev as { sessionUpdate?: string; content?: { type?: string; text?: string } } | null;
         const tag = ev2?.sessionUpdate;
         this.#trackOpenToolCall(sess, p.turn_id, ev);
-        if (tag === "session_info_update") {
+        const wireId = eventRecord(eventRecord(ev)?.["_openma.acp.notification"])?.session_id;
+        const rootUpdate = !wireId || wireId === sess.acp.acpSessionId;
+        if (rootUpdate && tag === "session_info_update") {
           const title = (ev as { title?: unknown }).title;
           if (typeof title === "string" && title.trim()) {
             setSessionTitle(p.session_id, title.trim().slice(0, 500));

@@ -1,0 +1,138 @@
+diff --git a/dist/acp-fork/index.d.ts b/dist/acp-fork/index.d.ts
+index 8278202..dcbcffd 100644
+--- a/dist/acp-fork/index.d.ts
++++ b/dist/acp-fork/index.d.ts
+@@ -1,4 +1,4 @@
+-import type * as schema from "@agentclientprotocol/sdk";
++import type * as schema from "@agentclientprotocol/sdk/unstable";
+ /** Inclusive-fork point selected by a client from visible assistant text. */
+ export interface AcpForkPoint {
+     messageId: string;
+diff --git a/dist/acp-runtime/probe.js b/dist/acp-runtime/probe.js
+index 2f836a5..b0fe670 100644
+--- a/dist/acp-runtime/probe.js
++++ b/dist/acp-runtime/probe.js
+@@ -1,4 +1,5 @@
+-import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION, } from "@agentclientprotocol/sdk";
++import { sdkClient } from "./sdk-client.js";
++import { ndJsonStream, PROTOCOL_VERSION, } from "@agentclientprotocol/sdk";
+ import { readFileSync } from "node:fs";
+ import { mkdir } from "node:fs/promises";
+ import { tmpdir } from "node:os";
+@@ -226,7 +227,7 @@ async function spawnProbeAgent(options) {
+         env: mergedEnv,
+     });
+     const stream = ndJsonStream(child.stdin, child.stdout);
+-    const agent = new ClientSideConnection(() => options.client, stream);
++    const agent = sdkClient(options.client, stream);
+     let disposed;
+     const dispose = () => {
+         disposed ??= child.kill().catch(() => undefined).finally(() => {
+@@ -511,7 +512,7 @@ async function spawnAuthAgent(options) {
+             onDiagnosticLine?.(line);
+         },
+     });
+-    const agent = new ClientSideConnection(() => options.client ?? {
++    const agent = sdkClient(options.client ?? {
+         sessionUpdate: async () => undefined,
+         requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+     }, ndJsonStream(child.stdin, child.stdout));
+diff --git a/dist/acp-runtime/sdk-client.js b/dist/acp-runtime/sdk-client.js
+new file mode 100644
+index 0000000..ffa1623
+--- /dev/null
++++ b/dist/acp-runtime/sdk-client.js
+@@ -0,0 +1,36 @@
++import { client as acpClient } from "@agentclientprotocol/sdk/unstable";
++export function sdkClient(handlers, stream) {
++        const app = acpClient();
++        const requestHandlers = {
++            "session/request_permission": "requestPermission",
++            "fs/read_text_file": "readTextFile", "fs/write_text_file": "writeTextFile",
++            "terminal/create": "createTerminal", "terminal/output": "terminalOutput",
++            "terminal/release": "releaseTerminal", "terminal/wait_for_exit": "waitForTerminalExit",
++            "terminal/kill": "killTerminal", "elicitation/create": "unstable_createElicitation",
++        };
++        for (const [method, name] of Object.entries(requestHandlers)) {
++            if (handlers[name]) app.onRequest(method, (ctx) => handlers[name](ctx.params));
++        }
++        app.onNotification("session/update", (ctx) => handlers.sessionUpdate(ctx.params));
++        if (handlers.unstable_completeElicitation) {
++            app.onNotification("elicitation/complete", (ctx) => handlers.unstable_completeElicitation(ctx.params));
++        }
++        app.onRequest("*", (ctx) => handlers.extMethod(ctx.method, ctx.params));
++        app.onNotification("*", (ctx) => handlers.extNotification(ctx.method, ctx.params));
++        const connection = app.connect(stream);
++        const requests = {
++            initialize: "initialize", authenticate: "authenticate", newSession: "session/new",
++            loadSession: "session/load", resumeSession: "session/resume", closeSession: "session/close",
++            unstable_forkSession: "session/fork", listSessions: "session/list", deleteSession: "session/delete",
++            setSessionMode: "session/set_mode", setSessionConfigOption: "session/set_config_option",
++            logout: "logout", prompt: "session/prompt", unstable_listProviders: "providers/list",
++            unstable_setProvider: "providers/set", unstable_disableProvider: "providers/disable",
++        };
++        return {
++            ...Object.fromEntries(Object.entries(requests).map(([name, method]) =>
++                [name, (params) => connection.agent.request(method, params)])),
++            cancel: (params) => connection.agent.notify("session/cancel", params),
++            extMethod: (method, params) => connection.agent.request(method, params),
++            extNotification: (method, params) => connection.agent.notify(method, params),
++        };
++}
+diff --git a/dist/acp-runtime/session.js b/dist/acp-runtime/session.js
+index f0946ac..f1cdc1e 100644
+--- a/dist/acp-runtime/session.js
++++ b/dist/acp-runtime/session.js
+@@ -1,8 +1,9 @@
+-import { ClientSideConnection, RequestError, ndJsonStream, } from "@agentclientprotocol/sdk";
++import { RequestError, ndJsonStream, } from "@agentclientprotocol/sdk/unstable";
+ import { preserveAcpNotificationContext } from "../session-events/acp.js";
+ import { isAuthenticationRequiredError } from "./errors.js";
+ import { acpForkRequestMeta, forkSupport as forkSupportOf, } from "./fork-support.js";
+ export { acpForkRequestMeta } from "./fork-support.js";
++import { sdkClient } from "./sdk-client.js";
+ const LEGACY_MODEL_META_KEY = "openma.dev/legacy-model-state";
+ export class AcpSessionImpl {
+     id;
+@@ -142,8 +143,7 @@ export class AcpSessionImpl {
+                 || requestedElicitationCapabilities.url != null)
+             ? requestedElicitationCapabilities
+             : undefined;
+-        const connection = new ClientSideConnection(() => this.#createClient(callbacks, elicitationCapabilities?.url != null), ndJsonStream(this.#child.stdin, this.#stdout));
+-        this.#agent = connection;
++        this.#agent = sdkClient(this.#createClient(callbacks, elicitationCapabilities?.url != null), ndJsonStream(this.#child.stdin, this.#stdout));
+         if (this.options.forkPoint && !this.options.forkFromAcpSessionId) {
+             throw new Error("forkPoint can only be used together with forkFromAcpSessionId");
+         }
+diff --git a/dist/acp-runtime/types.d.ts b/dist/acp-runtime/types.d.ts
+index 778fb3a..d5c30c9 100644
+--- a/dist/acp-runtime/types.d.ts
++++ b/dist/acp-runtime/types.d.ts
+@@ -1,4 +1,4 @@
+-import type * as schema from "@agentclientprotocol/sdk";
++import type * as schema from "@agentclientprotocol/sdk/unstable";
+ import type { AcpForkPoint, AcpForkSupport } from "../acp-fork/index.js";
+ export interface AgentSpec {
+     command: string;
+diff --git a/dist/session-events/acp.js b/dist/session-events/acp.js
+index 1532476..2c7d520 100644
+--- a/dist/session-events/acp.js
++++ b/dist/session-events/acp.js
+@@ -37,7 +37,7 @@ export function preserveAcpNotificationContext(params) {
+     if (!update || typeof update !== "object")
+         return update;
+     const notificationMeta = notification._meta;
+-    if (!notificationMeta || typeof notificationMeta !== "object")
++    if (typeof notification.sessionId !== "string" && (!notificationMeta || typeof notificationMeta !== "object"))
+         return update;
+     return {
+         ...update,
+@@ -45,7 +45,7 @@ export function preserveAcpNotificationContext(params) {
+             ...(typeof notification.sessionId === "string"
+                 ? { session_id: notification.sessionId }
+                 : {}),
+-            meta: notificationMeta,
++            ...(notificationMeta && typeof notificationMeta === "object" ? { meta: notificationMeta } : {}),
+         },
+     };
+ }

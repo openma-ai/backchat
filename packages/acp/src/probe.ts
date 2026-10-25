@@ -3,18 +3,18 @@ import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ClientSideConnection,
+  client as acpClient,
   ndJsonStream,
   PROTOCOL_VERSION,
-  type Agent,
+  type ClientContext,
+  type ClientApp,
   type AuthMethod,
-  type Client,
   type ClientCapabilities,
   type InitializeResponse,
   type NewSessionResponse,
   type SessionConfigOption,
   type SessionModeState,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import { acpLogoutAdvertised, callAcpLogout } from "./logout-capability.js";
 import { NodeSpawner } from "./spawners/node.js";
 import type { AgentSpec, ChildHandle, Spawner } from "./types.js";
@@ -603,10 +603,10 @@ async function spawnAcpProbeAgent(
     cwd: string;
     env?: Record<string, string | undefined>;
     spawner?: Spawner;
-    client?: Client;
+    client?: ClientApp;
   },
 ): Promise<{
-  agent: Agent;
+  agent: ClientContext;
   child: ChildHandle;
   env: Record<string, string>;
   diagnosticLines: string[];
@@ -649,13 +649,10 @@ async function spawnAcpProbeAgent(
     flush() { validate(pending + decoder.decode()); },
   }));
   const stream = ndJsonStream(child.stdin, input);
-  const agent: Agent = new ClientSideConnection(
-    (): Client => options.client ?? {
-      sessionUpdate: async () => undefined,
-      requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
-    },
-    stream,
-  );
+  const app = options.client ?? acpClient()
+    .onNotification("session/update", async () => undefined)
+    .onRequest("session/request_permission", async () => ({ outcome: { outcome: "cancelled" } }));
+  const agent = app.connect(stream).agent;
   let disposePromise: Promise<void> | null = null;
   const dispose = () => {
     disposePromise ??= withTimeout(
@@ -684,15 +681,15 @@ export async function disposeAllAcpSetupProcesses(): Promise<void> {
   );
 }
 
-function initializeAcpAgent(agent: Agent): Promise<InitializeResponse> {
-  return Promise.resolve(agent.initialize({
+function initializeAcpAgent(agent: ClientContext): Promise<InitializeResponse> {
+  return Promise.resolve(agent.request("initialize", {
     protocolVersion: PROTOCOL_VERSION,
     clientCapabilities: ACP_CLIENT_CAPABILITIES,
   }));
 }
 
-function createAcpProbeSession(agent: Agent, cwd: string): Promise<NewSessionResponse> {
-  return Promise.resolve(agent.newSession({
+function createAcpProbeSession(agent: ClientContext, cwd: string): Promise<NewSessionResponse> {
+  return Promise.resolve(agent.request("session/new", {
     cwd,
     mcpServers: [],
   }));
@@ -731,8 +728,8 @@ export async function probeAgentSessionConfig(
   const availableCommandsReady = new Promise<void>((resolve) => {
     resolveAvailableCommands = resolve;
   });
-  const client: Client = {
-    sessionUpdate: async (params) => {
+  const client = acpClient()
+    .onNotification("session/update", async ({ params }) => {
       const next = configOptionsFromSessionUpdate(params.update);
       if (next) updatedConfigOptions = next;
       const commands = availableCommandsFromSessionUpdate(params.update);
@@ -742,9 +739,8 @@ export async function probeAgentSessionConfig(
       }
       const modeId = modeFromSessionUpdate(params.update);
       if (modeId) updatedModeId = modeId;
-    },
-    requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
-  };
+    })
+    .onRequest("session/request_permission", async () => ({ outcome: { outcome: "cancelled" } }));
   const connection = await spawnAcpProbeAgent({
     agent: options.agent,
     cwd,
@@ -886,10 +882,10 @@ export async function authenticateAgent(options: AuthenticateAgentOptions): Prom
     rejectTerminalLaunch = reject;
   });
   void terminalLaunch.catch(() => undefined);
-  const client: Client = {
-    sessionUpdate: async () => undefined,
-    requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
-    createTerminal: async (params) => {
+  const client = acpClient()
+    .onNotification("session/update", async () => undefined)
+    .onRequest("session/request_permission", async () => ({ outcome: { outcome: "cancelled" } }))
+    .onRequest("terminal/create", async ({ params }) => {
       if (!options.launchInteractiveAuth) {
         throw new Error("ACP auth requested a terminal, but this host cannot open one.");
       }
@@ -908,15 +904,11 @@ export async function authenticateAgent(options: AuthenticateAgentOptions): Prom
         rejectTerminalLaunch?.(error);
         throw error;
       }
-    },
-    terminalOutput: async () => ({
-      output: "",
-      truncated: false,
-    }),
-    waitForTerminalExit: async () => new Promise(() => undefined),
-    releaseTerminal: async () => undefined,
-    killTerminal: async () => undefined,
-  };
+    })
+    .onRequest("terminal/output", async () => ({ output: "", truncated: false }))
+    .onRequest("terminal/wait_for_exit", async () => new Promise(() => undefined))
+    .onRequest("terminal/release", async () => undefined)
+    .onRequest("terminal/kill", async () => undefined);
   const connection = await spawnAcpProbeAgent({
     agent: options.agent,
     cwd,
@@ -968,7 +960,7 @@ export async function authenticateAgent(options: AuthenticateAgentOptions): Prom
         const values = formValuesFromOptions(options);
         const authenticateMeta = authenticateMetaFromMethod(method, values);
         if (authenticateMeta) {
-          await Promise.resolve(agent.authenticate({
+          await Promise.resolve(agent.request("authenticate", {
             methodId: method.id,
             _meta: authenticateMeta,
           })).catch((error) => {
@@ -985,7 +977,7 @@ export async function authenticateAgent(options: AuthenticateAgentOptions): Prom
           return { status: "started" as const };
         }
         activeAuthMethodName = authMethodName(method) ?? "Agent";
-        const authPromise = Promise.resolve(agent.authenticate({ methodId: method.id }))
+        const authPromise = Promise.resolve(agent.request("authenticate", { methodId: method.id }))
           .catch((error) => {
             throw withAcpDetails(error);
           });
@@ -1047,7 +1039,9 @@ export async function logoutAcpAgent(options: {
     await withTimeout(
       (async () => {
         const initResult = await initializeAcpAgent(connection.agent);
-        await callAcpLogout(connection.agent, initResult.agentCapabilities);
+        await callAcpLogout({
+          logout: (params) => connection.agent.request("logout", params),
+        }, initResult.agentCapabilities);
       })(),
       timeoutMs,
       `ACP logout timed out after ${timeoutMs}ms`,

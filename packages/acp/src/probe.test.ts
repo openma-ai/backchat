@@ -1,17 +1,16 @@
+import { TestAgentConnection as AgentSideConnection, type TestAgent as Agent } from "./legacy-agent-test-helper.js";
 import { TransformStream } from "node:stream/web";
 import {
-  AgentSideConnection,
   ndJsonStream,
   PROTOCOL_VERSION,
   RequestError,
-  type Agent,
   type InitializeRequest,
   type InitializeResponse,
   type NewSessionRequest,
   type NewSessionResponse,
   type PromptRequest,
   type PromptResponse,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import { describe, expect, it, vi } from "vitest";
 
 import {

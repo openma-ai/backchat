@@ -1,3 +1,4 @@
+import { SessionMessages } from "./SessionMessages";
 import {
   useCallback,
   useEffect,
@@ -848,11 +849,14 @@ export function ChatView({
               </MarkdownCwdProvider>
             ),
             conversationContentAfter: active ? (
+              <>
+              <SessionMessages messages={active.sessionMessages ?? []} />
               <ResponseAnnotationController
                 scopeRef={transcriptRef}
                 destinationSessionId={active.id}
                 onAskInSideChat={askInSideChat}
               />
+              </>
             ) : null,
             renderScrollButton: ({ onClick, className, icon }) => (
               <button

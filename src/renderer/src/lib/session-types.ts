@@ -1,3 +1,4 @@
+import type { SubagentAssociation, SessionMessage } from "./subagent-sessions";
 import type {
   AgentMessageDelivery,
   AgentMessageIntent,
@@ -16,6 +17,8 @@ import type {
 import type { SubagentAvatarId } from "./subagent-avatar";
 
 export interface SessionRow {
+  subagentAssociation?: SubagentAssociation;
+  sessionMessages?: SessionMessage[];
   /** A draft may choose a target; created OpenMA tasks pin it permanently. */
   executionTarget?: import("@shared/openma").OpenmaExecutionTarget;
   openma?: import("@shared/openma").OpenmaTask;

@@ -125,8 +125,8 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.64.2",
-    "@agentclientprotocol/codex-acp": "1.1.14",
+    "@agentclientprotocol/claude-agent-acp": "0.95.0",
+    "@agentclientprotocol/codex-acp": "2.2.2",
     "@electron/asar": "3.4.1",
     "@openmatter/agent-mock": "github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-mock",
     "@playwright/test": "^1.60.0",
