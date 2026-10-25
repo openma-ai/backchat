@@ -57,4 +57,3 @@ export class TestAgentConnection {
     return this.client.request("session/request_permission", params);
   }
 }
-

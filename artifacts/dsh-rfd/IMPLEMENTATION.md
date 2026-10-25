@@ -1,3 +1,5 @@
+DSH source MR: https://github.com/openma-ai/deepseek-harness-acp/pull/49
+
 # DSH subagent RFD core slice — unreleased
 
 Base: e771ecf6a6eec2dea0165cd061369060190d5e23 (package 0.4.39).
@@ -34,4 +36,4 @@ Full-host stdio subagent tests: 2 FAIL at initialize timeout. Host reports faile
 ## Local reproduction
 Dependencies used read-only DSH host cache: /Users/minimax/.cache/dsh-acp/0.2.0-rc.2-c0fe252b4d43/node_modules.
 Only SDK 2.0.2 and the already-declared @types/semver 7.5.8 were downloaded into this repo for verification. Existing runtime/package*.json are unchanged.
-Patch: artifacts/dsh-subagents-rfd-core.patch. Apply against the base with git apply --check then git apply. No git index changes are required.
+The source changes are submitted in the linked DSH MR; use its branch directly for cross-machine verification.
