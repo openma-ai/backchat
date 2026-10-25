@@ -164,3 +164,16 @@ nullable patch, nested ownership, reuse and replay tests. These are not live
 model or Electron end-to-end acceptance. The attempted live Claude smoke was
 blocked by its SDK process receiving SIGKILL during setup. No success is
 inferred from a mock transcript.
+
+### SDK2 ordering and startup regression coverage
+
+The SDK2 client builder dispatches session notifications independently of RPC
+response resolution. Backchat's common compatibility patch delays delivery of
+a response until preceding session-update callbacks have completed. This
+maintains I1 (prompt response is the boundary) without inferring completion
+from queue snapshots or moving output to an arbitrary completed turn.
+
+RFD routing also requires an explicit child association (I11). A missing or
+stale root wire session ID alone cannot turn root traffic into child traffic.
+Replay does not suppress canonical root content solely because an older build
+incorrectly stored a matching RFD vendor record.

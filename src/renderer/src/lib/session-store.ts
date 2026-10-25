@@ -225,7 +225,9 @@ export class SessionStore {
       }
       return true;
     }
-    if (!parentView) return wireId !== rootRow.acp_session_id;
+    // I11: ownership requires a structured child association. A missing or
+    // stale root wire id (startup/reconnect) is not evidence of a child.
+    if (!parentView) return false;
     if (update.sessionUpdate === "session_message" || update.sessionUpdate === "session_message_chunk") {
       this.#mutateSession(parentView, (row) => {
         const messages = [...(row.sessionMessages ?? [])];
@@ -3569,9 +3571,26 @@ export class SessionStore {
         canonical: parsePersistedOpenMAEvent(data),
       };
     });
+    // Older builds could persist ordinary root traffic as RFD evidence while
+    // session.ready was still in flight. Only suppress canonical rows when
+    // structured child ownership (or an RFD-only update) proves duplication.
+    const announcedChildren = new Set(prepared.flatMap(({ canonical }) => {
+      const vendor = wireRecord(canonical?.data);
+      const raw = wireRecord(vendor.data);
+      const update = raw.update ? wireRecord(raw.update) : raw;
+      return canonical?.type === "vendor.event" && vendor.namespace === "subagent_sessions"
+        && update.sessionUpdate === "subagent_update" && typeof update.sessionId === "string"
+        ? [update.sessionId] : [];
+    }));
     const rfdRawEvidence = new Set(prepared.flatMap(({ canonical }) => {
       const vendor = wireRecord(canonical?.data);
-      return canonical?.type === "vendor.event" && vendor.namespace === "subagent_sessions"
+      const raw = wireRecord(vendor.data);
+      const update = raw.update ? wireRecord(raw.update) : raw;
+      const scoped = update.sessionUpdate === "subagent_update"
+        || update.sessionUpdate === "session_message"
+        || update.sessionUpdate === "session_message_chunk"
+        || announcedChildren.has(wireSessionId(vendor.data) ?? "");
+      return canonical?.type === "vendor.event" && vendor.namespace === "subagent_sessions" && scoped
         ? [persistedEventFingerprint(vendor.data)] : [];
     }));
     const canonicalRawEvidence = new Set(

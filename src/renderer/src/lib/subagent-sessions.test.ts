@@ -75,3 +75,37 @@ test("replaying the same scoped log twice does not duplicate child text or messa
   const view = store.subagentsFor("host")[0]!.viewSessionId;
   expect(store.turnsFor(view)[0]?.assistantText).toBe("one");
 });
+
+test.each([
+  ["codex-acp", ""], ["codex-acp", "previous-root"],
+  ["claude-acp", ""], ["claude-acp", "previous-root"],
+])("%s root traffic is not a child merely because root identity is %j", (agent, knownRoot) => {
+  const store = new SessionStore();
+  store.apply({ type: "session.ready", session_id: "host", acp_session_id: knownRoot!, agent_id: agent!, cwd: "/repo" });
+  store.registerTurn("turn", "host", "prompt");
+  store.apply({ type: "session.event", session_id: "host", turn_id: "turn", event: routed("current-root", {
+    sessionUpdate: "agent_message_chunk", content: { type: "text", text: "root answer" },
+  }) });
+  expect(store.turnsFor("host")[0]?.assistantText).toBe("root answer");
+  expect(store.openmaEventsFor("host").filter((event) => event.type === "vendor.event")).toEqual([]);
+});
+
+test("replay retains root text alongside a previously misclassified RFD vendor row", () => {
+  const store = new SessionStore();
+  store.apply({ type: "session.ready", session_id: "host", acp_session_id: "root", agent_id: "codex-acp", cwd: "/repo" });
+  const raw = routed("root", { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "saved answer" } });
+  const envelope = (id: string, type: string, data: unknown, extra = {}) => ({
+    schema: "oma.event.v1", event_id: id, type, session_id: "host", turn_id: "turn",
+    source: { kind: "harness", harness: "codex-acp" }, occurred_at: "2026-10-25T00:00:00Z", data, ...extra,
+  });
+  const events = [
+    envelope("prompt", "user.message", { text: "prompt", input_kind: "prompt" }),
+    envelope("answer", "agent.message_chunk", { text: "saved answer", content: { type: "text", text: "saved answer" } }, {
+      raw: { source: "acp", method: "session/update", event_type: "agent_message_chunk", payload: raw },
+    }),
+    envelope("misclassified", "vendor.event", { harness: "acp", namespace: "subagent_sessions", name: "update", data: raw }),
+    envelope("done", "turn.completed", { stop_reason: "end_turn" }),
+  ];
+  store.replayHistory("host", events.map((event, index) => ({ seq: index + 1, ts: index + 1, type: "openma_event", data: JSON.stringify(event) })));
+  expect(store.turnsFor("host")).toEqual([expect.objectContaining({ promptText: "prompt", assistantText: "saved answer", status: "complete" })]);
+});

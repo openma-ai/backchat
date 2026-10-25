@@ -42,10 +42,31 @@ new file mode 100644
 index 0000000..ffa1623
 --- /dev/null
 +++ b/dist/acp-runtime/sdk-client.js
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,67 @@
 +import { client as acpClient } from "@agentclientprotocol/sdk/unstable";
 +export function sdkClient(handlers, stream) {
 +        const app = acpClient();
++        // SDK 2 dispatches notification handlers asynchronously, independently
++        // of response resolution. Preserve the v1 wire boundary: all earlier
++        // session updates must reach the runtime before a prompt/load response.
++        const pendingUpdates = [];
++        const inFlightUpdates = new Set();
++        const orderedStream = {
++            writable: stream.writable,
++            readable: stream.readable.pipeThrough(new TransformStream({
++                async transform(message, controller) {
++                    if (message.method === "session/update" && !("id" in message)) {
++                        let resolve;
++                        const done = new Promise((finish) => { resolve = finish; });
++                        pendingUpdates.push({ done, resolve });
++                        inFlightUpdates.add(done);
++                    } else if ("id" in message && !("method" in message)) {
++                        await Promise.all([...inFlightUpdates]);
++                    }
++                    controller.enqueue(message);
++                },
++            })),
++        };
 +        const requestHandlers = {
 +            "session/request_permission": "requestPermission",
 +            "fs/read_text_file": "readTextFile", "fs/write_text_file": "writeTextFile",
@@ -56,13 +77,23 @@ index 0000000..ffa1623
 +        for (const [method, name] of Object.entries(requestHandlers)) {
 +            if (handlers[name]) app.onRequest(method, (ctx) => handlers[name](ctx.params));
 +        }
-+        app.onNotification("session/update", (ctx) => handlers.sessionUpdate(ctx.params));
++        app.onNotification("session/update", async (ctx) => {
++            const pending = pendingUpdates.shift();
++            try {
++                await handlers.sessionUpdate(ctx.params);
++            } finally {
++                if (pending) {
++                    inFlightUpdates.delete(pending.done);
++                    pending.resolve();
++                }
++            }
++        });
 +        if (handlers.unstable_completeElicitation) {
 +            app.onNotification("elicitation/complete", (ctx) => handlers.unstable_completeElicitation(ctx.params));
 +        }
 +        app.onRequest("*", (ctx) => handlers.extMethod(ctx.method, ctx.params));
 +        app.onNotification("*", (ctx) => handlers.extNotification(ctx.method, ctx.params));
-+        const connection = app.connect(stream);
++        const connection = app.connect(orderedStream);
 +        const requests = {
 +            initialize: "initialize", authenticate: "authenticate", newSession: "session/new",
 +            loadSession: "session/load", resumeSession: "session/resume", closeSession: "session/close",
