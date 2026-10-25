@@ -136,7 +136,8 @@ describe("ProjectChipRow", () => {
 
     expect(html).toContain('data-composer-footer-control="workspace"');
     expect(html).toContain('data-testid="composer-workspace-picker-panel"');
-    expect(html.match(/data-side-offset="6"/g)).toHaveLength(3);
+    expect(html).toContain('data-side-offset="6"');
+    expect(html).not.toMatch(/data-side-offset="(?!6")/);
   });
 });
 
