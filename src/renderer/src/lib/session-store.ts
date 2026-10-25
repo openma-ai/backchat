@@ -692,6 +692,15 @@ export class SessionStore {
     return true;
   }
 
+  #modelAuthRecovery(session: SessionRow, options: AcpSessionConfigOption[]): Partial<SessionRow> {
+    const model = (values: AcpSessionConfigOption[] | undefined) => values?.find(option => option.category === "model" || option.id === "model")?.currentValue;
+    const before = model(session.configOptions);
+    const after = model(options);
+    if (!session.authRequired || !before || !after || before === after) return {};
+    return {authRequired: false, authRetryAllowed: true,
+      auth: {...session.auth, status: "unknown", message: "Model changed; retry to verify its credentials."}};
+  }
+
   #applyCanonicalSessionProjection(event: OpenMAEvent): boolean {
     if (!event.data || typeof event.data !== "object") return false;
     const data = event.data as Record<string, unknown>;
@@ -784,7 +793,11 @@ export class SessionStore {
           : undefined;
       this.#mutateSession(event.session_id, (session) => ({
         ...session,
-        status: "running",
+        // I1/I3: provider activity cannot resurrect a prompt that already
+        // resolved. Unowned/session-level snapshots remain observable.
+        status: event.turn_id && this.#turns.has(event.turn_id)
+          && this.#turns.get(event.turn_id)!.status !== "running"
+          ? session.status : "running",
         agentThreadStatus: threadStatus ?? session.agentThreadStatus,
         providerQueueDepth:
           providerQueueDepth ?? session.providerQueueDepth,
@@ -807,7 +820,11 @@ export class SessionStore {
           : undefined;
       this.#mutateSession(event.session_id, (session) => ({
         ...session,
-        status: "ready",
+        // I1: idle is a provider level, not the response to session/prompt.
+        // In particular an old idle must not end a newer unresolved prompt.
+        status: session.activeTurnId
+          && this.#turns.get(session.activeTurnId)?.status === "running"
+          ? "running" : "ready",
         agentThreadStatus: threadStatus ?? session.agentThreadStatus,
         providerQueueDepth:
           providerQueueDepth ?? session.providerQueueDepth,
@@ -900,6 +917,7 @@ export class SessionStore {
       const configOptions = normalizeAgentConfigOptions(rawConfigOptions) ?? [];
       this.#mutateSession(event.session_id, (session) => ({
         ...session,
+        ...this.#modelAuthRecovery(session, configOptions),
         configOptions,
         currentModeId:
           selectedModeIdFromConfigOptions(configOptions) ?? session.currentModeId,
@@ -3451,6 +3469,16 @@ export class SessionStore {
     }
   }
 
+  /** Ownerless late tool patches belong only to a unique existing call, never
+   * to a guessed active turn or a new prompt (I1/I11). */
+  #existingToolOwner(sessionId: string, payload: unknown): Turn | undefined {
+    const parsed = parseAcpEvent(payload);
+    if (parsed.kind !== "tool_call") return undefined;
+    const matches = [...this.#turns.values()].filter(turn => turn.sessionId === sessionId
+      && this.projectTurn(turn).tools.some(tool => tool.toolCallId === parsed.tool.toolCallId));
+    return matches.length === 1 ? matches[0] : undefined;
+  }
+
   #replayRows(
     sessionId: string,
     rows: HistoryRow[],
@@ -3625,10 +3653,16 @@ export class SessionStore {
         }
 
         const parsedCanonical = parseAcpEvent(canonical);
+        // I1/I11: session-scoped text has no prompt owner. Retain it as a
+        // notice, never a synthetic running turn (live/replay share this rule).
+        if (!canonical.turn_id && parsedCanonical.kind === "text") {
+          if (parsedCanonical.text.trim()) notify(parsedCanonical.text.trim());
+          continue;
+        }
         let turn = canonical.turn_id
           ? turnsByCanonicalId.get(canonical.turn_id)
             ?? this.#turns.get(canonical.turn_id)
-          : undefined;
+          : this.#existingToolOwner(sessionId, canonical);
         if (!turn && canonical.turn_id && unclaimedLegacyTurn) {
           turn = unclaimedLegacyTurn;
           turnsByCanonicalId.set(canonical.turn_id, turn);
@@ -3724,6 +3758,8 @@ export class SessionStore {
           || canonical.type === "plan.updated"
           || canonical.type === "plan.completed"
           || canonical.type === "plan.removed"
+          || (canonical.type === "raw.event" && canonical.data.method === "session/update" &&
+            (canonical.data.event_type === "compaction_update" || canonical.data.event_type === "compaction_summary_chunk"))
         ) {
           turn.events.push({ payload: canonical, receivedAt: r.ts });
         }
@@ -4121,13 +4157,16 @@ export class SessionStore {
           const configOptions = normalizeAgentConfigOptions(rawConfigOptions) ?? [];
           this.#mutateSession(ev.session_id, (s) => ({
             ...s,
+            ...this.#modelAuthRecovery(s, configOptions),
             configOptions,
             currentModeId:
               selectedModeIdFromConfigOptions(configOptions) ?? s.currentModeId,
           }));
           break;
         }
-        const eventTurnId = ev.turn_id;
+        const toolOwner = !ev.turn_id ? this.#existingToolOwner(ev.session_id, semanticEvent) : undefined;
+        const eventTurnId = ev.turn_id || toolOwner?.id || "";
+        if (!eventTurnId && parsed.kind === "tool_call") break;
         const runtimeAdapter = resolveAgentRuntimeAdapter(
           this.#sessions.get(ev.session_id)?.agent_id,
         );
@@ -4162,6 +4201,10 @@ export class SessionStore {
               adapter: runtimeAdapter!.provider,
             },
           ), { persist: true });
+        }
+        if (!eventTurnId && parsed.kind === "text") {
+          if (parsed.text.trim()) this.#showNotice(ev.session_id, parsed.text.trim(), "warning");
+          break;
         }
         let turn = this.#turns.get(eventTurnId);
         if (!turn) {
@@ -4662,9 +4705,33 @@ export class SessionStore {
         break;
       }
       case "session.queue_update": {
-        const nextQueuedIds = ev.queued.map((prompt) => prompt.turn_id);
+        // I1/I2/I11: a queue snapshot cannot reopen a resolved prompt, and an
+        // injected steer belongs to its parent rather than a second live turn.
+        const isSettled = (id: string) => {
+          const turn = this.#turns.get(id);
+          return turn?.sessionId === ev.session_id
+            && turn.status !== "running" && turn.status !== "queued";
+        };
+        // I1/I11: a snapshot naming a terminal prompt is stale as a whole;
+        // filtering it into an empty queue would incorrectly settle a newer turn.
+        if (ev.active_turn_id && isSettled(ev.active_turn_id)) break;
+        const activeTurnId = ev.active_turn_id ?? undefined;
+        const nextQueuedIds = ev.queued.map((prompt) => prompt.turn_id).filter(id => !isSettled(id));
         const nextQueued = new Set(nextQueuedIds);
-        const steeringTurnIds = ev.steering_turn_ids ?? [];
+        const steeringTurnIds = (ev.steering_turn_ids ?? []).filter(id => {
+          if (isSettled(id)) return false;
+          for (const turn of this.#turns.values()) {
+            if (turn.sessionId !== ev.session_id) continue;
+            const injected = turn.events.some(entry => {
+              const payload = entry.payload;
+              return isPlainRecord(payload) && payload.type === "user.message"
+                && payload.turn_id === id && isPlainRecord(payload.data)
+                && payload.data.input_kind === "steering" && payload.data.outcome === "injected";
+            });
+            if (injected) return false;
+          }
+          return true;
+        });
         const steeringTurns = new Set(steeringTurnIds);
         const previous = this.#sessions.get(ev.session_id);
         const previousQueued = new Set(
@@ -4674,7 +4741,7 @@ export class SessionStore {
           if (
             nextQueued.has(turnId)
             || steeringTurns.has(turnId)
-            || turnId === ev.active_turn_id
+            || turnId === activeTurnId
           ) continue;
           const turn = this.#turns.get(turnId);
           if (turn?.sessionId === ev.session_id && turn.status === "queued") {
@@ -4684,7 +4751,7 @@ export class SessionStore {
         for (const turnId of steeringTurnIds) {
           this.#markTurnRunning(turnId);
         }
-        for (const prompt of ev.queued) {
+        for (const prompt of ev.queued.filter(prompt => nextQueued.has(prompt.turn_id))) {
           const turn = this.#turns.get(prompt.turn_id);
           if (turn?.sessionId === ev.session_id) {
             this.#turns.set(prompt.turn_id, {
@@ -4694,14 +4761,14 @@ export class SessionStore {
             });
           }
         }
-        this.#markTurnRunning(ev.active_turn_id ?? undefined);
-        this.#settleOrphanedRunningTurns(ev.session_id, ev.active_turn_id ?? undefined, steeringTurnIds);
+        this.#markTurnRunning(activeTurnId);
+        this.#settleOrphanedRunningTurns(ev.session_id, activeTurnId, steeringTurnIds);
         this.#mutateSession(ev.session_id, (s) => ({
           ...s,
-          activeTurnId: ev.active_turn_id ?? undefined,
+          activeTurnId,
           queuedTurnIds: nextQueuedIds.length ? nextQueuedIds : undefined,
-          queuedPrompts: ev.queued,
-          status: ev.active_turn_id
+          queuedPrompts: ev.queued.filter(prompt => nextQueued.has(prompt.turn_id)),
+          status: activeTurnId
             || steeringTurnIds.length > 0
             ? "running"
             : s.status === "running"
@@ -4745,6 +4812,7 @@ export class SessionStore {
             : turnId ? s.status : "errored",
           lastError: authRequired ? undefined : message,
           authRequired: authRequired ? true : s.authRequired,
+          authRetryAllowed: authRequired ? false : s.authRetryAllowed,
           supportsLogout: ev.auth?.supportsLogout ?? s.supportsLogout,
           auth: ev.auth ?? (authRequired
             ? { status: "needs-auth", message }

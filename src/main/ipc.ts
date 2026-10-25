@@ -93,6 +93,7 @@ import {
   createTerminal,
   killTerminal,
   listTerminals,
+  listPendingAsks,
   readTextFile,
   registerBrokers,
   releaseTerminal,
@@ -618,6 +619,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
         waitForTerminalExit(params) as never,
       killTerminal: async (params) => killTerminal(params) as never,
     }),
+    hasSessionBackgroundWork: (id) => listPendingAsks(id).length > 0
+      || listTerminals(id).some(terminal => !terminal.exited),
     requestElicitationForm: (request) =>
       requestElicitationForm(request.sessionId, request),
     requestElicitationUrl: (request) =>

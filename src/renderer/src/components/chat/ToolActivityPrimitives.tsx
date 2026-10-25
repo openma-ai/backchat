@@ -65,7 +65,7 @@ export function ToolActivityIdentity({
   leading,
 }: {
   kind?: string;
-  label: string;
+  label: ReactNode;
   target?: string;
   trailing?: ReactNode;
   failed?: boolean;

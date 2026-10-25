@@ -1,6 +1,6 @@
 {
   "name": "backchat",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "private": true,
   "description": "Multi-agent desktop client for ACP harnesses",
   "author": "backchat contributors",
@@ -57,7 +57,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@open-managed-agents-desktop/acp": "workspace:*",
     "@open-managed-agents-desktop/acp-agent-setup": "workspace:*",
-    "@openma/common": "0.11.0",
+    "@openma/common": "0.11.1",
     "@openma/sdk": "workspace:*",
     "@openmatter/agent": "github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent",
     "@openmatter/agent-claude": "github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-claude",
@@ -126,7 +126,7 @@
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.64.2",
-    "@agentclientprotocol/codex-acp": "1.1.14",
+    "@agentclientprotocol/codex-acp": "2.2.2",
     "@electron/asar": "3.4.1",
     "@openmatter/agent-mock": "github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-mock",
     "@playwright/test": "^1.60.0",

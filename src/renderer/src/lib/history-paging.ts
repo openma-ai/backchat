@@ -24,7 +24,7 @@ export async function openHistoryWindow(sessionId: string): Promise<void> {
 /** Fetch the page before the oldest loaded row and prepend it. Resolves
  *  to true when rows were added. No-op while a page is already in flight
  *  or when the window already reaches the start of the log. */
-export async function loadOlderHistory(sessionId: string): Promise<boolean> {
+export async function loadOlderHistory(sessionId: string, beforePrepend?: () => void): Promise<boolean> {
   const info = sessionStore.historyWindowFor(sessionId);
   if (!info || !info.hasMore || info.loading) return false;
   sessionStore.setHistoryLoading(sessionId, true);
@@ -33,6 +33,7 @@ export async function loadOlderHistory(sessionId: string): Promise<boolean> {
       before_seq: info.oldestSeq,
       limit: HISTORY_PAGE_ROWS,
     });
+    beforePrepend?.();
     sessionStore.prependHistory(sessionId, rows, {
       hasMore: rows.length >= HISTORY_PAGE_ROWS,
     });

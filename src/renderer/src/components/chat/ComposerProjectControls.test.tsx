@@ -73,7 +73,7 @@ vi.mock("@/components/ui/popover", () => ({
 import { ProjectChipRow } from "./ComposerProjectControls";
 
 describe("ProjectChipRow", () => {
-  it("uses cmdk for the growing project list while runtime stays a fixed dropdown", () => {
+  it("uses searchable popover lists for both runtime and project", () => {
     const html = renderToStaticMarkup(
       <ProjectChipRow
         isDraft
@@ -94,8 +94,11 @@ describe("ProjectChipRow", () => {
     expect(html).toContain("chat.recentDirectories");
     expect(html).toContain("Browse…");
     expect(html).toContain("No project");
-    expect(html).toContain('data-side-offset="0"');
-    expect(html.match(/data-slot="dropdown-menu"/g)).toHaveLength(1);
+    expect(html).toContain('data-side-offset="6"');
+    expect(html.match(/data-slot="dropdown-menu"/g)).toBeNull();
+    expect(html.match(/cmdk-input=""/g)).toHaveLength(2);
+    expect(html).not.toContain('data-open-surface="none"');
+    expect(html).toContain('data-menu-density="comfortable"');
     expect(html.indexOf('data-composer-footer-control="runtime"')).toBeLessThan(
       html.indexOf('data-composer-footer-control="project"'),
     );
@@ -133,6 +136,20 @@ describe("ProjectChipRow", () => {
 
     expect(html).toContain('data-composer-footer-control="workspace"');
     expect(html).toContain('data-testid="composer-workspace-picker-panel"');
-    expect(html.match(/data-side-offset="0"/g)).toHaveLength(2);
+    expect(html.match(/data-side-offset="6"/g)).toHaveLength(3);
   });
+});
+
+it("keeps existing-session project and workspace selections locked", () => {
+  const html = renderToStaticMarkup(<ProjectChipRow
+    isDraft={false} projectId="alpha-project" activeCwd="/Users/mini/work/alpha"
+    onPickCwd={async () => null} onSetCwd={() => undefined} onClearCwd={() => undefined}
+    onSetWorkspace={() => undefined}
+  />);
+  for (const control of ["project", "workspace"]) {
+    const trigger = html.match(new RegExp(`<button[^>]*data-composer-footer-control="${control}"[^>]*>`))?.[0];
+    expect(trigger).toContain("disabled");
+  }
+  expect(html).not.toContain('data-testid="composer-project-picker-panel"');
+  expect(html).not.toContain('data-testid="composer-workspace-picker-panel"');
 });

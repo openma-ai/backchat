@@ -258,8 +258,9 @@
 }
 
 @layer utilities {
-  button.composer-footer-trigger {
+  :is(button, [data-composer-footer-control="workspace-loading"]).composer-footer-trigger {
     display: inline-flex;
+    white-space: nowrap;
     height: var(--control-height-compact);
     min-width: 0;
     flex-shrink: 0;
@@ -302,7 +303,7 @@
   button.composer-footer-trigger[data-state="open"],
   button.composer-footer-trigger[aria-expanded="true"] {
     color: var(--fg-muted);
-    background: var(--control-bg-open);
+    background: var(--control-bg-hover);
     outline: none;
     box-shadow: none;
   }
@@ -495,14 +496,7 @@
 :is([data-composer-footer-controls="true"], .composer-toolbar-chip-row) {
   gap: var(--control-gap-compact);
 }
-:is([data-composer-footer-controls="true"], .composer-toolbar-chip-row)
-  > .composer-footer-trigger:is(:hover, [data-state="open"], [aria-expanded="true"])
-  + .composer-footer-trigger:is(:hover, [data-state="open"], [aria-expanded="true"]):not(:focus-visible) {
-  clip-path: inset(
-    0 0 0 calc(var(--gap-adjacent) - var(--control-gap-compact))
-    round var(--control-radius)
-  );
-}
+
 .sidebar-section + .sidebar-section {
   margin-top: 1px;
 }
@@ -2939,15 +2933,26 @@ body,
   justify-content: end;
   align-items: center;
 }
-/* One trailing control lands in the penultimate or last action column. */
-.sidebar-grid-row[data-sidebar-trailing-track="double"] [data-sidebar-grid="trailing"] > :only-child {
-  grid-column: 2;
+/* Explicit columns let resting status and hover actions share one slot.
+   Opacity-hidden menus must never reserve a second flex position. */
+.sidebar-grid-row:is([data-sidebar-trailing-track="single"], [data-sidebar-trailing-track="double"]) [data-sidebar-grid="trailing"] {
+  display: grid;
+  grid-template-columns: var(--sidebar-row-action-size);
 }
-.sidebar-grid-row[data-sidebar-trailing-track="double"]
-  [data-sidebar-grid="trailing"]
-  > :only-child[data-sidebar-grid-action="penultimate"] {
+.sidebar-grid-row[data-sidebar-trailing-track="double"] [data-sidebar-grid="trailing"] {
+  grid-template-columns: var(--sidebar-row-action-size) var(--sidebar-row-action-size);
+}
+.sidebar-grid-row [data-sidebar-grid="trailing"] > [data-sidebar-grid-action] {
+  grid-row: 1;
+  grid-column: -2 / -1;
+  justify-self: center;
+}
+.sidebar-grid-row [data-sidebar-grid="trailing"] > [data-sidebar-grid-action="penultimate"] {
   grid-column: 1;
 }
+.sidebar-activity-indicator[data-sidebar-activity="unread"] { color: var(--unread-indicator); }
+.sidebar-activity-indicator[data-sidebar-activity="error"] { color: var(--danger); }
+.sidebar-activity-indicator[data-sidebar-activity="approval"] { color: var(--warning); }
 .sidebar-grid-cell-icon,
 [data-sidebar-grid="icon"] {
   grid-column: 1;
@@ -2973,7 +2978,7 @@ body,
 /* Worktree group row shares the chat row's 13px / --fg-subtle -> --fg tier
    from .sidebar-grid-row; the caret and branch glyph mark its role. */
 /* Workspace identity glyph: caption-sized, inline before the name. */
-.sidebar-workspace-glyph {
+.sidebar-row-icon > .sidebar-workspace-glyph {
   width: 11px;
   height: 11px;
   flex: none;
@@ -3479,17 +3484,18 @@ body,
 }
 
 .shimmer-text {
+  display: inline-block;
   background-image: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--fg-muted) 88%, transparent) 0%,
-    color-mix(in srgb, var(--fg) 96%, transparent) 45%,
-    color-mix(in srgb, var(--fg-muted) 88%, transparent) 90%
+    var(--fg-subtle) 35%,
+    var(--fg) 50%,
+    var(--fg-subtle) 65%
   );
-  background-size: 200% 100%;
+  background-size: 240% 100%;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  animation: shimmer-text-sweep 2.4s var(--ease-soft) infinite;
+  animation: shimmer-text-sweep 1.6s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3819,6 +3825,7 @@ button[data-chat-turn-disclosure-trigger]:disabled .activity-disclosure-chevron 
     visibility 0s linear 0s;
 }
 .animated-collapse-inner {
+  display: flow-root;
   min-height: 0;
 }
 
@@ -4255,4 +4262,15 @@ textarea:disabled::selection {
   transition:
     background-color 320ms ease-out,
     box-shadow 320ms ease-out;
+}
+
+/* Actionable navigation and conversations carry stronger ink than structure.
+   Selected/error states retain their own semantic color. */
+.sidebar-grid-row[data-sidebar-ink="primary"]:not(.app-selected-surface):not(.text-danger),
+.sidebar-grid-row[data-sidebar-ink="primary"] .sidebar-new-chat-primary {
+  color: var(--fg-muted);
+}
+.sidebar-grid-row[data-sidebar-ink="primary"]:is(:hover, :has(:focus-visible), [data-menu-open="true"]),
+.sidebar-grid-row[data-sidebar-ink="primary"] .sidebar-new-chat-primary:hover {
+  color: var(--fg);
 }

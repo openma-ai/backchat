@@ -53,6 +53,24 @@ describe("history paging", () => {
     vi.unstubAllGlobals();
   });
 
+  it("captures the latest reading position after fetching but before publishing older rows", async () => {
+    let resolveRows!: (rows: Array<{seq: number}>) => void;
+    vi.stubGlobal("window", {backchat: {sessionsLoadHistory: () => new Promise<Array<{seq:number}>>(resolve => {resolveRows = resolve;})}});
+    let currentPosition = 10;
+    let capturedPosition: number | undefined;
+    const pending = loadOlderHistory("s", () => {
+      capturedPosition = currentPosition;
+      expect(state.turns).toEqual([]);
+    });
+    currentPosition = 90;
+    expect(capturedPosition).toBeUndefined();
+    resolveRows([{seq: 500}]);
+    await pending;
+    expect(capturedPosition).toBe(90);
+    expect(state.turns).toEqual([{id: "older"}]);
+    vi.unstubAllGlobals();
+  });
+
   it("fetches a larger preceding window in one request while preserving the previous boundary", async () => {
     vi.stubGlobal("window", { backchat: {
       sessionsLoadHistory: vi.fn(async (_id: string, options: { before_seq: number; limit: number }) => {

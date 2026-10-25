@@ -1405,3 +1405,16 @@ describe("agent runtime adapters", () => {
     });
   });
 });
+
+describe("Codex internal approval review visibility", () => {
+  const review = (status: string) => ({ toolCallId: "opaque", title: "Not a magic title", status: "completed", rawInput: { reviewId: "review", threadId: "thread", turnId: "turn", review: { status }, action: { type: "command", command: "ls", cwd: "/repo", source: "unifiedExec" } } });
+  test("hides native in-progress/approved review payloads, not ordinary names", () => {
+    expect(codexRuntimeAdapter.isInternalToolActivity?.(review("inProgress"))).toBe(true);
+    expect(codexRuntimeAdapter.isInternalToolActivity?.(review("approved"))).toBe(true);
+    expect(codexRuntimeAdapter.isInternalToolActivity?.({ toolCallId: "normal", title: "Guardian Review" })).toBe(false);
+  });
+  test("keeps actionable denial, timeout, abort and failed transport visible", () => {
+    for (const status of ["denied", "timedOut", "aborted"]) expect(codexRuntimeAdapter.isInternalToolActivity?.(review(status))).toBe(false);
+    expect(codexRuntimeAdapter.isInternalToolActivity?.({ ...review("approved"), status: "failed" })).toBe(false);
+  });
+});

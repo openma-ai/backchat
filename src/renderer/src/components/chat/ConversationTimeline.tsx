@@ -1,6 +1,6 @@
 import { useI18n } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
-import { useStickToBottomContext } from "use-stick-to-bottom";
+import { useChatScrollAnchor } from "@openma/common/chat-ui";
 import { cn } from "@/lib/utils";
 import type { Turn } from "@/lib/session-store";
 
@@ -9,14 +9,14 @@ import type { Turn } from "@/lib/session-store";
 const MIN_PROMPTS = 5;
 
 /**
- * ConversationTimeline — ChatGPT-style scrubber hugging the right edge
+ * ConversationTimeline — ChatGPT-style scrubber hugging the left edge
  * of the conversation scroll area. One tick per user message (turn);
  * the tick for the turn currently in view is emphasized. Hovering the
  * strip opens a panel listing one-line previews of every user message;
  * clicking a row (or a tick) smooth-scrolls the conversation there.
  *
  * Must render INSIDE <Conversation> — it reads the scroll element via
- * useStickToBottomContext() (same precedent as ConversationScrollButton).
+ * useChatScrollAnchor() (same precedent as ConversationScrollButton).
  *
  * Active-turn tracking is a passive scroll listener + rAF throttle,
  * deliberately NOT an IntersectionObserver/ResizeObserver — observers
@@ -25,7 +25,7 @@ const MIN_PROMPTS = 5;
  */
 export function ConversationTimeline({ turns }: { turns: Turn[] }) {
   const { t } = useI18n();
-  const stick = useStickToBottomContext();
+  const stick = useChatScrollAnchor();
   const prompts = turns.filter((t) => t.promptText);
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -86,6 +86,11 @@ export function ConversationTimeline({ turns }: { turns: Turn[] }) {
   const scrollToTurn = (turnId: string) => {
     const scrollEl = stick.scrollRef.current;
     if (!scrollEl) return;
+    scrollEl.dispatchEvent(new Event("chat:navigate-to-turn"));
+    if (stick.scrollToTurn) {
+      stick.scrollToTurn(turnId);
+      return;
+    }
     // Scope to this view's scroller — side chat / pair chat render their
     // own [data-turn-id] elements elsewhere in the document.
     const el = scrollEl.querySelector<HTMLElement>(
@@ -121,31 +126,23 @@ export function ConversationTimeline({ turns }: { turns: Turn[] }) {
   const gap = Math.max(2, Math.min(8, 280 / promptCount));
 
   return (
-    // Single hover wrapper sized to its children (ticks column + the
-    // panel when open). `right-3` (12px) keeps the strip off the
-    // scrollbar lane — the chat's WebKit scrollbar lives at
-    // right-0 in classic mode and floats at the right edge in
-    // overlay mode, so the strip needs a few px of breathing
-    // room on the right to not visually fuse with the thumb.
-    // Wrapper height is auto, not inset-y-0 — that would make the
-    // entire conversation a hover target. Centered vertically with
-    // top-1/2 -translate-y-1/2 to keep the strip at the visual
-    // middle of the scroller regardless of scroll position.
+    // Mirror the navigation rail onto the left edge. The sibling panel opens
+    // inward to the right; labels keep their normal reading direction.
     <div
       className={cn(
-        "absolute right-3 top-1/2 z-20 -translate-y-1/2",
-        "flex flex-row-reverse items-center",
+        "absolute left-3 top-1/2 z-20 -translate-y-1/2",
+        "flex flex-row items-center",
       )}
       onMouseEnter={enter}
       onMouseLeave={leave}
     >
       <div
         // The ticks column. Limited to ~50vh so a chat with 100+ turns
-        // still leaves room for the conversation itself. pl-2 widens
+        // still leaves room for the conversation itself. pr-2 widens
         // the click target horizontally beyond the 2-px ticks so the
         // strip is easy to hit.
         className={cn(
-          "flex max-h-[40vh] flex-col items-end overflow-hidden py-1 pl-2",
+          "flex max-h-[40vh] flex-col items-start overflow-hidden py-1 pr-2",
           "transition-opacity duration-150",
           open ? "opacity-0" : "opacity-100",
         )}
@@ -170,10 +167,7 @@ export function ConversationTimeline({ turns }: { turns: Turn[] }) {
       {open && (
         <div
           ref={panelRef}
-          // Flex sibling of the ticks column (flex-row-reverse puts
-          // panel to the LEFT of the ticks). ml-2 visually separates
-          // the two. max-h matches the ticks column so the hover
-          // region stays tight (one max-h, not ticks+panel stacked).
+          // Same bounded hover region, with the list to the right of the ticks.
           className={cn(
             "max-h-[40vh] w-72 overflow-y-auto",
             "rounded-xl border border-border/60 bg-bg-surface/95 backdrop-blur",

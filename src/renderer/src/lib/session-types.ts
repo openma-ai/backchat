@@ -109,6 +109,8 @@ export interface SessionRow {
   /** True when the current harness needs sign-in. Distinct from `errored`
    *  so the composer stays usable and can show the setup panel. */
   authRequired?: boolean;
+  /** A confirmed model change permits retry without asserting its credentials work. */
+  authRetryAllowed?: boolean;
   auth?: {
     status: "configured" | "needs-auth" | "unknown";
     message: string;

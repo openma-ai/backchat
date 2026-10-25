@@ -16,6 +16,13 @@ import {
 } from "./ToolPresentation";
 
 describe("ToolRow acceptance contract", () => {
+  it("uses a think tool's own title rather than a duplicate thinking label", () => {
+    const html = renderToStaticMarkup(<ToolRow sessionId="s" tool={{ toolCallId: "compact", kind: "think", title: "Compact conversation", status: "in_progress" }} />);
+    expect(html).toContain("Compact conversation");
+    expect(html).not.toContain(">Thinking<");
+    expect(html).toContain("shimmer-text");
+  });
+
   it.each([
     ["pending", "started", "Started", true],
     ["in_progress", "progress", "In progress", true],

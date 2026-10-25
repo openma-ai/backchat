@@ -92,6 +92,9 @@ export function SuggestionTemplateEditor({
   );
 }
 
+import { AttachmentImage } from "./AttachmentImage";
+import { attachmentImageSource } from "@/lib/attachment-image";
+
 export function AttachmentPreviewStrip({
   attachments,
   browserScreenshotNames,
@@ -117,28 +120,13 @@ export function AttachmentPreviewStrip({
       aria-label={t("composer.attachments")}
     >
       {visibleAttachments.map((attachment) => {
-        const isPreviewableImage =
-          attachment.kind === "image" &&
-          attachment.data &&
-          attachment.mimeType;
-        if (isPreviewableImage) {
-          return (
-            <div
-              key={attachment.id}
-              className="group/attachment relative size-11 overflow-hidden rounded-md border border-border/50 bg-bg/50"
-              title={attachment.name}
-            >
-              <img
-                src={`data:${attachment.mimeType};base64,${attachment.data}`}
-                alt={attachment.name}
-                className="size-full object-cover"
-              />
-              <AttachmentRemoveButton
-                attachment={attachment}
-                onRemove={onRemove}
-              />
-            </div>
-          );
+        if (attachmentImageSource(attachment)) {
+          return <div key={attachment.id} className="group/attachment relative shrink-0">
+            <AttachmentImage file={attachment} variant="composer" fallback={
+              <span className="flex h-24 w-32 items-center justify-center rounded-lg border border-border p-2 text-xs"><span className="truncate">{attachment.name}</span></span>
+            } />
+            <AttachmentRemoveButton attachment={attachment} onRemove={onRemove} />
+          </div>;
         }
         return (
           <div

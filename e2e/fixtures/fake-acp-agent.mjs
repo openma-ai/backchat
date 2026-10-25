@@ -50,7 +50,8 @@ class FakeAcpAgent {
     this.nextMessageId = 1;
   }
 
-  async initialize() {
+  async initialize(params) {
+    this.supportsCompaction = params.clientCapabilities?.session?.compaction != null;
     const forkLevel = fakeForkLevel();
     return {
       protocolVersion: PROTOCOL_VERSION,
@@ -119,6 +120,13 @@ class FakeAcpAgent {
       .map((block) => block.text)
       .join("\n");
     await recordAuthEvent({ method: "session/prompt", sessionId: params.sessionId, text: promptText });
+    if (promptText === "standard-compaction-e2e") {
+      if (!this.supportsCompaction) throw new Error("Client did not advertise compaction");
+      await this.connection.sessionUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "compaction_update", compactionId: "wire-compact", status: "in_progress" } });
+      await this.connection.sessionUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "compaction_summary_chunk", compactionId: "wire-compact", content: { type: "text", text: "Wire retained context" } } });
+      await this.connection.sessionUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "compaction_update", compactionId: "wire-compact", status: "completed" } });
+      return { stopReason: "end_turn" };
+    }
     if (await this.runCursorProbe(params.sessionId, promptText)) {
       return { stopReason: "end_turn" };
     }

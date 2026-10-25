@@ -426,3 +426,46 @@ degrades to the turn-end queue with `delivery_degraded` set. The `/steering`
 and `/follow-up` commands in the catalogue only switch pi's drain modes and
 are not steer inputs (I10). Alt+Enter in the composer sends the `queue`
 intent for every harness.
+
+### Idle process reclamation (2026-10-25)
+An ACP process is eligible after 20 minutes of inactivity, checked every minute,
+only with negotiated resume/load support and a native session ID. This is
+resource suspension, never conversation archival: preserve start parameters and
+native ID; next start/prompt/config/command restores the session. Reclamation
+and new requests serialize so a new prompt cannot enter a closing process.
+I1/I5 protect unresolved/queued/steering requests; I6 protects structured goal
+activity beyond prompt completion. Broker pending asks and live terminals also
+block reclamation. Unknown native background/subagent metadata is protected
+conservatively rather than treated as idle. No text matching or output-silence
+heuristic determines completion. Shared spec: ACP v1 Session Setup capability
+checks govern load/resume/close. No `session.disposed` event is emitted for idle
+reclamation because that event archives/removes the GUI row.
+
+### Live feedback ownership (2026-10-25)
+I1/I3: unresolved prompt is the liveness authority; completed tool history cannot
+close it. Feedback precedence is actual running tool, actual streaming thought,
+then waiting fallback. Waiting after final process activity lives in that final
+group's disclosure header, expanded or collapsed, not as a second trailing row.
+Earlier groups remain historical. Text-only/answer-tail waits without a current
+process owner retain a single trailing fallback. Terminal prompt removes the
+fallback regardless of late queue metadata. This is rendering state only, not a
+fabricated ACP thought or tool event.
+
+### Steer presentation slices are not turns (2026-10-25)
+I2/I11: injected input partitions chronological content, not prompt ownership.
+One turn has one visible elapsed/status header and one parent expansion state;
+continuation slices after injected inputs do not repeat the turn-level clock.
+The input remains visible when activity slices fold. Group-level activity labels
+are separate from this single turn-level lifecycle header.
+
+### Standard compaction boundaries (2026-10-25)
+ACP v1 now defines `compaction_update`/`compaction_summary_chunk`, gated by
+`clientCapabilities.session.compaction: {}`. A compaction is an ID-addressed
+session timeline entity: first receipt fixes position; subsequent updates patch
+in place. Summary chunks append; concrete summary replaces, null/[] clears;
+omission retains. Unknown status is preserved, never inferred from titles.
+Compaction terminal status is NOT a prompt boundary (I1). It never creates a
+model thought or synthetic tool event. Backchat advertises support with the
+implemented common projector and dedicated renderer. Canonical raw transport
+records preserve these new updates through live delivery and persisted replay.
+Source: https://agentclientprotocol.com/protocol/v1/prompt-turn#session-compaction
