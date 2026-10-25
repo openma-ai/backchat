@@ -7,6 +7,7 @@ import type {
   ElicitationUrlResponseInfo,
   PermissionAskInfo,
 } from "../shared/api.js";
+import { questionsFromDshUserQuestionsMeta } from "./elicitation-question-meta.js";
 
 type CreateElicitationResponse = Awaited<ReturnType<
   NonNullable<ClientCallbacks["createElicitation"]>
@@ -93,10 +94,15 @@ export function elicitationCallbackForSession(
     if (options.requestForm) {
       const fields = normalizeElicitationFields(properties, required);
       if (!fields) return { action: "decline" };
+      const questions = questionsFromDshUserQuestionsMeta(
+        recordValue(params._meta)["dsh.userQuestions"],
+        fields,
+      );
       return options.requestForm({
         sessionId: options.sessionId,
         message: params.message,
         fields,
+        ...(questions ? { questions } : {}),
       });
     }
 
@@ -161,7 +167,11 @@ function normalizeElicitationFields(
       fields.push({
         ...base,
         type: "select",
-        options: choices.map((choice) => ({ value: choice.id, label: choice.label })),
+        options: choices.map((choice) => ({
+          value: choice.id,
+          label: choice.label,
+          ...(choice.description ? { description: choice.description } : {}),
+        })),
         ...(typeof property.default === "string"
           ? { defaultValue: property.default }
           : {}),
@@ -225,7 +235,11 @@ function normalizeElicitationFields(
       fields.push({
         ...base,
         type: "multiselect",
-        options: choices.map((choice) => ({ value: choice.id, label: choice.label })),
+        options: choices.map((choice) => ({
+          value: choice.id,
+          label: choice.label,
+          ...(choice.description ? { description: choice.description } : {}),
+        })),
         ...(numberValue(property.minItems) !== undefined
           ? { minItems: numberValue(property.minItems) }
           : {}),
@@ -250,6 +264,7 @@ function normalizeElicitationFields(
 interface Choice {
   id: string;
   label: string;
+  description?: string;
 }
 
 function elicitationChoices(property: Record<string, unknown>): Choice[] {
@@ -275,7 +290,10 @@ function enumChoices(values: unknown, titled: unknown): Choice[] {
       const option = recordValue(value);
       const id = stringValue(option.const);
       const label = stringValue(option.title);
-      return id && label ? [{ id, label }] : [];
+      const description = stringValue(option.description);
+      return id && label
+        ? [{ id, label, ...(description ? { description } : {}) }]
+        : [];
     });
   }
   return Array.isArray(values)

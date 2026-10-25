@@ -308,10 +308,31 @@ export type ElicitationFieldInfo =
       defaultValue?: string[];
     });
 
+export interface ElicitationQuestionOptionInfo {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface ElicitationQuestionInfo {
+  id: string;
+  question: string;
+  header?: string;
+  detail?: string;
+  multiSelect: boolean;
+  /** Form field carrying the answer: option value(s), or free text when `options` is empty. */
+  field: string;
+  /** Optional free-text "Other" field. */
+  customField?: string;
+  options: ElicitationQuestionOptionInfo[];
+  intent?: { kind: "plan-review"; approve: string };
+}
+
 export interface ElicitationFormRequestInfo {
   sessionId: string;
   message: string;
   fields: ElicitationFieldInfo[];
+  questions?: ElicitationQuestionInfo[];
 }
 
 export type ElicitationFormResponseInfo =

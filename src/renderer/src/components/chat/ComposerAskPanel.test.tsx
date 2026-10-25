@@ -168,6 +168,142 @@ describe("InlineAskPanel", () => {
     expect(html).not.toContain('>Submit<');
   });
 
+  it("renders dsh multi-question asks as stacked rows in the composer slot", () => {
+    const html = renderToStaticMarkup(
+      <InlineAskPanel
+        ask={{
+          kind: "elicitation",
+          ask: {
+            requestId: "dsh-multi",
+            sessionId: "session-1",
+            message: "The agent needs your input.",
+            fields: [],
+            questions: [
+              {
+                id: "target",
+                header: "Target",
+                question: "Where should this run?",
+                detail: "Choose the deployment target.",
+                multiSelect: false,
+                field: "question_0",
+                customField: "question_0_custom",
+                options: [
+                  { value: "option_0", label: "Local", description: "Run on this machine." },
+                  {
+                    value: "option_1",
+                    label: "Staging",
+                    description: "Deploy to the shared staging cluster.",
+                  },
+                ],
+              },
+              {
+                id: "checks",
+                header: "Checks",
+                question: "Which checks should run first?",
+                multiSelect: true,
+                field: "question_1",
+                customField: "question_1_custom",
+                options: [
+                  { value: "option_0", label: "Lint" },
+                  { value: "option_1", label: "Typecheck" },
+                  { value: "option_2", label: "Unit tests" },
+                ],
+              },
+              {
+                id: "notes",
+                question: "Anything else the agent should know?",
+                multiSelect: false,
+                field: "question_2",
+                options: [],
+              },
+            ],
+          },
+        }}
+        onResolve={vi.fn()}
+      />,
+    );
+
+    expect(html.match(/data-elicitation-question=/g)).toHaveLength(3);
+    expect(html).toContain("Choose the deployment target.");
+    expect(html).toContain("Deploy to the shared staging cluster.");
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain("Submit");
+    expect(html).not.toContain("<select");
+  });
+
+  it("renders dsh plan review markdown and intent options in the ask slot", () => {
+    const html = renderToStaticMarkup(
+      <InlineAskPanel
+        ask={{
+          kind: "elicitation",
+          ask: {
+            requestId: "dsh-plan-review",
+            sessionId: "session-1",
+            message: "The agent needs your input.",
+            fields: [],
+            questions: [{
+              id: "plan-review",
+              question: "Approve this plan and leave plan mode?",
+              detail: "# Ship the release\n\n1. Bump the version\n2. Tag and publish",
+              multiSelect: false,
+              field: "question_0",
+              customField: "question_0_custom",
+              options: [
+                { value: "option_0", label: "Approve" },
+                { value: "option_1", label: "Keep planning" },
+              ],
+              intent: { kind: "plan-review", approve: "Approve" },
+            }],
+          },
+        }}
+        onResolve={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Plan review");
+    expect(html).toContain("Approve this plan and leave plan mode?");
+    expect(html).toMatch(/<h1[^>]*>Ship the release<\/h1>/);
+    expect(html).toContain("Approve");
+    expect(html).toContain("Keep planning");
+    expect(html).toContain('data-elicitation-form="plan-review"');
+  });
+
+  it("renders dsh single-choice options as described one-click rows", () => {
+    const html = renderToStaticMarkup(
+      <InlineAskPanel
+        ask={{
+          kind: "elicitation",
+          ask: {
+            requestId: "dsh-single",
+            sessionId: "session-1",
+            message: "The agent needs your input.",
+            fields: [],
+            questions: [{
+              id: "target",
+              header: "Target",
+              question: "Where should this run?",
+              detail: "Choose the deployment target.",
+              multiSelect: false,
+              field: "question_0",
+              customField: "question_0_custom",
+              options: [
+                { value: "option_0", label: "Local", description: "Run on this machine." },
+                { value: "option_1", label: "Staging", description: "Deploy to staging." },
+              ],
+            }],
+          },
+        }}
+        onResolve={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('data-elicitation-form="questions"');
+    expect(html).toContain('data-elicitation-choice="option_0"');
+    expect(html).toContain("Run on this machine.");
+    expect(html).toContain("Skip");
+    expect(html).not.toContain("<select");
+  });
+
   it("renders URL elicitation consent in the same composer ask slot", () => {
     const html = renderToStaticMarkup(
       <InlineAskPanel

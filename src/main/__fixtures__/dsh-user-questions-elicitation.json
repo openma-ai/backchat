@@ -1,0 +1,571 @@
+{
+  "source": "openma-ai/deepseek-harness-acp@69d2723f71f7744c911a5dd000310453743d0f4d src/bridge/user-questions.ts",
+  "requests": {
+    "multi": {
+      "mode": "form",
+      "sessionId": "sess-dsh",
+      "message": "The agent needs your input.",
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "question_0": {
+            "type": "string",
+            "title": "Target",
+            "description": "Where should this run?\n\nChoose the deployment target.",
+            "oneOf": [
+              {
+                "const": "option_0",
+                "title": "Local",
+                "description": "Run on this machine."
+              },
+              {
+                "const": "option_1",
+                "title": "Staging",
+                "description": "Deploy to the shared staging cluster."
+              },
+              {
+                "const": "custom_0",
+                "title": "Other"
+              }
+            ]
+          },
+          "question_0_custom": {
+            "type": "string",
+            "title": "Other",
+            "description": "Type a custom answer."
+          },
+          "question_1": {
+            "type": "array",
+            "title": "Checks",
+            "description": "Which checks should run first?",
+            "minItems": 1,
+            "items": {
+              "anyOf": [
+                {
+                  "const": "option_0",
+                  "title": "Lint"
+                },
+                {
+                  "const": "option_1",
+                  "title": "Typecheck"
+                },
+                {
+                  "const": "option_2",
+                  "title": "Unit tests"
+                },
+                {
+                  "const": "custom_1",
+                  "title": "Other"
+                }
+              ]
+            }
+          },
+          "question_1_custom": {
+            "type": "string",
+            "title": "Other",
+            "description": "Type a custom answer."
+          },
+          "question_2": {
+            "type": "string",
+            "title": "Anything else the agent should know?"
+          }
+        },
+        "required": []
+      },
+      "_meta": {
+        "dsh.userQuestions": {
+          "version": 1,
+          "questions": [
+            {
+              "id": "target",
+              "header": "Target",
+              "question": "Where should this run?",
+              "detail": "Choose the deployment target.",
+              "options": [
+                {
+                  "label": "Local",
+                  "description": "Run on this machine."
+                },
+                {
+                  "label": "Staging",
+                  "description": "Deploy to the shared staging cluster."
+                }
+              ]
+            },
+            {
+              "id": "checks",
+              "header": "Checks",
+              "question": "Which checks should run first?",
+              "options": [
+                {
+                  "label": "Lint"
+                },
+                {
+                  "label": "Typecheck"
+                },
+                {
+                  "label": "Unit tests"
+                }
+              ],
+              "multiSelect": true
+            },
+            {
+              "id": "notes",
+              "question": "Anything else the agent should know?"
+            }
+          ]
+        }
+      }
+    },
+    "planReview": {
+      "mode": "form",
+      "sessionId": "sess-dsh",
+      "message": "The agent needs your input.",
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "question_0": {
+            "type": "string",
+            "title": "Approve this plan and leave plan mode?",
+            "description": "# Ship the release\n\n1. Bump the version\n2. Tag and publish",
+            "oneOf": [
+              {
+                "const": "option_0",
+                "title": "Approve",
+                "description": "Leave plan mode; the plan is carried out from the next step."
+              },
+              {
+                "const": "option_1",
+                "title": "Keep planning",
+                "description": "Stay in plan mode; feedback goes back to the model."
+              },
+              {
+                "const": "custom_0",
+                "title": "Other"
+              }
+            ]
+          },
+          "question_0_custom": {
+            "type": "string",
+            "title": "Other",
+            "description": "Type a custom answer."
+          }
+        },
+        "required": []
+      },
+      "_meta": {
+        "dsh.userQuestions": {
+          "version": 1,
+          "questions": [
+            {
+              "id": "plan-review",
+              "question": "Approve this plan and leave plan mode?",
+              "detail": "# Ship the release\n\n1. Bump the version\n2. Tag and publish",
+              "options": [
+                {
+                  "label": "Approve",
+                  "description": "Leave plan mode; the plan is carried out from the next step."
+                },
+                {
+                  "label": "Keep planning",
+                  "description": "Stay in plan mode; feedback goes back to the model."
+                }
+              ],
+              "intent": {
+                "kind": "plan-review",
+                "approve": "Approve"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "normalizedRequests": {
+    "multi": {
+      "sessionId": "sess-dsh",
+      "message": "The agent needs your input.",
+      "fields": [
+        {
+          "name": "question_0",
+          "title": "Target",
+          "description": "Where should this run?\n\nChoose the deployment target.",
+          "required": false,
+          "type": "select",
+          "options": [
+            {
+              "value": "option_0",
+              "label": "Local",
+              "description": "Run on this machine."
+            },
+            {
+              "value": "option_1",
+              "label": "Staging",
+              "description": "Deploy to the shared staging cluster."
+            },
+            {
+              "value": "custom_0",
+              "label": "Other"
+            }
+          ]
+        },
+        {
+          "name": "question_0_custom",
+          "title": "Other",
+          "description": "Type a custom answer.",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "name": "question_1",
+          "title": "Checks",
+          "description": "Which checks should run first?",
+          "required": false,
+          "type": "multiselect",
+          "options": [
+            {
+              "value": "option_0",
+              "label": "Lint"
+            },
+            {
+              "value": "option_1",
+              "label": "Typecheck"
+            },
+            {
+              "value": "option_2",
+              "label": "Unit tests"
+            },
+            {
+              "value": "custom_1",
+              "label": "Other"
+            }
+          ],
+          "minItems": 1
+        },
+        {
+          "name": "question_1_custom",
+          "title": "Other",
+          "description": "Type a custom answer.",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "name": "question_2",
+          "title": "Anything else the agent should know?",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "questions": [
+        {
+          "id": "target",
+          "question": "Where should this run?",
+          "header": "Target",
+          "detail": "Choose the deployment target.",
+          "multiSelect": false,
+          "field": "question_0",
+          "customField": "question_0_custom",
+          "options": [
+            {
+              "value": "option_0",
+              "label": "Local",
+              "description": "Run on this machine."
+            },
+            {
+              "value": "option_1",
+              "label": "Staging",
+              "description": "Deploy to the shared staging cluster."
+            }
+          ]
+        },
+        {
+          "id": "checks",
+          "question": "Which checks should run first?",
+          "header": "Checks",
+          "multiSelect": true,
+          "field": "question_1",
+          "customField": "question_1_custom",
+          "options": [
+            {
+              "value": "option_0",
+              "label": "Lint"
+            },
+            {
+              "value": "option_1",
+              "label": "Typecheck"
+            },
+            {
+              "value": "option_2",
+              "label": "Unit tests"
+            }
+          ]
+        },
+        {
+          "id": "notes",
+          "question": "Anything else the agent should know?",
+          "multiSelect": false,
+          "field": "question_2",
+          "options": []
+        }
+      ]
+    },
+    "planReview": {
+      "sessionId": "sess-dsh",
+      "message": "The agent needs your input.",
+      "fields": [
+        {
+          "name": "question_0",
+          "title": "Approve this plan and leave plan mode?",
+          "description": "# Ship the release\n\n1. Bump the version\n2. Tag and publish",
+          "required": false,
+          "type": "select",
+          "options": [
+            {
+              "value": "option_0",
+              "label": "Approve",
+              "description": "Leave plan mode; the plan is carried out from the next step."
+            },
+            {
+              "value": "option_1",
+              "label": "Keep planning",
+              "description": "Stay in plan mode; feedback goes back to the model."
+            },
+            {
+              "value": "custom_0",
+              "label": "Other"
+            }
+          ]
+        },
+        {
+          "name": "question_0_custom",
+          "title": "Other",
+          "description": "Type a custom answer.",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "questions": [
+        {
+          "id": "plan-review",
+          "question": "Approve this plan and leave plan mode?",
+          "detail": "# Ship the release\n\n1. Bump the version\n2. Tag and publish",
+          "multiSelect": false,
+          "field": "question_0",
+          "customField": "question_0_custom",
+          "options": [
+            {
+              "value": "option_0",
+              "label": "Approve",
+              "description": "Leave plan mode; the plan is carried out from the next step."
+            },
+            {
+              "value": "option_1",
+              "label": "Keep planning",
+              "description": "Stay in plan mode; feedback goes back to the model."
+            }
+          ],
+          "intent": {
+            "kind": "plan-review",
+            "approve": "Approve"
+          }
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "staging-and-checks",
+      "request": "multi",
+      "drafts": {
+        "target": {
+          "selected": [
+            "Staging"
+          ],
+          "custom": ""
+        },
+        "checks": {
+          "selected": [
+            "Lint",
+            "Unit tests"
+          ],
+          "custom": ""
+        },
+        "notes": {
+          "selected": [],
+          "custom": "Use node 24"
+        }
+      },
+      "content": {
+        "question_0": "option_1",
+        "question_1": [
+          "option_0",
+          "option_2"
+        ],
+        "question_2": "Use node 24"
+      },
+      "answer": {
+        "answers": [
+          {
+            "id": "target",
+            "selected": [
+              "Staging"
+            ]
+          },
+          {
+            "id": "checks",
+            "selected": [
+              "Lint",
+              "Unit tests"
+            ]
+          },
+          {
+            "id": "notes",
+            "selected": [],
+            "custom": "Use node 24"
+          }
+        ]
+      }
+    },
+    {
+      "name": "custom-only-multiselect",
+      "request": "multi",
+      "drafts": {
+        "target": {
+          "selected": [],
+          "custom": "Remote VM"
+        },
+        "checks": {
+          "selected": [],
+          "custom": "Only e2e"
+        },
+        "notes": {
+          "selected": [],
+          "custom": "none"
+        }
+      },
+      "content": {
+        "question_0_custom": "Remote VM",
+        "question_1_custom": "Only e2e",
+        "question_2": "none"
+      },
+      "answer": {
+        "answers": [
+          {
+            "id": "target",
+            "selected": [],
+            "custom": "Remote VM"
+          },
+          {
+            "id": "checks",
+            "selected": [],
+            "custom": "Only e2e"
+          },
+          {
+            "id": "notes",
+            "selected": [],
+            "custom": "none"
+          }
+        ]
+      }
+    },
+    {
+      "name": "multiselect-with-custom",
+      "request": "multi",
+      "drafts": {
+        "target": {
+          "selected": [
+            "Local"
+          ],
+          "custom": ""
+        },
+        "checks": {
+          "selected": [
+            "Typecheck"
+          ],
+          "custom": "and e2e"
+        },
+        "notes": {
+          "selected": [],
+          "custom": "ok"
+        }
+      },
+      "content": {
+        "question_0": "option_0",
+        "question_1": [
+          "option_1"
+        ],
+        "question_1_custom": "and e2e",
+        "question_2": "ok"
+      },
+      "answer": {
+        "answers": [
+          {
+            "id": "target",
+            "selected": [
+              "Local"
+            ]
+          },
+          {
+            "id": "checks",
+            "selected": [
+              "Typecheck"
+            ],
+            "custom": "and e2e"
+          },
+          {
+            "id": "notes",
+            "selected": [],
+            "custom": "ok"
+          }
+        ]
+      }
+    },
+    {
+      "name": "plan-approved",
+      "request": "planReview",
+      "drafts": {
+        "plan-review": {
+          "selected": [
+            "Approve"
+          ],
+          "custom": ""
+        }
+      },
+      "content": {
+        "question_0": "option_0"
+      },
+      "answer": {
+        "answers": [
+          {
+            "id": "plan-review",
+            "selected": [
+              "Approve"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "plan-feedback",
+      "request": "planReview",
+      "drafts": {
+        "plan-review": {
+          "selected": [],
+          "custom": "Split step 2"
+        }
+      },
+      "content": {
+        "question_0_custom": "Split step 2"
+      },
+      "answer": {
+        "answers": [
+          {
+            "id": "plan-review",
+            "selected": [],
+            "custom": "Split step 2"
+          }
+        ]
+      }
+    }
+  ]
+}

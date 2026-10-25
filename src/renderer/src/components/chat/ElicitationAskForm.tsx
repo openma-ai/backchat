@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { ArrowRightIcon, CheckIcon, PencilIcon } from "@/components/Icons";
 
 import { Button } from "@/components/ui/button";
+import { ElicitationQuestionForm } from "./ElicitationQuestionForm";
 import type {
   ElicitationFieldInfo,
   ElicitationFormAskInfo,
@@ -11,6 +12,19 @@ import type {
 type DraftValue = string | boolean | string[];
 
 export function ElicitationAskForm({
+  ask,
+  onSubmit,
+}: {
+  ask: ElicitationFormAskInfo;
+  onSubmit: (response: ElicitationFormResponseInfo) => void | Promise<void>;
+}) {
+  if (ask.questions?.length) {
+    return <ElicitationQuestionForm ask={ask} onSubmit={onSubmit} />;
+  }
+  return <LegacyElicitationAskForm ask={ask} onSubmit={onSubmit} />;
+}
+
+function LegacyElicitationAskForm({
   ask,
   onSubmit,
 }: {
