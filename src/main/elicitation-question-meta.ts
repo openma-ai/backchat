@@ -79,7 +79,7 @@ export function questionsFromDshUserQuestionsMeta(
           ...(metaOption.description ? { description: metaOption.description } : {}),
         });
       }
-      const customFieldName = `${fieldName}_custom`;
+      const customFieldName = `${fieldName}__other`;
       const custom = fieldByName.get(customFieldName);
       if (custom?.type === "text") {
         customField = customFieldName;

@@ -29,7 +29,7 @@
               }
             ]
           },
-          "question_0_custom": {
+          "question_0__other": {
             "type": "string",
             "title": "Other",
             "description": "Type a custom answer."
@@ -60,7 +60,7 @@
               ]
             }
           },
-          "question_1_custom": {
+          "question_1__other": {
             "type": "string",
             "title": "Other",
             "description": "Type a custom answer."
@@ -145,7 +145,7 @@
               }
             ]
           },
-          "question_0_custom": {
+          "question_0__other": {
             "type": "string",
             "title": "Other",
             "description": "Type a custom answer."
@@ -210,7 +210,7 @@
           ]
         },
         {
-          "name": "question_0_custom",
+          "name": "question_0__other",
           "title": "Other",
           "description": "Type a custom answer.",
           "required": false,
@@ -243,7 +243,7 @@
           "minItems": 1
         },
         {
-          "name": "question_1_custom",
+          "name": "question_1__other",
           "title": "Other",
           "description": "Type a custom answer.",
           "required": false,
@@ -264,7 +264,7 @@
           "detail": "Choose the deployment target.",
           "multiSelect": false,
           "field": "question_0",
-          "customField": "question_0_custom",
+          "customField": "question_0__other",
           "options": [
             {
               "value": "option_0",
@@ -284,7 +284,7 @@
           "header": "Checks",
           "multiSelect": true,
           "field": "question_1",
-          "customField": "question_1_custom",
+          "customField": "question_1__other",
           "options": [
             {
               "value": "option_0",
@@ -337,7 +337,7 @@
           ]
         },
         {
-          "name": "question_0_custom",
+          "name": "question_0__other",
           "title": "Other",
           "description": "Type a custom answer.",
           "required": false,
@@ -351,7 +351,7 @@
           "detail": "# Ship the release\n\n1. Bump the version\n2. Tag and publish",
           "multiSelect": false,
           "field": "question_0",
-          "customField": "question_0_custom",
+          "customField": "question_0__other",
           "options": [
             {
               "value": "option_0",
@@ -444,8 +444,8 @@
         }
       },
       "content": {
-        "question_0_custom": "Remote VM",
-        "question_1_custom": "Only e2e",
+        "question_0__other": "Remote VM",
+        "question_1__other": "Only e2e",
         "question_2": "none"
       },
       "answer": {
@@ -494,7 +494,7 @@
         "question_1": [
           "option_1"
         ],
-        "question_1_custom": "and e2e",
+        "question_1__other": "and e2e",
         "question_2": "ok"
       },
       "answer": {
@@ -555,7 +555,7 @@
         }
       },
       "content": {
-        "question_0_custom": "Split step 2"
+        "question_0__other": "Split step 2"
       },
       "answer": {
         "answers": [

@@ -200,7 +200,7 @@ describe("ACP elicitation adapter", () => {
         ],
       },
       {
-        name: "question_0_custom",
+        name: "question_0__other",
         type: "text",
         title: "Other",
         description: "Type a custom answer.",
@@ -221,7 +221,7 @@ describe("ACP elicitation adapter", () => {
         minItems: 1,
       },
       {
-        name: "question_1_custom",
+        name: "question_1__other",
         type: "text",
         title: "Other",
         description: "Type a custom answer.",
@@ -242,7 +242,7 @@ describe("ACP elicitation adapter", () => {
         detail: "Choose the deployment target.",
         multiSelect: false,
         field: "question_0",
-        customField: "question_0_custom",
+        customField: "question_0__other",
         options: [
           {
             value: "option_0",
@@ -262,7 +262,7 @@ describe("ACP elicitation adapter", () => {
         header: "Checks",
         multiSelect: true,
         field: "question_1",
-        customField: "question_1_custom",
+        customField: "question_1__other",
         options: [
           { value: "option_0", label: "Lint" },
           { value: "option_1", label: "Typecheck" },

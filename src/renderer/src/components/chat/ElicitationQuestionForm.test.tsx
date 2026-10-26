@@ -152,7 +152,7 @@ describe("dsh elicitation question rendering", () => {
           ],
         },
         {
-          name: "question_0_custom",
+          name: "question_0__other",
           type: "text",
           title: "Other",
           required: false,
@@ -165,7 +165,7 @@ describe("dsh elicitation question rendering", () => {
         detail: "Choose the deployment target.",
         multiSelect: false,
         field: "question_0",
-        customField: "question_0_custom",
+        customField: "question_0__other",
         options: [
           { value: "option_0", label: "Local", description: "Run on this machine." },
           { value: "option_1", label: "Staging", description: "Deploy to staging." },

@@ -186,7 +186,7 @@ describe("InlineAskPanel", () => {
                 detail: "Choose the deployment target.",
                 multiSelect: false,
                 field: "question_0",
-                customField: "question_0_custom",
+                customField: "question_0__other",
                 options: [
                   { value: "option_0", label: "Local", description: "Run on this machine." },
                   {
@@ -202,7 +202,7 @@ describe("InlineAskPanel", () => {
                 question: "Which checks should run first?",
                 multiSelect: true,
                 field: "question_1",
-                customField: "question_1_custom",
+                customField: "question_1__other",
                 options: [
                   { value: "option_0", label: "Lint" },
                   { value: "option_1", label: "Typecheck" },
@@ -247,7 +247,7 @@ describe("InlineAskPanel", () => {
               detail: "# Ship the release\n\n1. Bump the version\n2. Tag and publish",
               multiSelect: false,
               field: "question_0",
-              customField: "question_0_custom",
+              customField: "question_0__other",
               options: [
                 { value: "option_0", label: "Approve" },
                 { value: "option_1", label: "Keep planning" },
@@ -285,7 +285,7 @@ describe("InlineAskPanel", () => {
               detail: "Choose the deployment target.",
               multiSelect: false,
               field: "question_0",
-              customField: "question_0_custom",
+              customField: "question_0__other",
               options: [
                 { value: "option_0", label: "Local", description: "Run on this machine." },
                 { value: "option_1", label: "Staging", description: "Deploy to staging." },
