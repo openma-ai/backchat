@@ -1,3 +1,4 @@
+import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import { openmaWorkspaceScope } from "@shared/openma";
 import { openmaTargets } from "@/lib/openma-targets";
 import {
@@ -21,7 +22,9 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GroupedCommandMenu } from "@/components/ui/grouped-command-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ComposerPickerMenu } from "@/components/ui/composer-picker-menu";
+import { groupedCommandMenuPopoverShellClassName, GroupedCommandMenu } from "@/components/ui/grouped-command-menu";
 
 /** Match main native host menu list budget (`max-h-[60vh]`). */
 const HOST_PICKER_LIST_MAX_HEIGHT_PX = 540;
@@ -31,7 +34,6 @@ import {
 } from "@/components/ui/grouped-command-menu-slots";
 import {
   composerFooterTriggerClass,
-  composerFooterTriggerProps,
 } from "@/components/ui/composer-footer-trigger";
 import { SidebarSectionHeading } from "@/components/shell/SidebarSectionHeading";
 import { useI18n } from "@/lib/i18n";
@@ -101,11 +103,11 @@ export function RuntimeLocationControl({
   const groups = useMemo((): GroupedCommandMenuGroup[] => {
     const locationItems: GroupedCommandMenuItem[] = [];
 
-    if (!locked && !target) {
+    if (!locked) {
       locationItems.push({
         id: "local",
         value: t("chat.local"),
-        checked: true,
+        checked: !target,
         onSelect: () => applySelection(undefined),
         children: (
           <>
@@ -124,7 +126,7 @@ export function RuntimeLocationControl({
       for (const { target: choice, offline } of choices) {
         const checked =
           choice.agentId === target?.agentId &&
-          choice.environmentId === target.environmentId;
+          choice.environmentId === target?.environmentId;
         locationItems.push({
           id: `${choice.environmentId}:${choice.agentId}`,
           value: `${choice.runtimeName} ${choice.environmentName} ${choice.agentName}`,
@@ -265,6 +267,31 @@ export function RuntimeLocationControl({
     />
   );
 
+  if (variant === "composer") return (
+    <Popover open={menuOpen} onOpenChange={(open) => {
+      setMenuOpen(open);
+      if (open && account?.status === "signed_in") void refetch();
+    }}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="ghost" size="sm"
+          data-composer-footer-control="runtime" data-session-runtime-location="true"
+          className={cn(composerFooterTriggerClass("runtime-location-control"), className)}
+          title={title ?? t("chat.whereRuns")}>
+          <span data-control-icon><Icon /></span>
+          <span className="truncate">{locationLabel}</span>
+          <ChevronDownIcon data-control-chevron />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" sideOffset={GAP_ADJACENT_PX}
+        className={groupedCommandMenuPopoverShellClassName()}>
+        <ComposerPickerMenu testId="composer-host-picker-panel" menuMode="runtime-picker"
+          menuResetKey={menuOpen ? "open" : "closed"}
+          searchPlaceholder={t("chat.whereRuns")} emptyMessage={t("chat.noMatchingOptions")}
+          groups={groups} />
+      </PopoverContent>
+    </Popover>
+  );
+
   return (
     <DropdownMenu
       open={menuOpen}
@@ -274,7 +301,6 @@ export function RuntimeLocationControl({
       }}
     >
       <DropdownMenuTrigger asChild>
-        {variant === "sidebar" ? (
           <SidebarSectionHeading
             trigger
             depth={0}
@@ -292,29 +318,11 @@ export function RuntimeLocationControl({
             data-session-runtime-location="true"
             aria-label={title ?? t("chat.whereRuns")}
           />
-        ) : (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            data-composer-footer-control="runtime"
-            data-session-runtime-location="true"
-            {...composerFooterTriggerProps("none")}
-            className={cn(composerFooterTriggerClass("runtime-location-control"), className)}
-            title={title ?? t("chat.whereRuns")}
-          >
-            <span data-control-icon>
-              <Icon />
-            </span>
-            <span className="truncate">{locationLabel}</span>
-            <ChevronDownIcon data-control-chevron />
-          </Button>
-        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        side={variant === "sidebar" ? "bottom" : "top"}
+        side="bottom"
         align="start"
-        sideOffset={0}
+        sideOffset={GAP_ADJACENT_PX}
         className={cn(
           "w-[var(--composer-menu-width)] max-h-[60vh] overflow-y-auto ring-0",
         )}

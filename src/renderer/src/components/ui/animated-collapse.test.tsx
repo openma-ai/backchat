@@ -46,12 +46,33 @@ describe("AnimatedCollapse", () => {
       host.querySelector("[data-body]")!.dispatchEvent(new Event("transitionend", { bubbles: true }));
     });
     expect(host.querySelector("[data-body]")).not.toBeNull();
-    act(() => { shell.dispatchEvent(new Event("transitionend", { bubbles: true })); });
+    act(() => {
+      const event = new Event("transitionend", { bubbles: true });
+      Object.defineProperty(event, "propertyName", { value: "height" });
+      shell.dispatchEvent(event);
+    });
     expect(host.querySelector("[data-body]")).toBeNull();
 
     // Reopening mounts it again immediately.
     act(() => root.render(<AnimatedCollapse open><span data-body="1" /></AnimatedCollapse>));
     expect(host.querySelector("[data-body]")).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("does not unmount the intrinsic body on opacity finishing before height", () => {
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    act(() => root.render(<AnimatedCollapse open><span data-body="1" /></AnimatedCollapse>));
+    act(() => root.render(<AnimatedCollapse open={false}><span data-body="1" /></AnimatedCollapse>));
+    const shell = host.querySelector('[data-slot="animated-collapse"]')!;
+    const opacity = new Event("transitionend", { bubbles: true });
+    Object.defineProperty(opacity, "propertyName", { value: "opacity" });
+    act(() => shell.dispatchEvent(opacity));
+    expect(host.querySelector("[data-body]")).not.toBeNull();
+    const height = new Event("transitionend", { bubbles: true });
+    Object.defineProperty(height, "propertyName", { value: "height" });
+    act(() => shell.dispatchEvent(height));
+    expect(host.querySelector("[data-body]")).toBeNull();
     act(() => root.unmount());
   });
 
@@ -62,7 +83,11 @@ describe("AnimatedCollapse", () => {
     act(() => root.render(<AnimatedCollapse open={false}><span data-body="1" /></AnimatedCollapse>));
     act(() => root.render(<AnimatedCollapse open><span data-body="1" /></AnimatedCollapse>));
     const shell = host.querySelector('[data-slot="animated-collapse"]')!;
-    act(() => { shell.dispatchEvent(new Event("transitionend", { bubbles: true })); });
+    act(() => {
+      const event = new Event("transitionend", { bubbles: true });
+      Object.defineProperty(event, "propertyName", { value: "height" });
+      shell.dispatchEvent(event);
+    });
     expect(host.querySelector("[data-body]")).not.toBeNull();
     act(() => root.unmount());
   });

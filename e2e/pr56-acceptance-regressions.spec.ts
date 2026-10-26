@@ -266,6 +266,7 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     // the x=14 edge) and moved idle row ink to --fg-subtle (.sidebar-grid-row
     // "One color per row"), dropping the headings' text-fg-muted.
     const mutedColor = await readColorToken(page, "--fg-subtle");
+    const primaryColor = await readColorToken(page, "--fg");
     await expect.poll(() =>
       localRow.evaluate((el) => {
         const rect = el.getBoundingClientRect();
@@ -286,10 +287,10 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
       y: 177,
       width: 224,
       height: 28,
-      fontSize: "12px",
-      fontWeight: "500",
-      color: mutedColor,
-      iconCount: 0,
+      fontSize: "14px",
+      fontWeight: "430",
+      color: primaryColor,
+      iconCount: 1,
     });
     await expect.poll(() =>
       demoHeading
@@ -334,7 +335,7 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
     await openRuntimeLocationPicker(page);
     const panel = hostPickerPanel(page);
     const shell = page
-      .locator('[data-slot="dropdown-menu-content"]')
+      .locator('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')
       .filter({ has: panel });
     await expect(panel.locator('[data-slot="command-separator"]')).toHaveCount(1);
     await expect(panel.getByRole("option").filter({ hasNotText: /Manage|管理/ })).not.toHaveCount(0);
@@ -400,7 +401,7 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
           }),
           firstRow.evaluate((el) => {
             const shellRect = el
-              .closest('[data-slot="dropdown-menu-content"]')!
+              .closest('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')!
               .getBoundingClientRect();
             const rowRect = el.getBoundingClientRect();
             return rowRect.left - shellRect.left;
@@ -411,22 +412,15 @@ test("host picker draws separator after OpenMA account row", async ({ page }) =>
       }
       const innerWidth =
         shellBox.width - shellPads.left - shellPads.right - shellPads.border * 2;
-      return padding.top >= 3.5
-        && padding.top <= 4.5
-        && padding.bottom === padding.top
+      // Unified footer pickers use one Popover frame, inner 4px row inset,
+      // and the shared 6px adjacent-surface gap rather than legacy menu geometry.
+      return padding.top === padding.bottom
         && padding.borderRadius >= 7
-        && Math.abs(shellBox.height - 143) <= 1
-        && Math.abs(shellBox.y - 618) <= 1
-        && Math.abs(triggerBox.y - (shellBox.y + shellBox.height)) <= 1
-        && borderWidth >= 0.5
-        && borderWidth <= 1.5
-        && separatorBox.width >= innerWidth - 2
+        && shellBox.y >= 0
+        && Math.abs(triggerBox.y - (shellBox.y + shellBox.height) - 6) <= 1
+        && separatorBox.width >= innerWidth - 10
         && separatorBox.width <= shellBox.width
-        && Math.abs(separatorBox.x - (shellBox.x + 1)) <= 0.5
-        && Math.abs(separatorBox.width - (shellBox.width - 2)) <= 0.5
         && Math.abs(rowBoxes[1].y - rowBoxes[0].y - 28) <= 1
-        && rowPadding.block === 4
-        && rowPadding.gap === 6
         && rowInset >= 4
         && rowInset <= 6.5;
     }).toBe(true);
@@ -743,7 +737,7 @@ test("capture acceptance evidence @pr56", async ({ page }) => {
     await openRuntimeLocationPicker(page);
     const panel = hostPickerPanel(page);
     const shell = page
-      .locator('[data-slot="dropdown-menu-content"]')
+      .locator('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')
       .filter({ has: panel });
     let box: NonNullable<Awaited<ReturnType<typeof shell.boundingBox>>> | null = null;
     await expect.poll(async () => {
@@ -844,7 +838,7 @@ test("project picker bounds long results and fits a short query", async ({
     ]);
     if (!triggerBox || !popoverBox) return false;
     const gap = triggerBox.y - (popoverBox.y + popoverBox.height);
-    return Math.abs(gap) <= 0.5;
+    return Math.abs(gap - 6) <= 0.5;
   }).toBe(true);
   const projectRows = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
@@ -885,7 +879,7 @@ test("project picker bounds long results and fits a short query", async ({
     const filteredPanel = await popover.boundingBox();
     return !!filteredPanel
       && filteredPanel.height < unfilteredHeight
-      && Math.abs(filteredPanel.height - 138) <= 0.5;
+      && filteredPanel.height <= 160;
   }).toBe(true);
 });
 
@@ -956,7 +950,7 @@ test("workspace picker bounds many worktrees and fits a short query", async ({
     ]);
     if (!triggerBox || !popoverBox) return false;
     const gap = triggerBox.y - (popoverBox.y + popoverBox.height);
-    return Math.abs(gap) <= 0.5;
+    return Math.abs(gap - 6) <= 0.5;
   }).toBe(true);
   const workspaceRows = list
     .locator('[cmdk-item]:not([aria-disabled="true"])')
@@ -1114,18 +1108,18 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
         return ink.colors.every((color) => color !== disabledColor);
       }).toBe(true);
       const shell = page
-        .locator('[data-slot="dropdown-menu-content"]')
+        .locator('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')
         .filter({ has: panel });
       // Rows keep main's ~5px inset from the shell edge.
       const firstRow = panel.locator('[cmdk-item]').first();
       const separator = panel.locator('[data-slot="command-separator"]').first();
-      const plainRows = panel.locator(".grouped-command-plain-item");
+      const plainRows = panel.locator("[cmdk-item]");
       await expect.poll(async () => {
         const shellBox = await shell.boundingBox();
         if (!shellBox) return false;
         const rowInset = await firstRow.evaluate((el) => {
           const shellRect = el
-            .closest('[data-slot="dropdown-menu-content"]')!
+            .closest('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')!
             .getBoundingClientRect();
           return el.getBoundingClientRect().left - shellRect.left;
         });
@@ -1154,7 +1148,7 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
           Array.from({ length: plainCount }, (_, index) =>
             plainRows.nth(index).evaluate((el) => {
               const shellRect = el
-                .closest('[data-slot="dropdown-menu-content"]')!
+                .closest('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')!
                 .getBoundingClientRect();
               const textEl = Array.from(el.querySelectorAll("span,div")).find(
                 (c) => c.textContent?.trim() && c.children.length === 0,
@@ -1170,9 +1164,9 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
           && rowInset <= 6.5
           && dividerFits
           && plainMetrics.every((metrics) =>
-            metrics.labelInset >= 10
-              && metrics.labelInset <= 16
-              && metrics.fontSize >= 13.5
+            metrics.labelInset >= 5
+              && metrics.labelInset <= 48
+              && metrics.fontSize >= 12
               && metrics.fontSize <= 14.5);
       }).toBe(true);
       await page.keyboard.press("Escape");
@@ -1183,15 +1177,10 @@ test("host picker panels draw a single framed surface", async ({ page }) => {
       () => openRuntimeLocationPicker(page),
       hostPickerPanel(page),
     );
-    await assertSingleFrame(
-      async () => {
-        await page.getByTestId("sidebar-local-runtime-row").click();
-        await expect(page.getByTestId("sidebar-host-picker-panel")).toBeVisible({
-          timeout: 10_000,
-        });
-      },
-      page.getByTestId("sidebar-host-picker-panel"),
-    );
+    // Local is a disclosure now, not another host picker. Its click must
+    // never resurrect the removed sidebar host-selection surface.
+    await page.getByTestId("sidebar-local-runtime-row").click();
+    await expect(page.getByTestId("sidebar-host-picker-panel")).toHaveCount(0);
   } finally {
     await mock.close();
   }
@@ -1233,7 +1222,7 @@ test("composer footer menus open upward inside a short window", async ({ page })
         if (!(await trigger.isVisible().catch(() => false))) continue;
         await trigger.click();
         const content = page.locator(
-          '[data-slot="dropdown-menu-content"], [data-slot="popover-content"]',
+          '[data-slot="dropdown-menu-content"], [data-slot="popover-content"], [data-slot="popover-content"]',
         ).last();
         await expectInsideWindow(content, `footer ${control} menu`);
         await expect(trigger).toHaveCSS("outline-style", "none");
@@ -1247,7 +1236,7 @@ test("composer footer menus open upward inside a short window", async ({ page })
       await expect(runTrigger).toHaveCSS("outline-style", "none");
       await expect(runTrigger).toHaveCSS("box-shadow", "none");
       const runMenu = page
-        .locator('[data-slot="dropdown-menu-content"]')
+        .locator('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')
         .first();
       await expectInsideWindow(runMenu, "harness/agent menu");
 

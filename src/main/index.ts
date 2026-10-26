@@ -32,6 +32,7 @@ import {
 } from "./bundled-node-runtime.js";
 import { configureAppLog, flushAppLog, logAppEvent } from "./app-log.js";
 import { installMainTelemetry, type InstalledTelemetry } from "./telemetry/index.js";
+import { RendererRecovery } from "./renderer-recovery.js";
 import { logRendererCrash } from "./renderer-crash-log.js";
 import { startAppUpdater } from "./app-updater.js";
 import { resolveRemoteDebugging } from "./remote-debugging.js";
@@ -208,17 +209,32 @@ export function syncTrafficLight(win: BrowserWindow): void {
   // Solve: position.y = toggleCenterY - TRAFFIC_LIGHT_CENTER_FROM_TOP.
   const positionY = Math.floor(toggleCenterY - TRAFFIC_LIGHT_CENTER_FROM_TOP);
 
-  const ANCHOR_X = 30;
-  const positionX = Math.floor(ANCHOR_X * z - TRAFFIC_LIGHT_DOT_PX / 2);
-
-  win.setWindowButtonPosition({ x: positionX, y: positionY });
-
-  win.webContents
-    .executeJavaScript(
-      `document.documentElement.style.setProperty('--zoom', '${z}')`,
-      true,
-    )
-    .catch(() => {});
+  // Measure the actual renderer rail instead of duplicating padding/icon
+  // constants here. Native buttons remain unscaled; their origin is in DIP.
+  win.webContents.executeJavaScript(`(async () => {
+    document.documentElement.style.setProperty('--zoom', '${z}');
+    let icon;
+    for (let frame = 0; frame < 60; frame++) {
+      icon = document.querySelector('.sidebar-host-chrome [data-sidebar-grid="icon"]');
+      if (icon) break;
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    if (!icon) return null;
+    const rect = icon.getBoundingClientRect();
+    const rail = icon.closest("aside");
+    if (!rail) return rect.left + rect.width / 2;
+    const railRect = rail.getBoundingClientRect();
+    const css = getComputedStyle(rail);
+    const scale = css.transform === "none" ? 1 : new DOMMatrixReadOnly(css.transform).a;
+    return parseFloat(css.left) + (rect.left + rect.width / 2 - railRect.left) / scale;
+  })()`, true).then((centerX: unknown) => {
+    if (win.isDestroyed() || win.webContents.getZoomFactor() !== z) return;
+    if (typeof centerX !== "number" || !Number.isFinite(centerX)) return;
+    win.setWindowButtonPosition({
+      x: Math.round(centerX * z - TRAFFIC_LIGHT_DOT_PX / 2),
+      y: positionY,
+    });
+  }).catch(() => {});
 }
 
 function createWindow(startupStartedAt?: number): BrowserWindow {
@@ -259,6 +275,29 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
   windows.add(win);
   win.on("closed", () => windows.delete(win));
 
+  let recoveryDialogOpen = false;
+  const rendererRecovery = new RendererRecovery({
+    isDestroyed: () => win.isDestroyed() || win.webContents.isDestroyed(),
+    reload: () => win.webContents.reload(),
+    log: (event, details) => logAppEvent(`app.renderer_recovery.${event}`, details),
+    fallback: () => {
+      if (recoveryDialogOpen || win.isDestroyed()) return;
+      recoveryDialogOpen = true;
+      const language = settingsStore.get().appearance.language;
+      const zh = language === "zh-CN" || (language === "system" && app.getLocale().startsWith("zh"));
+      void dialog.showMessageBox(win, {
+        type: "warning",
+        message: zh ? "界面未能自动恢复" : "The interface could not recover automatically",
+        detail: zh ? "本机任务不会因重载界面被终止，也不会重复发送消息。可以尝试重新加载；尚未保存的输入可能丢失。" : "Reloading the interface will not stop local tasks or resend messages. Unsaved input may be lost.",
+        buttons: zh ? ["重新加载界面", "暂不恢复"] : ["Reload interface", "Not now"],
+        defaultId: 0, cancelId: 1,
+      }).then(({response}) => {
+        if (response === 0 && !win.isDestroyed()) win.webContents.reload();
+      }).catch(() => {}).finally(() => {recoveryDialogOpen = false;});
+    },
+  });
+  win.on("closed", () => rendererRecovery.dispose());
+  win.webContents.on("did-finish-load", () => rendererRecovery.loaded());
   win.webContents.on("render-process-gone", (_event, details) => {
     logRendererCrash({
       source: "render-process-gone",
@@ -266,6 +305,7 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
       reason: details.reason,
       exitCode: details.exitCode,
     });
+    rendererRecovery.gone(details.reason);
   });
   win.webContents.on("unresponsive", () => {
     logRendererCrash({
@@ -291,6 +331,7 @@ function createWindow(startupStartedAt?: number): BrowserWindow {
   // ctrl+wheel — menu Zoom In/Out calls sync explicitly (see menu.ts).
   win.webContents.on("did-finish-load", () => syncTrafficLight(win));
   win.on("focus", () => syncTrafficLight(win));
+  win.webContents.on("zoom-changed", () => syncTrafficLight(win));
 
   win.once("ready-to-show", () => {
     if (startupStartedAt !== undefined) logAppEvent("app.startup_stage", {

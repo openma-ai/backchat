@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { useStickToBottomContext } from "use-stick-to-bottom";
+import { useChatScrollAnchor } from "@openma/common/chat-ui";
 
 /**
  * FollowOnSend — when a new turn lands at the tail (the user just sent),
@@ -7,12 +7,12 @@ import { useStickToBottomContext } from "use-stick-to-bottom";
  * followed. Re-arming clears use-stick-to-bottom's "escaped" lock; from then
  * on its own resize observer keeps following until the user scrolls away.
  *
- * Must render INSIDE <Conversation> (reads useStickToBottomContext()).
+ * Must render INSIDE <Conversation> (reads useChatScrollAnchor()).
  * The first render is skipped: opening a session is HistoryPager's job, and
  * prepending older history never changes the tail id.
  */
 export function FollowOnSend({ tailTurnId }: { tailTurnId: string | undefined }) {
-  const stick = useStickToBottomContext();
+  const stick = useChatScrollAnchor();
   const previous = useRef<string | undefined | null>(null);
 
   useLayoutEffect(() => {

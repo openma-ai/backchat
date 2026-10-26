@@ -16,6 +16,13 @@ export async function openHistoryWindow(sessionId: string): Promise<void> {
     sessionStore.replayHistoryWindow(sessionId, rows, {
       hasMore: rows.length >= HISTORY_PAGE_ROWS,
     });
+    const replayedTurnIds = sessionStore.turnsFor(sessionId).map(turn => turn.id);
+    // No running local process is authoritative interruption evidence. Query
+    // errors are unknown, never permission to silently cancel a remote task.
+    if (!sessionStore.get(sessionId)?.openma && window.backchat.sessionRuntimeStatus) {
+      const runtime = await window.backchat.sessionRuntimeStatus({ session_id: sessionId });
+      sessionStore.reconcileHistoryRuntime(sessionId, replayedTurnIds, runtime?.busy === true, runtime?.active_turn_ids);
+    }
   } finally {
     sessionStore.setHistoryPending(sessionId, false);
   }
@@ -24,7 +31,7 @@ export async function openHistoryWindow(sessionId: string): Promise<void> {
 /** Fetch the page before the oldest loaded row and prepend it. Resolves
  *  to true when rows were added. No-op while a page is already in flight
  *  or when the window already reaches the start of the log. */
-export async function loadOlderHistory(sessionId: string): Promise<boolean> {
+export async function loadOlderHistory(sessionId: string, beforePrepend?: () => void): Promise<boolean> {
   const info = sessionStore.historyWindowFor(sessionId);
   if (!info || !info.hasMore || info.loading) return false;
   sessionStore.setHistoryLoading(sessionId, true);
@@ -33,6 +40,7 @@ export async function loadOlderHistory(sessionId: string): Promise<boolean> {
       before_seq: info.oldestSeq,
       limit: HISTORY_PAGE_ROWS,
     });
+    beforePrepend?.();
     sessionStore.prependHistory(sessionId, rows, {
       hasMore: rows.length >= HISTORY_PAGE_ROWS,
     });

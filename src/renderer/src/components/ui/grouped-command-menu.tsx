@@ -224,7 +224,7 @@ export function GroupedCommandMenu({
   }, [displayedGroups, searchQuery]);
 
   const popoverPicker =
-    menuMode === "project-picker" || menuMode === "workspace-picker";
+    menuMode === "project-picker" || menuMode === "workspace-picker" || menuMode === "runtime-picker";
   const popoverAvailableHeight =
     popoverPicker || menuMode === "grouped-command-field";
   const effectivePanelHeightPx =
@@ -254,7 +254,8 @@ export function GroupedCommandMenu({
   const bareListGroupItems =
     menuMode === "project-picker"
     || menuMode === "workspace-picker"
-    || menuMode === "host-picker";
+    || menuMode === "host-picker"
+    || menuMode === "runtime-picker";
 
   const renderMenuItem = (item: GroupedCommandMenuItem) => (
     <CommandItem
@@ -340,7 +341,7 @@ export function GroupedCommandMenu({
         shouldFilter={shouldFilter}
         data-has-query={searchQuery.length > 0}
         className={cn(
-        "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! bg-transparent p-0 shadow-none ring-0",
+        "grouped-command-menu flex min-h-0 flex-col overflow-hidden rounded-none! border-0! bg-transparent p-0 shadow-none ring-0",
           popoverPicker
             ? "h-auto min-h-0 flex-1"
             : shrinkToContent
@@ -371,7 +372,7 @@ export function GroupedCommandMenu({
             className={cn(
               menuMode === "host-picker"
                 ? "max-h-none overflow-visible scroll-py-0 p-0 outline-none"
-                : menuMode === "project-picker" || menuMode === "workspace-picker"
+                : menuMode === "project-picker" || menuMode === "workspace-picker" || menuMode === "runtime-picker"
                   ? "oma-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto scroll-py-1 p-0 outline-none"
                   : "oma-scrollbar max-h-[60vh] overflow-y-auto scroll-py-1 p-0 outline-none",
               listClassName,

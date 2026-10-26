@@ -34,7 +34,9 @@ test("history boundary shows loading and preserves the latest viewport when prep
         await gate;
         return [{ seq: 1, ts: 1, type: "user_prompt", data: JSON.stringify({ text: "Original prompt" }) }, { seq: 2, ts: 2, type: "agent_message_chunk", data: JSON.stringify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Older paragraph.\n\n".repeat(30) } }) }];
       }
-      return Array.from({ length: 800 }, (_, i) => ({ seq: 801 + i, ts: i + 2, type: "agent_message_chunk", data: JSON.stringify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Recent ${i}.\n\n` } }) }));
+      return Array.from({ length: 1600 }, (_, i) => ({ seq: 801 + i, ts: i + 2,
+        type: i % 200 === 0 ? "user_prompt" : "agent_message_chunk",
+        data: JSON.stringify(i % 200 === 0 ? {text: `Recent request ${i / 200}`} : {sessionUpdate: "agent_message_chunk", content: {type: "text", text: `Recent ${i}.\n\n`}, _meta: {codex: {phase: "final_answer"}}}) }));
     });
   });
   await page.reload();
@@ -48,7 +50,7 @@ test("history boundary shows loading and preserves the latest viewport when prep
   await expect(loading).toBeVisible();
   expect((await loading.boundingBox())!.height).toBeGreaterThan(20);
   await scroll.evaluate(el => { el.scrollTop = 0; });
-  const first = page.getByText('Recent 0.', { exact: true });
+  const first = page.getByText('Recent request 0', { exact: true });
   const before = (await first.boundingBox())!.y;
   await app.evaluate(() => (globalThis as unknown as { releasePage: () => void }).releasePage());
   await expect(loading).toBeHidden();

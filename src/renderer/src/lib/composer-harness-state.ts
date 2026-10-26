@@ -40,11 +40,12 @@ export function composerAuthNeeded(
   liveAuth?: { status?: string; message?: string } | null,
   session?: {
     authRequired?: boolean;
+    authRetryAllowed?: boolean;
     auth?: { status?: string; message?: string };
   } | null,
   options?: { liveProbePending?: boolean },
 ): boolean {
-  if (session?.auth?.status === "configured") return false;
+  if (session?.authRetryAllowed || session?.auth?.status === "configured") return false;
   if (session?.authRequired) return true;
   if (session?.auth?.status === "needs-auth") return true;
   if (options?.liveProbePending) return false;

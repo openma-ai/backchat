@@ -1,0 +1,34 @@
+import { expect, test } from "./fixtures";
+import { injectEvent, injectSession } from "./helpers";
+
+test("activity shares the far-right menu slot without propagating to structural ancestors", async ({ page, capture }) => {
+  const id = await injectSession(page, { sessionId: "activity-sidebar", cwd: "/tmp/sidebar-activity-project" });
+  await injectEvent(page, { type: "session.prompt", session_id: id, turn_id: "activity-turn", text: "A long running conversation title that should truncate before its status" });
+  await injectEvent(page, { type: "session.queue_update", session_id: id, active_turn_id: "activity-turn", queued: [], mode: "single" });
+  await page.mouse.move(900, 500);
+  const row = page.locator(`.sidebar-grid-row[data-session-id="${id}"]`);
+  const indicator = row.locator('[data-sidebar-activity="running"]');
+  await expect(indicator).toBeVisible();
+  const menu = row.locator('[data-sidebar-grid-action="last"]').last();
+  const [statusBox, menuBox] = await Promise.all([indicator.boundingBox(), menu.boundingBox()]);
+  expect(statusBox).not.toBeNull();
+  expect(menuBox).not.toBeNull();
+  expect(Math.abs(statusBox!.x - menuBox!.x)).toBeLessThan(1);
+  const project = page.locator('[data-sidebar-project]').filter({ hasText: "sidebar-activity-project" });
+  await expect(project.locator('[data-sidebar-activity]')).toHaveCount(0);
+  await project.locator('[data-sidebar-grid="label"] > button').click();
+  await expect(row).not.toBeVisible();
+  await expect(project.locator('[data-sidebar-activity]')).toHaveCount(0);
+  await page.getByTestId("new-chat-button").click();
+  await injectEvent(page, { type: "session.complete", session_id: id, turn_id: "activity-turn", stop_reason: "end_turn" });
+  await expect(project.locator('[data-sidebar-activity]')).toHaveCount(0);
+  await capture("sidebar-completed-unread.png");
+  await project.locator('[data-sidebar-grid="label"] > button').click();
+  await row.locator('button').first().click();
+  await expect(project.locator('[data-sidebar-activity="unread"]')).toHaveCount(0);
+  await injectEvent(page, { type: "session.error", session_id: id, message: "Provider failed" });
+  await expect(row.locator('[data-sidebar-activity="error"]')).toBeVisible();
+  await expect(project.locator('[data-sidebar-activity]')).toHaveCount(0);
+  await page.mouse.move(900, 500);
+  await capture("sidebar-error.png");
+});

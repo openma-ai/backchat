@@ -12,6 +12,9 @@ import {
 import { useI18n } from "@/lib/i18n";
 import type { ScheduledTaskPromptSurface } from "@/lib/scheduled-task-presentation";
 import type { Turn } from "@/lib/session-store";
+import { derivePromptDisplayText } from "@/lib/composer-prompt";
+import { ComposerAnnotationStrip } from "./ComposerAnnotations";
+import { PromptMessageAttachments } from "./PromptMessageAttachments";
 import { cn } from "@/lib/utils";
 
 const LONG_PROMPT_CHAR_LIMIT = 480;
@@ -106,10 +109,15 @@ export function UserPromptBubble({
   onEditPrompt?: (turn: Turn, nextPromptText: string) => void;
 }) {
   const { t } = useI18n();
-  const isCollapsible = isLongUserPrompt(text);
+  // Legacy image-only prompts carry a generated display label. Suppress only
+  // that exact label when structured attachments are actually available.
+  const placeholderOnly = Boolean(turn.annotations?.length) && /^\[\d+ annotations?\]$/.test(text.trim());
+  const displayText = placeholderOnly || (turn.attachments?.length && text === derivePromptDisplayText("", turn.attachments))
+    ? "" : text;
+  const isCollapsible = isLongUserPrompt(displayText);
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [draftText, setDraftText] = useState(text);
+  const [draftText, setDraftText] = useState(displayText);
   const handleSubmitEdit = () => {
     const trimmed = draftText.trim();
     if (!trimmed || !onEditPrompt) return;
@@ -122,7 +130,9 @@ export function UserPromptBubble({
       className="group is-user relative ml-auto flex w-full max-w-[95%] flex-col items-end gap-3"
       data-session-turn-prompt="true"
     >
-      <div className="is-user:dark ml-auto flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden rounded-lg bg-secondary px-4 py-3 text-sm text-foreground">
+      {!!turn.annotations?.length && <ComposerAnnotationStrip annotations={turn.annotations} attachments={turn.attachments ?? []} />}
+      <PromptMessageAttachments attachments={turn.attachments ?? []} />
+      {(editing || displayText) && <div className="is-user:dark ml-auto flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden rounded-lg bg-secondary px-4 py-3 text-sm text-foreground">
         {editing ? (
           <div
             className="flex min-w-[260px] max-w-full flex-col gap-2 sm:min-w-[360px]"
@@ -135,7 +145,7 @@ export function UserPromptBubble({
                 if (event.key === "Escape") {
                   event.preventDefault();
                   setEditing(false);
-                  setDraftText(text);
+                  setDraftText(displayText);
                 } else if (
                   event.key === "Enter" &&
                   (event.metaKey || event.ctrlKey)
@@ -152,7 +162,7 @@ export function UserPromptBubble({
                 type="button"
                 onClick={() => {
                   setEditing(false);
-                  setDraftText(text);
+                  setDraftText(displayText);
                 }}
                 className="rounded-md border border-border-strong bg-bg px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-surface hover:text-fg"
               >
@@ -180,7 +190,7 @@ export function UserPromptBubble({
                 isCollapsible && !expanded && "max-h-48 overflow-hidden",
               )}
             >
-              {text}
+              {displayText}
             </p>
             {isCollapsible && (
               <button
@@ -204,7 +214,7 @@ export function UserPromptBubble({
             )}
           </>
         )}
-      </div>
+      </div>}
       {!editing && (
         // Same row as the answer's footer (time · copy · …), mirrored to the
         // prompt's side. It always holds its 28px, visible or not, so the
@@ -214,7 +224,7 @@ export function UserPromptBubble({
           data-session-turn-prompt-meta="true"
           className="pointer-events-none flex h-7 items-center justify-end gap-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
         >
-          <TurnMetaActions timestamp={turn.startedAt} copyText={text} align="end">
+          <TurnMetaActions timestamp={turn.startedAt} copyText={displayText} align="end">
             {onEditPrompt && (
               <button
                 type="button"
@@ -222,7 +232,7 @@ export function UserPromptBubble({
                 aria-label={t("chat.editPrompt")}
                 title={t("chat.editPrompt")}
                 onClick={() => {
-                  setDraftText(text);
+                  setDraftText(displayText);
                   setEditing(true);
                 }}
                 className={TURN_ACTION_BUTTON}
@@ -250,6 +260,8 @@ export function ScheduledTaskUserPrompt({
       data-session-turn-prompt="true"
       data-scheduled-task-prompt="true"
     >
+      {!!turn.annotations?.length && <ComposerAnnotationStrip annotations={turn.annotations} attachments={turn.attachments ?? []} />}
+      <PromptMessageAttachments attachments={turn.attachments ?? []} />
       <div className="is-user:dark ml-auto flex w-fit min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-lg bg-secondary px-3 py-2 text-sm text-foreground">
         <p className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
           <CalendarClockIcon className="size-3.5 shrink-0" aria-hidden="true" />

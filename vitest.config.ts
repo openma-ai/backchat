@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   resolve: {
-    preserveSymlinks: true,
+    preserveSymlinks: false,
     dedupe: ["react", "react-dom", "use-stick-to-bottom"],
     alias: [
       {
@@ -49,6 +49,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Locally linked common must use this renderer's React, not its dev dependency.
+    server: { deps: { inline: ["@openma/common", /@tanstack\/react-virtual/, /@tanstack\/virtual-core/, "use-stick-to-bottom"] } },
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "packages/**/*.test.ts"],
     exclude: [...configDefaults.exclude, "e2e/**"],
   },

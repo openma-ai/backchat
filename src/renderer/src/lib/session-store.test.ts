@@ -3468,7 +3468,7 @@ describe("SessionStore prompt queue state", () => {
       ["turn-active", "running"],
     ]);
     expect(store.projectTurn(store.turnsFor(sessionId)[0]!).timeline).toEqual([
-      { kind: "user_input", text: "change direction", clientId: "turn-steer" },
+      { kind: "user_input", text: "change direction", clientId: "turn-steer", startedAt: "2026-08-06T00:00:00.000Z" },
     ]);
     expect(store.get(sessionId)).toMatchObject({
       status: "running",

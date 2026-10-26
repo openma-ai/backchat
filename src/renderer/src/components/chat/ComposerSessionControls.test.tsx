@@ -324,7 +324,8 @@ describe("PermissionModeChip", () => {
       />,
     );
 
-    expect(html).toContain("permission.codexApprove");
+    expect(html).toContain("Approve for me");
+    expect(html).not.toContain("permission.codexApprove");
     expect(html).not.toContain("Workspace access");
     expect(html).not.toContain("workspace-access");
   });

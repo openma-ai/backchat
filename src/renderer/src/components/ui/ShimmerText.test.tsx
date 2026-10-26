@@ -23,6 +23,13 @@ describe("ShimmerText", () => {
     expect(styles).not.toContain("::placeholder {\n  background-image");
   });
 
+  it("uses a stronger narrow sweep and a readable static reduced-motion fallback", () => {
+    expect(styles).toContain("var(--fg-subtle) 35%");
+    expect(styles).toContain("var(--fg) 50%");
+    expect(styles).toContain("shimmer-text-sweep 1.6s linear infinite");
+    expect(styles).toContain("display: inline-block;");
+  });
+
   it("forwards status semantics to the span", () => {
     const html = renderToStaticMarkup(
       <ShimmerText role="status" data-composer-harness-probe="true">Checking</ShimmerText>,

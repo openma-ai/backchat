@@ -201,7 +201,7 @@ describe("new chat sidebar grid", () => {
     expect(label?.textContent).toContain("New chat");
     expect(primary?.contains(trailing!)).toBe(false);
     expect(trailing?.querySelector('[data-sidebar-grid-action="penultimate"]')).not.toBeNull();
-    expect(trailing?.querySelector('[data-sidebar-grid-action="last"]')).not.toBeNull();
+    expect(trailing?.querySelector('[data-sidebar-grid-action="last"]')).toBeNull();
 
     await act(async () => {
       if (primary instanceof HTMLButtonElement) primary.click();
@@ -216,20 +216,25 @@ describe("new chat sidebar grid", () => {
     await act(async () => root.unmount());
   });
 
-  it("opens sidebar menus without hiding or scroll-locking the rest of the app", async () => {
-    // A modal Radix menu marks every sibling aria-hidden and locks body scroll;
-    // in the real window that restyles ~800 nodes per open/close.
-    const sibling = document.createElement("main");
-    document.body.appendChild(sibling);
-    const { root, host } = await mount();
-    const trigger = host.querySelector<HTMLButtonElement>('button[aria-label="Sidebar options"]')!;
-    await act(async () => {
-      trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
-    });
-    expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(document.body.hasAttribute("data-scroll-locked")).toBe(false);
-    expect(sibling.getAttribute("aria-hidden")).toBeNull();
-    await act(async () => root.unmount());
+  it("does not show a redundant header menu containing only create-section", async () => {
+    const {root,host}=await mount();
+    expect(host.querySelector('button[aria-label="Sidebar options"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Search"]')).not.toBeNull();
+    await act(async()=>root.unmount());
+  });
+
+  it("keeps the local group fixed and collapses its content instead of opening a runtime menu", async () => {
+    installBackchat(accountWithStatus("signed_in"));
+    const {root,host}=await mount();
+    await waitForText(host,"Demo");
+    const toggle=host.querySelector<HTMLButtonElement>('[data-testid="sidebar-local-runtime-row"] button')!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.textContent).toContain("chat.local");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await act(async()=>toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector('.sidebar-local-content')?.getAttribute('data-state')).toBe('closed');
+    await act(async()=>root.unmount());
   });
 
   it("renders tenant conversations and iconless rows on the shared grid", async () => {
