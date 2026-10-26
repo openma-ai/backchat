@@ -70,3 +70,9 @@ recovery preserving an active prompt, orphaned-history interruption, and typed
 restartable Codex interruption. No claim of a native-crash soak test.
 Common 0.11.1 is already published. Isolate unrelated in-progress ma harness work
 from this release. Public publication still requires green checks and release assets.
+
+### Security gate remediation
+Final dependency review rejected Electron 42.11.12 due to GHSA-jr5w-w6x2-84p9.
+Official advisory specifies 42.11.16 as the same-series patched release. Upgrade
+the exact package and native target together; re-run clean CI before publication.
+Do not waive or allowlist the advisory.
