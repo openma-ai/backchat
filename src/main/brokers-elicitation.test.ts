@@ -1,4 +1,19 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+
+import { elicitationCallbackForSession } from "./acp-client-callback-adapters.js";
+import type { ElicitationFormRequestInfo } from "../shared/api.js";
+
+const dshFixture = JSON.parse(readFileSync(
+  new URL("./__fixtures__/dsh-user-questions-elicitation.json", import.meta.url),
+  "utf8",
+)) as {
+  requests: { multi: Record<string, unknown> };
+  cases: Array<{
+    name: string;
+    content: Record<string, string | string[]>;
+  }>;
+};
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 const send = vi.fn();
@@ -87,6 +102,53 @@ describe("ACP elicitation form broker", () => {
       request_id: requestId,
       action: "accept",
       content: { note: "ship it", retries: 3 },
+    });
+  });
+
+  it("broadcasts dsh questions and accepts a custom-only multiselect answer", async () => {
+    let form: ElicitationFormRequestInfo | undefined;
+    const callback = elicitationCallbackForSession({
+      sessionId: "sess-dsh",
+      requestForm: async (request: ElicitationFormRequestInfo) => {
+        form = request;
+        return { action: "decline" as const };
+      },
+    } as never);
+    if (!callback) throw new Error("form callback was not registered");
+    await callback(dshFixture.requests.multi as never);
+    if (!form?.questions) throw new Error("dsh questions were not normalized");
+
+    const customOnly = dshFixture.cases.find((item) =>
+      item.name === "custom-only-multiselect")!;
+    const response = brokers.requestElicitationForm("sess-dsh", form);
+    const pending = handlers.get(InvokeChannel.BrokerPendingAsks)?.({}) as Array<{
+      kind: string;
+      ask: {
+        requestId: string;
+        sessionId: string;
+        fields: ElicitationFormRequestInfo["fields"];
+        questions?: ElicitationFormRequestInfo["questions"];
+      };
+    }>;
+    const dshAsk = pending.find((item) => item.ask.sessionId === "sess-dsh")!;
+    expect(dshAsk).toMatchObject({
+      kind: "elicitation",
+      ask: {
+        sessionId: "sess-dsh",
+        fields: form.fields,
+        questions: form.questions,
+      },
+    });
+
+    handlers.get(InvokeChannel.ElicitationRespond)?.({}, {
+      requestId: dshAsk.ask.requestId,
+      action: "accept",
+      content: customOnly.content,
+    });
+
+    await expect(response).resolves.toEqual({
+      action: "accept",
+      content: customOnly.content,
     });
   });
 

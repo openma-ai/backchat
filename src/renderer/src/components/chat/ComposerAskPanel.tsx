@@ -217,8 +217,16 @@ export function ComposerBrokerAsk({
         </AskSheet>
       );
     }
+    const planReview = ask.ask.questions?.length === 1
+      && ask.ask.questions[0]?.intent?.kind === "plan-review"
+      ? ask.ask.questions[0]
+      : undefined;
     return (
-      <AskSheet title={ask.ask.message} onClose={dismiss}>
+      <AskSheet
+        title={planReview?.question ?? ask.ask.message}
+        eyebrow={planReview ? t("ask.planReview") : undefined}
+        onClose={dismiss}
+      >
         <ElicitationAskForm
           ask={ask.ask}
           onSubmit={(response) => onResolve(null, undefined, response)}

@@ -1,6 +1,46 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { elicitationCallbackForSession } from "./acp-client-callback-adapters.js";
+import type { ElicitationFormRequestInfo } from "../shared/api.js";
+
+type FixtureQuestion = {
+  id: string;
+  question: string;
+  header?: string;
+  detail?: string;
+  options?: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+  intent?: { kind: string; approve: string };
+};
+
+type FixtureRequest = {
+  mode: "form";
+  sessionId: string;
+  message: string;
+  requestedSchema: {
+    type: string;
+    properties: Record<string, Record<string, unknown>>;
+    required: string[];
+  };
+  _meta?: Record<string, unknown>;
+};
+
+type FixtureMeta = {
+  version: number;
+  questions: FixtureQuestion[];
+};
+
+const dshFixture = JSON.parse(readFileSync(
+  new URL("./__fixtures__/dsh-user-questions-elicitation.json", import.meta.url),
+  "utf8",
+)) as {
+  requests: { multi: FixtureRequest; planReview: FixtureRequest };
+};
+
+function dshMeta(request: FixtureRequest): FixtureMeta {
+  return request._meta?.["dsh.userQuestions"] as FixtureMeta;
+}
 
 describe("ACP elicitation adapter", () => {
   it("normalizes free-text and numeric fields for the existing elicitation ask slot", async () => {
@@ -128,5 +168,190 @@ describe("ACP elicitation adapter", () => {
       message: "Open local file",
     })).resolves.toEqual({ action: "decline" });
     expect(requestUrl).not.toHaveBeenCalled();
+  });
+
+  it("normalizes real dsh multi-question metadata against its form schema", async () => {
+    const requestForm = vi.fn(async (_request: ElicitationFormRequestInfo) => ({
+      action: "decline" as const,
+    }));
+    const callback = elicitationCallbackForSession({
+      sessionId: "sess-dsh",
+      requestForm,
+    } as never);
+    if (!callback) throw new Error("form callback was not registered");
+
+    await callback(dshFixture.requests.multi as never);
+
+    expect(requestForm.mock.calls[0]?.[0].fields).toEqual([
+      {
+        name: "question_0",
+        type: "select",
+        title: "Target",
+        description: "Where should this run?\n\nChoose the deployment target.",
+        required: false,
+        options: [
+          { value: "option_0", label: "Local", description: "Run on this machine." },
+          {
+            value: "option_1",
+            label: "Staging",
+            description: "Deploy to the shared staging cluster.",
+          },
+          { value: "custom_0", label: "Other" },
+        ],
+      },
+      {
+        name: "question_0__other",
+        type: "text",
+        title: "Other",
+        description: "Type a custom answer.",
+        required: false,
+      },
+      {
+        name: "question_1",
+        type: "multiselect",
+        title: "Checks",
+        description: "Which checks should run first?",
+        required: false,
+        options: [
+          { value: "option_0", label: "Lint" },
+          { value: "option_1", label: "Typecheck" },
+          { value: "option_2", label: "Unit tests" },
+          { value: "custom_1", label: "Other" },
+        ],
+        minItems: 1,
+      },
+      {
+        name: "question_1__other",
+        type: "text",
+        title: "Other",
+        description: "Type a custom answer.",
+        required: false,
+      },
+      {
+        name: "question_2",
+        type: "text",
+        title: "Anything else the agent should know?",
+        required: false,
+      },
+    ]);
+    expect(requestForm.mock.calls[0]?.[0].questions).toEqual([
+      {
+        id: "target",
+        question: "Where should this run?",
+        header: "Target",
+        detail: "Choose the deployment target.",
+        multiSelect: false,
+        field: "question_0",
+        customField: "question_0__other",
+        options: [
+          {
+            value: "option_0",
+            label: "Local",
+            description: "Run on this machine.",
+          },
+          {
+            value: "option_1",
+            label: "Staging",
+            description: "Deploy to the shared staging cluster.",
+          },
+        ],
+      },
+      {
+        id: "checks",
+        question: "Which checks should run first?",
+        header: "Checks",
+        multiSelect: true,
+        field: "question_1",
+        customField: "question_1__other",
+        options: [
+          { value: "option_0", label: "Lint" },
+          { value: "option_1", label: "Typecheck" },
+          { value: "option_2", label: "Unit tests" },
+        ],
+      },
+      {
+        id: "notes",
+        question: "Anything else the agent should know?",
+        multiSelect: false,
+        field: "question_2",
+        options: [],
+      },
+    ]);
+  });
+
+  it("keeps a validated dsh plan-review intent", async () => {
+    const requestForm = vi.fn(async (_request: ElicitationFormRequestInfo) => ({
+      action: "decline" as const,
+    }));
+    const callback = elicitationCallbackForSession({
+      sessionId: "sess-dsh",
+      requestForm,
+    } as never);
+    if (!callback) throw new Error("form callback was not registered");
+
+    await callback(dshFixture.requests.planReview as never);
+
+    expect(requestForm.mock.calls[0]?.[0].questions).toMatchObject([{
+      id: "plan-review",
+      intent: { kind: "plan-review", approve: "Approve" },
+    }]);
+  });
+
+  it.each([
+    ["version 2", (request: FixtureRequest) => {
+      dshMeta(request).version = 2;
+    }],
+    ["missing metadata", (request: FixtureRequest) => {
+      delete request._meta;
+    }],
+    ["a metadata label mismatch", (request: FixtureRequest) => {
+      dshMeta(request).questions[0]!.options![0]!.label = "Not Local";
+    }],
+    ["an unclaimed schema field", (request: FixtureRequest) => {
+      request.requestedSchema.properties.orphan = { type: "string" };
+    }],
+    ["a field with the wrong type", (request: FixtureRequest) => {
+      const field = request.requestedSchema.properties.question_0!;
+      field.type = "array";
+      field.items = { anyOf: field.oneOf };
+      delete field.oneOf;
+    }],
+  ])("falls back to the generic form for %s", async (_name, mutate) => {
+    const request = structuredClone(dshFixture.requests.multi);
+    mutate(request);
+    const requestForm = vi.fn(async (_request: ElicitationFormRequestInfo) => ({
+      action: "decline" as const,
+    }));
+    const callback = elicitationCallbackForSession({
+      sessionId: "sess-dsh",
+      requestForm,
+    } as never);
+    if (!callback) throw new Error("form callback was not registered");
+
+    await callback(request as never);
+
+    const normalized = requestForm.mock.calls[0]?.[0];
+    expect(normalized?.fields.length).toBeGreaterThan(0);
+    expect(normalized).not.toHaveProperty("questions");
+  });
+
+  it("drops an unknown intent while preserving its question", async () => {
+    const request = structuredClone(dshFixture.requests.planReview);
+    dshMeta(request).questions[0]!.intent!.kind = "future-intent";
+    const requestForm = vi.fn(async (_request: ElicitationFormRequestInfo) => ({
+      action: "decline" as const,
+    }));
+    const callback = elicitationCallbackForSession({
+      sessionId: "sess-dsh",
+      requestForm,
+    } as never);
+    if (!callback) throw new Error("form callback was not registered");
+
+    await callback(request as never);
+
+    expect(requestForm.mock.calls[0]?.[0].questions).toMatchObject([{
+      id: "plan-review",
+    }]);
+    expect(requestForm.mock.calls[0]?.[0].questions?.[0]).not.toHaveProperty("intent");
   });
 });
