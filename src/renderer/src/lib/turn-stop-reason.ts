@@ -31,6 +31,9 @@ const NOTICES: Record<string, TurnStopNotice> = {
 export function turnStopNotice(
   turn: { status: string; stopReason?: string },
 ): TurnStopNotice | null {
+  if (turn.status === "cancelled" && turn.stopReason === "interrupted") {
+    return { key: "chat.stopInterrupted", tone: "truncated" };
+  }
   if (turn.status !== "complete") return null;
   if (!turn.stopReason) return null;
   return NOTICES[turn.stopReason] ?? null;

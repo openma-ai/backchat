@@ -1,3 +1,4 @@
+import { isRestartableAgentInterruption } from "./agent-interruption";
 /**
  * Renderer-side session store. Main-session history and task-scoped right-rail
  * workspaces are mirrored to SQLite through the preload API; this class keeps
@@ -2282,6 +2283,25 @@ export class SessionStore {
     this.#emit();
   }
 
+  /** I1: session/load or session/resume restores context, not a lost prompt.
+   * Only reconcile the history snapshot IDs: a newly sent prompt may race IPC.
+   * A surviving main-owned prompt stays running across renderer reloads. */
+  reconcileHistoryRuntime(sessionId: string, replayedTurnIds: readonly string[], busy: boolean, activeTurnIds?: readonly string[]): void {
+    if (busy && !activeTurnIds) return;
+    const activeIds = new Set(activeTurnIds ?? []);
+    const ids = new Set(replayedTurnIds);
+    for (const turn of this.#turns.values()) {
+      if (turn.sessionId !== sessionId || !ids.has(turn.id) || activeIds.has(turn.id) || turn.status !== "running") continue;
+      this.#turns.set(turn.id, { ...turn, status: "cancelled", stopReason: "interrupted", endedAt: turn.endedAt ?? turn.startedAt });
+    }
+    this.#mutateSession(sessionId, session => {
+      const active = session.activeTurnId && this.#turns.get(session.activeTurnId);
+      if (active && (active.status === "running" || active.status === "queued")) return session;
+      return { ...session, activeTurnId: undefined, status: session.status === "running" ? "ready" : session.status };
+    });
+    this.#emit();
+  }
+
   /** The host's queue snapshot is the authority on what is running. A turn
    *  replayed from SQL whose terminal event never got persisted (a write that
    *  failed with ENOSPC, a crash mid-turn) would otherwise stay "running"
@@ -3718,6 +3738,13 @@ export class SessionStore {
           continue;
         }
         if (canonical.type === "session.error" && canonical.turn_id) {
+          const interruption = isRestartableAgentInterruption(this.#sessions.get(sessionId)?.agent_id ?? canonical.source.harness, isPlainRecord(canonical.data) ? canonical.data.error_details : undefined);
+          if (interruption) {
+            turn.status = "cancelled";
+            turn.stopReason = "interrupted";
+            turn.errorMessage = undefined;
+            continue;
+          }
           turn.status = "error";
           const errorData = isPlainRecord(canonical.data)
             ? canonical.data
@@ -4778,6 +4805,10 @@ export class SessionStore {
         break;
       }
       case "session.error": {
+        const interrupted = isRestartableAgentInterruption(
+          ev.agent_id ?? this.#sessions.get(ev.session_id)?.agent_id,
+          ev.error_details,
+        );
         const authRequired = ev.code === "auth_required"
           || isAuthenticationFailureMessage(ev.message);
         const message = sanitizeAuthenticationMessage(ev.message);
@@ -4789,10 +4820,11 @@ export class SessionStore {
             const sendFailed = turn.sendState === "pending" && turn.events.length === 0;
             this.#turns.set(turnId, {
               ...turn,
-              status: "error",
-              errorMessage: message,
-              sendState: sendFailed ? "failed" : undefined,
-              sendError: sendFailed ? message : undefined,
+              status: interrupted ? "cancelled" : "error",
+              stopReason: interrupted ? "interrupted" : turn.stopReason,
+              errorMessage: interrupted ? undefined : message,
+              sendState: !interrupted && sendFailed ? "failed" : undefined,
+              sendError: !interrupted && sendFailed ? message : undefined,
               endedAt: Date.now(),
             });
           }
@@ -4810,7 +4842,7 @@ export class SessionStore {
           status: authRequired
             ? (s.status === "draft" ? "draft" : "ready")
             : turnId ? s.status : "errored",
-          lastError: authRequired ? undefined : message,
+          lastError: authRequired || interrupted ? undefined : message,
           authRequired: authRequired ? true : s.authRequired,
           authRetryAllowed: authRequired ? false : s.authRetryAllowed,
           supportsLogout: ev.auth?.supportsLogout ?? s.supportsLogout,

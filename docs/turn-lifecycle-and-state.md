@@ -469,3 +469,21 @@ model thought or synthetic tool event. Backchat advertises support with the
 implemented common projector and dedicated renderer. Canonical raw transport
 records preserve these new updates through live delivery and persisted replay.
 Source: https://agentclientprotocol.com/protocol/v1/prompt-turn#session-compaction
+
+### Cold history versus live prompt recovery
+`session/load` and capability-gated `session/resume` restore conversation
+context; neither proves a lost `session/prompt` resumed execution. I1 permits
+client-side interruption when the authoritative local main runtime confirms no
+active work. Reconcile only the IDs captured after history materialization so a
+new prompt racing IPC cannot be cancelled. Renderer-only recovery is different:
+when the main still owns active work, keep it live without resending the prompt.
+Never use a network/query error as evidence that a remote task has stopped.
+
+### Adapter process exits are not successful prompt completion
+codex-acp 2.2.2 uses request error code1001 plus data.restartable for app-server
+loss. This is adapter evidence, not a standard ACP StopReason. A zero child exit
+code does not complete a prompt. Project restartable process loss as interrupted
+in live/replay, retain partial output, and permit explicit next input; never
+silently retry a side-effectful prompt. Keep the original structured error on
+disk for diagnostics even when the GUI chooses interruption rather than red
+session-failure chrome.

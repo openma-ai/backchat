@@ -16,6 +16,13 @@ export async function openHistoryWindow(sessionId: string): Promise<void> {
     sessionStore.replayHistoryWindow(sessionId, rows, {
       hasMore: rows.length >= HISTORY_PAGE_ROWS,
     });
+    const replayedTurnIds = sessionStore.turnsFor(sessionId).map(turn => turn.id);
+    // No running local process is authoritative interruption evidence. Query
+    // errors are unknown, never permission to silently cancel a remote task.
+    if (!sessionStore.get(sessionId)?.openma && window.backchat.sessionRuntimeStatus) {
+      const runtime = await window.backchat.sessionRuntimeStatus({ session_id: sessionId });
+      sessionStore.reconcileHistoryRuntime(sessionId, replayedTurnIds, runtime?.busy === true, runtime?.active_turn_ids);
+    }
   } finally {
     sessionStore.setHistoryPending(sessionId, false);
   }

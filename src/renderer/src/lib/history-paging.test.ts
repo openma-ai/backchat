@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("./session-store", () => ({
   sessionStore: {
+    get: () => undefined,
     setHistoryPending: (value: string, pending: boolean) => { state.pending = pending; },
     isHistoryPending: () => state.pending,
     historyWindowFor: () => state.window,

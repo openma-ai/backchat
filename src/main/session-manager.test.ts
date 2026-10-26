@@ -389,6 +389,7 @@ describe("SessionManager prompt queue", () => {
       installed_version: "2.0.0",
       restart_required: true,
       busy: false,
+      active_turn_ids: [],
       restart_pending: false,
     });
   });

@@ -32,6 +32,8 @@ export default defineConfig({
       "src/main/power-management.test.ts",
       "src/main/quit-coordinator.test.ts",
       "src/main/renderer-recovery.test.ts",
+      "src/renderer/src/lib/session-restart-recovery.test.ts",
+      "src/renderer/src/lib/agent-interruption.test.ts",
       "src/renderer/src/components/chat/CompactionActivity.test.tsx",
       "src/renderer/src/components/chat/ChatTurn.test.tsx",
       "src/shared/app-update.test.ts",

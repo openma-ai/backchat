@@ -542,6 +542,7 @@ export class SessionManager {
           runningVersion !== installedVersion,
       ),
       busy: sess.orchestration.isBusy(),
+      active_turn_ids: this.activeTurnIds(session_id),
       restart_pending: sess.orchestration.restartPending,
     };
   }

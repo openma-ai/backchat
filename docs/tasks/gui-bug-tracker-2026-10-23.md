@@ -823,3 +823,43 @@ reload and retained summary. Fake harness, not a paid production Codex run.
 Main/web typechecks and production build pass. Expanded host event-store suite
 has 5 unrelated-background/subagent assertion failures (212 passed overall),
 so no full-suite-green claim. Current installed/running app unchanged; no release.
+
+## 41. Third native crash + cold-start running reconciliation
+2026-10-25 21:29:47 local: installed 0.0.18 renderer exited SIGTRAP/exit5.
+Framework UUID 4c4c4476-5555-3144-a177-883f810f3630 matches official Electron
+42.5.1 symbols. Three crash reports have identical leading frame offsets.
+Symbolized chain: Document::UpdateStyleAndLayoutTreeForThisDocument ->
+LocalFrameView::UpdateStyleAndLayoutInternal -> FrameSelection::SelectionHasFocus
+-> LayoutSelection::Commit -> MouseEventManager::HandleMouseReleaseEvent.
+Official Electron #54281 / 42-series backport #54610 describes this exact
+CHECK(StateAllowsTreeMutations()) crash; fixed in 42.11.12. Upgrade pending.
+Sources: https://releases.electronjs.org/pr/54281 and /pr/54610.
+Main continued after renderer crash; log contains no auto-recovery events from
+installed old app. Do not claim the new recovery controller failed in that build.
+
+ACP session/resume restores context without replay, not an outstanding prompt.
+History now queries main runtime liveness; absent/idle local runtime settles only
+snapshot unfinished turn IDs as interrupted, never racing new prompts. Surviving
+main-owned work remains running through renderer reload. Unit2 + history3 and
+Electron2 passed (cold history interruption + actual renderer crash live task).
+Backchat release paused by user's new crash report; no Backchat tag published.
+
+## 42. Restartable Codex app-server exit must show interruption
+2026-10-25 22:00:10 local: adapter reported ACP error code1001 with
+{exitCode:0,signal:null,restartable:true}. Diagnostic: intentional=false,
+likelyOutOfMemory=false, uptimeMs=1226134, stderrTail empty. This is NOT evidence
+of successful prompt completion or the renderer SIGTRAP. Exact exit cause is
+not established; do not claim idle reclamation/OS kill without evidence.
+Map this adapter-scoped structured error to cancelled/interrupted on live and
+persisted replay, clear the generic error gate, keep prior partial output and
+show explicit interruption copy. Never infer from English text or exitCode0
+alone, never automatically replay side-effectful work. New message can use
+adapter-owned app-server restart without pretending old prompt resumed.
+
+Electron42.11.12 installed for test runtime; npm target/header and lock match.
+124 focused unit tests pass, main/web types and build pass. Four Electron tests
+pass on42.11.12: text selection annotation, real renderer crash recovery keeping
+live main prompt, orphan history interruption, typed process-exit interruption.
+Installed user app remains untouched. Native crash root is strongly matched to
+upstream#54610 by exact official symbol UUID/call chain; prolonged native crash
+reproduction/soak has not yet been performed, so no guarantee of crash absence.

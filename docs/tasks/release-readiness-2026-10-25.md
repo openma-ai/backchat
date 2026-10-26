@@ -54,3 +54,19 @@ Common PR #53 merged as 73c30fe, tag v0.11.1 pushed; npm confirmed 0.11.1.
 Backchat preparing 0.0.19 with all common consumers pinned 0.11.1 and no patch.
 Curated suite now includes compact regressions: 922 passed, script tests passed,
 5 critical Electron regressions passed before formal dependency refresh.
+
+### Release hold after repeated installed-app crash
+User reported third native renderer crash and orphan running sessions on restart.
+Do not merge/tag Backchat release until interruption reconciliation and Electron
+42.11.12 upgrade are validated. Official upstream #54610 matches symbolized crash
+and ships fix in 42.11.12. common 0.11.1 remains published and available.
+
+### Release resumed — 2026-10-26
+User authorized publication after interruption and crash fixes. Electron is pinned
+to 42.11.12; upstream #54610 matches the symbolized layout/selection crash.
+Main/web typechecks and production build passed. Curated validation passed
+136 files / 927 tests; four Electron regressions passed for annotation, renderer
+recovery preserving an active prompt, orphaned-history interruption, and typed
+restartable Codex interruption. No claim of a native-crash soak test.
+Common 0.11.1 is already published. Isolate unrelated in-progress ma harness work
+from this release. Public publication still requires green checks and release assets.
