@@ -48,3 +48,68 @@ export function patchSessionMessage(old: SessionMessage | undefined, update: Rec
   }
   return result;
 }
+
+/** Synthetic toolCallIds used until a parent Subagent tool can be correlated. */
+export function isSyntheticSubagentToolCallId(toolCallId: string): boolean {
+  return toolCallId.startsWith("rfd:") || toolCallId.startsWith("subagent:");
+}
+
+/** Live DSH settlement messages encode the parent tool id in messageId. */
+export function toolCallIdFromSessionMessageId(messageId: string): string | undefined {
+  const match = /^dsh:tool-result:(.+)$/.exec(messageId);
+  return match?.[1] || undefined;
+}
+
+export function parentSubagentToolTask(rawInput: unknown): string | undefined {
+  if (!rawInput || typeof rawInput !== "object" || Array.isArray(rawInput)) return undefined;
+  const input = rawInput as Record<string, unknown>;
+  // Prefer prompt: DSH Subagent description is often a short label while
+  // prompt carries the real delegated user message for the child bubble.
+  for (const key of ["prompt", "description", "message", "task"] as const) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+/** Parent-turn tools that launch a native/RFD child (DSH "Subagent", Codex spawn, …). */
+export function isParentSubagentLaunchTool(tool: {
+  title?: string | null;
+  toolName?: string | null;
+  rawInput?: unknown;
+}): boolean {
+  const title = (tool.title ?? "").trim().toLowerCase();
+  const name = (tool.toolName ?? "").trim().toLowerCase();
+  if (
+    title === "subagent"
+    || title.startsWith("start subagent")
+    || /\bsubagent\b/.test(title)
+    || title === "spawnagent"
+    || title.startsWith("spawn agent")
+  ) {
+    return true;
+  }
+  if (
+    name === "subagent"
+    || name === "spawn_agent"
+    || name === "spawnagent"
+  ) {
+    return true;
+  }
+  // DSH Subagent rawInput carries prompt/description; title is often exactly
+  // "Subagent". Do not match bare Claude Task/Agent tools here — those have
+  // their own native adapters with real toolCallIds.
+  return title === "subagent" && parentSubagentToolTask(tool.rawInput) !== undefined;
+}
+
+export function sessionMessageText(content: unknown[] | null | undefined): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .flatMap((block) => {
+      if (!block || typeof block !== "object") return [];
+      const row = block as Record<string, unknown>;
+      return row.type === "text" && typeof row.text === "string" ? [row.text] : [];
+    })
+    .join("")
+    .trim();
+}

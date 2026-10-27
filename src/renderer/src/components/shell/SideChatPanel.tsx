@@ -310,11 +310,18 @@ export function SideChatPanel() {
 
   const openSubagent = useCallback((activity: SubagentActivity) => {
     if (!mainActive) return;
+    // Match ChatTurn: re-activate an existing subagent tab for the same
+    // viewSessionId instead of minting a duplicate Maxwell chrome entry.
+    const existingTab = sessionStore.sideTabs().find(
+      (tab) =>
+        tab.type === "subagent" && tab.payload === activity.viewSessionId,
+    );
     const tabId = sessionStore.openSideTabForTask(
       mainActive.id,
       "subagent",
       activity.viewSessionId,
       subagentLabel(activity),
+      existingTab?.id,
     );
     sessionStore.patchSideTabForTask(mainActive.id, tabId, {
       avatarId: activity.avatarId,

@@ -464,6 +464,7 @@ export function ChatView({
         isSessionComposerDisabled(active?.status)
       }
       running={!isNativeSubagent && (active?.status === "running" || hasActiveTurn)}
+      compactChips={isSide}
       availableCommands={active?.availableCommands}
       attachmentDefaultPath={active?.cwd || pickedCwd || undefined}
       lockedAgentId={composerAgentBinding.lockedAgentId}
@@ -850,7 +851,19 @@ export function ChatView({
             ),
             conversationContentAfter: active ? (
               <>
-              <SessionMessages messages={active.sessionMessages ?? []} />
+              {/* Parent transcript uses per-turn subagent chips for quick
+                  access. Child→parent session_messages must not float as
+                  user bubbles after the main answer. Side-chat native
+                  children still render directed session_message rows. */}
+              {isNativeSubagent ? (
+                <SessionMessages
+                  messages={active.sessionMessages ?? []}
+                  childAcpSessionId={active.acp_session_id || undefined}
+                  hideTexts={transcriptTurns
+                    .map((turn) => turn.assistantText.trim())
+                    .filter(Boolean)}
+                />
+              ) : null}
               <ResponseAnnotationController
                 scopeRef={transcriptRef}
                 destinationSessionId={active.id}
