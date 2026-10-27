@@ -109,3 +109,44 @@ test("replay retains root text alongside a previously misclassified RFD vendor r
   store.replayHistory("host", events.map((event, index) => ({ seq: index + 1, ts: index + 1, type: "openma_event", data: JSON.stringify(event) })));
   expect(store.turnsFor("host")).toEqual([expect.objectContaining({ promptText: "prompt", assistantText: "saved answer", status: "complete" })]);
 });
+
+test("native result then identical child chunk does not glue assistant text", () => {
+  const store = new SessionStore();
+  store.apply({ type: "session.ready", session_id: "host", acp_session_id: "root", agent_id: "claude-acp", cwd: "/repo" });
+  const send = (session: string, update: Record<string, unknown>) => store.apply({
+    type: "session.event", session_id: "host", turn_id: "turn", event: routed(session, update),
+  });
+  send("root", { sessionUpdate: "subagent_update", sessionId: "child", title: "Maxwell", state: { state: "running" } });
+  const activity = store.subagentsFor("host")[0]!;
+  store.apply({
+    type: "session.native_subagent",
+    session_id: "host",
+    provider: "claude",
+    tool_call_id: activity.native?.toolCallId ?? `rfd:child`,
+    child_id: "child",
+    status: "complete",
+    result: "CHILD_RFD_OK",
+  } as never);
+  send("child", { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "CHILD_RFD_OK" } });
+  const view = store.subagentsFor("host")[0]!.viewSessionId;
+  expect(store.turnsFor(view)[0]?.assistantText).toBe("CHILD_RFD_OK");
+});
+
+test("opening the same subagent viewSessionId reuses the side tab", () => {
+  const store = new SessionStore();
+  store.apply({ type: "session.ready", session_id: "host", acp_session_id: "root", agent_id: "claude-acp", cwd: "/repo" });
+  store.apply({
+    type: "session.event", session_id: "host", turn_id: "turn",
+    event: routed("root", { sessionUpdate: "subagent_update", sessionId: "child", title: "Maxwell", state: { state: "running" } }),
+  });
+  const view = store.subagentsFor("host")[0]!.viewSessionId;
+  // Auto-sync already opened one tab for the child view.
+  expect(store.sideTabs()).toEqual([
+    expect.objectContaining({ type: "subagent", payload: view }),
+  ]);
+  const firstId = store.sideTabs()[0]!.id;
+  const secondId = store.openSideTabForTask("host", "subagent", view, "Maxwell");
+  expect(secondId).toBe(firstId);
+  expect(store.sideTabs()).toHaveLength(1);
+  expect(store.activeSideTabId()).toBe(firstId);
+});

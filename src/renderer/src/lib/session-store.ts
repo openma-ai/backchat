@@ -182,6 +182,9 @@ interface TurnProjectionCacheEntry {
 
 export class SessionStore {
   #rfdAppliedEvents = new Set<string>();
+  /** Child turns whose assistantText was seeded from native.result before any
+   *  stream chunk. The matching first chunk must not append again. */
+  #resultSeededTurns = new Set<string>();
   #rfdAssociations = new Map<string, SubagentAssociation>();
   #rfdKey(root: string, child: string): string { return JSON.stringify([root, child]); }
   #rfdView(root: string, child: string): string | undefined {
@@ -251,9 +254,30 @@ export class SessionStore {
     const parsed = parseAcpEvent(update);
     const now = Date.now();
     const nextTurn = { ...previousTurn, events: [...previousTurn.events] };
-    if (parsed.kind === "text") { nextTurn.assistantText += parsed.text; this.#appendStreamEvent(nextTurn, "text", parsed.text, now); }
-    else if (parsed.kind === "thought") { nextTurn.thoughtText += parsed.text; this.#appendStreamEvent(nextTurn, "thought", parsed.text, now); }
-    else nextTurn.events.push({ payload: update, receivedAt: now });
+    if (parsed.kind === "text") {
+      // Native result may seed the answer before RFD/stream frames arrive
+      // (Claude Task tool + child agent_message_chunk). Consume that seed
+      // once so CHILD_RFD_OK is not glued into CHILD_RFD_OKCHILD_RFD_OK.
+      if (
+        this.#resultSeededTurns.has(childTurn)
+        && previousTurn.assistantText.length > 0
+        && previousTurn.assistantText === parsed.text
+      ) {
+        this.#resultSeededTurns.delete(childTurn);
+        if (previousTurn.events.length === 0) {
+          this.#appendStreamEvent(nextTurn, "text", parsed.text, now);
+        }
+      } else {
+        this.#resultSeededTurns.delete(childTurn);
+        nextTurn.assistantText += parsed.text;
+        this.#appendStreamEvent(nextTurn, "text", parsed.text, now);
+      }
+    } else if (parsed.kind === "thought") {
+      nextTurn.thoughtText += parsed.text;
+      this.#appendStreamEvent(nextTurn, "thought", parsed.text, now);
+    } else {
+      nextTurn.events.push({ payload: update, receivedAt: now });
+    }
     this.#turns.set(childTurn, nextTurn);
     return true;
   }
@@ -1727,8 +1751,15 @@ export class SessionStore {
     requestedId?: string,
     avatarId?: SubagentAvatarId,
   ): string {
-    const id = requestedId || `tab-${Math.random().toString(36).slice(2, 8)}`;
     const prevTabs = this.#sideTabsByMain.get(bucket) ?? [];
+    // Subagent tabs are keyed by viewSessionId payload. Reuse the existing
+    // rail entry when the caller omitted an id (New-tab list, auto-sync).
+    const reusedId =
+      requestedId
+      ?? (type === "subagent"
+        ? prevTabs.find((tab) => tab.type === "subagent" && tab.payload === payload)?.id
+        : undefined);
+    const id = reusedId || `tab-${Math.random().toString(36).slice(2, 8)}`;
     const existingIndex = prevTabs.findIndex((tab) => tab.id === id);
     if (existingIndex >= 0) {
       const existing = prevTabs[existingIndex]!;
@@ -3104,22 +3135,64 @@ export class SessionStore {
       activeTurnId: turnStatus === "running" ? turnId : undefined,
     });
 
-    this.#turns.set(turnId, {
-      id: turnId,
-      sessionId: viewSessionId,
-      promptText: activity.task,
-      events: previousTurn?.events ?? [],
-      assistantText:
-        previousTurn?.assistantText || activity.native?.result || "",
-      thoughtText: previousTurn?.thoughtText ?? "",
-      status: turnStatus,
-      errorMessage: activity.errorMessage,
-      startedAt: previousTurn?.startedAt ?? activity.startedAt,
-      endedAt:
-        turnStatus === "running"
-          ? undefined
-          : previousTurn?.endedAt ?? activity.updatedAt,
-    });
+    const hadAssistant = !!previousTurn?.assistantText;
+    const seededAssistant =
+      previousTurn?.assistantText || activity.native?.result || "";
+    const seededEvents = [...(previousTurn?.events ?? [])];
+    if (
+      !hadAssistant
+      && activity.native?.result
+      && seededAssistant === activity.native.result
+    ) {
+      this.#resultSeededTurns.add(turnId);
+    }
+    // Keep timeline + accumulator aligned when the only answer is the
+    // structured native result (no stream chunks yet).
+    if (
+      seededAssistant
+      && seededEvents.length === 0
+      && !hadAssistant
+      && activity.native?.result
+    ) {
+      const seed: Turn = {
+        id: turnId,
+        sessionId: viewSessionId,
+        promptText: activity.task,
+        events: [],
+        assistantText: seededAssistant,
+        thoughtText: "",
+        status: turnStatus,
+        errorMessage: activity.errorMessage,
+        startedAt: previousTurn?.startedAt ?? activity.startedAt,
+        endedAt:
+          turnStatus === "running"
+            ? undefined
+            : previousTurn?.endedAt ?? activity.updatedAt,
+      };
+      this.#appendStreamEvent(
+        seed,
+        "text",
+        seededAssistant,
+        previousTurn?.startedAt ?? activity.startedAt,
+      );
+      this.#turns.set(turnId, seed);
+    } else {
+      this.#turns.set(turnId, {
+        id: turnId,
+        sessionId: viewSessionId,
+        promptText: activity.task,
+        events: seededEvents,
+        assistantText: seededAssistant,
+        thoughtText: previousTurn?.thoughtText ?? "",
+        status: turnStatus,
+        errorMessage: activity.errorMessage,
+        startedAt: previousTurn?.startedAt ?? activity.startedAt,
+        endedAt:
+          turnStatus === "running"
+            ? undefined
+            : previousTurn?.endedAt ?? activity.updatedAt,
+      });
+    }
 
     const tabs = this.#sideTabsByMain.get(parentSessionId) ?? [];
     // Clean up the short-lived aggregate tab from older hot-reloaded builds.

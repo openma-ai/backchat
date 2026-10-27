@@ -33,8 +33,12 @@ vi.mock("@/components/shell/TerminalTab", () => ({
 vi.mock("@/components/shell/BackgroundProcessTab", () => ({
   BackgroundProcessTab: () => <div data-process-tab />,
 }));
+let pickSubagent: ((activity: Record<string, unknown>) => void) | null = null;
 vi.mock("@/components/shell/RightPanelLauncher", () => ({
-  RightPanelLauncher: () => <div data-task-workspace />,
+  RightPanelLauncher: (props: { onPickSubagent?: (activity: Record<string, unknown>) => void }) => {
+    pickSubagent = props.onPickSubagent ?? null;
+    return <div data-task-workspace />;
+  },
 }));
 vi.mock("@/components/shell/AppShell", () => ({
   useRightRailCollapse: () => ({ toggle: vi.fn() }),
@@ -95,12 +99,14 @@ vi.mock("@/lib/session-store", () => ({
   sessionStore: {
     setActiveSideTab: vi.fn(),
     openSideTab: vi.fn(),
-    openSideTabForTask: vi.fn(),
+    openSideTabForTask: vi.fn(() => "tab-new"),
     patchSideTabForTask: vi.fn(),
+    sideTabs: () => sideTabs,
   },
 }));
 
 import { SideChatPanel } from "./SideChatPanel";
+import { sessionStore } from "@/lib/session-store";
 
 describe("SideChatPanel new-tab workspace", () => {
   beforeEach(() => {
@@ -110,6 +116,9 @@ describe("SideChatPanel new-tab workspace", () => {
     sideTabs = [];
     activeSideTab = null;
     browserWindows = [];
+    pickSubagent = null;
+    vi.mocked(sessionStore.openSideTabForTask).mockClear();
+    vi.mocked(sessionStore.patchSideTabForTask).mockClear();
   });
 
   it("mounts webviews only for the current session's browser window", () => {
@@ -257,5 +266,35 @@ describe("SideChatPanel new-tab workspace", () => {
       'src="data:image/png;base64,example-icon"',
     );
     expect(markup).not.toContain("lucide-globe");
+  });
+
+  it("reuses an existing Maxwell subagent tab when picking the same viewSessionId", () => {
+    sideTabs = [{
+      id: "tab-maxwell",
+      type: "subagent",
+      payload: "view-maxwell",
+      label: "Maxwell",
+      avatarId: "1_01",
+    }];
+    renderToStaticMarkup(<SideChatPanel />);
+    expect(pickSubagent).toEqual(expect.any(Function));
+    pickSubagent?.({
+      viewSessionId: "view-maxwell",
+      avatarId: "1_01",
+      childSessionId: "child-1",
+      parentSessionId: "session-1",
+      inheritance: "fresh",
+      task: "Audit",
+      status: "running",
+      startedAt: 1,
+      updatedAt: 1,
+    });
+    expect(sessionStore.openSideTabForTask).toHaveBeenCalledWith(
+      "session-1",
+      "subagent",
+      "view-maxwell",
+      expect.any(String),
+      "tab-maxwell",
+    );
   });
 });

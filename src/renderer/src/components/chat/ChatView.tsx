@@ -850,7 +850,19 @@ export function ChatView({
             ),
             conversationContentAfter: active ? (
               <>
-              <SessionMessages messages={active.sessionMessages ?? []} />
+              <SessionMessages
+                messages={active.sessionMessages ?? []}
+                childAcpSessionId={
+                  isNativeSubagent ? active.acp_session_id || undefined : undefined
+                }
+                hideTexts={
+                  isNativeSubagent
+                    ? transcriptTurns
+                        .map((turn) => turn.assistantText.trim())
+                        .filter(Boolean)
+                    : []
+                }
+              />
               <ResponseAnnotationController
                 scopeRef={transcriptRef}
                 destinationSessionId={active.id}
