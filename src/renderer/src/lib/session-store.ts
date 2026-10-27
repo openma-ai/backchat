@@ -56,6 +56,7 @@ import {
 } from "./fork-support.js";
 import { forkPointsByTurn } from "./fork-point.js";
 import { sessionUsesManagedWorkspace } from "./fork-workspace";
+import { readPromptSuggestion } from "./prompt-suggestion";
 import {
   createOpenMAEvent,
   createVendorEvent,
@@ -2577,6 +2578,9 @@ export class SessionStore {
         : s.queuedTurnIds,
       status: "running",
       lastUsedAt: Math.max(s.lastUsedAt ?? s.createdAt, now),
+      // The suggestion answered the turn that is starting now. Keeping it
+      // would put a spent ghost back over the empty composer.
+      promptSuggestion: null,
     }));
     this.#recordSubagentActivity(sessionId, {
       task: promptText,
@@ -2842,6 +2846,9 @@ export class SessionStore {
       const nextMeta = isPlainRecord(inner._meta)
         ? deepMergeRecords(s.sessionInfoMeta ?? {}, inner._meta)
         : s.sessionInfoMeta;
+      // Only an update that carries the key speaks about the suggestion.
+      // An unrelated session_info_update must not clear a live one.
+      const promptSuggestion = readPromptSuggestion(inner._meta);
       const adapter =
         resolveAgentRuntimeAdapter(s.agent_id) ?? genericAcpRuntimeAdapter;
       const threadStatus = adapter.sessionThreadStatusUpdate({
@@ -2866,6 +2873,9 @@ export class SessionStore {
             ? inner.updatedAt
             : s.sessionUpdatedAt,
         sessionInfoMeta: nextMeta,
+        ...(promptSuggestion.present
+          ? { promptSuggestion: promptSuggestion.text }
+          : {}),
         agentThreadStatus: threadStatus ?? s.agentThreadStatus,
         ...(goal === undefined
           ? {}

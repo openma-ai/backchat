@@ -65,6 +65,7 @@ import {
 } from "./ComposerContentParts";
 import { ComposerSlashCommandMenu } from "./ComposerSlashCommandMenu";
 import { useComposerSuggestionState } from "@/lib/composer-suggestion-state";
+import { resolvePromptSuggestionGhost } from "@/lib/prompt-suggestion";
 import {
   useComposerHarnessLiveAuth,
   composerHarnessLiveAuthKey,
@@ -210,6 +211,9 @@ export function Composer({
   }, [composerTextKey]);
   const [caret, setCaret] = useState(0);
   const [dismissedMentionText, setDismissedMentionText] = useState<string | null>(null);
+  /** The agent's suggestion the user dismissed with Escape. A new suggestion
+   *  is a new string, so it shows again. */
+  const [dismissedPromptSuggestion, setDismissedPromptSuggestion] = useState<string | null>(null);
   const [mentionPickerIndex, setMentionPickerIndex] = useState(0);
   const [fileMentionCandidates, setFileMentionCandidates] = useState<FileMentionCandidate[]>([]);
   const [mentionedFileAttachmentIds, setMentionedFileAttachmentIds] = useState<Set<string>>(
@@ -591,6 +595,34 @@ export function Composer({
     setText,
     setDismissedSlashText,
   });
+  /** The agent's predicted follow-up prompt, shown only while the composer
+   *  is empty. Every surface that already owns an empty composer blocks it:
+   *  the slash picker, the skill chip, the auth prompt, the harness probe. */
+  const promptSuggestionGhost = useMemo(
+    () => resolvePromptSuggestionGhost({
+      text,
+      suggestion: composerSession?.promptSuggestion,
+      dismissed: dismissedPromptSuggestion,
+      blocked:
+        !!disabled
+        || authNeeded
+        || !!selectedSkillCommand
+        || !!suggestionTemplate
+        || showPicker
+        || !!harnessProbeText,
+    }),
+    [
+      authNeeded,
+      composerSession?.promptSuggestion,
+      dismissedPromptSuggestion,
+      disabled,
+      harnessProbeText,
+      selectedSkillCommand,
+      showPicker,
+      suggestionTemplate,
+      text,
+    ],
+  );
   const staticAgentIds = agentPickerAgentIds?.filter(Boolean) ?? [];
   const visibleStaticAgentIds = staticAgentIds.slice(0, 3);
 
@@ -656,6 +688,7 @@ export function Composer({
     setSessionReferences([]);
     setMentionedFileAttachmentIds(new Set());
     setDismissedMentionText(null);
+    setDismissedPromptSuggestion(null);
     setMentionPickerIndex(0);
   }, [sessionId]);
 
@@ -684,6 +717,24 @@ export function Composer({
       || attachments.length > 0
       || annotations.length > 0,
     );
+  };
+
+  /** Shared by Tab and right-click: write the suggested prompt in as real
+   *  text and select it, so the next keystroke types over it. It fills the
+   *  composer, it never sends. */
+  const applyPromptSuggestion = (suggestion: string) => {
+    const trimmed = suggestion.trim();
+    if (!trimmed) return;
+    setText(trimmed);
+    setCaret(trimmed.length);
+    setDismissedPromptSuggestion(null);
+    reportComposerContent(trimmed);
+    requestAnimationFrame(() => {
+      const textarea = taRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.select();
+    });
   };
 
   /** `/fork` navigates away immediately. The draft-store write has to happen
@@ -1061,7 +1112,10 @@ export function Composer({
             />
             <div
               className={cn(
-                "relative flex min-w-0",
+                // `isolate` keeps the ghost inside this box: it paints under
+                // the transparent textarea, so the caret stays readable on
+                // top of the suggested text.
+                "relative isolate flex min-w-0",
                 sessionReferences.length > 0 || mentionedFileAttachmentIds.size > 0
                   ? "min-w-[12rem] flex-[1_1_12rem]"
                   : "w-full",
@@ -1099,6 +1153,19 @@ export function Composer({
                   />
                 </span>
               )}
+              {/* The agent's predicted follow-up prompt rides in the empty
+                  composer as muted ghost text. Not the placeholder: a
+                  placeholder cannot be completed with Tab. It sits under the
+                  transparent textarea so the caret stays on top of it. */}
+              {promptSuggestionGhost && (
+                <div
+                  aria-hidden="true"
+                  data-composer-prompt-suggestion="true"
+                  className="composer-input-ghost pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+                >
+                  <span className="text-fg-subtle">{promptSuggestionGhost}</span>
+                </div>
+              )}
               <ComposerInput
               ref={taRef}
               aria-label={inputLabel}
@@ -1114,6 +1181,13 @@ export function Composer({
                 clearDismissal();
               }}
               onClick={(e) => setCaret(e.currentTarget.selectionStart ?? text.length)}
+              onContextMenu={(e) => {
+                // Right-click applies the visible suggestion (the same insert
+                // as Tab). No suggestion → leave the OS context menu alone.
+                if (!promptSuggestionGhost) return;
+                e.preventDefault();
+                applyPromptSuggestion(promptSuggestionGhost);
+              }}
               onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? text.length)}
               onFocus={() => pasteRegistrationRef.current?.noteFocus()}
               onPaste={(e) => {
@@ -1167,6 +1241,7 @@ export function Composer({
                 sessionReferenceCount: sessionReferences.length,
                 slashPickerOpen: showPicker,
                 hasSlashSelection: !!highlightedSlashCommand,
+                hasPromptSuggestion: !!promptSuggestionGhost,
                 shiftKey: e.shiftKey,
                 altKey: e.altKey,
                 isComposing: e.nativeEvent.isComposing,
@@ -1205,6 +1280,16 @@ export function Composer({
                   e.preventDefault();
                   dismissPicker();
                   return;
+                case "prompt-suggest-apply":
+                  e.preventDefault();
+                  if (promptSuggestionGhost) {
+                    applyPromptSuggestion(promptSuggestionGhost);
+                  }
+                  return;
+                case "prompt-suggest-dismiss":
+                  e.preventDefault();
+                  setDismissedPromptSuggestion(promptSuggestionGhost);
+                  return;
                 case "queue":
                   // Alt+Enter: pi's follow-up gesture — wait for the turn to
                   // finish rather than steering into it.
@@ -1222,7 +1307,7 @@ export function Composer({
               placeholder={
                 selectedSkillCommand
                   ? t("chat.addInstructions")
-                  : harnessProbeText
+                  : harnessProbeText || promptSuggestionGhost
                     ? ""
                     : authNeeded
                       ? t("chat.signInToChat")

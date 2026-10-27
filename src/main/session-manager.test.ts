@@ -1745,6 +1745,7 @@ describe("SessionManager prompt queue", () => {
         clientCapabilityOverlay: {
           subagents: {},
           session: { configOptions: { boolean: {} }, compaction: {} },
+          _meta: { jetbrains: { air: {} } },
         },
         sessionRequestMeta: {
           claudeCode: {
@@ -1760,6 +1761,48 @@ describe("SessionManager prompt queue", () => {
         },
       }),
     );
+  });
+
+  it("declares the JetBrains AIR gate for Claude sessions only", async () => {
+    const claude = createControllableAcpSession();
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockResolvedValueOnce(claude.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+
+    await manager.start({
+      session_id: "sess-claude-air-gate",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+
+    const claudeStart = mocks.runtimeStart.mock.calls.at(-1)?.[0] as
+      | SessionOptions
+      | undefined;
+    // The empty `air` object is the whole gate — no version, no capability
+    // arrays, so nothing else in AIR is advertised.
+    expect(claudeStart?.clientCapabilityOverlay).toMatchObject({
+      _meta: { jetbrains: { air: {} } },
+    });
+
+    const dsh = createControllableAcpSession();
+    mocks.runtimeStart.mockClear();
+    mocks.runtimeStart.mockResolvedValueOnce(dsh.session);
+    await manager.start({
+      session_id: "sess-dsh-no-air-gate",
+      agent_id: "dsh-acp",
+      cwd: "/repo",
+    });
+
+    const dshStart = mocks.runtimeStart.mock.calls.at(-1)?.[0] as
+      | SessionOptions
+      | undefined;
+    expect(dshStart?.clientCapabilityOverlay ?? {}).not.toHaveProperty("_meta");
   });
 
   it("installs the Cursor extension request adapter in the shared ACP runtime", async () => {

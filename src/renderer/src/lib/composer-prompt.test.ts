@@ -196,6 +196,50 @@ describe("composer prompt presentation", () => {
     expect(resolveComposerKeyAction({ ...base, key: "Tab" })).toBeNull();
   });
 
+  it("applies the predicted prompt on Tab and dismisses it on Escape", () => {
+    const base = {
+      text: "",
+      hasSelectedSkill: false,
+      attachmentCount: 0,
+      annotationCount: 0,
+      sessionReferenceCount: 0,
+      slashPickerOpen: false,
+      hasSlashSelection: false,
+      hasPromptSuggestion: true,
+      shiftKey: false,
+      isComposing: false,
+    };
+
+    expect(resolveComposerKeyAction({ ...base, key: "Tab" }))
+      .toBe("prompt-suggest-apply");
+    expect(resolveComposerKeyAction({ ...base, key: "Escape" }))
+      .toBe("prompt-suggest-dismiss");
+    // Enter still sends, Shift+Tab still moves focus, and an IME composition
+    // still owns its keys.
+    expect(resolveComposerKeyAction({ ...base, key: "Enter" })).toBe("submit");
+    expect(resolveComposerKeyAction({ ...base, key: "Tab", shiftKey: true }))
+      .toBeNull();
+    expect(resolveComposerKeyAction({ ...base, key: "Tab", isComposing: true }))
+      .toBeNull();
+  });
+
+  it("leaves Tab and Escape alone when no suggestion is on screen", () => {
+    const base = {
+      text: "",
+      hasSelectedSkill: false,
+      attachmentCount: 0,
+      annotationCount: 0,
+      sessionReferenceCount: 0,
+      slashPickerOpen: false,
+      hasSlashSelection: false,
+      shiftKey: false,
+      isComposing: false,
+    };
+
+    expect(resolveComposerKeyAction({ ...base, key: "Tab" })).toBeNull();
+    expect(resolveComposerKeyAction({ ...base, key: "Escape" })).toBeNull();
+  });
+
   it("submits text, attachment-only, or annotation-only input unless disabled", () => {
     expect(canSubmitComposer({
       text: "hello",

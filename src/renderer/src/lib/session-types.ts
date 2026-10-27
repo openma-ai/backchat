@@ -193,6 +193,11 @@ export interface SessionRow {
    *  stuck in a running state after `session.complete`. */
   sessionUpdatedAt?: string;
   sessionInfoMeta?: Record<string, unknown>;
+  /** The agent's predicted follow-up prompt, published on
+   *  `session_info_update._meta.promptSuggestions` after a turn. The
+   *  composer shows it as ghost text while it is empty; null means the
+   *  agent cleared it. */
+  promptSuggestion?: string | null;
   agentThreadStatus?: string;
   /** Latest provider-owned queue depth when a harness emits one. This is
    * read-only observability, separate from OpenMA's editable prompt queue. */

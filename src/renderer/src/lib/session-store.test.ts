@@ -2029,6 +2029,87 @@ describe("SessionStore ACP session metadata", () => {
     expect(store.get("sess-usage")?.usage).toEqual({ used: 10, size: 100 });
   });
 
+  test("stores the predicted follow-up prompt and clears it on an empty list", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-prompt-suggestion",
+      acp_session_id: "acp-prompt-suggestion",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-prompt-suggestion",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          promptSuggestions: { suggestions: [{ text: "Run the tests" }] },
+        },
+      },
+    });
+
+    expect(store.get("sess-prompt-suggestion")?.promptSuggestion)
+      .toBe("Run the tests");
+
+    // An update that says nothing about the suggestion leaves it alone.
+    store.apply({
+      type: "session.event",
+      session_id: "sess-prompt-suggestion",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: { codex: { threadStatus: { type: "idle" } } },
+      },
+    });
+
+    expect(store.get("sess-prompt-suggestion")?.promptSuggestion)
+      .toBe("Run the tests");
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-prompt-suggestion",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: { promptSuggestions: { suggestions: [] } },
+      },
+    });
+
+    expect(store.get("sess-prompt-suggestion")?.promptSuggestion).toBeNull();
+  });
+
+  test("clears the predicted follow-up prompt when a prompt is sent", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-prompt-suggestion-send",
+      acp_session_id: "acp-prompt-suggestion-send",
+      agent_id: "claude-acp",
+      cwd: "/tmp/project",
+    });
+    store.apply({
+      type: "session.event",
+      session_id: "sess-prompt-suggestion-send",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          promptSuggestions: { suggestions: [{ text: "Run the tests" }] },
+        },
+      },
+    });
+
+    store.registerTurn(
+      "turn-2",
+      "sess-prompt-suggestion-send",
+      "Run the tests",
+    );
+
+    expect(store.get("sess-prompt-suggestion-send")?.promptSuggestion).toBeNull();
+  });
+
   test("merges session info while keeping the local turn lifecycle authoritative", () => {
     const store = new SessionStore();
     store.apply({

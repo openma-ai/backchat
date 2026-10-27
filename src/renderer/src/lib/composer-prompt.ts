@@ -68,6 +68,8 @@ export type ComposerKeyAction =
   | "slash-previous"
   | "slash-pick"
   | "slash-dismiss"
+  | "prompt-suggest-apply"
+  | "prompt-suggest-dismiss"
   | "queue"
   | "submit";
 
@@ -80,6 +82,7 @@ export function resolveComposerKeyAction({
   sessionReferenceCount = 0,
   slashPickerOpen,
   hasSlashSelection,
+  hasPromptSuggestion = false,
   shiftKey,
   altKey = false,
   isComposing,
@@ -92,6 +95,8 @@ export function resolveComposerKeyAction({
   sessionReferenceCount?: number;
   slashPickerOpen: boolean;
   hasSlashSelection: boolean;
+  /** The empty composer shows the agent's predicted follow-up prompt. */
+  hasPromptSuggestion?: boolean;
   shiftKey: boolean;
   altKey?: boolean;
   isComposing: boolean;
@@ -105,6 +110,13 @@ export function resolveComposerKeyAction({
     sessionReferenceCount,
   });
   if (backspaceTarget) return `remove-${backspaceTarget}`;
+
+  // A visible suggestion owns Tab and Escape: the user is looking at a
+  // proposed prompt, not at the slash picker.
+  if (hasPromptSuggestion) {
+    if (key === "Tab" && !shiftKey && !isComposing) return "prompt-suggest-apply";
+    if (key === "Escape") return "prompt-suggest-dismiss";
+  }
 
   if (slashPickerOpen) {
     if (key === "ArrowDown") return "slash-next";

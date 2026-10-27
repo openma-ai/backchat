@@ -914,6 +914,14 @@ export class SessionManager {
         clientCapabilityOverlay: {
           ...(["claude-acp", "dsh-acp"].includes(agent.id) ? { subagents: {} } : {}),
           session: { configOptions: { boolean: {} }, compaction: {} },
+          // claude-agent-acp publishes its predicted follow-up prompt only to
+          // clients that declared the JetBrains AIR gate. The empty `air`
+          // object is the whole gate — advertising `version`/`capabilities`
+          // arrays would opt into rawInputRendering and the other AIR
+          // features this client does not implement.
+          ...(agent.id === "claude-acp"
+            ? { _meta: { jetbrains: { air: {} } } }
+            : {}),
         },
         clientCallbacks: runtimeCallbacks,
         onOutOfBandSessionUpdate: (update: unknown) => {
