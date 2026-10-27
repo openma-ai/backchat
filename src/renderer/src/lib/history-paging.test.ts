@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("./session-store", () => ({
   sessionStore: {
+    get: () => undefined,
     setHistoryPending: (value: string, pending: boolean) => { state.pending = pending; },
     isHistoryPending: () => state.pending,
     historyWindowFor: () => state.window,
@@ -50,6 +51,24 @@ describe("history paging", () => {
     await openHistoryWindow("s");
     expect(state.turns).toHaveLength(2);
     expect(state.pending).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("captures the latest reading position after fetching but before publishing older rows", async () => {
+    let resolveRows!: (rows: Array<{seq: number}>) => void;
+    vi.stubGlobal("window", {backchat: {sessionsLoadHistory: () => new Promise<Array<{seq:number}>>(resolve => {resolveRows = resolve;})}});
+    let currentPosition = 10;
+    let capturedPosition: number | undefined;
+    const pending = loadOlderHistory("s", () => {
+      capturedPosition = currentPosition;
+      expect(state.turns).toEqual([]);
+    });
+    currentPosition = 90;
+    expect(capturedPosition).toBeUndefined();
+    resolveRows([{seq: 500}]);
+    await pending;
+    expect(capturedPosition).toBe(90);
+    expect(state.turns).toEqual([{id: "older"}]);
     vi.unstubAllGlobals();
   });
 

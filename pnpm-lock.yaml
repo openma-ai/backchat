@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@agentclientprotocol/sdk': 2.0.2
   '@ai-sdk/provider-utils@4.0.27': 4.0.33
   '@openma/common': 0.11.0
   '@openma/common>@agentclientprotocol/sdk': 2.0.2
@@ -338,8 +339,8 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       electron:
-        specifier: ^42.5.1
-        version: 42.5.1(supports-color@10.2.2)
+        specifier: 42.11.16
+        version: 42.11.16(supports-color@10.2.2)
       electron-builder:
         specifier: ^26.17.0
         version: 26.17.0(electron-builder-squirrel-windows@26.17.0)(supports-color@10.2.2)
@@ -516,16 +517,6 @@ packages:
   '@agentclientprotocol/codex-acp@2.2.2':
     resolution: {integrity: sha512-vNdeNV3jxbqaH7MYvVWzyB6cMOz+YGIV9W1xyBDsQfoii92DulZLM+ahCL2T2G6uohlaB1Yma347p2kLfAab2w==}
     hasBin: true
-
-  '@agentclientprotocol/sdk@1.9.0':
-    resolution: {integrity: sha512-saCOTPYBK1iqWqJFAYHXbg3+zCoFXyZZFoqQAwdTWkbrZZPpAETr80QOnYr2l+dzPwL0jpNhn3eDY8MoEIDbUA==}
-    peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
-
-  '@agentclientprotocol/sdk@2.0.1':
-    resolution: {integrity: sha512-v4E/NcBTGFEKmorGso8ysAjJTkNh5UMJPP4aDznyMNmnP9t10g/aCCo/Djy7RYaYZy5ZROFK3G5cEj9tDgGOTQ==}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.0.0
 
   '@agentclientprotocol/sdk@2.0.2':
     resolution: {integrity: sha512-jLywRB42hZMRMc4aUgt0uRjkY9FQnMdybv4XgLl+ddi75QuJn8Vbl0+CHcVHJDC0+WDfi1KQXRWtHaR5vp6gHw==}
@@ -4639,13 +4630,13 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@42.11.8:
-    resolution: {integrity: sha512-IJTRSVUfMCiWG7IPzXuk9lBMkat/AppL8DK1KBP8zZlyorLD7jkCRxgcq+GmSltM9HqXlaVG20lOQWgMaH7DLQ==}
+  electron@42.11.16:
+    resolution: {integrity: sha512-CHCEsZbWm9zspEnYsro+g8FFllh0e82A1Jtofi/XqPs/XqlrpDPdLP0OhzfhG/IkxNXQ8iHEoYms+wVepZNzZA==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
-  electron@42.5.1:
-    resolution: {integrity: sha512-2VFNJcHHbrhIpGsJHdkLoi/nWPZPxN3GHVPe+9At3Oz3/TJRwpr+7JL97ddBDbKyLmHGx3GfI2jvzcEQL28uFw==}
+  electron@42.11.8:
+    resolution: {integrity: sha512-IJTRSVUfMCiWG7IPzXuk9lBMkat/AppL8DK1KBP8zZlyorLD7jkCRxgcq+GmSltM9HqXlaVG20lOQWgMaH7DLQ==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -7398,7 +7389,7 @@ snapshots:
 
   '@agentclientprotocol/claude-agent-acp@0.95.0(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))':
     dependencies:
-      '@agentclientprotocol/sdk': 2.0.1(zod@4.6.7)
+      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
       '@anthropic-ai/claude-agent-sdk': 0.3.309(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))(zod@4.6.7)
       diff: 9.0.0
       zod: 4.6.7
@@ -7408,21 +7399,13 @@ snapshots:
 
   '@agentclientprotocol/codex-acp@2.2.2':
     dependencies:
-      '@agentclientprotocol/sdk': 1.9.0(zod@4.6.5)
+      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.5)
       '@openai/codex': 0.160.1
       cross-spawn: 7.0.6
       diff: 9.0.0
       open: 11.0.4
       vscode-jsonrpc: 9.0.1
       zod: 4.6.5
-
-  '@agentclientprotocol/sdk@1.9.0(zod@4.6.5)':
-    dependencies:
-      zod: 4.6.5
-
-  '@agentclientprotocol/sdk@2.0.1(zod@4.6.7)':
-    dependencies:
-      zod: 4.6.7
 
   '@agentclientprotocol/sdk@2.0.2(zod@4.4.3)':
     dependencies:
@@ -7431,6 +7414,10 @@ snapshots:
   '@agentclientprotocol/sdk@2.0.2(zod@4.6.5)':
     dependencies:
       zod: 4.6.5
+
+  '@agentclientprotocol/sdk@2.0.2(zod@4.6.7)':
+    dependencies:
+      zod: 4.6.7
 
   '@ai-sdk/gateway@3.0.122(zod@4.4.3)':
     dependencies:
@@ -11965,7 +11952,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@42.11.8(supports-color@10.2.2):
+  electron@42.11.16(supports-color@10.2.2):
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.0.0(supports-color@10.2.2)
@@ -11973,7 +11960,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@42.5.1(supports-color@10.2.2):
+  electron@42.11.8(supports-color@10.2.2):
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.0.0(supports-color@10.2.2)

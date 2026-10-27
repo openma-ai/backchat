@@ -92,6 +92,79 @@ vi.mock("./session-cwd.js", () => ({
   removeSessionCwd: vi.fn(),
 }));
 
+describe("20 minute idle process reclamation", () => {
+  it("releases only the process after 20 minutes and resumes the same native session", async () => {
+    vi.useFakeTimers();
+    const fake = createControllableAcpSession({supportsSessionResume: true});
+    const dispose = vi.spyOn(fake.session, "dispose");
+    mocks.runtimeStart.mockResolvedValue(fake.session);
+    const send = vi.fn();
+    const manager = new SessionManager({send, resolveMcpServers: () => [], buildCallbacks: () => ({}), resolveDefaults: () => ({}), resolveAgentOverride: () => undefined});
+    try {
+      await manager.start({session_id:"idle-reclaim",agent_id:"codex-acp",cwd:"/repo"});
+      await vi.advanceTimersByTimeAsync(19 * 60_000);
+      expect(manager.has("idle-reclaim")).toBe(true);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(dispose).toHaveBeenCalledTimes(1);
+      expect(manager.has("idle-reclaim")).toBe(false);
+      expect(send.mock.calls.some(([event]) => event.type === "session.disposed")).toBe(false);
+      await manager.start({session_id:"idle-reclaim",agent_id:"codex-acp",cwd:"/repo"});
+      expect(mocks.runtimeStart.mock.calls.at(-1)?.[0]).toMatchObject({resumeAcpSessionId: fake.session.acpSessionId});
+      expect(manager.has("idle-reclaim")).toBe(true);
+    } finally {await manager.disposeAll();vi.useRealTimers();mocks.runtimeStart.mockReset();}
+  });
+  it("never reclaims an unresolved prompt even after twenty minutes without output", async () => {
+    vi.useFakeTimers();
+    const fake = createControllableAcpSession({supportsSessionResume:true,abortRejects:true});
+    mocks.runtimeStart.mockResolvedValue(fake.session);
+    const manager = new SessionManager({send:()=>{},resolveMcpServers:()=>[],buildCallbacks:()=>({}),resolveDefaults:()=>({}),resolveAgentOverride:()=>undefined});
+    let running: Promise<void> | undefined;
+    try {
+      await manager.start({session_id:"busy-idle",agent_id:"codex-acp",cwd:"/repo"});
+      running = manager.prompt({session_id:"busy-idle",turn_id:"busy",text:"wait"});
+      await vi.advanceTimersByTimeAsync(25*60_000);
+      expect(manager.has("busy-idle")).toBe(true);
+    } finally {await manager.disposeAll();await running;vi.useRealTimers();mocks.runtimeStart.mockReset();}
+  });
+  it("keeps an active structured goal beyond the prompt boundary", async () => {
+    vi.useFakeTimers();
+    const fake = createControllableAcpSession({supportsSessionResume:true});
+    mocks.runtimeStart.mockResolvedValue(fake.session);
+    const manager = new SessionManager({send:()=>{},resolveMcpServers:()=>[],buildCallbacks:()=>({}),resolveDefaults:()=>({}),resolveAgentOverride:()=>undefined});
+    try {
+      await manager.start({session_id:"goal-idle",agent_id:"codex-acp",cwd:"/repo"});
+      mocks.runtimeStart.mock.calls.at(-1)![0].onOutOfBandSessionUpdate({sessionUpdate:"session_info_update",_meta:{goal:{objective:"keep working",status:"active"}}});
+      await vi.advanceTimersByTimeAsync(25*60_000);
+      expect(manager.has("goal-idle")).toBe(true);
+    } finally {await manager.disposeAll();vi.useRealTimers();mocks.runtimeStart.mockReset();}
+  });
+  it("keeps non-restorable sessions and sessions with owned background work", async () => {
+    vi.useFakeTimers();
+    const resumable = createControllableAcpSession({supportsSessionResume:true});
+    const ephemeral = createControllableAcpSession();
+    mocks.runtimeStart.mockResolvedValueOnce(resumable.session).mockResolvedValueOnce(ephemeral.session);
+    const manager = new SessionManager({send:()=>{},resolveMcpServers:()=>[],buildCallbacks:()=>({}),resolveDefaults:()=>({}),resolveAgentOverride:()=>undefined, hasSessionBackgroundWork:(id)=>id === "protected"});
+    try {
+      await manager.start({session_id:"protected",agent_id:"codex-acp",cwd:"/repo"});
+      await manager.start({session_id:"ephemeral",agent_id:"codex-acp",cwd:"/repo"});
+      await vi.advanceTimersByTimeAsync(21*60_000);
+      expect(manager.sessionCount()).toBe(2);
+    } finally {await manager.disposeAll();vi.useRealTimers();mocks.runtimeStart.mockReset();}
+  });
+});
+
+it("keeps late out-of-band tool patches on the original completed prompt",async()=>{
+ const fake=createControllableAcpSession({promptEvents:[{sessionUpdate:"tool_call",toolCallId:"late-owner",status:"in_progress",title:"Command",kind:"execute"}]});
+ mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+ const send=vi.fn();const manager=new SessionManager({send,resolveMcpServers:()=>[],buildCallbacks:()=>({}),resolveDefaults:()=>({}),resolveAgentOverride:()=>undefined});
+ await manager.start({session_id:"late-owner",agent_id:"codex-acp",cwd:"/repo"});
+ const running=manager.prompt({session_id:"late-owner",turn_id:"original",text:"work"});
+ await vi.waitFor(()=>expect(fake.prompts).toHaveLength(1));fake.releaseNext();await running;
+ send.mockClear();mocks.runtimeStart.mock.calls.at(-1)![0].onOutOfBandSessionUpdate({sessionUpdate:"tool_call_update",toolCallId:"late-owner",status:"completed"});
+ expect(send).toHaveBeenCalledWith(expect.objectContaining({type:"session.event",turn_id:"original"}));
+ await manager.disposeAll();
+});
+
 describe("SessionManager prompt queue", () => {
   it("settles queued prompts and ignores late agent events when the session is disposed", async () => {
     const fake = createControllableAcpSession({ eventsAfterAbort: [{ type: "sessionUpdate", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "late output" } } }] });
@@ -316,6 +389,7 @@ describe("SessionManager prompt queue", () => {
       installed_version: "2.0.0",
       restart_required: true,
       busy: false,
+      active_turn_ids: [],
       restart_pending: false,
     });
   });
@@ -1708,6 +1782,7 @@ describe("SessionManager prompt queue", () => {
     const startOptions = mocks.runtimeStart.mock.calls.at(-1)?.[0] as
       | SessionOptions
       | undefined;
+    expect(startOptions?.clientCapabilityOverlay).toMatchObject({ session: { compaction: {} } });
     expect(startOptions?.clientCallbacks?.requestPermission)
       .toBe(requestPermission);
     expect(startOptions?.clientCallbacks?.extensionRequest)

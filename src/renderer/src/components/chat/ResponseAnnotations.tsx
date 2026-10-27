@@ -101,7 +101,7 @@ export function ResponseAnnotationController({
       const range = browserSelection.getRangeAt(0);
       const source = annotationSourceForRange(range, scope);
       const text = range.toString().trim();
-      if (!source || source.dataset.annotationReady !== "true" || text.length === 0) {
+      if (!source || text.length === 0) {
         setSelection(null);
         return;
       }
@@ -401,9 +401,15 @@ function SelectionAction({
 function annotationSourceForRange(range: Range, scope: HTMLElement): HTMLElement | null {
   const startElement = nodeElement(range.startContainer);
   const endElement = nodeElement(range.endContainer);
-  const source = startElement?.closest<HTMLElement>("[data-annotatable-response]") ?? null;
-  if (!source || !scope.contains(source) || !endElement || !source.contains(endElement)) return null;
-  return source;
+  // A running response contains both stable commentary and changing content.
+  // Accept only the same assistant prose surface, never tool chrome, prompts,
+  // thought disclosures, form fields or cross-message selections.
+  const proseSelector = "[data-assistant-annotation-surface]";
+  const prose = startElement?.closest<HTMLElement>(proseSelector);
+  if (!prose || !endElement || !prose.contains(endElement)) return null;
+  if (startElement?.closest("input, textarea, [contenteditable=true]")) return null;
+  const source = prose.closest<HTMLElement>("[data-annotatable-response]");
+  return source && scope.contains(source) ? source : null;
 }
 
 function nodeElement(node: Node): Element | null {

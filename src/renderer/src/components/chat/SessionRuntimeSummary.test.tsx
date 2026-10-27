@@ -61,7 +61,7 @@ describe("SessionRuntimeSummary", () => {
     expect(html).toContain("Goal Verify every harness · active");
     expect(html).toContain('data-session-runtime-location="true"');
     expect(html).toContain('data-composer-footer-control="runtime"');
-    expect(html).toContain('data-slot="dropdown-menu-trigger"');
+    expect(html).toContain('data-slot="popover-trigger"');
     expect(html).toContain('data-gui-feature="output.usage-parent"');
     expect(html).toContain('data-session-runtime-details="true"');
     expect(html).toContain("sr-only");

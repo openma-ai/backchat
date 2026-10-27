@@ -195,6 +195,7 @@ export function requestElicitationForm(
       sessionId,
       message: request.message,
       fields: request.fields,
+      ...(request.questions ? { questions: request.questions } : {}),
     };
     pendingElicitation.set(requestId, {
       sessionId,

@@ -23,6 +23,8 @@ import {
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SidebarActivityIndicator } from "./SidebarActivityIndicator";
+import { getSessionSidebarStatus } from "@/lib/sidebar-activity";
 import { sidebarNavRowClass } from "@/lib/sidebar-nav-row";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/lib/settings-store";
@@ -62,7 +64,6 @@ import {
   useArchiveSessions,
 } from "./ArchiveScheduledChatDialog";
 import { AgentUpdateControl } from "./AgentUpdateControl";
-import { RuntimeLocationControl } from "@/components/chat/RuntimeLocationControl";
 import type { ProjectInfo } from "@shared/projects.js";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
@@ -246,16 +247,7 @@ export function groupSidebarSessions(
   }
 
   for (const session of sessions) {
-    if (coordinatorSessionIds.has(session.id) || session.listHidden) continue;
-    if (session.pinnedAt != null) {
-      pinned.push(session);
-      continue;
-    }
-    const custom = customById.get(assignedSection.get(session.id) ?? "");
-    if (custom) {
-      custom.sessions.push(session);
-      continue;
-    }
+    if (session.listHidden && !coordinatorSessionIds.has(session.id)) continue;
 
     if (session.projectScope === "none") {
       chats.push(session);
@@ -311,6 +303,19 @@ export function groupSidebarSessions(
     }
   }
 
+  // Relocate chats without propagating their activity to structural folders.
+  const keepInTree = (session: SessionRowData): boolean => {
+    if (coordinatorSessionIds.has(session.id)) return false;
+    if (session.pinnedAt != null) { pinned.push(session); return false; }
+    const custom = customById.get(assignedSection.get(session.id) ?? "");
+    if (custom) { custom.sessions.push(session); return false; }
+    return true;
+  };
+  for (const group of projectMap.values()) {
+    group.sessions = group.sessions.filter(keepInTree);
+    for (const workspace of group.workspaces) workspace.sessions = workspace.sessions.filter(keepInTree);
+  }
+  const visibleChats = chats.filter(keepInTree);
   // External worktrees are only worth a sidebar node once a chat runs in
   // them; otherwise they stay reachable through the composer's workspace
   // picker and do not turn every `git worktree list` entry into UI.
@@ -322,8 +327,8 @@ export function groupSidebarSessions(
   pinned.sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0));
   return {
     pinned,
-    projects: [...projectMap.values()],
-    chats,
+    projects: [...projectMap.values()].filter(group => group.projectId || group.sessions.length || group.workspaces.length),
+    chats: visibleChats,
     customSections,
   };
 }
@@ -440,6 +445,13 @@ export function Sidebar() {
     () => readDisclosureKeys("backchat:sidebar-sections:v1", ["pinned", "pairs", "projects", "chats"]),
   );
   useEffect(() => saveDisclosureKeys("backchat:sidebar-projects:v1", openProjectKeys), [openProjectKeys]);
+  const [localOpen, setLocalOpen] = useState(() => {
+    try { return localStorage.getItem("backchat:sidebar-local-open:v1") !== "false"; } catch { return true; }
+  });
+  const toggleLocal = () => setLocalOpen(open => {
+    try { localStorage.setItem("backchat:sidebar-local-open:v1", String(!open)); } catch {}
+    return !open;
+  });
   const [customSections, setCustomSections] = useState(readCustomSections);
   const [closedCustomSectionIds, setClosedCustomSectionIds] = useState<Set<string>>(
     () => readDisclosureKeys("backchat:closed-custom-sidebar-sections:v1", []),
@@ -762,6 +774,7 @@ export function Sidebar() {
         <SidebarGridRow
           trailingTrack="double"
           data-sidebar-row="new-chat"
+          data-sidebar-ink="primary"
           className="rounded-md text-ui text-fg-subtle"
         >
           <button
@@ -774,7 +787,7 @@ export function Sidebar() {
               "sidebar-new-chat-primary app-no-drag text-ui transition-colors",
               // No selected wash on this row, so "current page" must not darken
               // the text either; it would read as a heavier weight.
-              "text-fg-subtle hover:text-fg",
+              "text-fg-muted hover:text-fg",
             )}
           >
             <SidebarGridCell slot="icon">
@@ -797,23 +810,7 @@ export function Sidebar() {
             >
               <SearchIcon aria-hidden="true" />
             </button>
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={t("sidebar.sidebarOptions")}
-                  data-sidebar-grid-action="last"
-                  className="app-no-drag sidebar-row-action"
-                >
-                  <MoreHorizontalIcon aria-hidden="true" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-40">
-                <DropdownMenuItem onSelect={() => openSectionDialog("create")}>
-                  <PlusIcon className="size-3.5" />{t("sidebar.newSection")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+
           </SidebarGridCell>
         </SidebarGridRow>
       </div>
@@ -834,6 +831,7 @@ export function Sidebar() {
               : "text-fg-subtle hover:bg-[var(--control-bg-hover)] hover:text-fg",
           )}
           data-sidebar-depth="0"
+          data-sidebar-ink="primary"
           data-sidebar-trailing-track="single"
         >
           <SidebarGridCell slot="icon">
@@ -864,7 +862,10 @@ export function Sidebar() {
           {/* The runtime switch is only a choice once OpenMA offers remote
               locations; local-only, it was a "本机" layer over everything. The
               composer keeps its own control. */}
-          {openmaAccount?.user && <RuntimeLocationControl variant="sidebar" labelCls={labelCls} />}
+          {openmaAccount?.user && <div data-testid="sidebar-local-runtime-row" data-sidebar-local-runtime="true">
+            <SidebarSectionHeading title={t("chat.local")} open={localOpen} onToggle={toggleLocal} labelCls={labelCls} depth={0} />
+          </div>}
+          <AnimatedCollapse open={!openmaAccount?.user || localOpen} className="sidebar-local-content">
           <div>
           {(() => {
             const { pinned, projects, chats } = grouped;
@@ -1157,6 +1158,7 @@ export function Sidebar() {
             );
           })()}
           </div>
+          </AnimatedCollapse>
         </section>
       </nav>
       </ScrollArea>
@@ -1454,18 +1456,18 @@ function ProjectSidebarRow({
             <span className={cn("sidebar-project-label min-w-0 truncate", labelCls)}>{group.label}</span>
           </button>
         </SidebarGridCell>
-        <SidebarGridCell slot="trailing" className={cn("sidebar-row-reveal", labelCls)}>
+        <SidebarGridCell slot="trailing" className={labelCls}>
           <button
             type="button"
             aria-label={t("sidebar.startProjectChat")}
             title={t("sidebar.startProjectChat")}
             data-sidebar-grid-action="penultimate"
             onClick={onNewChat}
-            className="sidebar-row-action"
+            className="sidebar-row-action sidebar-row-reveal"
           >
             <SquarePenIcon aria-hidden="true" />
           </button>
-          <RowMoreMenu menu={menu} open={menuOpen} onOpenChange={onMenuOpenChange} label={t("sidebar.projectActions")} />
+          <RowMoreMenu menu={menu} open={menuOpen} onOpenChange={onMenuOpenChange} label={t("sidebar.projectActions")} className="sidebar-row-reveal" />
         </SidebarGridCell>
       </SidebarGridRow>
     </RowContextMenu>
@@ -1502,6 +1504,7 @@ function ProjectCoordinatorRow({
     "aria-current": active ? "page" as const : undefined,
     "data-project-coordinator": group.key,
     "data-testid": "project-coordinator-row",
+    "data-sidebar-ink": "primary",
     "data-configured": true,
   };
   const content = <>
@@ -1613,27 +1616,27 @@ function WorkspaceGroupHeading({
             onClick={onToggle}
             aria-label={`${t("workspace.picker")}: ${workspace.label}`}
             aria-expanded={open}
-            className="flex h-full min-w-0 flex-1 items-center gap-1 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-ring"
+            className="flex h-full min-w-0 flex-1 items-center gap-[var(--sidebar-grid-column-gap)] rounded-sm text-left focus-visible:outline-2 focus-visible:outline-ring"
           >
             {/* Identity cue: the same branch glyph the composer's workspace
                 control uses, at caption size inline with the name, so the
                 label reads as "workspace fix-abc" and not as another chat. */}
-            <GitBranchIcon aria-hidden="true" className={cn("sidebar-workspace-glyph", labelCls)} />
+            <span className="sidebar-row-icon"><GitBranchIcon aria-hidden="true" className={cn("sidebar-workspace-glyph", labelCls)} /></span>
             <span className={cn("min-w-0 truncate", labelCls)}>{label}</span>
           </button>
         </SidebarGridCell>
-        <SidebarGridCell slot="trailing" className={cn("sidebar-row-reveal", labelCls)}>
+        <SidebarGridCell slot="trailing" className={labelCls}>
           <button
             type="button"
             aria-label={t("workspace.startChat")}
             title={t("workspace.startChat")}
             data-sidebar-grid-action="penultimate"
             onClick={onNewChat}
-            className="sidebar-row-action"
+            className="sidebar-row-action sidebar-row-reveal"
           >
             <SquarePenIcon aria-hidden="true" />
           </button>
-          <RowMoreMenu menu={menu} open={menuOpen} onOpenChange={onMenuOpenChange} label={t("workspace.actions")} />
+          <RowMoreMenu menu={menu} open={menuOpen} onOpenChange={onMenuOpenChange} label={t("workspace.actions")} className="sidebar-row-reveal" />
         </SidebarGridCell>
       </SidebarGridRow>
     </RowContextMenu>
@@ -1753,8 +1756,8 @@ export function SessionRow({
   onMoveToSection?: (sessionId: string, sectionId: string | null) => void;
 }) {
   const { t } = useI18n();
-  const running = row.status === "running" || row.status === "starting";
-  const errored = row.status === "errored";
+  const activity = getSessionSidebarStatus(row, active);
+  const errored = activity === "error";
   const pinned = row.pinnedAt != null;
   const workingDirectory = row.chosenCwd || row.cwd;
   const copy = (value: string, done: string) => {
@@ -1789,13 +1792,14 @@ export function SessionRow({
     <RowContextMenu menu={menu}>
       <SidebarGridRow
         depth={depth}
-        trailingTrack={hasSchedule && !running ? "double" : "single"}
+        trailingTrack={hasSchedule ? "double" : "single"}
         className={sidebarNavRowClass({
           active,
           errored,
           className: "relative",
         })}
         data-session-id={row.id}
+        data-sidebar-ink="primary"
         data-sidebar-card={`session:${row.id}`}
         data-sidebar-row-hover="true"
         data-menu-open={menuOpen || undefined}
@@ -1821,37 +1825,12 @@ export function SessionRow({
           </button>
         </SidebarGridCell>
         <SidebarGridCell slot="trailing" className="relative">
-          {/* Resting indicators give way to ⋯ on hover, focus or an open menu. */}
-          {running ? (
-            <span
-              className="sidebar-row-action sidebar-row-rest pointer-events-none"
-              data-sidebar-grid-action="last"
-              aria-hidden="true"
-            >
-              <Loader2Icon className="animate-spin" />
+          <SidebarActivityIndicator status={activity} />
+          {hasSchedule && (
+            <span data-sidebar-schedule-indicator="true" data-sidebar-grid-action="penultimate"
+              aria-hidden="true" className="sidebar-row-action sidebar-row-rest pointer-events-none">
+              <CalendarClockIcon />
             </span>
-          ) : (
-            <>
-              {hasSchedule && (
-                <span
-                  data-sidebar-schedule-indicator="true"
-                  data-sidebar-grid-action="penultimate"
-                  aria-hidden="true"
-                  className="sidebar-row-action sidebar-row-rest pointer-events-none"
-                >
-                  <CalendarClockIcon />
-                </span>
-              )}
-              {!hasSchedule && !active && row.unread ? (
-                <span
-                  data-sidebar-unread-indicator="true"
-                  data-sidebar-grid-action="last"
-                  aria-hidden="true"
-                  className="sidebar-row-rest size-1.5 justify-self-center rounded-full pointer-events-none"
-                  style={{ backgroundColor: "var(--unread-indicator)" }}
-                />
-              ) : null}
-            </>
           )}
           <RowMoreMenu menu={menu} open={menuOpen} onOpenChange={onMenuOpenChange}
             label={t("sidebar.sessionActions")} className="sidebar-row-reveal" />

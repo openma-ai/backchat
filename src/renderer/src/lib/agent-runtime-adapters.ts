@@ -90,6 +90,7 @@ export type SessionGoalUpdateReader = (
 export interface AgentRuntimeAdapter {
   readonly provider: NativeAgentProvider | "kimi" | "generic-acp";
   matches(agentId: string): boolean;
+  isInternalToolActivity?(tool: RuntimeToolEvent): boolean;
   nativeAgentToolUpdates(
     tool: RuntimeToolEvent,
     context?: NativeAgentContext,
@@ -157,6 +158,21 @@ export const codexRuntimeAdapter: AgentRuntimeAdapter = {
   matches(agentId) {
     const normalized = normalizeAgentId(agentId);
     return normalized === "codex-acp" || normalized.includes("codex");
+  },
+  isInternalToolActivity(tool) {
+    if (["failed", "denied", "cancelled"].includes(tool.status ?? "")) return false;
+    const payload = isRecord(tool.rawOutput)
+      ? tool.rawOutput
+      : isRecord(tool.rawInput) ? tool.rawInput : undefined;
+    if (
+      !payload ||
+      typeof payload.reviewId !== "string" ||
+      typeof payload.threadId !== "string" ||
+      typeof payload.turnId !== "string" ||
+      !isRecord(payload.review) ||
+      !isRecord(payload.action)
+    ) return false;
+    return payload.review.status === "inProgress" || payload.review.status === "approved";
   },
   nativeAgentToolUpdates(tool, context, logicalTool) {
     // ACP updates are patches: native metadata may arrive after rawInput.

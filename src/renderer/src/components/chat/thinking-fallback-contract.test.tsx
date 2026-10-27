@@ -64,13 +64,14 @@ describe("the thinking fallback", () => {
   it("speaks for a silence", () => {
     const html = renderToStaticMarkup(<TurnBlock turn={runningTurn([])} />);
     expect(html).toContain("chat.thinking");
+    expect(html).toContain("shimmer-text");
   });
 
-  it("says nothing while the answer is arriving", () => {
+  it("keeps unresolved answer output visibly running", () => {
     const html = renderToStaticMarkup(
       <TurnBlock turn={runningTurn([chunk("An answer", "final_answer")])} />,
     );
-    expect(html).not.toContain("chat.thinking");
+    expect(html).toContain('data-thinking-fallback="true"');
   });
 
   it("says nothing while a tool is running", () => {
@@ -90,7 +91,15 @@ describe("the thinking fallback", () => {
         ])}
       />,
     );
-    expect(html).not.toContain("chat.thinking");
+    expect(html).not.toContain('data-thinking-fallback="true"');
+  });
+
+  it("uses the same shimmer for an atomic live thought row", () => {
+    const html = renderToStaticMarkup(<TurnBlock turn={runningTurn([{
+      payload: {sessionUpdate:"agent_thought_chunk",content:{type:"text",text:"Working through it"}},receivedAt:0,
+    }])} />);
+    expect(html).toContain('data-thought-live="true"');
+    expect(html).toContain('shimmer-text');
   });
 
   it("says nothing while a thought is being emitted", () => {
@@ -107,6 +116,6 @@ describe("the thinking fallback", () => {
         ])}
       />,
     );
-    expect(html).not.toContain("chat.thinking");
+    expect(html).not.toContain('data-thinking-fallback="true"');
   });
 });

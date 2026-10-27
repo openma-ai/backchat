@@ -17,9 +17,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLiveWorkspaceId, type WorkspaceInfo } from "@shared/workspaces";
 import { WORKSPACES_QUERY_KEY } from "@/lib/workspace-query";
 import {
-  GroupedCommandMenu,
   groupedCommandMenuPopoverShellClassName,
 } from "@/components/ui/grouped-command-menu";
+import { ComposerPickerMenu } from "@/components/ui/composer-picker-menu";
 import { GAP_ADJACENT_PX } from "@/components/ui/gap-adjacent";
 import {
   GroupedCommandMenuIconSlot,
@@ -166,17 +166,12 @@ export function ProjectChipRow({
           <PopoverContent
             side="top"
             align="start"
-            sideOffset={0}
+            sideOffset={GAP_ADJACENT_PX}
             className={groupedCommandMenuPopoverShellClassName()}
           >
-            <GroupedCommandMenu
+            <ComposerPickerMenu
               testId="composer-project-picker-panel"
               menuMode="project-picker"
-              density="comfortable"
-              shrinkToContent
-              nativeListScroll
-              panelClassName="flex h-auto w-full flex-col p-0"
-              commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
               searchPlaceholder={t("chat.chooseProject")}
               emptyMessage={t("chat.noMatchingOptions")}
               initialHighlightValue={projectPickerValue || activeCwd || noProjectCommandValue}
@@ -467,8 +462,8 @@ function WorkspaceChip({
 
   if (isPending) return (
     <span className={composerFooterTriggerClass()} data-composer-footer-control="workspace-loading">
-      <Spinner className="size-3.5 text-fg-muted" aria-label={t("workspace.loading")} />
-      <span>{t("common.loadingShort")}</span>
+      <span data-control-icon><Spinner aria-label={t("workspace.loading")} /></span>
+      <span data-loading-label>{t("common.loadingShort")}</span>
     </span>
   );
   if (!repositories.length) return null;
@@ -489,18 +484,13 @@ function WorkspaceChip({
           {isDraft && <ChevronDownIcon data-control-chevron />}
         </Button>
       </PopoverTrigger>
-      {isDraft && <PopoverContent side="top" align="start" sideOffset={0}
-        className={`${view === "create" ? "w-[360px]" : "w-[var(--composer-menu-width)]"} max-w-[var(--radix-popover-content-available-width)] gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0`}>
+      {isDraft && <PopoverContent side="top" align="start" sideOffset={GAP_ADJACENT_PX}
+        className={groupedCommandMenuPopoverShellClassName(view === "create" ? "w-[360px]" : undefined)}>
         {view === "choose" ? (
-          <GroupedCommandMenu
+          <ComposerPickerMenu
               testId="composer-workspace-picker-panel"
               menuMode="workspace-picker"
-              density="comfortable"
-            shrinkToContent
-            nativeListScroll
             menuResetKey={open ? "open" : "closed"}
-            panelClassName="flex h-auto w-full flex-col overflow-hidden p-0"
-            commandClassName="rounded-xl! bg-popover p-1! text-popover-foreground shadow-none ring-0"
             searchPlaceholder={t("workspace.search")}
             emptyMessage={t("chat.noMatchingOptions")}
             initialHighlightValue={selected?.id ?? "local"}

@@ -130,6 +130,9 @@ type SessionAuthObservation = NonNullable<
 
 interface ActiveSession {
   id: string;
+  lastActivityAt: number;
+  idleTimer?: ReturnType<typeof setTimeout>;
+  idleActivityBlocked: boolean;
   acp: AcpSession;
   acpSessionId: string;
   agentId: string;
@@ -146,6 +149,7 @@ interface ActiveSession {
   /** Client-side view of ACP tools that have not reported a wire terminal
    * status yet, grouped by the OpenMA turn that owns them. */
   openToolCallsByTurn: Map<string, Set<string>>;
+  toolTurnOwners: Map<string, string>;
   orchestration: SessionOrchestrator<QueuedPrompt>;
   /** A vendor steering extension may start a full turn after the host-owned
    * prompt has already unwound. Its ACP updates then arrive through the
@@ -187,6 +191,8 @@ interface RunPromptOptions {
 }
 
 export interface SessionManagerDeps {
+  /** Owned terminals, pending asks or other work outside prompt lifecycle. */
+  hasSessionBackgroundWork?: (sessionId: string) => boolean;
   /** Tracing hooks for start and prompt commands (spans for the output
    *  stream are recorded where `send` is observed). */
   tracing?: {
@@ -306,8 +312,12 @@ export class SessionManager {
   #starting = new Map<string, Promise<SessionStartResult>>();
   #cancelledStarts = new Set<string>();
   #acceptingStarts = true;
+  #hasSessionBackgroundWork: (sessionId: string) => boolean;
+  #suspended = new Map<string, SessionStartParams>();
+  #reclaiming = new Map<string, Promise<void>>();
 
   constructor(deps: SessionManagerDeps) {
+    this.#hasSessionBackgroundWork = deps.hasSessionBackgroundWork ?? (() => false);
     this.#send = deps.send;
     this.#tracing = deps.tracing;
     this.#resolveMcpServers = deps.resolveMcpServers;
@@ -532,6 +542,7 @@ export class SessionManager {
           runningVersion !== installedVersion,
       ),
       busy: sess.orchestration.isBusy(),
+      active_turn_ids: this.activeTurnIds(session_id),
       restart_pending: sess.orchestration.restartPending,
     };
   }
@@ -563,16 +574,17 @@ export class SessionManager {
    *  the user can see but main does not hold. That is a cold session, not a
    *  dead one — resume it on the saved ACP session id. */
   async #resumePersisted(session_id: string): Promise<ActiveSession> {
+    const suspended = this.#suspended.get(session_id);
     const saved = getSession(session_id);
-    if (!saved) throw new Error("no such session");
-    const result = await this.start({
+    if (!saved && !suspended) throw new Error("no such session");
+    const result = await this.start(suspended ?? {
       session_id,
-      agent_id: saved.agent_id,
-      cwd: saved.cwd,
-      additional_directories: saved.additional_directories ?? undefined,
-      project_id: saved.project_id ?? undefined,
-      workspace_id: saved.workspace_id ?? undefined,
-      resume: saved.acp_session_id ? { acp_session_id: saved.acp_session_id } : undefined,
+      agent_id: saved!.agent_id,
+      cwd: saved!.cwd,
+      additional_directories: saved!.additional_directories ?? undefined,
+      project_id: saved!.project_id ?? undefined,
+      workspace_id: saved!.workspace_id ?? undefined,
+      resume: saved!.acp_session_id ? { acp_session_id: saved!.acp_session_id } : undefined,
     });
     if (result.status !== "ready") {
       throw new Error(result.status === "error" ? result.message : `ACP session restart ${result.status}`);
@@ -607,6 +619,9 @@ export class SessionManager {
   }
 
   async start(p: SessionStartParams): Promise<SessionStartResult> {
+    if (this.#reclaiming.has(p.session_id)) await this.#reclaiming.get(p.session_id);
+    const suspended = this.#suspended.get(p.session_id);
+    if (suspended) p = {...suspended, ...p, resume: suspended.resume};
     this.#tracing?.starting(p);
     if (!this.#acceptingStarts) {
       return { status: "cancelled", session_id: p.session_id };
@@ -631,6 +646,7 @@ export class SessionManager {
     // Idempotent re-ack.
     const existing = this.#sessions.get(p.session_id);
     if (existing) {
+      existing.lastActivityAt = Date.now();
       const result = this.#readyResult(p.session_id, existing);
       this.#sendPromptQueueUpdate(existing);
       return result;
@@ -894,6 +910,9 @@ export class SessionManager {
               },
             }
           : {}),
+        // Standard ACP v1 ID-addressed compaction, rendered and replayed by
+        // the transcript projector; this does not opt into AIR extensions.
+        clientCapabilityOverlay: { session: { configOptions: { boolean: {} }, compaction: {} } },
         clientCallbacks: runtimeCallbacks,
         onOutOfBandSessionUpdate: (update: unknown) => {
           if (activeForOutOfBandUpdates) {
@@ -948,6 +967,8 @@ export class SessionManager {
       const projectId = preparedWorktrees?.projectId ?? (p.project_id?.trim() || undefined);
       const activeSession: ActiveSession = {
         id: p.session_id,
+        lastActivityAt: Date.now(),
+        idleActivityBlocked: false,
         acp: acpSession,
         acpSessionId: acpSession.acpSessionId,
         agentId: agent.id,
@@ -969,6 +990,7 @@ export class SessionManager {
         },
         turns: new Map(),
         openToolCallsByTurn: new Map(),
+        toolTurnOwners: new Map(),
         orchestration: new SessionOrchestrator<QueuedPrompt>({
           sessionId: p.session_id,
         }),
@@ -983,6 +1005,8 @@ export class SessionManager {
       };
       activeForOutOfBandUpdates = activeSession;
       this.#sessions.set(p.session_id, activeSession);
+      this.#suspended.delete(p.session_id);
+      this.#armIdleReclaim(activeSession);
       spawnedAcp = null;
       for (const update of pendingOutOfBandUpdates) {
         this.#handleOutOfBandSessionUpdate(activeSession, update);
@@ -1082,6 +1106,7 @@ export class SessionManager {
 
   async prompt(p: SessionPromptParams): Promise<void> {
     this.#tracing?.prompting(p);
+    if (this.#reclaiming.has(p.session_id)) await this.#reclaiming.get(p.session_id);
     let sess = this.#sessions.get(p.session_id);
     if (!sess) {
       try {
@@ -1096,6 +1121,7 @@ export class SessionManager {
         return;
       }
     }
+    sess.lastActivityAt = Date.now();
     const requestedDelivery = p.requested_delivery ?? p.effective_delivery;
     if (
       requestedDelivery === "llm_boundary"
@@ -1352,8 +1378,9 @@ export class SessionManager {
   }
 
   async runCommand(p: SessionRunCommandParams): Promise<void> {
-    const sess = this.#sessions.get(p.session_id);
-    if (!sess) throw new Error("no such session");
+    if (this.#reclaiming.has(p.session_id)) await this.#reclaiming.get(p.session_id);
+    const sess = this.#sessions.get(p.session_id) ?? await this.#resumePersisted(p.session_id);
+    sess.lastActivityAt = Date.now();
     const command = p.command.trim().toLowerCase();
     const args = p.args?.trim() ?? "";
     if (!/^[a-z0-9][a-z0-9-]*$/.test(command)) {
@@ -1386,6 +1413,7 @@ export class SessionManager {
     p: SessionPromptParams,
     options: RunPromptOptions = {},
   ): Promise<void> {
+    sess.lastActivityAt = Date.now();
     if (!sess.orchestration.tryStartTurn(p.turn_id)) {
       return this.#queuePrompt(sess, p, options);
     }
@@ -1567,6 +1595,29 @@ export class SessionManager {
   ): void {
     const eventWireId = eventRecord(eventRecord(event)?.["_openma.acp.notification"])?.session_id;
     const rootEvent = !eventWireId || eventWireId === sess.acp.acpSessionId;
+    const toolUpdate = outOfBandUpdateRecord(event);
+    const callId = typeof toolUpdate.toolCallId === "string" ? toolUpdate.toolCallId
+      : typeof toolUpdate.tool_call_id === "string" ? toolUpdate.tool_call_id : undefined;
+    if (callId && (toolUpdate.sessionUpdate === "tool_call" || toolUpdate.sessionUpdate === "tool_call_update")) {
+      if (turnId) sess.toolTurnOwners.set(callId, turnId);
+      else turnId = sess.toolTurnOwners.get(callId) ?? "";
+    }
+    sess.lastActivityAt = Date.now();
+    const record = outOfBandUpdateRecord(event);
+    const meta = eventRecord(record._meta);
+    // Adapter activity is independent of prompt completion (I6). Unknown
+    // activity stays protected rather than being guessed idle from silence.
+    const codex = eventRecord(meta?.codex);
+    for (const scope of sess.agentId === "codex-acp" ? [meta, codex] : []) {
+      if (scope && Object.prototype.hasOwnProperty.call(scope, "goal")) {
+        const goal = eventRecord(scope.goal);
+        sess.idleActivityBlocked = scope.goal !== null
+          && goal?.status !== "completed" && goal?.status !== "cancelled";
+      }
+    }
+    if (meta?.claudeCode || meta?.subagent || codex?.agent || codex?.multiAgent) sess.idleActivityBlocked = true;
+    if (record.type === "acp.extension_notification"
+      && record.method === "_claude/sdkMessage") sess.idleActivityBlocked = true;
     if (rootEvent && isAvailableCommandsUpdate(event)) {
       sess.latestAvailableCommandsUpdate = event;
       const commands = availableCommandsFromUpdate(event);
@@ -2020,6 +2071,7 @@ export class SessionManager {
           `[session-latency] sid=${p.session_id.slice(0, 12)} turn=${p.turn_id.slice(0, 12)} agent=${sess.agentId} prompt_no_event_ms=${Date.now() - promptStartedAt}\n`,
         );
       }
+      sess.lastActivityAt = Date.now();
       sess.turns.delete(p.turn_id);
       sess.openToolCallsByTurn.delete(p.turn_id);
       // thoughtText/assistantText accumulators are still maintained for
@@ -2037,10 +2089,10 @@ export class SessionManager {
    *  snapshot — so the method travels with the data instead of being pinned
    *  here, where it would drift the moment the adapter renames it. */
   async requestExtension(p: SessionRequestExtensionParams): Promise<void> {
-    const sess = this.#sessions.get(p.session_id);
-    if (!sess) {
-      throw new Error("no such session");
-    }
+    if (this.#reclaiming.has(p.session_id)) await this.#reclaiming.get(p.session_id);
+    const sess = this.#sessions.get(p.session_id) ?? await this.#resumePersisted(p.session_id);
+    sess.lastActivityAt = Date.now();
+
     const method = p.method.trim();
     if (!method.startsWith("_")) {
       // ACP reserves the underscore prefix for extensions; anything else would
@@ -2060,10 +2112,10 @@ export class SessionManager {
   }
 
   async setConfigOption(p: SessionSetConfigOptionParams): Promise<void> {
-    const sess = this.#sessions.get(p.session_id);
-    if (!sess) {
-      throw new Error("no such session");
-    }
+    if (this.#reclaiming.has(p.session_id)) await this.#reclaiming.get(p.session_id);
+    const sess = this.#sessions.get(p.session_id) ?? await this.#resumePersisted(p.session_id);
+    sess.lastActivityAt = Date.now();
+
     const usesLegacyModeContract =
       p.config_id === "mode"
       && typeof p.value === "string"
@@ -2223,6 +2275,8 @@ export class SessionManager {
   }
 
   async dispose(session_id: string, opts?: { removeCwd?: boolean }): Promise<void> {
+    if (this.#reclaiming.has(session_id)) await this.#reclaiming.get(session_id);
+    this.#suspended.delete(session_id);
     const starting = this.#starting.get(session_id);
     if (starting) {
       this.#cancelledStarts.add(session_id);
@@ -2240,8 +2294,30 @@ export class SessionManager {
     this.#send({ type: "session.disposed", session_id });
   }
 
+  #armIdleReclaim(sess: ActiveSession): void {
+    sess.idleTimer = setTimeout(() => {
+      if (this.#sessions.get(sess.id) !== sess || !this.#acceptingStarts) return;
+      const busy = sess.orchestration.isBusy() || sess.turns.size > 0
+        || Boolean(sess.outOfBandSteeringTurn && !sess.outOfBandSteeringTurn.settled)
+        || sess.idleActivityBlocked || this.#hasSessionBackgroundWork(sess.id);
+      if (busy) sess.lastActivityAt = Date.now();
+      const restorable = sess.acp.supportsSessionResume || sess.acp.agentCapabilities?.loadSession === true;
+      if (!busy && restorable && sess.acpSessionId && Date.now() - sess.lastActivityAt >= 20 * 60_000) {
+        const {fork: _fork, ...start} = sess.startParams;
+        this.#suspended.set(sess.id, {...start, resume: {acp_session_id: sess.acpSessionId}});
+        const operation = this.#killChild(sess.id);
+        this.#reclaiming.set(sess.id, operation);
+        void operation.finally(() => this.#reclaiming.delete(sess.id));
+        logAppEvent("acp.session.idle_reclaimed", {session_id: sess.id, agent_id: sess.agentId});
+      } else this.#armIdleReclaim(sess);
+    }, 60_000);
+    sess.idleTimer.unref?.();
+  }
+
   async disposeAll(): Promise<void> {
     this.#acceptingStarts = false;
+    this.#suspended.clear();
+    await Promise.allSettled(this.#reclaiming.values());
     for (const id of this.#starting.keys()) {
       this.#cancelledStarts.add(id);
     }
@@ -2273,6 +2349,7 @@ export class SessionManager {
   async #killChild(session_id: string): Promise<void> {
     const sess = this.#sessions.get(session_id);
     if (!sess) return;
+    if (sess.idleTimer) clearTimeout(sess.idleTimer);
     for (const entry of sess.orchestration.dispose()) {
       entry.value.resolveCompletion();
     }
@@ -2320,6 +2397,7 @@ export class SessionManager {
     }));
     const acpSessionId = sess.acpSessionId;
     const { fork: _fork, ...previousStart } = sess.startParams;
+    if (sess.idleTimer) clearTimeout(sess.idleTimer);
     sess.orchestration.dispose();
     for (const ctrl of sess.turns.values()) ctrl.abort();
     await Promise.resolve(sess.acp.dispose()).catch(() => undefined);

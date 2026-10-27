@@ -29,6 +29,17 @@ import {
 } from "./session-store";
 import { withActionTrace } from "./ui-trace";
 
+/** A selected run configuration is a precondition, never a best-effort hint. */
+export async function applyChatConfigOverrides(
+  sessionId: string,
+  values: Record<string, string | boolean>,
+  apply: (params: {session_id: string; config_id: string; value: string | boolean}) => Promise<void>,
+): Promise<void> {
+  for (const [config_id, value] of Object.entries(values)) {
+    await apply({session_id: sessionId, config_id, value});
+  }
+}
+
 export function resolveChatSubmitAgentId({
   target,
   selectedAgentId,
@@ -418,20 +429,8 @@ export function useChatSubmission({
           return;
         }
 
-        for (const [config_id, value] of Object.entries(configOverrides)) {
-          try {
-            await window.backchat.sessionSetConfigOption({
-              session_id: target.id,
-              config_id,
-              value,
-            });
-          } catch (error) {
-            toast.error("Couldn't switch model", {
-              description:
-                error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
+        await applyChatConfigOverrides(target.id, configOverrides,
+          params => window.backchat.sessionSetConfigOption(params));
       } else if (target.status === "ready" && !target.activeTurnId) {
         const startResult = await window.backchat.sessionStart({
           session_id: target.id,

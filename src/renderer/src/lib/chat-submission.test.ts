@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  applyChatConfigOverrides,
   chatIdleDeliveryMeta,
   retryBoundChatSend,
   resolveDraftStartWorkspace,
@@ -269,3 +270,9 @@ describe("chat submission decisions", () => {
     });
   });
 });
+
+ it("aborts config application on a rejected model instead of continuing with a provider default", async () => {
+   const calls: string[] = [];
+   await expect(applyChatConfigOverrides("pi", {model: "anthropic/opus", effort: "high"}, async ({config_id}) => { calls.push(config_id); throw new Error("model rejected"); })).rejects.toThrow("model rejected");
+   expect(calls).toEqual(["model"]);
+ });

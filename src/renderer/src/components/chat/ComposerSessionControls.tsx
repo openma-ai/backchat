@@ -48,7 +48,6 @@ import {
   findPermissionModeConfigOption,
   configSelectItemHint,
   flattenSelectOptions,
-  isWorkspaceAccessPermissionMode,
   permissionModeMenuItems,
   isAgentPresetConfigOption,
   isFastModeConfigOption,
@@ -630,32 +629,6 @@ export function PermissionModeChip({
   );
 }
 
-const PERMISSION_MODE_VALUE_I18N: Record<
-  string,
-  { label: TranslationKey; hint: TranslationKey }
-> = {
-  "read-only": {
-    label: "permission.codexAsk",
-    hint: "permission.codexAskHint",
-  },
-  agent: {
-    label: "permission.codexApprove",
-    hint: "permission.codexApproveHint",
-  },
-  "agent-full-access": {
-    label: "permission.codexFull",
-    hint: "permission.codexFullHint",
-  },
-  workspace: {
-    label: "permission.workspaceAccess",
-    hint: "permission.workspaceAccessHint",
-  },
-  "workspace-access": {
-    label: "permission.workspaceAccess",
-    hint: "permission.workspaceAccessHint",
-  },
-};
-
 function SessionModeControl({
   disabled,
   compactChips = false,
@@ -683,7 +656,7 @@ function SessionModeControl({
   const selected =
     values.find((item) => item.value === option.currentValue) ?? values[0];
   if (!selected) return null;
-  const selectedPresentation = localizedSessionModePresentation(t, selected, option.name);
+  const selectedPresentation = configModeOptionPresentation(selected, option.name);
   const SelectedIcon = sessionModeIcon(selected.value);
 
   const pick = async (value: string) => {
@@ -726,7 +699,7 @@ function SessionModeControl({
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {values.map((item) => {
-          const presentation = localizedSessionModePresentation(t, item, option.name);
+          const presentation = configModeOptionPresentation(item, option.name);
           const ItemIcon = sessionModeIcon(item.value);
           return (
             <DropdownMenuItem
@@ -755,26 +728,6 @@ function SessionModeControl({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function localizedSessionModePresentation(
-  t: (key: TranslationKey) => string,
-  option: { value: string; name: string; description?: string | null },
-  optionName: string,
-) {
-  const presentation = configModeOptionPresentation(option, optionName);
-  const translation =
-    PERMISSION_MODE_VALUE_I18N[option.value]
-    ?? (isWorkspaceAccessPermissionMode(option.value)
-      ? PERMISSION_MODE_VALUE_I18N["workspace-access"]
-      : undefined);
-  return translation
-    ? {
-        ...presentation,
-        label: t(translation.label),
-        hint: t(translation.hint),
-      }
-    : presentation;
 }
 
 function sessionModeIcon(value: string): LucideIcon {

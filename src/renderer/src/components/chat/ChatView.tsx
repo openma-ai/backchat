@@ -470,6 +470,7 @@ export function ChatView({
       lockedAgentId={composerAgentBinding.lockedAgentId}
       pickedAgentId={pickedAgentId}
       sessionAuthRequired={!!active?.authRequired}
+      sessionAuthRetryAllowed={active?.authRetryAllowed}
       sessionAuth={active?.auth}
       sessionSupportsLogout={!!active?.supportsLogout}
       suggestionDraft={suggestionDraft}

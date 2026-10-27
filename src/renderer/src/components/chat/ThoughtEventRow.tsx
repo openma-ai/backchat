@@ -4,6 +4,8 @@ import {
   type ChatThoughtEventProjection,
 } from "@openma/common/chat-ui";
 
+import type { ReactNode } from "react";
+import { ShimmerText } from "@/components/ui/ShimmerText";
 import { useI18n } from "@/lib/i18n";
 import type { Turn } from "@/lib/session-store";
 import { StreamdownText } from "./ChatMarkdown";
@@ -19,7 +21,7 @@ export function projectThoughtEvent({
   completedLabel,
 }: {
   live: boolean;
-  liveFallback: string;
+  liveFallback: ReactNode;
   completedLabel: string;
 }): ThoughtEventProjection {
   return projectChatThoughtEvent({
@@ -49,7 +51,7 @@ export function ThoughtEventRow({
   const { t } = useI18n();
   const projection = projectThoughtEvent({
     live,
-    liveFallback: t("chat.thinking"),
+    liveFallback: <ShimmerText>{t("chat.thinking")}</ShimmerText>,
     completedLabel: t("chat.thoughtFor", { seconds: durationSeconds }),
   });
 
@@ -57,7 +59,7 @@ export function ThoughtEventRow({
     <ChatThoughtEventRow
       live={live}
       text={text}
-      liveFallback={t("chat.thinking")}
+      liveFallback={<ShimmerText>{t("chat.thinking")}</ShimmerText>}
       completedLabel={t("chat.thoughtFor", { seconds: durationSeconds })}
       projection={projection}
       renderBody={() =>

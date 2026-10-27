@@ -438,3 +438,63 @@ compatibility patch therefore drains preceding session-update callbacks before
 passing an RPC response to the SDK. Requests such as permission prompts remain
 unblocked. This preserves I1 at the transport seam; changing queue guards or
 assigning an empty-ID event to the most recent turn would not establish I11.
+### Idle process reclamation (2026-10-25)
+An ACP process is eligible after 20 minutes of inactivity, checked every minute,
+only with negotiated resume/load support and a native session ID. This is
+resource suspension, never conversation archival: preserve start parameters and
+native ID; next start/prompt/config/command restores the session. Reclamation
+and new requests serialize so a new prompt cannot enter a closing process.
+I1/I5 protect unresolved/queued/steering requests; I6 protects structured goal
+activity beyond prompt completion. Broker pending asks and live terminals also
+block reclamation. Unknown native background/subagent metadata is protected
+conservatively rather than treated as idle. No text matching or output-silence
+heuristic determines completion. Shared spec: ACP v1 Session Setup capability
+checks govern load/resume/close. No `session.disposed` event is emitted for idle
+reclamation because that event archives/removes the GUI row.
+
+### Live feedback ownership (2026-10-25)
+I1/I3: unresolved prompt is the liveness authority; completed tool history cannot
+close it. Feedback precedence is actual running tool, actual streaming thought,
+then waiting fallback. Waiting after final process activity lives in that final
+group's disclosure header, expanded or collapsed, not as a second trailing row.
+Earlier groups remain historical. Text-only/answer-tail waits without a current
+process owner retain a single trailing fallback. Terminal prompt removes the
+fallback regardless of late queue metadata. This is rendering state only, not a
+fabricated ACP thought or tool event.
+
+### Steer presentation slices are not turns (2026-10-25)
+I2/I11: injected input partitions chronological content, not prompt ownership.
+One turn has one visible elapsed/status header and one parent expansion state;
+continuation slices after injected inputs do not repeat the turn-level clock.
+The input remains visible when activity slices fold. Group-level activity labels
+are separate from this single turn-level lifecycle header.
+
+### Standard compaction boundaries (2026-10-25)
+ACP v1 now defines `compaction_update`/`compaction_summary_chunk`, gated by
+`clientCapabilities.session.compaction: {}`. A compaction is an ID-addressed
+session timeline entity: first receipt fixes position; subsequent updates patch
+in place. Summary chunks append; concrete summary replaces, null/[] clears;
+omission retains. Unknown status is preserved, never inferred from titles.
+Compaction terminal status is NOT a prompt boundary (I1). It never creates a
+model thought or synthetic tool event. Backchat advertises support with the
+implemented common projector and dedicated renderer. Canonical raw transport
+records preserve these new updates through live delivery and persisted replay.
+Source: https://agentclientprotocol.com/protocol/v1/prompt-turn#session-compaction
+
+### Cold history versus live prompt recovery
+`session/load` and capability-gated `session/resume` restore conversation
+context; neither proves a lost `session/prompt` resumed execution. I1 permits
+client-side interruption when the authoritative local main runtime confirms no
+active work. Reconcile only the IDs captured after history materialization so a
+new prompt racing IPC cannot be cancelled. Renderer-only recovery is different:
+when the main still owns active work, keep it live without resending the prompt.
+Never use a network/query error as evidence that a remote task has stopped.
+
+### Adapter process exits are not successful prompt completion
+codex-acp 2.2.2 uses request error code1001 plus data.restartable for app-server
+loss. This is adapter evidence, not a standard ACP StopReason. A zero child exit
+code does not complete a prompt. Project restartable process loss as interrupted
+in live/replay, retain partial output, and permit explicit next input; never
+silently retry a side-effectful prompt. Keep the original structured error on
+disk for diagnostics even when the GUI chooses interruption rather than red
+session-failure chrome.

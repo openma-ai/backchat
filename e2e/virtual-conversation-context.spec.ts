@@ -1,0 +1,41 @@
+import { expect,test } from './fixtures';
+import {injectEvent,injectSession} from './helpers';
+test('crossing the virtual transcript threshold preserves host scroll consumers',async({page,app})=>{
+ await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('session:start');ipcMain.handle('session:start',()=>({}));});
+ const id=await injectSession(page,{sessionId:'virtual-scroll-context'});
+ for(let n=0;n<18;n++){
+   const turn=`history-${n}`;
+   const event={schema_version:'oma.event.v1',event_id:`prompt-${n}`,session_id:id,turn_id:turn,occurred_at:new Date(1792700000000+n*1000).toISOString(),source:{kind:'user'},type:'user.message',data:{text:`Request ${n}`,input_kind:'steering',outcome:'startedNewTurn'}};
+   await injectEvent(page,{type:'session.steering',session_id:id,turn_id:turn,text:`Request ${n}`,outcome:'startedNewTurn',openma_event:event});
+   await injectEvent(page,{type:'session.event',session_id:id,turn_id:turn,event:{sessionUpdate:'tool_call',toolCallId:`tool-${n}`,title:`Read item ${n}`,kind:'read',status:'completed',rawInput:{path:'/tmp/file'}}});
+   await injectEvent(page,{type:'session.event',session_id:id,turn_id:turn,event:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:`Answer ${n}`}}});
+   await injectEvent(page,{type:'session.complete',session_id:id,turn_id:turn,stop_reason:'end_turn'});
+ }
+ await expect(page.getByText('use-stick-to-bottom component context must be used',{exact:false})).toHaveCount(0);
+ await expect(page.locator('[data-virtual-transcript]')).toBeVisible();
+ await expect(page.getByRole('textbox')).toBeVisible();
+ const viewport=page.locator('[role="log"] .chat-scrollbar').first();
+ await expect.poll(()=>viewport.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+ await viewport.evaluate(el=>{el.scrollTop=el.scrollHeight;el.dispatchEvent(new Event('scroll'));});
+ await expect(page.locator('[data-turn-id="history-17"]')).toBeVisible();
+ await expect(page.locator('[data-turn-id="history-0"]')).toHaveCount(0);
+ const tick=page.getByRole('button',{name:'Request 17',exact:true});
+ const tickBox=await tick.boundingBox();
+ const viewportBox=await viewport.boundingBox();
+ expect(tickBox!.x-viewportBox!.x).toBeLessThan(60);
+ await page.getByRole('button',{name:'Request 17',exact:true}).hover();
+ const menu=page.getByRole('listbox',{name:'Conversation timeline'});
+ await expect(menu).toBeVisible();
+ expect((await menu.boundingBox())!.x).toBeGreaterThan(tickBox!.x);
+ await page.locator('[data-timeline-row="history-0"]').click();
+ await expect(page.locator('[data-turn-id="history-0"]')).toBeVisible();
+ await viewport.evaluate(el=>{el.scrollTop=el.scrollHeight;el.dispatchEvent(new Event('scroll'));});
+ await expect(page.locator('[data-turn-id="history-17"]')).toBeVisible();
+ const last=page.locator('[data-turn-id="history-17"]');
+ await last.locator('[data-chat-turn-disclosure-trigger]').first().click();
+ const tool=last.locator('[data-tool-call-id="tool-17"] button').first();
+ await expect(tool).toBeVisible();
+ await tool.click();
+ await expect(tool).toHaveAttribute('aria-expanded','true');
+ await expect(page.getByText('use-stick-to-bottom component context must be used',{exact:false})).toHaveCount(0);
+});

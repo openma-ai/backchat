@@ -3,6 +3,9 @@ import { describe, expect, test } from "vitest";
 import { turnStopNotice } from "./turn-stop-reason";
 
 describe("turnStopNotice", () => {
+  test("explains runtime interruption separately from successful completion", () => {
+    expect(turnStopNotice({status:"cancelled",stopReason:"interrupted"})).toEqual({key:"chat.stopInterrupted",tone:"truncated"});
+  });
   test("says so when the agent stopped at a limit or declined", () => {
     // These reach the client as an ordinary completion, so without the agent's
     // stated reason a cut-off answer reads as a finished one.

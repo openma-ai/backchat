@@ -32,7 +32,7 @@ export function AnimatedCollapse({
   className,
   lightweight = false,
 }: AnimatedCollapseProps) {
-    const [mounted, setMounted] = useState(open);
+  const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
 
   // Unmount after the close transition. transitionend is the signal; the timer
@@ -45,7 +45,10 @@ export function AnimatedCollapse({
 
   const onTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
     // Ignore transitions bubbling up from the body.
-    if (event.target === event.currentTarget && !open) setMounted(false);
+    const terminalProperty = lightweight ? "opacity" : "height";
+    if (event.target === event.currentTarget && !open && event.propertyName === terminalProperty) {
+      setMounted(false);
+    }
   };
 
   return (

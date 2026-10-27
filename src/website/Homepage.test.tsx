@@ -32,6 +32,8 @@ describe("Backchat website", () => {
       env: {
         ...process.env,
         CI: "1",
+        // Building under a test worker must never reinstall its dependency tree.
+        pnpm_config_verify_deps_before_run: "false",
       },
     });
 

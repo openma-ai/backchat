@@ -1,3 +1,4 @@
+import { ShimmerText } from "@/components/ui/ShimmerText";
 import { useI18n } from "@/lib/i18n";
 import {
   BrainIcon,
@@ -15,7 +16,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type Ref,
 } from "react";
-import { useStickToBottomContext } from "use-stick-to-bottom";
+import { useChatScrollAnchor } from "@openma/common/chat-ui";
 import { safeJson } from "@/lib/format";
 import {
   pickToolActivityTarget,
@@ -90,7 +91,8 @@ export function ToolRow({
   const lifecycleLabel =
     lifecycle.value === "denied" ? t("tool.denied") : lifecycle.label;
   const inProgress = status === "in_progress" || status === "pending";
-  const verb = t(toolActivityVerbKey(tool));
+  const namedThought = tool.kind === "think" && !!tool.title?.trim() && !denied && status !== "cancelled";
+  const verb = namedThought ? tool.title! : t(toolActivityVerbKey(tool));
   const target = pickToolActivityTarget(tool, (name) =>
     t("tool.skillSuffix", { name }),
   );
@@ -111,7 +113,7 @@ export function ToolRow({
     tool.rawInput !== undefined ||
     (tool.rawOutput !== undefined && hoistedBlocks.length === 0);
   const [open, setOpen] = useState(false);
-  const stick = useStickToBottomContext();
+  const stick = useChatScrollAnchor();
   const summaryRef = useRef<HTMLElement | null>(null);
 
   // The body animates its height, so the anchor is held through the whole
@@ -149,8 +151,8 @@ export function ToolRow({
       >
         <ToolActivityIdentity
           kind={tool.kind}
-          label={verb}
-          target={target}
+          label={namedThought && inProgress ? <ShimmerText>{verb}</ShimmerText> : verb}
+          target={namedThought ? undefined : target}
           failed={status === "failed" && !denied}
           leading={
             subagent ? (

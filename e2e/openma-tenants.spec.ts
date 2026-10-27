@@ -50,7 +50,7 @@ test("tenant groups start collapsed above local and route new and continued sess
     await expect(alpha).toHaveAttribute("aria-expanded", "false");
     await expect(beta).toHaveAttribute("aria-expanded", "false");
     const localRuntimeRow = page.getByTestId("sidebar-local-runtime-row");
-    await expect(localRuntimeRow).toHaveClass(/sidebar-grid-row/);
+    await expect(localRuntimeRow.locator(".sidebar-grid-row")).toBeVisible();
     await expect(localRuntimeRow).toBeVisible();
     const localLabelCell = localRuntimeRow.locator('[data-sidebar-grid="label"]');
     const alphaLabelCell = alpha.locator('xpath=ancestor::*[@data-sidebar-grid="label"][1]');

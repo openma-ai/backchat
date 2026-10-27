@@ -1,4 +1,6 @@
-import { ComposerAnnotationStrip } from "./ComposerAnnotations";
+import { CompactionActivity, type CompactionState } from "./CompactionActivity";
+import { ShimmerText } from "@/components/ui/ShimmerText";
+import { resolveAgentRuntimeAdapter } from "@/lib/agent-runtime-adapters";
 import { turnStopNotice } from "@/lib/turn-stop-reason";
 import { memo, useMemo } from "react";
 import {
@@ -125,18 +127,26 @@ export const TurnBlock = memo(function TurnBlock({
           })),
         }
       : rendered;
-    if (!planDocument?.sourceToolCallId) return settled;
-    const sourceToolCallId = planDocument.sourceToolCallId;
+    const adapter = resolveAgentRuntimeAdapter(agentId);
+    // Classify the provider payload before client-side interruption settling.
+    // A routine review must not reappear merely because history settled its status.
+    const hiddenIds = new Set(
+      rendered.tools
+        .filter((tool) =>
+          tool.toolCallId === planDocument?.sourceToolCallId ||
+          adapter?.isInternalToolActivity?.(tool),
+        )
+        .map((tool) => tool.toolCallId),
+    );
+    if (!hiddenIds.size) return settled;
     return {
       ...settled,
-      tools: settled.tools.filter(
-        (tool) => tool.toolCallId !== sourceToolCallId,
-      ),
-      timeline: settled.timeline.filter(
-        (item) => item.kind !== "tool" || item.toolCallId !== sourceToolCallId,
+      tools: settled.tools.filter((tool) => !hiddenIds.has(tool.toolCallId)),
+      timeline: settled.timeline.filter((item) =>
+        item.kind !== "tool" || !hiddenIds.has(item.toolCallId),
       ),
     };
-  }, [planDocument?.sourceToolCallId, rendered, turn.status]);
+  }, [agentId, planDocument?.sourceToolCallId, rendered, turn.status]);
   const sendPending = turn.sendState === "pending";
   const sendFailed = turn.sendState === "failed";
   const isStreaming = turn.status === "running" && !sendPending && !sendFailed;
@@ -165,12 +175,12 @@ export const TurnBlock = memo(function TurnBlock({
     [turn.promptText],
   );
   const projectedTurn = useMemo(
-    () =>
-      projectAcpChatTurn(
+    () => {
+      const projected = projectAcpChatTurn(
         {
           id: turn.id,
           promptText:
-            hasSessionReferences || scheduledPrompt || (!!turn.annotations?.length && /^\[\d+ annotations?\]$/.test(turn.promptText.trim()))
+            hasSessionReferences || scheduledPrompt
               ? ""
               : (commandInvocation?.body ?? turn.promptText),
           attachments: turn.attachments,
@@ -182,7 +192,15 @@ export const TurnBlock = memo(function TurnBlock({
           endedAt: turn.endedAt,
         },
         { rendered: activityRendered },
-      ),
+      );
+      // Empty thought chunks are transport/activity signals, not historical
+      // reasoning. The turn view owns its separate live waiting fallback.
+      return {
+        ...projected,
+        items: projected.items.filter((item) =>
+          item.kind !== "thinking" || item.text.trim().length > 0),
+      };
+    },
     [
       activityRendered,
       commandInvocation?.body,
@@ -228,11 +246,7 @@ export const TurnBlock = memo(function TurnBlock({
 
   const view = (
     <AgentUITurnView
-      // chat-ui keeps a settled turn's process strip as it was while
-      // streaming (open). Remount once when the turn stops running so it
-      // re-initializes from defaultProcessOpen: each turn folds its work
-      // away when it finishes, leaving the answer.
-      key={turn.status === "running" ? "live" : "settled"}
+      collapseProcessOnComplete
       sessionId={turn.sessionId}
       turn={projectedTurn}
       frameStatus={sendFailed ? "error" : sendPending ? "completed" : turn.status}
@@ -243,7 +257,7 @@ export const TurnBlock = memo(function TurnBlock({
       labels={{
         workingFor: (seconds) => t("chat.workingFor", { seconds }),
         workedFor: (seconds) => t("chat.workedFor", { seconds }),
-        thinking: t("chat.thinking"),
+        thinking: <ShimmerText>{t("chat.thinking")}</ShimmerText>,
         thoughtFor: (seconds) => t("chat.thoughtFor", { seconds }),
         toolActivity: (tool) => describeProjectedTool(tool, t),
         toolRunSummary: (tools) => describeProjectedToolRun(tools, t),
@@ -251,11 +265,6 @@ export const TurnBlock = memo(function TurnBlock({
       slots={{
         renderBeforeTurn: () => (
           <>
-            {!!turn.annotations?.length && (
-              <div data-prompt-annotations className="mb-2 flex justify-end">
-                <ComposerAnnotationStrip annotations={turn.annotations} attachments={turn.attachments ?? []} />
-              </div>
-            )}
             {hasSessionReferences && <ReferencedSessionPrompt turn={turn} />}
             {scheduledPrompt && !hasSessionReferences && (
               <ScheduledTaskUserPrompt turn={turn} surface={scheduledPrompt} />
@@ -273,8 +282,24 @@ export const TurnBlock = memo(function TurnBlock({
               ),
             }
           : {}),
-        renderAssistant: ({ item, section, live, prefixSkip }) =>
-          live ? (
+        renderUserInput: ({ item }) => {
+          // Injected input remains in this turn's process timeline (I2/I11),
+          // but owns its own text, time and attachments, never the parent prompt.
+          const inputTurn: Turn = {
+            ...turn,
+            id: item.clientId ?? item.id,
+            promptText: item.text,
+            attachments: (item.attachments ?? []) as Turn["attachments"],
+            annotations: (item.annotations ?? []) as Turn["annotations"],
+            sessionReferences: undefined,
+            startedAt: item.startedAt ? Date.parse(item.startedAt) : turn.startedAt,
+            sendState: undefined,
+            sendError: undefined,
+          };
+          return <UserPromptBubble turn={inputTurn} text={item.text} onEditPrompt={onEditPrompt} />;
+        },
+        renderAssistant: ({ item, section, live, prefixSkip }) => (
+          <div data-assistant-annotation-surface={item.id}>{live ? (
             <StreamingMarkdown
               key={`${turn.id}:${turn.streamRevision ?? 0}`}
               turnId={turn.id}
@@ -291,15 +316,17 @@ export const TurnBlock = memo(function TurnBlock({
               sessionId={turn.sessionId}
               surfacePrefix={assistantSurfacePrefix(turn.id, item, section)}
             />
-          ),
+          )}</div>
+        ),
         projectThoughtActivity: ({ item, live }) =>
           projectThoughtEvent({
             live,
-            liveFallback: t("chat.thinking"),
+            liveFallback: <ShimmerText>{t("chat.thinking")}</ShimmerText>,
             completedLabel: t("chat.thoughtFor", {
               seconds: itemContentNumber(item, "durationSeconds"),
             }),
           }),
+        renderCompaction: ({ item }) => <CompactionActivity compaction={(item.content as { compaction: CompactionState }).compaction} />,
         renderThought: ({ item, live, prefixSkip }) => (
           <ThoughtEventRow
             turn={turn}
@@ -490,6 +517,12 @@ function describeProjectedTool(
     ...projectedToolPresentation(tool),
     status: live ? "in_progress" : tool.status,
   };
+  // A named reasoning tool describes its activity already. `think` is not
+  // evidence that this is an ordinary model-thought stream (e.g. compaction).
+  if (tool.toolKind === "think" && tool.title?.trim() &&
+      tool.status !== "cancelled" &&
+      tool.adapterMeta?.permissionOutcome !== "denied" &&
+      tool.adapterMeta?.permission_outcome !== "denied") return tool.title;
   const target =
     pickToolActivityTarget(projected, (name) =>
       t("tool.skillSuffix", { name }),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useStickToBottomContext } from "use-stick-to-bottom";
+import { useChatScrollAnchor } from "@openma/common/chat-ui";
 import { toast } from "sonner";
+import { captureHistoryAnchor, restoreHistoryAnchor, type HistoryScrollAnchor } from "@/lib/history-scroll-anchor";
 import { loadOlderHistory } from "@/lib/history-paging";
 import { sessionStore, useSessionStore } from "@/lib/session-store";
 import { ConversationHistoryWindowStatus } from "./ConversationLoadingState";
@@ -51,17 +52,17 @@ function pinDuringSettle(
  * HistoryPager — pages older persisted rows into a session that was opened
  * as a tail window (see history-paging.ts). Must render INSIDE
  * <Conversation> so it can reach the scroll element through
- * useStickToBottomContext(), like ConversationTimeline.
+ * useChatScrollAnchor(), like ConversationTimeline.
  *
  * Two jobs:
  *  1. Land at the bottom the first time a windowed session renders.
  *  2. When the user scrolls near the top (or presses the pill), fetch the
  *     page before the oldest loaded row and keep the viewport anchored on
- *     the content it was showing — prepending grows scrollHeight, so
- *     scrollTop is shifted by the same delta after React commits.
+ *     the visible message/paragraph it was showing, even if unrelated content
+ *     changes height or replay assigns the head a different turn identity.
  */
 export function HistoryPager({ sessionId }: { sessionId: string }) {
-  const stick = useStickToBottomContext();
+  const stick = useChatScrollAnchor();
   // The context object is recreated on every provider render; effects that
   // must run once per session read it through a ref instead of depending on it.
   const stickRef = useRef(stick);
@@ -81,7 +82,7 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
   loadingRef.current = loading;
 
   // Scroll anchor captured right before a page is requested.
-  const anchor = useRef<{ height: number; top: number } | null>(null);
+  const anchor = useRef<HistoryScrollAnchor | null>(null);
 
   const requestOlder = useCallback(() => {
     if (!hasMore || loading || busy.current) return;
@@ -90,12 +91,15 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
     setSettling(true);
     const scrollEl = stick.scrollRef.current;
     if (scrollEl) {
-      anchor.current = { height: scrollEl.scrollHeight, top: scrollEl.scrollTop };
+      anchor.current = captureHistoryAnchor(scrollEl);
       // Release the at-bottom lock; otherwise the resize observer snaps the
       // conversation to the bottom as the older turns mount.
       stick.stopScroll();
     }
-    void loadOlderHistory(sessionId).catch((error: unknown) => {
+    void loadOlderHistory(sessionId, () => {
+      const viewport = stickRef.current.scrollRef.current;
+      if (viewport) anchor.current = captureHistoryAnchor(viewport);
+    }).catch((error: unknown) => {
       anchor.current = null;
       busy.current = false;
       setSettling(false);
@@ -137,11 +141,13 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
     scrollEl.addEventListener("wheel", onUserScroll, { passive: true });
     scrollEl.addEventListener("touchmove", onUserScroll, { passive: true });
     scrollEl.addEventListener("keydown", onUserScroll);
+    scrollEl.addEventListener("chat:navigate-to-turn", onUserScroll);
     return () => {
       stop();
       scrollEl.removeEventListener("wheel", onUserScroll);
       scrollEl.removeEventListener("touchmove", onUserScroll);
       scrollEl.removeEventListener("keydown", onUserScroll);
+      scrollEl.removeEventListener("chat:navigate-to-turn", onUserScroll);
       // Only a real user scroll may change memory. Mount/unmount churn while
       // rows are still landing must not overwrite the last known position.
       if (!userScrolled) return;
@@ -166,7 +172,7 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
       return;
     }
     const restore = () => {
-      scrollEl.scrollTop = Math.max(0, a.top + scrollEl.scrollHeight - a.height);
+      if (anchor.current === a) restoreHistoryAnchor(scrollEl, a);
     };
     restore();
     let second = 0;
@@ -189,18 +195,25 @@ export function HistoryPager({ sessionId }: { sessionId: string }) {
     scrollEl.style.overscrollBehaviorY = "none";
     const track = () => {
       if (loadingRef.current && anchor.current) {
-        anchor.current = { height: scrollEl.scrollHeight, top: Math.max(0, scrollEl.scrollTop) };
+        anchor.current = captureHistoryAnchor(scrollEl);
       }
     };
-    const holdWhileMounting = (event: WheelEvent) => {
-      if (busy.current && !loadingRef.current && event.deltaY < 0) event.preventDefault();
+    const releaseOnInput = () => {
+      // A reader takes ownership immediately, including while new rows settle.
+      if (busy.current && !loadingRef.current) {
+        anchor.current = null;
+        busy.current = false;
+        setSettling(false);
+      }
     };
     scrollEl.addEventListener("scroll", track, { passive: true });
-    scrollEl.addEventListener("wheel", holdWhileMounting, { passive: false });
+    scrollEl.addEventListener("wheel", releaseOnInput, { passive: true });
+    scrollEl.addEventListener("touchmove", releaseOnInput, { passive: true });
     return () => {
       scrollEl.style.overscrollBehaviorY = previous;
       scrollEl.removeEventListener("scroll", track);
-      scrollEl.removeEventListener("wheel", holdWhileMounting);
+      scrollEl.removeEventListener("wheel", releaseOnInput);
+      scrollEl.removeEventListener("touchmove", releaseOnInput);
     };
   }, [sessionId]);
 

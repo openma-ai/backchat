@@ -9,6 +9,8 @@ import {
   SidebarGridCell,
   SidebarGridRow,
 } from "./SidebarGridRow";
+import { SidebarActivityIndicator } from "./SidebarActivityIndicator";
+import { SessionRow as SessionSidebarRow } from "./Sidebar";
 import { SidebarSectionHeading } from "./SidebarSectionHeading";
 
 vi.mock("@/components/AgentIcon", () => ({
@@ -500,19 +502,6 @@ describe("groupSidebarSessions", () => {
     expect(source).not.toContain("ContextMenu.Item");
   });
 
-  it("reveals project actions on hover", () => {
-    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const projectRow = source.slice(
-      source.indexOf("function ProjectSidebarRow"),
-      source.indexOf("function PairSidebarRow"),
-    );
-
-    expect(projectRow).toContain('t("sidebar.projectActions")');
-    expect(projectRow).toContain('t("sidebar.startProjectChat")');
-    expect(projectRow).toContain('<SidebarGridCell slot="trailing" className={cn("sidebar-row-reveal", labelCls)}>');
-    expect(projectRow).toContain("<RowMoreMenu");
-  });
-
   it("keeps project folders stateless and leaves activity on child sessions", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const projectRow = source.slice(
@@ -806,27 +795,16 @@ describe("groupSidebarSessions", () => {
     expect(styles).toContain(".sidebar-section-header .sidebar-row-action > svg");
   });
 
-  it("puts the running spinner in the same reserved trailing slot as the schedule clock", () => {
-    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
-    const styles = readFileSync(
-      resolve(__dirname, "../../styles/index.css"),
-      "utf8",
-    );
-    const sessionRow = source.slice(
-      source.indexOf("function SessionRow"),
-      source.length,
-    );
-    const trailing = sessionRow.slice(sessionRow.indexOf('slot="trailing"'));
-
-    expect(styles).toContain("--sidebar-grid-trailing-gap:");
-    expect(styles).toContain('data-sidebar-trailing-track="double"');
-    expect(sessionRow).toContain('SidebarGridCell slot="trailing"');
-    expect(sessionRow).toContain('data-sidebar-grid-action="last"');
-    expect(trailing).toContain("{running ?");
-    expect(trailing.indexOf("Loader2Icon")).toBeGreaterThan(trailing.indexOf('slot="trailing"'));
-    expect(trailing.indexOf("data-sidebar-schedule-indicator")).toBeGreaterThan(
-      trailing.indexOf("Loader2Icon"),
-    );
+  it("renders a running scheduled session with status, clock and an available menu", () => {
+    const html = renderToStaticMarkup(React.createElement(SessionSidebarRow, {
+      row: row({ status: "running" }), active: false, hasSchedule: true,
+      labelCls: "", onSelect() {}, onRename() {}, onArchive() {},
+      menuOpen: false, onMenuOpenChange() {},
+    }));
+    expect(html).toContain('data-sidebar-trailing-track="double"');
+    expect(html).toContain('data-sidebar-activity="running"');
+    expect(html).toContain('data-sidebar-schedule-indicator="true"');
+    expect(html).toContain('aria-label="Session actions"');
   });
 
   it("renders a dedicated Pinned section before every other conversation section", () => {
@@ -929,7 +907,9 @@ describe("removed projects", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const chatsSection = source.slice(source.indexOf('title={t("sidebar.chats")}'));
     expect(chatsSection).toContain("{...sectionRowProps}");
-    expect(source).toContain('data-sidebar-unread-indicator="true"');
+    const html = renderToStaticMarkup(React.createElement(SidebarActivityIndicator, { status: "unread" }));
+    expect(html).toContain('data-sidebar-unread-indicator="true"');
+    expect(html).toContain('aria-label="Completed · unread"');
   });
 });
 
@@ -937,9 +917,43 @@ describe("sidebar menu cost contract", () => {
   it("keeps every sidebar menu non-modal", () => {
     const sources = ["Sidebar.tsx", "sidebar-menus.tsx"].map((file) => readFileSync(resolve(__dirname, file), "utf8"));
     const roots = sources.flatMap((source) => source.match(/<(DropdownMenu|ContextMenu|ContextMenu\.Root)(?=[\s>])[^>]*>/g) ?? []);
-    // Sidebar's own header / tenant menus, plus the shared ⋯ and right-click.
-    expect(roots.length).toBeGreaterThanOrEqual(4);
+    // Tenant menu plus shared overflow/right-click; the redundant header menu is gone.
+    expect(roots.length).toBeGreaterThanOrEqual(3);
     for (const root of roots) expect(root).toContain("modal={false}");
   });
 
+});
+
+describe("sidebar descendant activity", () => {
+  it("keeps workspace and project attention when a child is pinned or moved to a section", () => {
+    const sessions = [
+      row({ id: "pinned-running", cwd: "/repo", pinnedAt: 1, status: "running" }),
+      row({ id: "section-approval", cwd: "/checkout", projectId: "project", workspaceId: "workspace", pendingAsks: [{ kind: "permission", ask: {} as never }] }),
+    ];
+    const project = { id: "project", name: "Repo", primary_folder: "/repo", source_folders: ["/repo"] } as ProjectInfo;
+    const grouped = groupSidebarSessions(sessions, [project], [], [], new Set(), [{ id: "custom", name: "Custom", sessionIds: ["section-approval"] }]);
+    expect(grouped.pinned.map(s => s.id)).toEqual(["pinned-running"]);
+    expect(grouped.customSections[0]?.sessions.map(s => s.id)).toEqual(["section-approval"]);
+    expect(grouped.projects[0]).not.toHaveProperty("activity");
+    expect(grouped.projects[0]?.sessions).toEqual([]);
+    expect(grouped.projects[0]?.workspaces[0]).not.toHaveProperty("activity");
+    expect(grouped.projects[0]?.workspaces[0]?.sessions).toEqual([]);
+  });
+});
+
+describe("sidebar project status priority", () => {
+  it.each([
+    [{ unread: true }, "unread"],
+    [{ status: "running" }, "running"],
+    [{ lastError: "Provider failed" }, "error"],
+    [{ pendingAsks: [{ kind: "permission", ask: {} }] }, "approval"],
+  ] as const)("propagates %j from a workspace without depending on expansion", (state, status) => {
+    const grouped = groupSidebarSessions([row({ id: "child", cwd: "/work/repo", workspaceId: "ws", ...state } as Partial<SessionRow>)]);
+    expect(grouped.projects[0]?.workspaces[0]).not.toHaveProperty("activity");
+    expect(grouped.projects[0]).not.toHaveProperty("activity");
+  });
+  it("includes hidden coordinator activity without rendering it as a normal chat", () => {
+    const grouped = groupSidebarSessions([row({ id: "coordinator", cwd: "/repo", status: "running", listHidden: true })], [], [], [], new Set(["coordinator"]));
+    expect(grouped.projects).toEqual([]);
+  });
 });

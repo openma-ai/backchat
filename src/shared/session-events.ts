@@ -117,6 +117,8 @@ export interface SessionRuntimeStatus {
   installed_version?: string;
   restart_required: boolean;
   busy: boolean;
+  /** Main-owned unresolved prompt IDs, not restored provider context. */
+  active_turn_ids?: string[];
   restart_pending: boolean;
 }
 

@@ -1,3 +1,4 @@
+import { configValuesFromOptions } from "@/lib/recent-run-preferences";
 import { ComposerSurface, ComposerInput, ComposerAction } from "./ComposerPrimitives";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeftIcon, PlusIcon, SquareIcon } from "@/components/Icons";
@@ -124,6 +125,7 @@ export function Composer({
   lockedAgentId,
   pickedAgentId,
   sessionAuthRequired = false,
+  sessionAuthRetryAllowed = false,
   sessionAuth,
   sessionSupportsLogout = false,
   suggestionDraft,
@@ -157,6 +159,7 @@ export function Composer({
   lockedAgentId: string | null;
   pickedAgentId: string | null;
   sessionAuthRequired?: boolean;
+  sessionAuthRetryAllowed?: boolean;
   sessionAuth?: SessionRow["auth"];
   sessionSupportsLogout?: boolean;
   suggestionDraft?: ComposerSuggestionDraft | null;
@@ -361,6 +364,7 @@ export function Composer({
   ]);
   const sessionAuthState = {
     authRequired: sessionAuthRequired,
+    authRetryAllowed: sessionAuthRetryAllowed,
     auth: sessionAuth,
   };
   const authChecking = !isRemote && composerHarnessAuthChecking(liveProbePending, sessionAuthState);
@@ -744,7 +748,7 @@ export function Composer({
       commandText,
       undefined,
       primaryIntent,
-      draftConfigValues,
+      lockedAgentId ? {} : configValuesFromOptions(effectiveConfigOptions),
       currentEnabledAgent?.id,
       annotations,
     );
@@ -1261,8 +1265,10 @@ export function Composer({
           >
             <PlusIcon className="size-[var(--composer-attachment-icon-size)]" />
           </button>}
+          {/* ACP config changes are valid while generating. Only actual
+              composer unavailability disables the session configuration. */}
           <PermissionModeChip
-            disabled={!!disabled || !!running}
+            disabled={!!disabled}
             compactChips={compactChips}
             agentId={currentAgentId}
             configOptions={effectiveConfigOptions}
@@ -1348,7 +1354,7 @@ export function Composer({
             </span>
           ) : (
             <SessionRunChip
-              disabled={!!running}
+              disabled={!!disabled}
               compactChips={compactChips}
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}

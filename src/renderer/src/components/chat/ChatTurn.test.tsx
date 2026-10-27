@@ -83,6 +83,42 @@ describe("TurnBlock", () => {
     sessionMock.subagents = [];
   });
 
+  it("renders standard compaction lifecycle in place without a thinking fallback", () => {
+    const start = { sessionUpdate: "compaction_update", compactionId: "standard-c", status: "in_progress" };
+    const html = renderToStaticMarkup(<TurnBlock turn={turn({ status: "running", events: [{ payload: start, receivedAt: 1 }] })} />);
+    expect(html).toContain('data-compaction-status="in_progress"');
+    expect(html).not.toContain('data-thinking-fallback="true"');
+    expect(html).not.toContain('data-tool-call-id');
+    const done = renderToStaticMarkup(<TurnBlock turn={turn({ status: "running", events: [{ payload: start, receivedAt: 1 }, { payload: { ...start, status: "completed" }, receivedAt: 2 }] })} />);
+    expect(done.match(/data-compaction-id=/g)).toHaveLength(1);
+    expect(done).toContain('data-compaction-status="completed"');
+    expect(done).toContain('data-thinking-fallback="true"');
+  });
+
+  it("does not turn whitespace thought chunks into historical thinking events", () => {
+    const events = [
+      { payload: { sessionUpdate: "agent_thought_chunk", messageId: "empty-1", content: { type: "text", text: "\n\n" } }, receivedAt: 1 },
+      { payload: { sessionUpdate: "tool_call", toolCallId: "read-1", kind: "read", title: "Read config", status: "completed" }, receivedAt: 1000 },
+      { payload: { sessionUpdate: "agent_thought_chunk", messageId: "empty-2", content: { type: "text", text: "  \n" } }, receivedAt: 2000 },
+    ];
+    const html = renderToStaticMarkup(<TurnBlock turn={turn({ status: "running", events })} />);
+    expect(html).not.toContain("chat.thoughtFor");
+    expect(html).toContain("Read config");
+    expect(html).toContain('data-thinking-fallback="true"');
+    const done = renderToStaticMarkup(<TurnBlock turn={turn({ status: "complete", events })} />);
+    expect(done).not.toContain("chat.thoughtFor");
+    expect(done).not.toContain('data-thinking-fallback="true"');
+  });
+
+  it("shows a named think tool without prefixing ordinary thinking", () => {
+    const html = renderToStaticMarkup(<TurnBlock turn={turn({
+      status: "running",
+      events: [{ payload: { sessionUpdate: "tool_call", toolCallId: "compact-event", kind: "think", title: "Compact conversation", status: "in_progress" }, receivedAt: 2 }],
+    })} />);
+    expect(html).toContain("Compact conversation");
+    expect(html).not.toContain("tool.thinking");
+  });
+
   it("shows the queued placeholder only while an empty turn is queued", () => {
     const html = renderToStaticMarkup(<TurnBlock turn={turn({})} />);
 
@@ -157,7 +193,35 @@ describe("TurnBlock", () => {
     );
 
     expect(html).toContain("Change direction inline");
-    expect(html).toContain("ml-auto w-fit max-w-full whitespace-pre-wrap");
+    expect(html).toContain('data-session-turn-prompt="true"');
+    expect(html).toContain('data-user-prompt-actions="true"');
+    expect(html).toContain('aria-label="chat.copyAnswer"');
+  });
+
+  it("renders ordinary and injected image messages with the same preview and metadata", () => {
+    const attachment = { id: "image", name: "screen.png", kind: "image" as const, path: "/tmp/screen.png", uri: "file:///tmp/screen.png", mimeType: "image/png", data: "aW1hZ2U=" };
+    const html = renderToStaticMarkup(<TurnBlock turn={turn({ id: "active", promptText: "Original", attachments: [attachment], status: "running", events: [{ payload: { schema: "oma.event.v1", event_id: "steer", session_id: "session-1", turn_id: "steer-turn", occurred_at: "2026-10-23T05:00:00.000Z", type: "user.message", data: { text: "Look", input_kind: "steering", outcome: "injected", active_turn_id: "active", attachments: [attachment] } }, receivedAt: 1 }] })} onEditPrompt={() => undefined} />);
+    expect(html.match(/alt="screen.png"/g)).toHaveLength(2);
+    expect(html.match(/data-user-prompt-actions="true"/g)).toHaveLength(2);
+    expect(html.match(/data-prompt-edit-action="true"/g)).toHaveLength(2);
+    expect(html).toContain('data-turn-timestamp="1792731600000"');
+    expect(html).not.toContain("[Attached image:");
+  });
+
+  it("shows image-only input as attachments rather than transport placeholder prose", () => {
+    const image = { id: "image", name: "screen.png", kind: "image" as const, path: "/tmp/screen.png", uri: "file:///tmp/screen.png", mimeType: "image/png" };
+    const html = renderToStaticMarkup(<TurnBlock turn={turn({ promptText: "[Attached image: screen.png]", attachments: [image], status: "complete" })} />);
+    expect(html).toContain('alt="screen.png"');
+    expect(html).not.toContain("[Attached image: screen.png]");
+  });
+
+  it("keeps a thinking fallback after interim text until the authoritative turn end", () => {
+    const content = { promptText: "Work", assistantText: "An interim update", events: [{ payload: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "An interim update" } }, receivedAt: 1 }] };
+    const running = renderToStaticMarkup(<TurnBlock turn={turn({ ...content, status: "running" })} />);
+    expect(running).toContain('data-thinking-fallback="true"');
+    expect(running).toContain('role="status"');
+    const completed = renderToStaticMarkup(<TurnBlock turn={turn({ ...content, status: "complete" })} />);
+    expect(completed).not.toContain('data-thinking-fallback');
   });
 
   it("keeps unphased ACP text before a later tool", () => {
@@ -530,10 +594,9 @@ describe("TurnBlock", () => {
       />,
     );
 
-    // No Reasoning disclosure without a thought event, and no wait line either:
-    // the answer arriving is what a running turn looks like.
+    // No fabricated thought disclosure; unresolved prompts keep a live fallback.
     expect(html).not.toContain("aria-expanded");
-    expect(html).not.toContain("chat.thinking");
+    expect(html).toContain('data-thinking-fallback="true"');
   });
 
   it("paints a pending user message without the working indicator", () => {
@@ -618,7 +681,7 @@ describe("TurnBlock", () => {
     }
   });
 
-  it("says nothing under an answer that is still arriving", () => {
+  it("keeps a single wait indicator while an answer turn remains unresolved", () => {
     // "Thinking" is the fallback for a silence. While the answer streams, the
     // text is the live status, and the word under it was a second, vaguer voice
     // for the same wait.
@@ -635,7 +698,7 @@ describe("TurnBlock", () => {
     // line; this fixture carries no events, so the answer never rendered and
     // indexOf returned -1, which is less than anything. It proved nothing.
     expect(html).toContain('data-session-turn-status="running"');
-    expect(html).not.toContain("chat.thinking");
+    expect(html).toContain('data-thinking-fallback="true"');
   });
 
   it("stops saying it is running once the turn ends", () => {
@@ -859,7 +922,7 @@ describe("TurnBlock", () => {
     expect(html.match(/data-tool-group-size=/g)).toHaveLength(1);
   });
 
-  it("keeps a completed uninterrupted tool group running at its latest event", () => {
+  it("keeps completed tools settled and supplies one turn-level fallback", () => {
     const events = ["components", "renderer", "dialog"].map(
       (target, index) => ({
         payload: {
@@ -886,7 +949,8 @@ describe("TurnBlock", () => {
     expect(html).toMatch(
       /data-tool-group-size="3"><button[^>]*aria-expanded="false"/,
     );
-    expect(html).toContain("tool.searching dialog");
+    expect(html).not.toContain("tool.searching dialog");
+    expect(html.match(/data-thinking-fallback="true"/g)).toHaveLength(1);
     expect(html).toContain("tool.searched");
     expect(html).toContain('data-tool-status="completed"');
     expect(html).toContain("components");
@@ -943,6 +1007,42 @@ describe("TurnBlock", () => {
     // folding tools into the last row cannot change where that row sits.
     expect(triggerClass).toContain("min-h-6");
     expect(html).toContain('data-disclosure-chevron-slot="true"');
+  });
+
+  it("hides routine native reviews in live and replay while retaining actionable reviews", () => {
+    sessionMock.agentId = "codex-acp";
+    for (const status of ["running", "complete"] as const) {
+      for (const reviewStatus of ["inProgress", "approved", "denied", "timedOut", "aborted"]) {
+        const input = turn({
+          status,
+          events: [{ receivedAt: 1, payload: {
+            sessionUpdate: "tool_call",
+            toolCallId: "opaque-review-id",
+            title: "Automatic safety assessment",
+            kind: "think",
+            status: reviewStatus === "inProgress" ? "in_progress" : "completed",
+            rawInput: {
+              reviewId: "review", threadId: "thread", turnId: "turn",
+              review: { status: reviewStatus }, action: { type: "command" },
+            },
+          } }],
+        });
+        const html = renderToStaticMarkup(<TurnBlock turn={input} />);
+        const hidden = reviewStatus === "inProgress" || reviewStatus === "approved";
+        if (status === "running") expect(html.includes("Automatic safety assessment")).toBe(!hidden);
+        else expect(html.includes("data-session-process-state")).toBe(!hidden);
+        if (hidden && status === "running") expect(html).toContain("data-thinking-fallback");
+        expect(input.events).toHaveLength(1);
+      }
+    }
+    const html = renderToStaticMarkup(<TurnBlock turn={turn({
+      status: "running",
+      events: [{ receivedAt: 1, payload: {
+        sessionUpdate: "tool_call", toolCallId: "ordinary",
+        title: "Guardian Review", kind: "execute", status: "in_progress",
+      } }],
+    })} />);
+    expect(html).toContain("Guardian Review");
   });
 
   it("groups tools separated only by hidden Codex thought summaries", () => {

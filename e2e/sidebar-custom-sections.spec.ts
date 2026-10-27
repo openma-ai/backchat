@@ -10,7 +10,8 @@ test("organizes a chat in a custom section across reload and restores it when re
   });
   await reloadRenderer(page);
 
-  await page.getByRole("button", { name: "Sidebar options" }).click();
+  const chatsHeading = page.locator('.sidebar-section-header').filter({ hasText: "Chats" }).last();
+  await chatsHeading.click({ button: "right" });
   await page.getByRole("menuitem", { name: "New section" }).click();
   const create = page.getByRole("dialog", { name: "New section" });
   await create.getByRole("textbox", { name: "Section name" }).fill("Work");
