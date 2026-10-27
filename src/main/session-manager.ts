@@ -888,8 +888,6 @@ export class SessionManager {
         },
         mcpServers,
         additionalDirectories,
-        ...(["claude-acp", "dsh-acp"].includes(agent.id)
-          ? { clientCapabilityOverlay: { subagents: {} } } : {}),
         ...(sessionRequestMetaForHarness(agent.id)
           ? { sessionRequestMeta: sessionRequestMetaForHarness(agent.id) }
           : {}),
@@ -910,9 +908,13 @@ export class SessionManager {
               },
             }
           : {}),
-        // Standard ACP v1 ID-addressed compaction, rendered and replayed by
-        // the transcript projector; this does not opt into AIR extensions.
-        clientCapabilityOverlay: { session: { configOptions: { boolean: {} }, compaction: {} } },
+        // Merge RFD subagent opt-in (#87) with standard ACP v1 compaction /
+        // boolean configOptions from main — a later overlay must not clobber
+        // the earlier spread.
+        clientCapabilityOverlay: {
+          ...(["claude-acp", "dsh-acp"].includes(agent.id) ? { subagents: {} } : {}),
+          session: { configOptions: { boolean: {} }, compaction: {} },
+        },
         clientCallbacks: runtimeCallbacks,
         onOutOfBandSessionUpdate: (update: unknown) => {
           if (activeForOutOfBandUpdates) {

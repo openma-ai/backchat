@@ -7,7 +7,7 @@ settings:
 overrides:
   '@agentclientprotocol/sdk': 2.0.2
   '@ai-sdk/provider-utils@4.0.27': 4.0.33
-  '@openma/common': 0.11.0
+  '@openma/common': 0.11.1
   '@openma/common>@agentclientprotocol/sdk': 2.0.2
   '@openmatter/agent': github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent
   '@openmatter/agent-claude': github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-claude
@@ -34,7 +34,7 @@ overrides:
   undici@6.26.0: 6.28.0
 
 patchedDependencies:
-  '@openma/common@0.11.0': 5ae0ec45b22c90ab84fe81491064dbda8cae18429a0e160fd0f382f206adc44c
+  '@openma/common@0.11.1': df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5
 
 importers:
 
@@ -80,8 +80,8 @@ importers:
         specifier: workspace:*
         version: link:packages/acp-agent-setup
       '@openma/common':
-        specifier: 0.11.0
-        version: 0.11.0(patch_hash=5ae0ec45b22c90ab84fe81491064dbda8cae18429a0e160fd0f382f206adc44c)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        specifier: 0.11.1
+        version: 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openma/sdk':
         specifier: workspace:*
         version: link:packages/openma-sdk
@@ -402,8 +402,8 @@ importers:
         specifier: 2.0.2
         version: 2.0.2(zod@4.4.3)
       '@openma/common':
-        specifier: 0.11.0
-        version: 0.11.0(patch_hash=5ae0ec45b22c90ab84fe81491064dbda8cae18429a0e160fd0f382f206adc44c)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        specifier: 0.11.1
+        version: 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       tar:
         specifier: ^7.5.22
         version: 7.5.22
@@ -424,8 +424,8 @@ importers:
         specifier: workspace:*
         version: link:../acp
       '@openma/common':
-        specifier: 0.11.0
-        version: 0.11.0(patch_hash=5ae0ec45b22c90ab84fe81491064dbda8cae18429a0e160fd0f382f206adc44c)(@anthropic-ai/sdk@0.120.0(zod@4.6.7))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        specifier: 0.11.1
+        version: 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.6.7))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -1934,8 +1934,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@openma/common@0.11.0':
-    resolution: {integrity: sha512-u4z5U/owZdFuQLdiHvMP+JIzVQ9docpaPJjC4OHAAkaboaop+VcvLCuEEd+/PtKOAh4fQ/YlgsbOo6u6Kas/kA==}
+  '@openma/common@0.11.1':
+    resolution: {integrity: sha512-ovG9wEeSMKu/i7eAucM/liUBwfYwwtnydoGJzs7le+k0zP4bVmuuqPmqdNiLywY6O1WkTk5EoqOqwXmt7aE3Zw==}
     engines: {node: '>=20'}
     peerDependencies:
       '@anthropic-ai/sdk': 0.120.x
@@ -8812,7 +8812,7 @@ snapshots:
 
   '@modelcontextprotocol/core@2.0.0':
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@modelcontextprotocol/ext-apps@1.7.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)':
     dependencies:
@@ -8911,9 +8911,9 @@ snapshots:
   '@openai/codex@0.160.1-win32-x64':
     optional: true
 
-  '@openma/common@0.11.0(patch_hash=5ae0ec45b22c90ab84fe81491064dbda8cae18429a0e160fd0f382f206adc44c)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+  '@openma/common@0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.5)
+      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
       '@radix-ui/react-collapsible': 1.1.20(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/react-virtual': 3.14.13(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       clsx: 2.1.1
@@ -8926,7 +8926,7 @@ snapshots:
       tailwind-merge: 3.6.0
       tar: 7.5.22
       use-stick-to-bottom: 1.1.4(react@19.2.7)
-      zod: 4.6.5
+      zod: 4.6.7
     optionalDependencies:
       '@anthropic-ai/sdk': 0.120.0(zod@4.4.3)
       '@opentelemetry/api': 1.9.1
@@ -8937,9 +8937,9 @@ snapshots:
       - '@types/react-dom'
       - supports-color
 
-  '@openma/common@0.11.0(patch_hash=5ae0ec45b22c90ab84fe81491064dbda8cae18429a0e160fd0f382f206adc44c)(@anthropic-ai/sdk@0.120.0(zod@4.6.7))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+  '@openma/common@0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.6.7))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.5)
+      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
       '@radix-ui/react-collapsible': 1.1.20(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/react-virtual': 3.14.13(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       clsx: 2.1.1
@@ -8952,7 +8952,7 @@ snapshots:
       tailwind-merge: 3.6.0
       tar: 7.5.22
       use-stick-to-bottom: 1.1.4(react@19.2.7)
-      zod: 4.6.5
+      zod: 4.6.7
     optionalDependencies:
       '@anthropic-ai/sdk': 0.120.0(zod@4.6.7)
       '@opentelemetry/api': 1.9.1
@@ -8965,7 +8965,7 @@ snapshots:
 
   '@openmatter/agent-claude@https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent-claude(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@openma/common': 0.11.0(patch_hash=5ae0ec45b22c90ab84fe81491064dbda8cae18429a0e160fd0f382f206adc44c)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@openma/common': 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/agent': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/core': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/core(effect@3.22.2)
       effect: 3.22.2
@@ -8993,7 +8993,7 @@ snapshots:
 
   '@openmatter/agent@https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@openma/common': 0.11.0(patch_hash=5ae0ec45b22c90ab84fe81491064dbda8cae18429a0e160fd0f382f206adc44c)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@openma/common': 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/core': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/core(effect@3.22.2)
       effect: 3.22.2
     transitivePeerDependencies:

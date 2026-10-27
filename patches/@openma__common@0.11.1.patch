@@ -1,0 +1,182 @@
+diff --git a/dist/acp-fork/index.d.ts b/dist/acp-fork/index.d.ts
+--- a/dist/acp-fork/index.d.ts
++++ b/dist/acp-fork/index.d.ts
+@@ -1,4 +1,4 @@
+-import type * as schema from "@agentclientprotocol/sdk";
++import type * as schema from "@agentclientprotocol/sdk/unstable";
+ /** Inclusive-fork point selected by a client from visible assistant text. */
+ export interface AcpForkPoint {
+     messageId: string;
+diff --git a/dist/acp-runtime/probe.js b/dist/acp-runtime/probe.js
+--- a/dist/acp-runtime/probe.js
++++ b/dist/acp-runtime/probe.js
+@@ -1,4 +1,5 @@
+-import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION, } from "@agentclientprotocol/sdk";
++import { sdkClient } from "./sdk-client.js";
++import { ndJsonStream, PROTOCOL_VERSION, } from "@agentclientprotocol/sdk";
+ import { readFileSync } from "node:fs";
+ import { mkdir } from "node:fs/promises";
+ import { tmpdir } from "node:os";
+@@ -226,7 +227,7 @@
+         env: mergedEnv,
+     });
+     const stream = ndJsonStream(child.stdin, child.stdout);
+-    const agent = new ClientSideConnection(() => options.client, stream);
++    const agent = sdkClient(options.client, stream);
+     let disposed;
+     const dispose = () => {
+         disposed ??= child.kill().catch(() => undefined).finally(() => {
+@@ -511,7 +512,7 @@
+             onDiagnosticLine?.(line);
+         },
+     });
+-    const agent = new ClientSideConnection(() => options.client ?? {
++    const agent = sdkClient(options.client ?? {
+         sessionUpdate: async () => undefined,
+         requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+     }, ndJsonStream(child.stdin, child.stdout));
+diff --git a/dist/acp-runtime/session.js b/dist/acp-runtime/session.js
+--- a/dist/acp-runtime/session.js
++++ b/dist/acp-runtime/session.js
+@@ -1,8 +1,9 @@
+-import { ClientSideConnection, RequestError, ndJsonStream, } from "@agentclientprotocol/sdk";
++import { RequestError, ndJsonStream, } from "@agentclientprotocol/sdk/unstable";
+ import { preserveAcpNotificationContext } from "../session-events/acp.js";
+ import { isAuthenticationRequiredError } from "./errors.js";
+ import { acpForkRequestMeta, forkSupport as forkSupportOf, } from "./fork-support.js";
+ export { acpForkRequestMeta } from "./fork-support.js";
++import { sdkClient } from "./sdk-client.js";
+ const LEGACY_MODEL_META_KEY = "openma.dev/legacy-model-state";
+ export class AcpSessionImpl {
+     id;
+@@ -142,8 +143,7 @@
+                 || requestedElicitationCapabilities.url != null)
+             ? requestedElicitationCapabilities
+             : undefined;
+-        const connection = new ClientSideConnection(() => this.#createClient(callbacks, elicitationCapabilities?.url != null), ndJsonStream(this.#child.stdin, this.#stdout));
+-        this.#agent = connection;
++        this.#agent = sdkClient(this.#createClient(callbacks, elicitationCapabilities?.url != null), ndJsonStream(this.#child.stdin, this.#stdout));
+         if (this.options.forkPoint && !this.options.forkFromAcpSessionId) {
+             throw new Error("forkPoint can only be used together with forkFromAcpSessionId");
+         }
+@@ -363,7 +363,7 @@
+             killTerminal: callbacks.killTerminal
+                 ? async (params) => this.#runClientRequest("terminal/kill", params, () => callbacks.killTerminal(params))
+                 : undefined,
+-            createElicitation: callbacks.createElicitation
++            unstable_createElicitation: callbacks.createElicitation
+                 ? async (params) => {
+                     const response = await this.#runClientRequest("elicitation/create", params, () => callbacks.createElicitation(params));
+                     if (params.mode === "url"
+@@ -374,7 +374,7 @@
+                     return response;
+                 }
+                 : undefined,
+-            completeElicitation: supportsUrlElicitation
++            unstable_completeElicitation: supportsUrlElicitation
+                 ? async (params) => {
+                     if (!this.#outstandingUrlElicitations.delete(params.elicitationId))
+                         return;
+diff --git a/dist/acp-runtime/types.d.ts b/dist/acp-runtime/types.d.ts
+--- a/dist/acp-runtime/types.d.ts
++++ b/dist/acp-runtime/types.d.ts
+@@ -1,5 +1,5 @@
+ import type * as nes from "@agentclientprotocol/sdk/experimental/nes";
+-import type * as schema from "@agentclientprotocol/sdk";
++import type * as schema from "@agentclientprotocol/sdk/unstable";
+ import type { AcpForkPoint, AcpForkSupport } from "../acp-fork/index.js";
+ /** Legacy MCP-over-ACP extension shapes, retained independently of core SDK. */
+ export interface ConnectMcpRequest extends Record<string, unknown> {
+diff --git a/dist/session-events/acp.js b/dist/session-events/acp.js
+--- a/dist/session-events/acp.js
++++ b/dist/session-events/acp.js
+@@ -37,7 +37,7 @@
+     if (!update || typeof update !== "object")
+         return update;
+     const notificationMeta = notification._meta;
+-    if (!notificationMeta || typeof notificationMeta !== "object")
++    if (typeof notification.sessionId !== "string" && (!notificationMeta || typeof notificationMeta !== "object"))
+         return update;
+     return {
+         ...update,
+@@ -45,7 +45,7 @@
+             ...(typeof notification.sessionId === "string"
+                 ? { session_id: notification.sessionId }
+                 : {}),
+-            meta: notificationMeta,
++            ...(notificationMeta && typeof notificationMeta === "object" ? { meta: notificationMeta } : {}),
+         },
+     };
+ }
+diff --git a/dist/acp-runtime/sdk-client.js b/dist/acp-runtime/sdk-client.js
+new file mode 100644
+--- /dev/null
++++ b/dist/acp-runtime/sdk-client.js
+@@ -0,0 +1,67 @@
++import { client as acpClient } from "@agentclientprotocol/sdk/unstable";
++export function sdkClient(handlers, stream) {
++        const app = acpClient();
++        // SDK 2 dispatches notification handlers asynchronously, independently
++        // of response resolution. Preserve the v1 wire boundary: all earlier
++        // session updates must reach the runtime before a prompt/load response.
++        const pendingUpdates = [];
++        const inFlightUpdates = new Set();
++        const orderedStream = {
++            writable: stream.writable,
++            readable: stream.readable.pipeThrough(new TransformStream({
++                async transform(message, controller) {
++                    if (message.method === "session/update" && !("id" in message)) {
++                        let resolve;
++                        const done = new Promise((finish) => { resolve = finish; });
++                        pendingUpdates.push({ done, resolve });
++                        inFlightUpdates.add(done);
++                    } else if ("id" in message && !("method" in message)) {
++                        await Promise.all([...inFlightUpdates]);
++                    }
++                    controller.enqueue(message);
++                },
++            })),
++        };
++        const requestHandlers = {
++            "session/request_permission": "requestPermission",
++            "fs/read_text_file": "readTextFile", "fs/write_text_file": "writeTextFile",
++            "terminal/create": "createTerminal", "terminal/output": "terminalOutput",
++            "terminal/release": "releaseTerminal", "terminal/wait_for_exit": "waitForTerminalExit",
++            "terminal/kill": "killTerminal", "elicitation/create": "unstable_createElicitation",
++        };
++        for (const [method, name] of Object.entries(requestHandlers)) {
++            if (handlers[name]) app.onRequest(method, (ctx) => handlers[name](ctx.params));
++        }
++        app.onNotification("session/update", async (ctx) => {
++            const pending = pendingUpdates.shift();
++            try {
++                await handlers.sessionUpdate(ctx.params);
++            } finally {
++                if (pending) {
++                    inFlightUpdates.delete(pending.done);
++                    pending.resolve();
++                }
++            }
++        });
++        if (handlers.unstable_completeElicitation) {
++            app.onNotification("elicitation/complete", (ctx) => handlers.unstable_completeElicitation(ctx.params));
++        }
++        app.onRequest("*", (ctx) => handlers.extMethod(ctx.method, ctx.params));
++        app.onNotification("*", (ctx) => handlers.extNotification(ctx.method, ctx.params));
++        const connection = app.connect(orderedStream);
++        const requests = {
++            initialize: "initialize", authenticate: "authenticate", newSession: "session/new",
++            loadSession: "session/load", resumeSession: "session/resume", closeSession: "session/close",
++            unstable_forkSession: "session/fork", listSessions: "session/list", deleteSession: "session/delete",
++            setSessionMode: "session/set_mode", setSessionConfigOption: "session/set_config_option",
++            logout: "logout", prompt: "session/prompt", unstable_listProviders: "providers/list",
++            unstable_setProvider: "providers/set", unstable_disableProvider: "providers/disable",
++        };
++        return {
++            ...Object.fromEntries(Object.entries(requests).map(([name, method]) =>
++                [name, (params) => connection.agent.request(method, params)])),
++            cancel: (params) => connection.agent.notify("session/cancel", params),
++            extMethod: (method, params) => connection.agent.request(method, params),
++            extNotification: (method, params) => connection.agent.notify(method, params),
++        };
++}
