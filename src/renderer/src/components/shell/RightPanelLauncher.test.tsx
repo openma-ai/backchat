@@ -1,5 +1,8 @@
+/** @vitest-environment happy-dom */
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ScheduleInfo } from "@shared/schedules.js";
 import type { SubagentActivity } from "@/lib/session-store";
 import { RightPanelLauncher } from "./RightPanelLauncher";
@@ -7,6 +10,17 @@ import { RightPanelLauncher } from "./RightPanelLauncher";
 vi.mock("@/lib/i18n", () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));
+
+const interactiveRoots: Array<{ root: ReturnType<typeof createRoot>; host: HTMLDivElement }> = [];
+
+afterEach(() => {
+  for (const entry of interactiveRoots.splice(0)) {
+    act(() => {
+      entry.root.unmount();
+    });
+    entry.host.remove();
+  }
+});
 
 function schedule(overrides: Partial<ScheduleInfo> = {}): ScheduleInfo {
   return {
@@ -503,5 +517,95 @@ describe("RightPanelLauncher", () => {
     const markup = renderToStaticMarkup(<RightPanelLauncher {...props} />);
     expect(markup).toContain("sideChat.freshHint");
     expect(markup).not.toContain("sideChat.forkHint");
+  });
+
+  it("hides the Subagents NewAction when no subagents or agent work items exist", () => {
+    const props = {
+      onPick: vi.fn(),
+      onPickSubagent: vi.fn(),
+      onPickProcess: vi.fn(),
+      onOpenSchedule: vi.fn(),
+      canStartSideChat: true,
+      browserEnabled: true,
+      artifacts: { files: [], services: [], sources: [] },
+      subagents: [],
+      workItems: [],
+      processes: [],
+      schedules: [],
+    } as React.ComponentProps<typeof RightPanelLauncher>;
+
+    const markup = renderToStaticMarkup(<RightPanelLauncher {...props} />);
+    expect(markup).not.toContain('data-new-action="subagents"');
+  });
+
+  it("shows the Subagents NewAction alongside other New actions when subagents exist", () => {
+    const props = {
+      onPick: vi.fn(),
+      onPickSubagent: vi.fn(),
+      onPickProcess: vi.fn(),
+      onOpenSchedule: vi.fn(),
+      canStartSideChat: true,
+      browserEnabled: true,
+      artifacts: { files: [], services: [], sources: [] },
+      subagents: [subagent()],
+      processes: [],
+      schedules: [],
+    } as React.ComponentProps<typeof RightPanelLauncher>;
+
+    const markup = renderToStaticMarkup(<RightPanelLauncher {...props} />);
+    const actionsIndex = markup.indexOf('data-new-actions="true"');
+    const subagentsActionIndex = markup.indexOf('data-new-action="subagents"');
+    expect(subagentsActionIndex).toBeGreaterThan(actionsIndex);
+    expect(markup).toContain("rightPanel.subagents");
+    expect(markup).toContain("rightPanel.subagentsHint");
+    expect(markup).toContain('data-new-view="actions"');
+  });
+
+  it("opens the subagent list from the NewAction and enters a picked subagent", () => {
+    const onPickSubagent = vi.fn();
+    const activity = subagent();
+    const props = {
+      onPick: vi.fn(),
+      onPickSubagent,
+      onPickProcess: vi.fn(),
+      onOpenSchedule: vi.fn(),
+      canStartSideChat: true,
+      browserEnabled: true,
+      artifacts: { files: [], services: [], sources: [] },
+      subagents: [activity],
+      processes: [],
+      schedules: [],
+    } as React.ComponentProps<typeof RightPanelLauncher>;
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    interactiveRoots.push({ root, host });
+
+    act(() => {
+      root.render(<RightPanelLauncher {...props} />);
+    });
+
+    const entry = host.querySelector('[data-new-action="subagents"]');
+    expect(entry).not.toBeNull();
+    act(() => {
+      entry?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(host.querySelector('[data-new-view="subagents"]')).not.toBeNull();
+    expect(host.querySelector("[data-new-subagents-list]")).not.toBeNull();
+    expect(host.querySelector("[data-new-actions]")).toBeNull();
+    expect(onPickSubagent).not.toHaveBeenCalled();
+
+    const row = Array.from(host.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Aster"),
+    );
+    expect(row).toBeTruthy();
+    act(() => {
+      row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onPickSubagent).toHaveBeenCalledTimes(1);
+    expect(onPickSubagent).toHaveBeenCalledWith(activity);
   });
 });
