@@ -44,10 +44,12 @@ import type {
   ExternalTaskNote,
 } from "../shared/external-coordinator.js";
 import {
+  dedupeProjects,
   normalizeProjectFolders,
   type ProjectInfo,
 } from "../shared/projects.js";
 import type { WorkspaceRoot, WorkspaceWorktree } from "../shared/workspaces.js";
+import { projectIdentityKey } from "./project-identity.js";
 
 export interface PersistedSession {
   id: string;
@@ -1294,9 +1296,13 @@ export function getProject(id: string): ProjectInfo | null {
   return row ? projectFromSql(row) : null;
 }
 
+/** One record per folder set: duplicates registered before save-time dedup
+ *  collapse onto the earliest project. */
 export function listProjects(): ProjectInfo[] {
-  return (stmts().listProjects.all() as PersistedProjectSqlRow[])
-    .map(projectFromSql);
+  return dedupeProjects(
+    (stmts().listProjects.all() as PersistedProjectSqlRow[]).map(projectFromSql),
+    (project) => projectIdentityKey(project.source_folders),
+  );
 }
 
 export function deleteProject(id: string): void {

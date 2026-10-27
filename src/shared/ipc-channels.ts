@@ -74,6 +74,7 @@ export const InvokeChannel = {
   PairsArchive: "pairs:archive",
   PairsUnarchive: "pairs:unarchive",
   ProjectsList: "projects:list",
+  ProjectFolderOwners: "projects:folder-owners",
   ProjectSave: "project:save",
   ProjectDelete: "project:delete",
   WorkspacesList: "workspaces:list",

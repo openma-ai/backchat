@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { ProjectInfo } from "../shared/projects.js";
 import { getProject, listProjects, saveProject } from "./sql-store.js";
 import { ControlError } from "./control/errors.js";
+import { expandHomeFolder, findProjectByFolders } from "./project-identity.js";
 
 export function listProjectRecords(): ProjectInfo[] {
   return listProjects();
@@ -29,7 +30,7 @@ export function saveProjectCommand(input: {
   }
   const name = input.name?.trim() ?? "";
   if (!name) throw new ControlError("invalid_args", "Project name is required");
-  const sourceFolders = (input.source_folders ?? []).map((folder) => folder.trim()).filter(Boolean);
+  const sourceFolders = (input.source_folders ?? []).map(expandHomeFolder).filter(Boolean);
   if (!input.requireId && sourceFolders.length === 0) {
     throw new ControlError("invalid_args", "A project needs at least one source directory");
   }
@@ -41,30 +42,28 @@ export function saveProjectCommand(input: {
   if (missing) {
     throw new ControlError("invalid_args", `Source directory does not exist: ${missing}`);
   }
-  const wanted = folderKey(sourceFolders);
-  if (!projectId) {
-    const match = listProjects().find((project) =>
-      project.name === name && folderKey(project.source_folders) === wanted
-    );
-    if (match) return { ...match, created: false };
+  // One project per folder set.
+  const owner = findProjectByFolders(
+    listProjects().filter((project) => project.id !== projectId),
+    sourceFolders,
+  );
+  const isEdit = Boolean(projectId && getProject(projectId));
+  if (isEdit) {
+    if (owner) {
+      throw new ControlError("invalid_args", `These folders already belong to project ${owner.name}`);
+    }
+  } else if (owner) {
+    // Creating a project for registered folders returns the registered project.
+    return { ...owner, created: false };
   }
   return {
     ...saveProject({
       id: projectId || `project-${randomBytes(8).toString("hex")}`,
       name,
       source_folders: sourceFolders,
-      primary_folder: input.primary_folder,
+      primary_folder: input.primary_folder && expandHomeFolder(input.primary_folder),
     }),
     created: true,
   };
 }
 
-function folderKey(folders: readonly string[]): string {
-  return [...folders].map((folder) => {
-    try {
-      return realpathSync(folder);
-    } catch {
-      return folder;
-    }
-  }).sort().join("\0");
-}
