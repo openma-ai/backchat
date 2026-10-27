@@ -74,14 +74,18 @@ export function ProjectGlyph({ identity, name, choice }: {
   }
   const hue = PROJECT_LETTER_HUES[identityHash(identity) % PROJECT_LETTER_HUES.length]!;
   const label = name || identity.split("/").filter(Boolean).pop() || identity;
+  const initial = projectInitial(label);
+  // Latin capitals (esp. L) need an optical nudge in CSS; CJK/digits stay geometric.
+  const initialKind = /^[A-Z]$/i.test(initial) ? "latin" : /^\d$/.test(initial) ? "digit" : "other";
   return (
     <span
       aria-hidden="true"
       className="project-letter"
       style={{ "--project-hue": hue } as CSSProperties}
       data-project-glyph="letter"
+      data-initial-kind={initialKind}
     >
-      {projectInitial(label)}
+      {initial}
     </span>
   );
 }
