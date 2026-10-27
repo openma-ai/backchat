@@ -40,7 +40,6 @@ export function ProjectIcon({ identity, name, sourceFolders, primaryRoot, classN
         <img
           src={src}
           alt=""
-          crossOrigin="anonymous"
           referrerPolicy="no-referrer"
           className="project-image"
           onError={() => setFailed(src)}
