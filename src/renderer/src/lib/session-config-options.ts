@@ -412,29 +412,45 @@ export interface ConfigModeOptionPresentation {
   tone: "neutral" | "warning";
 }
 
+/** A subtitle that only repeats a title the row already shows is noise. The
+ *  same sentence can arrive as the option's title ("Model"), as the row's own
+ *  title (a model named "MiniMax M78 (AITL)" described as "MiniMax M78
+ *  (AITL)"), or as neither — only the last one carries information. */
+function isRedundantConfigHint(hint: string, title: string | undefined): boolean {
+  const normalizedHint = hint.trim().toLowerCase();
+  if (!normalizedHint) return true;
+  const normalizedTitle = title?.trim().toLowerCase();
+  return !!normalizedTitle && normalizedHint === normalizedTitle;
+}
+
 export function configModeOptionPresentation(
   option: AcpSessionConfigSelectOption,
   optionName?: string,
 ): ConfigModeOptionPresentation {
+  const description = option.description?.trim();
   return {
     label: option.name,
-    ...(option.description
-      && option.description.trim().toLowerCase() !== optionName?.trim().toLowerCase()
-      ? { hint: option.description }
+    ...(description
+      && !isRedundantConfigHint(description, option.name)
+      && !isRedundantConfigHint(description, optionName)
+      ? { hint: description }
       : {}),
     tone: option.value === "agent-full-access" ? "warning" : "neutral",
   };
 }
 
-/** A row subtitle must not repeat its containing option's title. */
+/** A row subtitle must not repeat its own title, nor its containing option's
+ *  title. Model rows fall back to the provider group when the description
+ *  says nothing the title does not. */
 export function configSelectItemHint(
   option: AcpSessionConfigOption,
   item: FlattenedConfigSelectOption,
 ): string | undefined {
-  const itemDescription = item.description;
+  const itemDescription = item.description?.trim();
   if (
-    itemDescription?.trim()
-    && itemDescription.trim().toLowerCase() !== option.name.trim().toLowerCase()
+    itemDescription
+    && !isRedundantConfigHint(itemDescription, item.name)
+    && !isRedundantConfigHint(itemDescription, option.name)
   ) {
     return itemDescription;
   }
