@@ -593,20 +593,16 @@
   place-items: center;
   width: 100%;
   height: 100%;
-  box-sizing: border-box;
   border-radius: 4px;
   background: color-mix(in oklch, var(--project-tint) 16%, transparent);
   color: var(--project-tint);
   font-size: 9px;
   font-weight: 600;
   line-height: 1;
-}
-/* Optical centering for Latin capitals only (asymmetric L is worst case).
-   Transform on this element would move the peach tile with the ink; instead
-   asymmetric padding shrinks the place-items box so the glyph alone shifts
-   down-right inside the still-full background. CJK/digits stay geometric. */
-.project-letter[data-initial-kind="latin"] {
-  padding: 1.5px 0 0 1.5px;
+  /* Optical vertical center: trim half-leading to cap/alphabetic so Latin
+     capitals (and CJK/digits) aren't pushed low by the em-box. Chrome 133+ /
+     Electron 42+. */
+  text-box: trim-both cap alphabetic;
 }
 /* Repository artwork (GitHub social image or owner avatar) takes the same
    rounded tile as the letter mark, so an opaque avatar sits on the rail
