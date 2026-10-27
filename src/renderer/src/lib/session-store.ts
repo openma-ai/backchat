@@ -2594,7 +2594,16 @@ export class SessionStore {
     const ids = new Set(replayedTurnIds);
     for (const turn of this.#turns.values()) {
       if (turn.sessionId !== sessionId || !ids.has(turn.id) || activeIds.has(turn.id) || turn.status !== "running") continue;
-      this.#turns.set(turn.id, { ...turn, status: "cancelled", stopReason: "interrupted", endedAt: turn.endedAt ?? turn.startedAt });
+      // A settled turn cannot still be sending: clearing sendState keeps
+      // "Sending…" from sitting next to the interrupted notice.
+      this.#turns.set(turn.id, {
+        ...turn,
+        status: "cancelled",
+        stopReason: "interrupted",
+        sendState: undefined,
+        sendError: undefined,
+        endedAt: turn.endedAt ?? turn.startedAt,
+      });
     }
     this.#mutateSession(sessionId, session => {
       const active = session.activeTurnId && this.#turns.get(session.activeTurnId);
@@ -2763,6 +2772,24 @@ export class SessionStore {
       errorMessage: message,
       sendState: "failed",
       sendError: message,
+      endedAt: Date.now(),
+    });
+    this.#advanceAfterTurn(turn.sessionId, turnId);
+    this.#emit();
+  }
+
+  /** The user stopped the send before the host accepted it. This is a
+   *  deliberate stop, not a failure: the bubble settles as interrupted and
+   *  the send state is cleared so "Sending…" cannot survive it. */
+  cancelSend(turnId: string): void {
+    const turn = this.#turns.get(turnId);
+    if (!turn) return;
+    this.#turns.set(turnId, {
+      ...turn,
+      status: "cancelled",
+      stopReason: "interrupted",
+      sendState: undefined,
+      sendError: undefined,
       endedAt: Date.now(),
     });
     this.#advanceAfterTurn(turn.sessionId, turnId);
@@ -5063,6 +5090,11 @@ export class SessionStore {
           this.#turns.set(ev.turn_id, {
             ...turn,
             status: "cancelled",
+            // The turn is over, so it cannot still be sending. Leaving
+            // sendState pending would show "Sending…" next to the
+            // interrupted notice for the same turn.
+            sendState: undefined,
+            sendError: undefined,
             endedAt: Date.now(),
           });
         }

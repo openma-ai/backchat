@@ -419,6 +419,12 @@ export function useChatSubmission({
           fork_kind: workspace.fork_kind,
         });
         if (startResult.status !== "ready") {
+          if (startResult.status === "cancelled") {
+            // The user stopped the send while the session was still starting.
+            // That is a stop, not a failure — settle the bubble as such.
+            sessionStore.cancelSend(turnId);
+            return;
+          }
           const message = startResult.status === "error"
             ? startResult.message
             : "Couldn't start the session";
@@ -444,6 +450,12 @@ export function useChatSubmission({
             : undefined,
         });
         if (startResult.status !== "ready") {
+          if (startResult.status === "cancelled") {
+            // The user stopped the send while the session was still starting.
+            // That is a stop, not a failure — settle the bubble as such.
+            sessionStore.cancelSend(turnId);
+            return;
+          }
           sessionStore.failSend(
             turnId,
             startResult.status === "error" ? startResult.message : "Couldn't start the session",

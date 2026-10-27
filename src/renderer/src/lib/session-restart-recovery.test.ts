@@ -32,4 +32,18 @@ describe("history runtime reconciliation", () => {
     expect(store.turnsFor("s").find(t=>t.id==="new")?.status).toBe("running");
     expect(store.get("s")?.activeTurnId).toBe("new");
   });
+  it("drops the pending send state when a turn is settled as interrupted", () => {
+    // "Sending…" and "interrupted" on the same turn is the desync this
+    // reconciliation used to produce.
+    const store = new SessionStore();
+    store.apply({type:"session.ready",session_id:"s",agent_id:"codex-acp",acp_session_id:"native",cwd:"/repo"});
+    store.registerTurn("old", "s", "Unfinished");
+    expect(store.turnsFor("s")[0]).toMatchObject({status:"running",sendState:"pending"});
+    store.reconcileHistoryRuntime("s", ["old"], false);
+    expect(store.turnsFor("s")[0]).toMatchObject({
+      status:"cancelled",
+      stopReason:"interrupted",
+      sendState:undefined,
+    });
+  });
 });
