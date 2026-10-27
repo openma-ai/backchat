@@ -183,6 +183,32 @@ describe("GUI action tracing", () => {
     });
     expect(traceparent).toBeUndefined();
   });
+
+  it("traces a stop press with the resolved target only", () => {
+    const { provider, spans } = setup();
+    trace.setGlobalTracerProvider(provider);
+    const attributes = {
+      "backchat.cancel.session_id": "session-1",
+      "backchat.cancel.turn_id": "turn-1",
+      "backchat.cancel.result": "targeted" as const,
+    };
+    withActionTrace("turn.cancel", attributes, () => undefined);
+    const [span] = spans();
+    expect(span?.name).toBe("ui.turn.cancel");
+    expect(span?.attributes).toEqual({ "backchat.ui.action": "turn.cancel", ...attributes });
+  });
+
+  it("records a stop press without a target", () => {
+    const { provider, spans } = setup();
+    trace.setGlobalTracerProvider(provider);
+    withActionTrace("turn.cancel", {
+      "backchat.cancel.session_id": "session-1",
+      "backchat.cancel.turn_id": "",
+      "backchat.cancel.result": "no_target",
+    }, () => undefined);
+    const [span] = spans();
+    expect(span?.attributes).toMatchObject({ "backchat.cancel.result": "no_target" });
+  });
 });
 
 describe("renderer telemetry install", () => {

@@ -147,7 +147,14 @@ export const TurnBlock = memo(function TurnBlock({
       ),
     };
   }, [agentId, planDocument?.sourceToolCallId, rendered, turn.status]);
-  const sendPending = turn.sendState === "pending";
+  // A settled turn cannot still be sending: a cancelled, failed or completed
+  // turn that kept `sendState: "pending"` would show "Sending…" next to its
+  // own terminal notice.
+  const sendPending =
+    turn.sendState === "pending"
+    && turn.status !== "cancelled"
+    && turn.status !== "error"
+    && turn.status !== "complete";
   const sendFailed = turn.sendState === "failed";
   const isStreaming = turn.status === "running" && !sendPending && !sendFailed;
   // The agent states why a turn ended; a limit or a refusal arrives as an
