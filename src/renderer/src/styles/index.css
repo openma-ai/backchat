@@ -3699,6 +3699,15 @@ article.reveal-in[data-turn-id] {
   }
 }
 
+/* Empty traffic-light spacer: only needed under macOS hiddenInset
+   (titleBarStyle in src/main/index.ts). Linux/Windows keep the native
+   title bar + menu, so an always-on h-9 / 36px band is dead chrome under
+   File/Edit/View. html[data-os] is set by applyRendererOs in main.tsx. */
+html[data-os="linux"] [data-traffic-light-spacer],
+html[data-os="windows"] [data-traffic-light-spacer] {
+  display: none;
+}
+
 /* Drag region for the macOS hidden-titlebar window. Electron 42 reads
    `-webkit-app-region`; the unprefixed `app-region` is the same property in
    current Electron docs. The AppShell header carries `.app-drag-region`, so

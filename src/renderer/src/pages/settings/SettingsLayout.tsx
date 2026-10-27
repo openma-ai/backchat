@@ -104,7 +104,8 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
 
   return (
     <div className="sidebar-navigation flex h-full min-h-0 flex-col text-ui text-fg">
-      <div className="app-drag-region h-[36px] shrink-0" />
+      {/* macOS traffic-light spacer; collapsed on linux/windows (see index.css). */}
+      <div className="app-drag-region h-[36px] shrink-0" data-traffic-light-spacer="" />
       <div className="sidebar-content-inset pt-[var(--row-gap-y)]">
         <SidebarGridRow
           as="button"

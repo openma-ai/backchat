@@ -52,7 +52,7 @@ export function RendererCrashPage({
       className="fixed inset-0 z-[9999] flex flex-col app-canvas-surface text-fg"
       data-renderer-crash-page="true"
     >
-      <div className="app-drag-region h-9 shrink-0" aria-hidden="true" />
+      <div className="app-drag-region h-9 shrink-0" data-traffic-light-spacer="" aria-hidden="true" />
       <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-16">
         <div
           className="reveal-in w-full max-w-sm overflow-hidden rounded-xl shadow-sm ring-1 ring-foreground/10 app-panel-surface"

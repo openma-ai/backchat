@@ -29,4 +29,9 @@ describe("settings sidebar", () => {
     expect(source).toContain('to: "/settings/activity"');
     expect(source).toContain('labelKey: "settings.activity"');
   });
+
+  it("marks the traffic-light spacer for mac-only chrome", async () => {
+    const source = await readFile(new URL("./SettingsLayout.tsx", import.meta.url), "utf8");
+    expect(source).toContain('data-traffic-light-spacer=""');
+  });
 });
