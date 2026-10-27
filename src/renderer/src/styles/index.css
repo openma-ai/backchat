@@ -4074,15 +4074,25 @@ textarea:disabled::selection {
   background: var(--surface-selected);
 }
 
-/* Composer copy shares the response's reading tier. */
+/* Composer copy shares the response's reading tier. The slash-hint ghost
+   sits behind the textarea's own text, so it lays out on the same baseline:
+   same family, size, weight, tracking and leading as the textarea. */
 [data-chat-surface] .composer-card textarea,
-.composer-card textarea {
+.composer-card textarea,
+.composer-input-ghost {
   font-family: var(--font-chat);
   font-size: var(--type-body-size);
   font-weight: var(--font-ui-weight);
   letter-spacing: var(--chat-prose-letter-spacing);
   line-height: var(--chat-prose-leading);
   text-autospace: no-autospace;
+}
+
+/* The ghost mirrors the textarea's own box, so it wraps where the textarea
+   wraps and the hint starts exactly at the caret. */
+.composer-input-ghost {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 /* Disabled controls keep their fill. Inactive ink is a 2:1 glyph floor,

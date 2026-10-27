@@ -68,6 +68,8 @@ export type ComposerKeyAction =
   | "slash-previous"
   | "slash-pick"
   | "slash-dismiss"
+  | "slash-apply-hint"
+  | "slash-dismiss-hint"
   | "queue"
   | "submit";
 
@@ -80,6 +82,7 @@ export function resolveComposerKeyAction({
   sessionReferenceCount = 0,
   slashPickerOpen,
   hasSlashSelection,
+  hasSlashInputHint = false,
   shiftKey,
   altKey = false,
   isComposing,
@@ -92,6 +95,8 @@ export function resolveComposerKeyAction({
   sessionReferenceCount?: number;
   slashPickerOpen: boolean;
   hasSlashSelection: boolean;
+  /** The typed command declares an argument hint that Tab can complete. */
+  hasSlashInputHint?: boolean;
   shiftKey: boolean;
   altKey?: boolean;
   isComposing: boolean;
@@ -119,7 +124,20 @@ export function resolveComposerKeyAction({
     }
     if (key === "Tab" && hasSlashSelection) return "slash-pick";
     if (key === "Escape") return "slash-dismiss";
+    // The picker owns Tab while it is open, even with a stale selection:
+    // accepting a command is the picker's job, completing a hint is not.
+    if (key === "Tab") return null;
   }
+
+  // The picker is closed and the command declares what it expects next:
+  // Tab writes the hint in as real text. Shift+Tab keeps its normal meaning
+  // (focus traversal), and an IME composition owns its own keys.
+  if (key === "Tab" && !shiftKey && !isComposing && hasSlashInputHint) {
+    return "slash-apply-hint";
+  }
+  // Escape hides the ghost hint. The hint itself stays completable, so Tab
+  // can still finish the command the picker dismissed.
+  if (key === "Escape" && hasSlashInputHint) return "slash-dismiss-hint";
 
   // pi's editor: Enter steers, Alt+Enter queues a follow-up that waits for
   // the agent to finish. Every profile maps the `queue` intent to the
