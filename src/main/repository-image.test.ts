@@ -30,7 +30,46 @@ describe("repository custom artwork", () => {
     });
     expect(result).toBe(image);
   });
-  it("falls back for missing CLI or inaccessible private repository", async () => {
+  it("falls back to the owner avatar when gh is missing, timed out or offline", async () => {
+    const result = await readRepositoryImage("/repo", async (cmd) => {
+      if (cmd === "git") return "git@github.com:team/project.git";
+      throw new Error("gh: command not found");
+    });
+    expect(result).toBe("https://avatars.githubusercontent.com/team?s=64");
+  });
+  it("falls back to the owner avatar when the repository metadata has no image", async () => {
+    const result = await readRepositoryImage("/repo", async (cmd) => {
+      if (cmd === "git") return "git@github.com:team/project.git";
+      return JSON.stringify({ data: { repository: { usesCustomOpenGraphImage: false, owner: { avatarUrl: null } } } });
+    });
+    expect(result).toBe("https://avatars.githubusercontent.com/team?s=64");
+  });
+  it("prefers the owner avatar reported by gh over the constructed one", async () => {
+    const reported = "https://avatars.githubusercontent.com/u/123?s=64&v=4";
+    const result = await readRepositoryImage("/repo", async (cmd) => {
+      if (cmd === "git") return "git@github.com:team/project.git";
+      return JSON.stringify({ data: { repository: { usesCustomOpenGraphImage: false, owner: { avatarUrl: reported } } } });
+    });
+    expect(result).toBe(reported);
+  });
+  it.each([
+    "https://github.com/team/project.git/",
+    "https://github.com/team/project/",
+    "git@github.com:team/project.git/",
+  ])("resolves %s with a trailing slash", async remote => {
+    const result = await readRepositoryImage("/repo", async (cmd) => {
+      if (cmd === "git") return remote;
+      throw new Error("gh unavailable");
+    });
+    expect(result).toBe("https://avatars.githubusercontent.com/team?s=64");
+  });
+  it("keeps the letter tile for a remote that is not on GitHub", async () => {
+    expect(await readRepositoryImage("/repo", async (cmd) => {
+      if (cmd === "git") return "git@gitlab.com:team/project.git";
+      throw new Error("gh unavailable");
+    })).toBeNull();
+  });
+  it("returns no image when the remote cannot be read", async () => {
     expect(await readRepositoryImage("/repo", async () => { throw new Error("unavailable"); })).toBeNull();
   });
 });
@@ -97,5 +136,20 @@ describe("main-owned repository image cache", () => {
     const results = await Promise.all([cache.get("/repo"), cache.get("/repo"), cache.get("/repo")]);
     expect(results).toEqual([avatar, avatar, avatar]);
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a persisted owner avatar across restarts", async () => {
+    const file = await tempFile();
+    const ownerAvatar = "https://avatars.githubusercontent.com/team?s=64";
+    const first = createRepositoryImageCache({ file, read: async () => ownerAvatar, now: () => 1_000 });
+    expect(await first.get("/repo")).toBe(ownerAvatar);
+    await first.flush();
+
+    // The renderer reads from disk with an infinite stale time, so the
+    // fallback must survive a reload without another `gh` call.
+    const read = vi.fn(async () => null);
+    const second = createRepositoryImageCache({ file, read, now: () => 1_000 });
+    expect(await second.get("/repo")).toBe(ownerAvatar);
+    expect(read).not.toHaveBeenCalled();
   });
 });

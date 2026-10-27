@@ -32,6 +32,12 @@ export async function readRepositoryImage(cwd: string, run: ImageCommand = comma
   try { return await fetchRepositoryImage(cwd, run); } catch { return null; }
 }
 
+/** GitHub serves the owner (user or organization) avatar without auth, so a
+ *  readable remote is enough to keep a project off the letter tile. */
+function ownerAvatar(owner: string): string | null {
+  return customRepositoryImage({ owner: { avatarUrl: `https://avatars.githubusercontent.com/${owner}?s=64` } });
+}
+
 /** Like readRepositoryImage, but a failed lookup (no git, gh timeout, TLS
  *  error) throws instead of reading as "this repository has no image", so a
  *  cache can keep its last good value. */
@@ -49,12 +55,22 @@ export async function fetchRepositoryImage(cwd: string, run: ImageCommand = comm
     return null;
   }
   if (url.hostname !== "github.com") return null;
-  const parts = url.pathname.replace(/^\//, "").replace(/\.git$/, "").split("/");
-  if (parts.length !== 2 || parts.some(part => !/^[\w.-]+$/.test(part))) return null;
-  const result = JSON.parse(await run("gh", ["api", "graphql", "--hostname", "github.com", "-f",
-    "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){usesCustomOpenGraphImage openGraphImageUrl owner{avatarUrl(size:64)}}}",
-    "-f", `owner=${parts[0]}`, "-f", `name=${parts[1]}`], cwd));
-  return customRepositoryImage(result?.data?.repository);
+  // Copied remotes often carry a trailing slash after `.git`; strip the
+  // slashes first so the path stays owner/name and not a third empty part.
+  const parts = url.pathname.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/, "").split("/");
+  if (parts.length !== 2 || parts.some(part => !/^[\w.-]+$/.test(part) || part === "." || part === "..")) return null;
+  const [owner = "", name = ""] = parts;
+  try {
+    const result = JSON.parse(await run("gh", ["api", "graphql", "--hostname", "github.com", "-f",
+      "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){usesCustomOpenGraphImage openGraphImageUrl owner{avatarUrl(size:64)}}}",
+      "-f", `owner=${owner}`, "-f", `name=${name}`], cwd));
+    const image = customRepositoryImage(result?.data?.repository);
+    if (image) return image;
+  } catch {
+    // `gh` missing, timed out or offline: the owner avatar still identifies
+    // the project, so the sidebar shows a mark instead of a letter tile.
+  }
+  return ownerAvatar(owner);
 }
 
 interface CachedRepositoryImage {
@@ -63,9 +79,10 @@ interface CachedRepositoryImage {
 }
 
 export interface RepositoryImageCache {
-  /** Last known image for a folder. The first lookup waits for `gh`; after
-   *  that the cached value is returned immediately and refreshed in the
-   *  background once older than `refreshAfterMs`. */
+  /** Last known CDN artwork URL for a folder. Cold miss may call `gh` once
+   *  to discover custom OG (else owner avatar URL); afterwards `get` returns
+   *  the cached https URL immediately. TTL refresh is background-only.
+   *  The <img> loads that CDN URL; Chromium's HTTP cache holds the bytes. */
   get(cwd: string): Promise<string | null>;
   /** Settles when no refresh is in flight (tests, shutdown). */
   idle(): Promise<void>;
@@ -73,9 +90,11 @@ export interface RepositoryImageCache {
   flush(): Promise<void>;
 }
 
-/** Main-owned last-known-good cache for repository artwork. A renderer reload
- *  or app restart renders avatars from disk without a `gh` call, and a failed
- *  refresh never replaces a good image with nothing. */
+/** Main-owned last-known-good cache of repository artwork *URLs* (custom OG
+ *  preferred, else owner avatar on avatars.githubusercontent.com). Sidebar
+ *  <img> uses the CDN URL directly; we do not download bytes ourselves.
+ *  A renderer reload serves the cached URL without `gh`; a failed refresh
+ *  never replaces a good URL with nothing. */
 export function createRepositoryImageCache(options: {
   file: string;
   read?: (cwd: string) => Promise<string | null>;
@@ -90,7 +109,7 @@ export function createRepositoryImageCache(options: {
   const retryAfterFailureMs = options.retryAfterFailureMs ?? 10 * 60_000;
   const inflight = new Map<string, Promise<string | null>>();
   /** In-memory only: last failed attempt, so a broken `gh` is not re-run on
-   *  every render while the cached value keeps serving. */
+   *  every sidebar paint while the cached CDN URL keeps serving. */
   const failedAt = new Map<string, number>();
   let entries: Map<string, CachedRepositoryImage> | null = null;
   let dirty = false;
