@@ -118,4 +118,109 @@ describe("the thinking fallback", () => {
     );
     expect(html).not.toContain('data-thinking-fallback="true"');
   });
+
+  it("keeps the collapsed waiting tool group on chat.thinking after commentary (backchat#104)", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={runningTurn([
+          {
+            payload: {
+              sessionUpdate: "tool_call",
+              toolCallId: "shell-1",
+              status: "completed",
+              title: "/bin/zsh -lc echo one",
+              kind: "execute",
+            },
+            receivedAt: 1,
+          },
+          {
+            payload: {
+              sessionUpdate: "tool_call",
+              toolCallId: "shell-2",
+              status: "completed",
+              title: "/bin/zsh -lc echo two",
+              kind: "execute",
+            },
+            receivedAt: 2,
+          },
+          chunk("Interim commentary after the shells", "commentary"),
+        ])}
+      />,
+    );
+
+    expect(html).toContain('data-tool-group-size="2"');
+    const triggerMatch = html.match(
+      /data-tool-group-size="2"><button\b[^>]*data-chat-activity-disclosure-trigger="true"[^>]*>[\s\S]*?<\/button>/,
+    );
+    expect(triggerMatch?.[0]).toBeDefined();
+    expect(triggerMatch?.[0]).toContain("chat.thinking");
+    expect(triggerMatch?.[0]).toContain('data-thinking-fallback="true"');
+    expect(triggerMatch?.[0]).not.toContain("ToolSummary.execute");
+    expect(html.match(/data-thinking-fallback="true"/g)).toHaveLength(1);
+  });
+
+  it("keeps toolSummary on settled historical groups, not the waiting last group", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={runningTurn([
+          {
+            payload: {
+              sessionUpdate: "tool_call",
+              toolCallId: "early-1",
+              status: "completed",
+              title: "/bin/zsh -lc echo early",
+              kind: "execute",
+            },
+            receivedAt: 1,
+          },
+          {
+            payload: {
+              sessionUpdate: "tool_call",
+              toolCallId: "early-2",
+              status: "completed",
+              title: "/bin/zsh -lc echo early-2",
+              kind: "execute",
+            },
+            receivedAt: 2,
+          },
+          chunk("Between tool batches", "commentary"),
+          {
+            payload: {
+              sessionUpdate: "tool_call",
+              toolCallId: "late-1",
+              status: "completed",
+              title: "/bin/zsh -lc echo late",
+              kind: "execute",
+            },
+            receivedAt: 4,
+          },
+          {
+            payload: {
+              sessionUpdate: "tool_call",
+              toolCallId: "late-2",
+              status: "completed",
+              title: "/bin/zsh -lc echo late-2",
+              kind: "execute",
+            },
+            receivedAt: 5,
+          },
+        ])}
+      />,
+    );
+
+    expect(html.match(/data-tool-group-size="2"/g)).toHaveLength(2);
+    const triggers = [
+      ...html.matchAll(
+        /data-tool-group-size="2"><button\b[^>]*data-chat-activity-disclosure-trigger="true"[^>]*>[\s\S]*?<\/button>/g,
+      ),
+    ].map((match) => match[0]);
+    expect(triggers).toHaveLength(2);
+    expect(triggers[0]).toContain("ToolSummary.execute");
+    expect(triggers[0]).not.toContain('data-thinking-fallback="true"');
+    expect(triggers[1]).toContain("chat.thinking");
+    expect(triggers[1]).toContain('data-thinking-fallback="true"');
+    expect(triggers[1]).not.toContain("ToolSummary.execute");
+    expect(html.match(/data-thinking-fallback="true"/g)).toHaveLength(1);
+  });
+
 });
