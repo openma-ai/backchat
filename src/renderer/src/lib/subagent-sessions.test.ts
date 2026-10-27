@@ -150,3 +150,84 @@ test("opening the same subagent viewSessionId reuses the side tab", () => {
   expect(store.sideTabs()).toHaveLength(1);
   expect(store.activeSideTabId()).toBe(firstId);
 });
+
+
+test("RFD subagent correlates parent Subagent toolCallId and task for this turn", () => {
+  const store = new SessionStore();
+  store.apply({ type: "session.ready", session_id: "host", acp_session_id: "root", agent_id: "dsh-acp", cwd: "/repo" });
+  store.registerTurn("turn", "host", "delegate");
+  const send = (session: string, update: Record<string, unknown>) => store.apply({
+    type: "session.event", session_id: "host", turn_id: "turn", event: routed(session, update),
+  });
+  send("root", {
+    sessionUpdate: "tool_call",
+    toolCallId: "call_00_subagent",
+    title: "Subagent",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { description: "Reply CHILD_RFD_OK only", prompt: "Reply CHILD_RFD_OK only" },
+  });
+  send("root", {
+    sessionUpdate: "subagent_update",
+    sessionId: "child",
+    title: "Helper",
+    description: null,
+    state: { state: "running" },
+  });
+  const activity = store.subagentsFor("host")[0]!;
+  expect(activity.native?.toolCallId).toBe("call_00_subagent");
+  expect(activity.task).toBe("Reply CHILD_RFD_OK only");
+  const childTurn = store.turnsFor(activity.viewSessionId)[0]!;
+  expect(childTurn.promptText).toBe("Reply CHILD_RFD_OK only");
+});
+
+test("RFD backfills toolCallId when Subagent tool arrives after subagent_update", () => {
+  const store = new SessionStore();
+  store.apply({ type: "session.ready", session_id: "host", acp_session_id: "root", agent_id: "dsh-acp", cwd: "/repo" });
+  store.registerTurn("turn", "host", "delegate");
+  const send = (session: string, update: Record<string, unknown>) => store.apply({
+    type: "session.event", session_id: "host", turn_id: "turn", event: routed(session, update),
+  });
+  send("root", {
+    sessionUpdate: "subagent_update",
+    sessionId: "child",
+    title: "Helper",
+    description: null,
+    state: { state: "running" },
+  });
+  expect(store.subagentsFor("host")[0]?.native?.toolCallId).toBe("rfd:child");
+  send("root", {
+    sessionUpdate: "tool_call",
+    toolCallId: "call_00_later",
+    title: "Subagent",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { prompt: "do the thing" },
+  });
+  const activity = store.subagentsFor("host")[0]!;
+  expect(activity.native?.toolCallId).toBe("call_00_later");
+  expect(activity.task).toBe("do the thing");
+});
+
+test("dsh:tool-result message id prefers the real parent toolCallId", () => {
+  const store = new SessionStore();
+  store.apply({ type: "session.ready", session_id: "host", acp_session_id: "root", agent_id: "dsh-acp", cwd: "/repo" });
+  store.registerTurn("turn", "host", "delegate");
+  const send = (session: string, update: Record<string, unknown>) => store.apply({
+    type: "session.event", session_id: "host", turn_id: "turn", event: routed(session, update),
+  });
+  send("root", {
+    sessionUpdate: "subagent_update",
+    sessionId: "child",
+    title: "Helper",
+    state: { state: "running" },
+  });
+  send("child", {
+    sessionUpdate: "session_message",
+    messageId: "dsh:tool-result:call_00_from_msg",
+    senderSessionId: "child",
+    recipientSessionId: "root",
+    content: [{ type: "text", text: "CHILD_RFD_OK" }],
+  });
+  expect(store.subagentsFor("host")[0]?.native?.toolCallId).toBe("call_00_from_msg");
+});

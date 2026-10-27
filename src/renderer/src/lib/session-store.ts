@@ -1,4 +1,15 @@
-import { patchAssociation, patchSessionMessage, wireSessionId, wireRecord, type SubagentAssociation } from "./subagent-sessions";
+import {
+  patchAssociation,
+  patchSessionMessage,
+  wireSessionId,
+  wireRecord,
+  isParentSubagentLaunchTool,
+  isSyntheticSubagentToolCallId,
+  parentSubagentToolTask,
+  sessionMessageText,
+  toolCallIdFromSessionMessageId,
+  type SubagentAssociation,
+} from "./subagent-sessions";
 /**
  * Renderer-side session store. Main-session history and task-scoped right-rail
  * workspaces are mirrored to SQLite through the preload API; this class keeps
@@ -192,6 +203,137 @@ export class SessionStore {
     if (!association) return undefined;
     return [...this.#sessions.values()].find((row) => row.subagentAssociation === association)?.id;
   }
+
+  /** Match an RFD child to the parent turn's Subagent launch tool when the
+   *  RFD update only carried a synthetic rfd:<sessionId> toolCallId. */
+  #correlateRfdParentTool(
+    parentSessionId: string,
+    turnId: string | undefined,
+    retainToolCallId?: string,
+  ): { toolCallId?: string; task?: string } {
+    if (
+      retainToolCallId
+      && !isSyntheticSubagentToolCallId(retainToolCallId)
+    ) {
+      return { toolCallId: retainToolCallId };
+    }
+    const turn = turnId ? this.#turns.get(turnId) : undefined;
+    if (!turn) return {};
+    const claimed = new Set(
+      (this.#subagentsByParent.get(parentSessionId) ?? [])
+        .map((activity) => activity.native?.toolCallId)
+        .filter((id): id is string => typeof id === "string" && !isSyntheticSubagentToolCallId(id)),
+    );
+    if (retainToolCallId && !isSyntheticSubagentToolCallId(retainToolCallId)) {
+      claimed.delete(retainToolCallId);
+    }
+    for (const { payload } of turn.events) {
+      const parsed = parseAcpEvent(payload);
+      if (parsed.kind !== "tool_call") continue;
+      const tool = parsed.tool;
+      if (!isParentSubagentLaunchTool(tool)) continue;
+      if (claimed.has(tool.toolCallId)) continue;
+      return {
+        toolCallId: tool.toolCallId,
+        task: parentSubagentToolTask(tool.rawInput),
+      };
+    }
+    return {};
+  }
+
+  /** When a parent Subagent tool arrives after the RFD announce, backfill the
+   *  synthetic toolCallId / empty task so chips and child promptText resolve. */
+  #backfillRfdActivityFromParentTool(
+    parentSessionId: string,
+    tool: { toolCallId: string; title?: string | null; toolName?: string | null; rawInput?: unknown },
+  ): void {
+    if (!isParentSubagentLaunchTool(tool)) return;
+    const list = this.#subagentsByParent.get(parentSessionId) ?? [];
+    const alreadyBound = list.some(
+      (activity) => activity.native?.toolCallId === tool.toolCallId,
+    );
+    if (alreadyBound) return;
+    const pending = list.find(
+      (activity) =>
+        activity.native?.toolCallId
+        && isSyntheticSubagentToolCallId(activity.native.toolCallId),
+    );
+    if (!pending?.native) return;
+    const task =
+      pending.task.trim()
+      || parentSubagentToolTask(tool.rawInput)
+      || pending.task;
+    this.#upsertNativeSubagentActivity(parentSessionId, {
+      provider: pending.native.provider,
+      operation: "subagent_spawn",
+      childId: pending.childSessionId,
+      toolCallId: tool.toolCallId,
+      task,
+      nickname: pending.native.nickname,
+      ...(pending.status === "draft" ? {} : { status: pending.status }),
+    });
+  }
+
+  #refineRfdActivityFromSessionMessage(
+    root: string,
+    parentView: string,
+    update: Record<string, unknown>,
+  ): void {
+    if (typeof update.messageId !== "string") return;
+    const message = patchSessionMessage(undefined, update);
+    if (!message) return;
+    const text = sessionMessageText(message.content);
+    const fromToolResult = toolCallIdFromSessionMessageId(message.messageId);
+
+    // session_message rows are stored on the scoped view (child view when the
+    // wire session is the child). Prefer that view's activity.
+    const rootActivities = this.#subagentsByParent.get(root) ?? [];
+    const nestedParent = parentView !== root
+      ? (this.#subagentsByParent.get(parentView) ?? [])
+      : [];
+    const activity =
+      rootActivities.find((item) => item.viewSessionId === parentView)
+      ?? nestedParent.find((item) => item.viewSessionId === parentView)
+      ?? rootActivities.find(
+        (item) => item.childSessionId === message.senderSessionId
+          || item.childSessionId === message.recipientSessionId,
+      );
+    if (!activity?.native) return;
+
+    const sender = message.senderSessionId;
+    const rootAcp = this.#sessions.get(root)?.acp_session_id;
+    const isParentToChild =
+      Boolean(sender && rootAcp && sender === rootAcp)
+      || Boolean(
+        message.recipientSessionId
+        && message.recipientSessionId === activity.childSessionId
+        && sender !== activity.childSessionId,
+      );
+    const patchTask =
+      isParentToChild && text && !activity.task.trim() ? text : undefined;
+    const patchToolCallId =
+      fromToolResult
+      && (
+        !activity.native.toolCallId
+        || isSyntheticSubagentToolCallId(activity.native.toolCallId)
+      )
+        ? fromToolResult
+        : undefined;
+    if (!patchTask && !patchToolCallId) return;
+    this.#upsertNativeSubagentActivity(
+      activity.parentSessionId,
+      {
+        provider: activity.native.provider,
+        operation: "subagent_spawn",
+        childId: activity.childSessionId,
+        toolCallId: patchToolCallId ?? activity.native.toolCallId,
+        task: patchTask ?? activity.task,
+        nickname: activity.native.nickname,
+        ...(activity.status === "draft" ? {} : { status: activity.status }),
+      },
+    );
+  }
+
   #applySubagentSession(root: string, event: unknown, turnId?: string): boolean {
     const outer = wireRecord(event);
     const update = outer.update ? wireRecord(outer.update) : outer;
@@ -214,9 +356,32 @@ export class SessionStore {
         : state?.state === "idle" && state.stopReason === "cancelled" ? "cancelled"
         : state?.state === "idle" && state.stopReason === "error" ? "error"
         : state?.state === "idle" && state.stopReason === "end_turn" ? "complete" : "unknown";
+      // RFD/DSH announce children with session ids, while the parent turn's
+      // launch tool keeps a real ACP toolCallId (e.g. call_00_…). Correlate
+      // when possible so transcript chips can key off rendered tools.
+      const existing = this.#subagentsByParent.get(parentView)?.find(
+        (item) => item.childSessionId === next.sessionId,
+      );
+      const correlated = this.#correlateRfdParentTool(parentView, turnId, existing?.native?.toolCallId);
+      const description =
+        typeof next.description === "string" && next.description.trim()
+          ? next.description.trim()
+          : undefined;
+      const toolCallId =
+        (existing?.native?.toolCallId
+          && !isSyntheticSubagentToolCallId(existing.native.toolCallId)
+          ? existing.native.toolCallId
+          : undefined)
+        ?? correlated.toolCallId
+        ?? `rfd:${next.sessionId}`;
+      const task =
+        description
+        ?? (existing?.task?.trim() ? existing.task : undefined)
+        ?? correlated.task
+        ?? "";
       this.#upsertNativeSubagentActivity(parentView, {
         provider, operation: "subagent_spawn", childId: next.sessionId,
-        toolCallId: `rfd:${next.sessionId}`, task: next.description ?? "",
+        toolCallId, task,
         nickname: next.title ?? undefined, status,
       });
       const activity = this.#subagentsByParent.get(parentView)?.find((item) => item.childSessionId === next.sessionId);
@@ -240,6 +405,9 @@ export class SessionStore {
         if (index < 0) messages.push(message); else messages[index] = message;
         return { ...row, sessionMessages: messages };
       });
+      // Parent→child task text and DSH tool-result message ids refine the
+      // linked native activity used by the parent chip + child side chat.
+      this.#refineRfdActivityFromSessionMessage(root, parentView, update);
       return true;
     }
     if (parentView === root) return false;
@@ -4580,6 +4748,7 @@ export class SessionStore {
             tool,
             eventTurnId,
           );
+          this.#backfillRfdActivityFromParentTool(ev.session_id, tool);
           const workItemAdapter = runtimeAdapter ?? genericAcpRuntimeAdapter;
           for (const update of workItemAdapter.planToolUpdates(tool)) {
             const planEvent = runtimePlanUpdateToOpenMAEvent(update, {
