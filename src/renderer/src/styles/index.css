@@ -599,10 +599,6 @@
   font-size: 9px;
   font-weight: 600;
   line-height: 1;
-  /* Optical vertical center: trim half-leading to cap/alphabetic so Latin
-     capitals (and CJK/digits) aren't pushed low by the em-box. Chrome 133+ /
-     Electron 42+. */
-  text-box: trim-both cap alphabetic;
 }
 /* Repository artwork (GitHub social image or owner avatar) takes the same
    rounded tile as the letter mark, so an opaque avatar sits on the rail
