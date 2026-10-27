@@ -163,6 +163,7 @@ export function runtimePresentation(kind: ComposerRuntimeKind): {
 export function SessionRunChip({
   disabled,
   locked,
+  compactChips = false,
   agents,
   currentAgentId,
   currentAgentLabel,
@@ -178,6 +179,8 @@ export function SessionRunChip({
 }: {
   disabled: boolean;
   locked: boolean;
+  /** Drop the config summary text; keep agent icon + chevron with aria-label. */
+  compactChips?: boolean;
   agents: ComposerAgentOption[];
   currentAgentId: string;
   currentAgentLabel?: string;
@@ -260,22 +263,24 @@ export function SessionRunChip({
                 />
               </span>
             </span>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    ref={labelRef}
-                    onMouseEnter={refreshLabelTruncation}
-                    className={cn("min-w-0 max-w-[140px] truncate", authNeeded && "text-danger")}
-                  >
-                    {configLabel}
-                  </span>
-                </TooltipTrigger>
-                {labelTruncated && (
-                  <TooltipContent side="top">{configLabel}</TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
+            {!compactChips && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      ref={labelRef}
+                      onMouseEnter={refreshLabelTruncation}
+                      className={cn("min-w-0 max-w-[140px] truncate", authNeeded && "text-danger")}
+                    >
+                      {configLabel}
+                    </span>
+                  </TooltipTrigger>
+                  {labelTruncated && (
+                    <TooltipContent side="top">{configLabel}</TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </>
         )}
         <ChevronDownIcon className="size-3.5 shrink-0 text-current opacity-65 group-hover/model-selector:text-fg group-hover/model-selector:opacity-100" />

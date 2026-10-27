@@ -574,8 +574,9 @@ describe("home suggestions", () => {
     expect(runTrigger).toContain("<AgentIcon");
     expect(runTrigger).toContain("onMouseEnter={refreshLabelTruncation}");
     expect(runTrigger).toContain(
-      '{labelTruncated && (\n                  <TooltipContent side="top">{configLabel}</TooltipContent>\n                )}',
+      '{labelTruncated && (\n                    <TooltipContent side="top">{configLabel}</TooltipContent>\n                  )}',
     );
+    expect(runTrigger).toContain("{!compactChips && (");
     expect(runTrigger).toContain(
       '"min-w-0 max-w-[140px] truncate"',
     );
@@ -800,6 +801,9 @@ describe("side composer compactChips", () => {
     expect(source).not.toContain("hideConfigChips");
     expect(source).toContain("<PermissionModeChip");
     expect(source).toContain("<InlineComposerOptionControls");
+    expect(source).toContain("<SessionRunChip");
+    const runChip = source.slice(source.indexOf("<SessionRunChip"));
+    expect(runChip).toContain("compactChips={compactChips}");
   });
 });
 

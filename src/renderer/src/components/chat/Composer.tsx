@@ -1349,6 +1349,7 @@ export function Composer({
           ) : (
             <SessionRunChip
               disabled={!!running}
+              compactChips={compactChips}
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}
               authChecking={authChecking}
