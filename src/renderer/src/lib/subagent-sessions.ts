@@ -63,7 +63,9 @@ export function toolCallIdFromSessionMessageId(messageId: string): string | unde
 export function parentSubagentToolTask(rawInput: unknown): string | undefined {
   if (!rawInput || typeof rawInput !== "object" || Array.isArray(rawInput)) return undefined;
   const input = rawInput as Record<string, unknown>;
-  for (const key of ["description", "prompt", "message", "task"] as const) {
+  // Prefer prompt: DSH Subagent description is often a short label while
+  // prompt carries the real delegated user message for the child bubble.
+  for (const key of ["prompt", "description", "message", "task"] as const) {
     const value = input[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }

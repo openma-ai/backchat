@@ -211,13 +211,23 @@ export class SessionStore {
     turnId: string | undefined,
     retainToolCallId?: string,
   ): { toolCallId?: string; task?: string } {
+    const turn = turnId ? this.#turns.get(turnId) : undefined;
     if (
       retainToolCallId
       && !isSyntheticSubagentToolCallId(retainToolCallId)
     ) {
-      return { toolCallId: retainToolCallId };
+      // Id already bound (possibly while rawInput was still empty). Still
+      // read task from the projected tool so later prompt patches surface.
+      const tool = turn
+        ? this.projectTurn(turn).tools.find(
+          (candidate) => candidate.toolCallId === retainToolCallId,
+        )
+        : undefined;
+      return {
+        toolCallId: retainToolCallId,
+        task: tool ? parentSubagentToolTask(tool.rawInput) : undefined,
+      };
     }
-    const turn = turnId ? this.#turns.get(turnId) : undefined;
     if (!turn) return {};
     const claimed = new Set(
       (this.#subagentsByParent.get(parentSessionId) ?? [])
@@ -227,10 +237,8 @@ export class SessionStore {
     if (retainToolCallId && !isSyntheticSubagentToolCallId(retainToolCallId)) {
       claimed.delete(retainToolCallId);
     }
-    for (const { payload } of turn.events) {
-      const parsed = parseAcpEvent(payload);
-      if (parsed.kind !== "tool_call") continue;
-      const tool = parsed.tool;
+    // Prefer projected tools so tool_call_update rawInput patches are visible.
+    for (const tool of this.projectTurn(turn).tools) {
       if (!isParentSubagentLaunchTool(tool)) continue;
       if (claimed.has(tool.toolCallId)) continue;
       return {
@@ -242,17 +250,32 @@ export class SessionStore {
   }
 
   /** When a parent Subagent tool arrives after the RFD announce, backfill the
-   *  synthetic toolCallId / empty task so chips and child promptText resolve. */
+   *  synthetic toolCallId / empty task so chips and child promptText resolve.
+   *  Also refresh task when the tool was already bound but rawInput later
+   *  gained a prompt (DSH often streams tool_call then tool_call_update). */
   #backfillRfdActivityFromParentTool(
     parentSessionId: string,
     tool: { toolCallId: string; title?: string | null; toolName?: string | null; rawInput?: unknown },
   ): void {
     if (!isParentSubagentLaunchTool(tool)) return;
     const list = this.#subagentsByParent.get(parentSessionId) ?? [];
-    const alreadyBound = list.some(
+    const taskFromTool = parentSubagentToolTask(tool.rawInput);
+    const bound = list.find(
       (activity) => activity.native?.toolCallId === tool.toolCallId,
     );
-    if (alreadyBound) return;
+    if (bound?.native) {
+      if (!taskFromTool || bound.task.trim() === taskFromTool) return;
+      this.#upsertNativeSubagentActivity(parentSessionId, {
+        provider: bound.native.provider,
+        operation: "subagent_spawn",
+        childId: bound.childSessionId,
+        toolCallId: tool.toolCallId,
+        task: taskFromTool,
+        nickname: bound.native.nickname,
+        ...(bound.status === "draft" ? {} : { status: bound.status }),
+      });
+      return;
+    }
     const pending = list.find(
       (activity) =>
         activity.native?.toolCallId
@@ -261,7 +284,7 @@ export class SessionStore {
     if (!pending?.native) return;
     const task =
       pending.task.trim()
-      || parentSubagentToolTask(tool.rawInput)
+      || taskFromTool
       || pending.task;
     this.#upsertNativeSubagentActivity(parentSessionId, {
       provider: pending.native.provider,
