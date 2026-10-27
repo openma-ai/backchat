@@ -40,6 +40,10 @@ import {
   slashCommandConfigAction,
   withHostForkCommand,
 } from "@/lib/composer-slash-commands";
+import {
+  applySlashInputHint,
+  resolveSlashInputHint,
+} from "@/lib/composer-slash-input-hint";
 import { promptAnnotationStore } from "@/lib/prompt-annotations";
 import { useComposerContextState } from "@/lib/composer-context-state";
 import { composerPasteRouter } from "@/lib/composer-paste-router";
@@ -210,6 +214,8 @@ export function Composer({
   }, [composerTextKey]);
   const [caret, setCaret] = useState(0);
   const [dismissedMentionText, setDismissedMentionText] = useState<string | null>(null);
+  /** The text whose slash-hint ghost the user dismissed with Escape. */
+  const [dismissedHintText, setDismissedHintText] = useState<string | null>(null);
   const [mentionPickerIndex, setMentionPickerIndex] = useState(0);
   const [fileMentionCandidates, setFileMentionCandidates] = useState<FileMentionCandidate[]>([]);
   const [mentionedFileAttachmentIds, setMentionedFileAttachmentIds] = useState<Set<string>>(
@@ -410,6 +416,34 @@ export function Composer({
     ),
     [canFork, effectiveAvailableCommands, t],
   );
+  /** A command that declares an argument hint (ACP `AvailableCommand.input.hint`)
+   *  already said what it expects next — Codex's `/review` wants "optional
+   *  review instructions", Claude's `/adapt` wants a target and a context. The
+   *  composer says it too: as muted ghost text after the typed command, and
+   *  as real text once Tab completes it. */
+  const slashInputHint = useMemo(
+    () => resolveSlashInputHint({
+      text,
+      commands: composerAvailableCommands,
+    }),
+    [composerAvailableCommands, text],
+  );
+  /** Escape hides the ghost until the text changes. The hint itself stays
+   *  completable: Escape dismisses the picker, and Tab can still finish the
+   *  command afterwards. */
+  const slashInputGhost = useMemo(
+    () => resolveSlashInputHint({
+      text,
+      commands: composerAvailableCommands,
+      dismissed: dismissedHintText === text,
+    }),
+    [composerAvailableCommands, dismissedHintText, text],
+  );
+  /** The ghost reads as one run with the typed command: a space between them
+   *  unless the user already typed it. */
+  const slashInputGhostText = slashInputGhost
+    ? `${/\s$/u.test(text) ? "" : " "}${slashInputGhost.hint}`
+    : "";
   const [armedCommand, setArmedCommandState] = useState<AcpAvailableCommand | null>(
     () => armedCommandBySession.get(composerTextKey)
       ?? armedCommandBySession.get(DRAFT_ARMED_HANDOFF)
@@ -685,6 +719,27 @@ export function Composer({
       || annotations.length > 0,
     );
   };
+
+  /** Shared by Tab and right-click: write the declared hint as real text and
+   *  select it so the next keystroke types over it. Returns whether anything
+   *  was applied. */
+  const commitSlashInputHint = (hint: string): boolean => {
+    const trimmed = hint.trim();
+    if (!trimmed) return false;
+    const applied = applySlashInputHint(text, trimmed);
+    setText(applied.text);
+    setCaret(applied.selectionStart);
+    setDismissedHintText(null);
+    reportComposerContent(applied.text);
+    requestAnimationFrame(() => {
+      const textarea = taRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(applied.selectionStart, applied.selectionEnd);
+    });
+    return true;
+  };
+
 
   /** `/fork` navigates away immediately. The draft-store write has to happen
    *  before that, outside a setState updater: unmounting drops the updater
@@ -1099,6 +1154,20 @@ export function Composer({
                   />
                 </span>
               )}
+              {/* The command's declared hint rides along the caret as muted
+                  ghost text. A mirror of the textarea's own box: the typed
+                  part is transparent so the textarea paints over it, and the
+                  hint starts exactly where the caret is. */}
+              {slashInputGhost && !selectedSkillCommand && (
+                <div
+                  aria-hidden="true"
+                  data-composer-slash-hint="true"
+                  className="composer-input-ghost pointer-events-none absolute inset-0 z-0 overflow-hidden"
+                >
+                  <span className="text-transparent">{text}</span>
+                  <span className="text-fg-subtle">{slashInputGhostText}</span>
+                </div>
+              )}
               <ComposerInput
               ref={taRef}
               aria-label={inputLabel}
@@ -1111,9 +1180,17 @@ export function Composer({
                 setText(nextText);
                 setCaret(nextCaret);
                 setDismissedMentionText(null);
+                setDismissedHintText(null);
                 clearDismissal();
               }}
               onClick={(e) => setCaret(e.currentTarget.selectionStart ?? text.length)}
+              onContextMenu={(e) => {
+                // Right-click applies the visible ghost hint (same insert as
+                // Tab). No ghost → leave the OS context menu alone.
+                if (!slashInputGhost || selectedSkillCommand) return;
+                e.preventDefault();
+                commitSlashInputHint(slashInputGhost.hint);
+              }}
               onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? text.length)}
               onFocus={() => pasteRegistrationRef.current?.noteFocus()}
               onPaste={(e) => {
@@ -1167,6 +1244,7 @@ export function Composer({
                 sessionReferenceCount: sessionReferences.length,
                 slashPickerOpen: showPicker,
                 hasSlashSelection: !!highlightedSlashCommand,
+                hasSlashInputHint: !!slashInputHint,
                 shiftKey: e.shiftKey,
                 altKey: e.altKey,
                 isComposing: e.nativeEvent.isComposing,
@@ -1204,6 +1282,18 @@ export function Composer({
                 case "slash-dismiss":
                   e.preventDefault();
                   dismissPicker();
+                  // The ghost belongs to the command the picker dismissed.
+                  setDismissedHintText(text);
+                  return;
+                case "slash-apply-hint": {
+                  e.preventDefault();
+                  if (!slashInputHint) return;
+                  commitSlashInputHint(slashInputHint.hint);
+                  return;
+                }
+                case "slash-dismiss-hint":
+                  e.preventDefault();
+                  setDismissedHintText(text);
                   return;
                 case "queue":
                   // Alt+Enter: pi's follow-up gesture — wait for the turn to

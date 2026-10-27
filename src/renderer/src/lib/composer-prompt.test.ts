@@ -196,6 +196,64 @@ describe("composer prompt presentation", () => {
     expect(resolveComposerKeyAction({ ...base, key: "Tab" })).toBeNull();
   });
 
+  it("completes a declared slash input hint with Tab once the picker is closed", () => {
+    const base = {
+      text: "/review ",
+      hasSelectedSkill: false,
+      attachmentCount: 0,
+      annotationCount: 0,
+      slashPickerOpen: false,
+      hasSlashSelection: false,
+      hasSlashInputHint: true,
+      shiftKey: false,
+      isComposing: false,
+    };
+
+    expect(resolveComposerKeyAction({ ...base, key: "Tab" }))
+      .toBe("slash-apply-hint");
+    // Shift+Tab keeps its focus-traversal meaning, and an IME composition
+    // owns its own keys.
+    expect(resolveComposerKeyAction({ ...base, key: "Tab", shiftKey: true }))
+      .toBeNull();
+    expect(resolveComposerKeyAction({ ...base, key: "Tab", isComposing: true }))
+      .toBeNull();
+    // Escape hides the ghost hint.
+    expect(resolveComposerKeyAction({ ...base, key: "Escape" }))
+      .toBe("slash-dismiss-hint");
+    // Without a hint there is nothing for Tab to complete.
+    expect(resolveComposerKeyAction({
+      ...base,
+      key: "Tab",
+      hasSlashInputHint: false,
+    })).toBeNull();
+  });
+
+  it("leaves Tab to the slash picker while it is open", () => {
+    const base = {
+      text: "/review",
+      hasSelectedSkill: false,
+      attachmentCount: 0,
+      annotationCount: 0,
+      slashPickerOpen: true,
+      hasSlashSelection: true,
+      hasSlashInputHint: true,
+      shiftKey: false,
+      isComposing: false,
+    };
+
+    expect(resolveComposerKeyAction({ ...base, key: "Tab" }))
+      .toBe("slash-pick");
+    // A stale selection still leaves Tab to the picker, never to the hint.
+    expect(resolveComposerKeyAction({
+      ...base,
+      key: "Tab",
+      hasSlashSelection: false,
+    })).toBeNull();
+    // The picker owns Escape too.
+    expect(resolveComposerKeyAction({ ...base, key: "Escape" }))
+      .toBe("slash-dismiss");
+  });
+
   it("submits text, attachment-only, or annotation-only input unless disabled", () => {
     expect(canSubmitComposer({
       text: "hello",

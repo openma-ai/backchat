@@ -287,6 +287,102 @@ test.describe("composer slash commands", () => {
     await expect(composer.input).toHaveValue("/");
   });
 
+  test("a command's input hint reads as ghost text and Tab/right-click complete it", async ({ page, composer }) => {
+    const sessionId = await injectSession(page);
+    await injectAvailableCommands(page, sessionId, [
+      {
+        name: "review",
+        description: "Review the current changes.",
+        input: { hint: "optional review instructions" },
+      },
+    ]);
+
+    const ghost = page.locator('[data-composer-slash-hint="true"]');
+
+    // The hint only rides along a bare command: an argument already typed
+    // means the ghost would lie about what is in the box.
+    await composer.input.fill("/review");
+    await expect(ghost).toBeVisible();
+    await expect(ghost).toContainText("optional review instructions");
+
+    await composer.input.fill("/review focus on tests");
+    await expect(ghost).toHaveCount(0);
+
+    // A trailing space closes the picker, so Tab completes the command
+    // instead of picking it.
+    await composer.input.fill("/review ");
+    await expect(ghost).toBeVisible();
+    await composer.input.press("Tab");
+    await expect(composer.input).toHaveValue(
+      "/review optional review instructions",
+    );
+    await expect(ghost).toHaveCount(0);
+  });
+
+  test("the slash picker keeps Tab while it is open", async ({ page, composer }) => {
+    const sessionId = await injectSession(page);
+    await injectAvailableCommands(page, sessionId, [
+      {
+        name: "review",
+        description: "Review the current changes.",
+        input: { hint: "optional review instructions" },
+      },
+    ]);
+
+    await composer.input.fill("/review");
+    await expect(page.getByRole("listbox", { name: "Slash commands" })).toBeVisible();
+
+    // The picker accepts the highlighted command first; the hint is only
+    // completed once the picker is out of the way.
+    await composer.input.press("Tab");
+    await expect(composer.input).toHaveValue("/review ");
+
+    await composer.input.press("Tab");
+    await expect(composer.input).toHaveValue(
+      "/review optional review instructions",
+    );
+  });
+
+  test("escape hides the hint ghost without editing the prompt", async ({ page, composer }) => {
+    const sessionId = await injectSession(page);
+    await injectAvailableCommands(page, sessionId, [
+      {
+        name: "review",
+        description: "Review the current changes.",
+        input: { hint: "optional review instructions" },
+      },
+    ]);
+
+    await composer.input.fill("/review ");
+    await expect(page.locator('[data-composer-slash-hint="true"]')).toBeVisible();
+
+    await composer.input.press("Escape");
+
+    await expect(page.locator('[data-composer-slash-hint="true"]')).toHaveCount(0);
+    await expect(composer.input).toHaveValue("/review ");
+  });
+
+  test("right-click applies the visible hint ghost", async ({ page, composer }) => {
+    const sessionId = await injectSession(page);
+    await injectAvailableCommands(page, sessionId, [
+      {
+        name: "review",
+        description: "Review the current changes.",
+        input: { hint: "optional review instructions" },
+      },
+    ]);
+
+    // Trailing space closes the picker so the ghost is the affordance in play.
+    await composer.input.fill("/review ");
+    await expect(page.locator('[data-composer-slash-hint="true"]')).toBeVisible();
+
+    await composer.input.click({ button: "right" });
+    await expect(composer.input).toHaveValue(
+      "/review optional review instructions",
+    );
+    await expect(page.locator('[data-composer-slash-hint="true"]')).toHaveCount(0);
+  });
+
   test("slash command filtering accepts compact abbreviations", async ({ page, composer }) => {
     const sessionId = await injectSession(page);
     await injectAvailableCommands(page, sessionId, [
