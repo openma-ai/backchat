@@ -5,9 +5,10 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@agentclientprotocol/sdk': 1.9.0
+  '@agentclientprotocol/sdk': 2.0.2
   '@ai-sdk/provider-utils@4.0.27': 4.0.33
   '@openma/common': 0.11.1
+  '@openma/common>@agentclientprotocol/sdk': 2.0.2
   '@openmatter/agent': github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent
   '@openmatter/agent-claude': github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-claude
   '@openmatter/agent-mock': github:openma-ai/OpenMatter#620a0d02ace288ddfcdab4283989db3967190bc9&path:/packages/agent-mock
@@ -31,6 +32,9 @@ overrides:
   js-yaml@4.2.0: 4.3.2
   sharp@0.35.2: 0.35.4
   undici@6.26.0: 6.28.0
+
+patchedDependencies:
+  '@openma/common@0.11.1': df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5
 
 importers:
 
@@ -77,7 +81,7 @@ importers:
         version: link:packages/acp-agent-setup
       '@openma/common':
         specifier: 0.11.1
-        version: 0.11.1(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        version: 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openma/sdk':
         specifier: workspace:*
         version: link:packages/openma-sdk
@@ -275,8 +279,8 @@ importers:
         version: 8.21.1
     devDependencies:
       '@agentclientprotocol/claude-agent-acp':
-        specifier: 0.64.2
-        version: 0.64.2(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))
+        specifier: 0.95.0
+        version: 0.95.0(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))
       '@agentclientprotocol/codex-acp':
         specifier: 2.2.2
         version: 2.2.2
@@ -395,11 +399,11 @@ importers:
   packages/acp:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: 1.9.0
-        version: 1.9.0(zod@4.4.3)
+        specifier: 2.0.2
+        version: 2.0.2(zod@4.4.3)
       '@openma/common':
         specifier: 0.11.1
-        version: 0.11.1(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        version: 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       tar:
         specifier: ^7.5.22
         version: 7.5.22
@@ -421,7 +425,7 @@ importers:
         version: link:../acp
       '@openma/common':
         specifier: 0.11.1
-        version: 0.11.1(@anthropic-ai/sdk@0.120.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+        version: 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.6.7))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -446,7 +450,7 @@ importers:
         version: 0.120.0(zod@4.4.3)
       '@earendil-works/pi-ai':
         specifier: 0.84.4
-        version: 0.84.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.5))(supports-color@10.2.2)(ws@8.21.1)(zod@4.4.3)
+        version: 0.84.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.1)(zod@4.4.3)
 
   packages/pet-app:
     dependencies:
@@ -505,8 +509,8 @@ importers:
 
 packages:
 
-  '@agentclientprotocol/claude-agent-acp@0.64.2':
-    resolution: {integrity: sha512-REZ6FxfUF//GqGMqCEHfHLuuzd2ZJwupgfBmIQIm5gcMrkppuhrRlThwbn2RNasCWoMSnqRMHvnXDpl/HctM/g==}
+  '@agentclientprotocol/claude-agent-acp@0.95.0':
+    resolution: {integrity: sha512-9ocOKHfeGrSwXshLdaweYvRSdzy5fltbk+WiG2t7bQXW+882hiyrvZzUOhZ9k8ItwdLfpXcnytVlyDbjMdHDIA==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -514,10 +518,10 @@ packages:
     resolution: {integrity: sha512-vNdeNV3jxbqaH7MYvVWzyB6cMOz+YGIV9W1xyBDsQfoii92DulZLM+ahCL2T2G6uohlaB1Yma347p2kLfAab2w==}
     hasBin: true
 
-  '@agentclientprotocol/sdk@1.9.0':
-    resolution: {integrity: sha512-saCOTPYBK1iqWqJFAYHXbg3+zCoFXyZZFoqQAwdTWkbrZZPpAETr80QOnYr2l+dzPwL0jpNhn3eDY8MoEIDbUA==}
+  '@agentclientprotocol/sdk@2.0.2':
+    resolution: {integrity: sha512-jLywRB42hZMRMc4aUgt0uRjkY9FQnMdybv4XgLl+ddi75QuJn8Vbl0+CHcVHJDC0+WDfi1KQXRWtHaR5vp6gHw==}
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      zod: ^3.25.76 || ^4.0.0
 
   '@ai-sdk/gateway@3.0.122':
     resolution: {integrity: sha512-U1k2fk7cSH/tS5CZ3ujROiUCOLFwkzb792OqR/Org8Mfm27dKSIdRZG4ZuJUifT8alUWa61IoaRu4foXKlP5TQ==}
@@ -577,52 +581,52 @@ packages:
   '@antfu/install-pkg@1.1.0':
     resolution: {integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==}
 
-  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.220':
-    resolution: {integrity: sha512-7VxlbEosK7DODiOnsjoVd0DSJzbnaPrM2jelMHI0y8zx1UnLS3WC6EFUXbvy74F2sXqEznh2tzn7EKWInaRN6Q==}
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.309':
+    resolution: {integrity: sha512-qC93iDGEioaXqWsYazcZzNv3hd8d4VHkCFgb+AzvbkCWOzZHnRu1EqF4Iz5kCTLDs4VdMvCa1NkzlUwtTedBVw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.220':
-    resolution: {integrity: sha512-X9RwDsSmbF6ultKZroaip+DL8WRgC64gHbrAwrRlAFSPNZV7zmJyP2ur8rW7KrxqmtuehdMMkw8+SAC/6hD2PA==}
+  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.309':
+    resolution: {integrity: sha512-RvP0UOcYxn42c1lgByoMufHaMOH86U2ThGGFupOxBKATY4Q6WJd6M1CukQ/qygfgJ8lcxvK8GOOd3SIny4kQ8Q==}
     cpu: [x64]
     os: [darwin]
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.220':
-    resolution: {integrity: sha512-OHoZOZ8Cf2TBr6oXIXPwyvUxj9jrq2w8E4poA8dMpacXszcPSPiCQCMuuOh4aWJzfeJE1+TtWxhKMVb2csXyZQ==}
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.309':
+    resolution: {integrity: sha512-14ZD9hdUeobw+jr166YvCZyZwSYG3hDWi5S4yQxpSCrRuY/1z4Kl1AfymUlugiN3UT4Q1rif32K6GnjRJBvQdA==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.220':
-    resolution: {integrity: sha512-WkROPwWskqhKR9XgnmseHQ6rLi9zM9qt57IWoToIjL/eXOqDWipp7JXZ1L5ud+LrA42dunHPZfBwD/vXZ+A7LA==}
+  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.309':
+    resolution: {integrity: sha512-+8rQwzycuXTW2e/C+yotvP/SDiEDHxItdPvIriGAf2ixh7nPRjVuzHOj1tamgVO0J8nmpPvIAO4edzJ7VZCcAg==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.220':
-    resolution: {integrity: sha512-K+FWj+LcGhC1Z7wqeWoLxm1iemcba5xKpLLFVwYm4V6HyMx3ruYd/2r2TiQtjT+JWeNFWIys0ScHiItR6vWAiA==}
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.309':
+    resolution: {integrity: sha512-9ViOt4MGMiE2h8V+JUPR5l9F0ZTFuhKC3jawIL/MrMfYY1m2Gt3gcMuP7h7YK914a4tmpXrmITWrpTOu1WOZQQ==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.220':
-    resolution: {integrity: sha512-tkTJFnpR9VifvWX2fmkCAPkT6+8Wk/gVu8B5jsVekKZPiZoWRHmMXO30BnZn+f0TZhgYP+82PSX3S8crH1kn+w==}
+  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.309':
+    resolution: {integrity: sha512-96G8/uTArlvTTg0qGtiP36W76Ug/YT0gMBh8KX7J2RigdOTrk6QkHtUeCzrw6yff5hEIzecN7EWNw6uh9USo4A==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.220':
-    resolution: {integrity: sha512-rIwgq0UwQExWl6KrHUyC4w5KwpL9l6nd95aUTx6RitexaAuEw//xtfTVLnuE4hDDQZFkzEwpdKc3nxDWoGcUbA==}
+  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.309':
+    resolution: {integrity: sha512-lDsmw5hguDF7KNMG2OvvKlG0Zgs9bKlrX9Gs2Rv/NjLVl0PIy1TUsh7byOsUR4pXwoMU1toyU1CKqBc/Au8hHw==}
     cpu: [arm64]
     os: [win32]
 
-  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.220':
-    resolution: {integrity: sha512-MuOuXhbr66HlGaWXD2f3w0k2PsvmnbkwcUZ0dAe2poFLdl72GC2dapwwOBefxm9QmoNqk9+jmv/dSKGOVWyvLw==}
+  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.309':
+    resolution: {integrity: sha512-otGHQimz6F++6SajGqSAKBclRPGTn60cx+8u3dnhMa5yovKZ5SgChFgstFsiDIWr/ZBqpJysvFemSgHX61mlmQ==}
     cpu: [x64]
     os: [win32]
 
-  '@anthropic-ai/claude-agent-sdk@0.3.220':
-    resolution: {integrity: sha512-glc7SdwPkOkLw8oxwLo9PKTdLJGqW/PIR4urWXFoRtX9YllwozsEVc5Tc1+EvLSkfrsxPJqQWqOgpjUOQXf1oA==}
+  '@anthropic-ai/claude-agent-sdk@0.3.309':
+    resolution: {integrity: sha512-Tou0fXBkxKJDcgT09v3Iv/Jd7bNgapgfAiHxGPctAADPFQhidfhZbcv7at1cVL0Lon5sbs+OzP/pEOigw2TI0A==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       '@anthropic-ai/sdk': '>=0.93.0'
@@ -7366,6 +7370,9 @@ packages:
   zod@4.6.5:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
+
   zustand@3.7.2:
     resolution: {integrity: sha512-PIJDIZKtokhof+9+60cpockVOq05sJzHCriyvaLBmEJixseQ1a5Kdov6fWZfWOu5SK9c+FhH1jU0tntLxRJYMA==}
     engines: {node: '>=12.7.0'}
@@ -7380,18 +7387,19 @@ packages:
 
 snapshots:
 
-  '@agentclientprotocol/claude-agent-acp@0.64.2(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))':
+  '@agentclientprotocol/claude-agent-acp@0.95.0(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))':
     dependencies:
-      '@agentclientprotocol/sdk': 1.9.0(zod@4.4.3)
-      '@anthropic-ai/claude-agent-sdk': 0.3.220(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))(zod@4.4.3)
-      zod: 4.4.3
+      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
+      '@anthropic-ai/claude-agent-sdk': 0.3.309(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))(zod@4.6.7)
+      diff: 9.0.0
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
 
   '@agentclientprotocol/codex-acp@2.2.2':
     dependencies:
-      '@agentclientprotocol/sdk': 1.9.0(zod@4.6.5)
+      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.5)
       '@openai/codex': 0.160.1
       cross-spawn: 7.0.6
       diff: 9.0.0
@@ -7399,13 +7407,17 @@ snapshots:
       vscode-jsonrpc: 9.0.1
       zod: 4.6.5
 
-  '@agentclientprotocol/sdk@1.9.0(zod@4.4.3)':
+  '@agentclientprotocol/sdk@2.0.2(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 
-  '@agentclientprotocol/sdk@1.9.0(zod@4.6.5)':
+  '@agentclientprotocol/sdk@2.0.2(zod@4.6.5)':
     dependencies:
       zod: 4.6.5
+
+  '@agentclientprotocol/sdk@2.0.2(zod@4.6.7)':
+    dependencies:
+      zod: 4.6.7
 
   '@ai-sdk/gateway@3.0.122(zod@4.4.3)':
     dependencies:
@@ -7480,44 +7492,44 @@ snapshots:
       package-manager-detector: 1.8.0
       tinyexec: 1.2.4
 
-  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.220':
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.309':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.220':
+  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.309':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.220':
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.309':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.220':
+  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.309':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.220':
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.309':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.220':
+  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.309':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.220':
+  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.309':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.220':
+  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.309':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk@0.3.220(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))(zod@4.4.3)':
+  '@anthropic-ai/claude-agent-sdk@0.3.309(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))(zod@4.6.7)':
     dependencies:
       '@anthropic-ai/sdk': 0.120.0(zod@4.4.3)
       '@modelcontextprotocol/sdk': 1.29.0(supports-color@10.2.2)(zod@4.4.3)
-      zod: 4.4.3
+      zod: 4.6.7
     optionalDependencies:
-      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.220
-      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.220
-      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.220
-      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.220
-      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.220
-      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.220
-      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.220
-      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.220
+      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.309
+      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.309
+      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.309
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.309
+      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.309
+      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.309
+      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.309
+      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.309
 
   '@anthropic-ai/sdk@0.120.0(zod@4.4.3)':
     dependencies:
@@ -7526,12 +7538,12 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  '@anthropic-ai/sdk@0.120.0(zod@4.6.5)':
+  '@anthropic-ai/sdk@0.120.0(zod@4.6.7)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
     optionalDependencies:
-      zod: 4.6.5
+      zod: 4.6.7
     optional: true
 
   '@anthropic-ai/sdk@0.91.1(zod@4.4.3)':
@@ -7953,12 +7965,12 @@ snapshots:
       react: 19.2.7
       tslib: 2.8.1
 
-  '@earendil-works/pi-ai@0.84.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.5))(supports-color@10.2.2)(ws@8.21.1)(zod@4.4.3)':
+  '@earendil-works/pi-ai@0.84.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.1)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
       '@aws-sdk/client-bedrock-runtime': 3.1048.0
       '@earendil-works/pi-telemetry': 0.84.4
-      '@google/genai': 1.52.0(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.5))(supports-color@10.2.2)
+      '@google/genai': 1.52.0(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)
       '@smithy/node-http-handler': 4.7.3
       http-proxy-agent: 7.0.2(supports-color@10.2.2)
       https-proxy-agent: 7.0.6(supports-color@10.2.2)
@@ -8452,14 +8464,14 @@ snapshots:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
 
-  '@google/genai@1.52.0(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.5))(supports-color@10.2.2)':
+  '@google/genai@1.52.0(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)':
     dependencies:
       google-auth-library: 10.9.1(supports-color@10.2.2)
       p-retry: 4.6.2
       protobufjs: 7.6.6
       ws: 8.21.1
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(supports-color@10.2.2)(zod@4.6.5)
+      '@modelcontextprotocol/sdk': 1.29.0(supports-color@10.2.2)(zod@4.6.7)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -8800,7 +8812,7 @@ snapshots:
 
   '@modelcontextprotocol/core@2.0.0':
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@modelcontextprotocol/ext-apps@1.7.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)':
     dependencies:
@@ -8833,7 +8845,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.5)':
+  '@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.7)':
     dependencies:
       '@hono/node-server': 1.19.15(hono@4.13.9)
       ajv: 8.20.0
@@ -8850,8 +8862,8 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.6.5
-      zod-to-json-schema: 3.25.2(zod@4.6.5)
+      zod: 4.6.7
+      zod-to-json-schema: 3.25.2(zod@4.6.7)
     transitivePeerDependencies:
       - supports-color
     optional: true
@@ -8899,9 +8911,9 @@ snapshots:
   '@openai/codex@0.160.1-win32-x64':
     optional: true
 
-  '@openma/common@0.11.1(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+  '@openma/common@0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@agentclientprotocol/sdk': 1.9.0(zod@4.6.5)
+      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
       '@radix-ui/react-collapsible': 1.1.20(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/react-virtual': 3.14.13(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       clsx: 2.1.1
@@ -8914,7 +8926,7 @@ snapshots:
       tailwind-merge: 3.6.0
       tar: 7.5.22
       use-stick-to-bottom: 1.1.4(react@19.2.7)
-      zod: 4.6.5
+      zod: 4.6.7
     optionalDependencies:
       '@anthropic-ai/sdk': 0.120.0(zod@4.4.3)
       '@opentelemetry/api': 1.9.1
@@ -8925,9 +8937,9 @@ snapshots:
       - '@types/react-dom'
       - supports-color
 
-  '@openma/common@0.11.1(@anthropic-ai/sdk@0.120.0(zod@4.6.5))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+  '@openma/common@0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.6.7))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@agentclientprotocol/sdk': 1.9.0(zod@4.6.5)
+      '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
       '@radix-ui/react-collapsible': 1.1.20(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/react-virtual': 3.14.13(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       clsx: 2.1.1
@@ -8940,9 +8952,9 @@ snapshots:
       tailwind-merge: 3.6.0
       tar: 7.5.22
       use-stick-to-bottom: 1.1.4(react@19.2.7)
-      zod: 4.6.5
+      zod: 4.6.7
     optionalDependencies:
-      '@anthropic-ai/sdk': 0.120.0(zod@4.6.5)
+      '@anthropic-ai/sdk': 0.120.0(zod@4.6.7)
       '@opentelemetry/api': 1.9.1
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -8953,7 +8965,7 @@ snapshots:
 
   '@openmatter/agent-claude@https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent-claude(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@openma/common': 0.11.1(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@openma/common': 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/agent': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/core': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/core(effect@3.22.2)
       effect: 3.22.2
@@ -8981,7 +8993,7 @@ snapshots:
 
   '@openmatter/agent@https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/agent(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(effect@3.22.2)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
-      '@openma/common': 0.11.1(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@openma/common': 0.11.1(patch_hash=df4ac8515912f2254c2dd7d8058c424367eb906de0017bee1fb43d56745b01e5)(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@opentelemetry/api@1.9.1)(@types/react-dom@19.2.4(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@openmatter/core': https://codeload.github.com/openma-ai/OpenMatter/tar.gz/620a0d02ace288ddfcdab4283989db3967190bc9#path:/packages/core(effect@3.22.2)
       effect: 3.22.2
     transitivePeerDependencies:
@@ -15228,14 +15240,16 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  zod-to-json-schema@3.25.2(zod@4.6.5):
+  zod-to-json-schema@3.25.2(zod@4.6.7):
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.7
     optional: true
 
   zod@4.4.3: {}
 
   zod@4.6.5: {}
+
+  zod@4.6.7: {}
 
   zustand@3.7.2(react@19.2.7):
     optionalDependencies:

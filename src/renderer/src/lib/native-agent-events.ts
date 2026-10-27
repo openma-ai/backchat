@@ -1,6 +1,7 @@
 import type { ToolEntry } from "./reduce-turn";
 
 export type NativeAgentProvider =
+  | "dsh"
   | "codex"
   | "claude"
   | "opencode"
@@ -45,6 +46,7 @@ export interface NativeAgentProgress {
 }
 
 export interface NativeAgentTranscriptUpdate {
+  childId?: string;
   provider: NativeAgentProvider;
   parentToolUseId: string;
   kind: NativeAgentTranscriptKind;
@@ -71,9 +73,13 @@ export interface NativeAgentContext {
   operation?: NativeAgentOperation;
   task?: string;
   agentType?: string;
+  /** Observed Claude async launch, retained by the owning session across patches. */
+  asyncLaunched?: boolean;
 }
 
 export interface NativeAgentUpdate {
+  /** Sticky launch fact for NativeAgentContext; not a child terminal status. */
+  asyncLaunched?: boolean;
   provider: NativeAgentProvider;
   operation?: NativeAgentOperation;
   toolCallId?: string;
@@ -155,11 +161,14 @@ export function detectClaudeCodeNativeAgentToolEvent(
     ];
   }
 
-  const name = normalizeToolName(tool.toolName ?? tool.title);
-  if (name === "task" || name === "agent") {
+  const claudeMeta = objectValue(objectValue(tool.meta).claudeCode);
+  const name = normalizeToolName(claudeMeta.toolName ?? tool.toolName ?? tool.title);
+  // I6/I10: an already attributed Claude child remains attributable when the
+  // next ACP patch omits its name. Never infer another provider's lifecycle.
+  if (name === "task" || name === "agent" || context?.provider === "claude") {
     const progress = detectClaudeProgress(tool, context);
     if (progress) return [progress];
-    const update = detectClaudeSpawn(tool, name, context);
+    const update = detectClaudeSpawn(tool, name === "task" ? "task" : "agent", context);
     if (!update.usage) return [update];
     const { usage, ...lifecycle } = update;
     return [
@@ -173,7 +182,6 @@ export function detectClaudeCodeNativeAgentToolEvent(
       },
     ];
   }
-  if (context?.provider === "claude") return detectContextualResult(tool, context);
   return [];
 }
 
@@ -189,6 +197,17 @@ export function detectClaudeCodeNativeAgentTranscript(
     asString(inner.parent_tool_use_id);
   if (!parentToolUseId) return [];
 
+  return decodeNativeAgentTranscript(event, parentToolUseId, "claude");
+}
+
+/** Decode standard ACP child content after the matching adapter proves attribution. */
+export function decodeNativeAgentTranscript(
+  event: unknown,
+  parentToolUseId: string,
+  provider: NativeAgentProvider,
+): NativeAgentTranscriptUpdate[] {
+  const inner = unwrapEvent(event);
+  const claudeMeta = objectValue(objectValue(inner._meta).claudeCode);
   const update = asString(inner.sessionUpdate) ?? asString(inner.type);
   if (update === "agent_message_chunk" || update === "agent_thought_chunk") {
     const content = objectValue(inner.content);
@@ -200,7 +219,7 @@ export function detectClaudeCodeNativeAgentTranscript(
     if (!text) {
       return inner.content && typeof inner.content === "object"
         ? [{
-            provider: "claude",
+            provider,
             parentToolUseId,
             kind: "content",
             content: inner.content,
@@ -212,7 +231,7 @@ export function detectClaudeCodeNativeAgentTranscript(
         : [];
     }
     return [{
-      provider: "claude",
+      provider,
       parentToolUseId,
       kind: update === "agent_thought_chunk" ? "thought" : "text",
       text,
@@ -228,7 +247,7 @@ export function detectClaudeCodeNativeAgentTranscript(
       asString(inner.id);
     if (!toolCallId) return [];
     return [{
-      provider: "claude",
+      provider,
       parentToolUseId,
       kind: "tool",
       toolCallId,
@@ -244,7 +263,7 @@ export function detectClaudeCodeNativeAgentTranscript(
   const usage = nativeAgentUsage(inner.usage ?? inner._usage);
   if (update === "usage_update" && usage) {
     return [{
-      provider: "claude",
+      provider,
       parentToolUseId,
       kind: "usage",
       usage,
@@ -467,15 +486,16 @@ function detectClaudeSpawn(
 ): NativeAgentUpdate {
   const input = objectValue(tool.rawInput);
   const response = claudeToolResponse(tool);
-  const failed = isFailed(tool.status);
+  const asyncLaunched = isClaudeAsyncLaunch(tool) || context?.asyncLaunched === true;
+  // A successful launcher tool is not a terminal edge for a background child.
+  // Explicit SDK child completion still wins over remembered launch history.
+  const responseCompleted = asString(response.status) === "completed";
+  const failed = !asyncLaunched && isFailed(tool.status);
   const claudeMeta = objectValue(objectValue(tool.meta).claudeCode);
   const nonExecutionKind = asString(claudeMeta.nonExecutionKind);
   const userFeedback = asString(claudeMeta.userFeedback);
   const cancelled = failed && nonExecutionKind !== undefined;
-  const asyncLaunch = isClaudeAsyncLaunch(tool);
-  const complete =
-    !asyncLaunch
-    && (tool.status === "completed" || asString(response.status) === "completed");
+  const complete = responseCompleted || (!asyncLaunched && tool.status === "completed");
   const usage = nativeAgentUsage({
     ...objectValue(response.usage),
     ...(response.totalTokens !== undefined ? { totalTokens: response.totalTokens } : {}),
@@ -484,6 +504,7 @@ function detectClaudeSpawn(
     provider: "claude",
     operation: "claude_agent",
     toolCallId: tool.toolCallId,
+    ...(asyncLaunched ? { asyncLaunched: true } : {}),
     childId:
       structuredChildIdFromMeta(tool)
       ?? context?.childId
@@ -527,6 +548,8 @@ function detectClaudeProgress(
   context?: NativeAgentContext,
 ): NativeAgentUpdate | undefined {
   const response = claudeToolResponse(tool);
+  // Terminal child evidence must not be hidden by final progress statistics.
+  if (asString(response.status) === "completed" || isClaudeAsyncLaunch(tool)) return undefined;
   const retry = objectValue(response.subagentRetry);
   const elapsedTimeSeconds = asNumber(response.elapsedTimeSeconds);
   const subagentType = asString(response.subagentType);

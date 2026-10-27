@@ -1,10 +1,9 @@
+import { TestAgentConnection as AgentSideConnection, type TestAgent as Agent } from "./legacy-agent-test-helper.js";
 import {
-  AgentSideConnection,
   PROTOCOL_VERSION,
   ndJsonStream,
-  type Agent,
   type ContentBlock,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import { describe, expect, it } from "vitest";
 import { AcpSessionImpl } from "./session";
 import type { ChildHandle } from "./types";
@@ -488,6 +487,7 @@ describe("AcpSessionImpl", () => {
 
     expect(pending).toEqual([
       {
+        "_openma.acp.notification": { session_id: "fresh-session" },
         sessionUpdate: "available_commands_update",
         availableCommands: [
           {

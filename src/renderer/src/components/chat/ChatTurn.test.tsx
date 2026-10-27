@@ -457,7 +457,7 @@ describe("TurnBlock", () => {
     expect(triggerClass).not.toContain("py-1");
   });
 
-  it("renders detected native subagents as links after the activity block", () => {
+  it("renders detected native subagents as chips under the answer body", () => {
     sessionMock.subagents = [
       {
         parentSessionId: "session-1",
@@ -481,6 +481,7 @@ describe("TurnBlock", () => {
       <TurnBlock
         turn={turn({
           status: "running",
+          assistantText: "PARENT_RFD_OK",
           events: [
             {
               payload: {
@@ -500,8 +501,86 @@ describe("TurnBlock", () => {
     expect(html).toContain('data-subagent-links="true"');
     expect(html).toContain('data-subagent-link="native-a"');
     expect(html).toContain("Agent A");
+    expect(html).toContain('data-subagent-avatar="1_01"');
+    // Chip sits under the answer body (消息正文), not under Worked-for /
+    // process activity.
     expect(html.indexOf('data-subagent-links="true"')).toBeGreaterThan(
-      html.indexOf('data-tool-call-id="spawn-a"'),
+      html.indexOf("PARENT_RFD_OK"),
+    );
+    expect(html.indexOf('data-subagent-links="true"')).toBeGreaterThan(
+      html.indexOf('data-session-turn-answer="true"'),
+    );
+  });
+
+  it("shows an RFD synthetic child as a per-turn chip when this turn launched Subagent", () => {
+    sessionMock.subagents = [
+      {
+        parentSessionId: "session-1",
+        childSessionId: "child-rfd",
+        viewSessionId: "native-rfd",
+        avatarId: "2_01",
+        inheritance: "fresh",
+        task: "Reply CHILD_RFD_OK only",
+        status: "complete",
+        startedAt: 1_500,
+        updatedAt: 2_000,
+        native: {
+          provider: "dsh",
+          toolCallId: "rfd:child-rfd",
+          childThreadId: "child-rfd",
+          nickname: "Helper",
+        },
+      },
+      {
+        parentSessionId: "session-1",
+        childSessionId: "other-round",
+        viewSessionId: "native-other",
+        avatarId: "3_01",
+        inheritance: "fresh",
+        task: "other",
+        status: "complete",
+        startedAt: 50,
+        updatedAt: 60,
+        native: {
+          provider: "dsh",
+          toolCallId: "rfd:other-round",
+          childThreadId: "other-round",
+          nickname: "Other",
+        },
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "complete",
+          assistantText: "PARENT_RFD_OK",
+          startedAt: 1_000,
+          endedAt: 3_000,
+          events: [
+            {
+              payload: {
+                sessionUpdate: "tool_call",
+                toolCallId: "call_00_subagent",
+                kind: "other",
+                status: "completed",
+                title: "Subagent",
+                rawInput: {
+                  description: "Reply CHILD_RFD_OK only",
+                  prompt: "Reply CHILD_RFD_OK only",
+                },
+              },
+              receivedAt: 1_200,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('data-subagent-link="native-rfd"');
+    expect(html).toContain('data-subagent-avatar="2_01"');
+    expect(html).not.toContain('data-subagent-link="native-other"');
+    expect(html.indexOf('data-subagent-links="true"')).toBeGreaterThan(
+      html.indexOf("PARENT_RFD_OK"),
     );
   });
 

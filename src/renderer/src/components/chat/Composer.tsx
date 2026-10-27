@@ -133,6 +133,7 @@ export function Composer({
   pendingAsk,
   currentModeId,
   promptQueueEnabled = true,
+  compactChips = false,
   onUserInput = () => undefined,
   configOptions,
   onPickAgent,
@@ -166,6 +167,9 @@ export function Composer({
   pendingAsk?: BrokerAsk;
   currentModeId?: string;
   promptQueueEnabled?: boolean;
+  /** Side/narrow composers drop chip text labels (icon + chevron only) so
+   *  Workspace write / Standard / High do not truncate to "Stan". */
+  compactChips?: boolean;
   onUserInput?: (hasContent: boolean) => void;
   configOptions?: AcpSessionConfigOption[];
   onPickAgent: (agentId: string) => void;
@@ -1265,6 +1269,7 @@ export function Composer({
               composer unavailability disables the session configuration. */}
           <PermissionModeChip
             disabled={!!disabled}
+            compactChips={compactChips}
             agentId={currentAgentId}
             configOptions={effectiveConfigOptions}
             harnessProbe={currentEnabledAgent}
@@ -1289,6 +1294,7 @@ export function Composer({
             // what made 代我批准 look present but refuse to switch mid-turn —
             // exactly when you need to loosen approvals.
             disabled={!!disabled}
+            compactChips={compactChips}
             configOptions={effectiveConfigOptions}
             onSetConfigOption={(configId, value) => {
               if (lockedAgentId) return onSetConfigOption?.(configId, value);
@@ -1349,6 +1355,7 @@ export function Composer({
           ) : (
             <SessionRunChip
               disabled={!!disabled}
+              compactChips={compactChips}
               locked={!!lockedAgentId || agentLocked}
               authNeeded={authNeeded}
               authChecking={authChecking}

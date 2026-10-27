@@ -1,3 +1,4 @@
+import { dshNativeAgentUpdates, dshNativeAgentTranscript } from "./dsh-native-agent-events";
 import type { ToolEntry } from "./reduce-turn";
 import {
   detectClaudeCodeNativeAgentToolEvent,
@@ -225,8 +226,25 @@ export const claudeCodeRuntimeAdapter: AgentRuntimeAdapter = {
       || normalized.startsWith("cc-")
     );
   },
-  nativeAgentToolUpdates(tool, context) {
-    return detectClaudeCodeNativeAgentToolEvent(tool, context);
+  nativeAgentToolUpdates(tool, context, logicalTool) {
+    if (!logicalTool) return detectClaudeCodeNativeAgentToolEvent(tool, context);
+    // ACP v1 Tool Calls: updates are patches. Common's logical meta can be
+    // shallowly replaced, so retain the current patch's Claude evidence.
+    const logicalMeta = isRecord(logicalTool.meta) ? logicalTool.meta : {};
+    const patchMeta = isRecord(tool.meta) ? tool.meta : {};
+    const logicalClaude = isRecord(logicalMeta.claudeCode) ? logicalMeta.claudeCode : {};
+    const patchClaude = isRecord(patchMeta.claudeCode) ? patchMeta.claudeCode : {};
+    return detectClaudeCodeNativeAgentToolEvent({
+      ...logicalTool,
+      ...Object.fromEntries(Object.entries(tool).filter(([, value]) => value != null)),
+      meta: {
+        ...logicalMeta,
+        ...patchMeta,
+        // A response is one SDK result, not a field-by-field accumulator:
+        // do not carry isAsync from a stale launch into a later final result.
+        claudeCode: { ...logicalClaude, ...patchClaude },
+      },
+    }, context);
   },
   nativeAgentRawUpdates: claudeRawNativeAgentUpdates,
   nativeAgentTranscriptUpdates(event) {
@@ -333,7 +351,18 @@ export const kimiRuntimeAdapter: AgentRuntimeAdapter = {
   settleNativeAgentOnParentTurnComplete: false,
 };
 
+/** DSH publishes its own structured lifecycle and nested transcript metadata. */
+export const dshRuntimeAdapter: AgentRuntimeAdapter = {
+  ...genericAcpRuntimeAdapter,
+  provider: "dsh",
+  matches: (agentId) => ["dsh-acp", "dsh"].includes(normalizeAgentId(agentId)),
+  nativeAgentRawUpdates: dshNativeAgentUpdates,
+  nativeAgentTranscriptUpdates: dshNativeAgentTranscript,
+  settleNativeAgentOnParentTurnComplete: "missing_terminal",
+};
+
 const providerAdapters = [
+  dshRuntimeAdapter,
   codexRuntimeAdapter,
   claudeCodeRuntimeAdapter,
   openCodeRuntimeAdapter,

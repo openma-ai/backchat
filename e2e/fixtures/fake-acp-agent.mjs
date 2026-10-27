@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-import {
-  AgentSideConnection,
-  PROTOCOL_VERSION,
-  RequestError,
-  ndJsonStream,
-} from "../../packages/acp/node_modules/@agentclientprotocol/sdk/dist/acp.js";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+const acpRequire = createRequire(new URL("../../packages/acp/package.json", import.meta.url));
+const { agent: acpAgent, PROTOCOL_VERSION, RequestError, ndJsonStream } =
+  await import(pathToFileURL(acpRequire.resolve("@agentclientprotocol/sdk/unstable")).href);
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   StdioClientTransport,
@@ -492,4 +491,26 @@ const input = Writable.toWeb(process.stdout);
 const output = Readable.toWeb(process.stdin);
 const stream = ndJsonStream(input, output);
 
-new AgentSideConnection((connection) => new FakeAcpAgent(connection), stream);
+let fakeAgent;
+const app = acpAgent({ name: "backchat-fake-acp" }).onConnect(({ client }) => {
+  fakeAgent = new FakeAcpAgent({
+    sessionUpdate: (params) => client.notify("session/update", params),
+    requestPermission: (params) => client.request("session/request_permission", params),
+    extMethod: (method, params) => client.request(method, params),
+  });
+});
+for (const [method, handler] of Object.entries({
+  initialize: "initialize",
+  authenticate: "authenticate",
+  "session/new": "newSession",
+  "session/load": "loadSession",
+  "session/resume": "resumeSession",
+  "session/fork": "unstable_forkSession",
+  "session/prompt": "prompt",
+  "session/set_mode": "setSessionMode",
+  "session/set_config_option": "setSessionConfigOption",
+})) {
+  app.onRequest(method, ({ params }) => fakeAgent[handler](params));
+}
+app.onNotification("session/cancel", ({ params }) => fakeAgent.cancel(params));
+app.connect(stream);

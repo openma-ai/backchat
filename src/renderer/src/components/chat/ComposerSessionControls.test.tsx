@@ -197,6 +197,84 @@ describe("InlineComposerOptionControls", () => {
   });
 });
 
+describe("compactChips icon-only toolbar chips", () => {
+  it("keeps the Agent preset icon and aria-label but drops the visible label", () => {
+    const html = renderToStaticMarkup(
+      <InlineComposerOptionControls
+        disabled={false}
+        compactChips
+        configOptions={[
+          {
+            id: "agent",
+            name: "Agent",
+            type: "select",
+            currentValue: "standard",
+            options: [
+              { value: "standard", name: "Standard" },
+              { value: "code", name: "Code" },
+            ],
+          },
+        ]}
+        onSetConfigOption={() => undefined}
+      />,
+    );
+    const trigger = html.match(/<button\b[^>]*aria-label="Standard"[^>]*>/)?.[0];
+
+    expect(trigger).toContain('aria-label="Standard"');
+    expect(trigger).toContain('title="Standard"');
+    expect(html).toContain('data-dsh-preset-icon="standard"');
+    expect(html).toContain('data-backchat-icon="chevron-down"');
+    // Visible text label is gone; only aria/title carry the name.
+    expect(html).not.toContain('class="truncate">Standard<');
+  });
+
+  it("collapses a generic select to icon + chevron with a combined aria-label", () => {
+    const html = renderToStaticMarkup(
+      <InlineComposerOptionControls
+        disabled={false}
+        compactChips
+        configOptions={[
+          {
+            id: "theme",
+            name: "Theme",
+            category: "custom",
+            type: "select",
+            currentValue: "dark",
+            options: [
+              { value: "dark", name: "Dark" },
+              { value: "light", name: "Light" },
+            ],
+          },
+        ]}
+        onSetConfigOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Theme: Dark"');
+    expect(html).toContain('title="Theme: Dark"');
+    expect(html).toContain('data-backchat-icon="chevron-down"');
+    expect(html).not.toContain('class="truncate">Theme<');
+    expect(html).not.toContain('class="truncate text-fg-subtle">Dark<');
+  });
+
+  it("collapses PermissionModeChip fallback label while keeping aria-label", () => {
+    const html = renderToStaticMarkup(
+      <PermissionModeChip
+        disabled={false}
+        compactChips
+        agentId="claude"
+        configOptions={undefined}
+      />,
+    );
+    // Without session config options the chip falls back to settings default
+    // permission mode — still icon-only when compact.
+    expect(html).toMatch(/aria-label="[^"]+"/);
+    expect(html).toContain('data-backchat-icon="chevron-down"');
+    // No plain label span between icon and chevron.
+    expect(html).not.toMatch(/data-control-icon[\s\S]*?<span>[^<]+<\/span>\s*<[^>]*chevron-down/);
+  });
+});
+
 describe("SessionRunChip", () => {
   it("does not expose local agent command paths in the harness menu", () => {
     const command = "/Users/test/.oma/acp/bin/claude-agent-acp";
@@ -282,6 +360,43 @@ describe("SessionRunChip", () => {
 
     expect(html).toContain("text-danger");
     expect(html).toContain("GPT-5.3-Codex-Spark");
+  });
+
+  it("hides the thought_level/config label when compactChips is set", () => {
+    const html = renderToStaticMarkup(
+      <SessionRunChip
+        disabled={false}
+        locked={false}
+        compactChips
+        agents={[{
+          id: "claude",
+          label: "Claude",
+          command: "claude",
+          detected: true,
+        }]}
+        currentAgentId="claude"
+        configOptions={[{
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "high",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "high", name: "High" },
+          ],
+        }]}
+        onPickAgent={() => undefined}
+        onSetConfigOption={() => undefined}
+      />,
+    );
+
+    // aria-label still carries the summary (e.g. "... using High").
+    expect(html).toMatch(/aria-label="Run on [^"]* using High"/);
+    expect(html).toContain('data-composer-run-harness="true"');
+    expect(html).toContain('data-backchat-icon="chevron-down"');
+    // Visible truncated configLabel span is gone in compact mode.
+    expect(html).not.toContain("max-w-[140px] truncate");
   });
 });
 

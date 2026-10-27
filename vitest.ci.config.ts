@@ -24,6 +24,7 @@ export default defineConfig({
       "src/main/openma-*.test.ts",
       "src/main/direct-agent-runtime.test.ts",
       "src/renderer/src/lib/direct-task-projection.test.ts",
+      "src/renderer/src/lib/subagent-sessions.test.ts",
       "src/shared/openma-*.test.ts",
       "src/renderer/src/lib/openma-*.test.ts",
       "src/renderer/src/lib/remote-resource-routing.test.ts",

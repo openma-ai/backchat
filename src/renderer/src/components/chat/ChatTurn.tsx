@@ -28,7 +28,12 @@ import {
 } from "@/lib/chat-tool-presentation";
 import { promptCommandAnnotation } from "@/lib/prompt-command-annotation";
 import { latestPlanDocumentForRender } from "@/lib/session-plan";
+import { SubagentAvatar } from "@/components/SubagentAvatar";
 import { subagentActivityLabel } from "@/lib/session-workspace-normalization";
+import {
+  isParentSubagentLaunchTool,
+  isSyntheticSubagentToolCallId,
+} from "@/lib/subagent-sessions";
 import {
   selectAgentIdFor,
   selectAvailableCommandsFor,
@@ -226,8 +231,7 @@ export const TurnBlock = memo(function TurnBlock({
 
   const supplementalProcess =
     Boolean(planDocument) ||
-    rawEvents.length > 0 ||
-    hasTurnSubagentLinks(activityRendered, subagents);
+    rawEvents.length > 0;
   const resolvedOnFork = useMemo(
     () => (onForkTurn ? () => onForkTurn(turn.id) : onFork),
     [onFork, onForkTurn, turn.id],
@@ -393,19 +397,15 @@ export const TurnBlock = memo(function TurnBlock({
             />
           ) : null,
         renderProcessAfter: () => (
-          <>
-            <RawEventInspector events={rawEvents} />
-            <TurnSubagentLinks
-              turn={turn}
-              renderedToolCallIds={activityRendered.tools.map(
-                (tool) => tool.toolCallId,
-              )}
-              subagents={subagents}
-            />
-          </>
+          <RawEventInspector events={rawEvents} />
         ),
         renderAfterAnswer: () => (
           <>
+            <TurnSubagentLinks
+              turn={turn}
+              renderedTools={activityRendered.tools}
+              subagents={subagents}
+            />
             <TurnScheduleCards
               sessionId={turn.sessionId}
               tools={activityRendered.tools}
@@ -579,23 +579,20 @@ function assistantSurfacePrefix(
 
 function TurnSubagentLinks({
   turn,
-  renderedToolCallIds,
+  renderedTools,
   subagents,
 }: {
   turn: Turn;
-  renderedToolCallIds: string[];
+  renderedTools: TurnRender["tools"];
   subagents: SubagentActivity[];
 }) {
-  const toolCallIds = new Set(renderedToolCallIds);
-  const linkedSubagents = subagents.filter(
-    (activity) =>
-      activity.native?.toolCallId &&
-      toolCallIds.has(activity.native.toolCallId),
-  );
+  // Per-turn chips only: subagents this turn touched (via correlated tool
+  // ids, or synthetic RFD/DSH ids paired with this turn's Subagent tools).
+  const linkedSubagents = linkedSubagentsForTurn(turn, renderedTools, subagents);
   if (linkedSubagents.length === 0) return null;
 
   const openSubagent = (activity: SubagentActivity) => {
-    const label = subagentLinkLabel(activity);
+    const label = subagentActivityLabel(activity);
     const existingTab = sessionStore
       .sideTabs()
       .find(
@@ -613,20 +610,21 @@ function TurnSubagentLinks({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]"
+      className="mt-2 flex flex-wrap items-center gap-2"
       data-subagent-links
     >
       {linkedSubagents.map((activity) => {
-        const label = subagentLinkLabel(activity);
+        const label = subagentActivityLabel(activity);
         return (
           <button
             key={activity.viewSessionId}
             type="button"
             data-subagent-link={activity.viewSessionId}
-            className="rounded-sm text-info underline underline-offset-4 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/80 bg-bg-surface/70 px-2 py-0.5 text-[12px] text-fg hover:bg-bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             onClick={() => openSubagent(activity)}
           >
-            {label}
+            <SubagentAvatar avatarId={activity.avatarId} className="size-4" />
+            <span className="min-w-0 truncate">{label}</span>
           </button>
         );
       })}
@@ -634,20 +632,47 @@ function TurnSubagentLinks({
   );
 }
 
-function hasTurnSubagentLinks(
-  rendered: TurnRender,
+/** Subagents interacted with on this turn — never the full parent list. */
+function linkedSubagentsForTurn(
+  turn: Turn,
+  renderedTools: TurnRender["tools"],
   subagents: SubagentActivity[],
-): boolean {
-  const toolCallIds = new Set(rendered.tools.map((tool) => tool.toolCallId));
-  return subagents.some(
-    (activity) =>
-      activity.native?.toolCallId &&
-      toolCallIds.has(activity.native.toolCallId),
+): SubagentActivity[] {
+  const toolCallIds = new Set(renderedTools.map((tool) => tool.toolCallId));
+  const launchTools = renderedTools.filter((tool) =>
+    isParentSubagentLaunchTool({
+      title: tool.title,
+      toolName: tool.toolName,
+      rawInput: tool.rawInput,
+    }),
   );
-}
+  const claimedLaunchIds = new Set<string>();
+  const exact: SubagentActivity[] = [];
+  for (const activity of subagents) {
+    const id = activity.native?.toolCallId;
+    if (!id || !toolCallIds.has(id)) continue;
+    exact.push(activity);
+    claimedLaunchIds.add(id);
+  }
+  const unclaimedLaunches = launchTools.filter(
+    (tool) => !claimedLaunchIds.has(tool.toolCallId),
+  );
+  if (unclaimedLaunches.length === 0) return exact;
 
-function subagentLinkLabel(activity: SubagentActivity): string {
-  return subagentActivityLabel(activity);
+  // Pair leftover synthetic RFD/DSH ids 1:1 with this turn's unclaimed
+  // Subagent launch tools so chips still appear before correlation lands.
+  // Restrict by turn time window so other rounds' children stay off this chip row.
+  const turnStart = turn.startedAt;
+  const turnEnd = turn.endedAt ?? Number.POSITIVE_INFINITY;
+  const synthetic = subagents.filter((activity) => {
+    const id = activity.native?.toolCallId;
+    if (!id || !isSyntheticSubagentToolCallId(id)) return false;
+    if (exact.some((item) => item.viewSessionId === activity.viewSessionId)) {
+      return false;
+    }
+    return activity.startedAt >= turnStart && activity.startedAt <= turnEnd;
+  });
+  return [...exact, ...synthetic.slice(0, unclaimedLaunches.length)];
 }
 
 function TurnFooter({

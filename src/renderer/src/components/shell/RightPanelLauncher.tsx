@@ -1,5 +1,8 @@
+import { useState } from "react";
 import {
+  BotIcon,
   CalendarClockIcon,
+  ChevronLeftIcon,
   FileIcon,
   FolderIcon,
   BrowserIcon,
@@ -59,6 +62,7 @@ export function RightPanelLauncher({
   sourceAttachments?: PromptAttachment[];
 }) {
   const { t } = useI18n();
+  const [view, setView] = useState<"actions" | "subagents">("actions");
   const providerSourceRefs = artifacts.sources ?? [];
   const sourcePaths = new Set([
     ...sourceAttachments.map((attachment) => attachment.path),
@@ -92,11 +96,74 @@ export function RightPanelLauncher({
     sourceAttachments.length > 0
     || providerSources.length > 0;
 
+  if (view === "subagents") {
+    return (
+      <div
+        id="new-tab-page-panel"
+        role="tabpanel"
+        data-right-panel-launcher-list
+        data-new-view="subagents"
+        className="oma-scrollbar h-full overflow-y-auto pb-8 pt-3"
+      >
+        <div className="space-y-1 pl-2.5 pr-2">
+          <button
+            type="button"
+            data-new-subagents-back
+            aria-label={t("rightPanel.backToNew")}
+            onClick={() => setView("actions")}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-surface/60 hover:text-fg"
+          >
+            <ChevronLeftIcon className="size-3.5" />
+            {t("rightPanel.backToNew")}
+          </button>
+          <h2 className="ml-2 text-xs font-medium text-fg-muted">
+            {t("rightPanel.currentSubagents")}
+          </h2>
+          <div data-new-subagents-list className="mt-1 space-y-0.5">
+            {agentWorkItems.map((item) => {
+              const activity = subagents.find(
+                (candidate) => candidate.childSessionId === item.id,
+              );
+              return (
+                <ResourceRow
+                  key={`work-item:${item.id}`}
+                  label={
+                    item.title
+                    || activity?.native?.nickname
+                    || activity?.task
+                    || item.id
+                  }
+                  hint={agentResourceHint(item.status, activity)}
+                  icon={activity
+                    ? <SubagentAvatar avatarId={activity.avatarId} className="size-4" />
+                    : <MessageSquareIcon className="size-4" />}
+                  onClick={activity ? () => onPickSubagent(activity) : undefined}
+                />
+              );
+            })}
+            {subagents
+              .filter((activity) => !canonicalAgentIds.has(activity.childSessionId))
+              .map((activity) => (
+                <ResourceRow
+                  key={`subagent:${activity.viewSessionId}`}
+                  label={subagentLabel(activity)}
+                  hint={agentResourceHint(activity.status, activity)}
+                  icon={<SubagentAvatar avatarId={activity.avatarId} className="size-4" />}
+                  onClick={() => onPickSubagent(activity)}
+                />
+              ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       id="new-tab-page-panel"
       role="tabpanel"
       data-right-panel-launcher-list
+      data-new-view="actions"
       className="oma-scrollbar h-full overflow-y-auto pb-8 pt-3"
     >
       <section
@@ -136,6 +203,15 @@ export function RightPanelLauncher({
           icon={<SquareTerminalIcon className="size-4" />}
           onClick={() => onPick("terminal")}
         />
+        {hasAgents && (
+          <NewAction
+            type="subagents"
+            label={t("rightPanel.subagents")}
+            hint={t("rightPanel.subagentsHint")}
+            icon={<BotIcon className="size-4" />}
+            onClick={() => setView("subagents")}
+          />
+        )}
       </section>
 
       <div data-resource-list className="mt-5 space-y-4">
@@ -283,7 +359,7 @@ function NewAction({
   onClick,
   disabled,
 }: {
-  type: "chat" | "file" | "browser" | "terminal";
+  type: "chat" | "file" | "browser" | "terminal" | "subagents";
   label: string;
   hint: string;
   icon: React.ReactNode;

@@ -427,6 +427,17 @@ and `/follow-up` commands in the catalogue only switch pi's drain modes and
 are not steer inputs (I10). Alt+Enter in the composer sends the `queue`
 intent for every harness.
 
+### SDK2 callback ordering at the compatibility seam
+
+The SDK2 builder routes notifications through asynchronous handlers while
+resolving RPC responses independently. If a prompt response overtakes an
+earlier session update, the runtime's active prompt counter becomes zero and
+routes that update out-of-band with no owning turn. The renderer then shows a
+completed prompt without its answer and a separate orphaned answer. The SDK2
+compatibility patch therefore drains preceding session-update callbacks before
+passing an RPC response to the SDK. Requests such as permission prompts remain
+unblocked. This preserves I1 at the transport seam; changing queue guards or
+assigning an empty-ID event to the most recent turn would not establish I11.
 ### Idle process reclamation (2026-10-25)
 An ACP process is eligible after 20 minutes of inactivity, checked every minute,
 only with negotiated resume/load support and a native session ID. This is

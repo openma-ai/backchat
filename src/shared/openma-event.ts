@@ -1350,7 +1350,7 @@ export function nativeAgentUpdateToOpenMAEvent(
         data: {
           kind: "agent",
           missing_terminal: true,
-          reason: "parent_turn_completed",
+          reason: update.reason ?? "parent_turn_completed",
         },
       });
     default:

@@ -103,3 +103,77 @@ Backchat keeps three levels separate:
   screenshots of the right rail: the GUI can create `Side chat`, cannot create
   native subagents, and passes ACP fork parameters only when the active runtime
   advertises session fork support.
+
+## DSH adapter extension (0.4.39)
+
+DSH is now an explicitly supported native-subagent provider as well. This is
+not ACP v1 subagent semantics: the installed `@openma/deepseek-harness-acp`
+0.4.39 `SessionProjection` publishes its own structured extension:
+
+- `session_info_update._meta.dsh.event = "subagent/lifecycle"` with
+  `subagent.{runId,childSessionId,provider,local,state,stopReason?}`.
+- Child text, thought and tool updates retain their ordinary ACP shape and
+  carry `_meta.dsh.subagent.{childSessionId,parentToolCallId,provider}`.
+- The common runtime already advertises `_meta["subagent-transcript"]: true`,
+  which enables this child stream in DSH. No launch-tool text parsing is used.
+
+Backchat translates these into canonical WorkItems and child transcript events,
+including history replay. Each run uses the adapter's `subagent:<runId>` anchor;
+the child session identity remains the durable `childSessionId`. Explicit
+`completed`, `error`, and `aborted` endings map to complete, error, and cancelled.
+Other endings retain their reason and use unknown rather than claiming success.
+The lifecycle notification does not end the parent's prompt (I1/I5).
+
+Scope: current wire consumption, not full DSH parity. The installed adapter's
+lifecycle end projection does not forward `lastAssistantMessage`, despite the
+runtime supplying it; remote children without streamed content therefore may
+have no displayed answer. Nested parent hierarchy, partial-stop presentation,
+child usage/plan coverage and direct child control need further work. This
+change does not modify or republish the separately maintained DSH adapter.
+
+## Current RFD path: Claude 0.95 and DSH opt-in
+
+Backchat advertises `clientCapabilities.subagents: {}` only for Claude and
+DSH. Codex remains on its existing compatibility path pending upstream #655;
+no additional AIR-draft adapter is introduced here.
+
+The current Active RFD is not stable ACP v1. It uses `subagent_update`,
+child-addressed ordinary updates, and `session_message` upserts/chunks. The
+client keeps association metadata (including capabilities and work state)
+separate from the displayed latest execution. Idle does not delete identity;
+a missing stop reason is not displayed as successful completion. Unsupported
+child mutations are not offered, and ordinary prompt input stays disabled.
+
+SDK 2.0.2 removes the old connection classes. A tracked pnpm patch to common
+0.11.0 migrates the runtime/probes to the new `/unstable` client builder and
+retains outer notification session IDs even without notification metadata.
+The patch is applied on clean install; it is not a registry installation edit.
+Publish these changes in common and remove the local patch when available.
+
+RFD wire events are retained as versioned `vendor.event` records in namespace
+`subagent_sessions` until common owns a canonical association/message schema.
+The raw notification context is retained. Replay prefers these scoped records
+over the duplicate root-oriented raw projection. Message content uses upsert
+and chunk semantics, not assistant-token concatenation; it has a distinct UI
+section and retains non-text content. Child config, plan, tool, thought and
+message streams do not overwrite the root session's metadata/transcript.
+
+Validation includes actual Claude 0.95 `NativeSubagentRuntime` producer code
+against Backchat, shared-runtime SDK wire tests, and deterministic lifecycle,
+nullable patch, nested ownership, reuse and replay tests. These are not live
+model or Electron end-to-end acceptance. The attempted live Claude smoke was
+blocked by its SDK process receiving SIGKILL during setup. No success is
+inferred from a mock transcript.
+
+### SDK2 ordering and startup regression coverage
+
+The SDK2 client builder dispatches session notifications independently of RPC
+response resolution. Backchat's common compatibility patch delays delivery of
+a response until preceding session-update callbacks have completed. This
+maintains I1 (prompt response is the boundary) without inferring completion
+from queue snapshots or moving output to an arbitrary completed turn.
+
+RFD routing also requires an explicit child association (I11). A missing or
+stale root wire session ID alone cannot turn root traffic into child traffic.
+Replay does not suppress canonical root content solely because an older build
+incorrectly stored a matching RFD vendor record.
