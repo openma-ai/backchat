@@ -19,6 +19,7 @@ import { openBrowserAwareUrl } from "@/lib/browser-open";
 import { splitInlineVisualizations } from "@/lib/inline-visualization";
 import { resolveMarkdownLinkTarget } from "@/lib/markdown-link-target";
 import { previewLocalFile } from "@/lib/file-preview";
+import { cn } from "@/lib/utils";
 import { InlineVisualizationView } from "./InlineVisualizationView";
 import { MarkdownLinkFavicon } from "./MarkdownLinkFavicon";
 import { MarkdownLinkMenu } from "./MarkdownLinkMenu";
@@ -54,6 +55,20 @@ export const MARKDOWN_BLOCK_RHYTHM = CHAT_MARKDOWN_BLOCK_RHYTHM;
 export const MARKDOWN_PROSE_TYPE = CHAT_MARKDOWN_PROSE_CLASS;
 
 export const ASSISTANT_MARKDOWN_CLASS = CHAT_ASSISTANT_MARKDOWN_CLASS;
+
+/** The prompt bubble quotes what the user typed, so it reads at the same tier
+ *  as the answer — one reading tier across the transcript — but at the
+ *  bubble's own density.
+ *
+ *  `whitespace-pre-wrap` is the load-bearing part: markdown folds a single
+ *  newline into a space, and a prompt is not prose. The line structure the
+ *  user wrote is part of the message, so the bubble puts those newlines
+ *  back instead of silently reflowing the prompt into one paragraph. */
+export const USER_PROMPT_MARKDOWN_CLASS = cn(
+  "space-y-1.5 whitespace-pre-wrap break-words",
+  MARKDOWN_PROSE_TYPE,
+  MARKDOWN_BLOCK_RHYTHM,
+);
 
 export function MarkdownCwdProvider({
   cwd,

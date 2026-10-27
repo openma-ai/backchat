@@ -485,6 +485,17 @@ describe("groupSidebarSessions", () => {
     expect(source).not.toContain("<RepositoryHoverCard");
   });
 
+  it("shows a session title as readable text, not as markdown syntax", () => {
+    const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const pairRow = source.slice(source.indexOf("function PairSidebarRow"), source.indexOf("function SessionRow"));
+    const sessionRow = source.slice(source.indexOf("function SessionRow"));
+
+    expect(pairRow).toContain("markdownToPlainText(row.label)");
+    expect(sessionRow).toContain("markdownToPlainText(row.label)");
+    // The stored title stays raw: renaming edits what the session is called.
+    expect(source).toContain("title: s.label");
+  });
+
   it("gives every row that has a ⋯ menu the same menu on right-click", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     for (const [start, end] of [
