@@ -1,6 +1,6 @@
 # 贡献指南
 
-**English.** Canonical contribution guide for the openma-ai org. It lives in `open-managed-agents` first; copy it to other org repos or an org `.github` repo and replace only **本仓库**. Shared rules: conventional-commit titles, squash merge, small PRs, green CI with a root cause for failures, a compatibility check on dependency bumps plus a follow-up bump downstream after release, private security reports, an evidence report on every PR before merge, and linking fixed issues with `Closes`/`Fixes` (or the Development sidebar) so they auto-close on merge into `main`.
+**English.** Canonical contribution guide for the openma-ai org. It lives in `open-managed-agents` first; copy it to other org repos or an org `.github` repo and replace only **本仓库**. Shared rules: conventional-commit titles, squash merge, small PRs, green CI with a root cause for failures, a compatibility check on dependency bumps plus a follow-up bump downstream after release, private security reports, an evidence report on every PR before merge (UI changes need named screenshots/recordings; see Screenshots & recordings), and linking fixed issues with `Closes`/`Fixes` (or the Development sidebar) so they auto-close on merge into `main`.
 
 以下各节是组织约定。「本仓库」只适用于 `backchat`。
 
@@ -60,7 +60,7 @@ Closes #123
 
 **不要手工关。** PR 已经关联了就不要手动 Close issue；让合并去关。若过去有 PR 已合并但没写关键词、issue 仍开着，维护者可以用 completed 原因关闭，并在关闭说明里写上落地的 PR（可选；以后以模板为准，避免再漏）。
 
-证据报告里有关联 issue 时，加上一行「关联 issue」：`Closes #N` / `Fixes #N`，或写明已通过 Development 侧栏关联。
+证据报告里有关联 issue 时，加上一行「关联 issue」：`Closes #N` / `Fixes #N`，或写明已通过 Development 侧栏关联。截图与录屏是证据，**不能**代替 `Closes #N` / Development 关联（见「截图与录屏要求」）。
 
 ## 证据报告 / Evidence report
 
@@ -85,13 +85,15 @@ Closes #123
 - 当前 head SHA。
 - 该 SHA 上的 CI run 链接，写明 workflow 和 job。旧 push 的绿 run 不算。
 - 跑过的测试名称和通过数（例如 `8 files / 42 tests`）。本地和 CI 都写。
-- 改了 UI 或可见行为时，把截图或录屏嵌进 PR。可以直接拖进 GitHub。需要稳定链接时，推到孤立分支 `pr-assets`：
+- 改了 UI 或可见行为时，按「截图与录屏要求」附上指定状态的截图或录屏，并在证据报告里列出拍了哪些。纯逻辑 / CI / 仅文档且无可见界面变化时，写「不适用」并说明原因。截图不能代替 `Closes #N`。
+- 图片可直接拖进 GitHub PR 描述。需要稳定链接时，推到孤立分支 `pr-assets`：
 
   ```bash
   git checkout --orphan pr-assets
   git rm -rf .
   mkdir -p pr-<编号>
   # 只放 png / webm。不要放密钥，也不要放未剪辑的大体积录屏。
+  # 文件名：pr-<编号>-<surface>-<state>.png（见「截图与录屏要求」）
   git add pr-<编号>
   git commit -m "pr-assets: <编号>"
   git push -u origin pr-assets
@@ -122,6 +124,46 @@ Closes #123
 > **未验证的部分。** 这是 CI 用的 MinIO 镜像，不是产品运行时依赖。没有改 S3 条件写相关的产品代码，也就没有另做产品级 S3 手工验证。
 >
 > **风险与回滚。** 只影响存储集成测试。revert 该提交即回到旧镜像引用。
+
+## 截图与录屏要求 / Screenshots & recordings
+
+**English.** Any PR that changes renderer UI, layout, menus, composer, sidebar, chat transcript, settings, dialogs, or theme **must** embed named screenshots (or a short webm when motion/timing is the bug) that match the current head SHA. Visible-UI bug issues should attach repro shots when filed. Pure logic / CI / docs-only PRs with no visible surface write 「不适用」 and why. Screenshots are evidence only — they do **not** replace `Closes #N` / Development linking.
+
+任何改动 renderer / UI / 布局 / 菜单 / composer / 侧栏 / 聊天 transcript / 设置 / 对话框 / 主题 的 PR，**合并前必须**在证据报告里附上对应截图（或短 webm）。可见 UI 的 bug issue 开单时就应附复现截图。截图是验证证据，**不能**代替 `Closes #N`。
+
+### 何时必须 / When required
+
+- **PR 必附：** 只要改了上述可见界面（含样式、间距、图标、文案排版、交互 chrome），证据报告里就要有截图；缺图或图还停在旧 SHA 上，不合并。
+- **Issue 开单：** 可见 UI 的缺陷，报告人应在开 issue 时附上复现截图或录屏（见 `.github/ISSUE_TEMPLATE/bug_report.md`）。能截图却只写散文、没有图，维护者可以要求补图后再排期。
+- **不适用：** 纯逻辑、纯 CI、仅文档、且**没有任何**可见表面变化时，在「验证证据 → UI」写「不适用」并给一句原因（例如「只改 `ci.yml`，无 renderer」）。不要空着这一项。
+
+### 要拍什么 / What to capture
+
+改到哪块表面，就按下面清单拍对应状态；作者必须在证据报告里**列出实际附了哪些**（勾选 PR 模板清单，或逐条写出文件名）。未触及的状态写「不适用：未改该状态」。
+
+1. **Before / after（同视口）** — 修视觉 bug 时：同一窗口尺寸、同一 locale（若涉及 i18n），对比修复前后。
+2. **Default / idle** — 改动表面的默认静止态。
+3. **Hover / focus / open menu** — 改了交互 chrome 时：侧栏 `⋯`、hover card、composer picker、焦点环等。
+4. **Selected / active / running** — 选中侧栏行、streaming 回合、work-panel 打开、进行中状态等。
+5. **Empty / error / loading** — 改了空态、错误态或加载态时各拍一张。
+6. **Dialog / modal** — 整框：标题、字段、主按钮 + 次按钮、关闭/取消。
+7. **Light and dark** — 应用有双主题且改动是视觉向的：两主题都拍；若只验了一种，写明「仅验证 light」或「仅验证 dark」。
+8. **zh-CN and en** — 文案或布局可能 reflow 时：两种 locale 都拍；若只验了一种，写明「仅验证 zh-CN」或「仅验证 en」。
+9. **Nested / multi-panel** — 相关时：例如 subagent 子卡与父 transcript 同时可见；设置左侧导航 + 右侧内容同框。
+10. **Regression neighbors** — 一张相邻、本 PR **未改**但必须仍对齐的控件（例如同组侧栏兄弟行），用来证明没有挤歪邻居。
+
+### 格式与放置 / Format & placement
+
+- **优先 PNG 静图**嵌进 PR 描述；只有运动/时序本身是 bug 时才用短 **webm**。
+- **文件名：** `pr-<number>-<surface>-<state>.png`，例如 `pr-87-subagent-child-idle.png`、`pr-87-sidebar-row-hover.png`。
+- 可用孤立分支 `pr-assets` + `raw.githubusercontent.com` 链接（步骤见上节「验证证据」）。
+- 证据报告里**每张图一行说明**：拍的是什么状态、审稿人应看哪里（对齐、颜色、文案、裁切等）。
+- 证据报告里的 **Head SHA 必须与截图对应的构建一致**；推了新 commit 就要重截或注明「截图仍对应该 SHA」。
+
+### Issue 开单时的截图 / Screenshots when filing issues
+
+- **可见 bug：** 至少一张坏掉状态的截图，并写清 OS 与 Backchat 版本 / commit；理想情况再附一张标注过的局部裁切 + 一张完整窗口。
+- 能截图时，**不要**只靠文字描述 UI 缺陷就开单。
 
 ## CI / 必须是绿的
 
@@ -239,4 +281,4 @@ Workflow `CI`（`.github/workflows/ci.yml`；`pull_request`、`push` 到 `main`�
 
 调试端口见 #26（`5500c48`）和 `src/main/remote-debugging.ts`、`src/main/index.ts`。`resolveRemoteDebugging` 在打包应用或 `devBuild !== true` 时默认返回 null，`index.ts` 只在返回值非空时追加 `remote-debugging-address` 与 `remote-debugging-port`。`BACKCHAT_REMOTE_DEBUGGING_PORT` 匹配 `^[1-9]\d{0,4}$` 且数值不超过 65535 时，地址固定为 `127.0.0.1`。开发默认端口常量是 `9222`；`BACKCHAT_TEST_HOOKS=1` 时不使用这个默认端口。`.gitignore` 忽略 `.env` 和 `.env.*`，并列出例外 `!.env.example`；2026-10-02 工作树里没有 `.env.example`。仓库里没有 Dockerfile。`package.json` 的 `private: true`，workflow 里没有 npm publish。
 
-可复现的缺陷用 GitHub Issue。`README.md` 要求附上 OS、Backchat build、agent/harness、project type，以及最小复现。模板是 `.github/ISSUE_TEMPLATE/bug_report.md`（标签 `bug`，仓库里已有这个 label）。本仓库没有 `.github/ISSUE_TEMPLATE/config.yml`。`README.md` 没有 Discord 链接。
+可复现的缺陷用 GitHub Issue。`README.md` 要求附上 OS、Backchat build、agent/harness、project type，以及最小复现。可见 UI 缺陷还要按「截图与录屏要求」附复现截图。模板是 `.github/ISSUE_TEMPLATE/bug_report.md`（标签 `bug`，仓库里已有这个 label）。本仓库没有 `.github/ISSUE_TEMPLATE/config.yml`。`README.md` 没有 Discord 链接。
