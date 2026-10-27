@@ -448,7 +448,10 @@ function canonicalAcpUpdateEvent(
   const messagePhase = codexMessagePhase(inner);
 
   if (rawType === "agent_message_chunk") {
-    const notice = extractAcpSystemNotice(message.event);
+    const notice = extractAcpSystemNotice(message.event, {
+      outOfTurn: !message.turn_id,
+      harness: options.harness,
+    });
     if (notice) {
       return createOpenMAEvent({
         ...base,

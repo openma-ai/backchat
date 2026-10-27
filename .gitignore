@@ -17,3 +17,5 @@ playwright-report/
 
 # Generated tenant sidebar screenshots from Electron tests.
 /artifacts/tenant-sidebar/
+
+coverage/

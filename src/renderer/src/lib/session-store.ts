@@ -3609,7 +3609,11 @@ export class SessionStore {
         // Turn event list. The reducer already understands the canonical
         // envelope, so replay does not need to reconstruct an ACP payload.
         if (parsedCanonical.kind === "text") {
-          const split = splitAcpSystemNoticeText(parsedCanonical.text);
+          const split = splitAcpSystemNoticeText(parsedCanonical.text, {
+            outOfTurn: !canonical.turn_id,
+            harness: this.#sessions.get(sessionId)?.agent_id,
+            phase: parsedCanonical.phase,
+          });
           if (split.notice) {
             notify(split.notice);
           }
@@ -3703,7 +3707,10 @@ export class SessionStore {
         // `agent_message` / `agent_thought` rows.
         if (r.type === "agent_message") {
           const text = (data as { text?: string })?.text ?? "";
-          const split = splitAcpSystemNoticeText(text);
+          const split = splitAcpSystemNoticeText(text, {
+            harness: this.#sessions.get(sessionId)?.agent_id,
+            coalesced: true,
+          });
           if (split.notice) {
             notify(split.notice);
           }
@@ -3720,7 +3727,10 @@ export class SessionStore {
         // row's `data`. They remain supported for pre-canonical histories.
           const parsed = parseAcpEvent(data);
           if (parsed.kind === "text") {
-            const split = splitAcpSystemNoticeText(parsed.text);
+            const split = splitAcpSystemNoticeText(parsed.text, {
+              harness: this.#sessions.get(sessionId)?.agent_id,
+              phase: parsed.phase,
+            });
             if (split.notice) {
               notify(split.notice);
             }
@@ -3984,7 +3994,11 @@ export class SessionStore {
         const updateType = sessionUpdateType(ev.event);
         let parsed = parseAcpEvent(semanticEvent);
         if (parsed.kind === "text") {
-          const split = splitAcpSystemNoticeText(parsed.text);
+          const split = splitAcpSystemNoticeText(parsed.text, {
+            outOfTurn: !ev.turn_id,
+            harness: this.#sessions.get(ev.session_id)?.agent_id,
+            phase: parsed.phase,
+          });
           if (split.notice) {
             this.#showNotice(ev.session_id, split.notice, "warning");
             if (!split.transcript) break;

@@ -1989,6 +1989,53 @@ describe("SessionManager prompt queue", () => {
     }
   });
 
+  it("reports Codex harness notice routes in development mode", async () => {
+    const warning =
+      "Warning: Codex couldn't save diagnostic logs to its local database. " +
+      "Use /feedback with logs included before closing Codex, or run " +
+      "`codex doctor` for diagnostics.";
+    const fake = createControllableAcpSession({
+      promptEvents: [{
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: `${warning}\n\n` },
+      }],
+    });
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const manager = new SessionManager({
+      send: vi.fn(),
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+    const stderrWrite = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      await manager.start({
+        session_id: "sess-codex-notice-route",
+        agent_id: "codex-acp",
+        cwd: "/repo",
+      });
+      vi.stubEnv("NODE_ENV", "development");
+      const prompting = manager.prompt({
+        session_id: "sess-codex-notice-route",
+        turn_id: "turn-codex-notice-route",
+        text: "Continue",
+      });
+      await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+      fake.releaseNext();
+      await prompting;
+
+      expect(stderrWrite).toHaveBeenCalledWith(
+        expect.stringContaining("route=composer_notice"),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+      stderrWrite.mockRestore();
+    }
+  });
+
   it("leaves Codex feature configuration under the harness owner's control", async () => {
     const fake = createControllableAcpSession();
     mocks.runtimeStart.mockClear();
@@ -2105,15 +2152,19 @@ describe("SessionManager prompt queue", () => {
   });
 
   it("classifies ACP event routes for boundary observability", () => {
-    expect(
-      acpEventUiRoute({
-        sessionUpdate: "agent_message_chunk",
-        content: {
-          type: "text",
-          text: "Warning: Skill descriptions were shortened to fit the skills context budget.",
-        },
-      }),
-    ).toBe("composer_notice");
+    const warning = {
+      sessionUpdate: "agent_message_chunk",
+      content: {
+        type: "text",
+        text: "Warning: Skill descriptions were shortened to fit the skills context budget.\n\n",
+      },
+    };
+    expect(acpEventUiRoute(warning, { harness: "codex-acp" })).toBe(
+      "composer_notice",
+    );
+    expect(acpEventUiRoute(warning, { harness: "claude-acp" })).toBe(
+      "transcript",
+    );
     expect(acpEventUiRoute({ sessionUpdate: "usage_update", used: 12 })).toBe(
       "session_state",
     );
