@@ -79,9 +79,10 @@ interface CachedRepositoryImage {
 }
 
 export interface RepositoryImageCache {
-  /** Last known image for a folder. The first lookup waits for `gh`; after
-   *  that the cached value is returned immediately and refreshed in the
-   *  background once older than `refreshAfterMs`. */
+  /** Last known CDN artwork URL for a folder. Cold miss may call `gh` once
+   *  to discover custom OG (else owner avatar URL); afterwards `get` returns
+   *  the cached https URL immediately. TTL refresh is background-only.
+   *  The <img> loads that CDN URL; Chromium's HTTP cache holds the bytes. */
   get(cwd: string): Promise<string | null>;
   /** Settles when no refresh is in flight (tests, shutdown). */
   idle(): Promise<void>;
@@ -89,9 +90,11 @@ export interface RepositoryImageCache {
   flush(): Promise<void>;
 }
 
-/** Main-owned last-known-good cache for repository artwork. A renderer reload
- *  or app restart renders avatars from disk without a `gh` call, and a failed
- *  refresh never replaces a good image with nothing. */
+/** Main-owned last-known-good cache of repository artwork *URLs* (custom OG
+ *  preferred, else owner avatar on avatars.githubusercontent.com). Sidebar
+ *  <img> uses the CDN URL directly; we do not download bytes ourselves.
+ *  A renderer reload serves the cached URL without `gh`; a failed refresh
+ *  never replaces a good URL with nothing. */
 export function createRepositoryImageCache(options: {
   file: string;
   read?: (cwd: string) => Promise<string | null>;
@@ -106,7 +109,7 @@ export function createRepositoryImageCache(options: {
   const retryAfterFailureMs = options.retryAfterFailureMs ?? 10 * 60_000;
   const inflight = new Map<string, Promise<string | null>>();
   /** In-memory only: last failed attempt, so a broken `gh` is not re-run on
-   *  every render while the cached value keeps serving. */
+   *  every sidebar paint while the cached CDN URL keeps serving. */
   const failedAt = new Map<string, number>();
   let entries: Map<string, CachedRepositoryImage> | null = null;
   let dirty = false;
