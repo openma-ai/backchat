@@ -773,9 +773,33 @@ describe("session config options stay live mid-turn", () => {
     );
     const props = control.slice(0, control.indexOf("/>"));
 
-    expect(props).toContain("disabled={false}");
+    // Disabled follows the composer being locked (native subagent, dead
+    // session), never the turn being in flight.
+    expect(props).toContain("disabled={!!disabled}");
+    expect(props).not.toContain("disabled={false}");
     expect(props).not.toContain("disabled={!!running}");
     expect(props).not.toContain("disabled={running");
+  });
+});
+
+describe("side composer compactChips", () => {
+  it("passes compactChips from the side surface flag", () => {
+    const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
+
+    expect(source).toContain("compactChips={isSide}");
+    expect(source).not.toContain("hideConfigChips");
+  });
+
+  it("forwards compactChips into the toolbar config chips", () => {
+    const source = readFileSync(resolve(__dirname, "Composer.tsx"), "utf8");
+
+    expect(source).toContain("compactChips?: boolean;");
+    expect(source).toContain("compactChips = false");
+    expect(source).toContain("compactChips={compactChips}");
+    // Chips stay visible for native/managed composers; only labels collapse.
+    expect(source).not.toContain("hideConfigChips");
+    expect(source).toContain("<PermissionModeChip");
+    expect(source).toContain("<InlineComposerOptionControls");
   });
 });
 

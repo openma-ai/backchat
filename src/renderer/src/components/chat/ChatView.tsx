@@ -464,6 +464,7 @@ export function ChatView({
         isSessionComposerDisabled(active?.status)
       }
       running={!isNativeSubagent && (active?.status === "running" || hasActiveTurn)}
+      compactChips={isSide}
       availableCommands={active?.availableCommands}
       attachmentDefaultPath={active?.cwd || pickedCwd || undefined}
       lockedAgentId={composerAgentBinding.lockedAgentId}

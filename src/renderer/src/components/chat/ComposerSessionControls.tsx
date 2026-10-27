@@ -519,12 +519,15 @@ function configOptionIcon(option: AcpSessionConfigOption): LucideIcon | DshPrese
 
 export function PermissionModeChip({
   disabled,
+  compactChips = false,
   agentId,
   configOptions,
   harnessProbe,
   onSetConfigOption,
 }: {
   disabled: boolean;
+  /** Drop the text label; keep icon + chevron with aria-label/title. */
+  compactChips?: boolean;
   agentId: string;
   configOptions?: AcpSessionConfigOption[];
   /** Cold-start / live harness probe facts used to cap permission mode choices. */
@@ -544,6 +547,7 @@ export function PermissionModeChip({
     return (
       <SessionModeControl
         disabled={disabled}
+        compactChips={compactChips}
         agentId={agentId}
         option={sessionMode}
         harnessProbe={harnessProbe}
@@ -571,12 +575,13 @@ export function PermissionModeChip({
         {...composerFooterTriggerProps()}
         className={cn(COMPOSER_TOOLBAR_CHIP_CLASS, meta.toneClass)}
         aria-label={label}
+        title={label}
       >
         <span data-control-icon>
           <Icon className="size-3.5" />
         </span>
-        <span>{label}</span>
-        <ChevronDownIcon className="size-3.5 opacity-70" />
+        {!compactChips && <span>{label}</span>}
+        <ChevronDownIcon className="size-3.5 opacity-70" data-control-chevron="" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         side="top"
@@ -648,12 +653,14 @@ const PERMISSION_MODE_VALUE_I18N: Record<
 
 function SessionModeControl({
   disabled,
+  compactChips = false,
   agentId,
   option,
   harnessProbe,
   onSetConfigOption,
 }: {
   disabled: boolean;
+  compactChips?: boolean;
   agentId: string;
   option: AcpSessionConfigOption & { type: "select" };
   harnessProbe?: {
@@ -690,19 +697,21 @@ function SessionModeControl({
         {...composerFooterTriggerProps()}
         className={cn(
           COMPOSER_TOOLBAR_CHIP_CLASS,
-          "max-w-[180px]",
+          !compactChips && "max-w-[180px]",
           selectedPresentation.tone === "warning"
             ? "text-warning"
             : "text-fg-muted",
         )}
         aria-label={selectedPresentation.label}
-        title={selectedPresentation.hint}
+        title={selectedPresentation.hint || selectedPresentation.label}
       >
         <span data-control-icon>
           <SelectedIcon className="size-3.5 shrink-0" />
         </span>
-        <span className="truncate">{selectedPresentation.label}</span>
-        <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
+        {!compactChips && (
+          <span className="truncate">{selectedPresentation.label}</span>
+        )}
+        <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" data-control-chevron="" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         side="top"
@@ -829,10 +838,12 @@ export function ComposerSessionStateSlot({
 
 export function InlineComposerOptionControls({
   disabled,
+  compactChips = false,
   configOptions,
   onSetConfigOption,
 }: {
   disabled: boolean;
+  compactChips?: boolean;
   configOptions?: AcpSessionConfigOption[];
   onSetConfigOption?: (
     configId: string,
@@ -847,6 +858,7 @@ export function InlineComposerOptionControls({
         <InlineComposerOptionControl
           key={option.id}
           disabled={disabled}
+          compactChips={compactChips}
           option={option}
           onSetConfigOption={onSetConfigOption}
         />
@@ -857,10 +869,12 @@ export function InlineComposerOptionControls({
 
 function InlineComposerOptionControl({
   disabled,
+  compactChips = false,
   option,
   onSetConfigOption,
 }: {
   disabled: boolean;
+  compactChips?: boolean;
   option: AcpSessionConfigOption;
   onSetConfigOption?: (
     configId: string,
@@ -874,16 +888,19 @@ function InlineComposerOptionControl({
         type="button"
         disabled={disabled || !onSetConfigOption}
         aria-pressed={option.currentValue}
+        aria-label={option.name}
+        title={option.name}
         onClick={() => void onSetConfigOption?.(option.id, !option.currentValue)}
         className={cn(
-          "inline-flex h-7 max-w-[150px] shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs",
+          "inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-md px-1.5 text-xs",
+          !compactChips && "max-w-[150px]",
           option.currentValue
             ? "bg-[var(--control-bg-open)] text-fg"
             : "text-fg-muted hover:bg-[var(--control-bg-hover)]",
         )}
       >
         <CheckSquareIcon className="size-3.5 shrink-0" />
-        <span className="truncate">{option.name}</span>
+        {!compactChips && <span className="truncate">{option.name}</span>}
       </button>
     );
   }
@@ -896,16 +913,18 @@ function InlineComposerOptionControl({
           disabled={disabled || !onSetConfigOption}
           {...composerFooterTriggerProps()}
           aria-label={currentLabel}
+          title={currentLabel}
           className={cn(
             COMPOSER_TOOLBAR_CHIP_CLASS,
-            "max-w-[180px] text-fg-muted",
+            !compactChips && "max-w-[180px]",
+            "text-fg-muted",
           )}
         >
           <span data-control-icon>
             <SelectedIcon className="size-3.5 shrink-0" />
           </span>
-          <span className="truncate">{currentLabel}</span>
-          <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
+          {!compactChips && <span className="truncate">{currentLabel}</span>}
+          <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" data-control-chevron="" />
         </DropdownMenuTrigger>
         <DropdownMenuContent
           side="top"
@@ -944,24 +963,32 @@ function InlineComposerOptionControl({
       </DropdownMenu>
     );
   }
+  const genericAriaLabel = `${option.name}: ${currentLabel}`;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled || !onSetConfigOption}
         {...composerFooterTriggerProps()}
+        aria-label={genericAriaLabel}
+        title={genericAriaLabel}
         className={cn(
           COMPOSER_TOOLBAR_CHIP_CLASS,
-          "max-w-[180px] text-fg-muted",
+          !compactChips && "max-w-[180px]",
+          "text-fg-muted",
         )}
       >
         <span data-control-icon>
           <WrenchIcon className="size-3.5 shrink-0" />
         </span>
-        <span className="truncate">{option.name}</span>
-        <span className="truncate text-fg-subtle">
-          {selectedConfigOptionLabel(option)}
-        </span>
-        <ChevronDownIcon className="size-3.5 shrink-0" />
+        {!compactChips && (
+          <>
+            <span className="truncate">{option.name}</span>
+            <span className="truncate text-fg-subtle">
+              {currentLabel}
+            </span>
+          </>
+        )}
+        <ChevronDownIcon className="size-3.5 shrink-0" data-control-chevron="" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         side="top"
