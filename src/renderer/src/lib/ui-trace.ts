@@ -19,6 +19,15 @@ export interface UiActionAttributes {
     /** Resent after an earlier attempt failed before the host accepted it. */
     "backchat.prompt.retry": boolean;
   };
+  /** A stop press on the composer or the topbar. */
+  "turn.cancel": {
+    /** The session the stop press belonged to; empty when there was none. */
+    "backchat.cancel.session_id": string;
+    /** The turn the cancel was addressed to; empty when none could be found. */
+    "backchat.cancel.turn_id": string;
+    /** Whether a turn could be resolved for the cancel. */
+    "backchat.cancel.result": "targeted" | "no_target";
+  };
 }
 
 export type UiAction = keyof UiActionAttributes;

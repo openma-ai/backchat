@@ -618,6 +618,25 @@ describe("TurnBlock", () => {
     expect(html).not.toContain("chat.workingFor");
   });
 
+  it("never shows the sending indicator next to the interrupted notice", () => {
+    // A cancelled turn that kept `sendState: "pending"` would render
+    // "Sending…" and "interrupted" for the same turn.
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "cancelled",
+          stopReason: "interrupted",
+          promptText: "Ship it now",
+          clientId: "client-1",
+          sendState: "pending",
+        })}
+      />,
+    );
+    expect(html).toContain("chat.stopInterrupted");
+    expect(html).not.toContain("chat.sending");
+    expect(html).not.toContain("data-user-echo-status");
+  });
+
   it("shows retry when the optimistic send fails", () => {
     const html = renderToStaticMarkup(
       <TurnBlock
