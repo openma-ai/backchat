@@ -760,13 +760,15 @@ export function Sidebar() {
   return (
     <div ref={sidebarRootRef} className="sidebar-navigation flex h-full min-h-0 flex-col">
       <SidebarHoverCard rootRef={sidebarRootRef} resolve={resolveCard} onCandidate={warmCard} />
-      {/* TrafficLight drag region — just empty space inside the sidebar
-          card so the macOS-drawn trafficLight (at window x=16, y=18)
-          has visible padding inside the card's rounded top-left. The
-          global toggle button (rendered in AppShell) is absolute-
-          positioned just to the right of the trafficLight; we don't
-          host it here so it stays in place when the sidebar collapses. */}
-      <div className="app-drag-region h-9 shrink-0" />
+      {/* TrafficLight drag region — macOS hiddenInset only (hidden on
+          linux/windows via html[data-os] + [data-traffic-light-spacer] in
+          index.css). Empty space so the macOS-drawn trafficLight (at
+          window x=16, y=18) has visible padding inside the card's rounded
+          top-left. The global toggle button (rendered in AppShell) is
+          absolute-positioned just to the right of the trafficLight; we
+          don't host it here so it stays in place when the sidebar
+          collapses. */}
+      <div className="app-drag-region h-9 shrink-0" data-traffic-light-spacer="" />
 
       {/* Header actions and conversation rows share one fixed 8px inset. The
           product-owned scrollbar overlays the viewport and reserves no gutter. */}

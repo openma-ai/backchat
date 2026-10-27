@@ -957,3 +957,17 @@ describe("sidebar project status priority", () => {
     expect(grouped.projects).toEqual([]);
   });
 });
+
+describe("traffic-light spacer", () => {
+  it("marks the mac-only spacer and hides it under linux/windows data-os", () => {
+    const sidebar = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
+    const css = readFileSync(resolve(__dirname, "../../styles/index.css"), "utf8");
+
+    expect(sidebar).toContain('data-traffic-light-spacer=""');
+    expect(css).toContain('html[data-os="linux"] [data-traffic-light-spacer]');
+    expect(css).toContain('html[data-os="windows"] [data-traffic-light-spacer]');
+    expect(css).toMatch(
+      /html\[data-os="linux"\] \[data-traffic-light-spacer\],[\s\S]*?html\[data-os="windows"\] \[data-traffic-light-spacer\][\s\S]*?display:\s*none/,
+    );
+  });
+});

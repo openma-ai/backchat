@@ -33,7 +33,7 @@ export function RendererCrashLegacyPreview({
       className="fixed inset-0 z-[9999] flex flex-col app-canvas-surface text-fg"
       data-renderer-error-fallback="true"
     >
-      <div className="app-drag-region h-9 shrink-0" aria-hidden="true" />
+      <div className="app-drag-region h-9 shrink-0" data-traffic-light-spacer="" aria-hidden="true" />
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16">
         <div className="app-panel-surface w-full max-w-md rounded-xl px-6 py-8 text-center shadow-sm">
           <h1 className="text-base font-medium text-fg">Something went wrong</h1>
