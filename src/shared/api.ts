@@ -647,11 +647,17 @@ export interface BackchatApi extends OpenmaAccountApi {
 
   /** Installed version, channel, and the latest update check. */
   updateGetState(): Promise<AppUpdateState>;
-  /** Look for a newer build of this installation's channel. */
+  /** Step 1 — look for a newer build of this installation's channel.
+   *  Discovery only: this never downloads anything. */
   updateCheck(): Promise<AppUpdateState>;
-  /** Ask the user to restart, then replace the app in /Applications. */
+  /** Step 2 — download the update a check discovered. */
+  updateDownload(): Promise<AppUpdateState>;
+  /** Step 3 — ask the user to restart, then replace the app in /Applications. */
   updateInstall(): Promise<AppUpdateState>;
   onUpdateState(handler: (state: AppUpdateState) => void): () => void;
+  /** The managed-agent list changed — a harness auto-upgrade settled, or an
+   *  install/upgrade finished. Carries the fresh list. */
+  onAgentsChanged(handler: (agents: AgentInfo[]) => void): () => void;
 
   /** Resolve and proxy the official io.modelcontextprotocol/ui extension.
    *  The main process owns MCP transports; untrusted Views never receive

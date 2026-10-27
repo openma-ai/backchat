@@ -42,6 +42,25 @@ export interface AvailableUpdate {
   commit: string;
 }
 
+/**
+ * Download progress for the App update.
+ *
+ * The App update is a three-step flow — check, download, restart — so the
+ * download bar needs a real number to show. `total` is 0 when the server
+ * sends no content length, which is why `percent` is carried alongside the
+ * byte counters instead of being derived from them.
+ */
+export interface UpdateProgress {
+  /** Whole-percent download progress, 0–100. */
+  percent: number;
+  /** Bytes fetched so far. */
+  transferred: number;
+  /** Total bytes to fetch. 0 when the server sent no content length. */
+  total: number;
+  /** Current transfer rate in bytes per second. */
+  bytesPerSecond: number;
+}
+
 export interface AppUpdateState {
   version: string;
   channel: UpdateChannel;
@@ -54,6 +73,8 @@ export interface AppUpdateState {
   available: AvailableUpdate | null;
   errorCode: UpdateErrorCode | null;
   checkedAt: string | null;
+  /** Live download progress. Non-null only while the update is downloading. */
+  progress: UpdateProgress | null;
 }
 
 export interface UpdateFeed {
@@ -71,6 +92,32 @@ export interface ElectronUpdaterFeedOptions {
   url: string;
   /** GitHub Releases CDN returns 501 for multipart Range; use sequential single-range fetches. */
   useMultipleRangeRequest: false;
+}
+
+/** The shape electron-updater emits on `download-progress`. */
+export interface UpdateProgressInfo {
+  percent: number;
+  transferred: number;
+  total: number;
+  bytesPerSecond: number;
+}
+
+/**
+ * Normalize an updater progress report.
+ *
+ * electron-updater reports a float percent that can dip below 0 or exceed
+ * 100 around a range request, so the value is clamped before it reaches the
+ * progress bar.
+ */
+export function updateProgressFromInfo(info: UpdateProgressInfo): UpdateProgress {
+  const raw = Number.isFinite(info.percent) ? info.percent : 0;
+  const percent = Math.min(100, Math.max(0, Math.round(raw)));
+  return {
+    percent,
+    transferred: Number.isFinite(info.transferred) ? Math.max(0, info.transferred) : 0,
+    total: Number.isFinite(info.total) ? Math.max(0, info.total) : 0,
+    bytesPerSecond: Number.isFinite(info.bytesPerSecond) ? Math.max(0, info.bytesPerSecond) : 0,
+  };
 }
 
 export function electronUpdaterFeedOptions(feed: UpdateFeed): ElectronUpdaterFeedOptions {

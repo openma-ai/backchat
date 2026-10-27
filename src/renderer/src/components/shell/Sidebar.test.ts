@@ -678,6 +678,26 @@ describe("groupSidebarSessions", () => {
     expect(source).not.toContain("border-t");
   });
 
+  it("unifies the App and agent updates behind the same three-step flow", () => {
+    const source = readFileSync(
+      resolve(__dirname, "AgentUpdateControl.tsx"),
+      "utf8",
+    );
+
+    // Step 1 — check only. The control never downloads on its own.
+    expect(source).toContain("window.backchat.updateCheck()");
+    expect(source).toContain('data-sidebar-app-check="true"');
+    // Step 2 — download.
+    expect(source).toContain("window.backchat.updateDownload()");
+    expect(source).toContain('data-sidebar-app-download="true"');
+    // Step 3 — restart.
+    expect(source).toContain("window.backchat.updateInstall()");
+    expect(source).toContain('data-sidebar-app-restart="true"');
+    // A real percentage for the App download; the npm upgrade keeps its spinner.
+    expect(source).toContain("<UpdateProgressBar");
+    expect(source).toContain("appState?.progress?.percent");
+  });
+
   it("shares one canonical Agent cache between the sidebar, updater, and Settings", () => {
     const sidebar = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
     const updater = readFileSync(resolve(__dirname, "AgentUpdateControl.tsx"), "utf8");

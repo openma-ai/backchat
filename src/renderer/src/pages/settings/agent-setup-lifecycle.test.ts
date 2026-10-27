@@ -40,12 +40,12 @@ describe("deriveAgentSetupState", () => {
       },
     }));
 
-    expect(state.statusText).toBe("Auth needed");
+    expect(state.statusKey).toBe("agents.status.authNeeded");
     expect(state.canEnable).toBe(false);
     expect(state.authAction).toEqual({
       kind: "configure",
-      label: "Configure",
-      ariaLabel: "Configure Qwen Code credentials",
+      labelKey: "agents.auth.configure",
+      ariaLabelKey: "agents.auth.configureAria",
     });
   });
 
@@ -60,12 +60,12 @@ describe("deriveAgentSetupState", () => {
       },
     }), { waitingForAuth: true });
 
-    expect(state.statusText).toBe("Waiting for auth");
+    expect(state.statusKey).toBe("agents.status.waitingAuth");
     expect(state.canEnable).toBe(false);
     expect(state.authAction).toEqual({
       kind: "sign-in",
-      label: "Open again",
-      ariaLabel: "Open Qwen Code sign in again",
+      labelKey: "agents.auth.openAgain",
+      ariaLabelKey: "agents.auth.signInAgainAria",
     });
   });
 
@@ -84,12 +84,12 @@ describe("deriveAgentSetupState", () => {
       },
     }));
 
-    expect(state.statusText).toBe("Auth needed");
+    expect(state.statusKey).toBe("agents.status.authNeeded");
     expect(state.canEnable).toBe(false);
     expect(state.authAction).toEqual({
       kind: "open-setup",
-      label: "Open setup",
-      ariaLabel: "Open Qwen Code setup",
+      labelKey: "agents.auth.openSetup",
+      ariaLabelKey: "agents.auth.openSetupAria",
     });
   });
 
@@ -165,8 +165,8 @@ describe("deriveAgentSetupState", () => {
 
     expect(state.authAction).toEqual({
       kind: "open-setup",
-      label: "Open setup",
-      ariaLabel: "Open Qwen Code setup",
+      labelKey: "agents.auth.openSetup",
+      ariaLabelKey: "agents.auth.openSetupAria",
     });
   });
 
@@ -178,9 +178,10 @@ describe("deriveAgentSetupState", () => {
       latestVersion: "2.0.0",
     }));
 
-    expect(state.statusText).toBe("Update available");
+    // Same word as the App update row: "Update available".
+    expect(state.statusKey).toBe("update.status.updateAvailable");
     expect(state.versionText).toBe("1.0.0 → 2.0.0");
-    expect(state.setupAction).toEqual({ kind: "upgrade", label: "Upgrade" });
+    expect(state.setupAction).toEqual({ kind: "upgrade", labelKey: "agents.upgrade" });
   });
 
   it("keeps auth status and still exposes the installed version", () => {
@@ -192,7 +193,7 @@ describe("deriveAgentSetupState", () => {
       },
     }));
 
-    expect(state.statusText).toBe("Auth configured");
+    expect(state.statusKey).toBe("agents.status.authConfigured");
     expect(state.versionText).toBe("0.4.6");
   });
 
@@ -201,7 +202,7 @@ describe("deriveAgentSetupState", () => {
       installedVersion: "0.0.33",
     }));
 
-    expect(state.statusText).toBe("Installed");
+    expect(state.statusKey).toBe("agents.status.installed");
     expect(state.versionText).toBe("0.0.33");
   });
 });

@@ -1,23 +1,32 @@
 import type { AgentInfo } from "@shared/api";
 import { authMethodKind, preferredAuthMethod } from "@/lib/auth-method-menu";
+import type { TranslationKey } from "@/lib/i18n";
 
+/**
+ * The agent setup row speaks the same update vocabulary as the App update.
+ *
+ * "Update available", "Upgrading…" and "Checking…" come from the shared
+ * `update.status.*` keys, so an agent row and the About page never describe
+ * the same state with two different words.
+ */
 export type AgentSetupAction =
-  | { kind: "install"; label: string }
-  | { kind: "upgrade"; label: string }
-  | { kind: "none"; label: string };
+  | { kind: "install"; labelKey: TranslationKey }
+  | { kind: "upgrade"; labelKey: TranslationKey }
+  | { kind: "none"; labelKey: TranslationKey };
 
 export type AgentAuthAction =
-  | { kind: "sign-in"; label: string; ariaLabel: string }
-  | { kind: "open-setup"; label: string; ariaLabel: string }
-  | { kind: "configure"; label: string; ariaLabel: string }
-  | { kind: "probe"; label: string; ariaLabel: string }
-  | { kind: "none"; label: string; ariaLabel: string };
+  | { kind: "sign-in"; labelKey: TranslationKey; ariaLabelKey: TranslationKey }
+  | { kind: "open-setup"; labelKey: TranslationKey; ariaLabelKey: TranslationKey }
+  | { kind: "configure"; labelKey: TranslationKey; ariaLabelKey: TranslationKey }
+  | { kind: "probe"; labelKey: TranslationKey; ariaLabelKey: TranslationKey }
+  | { kind: "none"; labelKey: TranslationKey; ariaLabelKey: TranslationKey };
 
 export interface AgentSetupState {
   available: boolean;
   authNeeded: boolean;
   canEnable: boolean;
-  statusText: string;
+  /** Shared status vocabulary — resolved with `t()` at the call site. */
+  statusKey: TranslationKey;
   versionText: string | null;
   setupAction: AgentSetupAction;
   authAction: AgentAuthAction;
@@ -37,45 +46,45 @@ export function deriveAgentSetupState(
 
   const setupAction: AgentSetupAction =
     agent.installable && !agent.installed
-      ? { kind: "install", label: "Install" }
+      ? { kind: "install", labelKey: "agents.install" }
       : agent.installed && agent.updateAvailable
-        ? { kind: "upgrade", label: "Upgrade" }
-        : { kind: "none", label: "" };
+        ? { kind: "upgrade", labelKey: "agents.upgrade" }
+        : { kind: "none", labelKey: "agents.status.ready" };
 
   const authAction: AgentAuthAction =
     available && authNeeded && authType === "env_var"
         ? {
             kind: "configure",
-            label: "Configure",
-            ariaLabel: `Configure ${agent.label} credentials`,
+            labelKey: "agents.auth.configure",
+            ariaLabelKey: "agents.auth.configureAria",
           }
         : available && authNeeded && authType === "terminal"
           ? {
               kind: "open-setup",
-              label: waitingForAuth ? "Open again" : "Open setup",
-              ariaLabel: waitingForAuth
-                ? `Open ${agent.label} setup again`
-                : `Open ${agent.label} setup`,
+              labelKey: waitingForAuth ? "agents.auth.openAgain" : "agents.auth.openSetup",
+              ariaLabelKey: waitingForAuth
+                ? "agents.auth.openSetupAgainAria"
+                : "agents.auth.openSetupAria",
             }
         : available && authNeeded
           ? {
               kind: "sign-in",
-              label: waitingForAuth ? "Open again" : "Sign in",
-              ariaLabel: waitingForAuth
-                ? `Open ${agent.label} sign in again`
-                : `Sign in to ${agent.label}`,
+              labelKey: waitingForAuth ? "agents.auth.openAgain" : "agents.auth.signIn",
+              ariaLabelKey: waitingForAuth
+                ? "agents.auth.signInAgainAria"
+                : "agents.auth.signInAria",
             }
           : {
               kind: "none",
-              label: "",
-              ariaLabel: "",
+              labelKey: "agents.auth.openSetup",
+              ariaLabelKey: "agents.auth.openSetupAria",
             };
 
   return {
     available,
     authNeeded,
     canEnable: available && !authNeeded,
-    statusText: statusText(agent, { waitingForAuth }),
+    statusKey: statusKey(agent, { waitingForAuth }),
     versionText: versionText(agent),
     setupAction,
     authAction,
@@ -109,19 +118,20 @@ function authMethodType(
   return method?.type ?? "agent";
 }
 
-function statusText(
+function statusKey(
   agent: AgentInfo,
   options: { waitingForAuth?: boolean },
-): string {
-  if (options.waitingForAuth) return "Waiting for auth";
-  if (agent.auth?.status === "needs-auth") return "Auth needed";
-  if (agent.auth?.status === "unknown") return "Auth unknown";
-  if (agent.auth?.status === "configured") return "Auth configured";
+): TranslationKey {
+  if (options.waitingForAuth) return "agents.status.waitingAuth";
+  if (agent.auth?.status === "needs-auth") return "agents.status.authNeeded";
+  if (agent.auth?.status === "unknown") return "agents.status.authUnknown";
+  if (agent.auth?.status === "configured") return "agents.status.authConfigured";
   if (agent.available ?? agent.detected) {
-    if (agent.updateAvailable) return "Update available";
-    return agent.installed ? "Installed" : "Ready";
+    // Same word as the App update row: "Update available".
+    if (agent.updateAvailable) return "update.status.updateAvailable";
+    return agent.installed ? "agents.status.installed" : "agents.status.ready";
   }
-  return agent.installable ? "Not installed" : "Missing";
+  return agent.installable ? "agents.status.notInstalled" : "agents.status.missing";
 }
 
 function versionText(agent: AgentInfo): string | null {

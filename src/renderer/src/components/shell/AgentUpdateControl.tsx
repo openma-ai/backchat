@@ -20,9 +20,16 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { UpdateProgressBar } from "@/components/ui/update-progress";
 import { useGapAdjacentPx } from "@/components/ui/gap-adjacent";
 import { useI18n } from "@/lib/i18n";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
+import { markAgentUpgrading } from "@/lib/agent-upgrade-store";
+import {
+  appUpdateSubject,
+  updateStatusKey,
+  useAppUpdateState,
+} from "@/lib/unified-update";
 
 const MIN_PROGRESS_VISIBLE_MS = 480;
 
@@ -137,6 +144,18 @@ export function AgentUpdateError({
   );
 }
 
+/**
+ * The unified update control in the sidebar footer.
+ *
+ * It covers the App and the managed agents with one vocabulary and one set
+ * of actions. The App half follows the same three-step flow as Settings →
+ * About: check discovers, download fetches, restart installs. Checking
+ * never downloads, so the control cannot start a download the user did not
+ * ask for.
+ *
+ * The trigger stays out of the way until there is something to act on —
+ * a quiet sidebar is worth more than a permanently visible counter.
+ */
 export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
   const gapAdjacent = useGapAdjacentPx();
   const { t } = useI18n();
@@ -145,22 +164,32 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
   const [activeIds, setActiveIds] = useState<Set<string>>(() => new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [recentlyUpdated, setRecentlyUpdated] = useState<AgentInfo | null>(null);
+  const appState = useAppUpdateState();
+  const app = appUpdateSubject(appState, t);
   const availableAgents = useMemo(
     () => agents.filter((agent) => agent.updateAvailable),
     [agents],
   );
 
-  const availableLabel = availableAgents.length === 1
-    ? t("acpUpdates.availableOne")
-    : t("acpUpdates.availableMany", { count: availableAgents.length });
-  const triggerLabel = availableAgents.length > 0
-    ? availableLabel
-    : t("acpUpdates.updatedControl", {
-        agent: recentlyUpdated?.label ?? "ACP",
-      });
+  const appActionable =
+    app.status === "updateAvailable"
+    || app.status === "ready"
+    || app.status === "downloading";
+  const totalCount = availableAgents.length + (appActionable ? 1 : 0);
+
+  const triggerLabel = totalCount === 1
+    ? t("update.sidebar.availableOne")
+    : totalCount > 1
+      ? t("update.sidebar.availableMany", { count: totalCount })
+      : recentlyUpdated
+        ? t("acpUpdates.updatedControl", { agent: recentlyUpdated.label ?? "ACP" })
+        : t("update.title");
 
   const startUpgrade = async (agent: AgentInfo) => {
     if (activeIds.has(agent.id)) return;
+    // Claim the agent in the shared registry so Settings → About shows the
+    // same "Upgrading…" line while npm runs.
+    if (!markAgentUpgrading(agent.id, true)) return;
     setActiveIds((current) => new Set(current).add(agent.id));
     setErrors((current) => {
       const next = { ...current };
@@ -202,6 +231,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
         next.delete(agent.id);
         return next;
       });
+      markAgentUpgrading(agent.id, false);
     }
   };
 
@@ -212,7 +242,10 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
     }
   };
 
-  if (availableAgents.length === 0 && !recentlyUpdated) return null;
+  if (totalCount === 0 && !recentlyUpdated) return null;
+
+  const busy = app.busy || activeIds.size > 0;
+  const percent = appState?.progress?.percent ?? 0;
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -222,22 +255,22 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
           aria-label={triggerLabel}
           title={triggerLabel}
           data-sidebar-agent-update-control="true"
-          data-sidebar-agent-update-count={availableAgents.length || undefined}
+          data-sidebar-agent-update-count={totalCount || undefined}
           className="app-no-drag sidebar-update-action inline-flex shrink-0 items-center justify-center text-small font-medium tabular-nums"
         >
-          {activeIds.size > 0 ? (
+          {busy ? (
             <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : availableAgents.length > 0 ? (
+          ) : totalCount > 0 ? (
             <CircleArrowUpIcon className="size-3.5" aria-hidden="true" />
           ) : (
             <CheckIcon className="size-3.5" aria-hidden="true" />
           )}
-          {availableAgents.length > 0 && <span>{availableAgents.length}</span>}
+          {totalCount > 0 && <span>{totalCount}</span>}
         </button>
       </PopoverTrigger>
 
       <PopoverContent
-        aria-label={t("acpUpdates.title")}
+        aria-label={t("update.title")}
         data-sidebar-agent-update-popover="true"
         side="top"
         align="start"
@@ -249,20 +282,151 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
         <PopoverHeader>
           <div className="flex items-center gap-2">
             <PopoverTitle className="min-w-0 flex-1 truncate">
-              {t("acpUpdates.title")}
+              {t("update.title")}
             </PopoverTitle>
-            {availableAgents.length > 0 && (
+            {totalCount > 0 && (
               <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tabular-nums">
-                {t("acpUpdates.ready", { count: availableAgents.length })}
+                {t("acpUpdates.ready", { count: totalCount })}
               </Badge>
             )}
           </div>
           <PopoverDescription className="text-xs leading-4">
-            {t("acpUpdates.description")}
+            {t("update.description")}
           </PopoverDescription>
         </PopoverHeader>
 
-        {recentlyUpdated && (
+        {/* The App half of the control — check, download, restart. */}
+        <div data-sidebar-app-update="true" className="space-y-1.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs font-medium text-foreground">Backchat</span>
+            <span
+              data-sidebar-app-update-status={app.status}
+              className="text-[11px] text-muted-foreground"
+            >
+              {t(updateStatusKey(app.status))}
+            </span>
+          </div>
+          {app.detail ? (
+            <p className="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
+              {app.detail}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {app.status === "updateAvailable" && appState?.canInstall ? (
+              <Button
+                type="button"
+                size="xs"
+                data-sidebar-app-download="true"
+                onClick={() => {
+                  void window.backchat.updateDownload().catch(() => undefined);
+                }}
+              >
+                {t("update.download")}
+              </Button>
+            ) : app.status === "ready" && appState?.canInstall ? (
+              <Button
+                type="button"
+                size="xs"
+                data-sidebar-app-restart="true"
+                onClick={() => {
+                  void window.backchat.updateInstall().catch(() => undefined);
+                }}
+              >
+                {t("update.restart")}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                data-sidebar-app-check="true"
+                disabled={app.busy}
+                onClick={() => {
+                  // Check only — discovery never downloads.
+                  void window.backchat.updateCheck().catch(() => undefined);
+                }}
+              >
+                {t("update.check")}
+              </Button>
+            )}
+          </div>
+          {app.status === "downloading" ? (
+            <div className="flex items-center gap-1.5 pt-0.5">
+              <UpdateProgressBar
+                percent={percent}
+                label={t("update.progressLabel", { percent })}
+                className="flex-1"
+              />
+              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                {percent}%
+              </span>
+            </div>
+          ) : null}
+        </div>
+
+        {availableAgents.length > 0 ? (
+          <>
+            <div className="h-px w-full bg-fg/10" aria-hidden="true" />
+            <div className="oma-scrollbar max-h-[min(300px,var(--radix-popover-content-available-height))] space-y-1 overflow-y-auto">
+              {availableAgents.map((agent) => {
+                const updating = activeIds.has(agent.id);
+                const error = errors[agent.id];
+                const actionLabel = updating
+                  ? t("acpUpdates.updatingAgent", { agent: agent.label })
+                  : error
+                    ? t("acpUpdates.retryAgent", { agent: agent.label })
+                    : t("acpUpdates.updateAgent", { agent: agent.label });
+                return (
+                  <div
+                    key={agent.id}
+                    className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md p-1.5 transition-colors hover:bg-muted/50"
+                  >
+                    <span className="inline-flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+                      <AgentIcon
+                        agentId={agent.id}
+                        iconUrl={agent.icon}
+                        title={agent.label}
+                        className="size-3.5"
+                      />
+                    </span>
+                    <div className="min-w-0">
+                      <p
+                        data-agent-update-label={agent.id}
+                        className="truncate text-xs font-medium text-foreground"
+                      >
+                        {agent.label}
+                      </p>
+                      <p className="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
+                        {updateDescription(agent, t("acpUpdates.newerRuntime"))}
+                      </p>
+                      {error && (
+                        <AgentUpdateError
+                          detailsLabel={t("acpUpdates.errorDetails")}
+                          diskSpaceMessage={t("acpUpdates.diskSpaceError")}
+                          npmMissingMessage={t("acpUpdates.npmMissingError")}
+                          timeoutMessage={t("acpUpdates.timeoutError")}
+                          fallbackMessage={t("acpUpdates.failed")}
+                          error={error}
+                        />
+                      )}
+                    </div>
+                    <AgentUpdateAction
+                      actionLabel={actionLabel}
+                      error={error}
+                      retryLabel={t("acpUpdates.retry")}
+                      updateLabel={t("acpUpdates.update")}
+                      updating={updating}
+                      updatingLabel={t("acpUpdates.updating")}
+                      onUpgrade={() => void startUpgrade(agent)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+
+        {recentlyUpdated ? (
           <p
             role="status"
             className="flex items-center gap-1.5 text-xs text-muted-foreground"
@@ -275,64 +439,7 @@ export function AgentUpdateControl({ agents }: { agents: AgentInfo[] }) {
                 ?? t("acpUpdates.latestVersion"),
             })}
           </p>
-        )}
-
-        <div className="oma-scrollbar max-h-[min(300px,var(--radix-popover-content-available-height))] space-y-1 overflow-y-auto">
-          {availableAgents.map((agent) => {
-            const updating = activeIds.has(agent.id);
-            const error = errors[agent.id];
-            const actionLabel = updating
-              ? t("acpUpdates.updatingAgent", { agent: agent.label })
-              : error
-                ? t("acpUpdates.retryAgent", { agent: agent.label })
-                : t("acpUpdates.updateAgent", { agent: agent.label });
-            return (
-              <div
-                key={agent.id}
-                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md p-1.5 transition-colors hover:bg-muted/50"
-              >
-                <span className="inline-flex size-6 shrink-0 items-center justify-center text-muted-foreground">
-                  <AgentIcon
-                    agentId={agent.id}
-                    iconUrl={agent.icon}
-                    title={agent.label}
-                    className="size-3.5"
-                  />
-                </span>
-                <div className="min-w-0">
-                  <p
-                    data-agent-update-label={agent.id}
-                    className="truncate text-xs font-medium text-foreground"
-                  >
-                    {agent.label}
-                  </p>
-                  <p className="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
-                    {updateDescription(agent, t("acpUpdates.newerRuntime"))}
-                  </p>
-                  {error && (
-                    <AgentUpdateError
-                      detailsLabel={t("acpUpdates.errorDetails")}
-                      diskSpaceMessage={t("acpUpdates.diskSpaceError")}
-                      npmMissingMessage={t("acpUpdates.npmMissingError")}
-                      timeoutMessage={t("acpUpdates.timeoutError")}
-                      fallbackMessage={t("acpUpdates.failed")}
-                      error={error}
-                    />
-                  )}
-                </div>
-                <AgentUpdateAction
-                  actionLabel={actionLabel}
-                  error={error}
-                  retryLabel={t("acpUpdates.retry")}
-                  updateLabel={t("acpUpdates.update")}
-                  updating={updating}
-                  updatingLabel={t("acpUpdates.updating")}
-                  onUpgrade={() => void startUpgrade(agent)}
-                />
-              </div>
-            );
-          })}
-        </div>
+        ) : null}
 
         <p className="flex items-start gap-1.5 text-[11px] leading-4 text-muted-foreground">
           <InfoIcon className="mt-0.5 size-3 shrink-0" aria-hidden="true" />

@@ -1,9 +1,21 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { PageScaffold } from "@/components/shell/PageScaffold";
 import { Button } from "@/components/ui/button";
+import { UpdateProgressBar } from "@/components/ui/update-progress";
 import { composerBoxClass } from "@/lib/composer-box";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
-import type { AppUpdateState, UpdateChannel } from "@shared/app-update";
+import { useUpgradingAgentId } from "@/lib/agent-upgrade-store";
+import {
+  appInstallBlockHint,
+  appUpdateSubject,
+  agentUpdateSubject,
+  updateStatusKey,
+  useAgentsList,
+  useAgentUpdateState,
+  useAppUpdateState,
+  type UpdateStatusLabel,
+} from "@/lib/unified-update";
+import type { UpdateChannel } from "@shared/app-update";
 
 const channelKey: Record<UpdateChannel, TranslationKey> = {
   preview: "update.channelPreview",
@@ -12,40 +24,44 @@ const channelKey: Record<UpdateChannel, TranslationKey> = {
 };
 
 /**
- * Settings → About. The version comes from app.getVersion() and the build
- * metadata. "Restart and update" asks electron-updater to quit through the
- * normal shutdown barrier; Squirrel.Mac then replaces the signed app.
+ * Settings → About.
+ *
+ * The update flow here is deliberately three separate user actions:
+ *
+ *   Check → Download → Restart
+ *
+ * "Check" only discovers a newer build. It never starts a download, so the
+ * button cannot turn into a surprise 「正在下载更新…」. The download needs its
+ * own click, and the install needs another one.
+ *
+ * The App and the managed agents share one status vocabulary, so the two
+ * rows below read as one product instead of two unrelated update systems.
  */
 export function SettingsAbout() {
   const { t } = useI18n();
-  const [state, setState] = useState<AppUpdateState | null>(null);
-  useEffect(() => {
-    let live = true;
-    void window.backchat.updateGetState().then((next) => {
-      if (live) setState(next);
-    }).catch(() => undefined);
-    const unsubscribe = window.backchat.onUpdateState((next) => {
-      if (live) setState(next);
-    });
-    return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, []);
+  const state = useAppUpdateState();
+  const agents = useAgentsList();
+  const upgradingAgentId = useUpgradingAgentId();
+  const agentState = useAgentUpdateState(agents, upgradingAgentId);
 
-  const busy = state?.status === "checking"
-    || state?.status === "downloading"
-    || state?.status === "installing";
-  const version = state?.version ?? "…";
-  const detail = state ? identityLine(state, t) : "";
+  const app = appUpdateSubject(state, t);
+  const agent = agentUpdateSubject(agentState, t);
+  const blockHint = appInstallBlockHint(state, t);
+
+  const busy = app.busy;
+  const canDownload = state?.status === "available" && state.canInstall;
+  const canRestart = state?.status === "ready" && state.canInstall;
+  const percent = state?.progress?.percent ?? 0;
 
   return (
     <PageScaffold title={t("settings.about")}>
       <dl className={composerBoxClass({ className: "overflow-hidden text-xs" })}>
         <Row label={t("about.version")}>
-          <span data-testid="about-version">Backchat {version}</span>
-          {detail ? (
-            <span className="mt-0.5 block font-mono text-[11px] text-fg-muted">{detail}</span>
+          <span data-testid="about-version">Backchat {state?.version ?? "…"}</span>
+          {state ? (
+            <span className="mt-0.5 block font-mono text-[11px] text-fg-muted">
+              {identityLine(state, t)}
+            </span>
           ) : null}
         </Row>
         <Row label={t("about.engine")}>Electron 42 · React 19 · TanStack Router</Row>
@@ -54,34 +70,90 @@ export function SettingsAbout() {
           <span className="font-mono">~/.oma/config.toml</span>
         </Row>
       </dl>
+
+      <dl
+        data-testid="update-status-rows"
+        className={composerBoxClass({ className: "overflow-hidden text-xs" })}
+      >
+        <StatusRow
+          testId="update-app-row"
+          label="Backchat"
+          status={app.status}
+          detail={app.detail}
+        />
+        <StatusRow
+          testId="update-agents-row"
+          label={t("update.agents.label")}
+          status={agent.status}
+          detail={agent.detail}
+        />
+      </dl>
+
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
           variant="outline"
           size="sm"
+          data-testid="update-check-button"
           disabled={busy}
           onClick={() => {
-            void window.backchat.updateCheck().then(setState).catch(() => undefined);
+            // Check only. The download is a separate action below.
+            void window.backchat.updateCheck().catch(() => undefined);
           }}
         >
           {state?.status === "checking" ? t("update.checking") : t("update.check")}
         </Button>
-        {state?.status === "ready" && state.canInstall ? (
+        {canDownload ? (
           <Button
             type="button"
             size="sm"
+            data-testid="update-download-button"
             disabled={busy}
             onClick={() => {
-              void window.backchat.updateInstall().then(setState).catch(() => undefined);
+              void window.backchat.updateDownload().catch(() => undefined);
+            }}
+          >
+            {t("update.download")}
+          </Button>
+        ) : null}
+        {canRestart ? (
+          <Button
+            type="button"
+            size="sm"
+            data-testid="update-restart-button"
+            disabled={busy}
+            onClick={() => {
+              void window.backchat.updateInstall().catch(() => undefined);
             }}
           >
             {t("update.restart")}
           </Button>
         ) : null}
       </div>
+
+      {state?.status === "downloading" ? (
+        <div className="max-w-2xl space-y-1.5">
+          <div className="flex items-center gap-2">
+            <UpdateProgressBar
+              percent={percent}
+              label={t("update.progressLabel", { percent })}
+              className="flex-1"
+            />
+            <span className="shrink-0 text-[11px] tabular-nums text-fg-muted">
+              {percent}%
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       <p data-testid="update-status" className="max-w-2xl text-[11px] leading-5 text-fg-muted">
         {statusMessage(state, t)}
       </p>
+      {blockHint ? (
+        <p data-testid="update-block-hint" className="max-w-2xl text-[11px] leading-5 text-fg-muted">
+          {blockHint}
+        </p>
+      ) : null}
       <p className="max-w-2xl text-[11px] leading-5 text-fg-muted">
         {t("about.summary")}
       </p>
@@ -90,7 +162,7 @@ export function SettingsAbout() {
 }
 
 function identityLine(
-  state: AppUpdateState,
+  state: { channel: UpdateChannel; build: number; commit: string },
   t: (key: TranslationKey, values?: Record<string, string | number>) => string,
 ): string {
   const parts = [t(channelKey[state.channel])];
@@ -99,49 +171,67 @@ function identityLine(
   return parts.join(" · ");
 }
 
+function StatusRow({
+  detail,
+  label,
+  status,
+  testId,
+}: {
+  detail: string | null;
+  label: string;
+  status: UpdateStatusLabel;
+  testId: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      data-testid={testId}
+      data-update-status={status}
+      className="grid min-h-9 grid-cols-[120px_1fr] items-center gap-3 border-b border-border/35 px-3 py-2 last:border-b-0"
+    >
+      <dt className="text-fg-muted">{label}</dt>
+      <dd className="flex min-w-0 items-baseline justify-between gap-3">
+        <span className="truncate text-fg">{t(updateStatusKey(status))}</span>
+        {detail ? (
+          <span className="truncate font-mono text-[11px] tabular-nums text-fg-muted">
+            {detail}
+          </span>
+        ) : null}
+      </dd>
+    </div>
+  );
+}
+
 function statusMessage(
-  state: AppUpdateState | null,
+  state: ReturnType<typeof useAppUpdateState>,
   t: (key: TranslationKey, values?: Record<string, string | number>) => string,
 ): string {
   if (!state) return t("update.idle");
-  if (state.installBlock === "dev") return t("update.devBlocked");
-  if (state.installBlock === "platform") return t("update.platformBlocked");
   const version = state.available?.version ?? state.version;
-  let main: string;
   switch (state.status) {
     case "checking":
-      main = t("update.checking");
-      break;
+      return t("update.checking");
     case "downloading":
-      main = t("update.downloading");
-      break;
+      return t("update.downloading");
     case "upToDate":
-      main = t("update.upToDate");
-      break;
+      return t("update.upToDate");
     case "available":
-      main = t("update.available", { version });
-      break;
+      return t("update.available", { version });
     case "ready":
-      main = t("update.ready", { version });
-      break;
+      return t("update.ready", { version });
     case "installing":
-      main = t("update.restarting");
-      break;
+      return t("update.restarting");
     case "error":
-      main = state.errorCode === "checksum"
+      return state.errorCode === "checksum"
         ? t("update.errorChecksum")
         : state.errorCode === "manifest"
           ? t("update.errorManifest")
           : state.errorCode === "install"
             ? t("update.errorInstall")
             : t("update.errorNetwork");
-      break;
     default:
-      main = t("update.idle");
+      return t("update.idle");
   }
-  if (state.installBlock === "unsigned") return `${main} ${t("update.unsignedBlocked")}`;
-  if (state.installBlock === "location") return `${main} ${t("update.locationBlocked")}`;
-  return main;
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {

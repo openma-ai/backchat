@@ -250,11 +250,17 @@ const api: BackchatApi = {
   },
   updateGetState: () => ipcRenderer.invoke(InvokeChannel.UpdateGetState) as Promise<AppUpdateState>,
   updateCheck: () => ipcRenderer.invoke(InvokeChannel.UpdateCheck) as Promise<AppUpdateState>,
+  updateDownload: () => ipcRenderer.invoke(InvokeChannel.UpdateDownload) as Promise<AppUpdateState>,
   updateInstall: () => ipcRenderer.invoke(InvokeChannel.UpdateInstall) as Promise<AppUpdateState>,
   onUpdateState: (handler) => {
     const listener = (_e: IpcRendererEvent, state: AppUpdateState) => handler(state);
     ipcRenderer.on(PushChannel.UpdateState, listener);
     return () => ipcRenderer.removeListener(PushChannel.UpdateState, listener);
+  },
+  onAgentsChanged: (handler) => {
+    const listener = (_e: IpcRendererEvent, agents: AgentInfo[]) => handler(agents);
+    ipcRenderer.on(PushChannel.AgentsChanged, listener);
+    return () => ipcRenderer.removeListener(PushChannel.AgentsChanged, listener);
   },
   mcpAppResolve: (p) =>
     ipcRenderer.invoke(InvokeChannel.McpAppResolve, p) as Promise<

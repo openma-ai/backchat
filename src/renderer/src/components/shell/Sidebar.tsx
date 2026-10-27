@@ -55,7 +55,7 @@ import {
 import { SidebarSectionHeading } from "@/components/shell/SidebarSectionHeading";
 import { folderName, projectKeyForCwd } from "@/lib/project-path";
 import { useI18n } from "@/lib/i18n";
-import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
+import { AGENTS_QUERY_KEY, useAgentsChangedSubscription } from "@/lib/agent-query";
 import { SCHEDULES_QUERY_KEY, scheduledSourceSessionIds } from "@/lib/scheduled-task-presentation";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { RenameDialog } from "./RenameDialog";
@@ -390,6 +390,10 @@ export function Sidebar() {
     staleTime: Infinity,
     gcTime: Infinity,
   });
+  // A background harness auto-upgrade settles in main; the fresh list has
+  // to land in the canonical cache so the update control stops reporting a
+  // stale "update available".
+  useAgentsChangedSubscription();
   const agentIconUrls = useMemo(
     () => new Map(agents.flatMap((agent) => agent.icon ? [[agent.id, agent.icon] as const] : [])),
     [agents],

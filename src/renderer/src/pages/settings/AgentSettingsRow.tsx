@@ -7,7 +7,7 @@ import {
 } from "@/components/Icons";
 
 import type { AgentInfo } from "@shared/api";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -46,9 +46,10 @@ export function AgentRow({
   const activeAction = activeActions.find((item) => item.id === agent.id) ?? null;
   const rowPending = activeAction != null;
   const anyPending = activeActions.length > 0;
-  const pendingLabel = rowPending ? pendingActionLabel(activeAction) : null;
+  const pendingLabel = rowPending ? t(pendingActionKey(activeAction)) : null;
   const commandText = agent.command !== agent.id ? agent.command : "";
   const canEnable = setup.canEnable;
+  const statusText = t(setup.statusKey);
 
   return (
     <div
@@ -68,12 +69,12 @@ export function AgentRow({
           )}
           {enabled && (
             <span className="shrink-0 rounded bg-success-subtle/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
-              Enabled
+              {t("agents.enabled")}
             </span>
           )}
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-fg-subtle">
-          <span className={statusTextClass(setup.statusText)}>{setup.statusText}</span>
+          <span className={statusTextClass(setup.statusKey)}>{statusText}</span>
           {pendingLabel && <span className="text-fg-muted">{pendingLabel}</span>}
           {commandText && <span className="truncate font-mono">{commandText}</span>}
         </div>
@@ -89,9 +90,11 @@ export function AgentRow({
             checked={enabled}
             disabled={!canEnable || anyPending}
             onCheckedChange={(checked) => onSetEnabled(checked === true)}
-            aria-label={`${enabled ? "Disable" : "Enable"} ${agent.label}`}
+            aria-label={t(enabled ? "agents.disableAria" : "agents.enableAria", {
+              agent: agent.label,
+            })}
           />
-          Enable
+          {t("agents.enable")}
         </label>
         {agent.homepage && (
           <a
@@ -99,7 +102,7 @@ export function AgentRow({
             className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-fg-muted transition-colors hover:bg-bg/50 hover:text-fg"
           >
             <ExternalLinkIcon className="size-3" />
-            homepage
+            {t("agents.homepage")}
           </a>
         )}
         {!setup.available && agent.installHint && !agent.installable && (
@@ -117,7 +120,9 @@ export function AgentRow({
             className="h-7 shrink-0 gap-1.5 bg-bg/55 px-2 text-xs hover:bg-bg"
           >
             <DownloadIcon className="size-3.5" />
-            {rowPending && activeAction?.type === "install" ? "Installing…" : "Install"}
+            {rowPending && activeAction?.type === "install"
+              ? t("agents.installing")
+              : t(setup.setupAction.labelKey)}
           </Button>
         )}
         {setup.setupAction.kind === "upgrade" && (
@@ -130,7 +135,9 @@ export function AgentRow({
             className="h-7 shrink-0 gap-1.5 bg-bg/55 px-2 text-xs hover:bg-bg"
           >
             <UploadIcon className="size-3.5" />
-            {rowPending && activeAction?.type === "upgrade" ? "Upgrading…" : "Upgrade"}
+            {rowPending && activeAction?.type === "upgrade"
+              ? t("update.status.upgrading")
+              : t(setup.setupAction.labelKey)}
           </Button>
         )}
         {agent.auth?.supportsLogout && !setup.authNeeded && (
@@ -155,10 +162,12 @@ export function AgentRow({
             onClick={onOpenSetup}
             disabled={anyPending}
             className="h-7 shrink-0 gap-1.5 bg-bg/55 px-2 text-xs hover:bg-bg"
-            aria-label={setup.authAction.ariaLabel}
+            aria-label={t(setup.authAction.ariaLabelKey, { agent: agent.label })}
           >
             <KeyRoundIcon className="size-3.5" />
-            {rowPending && activeAction?.type === "auth" ? "Opening…" : setup.authAction.label}
+            {rowPending && activeAction?.type === "auth"
+              ? t("agents.status.openingAuth")
+              : t(setup.authAction.labelKey)}
           </Button>
         )}
         {agent.installed && (
@@ -169,7 +178,7 @@ export function AgentRow({
             onClick={onUninstall}
             disabled={anyPending}
             className="size-7 shrink-0 text-fg-subtle opacity-0 hover:text-danger focus:opacity-100 group-hover/agent:opacity-100"
-            aria-label={`Uninstall ${agent.label}`}
+            aria-label={t("agents.uninstall", { agent: agent.label })}
           >
             <Trash2Icon className="size-3.5" />
           </Button>
@@ -179,26 +188,34 @@ export function AgentRow({
   );
 }
 
-function statusTextClass(statusText: string): string {
-  if (statusText === "Auth needed" || statusText === "Auth unknown") return "text-danger";
-  if (statusText === "Waiting for auth") return "text-brand";
-  if (statusText === "Update available") return "text-fg-muted";
+/**
+ * The status word decides the tone. Auth trouble is the only danger state;
+ * "Update available" is deliberately quiet, the same as the App row.
+ */
+function statusTextClass(statusKey: TranslationKey): string {
+  if (statusKey === "agents.status.authNeeded" || statusKey === "agents.status.authUnknown") {
+    return "text-danger";
+  }
+  if (statusKey === "agents.status.waitingAuth") return "text-brand";
+  if (statusKey === "update.status.updateAvailable") return "text-fg-muted";
   return "text-fg-subtle";
 }
 
-function pendingActionLabel(action: AgentAction): string {
+function pendingActionKey(action: AgentAction): TranslationKey {
   switch (action.type) {
     case "install":
-      return "Installing…";
+      return "agents.installing";
     case "upgrade":
-      return "Upgrading…";
+      // Shared with the App update row.
+      return "update.status.upgrading";
     case "uninstall":
-      return "Uninstalling…";
+      return "agents.status.uninstalling";
     case "auth":
-      return "Opening auth…";
+      return "agents.status.openingAuth";
     case "logout":
-      return "Logging out…";
+      return "agents.status.loggingOut";
     case "refresh":
-      return "Checking…";
+      // Shared with the App update row.
+      return "update.status.checking";
   }
 }

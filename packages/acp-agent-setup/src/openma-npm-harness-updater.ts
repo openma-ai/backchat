@@ -10,7 +10,8 @@ import type { AcpAgentSetupService } from "./index.js";
 /** Background re-check for @openma/* self-hosted harness npm `latest` dist-tags. */
 export const OPENMA_NPM_HARNESS_UPGRADE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
-export type OpenMaHarnessUpgradeTrigger = "startup" | "periodic";
+/** "manual" is the user-initiated check from the About page. */
+export type OpenMaHarnessUpgradeTrigger = "startup" | "periodic" | "manual";
 
 export type OpenMaHarnessUpgradeOutcome =
   | { agentId: string; action: "skipped"; reason: "not-installed" | "up-to-date" | "latest-unavailable" | "not-managed" }
@@ -20,6 +21,7 @@ export type OpenMaHarnessUpgradeOutcome =
 export type OpenMaHarnessUpgradeLogEvent =
   | { kind: "check-started"; trigger: OpenMaHarnessUpgradeTrigger }
   | { kind: "check-settled"; trigger: OpenMaHarnessUpgradeTrigger; outcomes: OpenMaHarnessUpgradeOutcome[] }
+  | { kind: "upgrade-started"; agentId: string; trigger: OpenMaHarnessUpgradeTrigger }
   | { kind: "version-changed"; agentId: string; fromVersion: string; toVersion: string; trigger: OpenMaHarnessUpgradeTrigger };
 
 export interface OpenMaNpmHarnessUpgradeDeps {
@@ -113,6 +115,7 @@ async function upgradeHarnessIfNeeded(
   }
   const fromVersion = installState.installedVersion ?? "unknown";
   try {
+    onEvent?.({ kind: "upgrade-started", agentId, trigger });
     await service.upgradeAgent(agentId);
     await recordHarnessRollbackMetadata(deps.acpInstallRoot, entry.registryId, fromVersion);
     onEvent?.({

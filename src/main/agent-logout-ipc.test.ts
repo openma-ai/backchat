@@ -57,6 +57,8 @@ vi.mock("electron", () => ({
 vi.mock("./agent-setup.js", () => ({
   createAgentSetupService: () => setup,
   launchTerminalAuth: vi.fn(),
+  // The background harness auto-updater must not run in this test.
+  startOpenMaNpmHarnessAutoUpdater: () => () => undefined,
 }));
 
 import { InvokeChannel } from "../shared/ipc-channels.js";

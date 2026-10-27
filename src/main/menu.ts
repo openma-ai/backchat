@@ -27,6 +27,8 @@ const isMac = process.platform === "darwin";
 export function installAppMenu(opts: {
   openNewWindow: () => void;
   focusedWebContentsSend: (channel: string, payload?: unknown) => void;
+  /** Runs the App update check. Discovery only — it never downloads. */
+  checkForUpdates: () => void;
 }): void {
   const template: MenuItemConstructorOptions[] = [
     // macOS app menu (auto-hidden on win/linux).
@@ -36,6 +38,11 @@ export function installAppMenu(opts: {
             label: app.name,
             submenu: [
               { role: "about" },
+              { type: "separator" },
+              {
+                label: "Check for Updates…",
+                click: () => opts.checkForUpdates(),
+              },
               { type: "separator" },
               {
                 label: "Settings…",
@@ -168,6 +175,11 @@ export function installAppMenu(opts: {
     {
       role: "help",
       submenu: [
+        {
+          label: "Check for Updates…",
+          click: () => opts.checkForUpdates(),
+        },
+        { type: "separator" },
         {
           label: "Backchat on GitHub",
           click: () =>

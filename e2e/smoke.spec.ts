@@ -473,7 +473,7 @@ test.describe("backchat smoke", () => {
       const settings = page
         .locator(".sidebar-footer-chrome")
         .getByRole("link", { name: "Settings", exact: true });
-      const update = page.getByRole("button", { name: "1 ACP update available" });
+      const update = page.getByRole("button", { name: "1 update available" });
       await Promise.all([settings, update].map((item) => expect(item).toBeVisible()));
       await expect(settings).toHaveAttribute("href", "/settings/activity");
       await expect(settings.locator("button")).toHaveCount(0);
@@ -512,7 +512,7 @@ test.describe("backchat smoke", () => {
 
       await page.keyboard.press("Escape");
       await expect(popover).toBeHidden();
-      await expect(page.getByRole("button", { name: "1 ACP update available" }))
+      await expect(page.getByRole("button", { name: "1 update available" }))
         .toHaveCount(0);
 
       await settings.click();

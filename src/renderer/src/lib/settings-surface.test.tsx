@@ -75,10 +75,20 @@ vi.mock("@/lib/projects-query", () => ({
   useProjects: () => ({ data: harness.projects }),
 }));
 
+/**
+ * The catalog resolves to the key so a panel can be located by the string it
+ * was asked for. Values ride along in the key so two rows that share a
+ * message ("Sign in to …") stay distinguishable.
+ */
 vi.mock("@/lib/i18n", () => ({
   useI18n: () => ({
     locale: "en" as const,
-    t: (key: string) => key,
+    t: (key: string, values?: Record<string, string | number>) =>
+      values && Object.keys(values).length > 0
+        ? `${key}(${Object.entries(values)
+            .map(([name, value]) => `${name}=${value}`)
+            .join(",")})`
+        : key,
   }),
 }));
 
@@ -546,8 +556,8 @@ describe("settings surfaces render the shared box and row", () => {
     };
     const view = await mount(<SettingsAgents />);
     await settle();
-    const signIn = () => view.host.querySelector("button[aria-label='Sign in to Evidence Agent']") as HTMLButtonElement;
-    const fieldsSignIn = () => view.host.querySelector("button[aria-label='Sign in to Fields Agent']") as HTMLButtonElement;
+    const signIn = () => view.host.querySelector("button[aria-label='agents.auth.signInAria(agent=Evidence Agent)']") as HTMLButtonElement;
+    const fieldsSignIn = () => view.host.querySelector("button[aria-label='agents.auth.signInAria(agent=Fields Agent)']") as HTMLButtonElement;
     expect(signIn()).not.toBeNull();
     await act(async () => { signIn().click(); });
     await act(async () => { signIn().click(); });
@@ -570,8 +580,8 @@ describe("settings surfaces render the shared box and row", () => {
     expect(lists().some((list) => list.textContent?.includes("auth.setupTitle"))).toBe(false);
     await act(async () => { signIn().click(); });
     harness.holdMutation = true;
-    await clickButton("Install");
-    await clickButton("Uninstall Evidence Agent");
+    await clickButton("agents.install");
+    await clickButton("agents.uninstall(agent=Evidence Agent)");
     await clickButton("auth.continue");
     harness.mutationError = new Error("boom");
     await act(async () => { view.root.render(<SettingsAgents />); });

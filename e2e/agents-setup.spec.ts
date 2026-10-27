@@ -227,7 +227,7 @@ test.describe("settings agent setup lifecycle", () => {
     await page.getByRole("button", { name: "Back to app" }).click();
     await expect(page.locator('[data-chat-surface="main"]')).toBeVisible();
 
-    const updateControl = page.getByRole("button", { name: "1 ACP update available" });
+    const updateControl = page.getByRole("button", { name: "1 update available" });
     await expect(updateControl).toBeVisible();
     await updateControl.click();
     const updatePopover = page.locator('[data-sidebar-agent-update-popover="true"]');

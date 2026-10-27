@@ -277,6 +277,37 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       });
     },
   });
+  /**
+   * Re-read the managed-agent list and push it to every renderer.
+   *
+   * The harness auto-updater can move an agent to a new version in the
+   * background. The renderer keeps one canonical agent cache, so the fresh
+   * list has to reach it — otherwise the combined update status keeps
+   * reporting "update available" for an agent that is already upgraded.
+   */
+  let agentsPushInFlight: Promise<void> | null = null;
+  const pushRefreshedAgents = (): Promise<void> => {
+    if (agentsPushInFlight) return agentsPushInFlight;
+    const run = async (): Promise<void> => {
+      const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+      if (windows.length === 0) return;
+      try {
+        const agents = await agentSetup.listAgents();
+        for (const window of windows) {
+          window.webContents.send(PushChannel.AgentsChanged, agents);
+        }
+      } catch (error) {
+        logAppEvent("app.harness_upgrade", {
+          outcome: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+    agentsPushInFlight = run().finally(() => {
+      agentsPushInFlight = null;
+    });
+    return agentsPushInFlight;
+  };
   const stopOpenMaHarnessAutoUpdater = startOpenMaNpmHarnessAutoUpdater(agentSetup, {
     acpBinDir: deps.acpBinDir,
     acpInstallRoot: deps.acpInstallRoot,
@@ -285,6 +316,14 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
       testHooksEnabled
       || process.env["BACKCHAT_DISABLE_OPENMA_HARNESS_AUTO_UPGRADE"] === "1",
     onEvent: (event) => {
+      if (event.kind === "upgrade-started") {
+        logAppEvent("app.harness_upgrade", {
+          agent_id: event.agentId,
+          trigger: event.trigger,
+          outcome: "started",
+        });
+        return;
+      }
       if (event.kind === "version-changed") {
         logAppEvent("app.harness_upgrade", {
           agent_id: event.agentId,
@@ -307,6 +346,10 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
             });
           }
         }
+        // The harness auto-updater may have moved an agent to a new version.
+        // Re-read the list so the renderer's combined update status stops
+        // reporting a stale "update available" for an already-upgraded agent.
+        void pushRefreshedAgents();
       }
     },
   });

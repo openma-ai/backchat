@@ -34,7 +34,7 @@ import { configureAppLog, flushAppLog, logAppEvent } from "./app-log.js";
 import { installMainTelemetry, type InstalledTelemetry } from "./telemetry/index.js";
 import { RendererRecovery } from "./renderer-recovery.js";
 import { logRendererCrash } from "./renderer-crash-log.js";
-import { startAppUpdater } from "./app-updater.js";
+import { startAppUpdater, type AppUpdaterHandle } from "./app-updater.js";
 import { resolveRemoteDebugging } from "./remote-debugging.js";
 
 // Chromium's OSCrypt otherwise initializes the macOS system credential store
@@ -76,6 +76,8 @@ let mainTelemetry: InstalledTelemetry | undefined;
 let disposeSessionsForShutdown: (() => Promise<void>) | null = null;
 let hasLocalProcesses = () => false;
 let startUpdater: (() => Promise<unknown>) | null = null;
+/** Live updater handle, so the "Check for Updates…" menu item can check. */
+let updaterHandle: AppUpdaterHandle | null = null;
 let openmaRunner: OpenmaRunner | null = null;
 
 function registerBackchatProtocolClient(): void {
@@ -638,6 +640,10 @@ if (!gotLock) {
     installAppMenu({
       openNewWindow: () => createWindow(),
       focusedWebContentsSend: sendToFocused,
+      // Discovery only. The menu never downloads and never restarts.
+      checkForUpdates: () => {
+        void updaterHandle?.checkForUpdates();
+      },
     });
 
     await startUpdater?.();
@@ -678,6 +684,7 @@ const quitCoordinator = new QuitCoordinator({
     return result.response === 1;
   },
   dispose: async () => {
+    updaterHandle?.dispose();
     disposeAllUiTerminals();
     await Promise.allSettled([
       disposeSessionsForShutdown?.(), browserHarnessMcpBridge.stop(),
@@ -692,7 +699,11 @@ const quitCoordinator = new QuitCoordinator({
   },
   quit: () => app.quit(),
 });
-startUpdater = () => startAppUpdater(quitCoordinator);
+startUpdater = () =>
+  startAppUpdater(quitCoordinator).then((handle) => {
+    updaterHandle = handle;
+    return handle;
+  });
 
 app.on("before-quit", (event) => {
   if (!quitCoordinator.request()) event.preventDefault();

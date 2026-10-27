@@ -104,6 +104,8 @@ export const InvokeChannel = {
   SettingsPatch: "settings:patch",
   UpdateGetState: "update:getState",
   UpdateCheck: "update:check",
+  /** Step 2 of the App update flow — downloads the update a check discovered. */
+  UpdateDownload: "update:download",
   UpdateInstall: "update:install",
   McpAppResolve: "mcpApp:resolve",
   McpAppRequest: "mcpApp:request",
@@ -274,6 +276,9 @@ export const PushChannel = {
    *  and re-renders settings-driven UI without polling. */
   SettingsChanged: "settings:changed",
   UpdateState: "update:state",
+  /** The managed-agent list changed (install, upgrade, or harness auto-upgrade
+   *  settled). The renderer refreshes its canonical agent cache from this. */
+  AgentsChanged: "agents:changed",
   /** CLI project create/remove. The sidebar refetches its project list. */
   ProjectsChanged: "projects:changed",
   /** Permission ask from a running ACP child. The owning session's composer
