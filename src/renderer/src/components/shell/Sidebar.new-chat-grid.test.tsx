@@ -21,6 +21,7 @@ const signedOutAccount: OpenmaAccountState = {
   workspaces: [],
   activeWorkspaceId: null,
 };
+let currentPath = "/";
 let taskRefreshMode: "success" | "error" | "pending" = "success";
 let taskRefreshCalls = 0;
 
@@ -69,7 +70,7 @@ vi.mock("@tanstack/react-router", () => ({
   } & Record<string, unknown>) => (
     <a href={to} className={className} {...props}>{children}</a>
   ),
-  useLocation: () => ({ pathname: "/" }),
+  useLocation: () => ({ pathname: currentPath }),
   useNavigate: () => () => undefined,
 }));
 
@@ -182,6 +183,7 @@ describe("new chat sidebar grid", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorage.clear();
+    currentPath = "/";
     taskRefreshMode = "success";
     installBackchat();
   });
@@ -200,8 +202,8 @@ describe("new chat sidebar grid", () => {
     expect(primary?.contains(icon!)).toBe(true);
     expect(label?.textContent).toContain("New chat");
     expect(primary?.contains(trailing!)).toBe(false);
-    expect(trailing?.querySelector('[data-sidebar-grid-action="penultimate"]')).not.toBeNull();
-    expect(trailing?.querySelector('[data-sidebar-grid-action="last"]')).toBeNull();
+    expect(trailing?.querySelector('[data-sidebar-grid-action="penultimate"]')).toBeNull();
+    expect(trailing?.querySelector('[data-sidebar-grid-action="last"]')).not.toBeNull();
 
     await act(async () => {
       if (primary instanceof HTMLButtonElement) primary.click();
@@ -261,51 +263,42 @@ describe("new chat sidebar grid", () => {
     await act(async () => root.unmount());
   });
 
-  it("shows a coordinator row only for configured projects", async () => {
-    const project: ProjectInfo = {
-      id: "coordinator-project",
-      name: "Coordinator project",
-      primary_folder: "/work/coordinator-project",
-      source_folders: ["/work/coordinator-project"],
-      created_at: 1,
-      updated_at: 1,
-    };
-    const renderCoordinator = async (coordinatorAgent?: string) => {
-      localStorage.setItem(
-        "backchat:sidebar-projects:v1",
-        JSON.stringify([`project:${project.id}`]),
-      );
-      installBackchat(signedOutAccount, [project], coordinatorAgent);
-      const { root, host } = await mount();
-      await act(async () => {
-        await vi.waitFor(() => {
-          expect(host.querySelector('[data-sidebar-project="project:coordinator-project"]')).not.toBeNull();
-          const row = host.querySelector<HTMLElement>(
-            '[data-testid="project-coordinator-row"]',
-          );
-          // Setup lives in the project menu; only a configured coordinator is a row.
-          if (coordinatorAgent) expect(row?.getAttribute("data-configured")).toBe("true");
-          else expect(row).toBeNull();
-        });
-      });
-      return { root, host };
-    };
+  it.each([undefined, "codex-acp"])("opens the project through its name while disclosure only expands (%s)", async coordinatorAgent => {
+    const project: ProjectInfo = { id: "coordinator-project", name: "Coordinator project", primary_folder: "/work/coordinator-project", source_folders: ["/work/coordinator-project"], created_at: 1, updated_at: 1 };
+    installBackchat(signedOutAccount, [project], coordinatorAgent);
+    const { root, host } = await mount();
+    await act(async () => { await vi.waitFor(() => expect(host.querySelector('[data-sidebar-project="project:coordinator-project"]')).not.toBeNull()); });
+    const row = host.querySelector('[data-sidebar-project="project:coordinator-project"]')!;
+    const toggle = row.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    expect(toggle.closest('[data-sidebar-grid="icon"]')).not.toBeNull();
+    const label = row.querySelector<HTMLButtonElement>('[data-sidebar-grid="label"] button')!;
+    expect(label.getAttribute("aria-expanded")).toBeNull();
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(host.querySelector('[data-testid="project-coordinator-row"]')).toBeNull();
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => label.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => root.unmount());
+  });
 
-    const configured = await renderCoordinator("codex-acp");
-    const configuredRow = configured.host.querySelector<HTMLElement>(
-      '[data-testid="project-coordinator-row"]',
-    );
-    const configuredTrailing = configuredRow?.querySelector<HTMLElement>(
-      '[data-sidebar-grid="trailing"]',
-    );
-    expect(configuredRow?.getAttribute("data-sidebar-trailing-track")).toBe("single");
-    expect(configuredTrailing?.getAttribute("aria-hidden")).toBe("true");
-    expect(configuredTrailing?.querySelector("svg")).not.toBeNull();
-    await act(async () => configured.root.unmount());
-
-    const unconfigured = await renderCoordinator();
-    expect(unconfigured.host.querySelector('[data-testid="project-coordinator-row"]')).toBeNull();
-    await act(async () => unconfigured.root.unmount());
+  it("retains project selection on its coordinator route but not unrelated routes", async () => {
+    const project: ProjectInfo = { id: "selected-project", name: "Selected project", primary_folder: "", source_folders: [], created_at: 1, updated_at: 1 };
+    installBackchat(signedOutAccount, [project]);
+    currentPath = "/projects/selected-project";
+    const { root, host } = await mount();
+    await act(async () => { await vi.waitFor(() => expect(host.querySelector('[data-sidebar-project="project:selected-project"]')).not.toBeNull()); });
+    const row = host.querySelector('[data-sidebar-project="project:selected-project"]')!;
+    expect(row.classList.contains("app-selected-surface")).toBe(true);
+    expect(row.querySelector('[data-sidebar-grid="label"] button')?.getAttribute("aria-current")).toBe("page");
+    expect(row.querySelector('button[aria-expanded]')?.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => root.unmount());
+    currentPath = "/chat/another-session";
+    const other = await mount();
+    await act(async () => { await vi.waitFor(() => expect(other.host.querySelector('[data-sidebar-project="project:selected-project"]')).not.toBeNull()); });
+    expect(other.host.querySelector('[data-sidebar-project="project:selected-project"]')?.classList.contains("app-selected-surface")).toBe(false);
+    await act(async () => other.root.unmount());
   });
 
   it("uses a label-only sign-in row for a workspace still signing in", async () => {

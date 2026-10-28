@@ -115,7 +115,8 @@ export class OpenManagedCloudRuntimeClient {
       signal: controller.signal,
       // OpenMA admits transient message/tool chunks through this extension;
       // the SDK's event_deltas parameter alone selects only spec events.
-      query: { include: "chunks" },
+      // SDK request options replace (rather than merge) the generated query.
+      query: { include: "chunks", event_deltas: ["agent.message", "agent.thinking"] },
       // The SDK timeout covers connection establishment, not SSE body reads.
       // Keep the normal timeout: zero aborts real network requests immediately.
     }).asResponse());

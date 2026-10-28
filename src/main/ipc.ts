@@ -642,7 +642,8 @@ export async function registerIpc(deps: RegisterDeps): Promise<RegisteredIpcRunt
     start: p => sessionManager.start(p), prompt: p => sessionManager.prompt(p),
     cancel: (id, turn) => sessionManager.cancel(id, turn),
     dispose: id => sessionManager.dispose(id), findSession: getSession,
-  });
+    setConfigOption: p => sessionManager.setConfigOption(p),
+  }, undefined, (projectId, commandId) => projectWork.runConfig(projectId, commandId));
   projectMcp = new ProjectMcpBridge(projectWork, projectAgents);
   await projectMcp.start();
   projectWork.start();

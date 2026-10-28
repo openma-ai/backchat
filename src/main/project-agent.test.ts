@@ -669,3 +669,38 @@ function projectEvent(
 ): ContextItem {
   return contextItem(`context-${id}`, "event", { id, type, payload });
 }
+
+it("applies selected run options before prompting the coordinator and refuses to prompt on a config failure", async () => {
+  const db = new DatabaseSync(":memory:");
+  const calls: string[] = [];
+  let fail = false;
+  const bridge = new ProjectAgentBridge(db, {
+    start: async () => { throw new Error("unused"); },
+    setConfigOption: async p => {
+      calls.push(`${p.config_id}:${p.value}`);
+      if (fail) throw new Error("Model unavailable");
+    },
+    prompt: async p => { calls.push("prompt"); },
+    cancel: () => {}, dispose: async () => {}, findSession: () => null,
+  }, { prepare: async () => { throw new Error("unused"); } }, (projectId, commandId) => {
+    expect([projectId, commandId]).toEqual(["p", "chosen-message"]);
+    return { model: "selected", thought_level: "high" };
+  });
+  const driver = bridge.driver("test", { id: "p", name: "P", primary_folder: "", source_folders: [], created_at: 1, updated_at: 1 }, "coordinator");
+  const turn = (id: string) => Stream.runCollect(driver.turn({
+    session: { id: "s", raw: { acpSessionId: "remote", workThreadId: "thread" } },
+    sessionId: "s", turnId: id, afterSequence: 0, allow: [],
+    context: { schemaVersion: "0.1", id: "c", scopeId: "p", workThreadId: "thread", triggerEventId: "e", digest: "d", createdAt: new Date().toISOString(), grants: [],
+      items: [{ id: "event", provenance: [], kind: "event", value: { id: "p:message:chosen-message", type: "project.message", payload: { text: "Hello" } } }],
+    },
+  }));
+  try {
+    await Effect.runPromise(turn("first"));
+    expect(calls).toEqual(["model:selected", "thought_level:high", "prompt"]);
+    fail = true;
+    calls.length = 0;
+    const events = Array.from(await Effect.runPromise(turn("second")));
+    expect(calls).toEqual(["model:selected"]);
+    expect(events.at(-1)?.type).toBe("turn.failed");
+  } finally { db.close(); }
+});

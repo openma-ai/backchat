@@ -1,3 +1,4 @@
+import { logAppEvent } from "./app-log.js";
 import { configuredEnvironment, readLocalEnvironment } from "./task-environment.js";
 import type { TaskEnvironment } from "../shared/task-environment.js";
 import { sessionInputIdentityPrefix } from "@openma/common/protocol/managed";
@@ -296,6 +297,13 @@ export class OpenmaTasks {
       const attempt = new AbortController();
       const attemptSignal = AbortSignal.any([signal, attempt.signal]);
       let live: AsyncIterator<OpenmaTaskEvent> | undefined;
+      let stage = "stream_connect";
+      const started = Date.now();
+      const taskForLog = this.#store.get(id)!;
+      const diagnostics = () => ({ task_id: id, session_id: taskForLog.sessionId, workspace_id: taskForLog.workspaceId, origin: new URL(taskForLog.baseUrl).origin, stage, elapsed_ms: Date.now() - started });
+      logAppEvent("openma.task.connecting", diagnostics());
+      const slow = setTimeout(() => logAppEvent("openma.task.connect_slow", diagnostics(), { level: "warn" }), 15_000);
+      slow.unref?.();
       try {
         const task = this.#task(id);
         const client = this.#client(this.options.account.connection(task));
@@ -309,16 +317,25 @@ export class OpenmaTasks {
         // arrive during catch-up remain buffered and deduplicate by event ID.
         void first.catch(failed);
         await ready;
+        stage = "history";
+        logAppEvent("openma.task.stream_connected", diagnostics());
+        let historyCount = 0;
         const hasLocal = this.#store.events(id).some((event) => event.canonical);
         for await (const event of client.history(task.sessionId, { signal: attemptSignal, preferLocal: hasLocal })) {
           if (signal.aborted) return;
           this.#ingest(id, observer, event);
+          historyCount++;
         }
+        logAppEvent("openma.task.history_loaded", { ...diagnostics(), event_count: historyCount });
+        stage = "session_retrieve";
         const revision = this.#store.get(id)?.revision;
         const session = await client.retrieveSession(task.sessionId, attemptSignal);
         if (signal.aborted) return;
         if (this.#store.get(id)?.revision === revision) this.#store.save({ ...this.#store.get(id)!, status: session.status, title: task.provider === "cursor-cloud" ? task.title : (session.title ?? task.title), updatedAt: timestamp(session.updated_at, task.updatedAt) });
         observer.connection = "online"; this.#publish(id);
+        clearTimeout(slow);
+        stage = "live";
+        logAppEvent("openma.task.online", diagnostics());
         for (let next = await first; !next.done; next = await live.next()) {
           if (signal.aborted) return;
           this.#ingest(id, observer, next.value);
@@ -327,11 +344,13 @@ export class OpenmaTasks {
         if (!signal.aborted) throw new Error("OpenMA connection interrupted. Reconnecting…");
       } catch (error) {
         if (signal.aborted || this.#closed) return;
+        logAppEvent("openma.task.connection_failed", { ...diagnostics(), error_type: error instanceof Error ? error.name : "unknown", status: error instanceof OpenmaRequestError ? error.status : undefined, retry_ms: retryMs }, { level: "warn" });
         observer.connection = "offline";
         observer.error = error instanceof Error ? error.message : "OpenMA connection interrupted";
         this.#publish(id);
       }
       finally {
+        clearTimeout(slow);
         attempt.abort();
         await live?.return?.().catch(() => {});
       }

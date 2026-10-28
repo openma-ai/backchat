@@ -487,3 +487,12 @@ in live/replay, retain partial output, and permit explicit next input; never
 silently retry a side-effectful prompt. Keep the original structured error on
 disk for diagnostics even when the GUI chooses interruption rather than red
 session-failure chrome.
+
+### Managed cloud execution failures (2026-10-27)
+Managed Agents events are not ACP prompt responses. Cloud projection uses the
+remote `session.error.error.retry_status` and `session.status_idle.stop_reason`:
+`exhausted` / `terminal` errors remain visible as failed turns, including when a
+stale task snapshot says running; `retries_exhausted` cannot become ordinary
+success. Retryable errors do not close the turn; a successful end_turn clears
+the transient diagnostic. Retain partial output and scope failures to their
+own user turn. This preserves I3/I7/I11 without inventing ACP lifecycle events.

@@ -9,7 +9,7 @@ it("gives each worker only its own Goal capability while retaining coordinator c
     ["coordinator-session", { projectId: "p", role: "coordinator", workThreadId: "coordinator" }],
   ]);
   const service = {
-    config: () => ({ controls: ["delegate", "steer", "cancel", "complete"] }),
+    config: () => ({ controls: [] }),
     goalControl: (scopeId: string, workThreadId: string) => ({
       get: async () => ({
         id: "goal", scopeId, workThreadId, objective: "Fix retries", status: "active",

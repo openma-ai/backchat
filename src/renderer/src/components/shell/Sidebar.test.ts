@@ -435,7 +435,6 @@ describe("groupSidebarSessions", () => {
     expect(source).toContain("function WorkspaceGroupHeading");
     expect(projectRow).toContain("<ProjectIcon");
     expect(projectRow).toContain("sidebar-project-label");
-    expect(projectRow).toContain('t("project.setupCoordinator")');
   });
 
   it("outdents worktree headings to the project depth, caret in the project-icon column", () => {
@@ -729,7 +728,6 @@ describe("groupSidebarSessions", () => {
     for (const component of [
       "function SidebarSection",
       "function ProjectSidebarRow",
-      "function ProjectCoordinatorRow",
       "function PairSidebarRow",
       "function SessionRow",
     ]) {
@@ -761,15 +759,6 @@ describe("groupSidebarSessions", () => {
       const next = source.indexOf("\nfunction ", start + 1);
       expect(source.slice(start, next < 0 ? undefined : next)).toContain("sidebar-row-icon");
     }
-    const coordinatorStart = source.indexOf("function ProjectCoordinatorRow");
-    const coordinatorEnd = source.indexOf("/** A worktree inside a project:", coordinatorStart);
-    const coordinator = source.slice(coordinatorStart, coordinatorEnd);
-    expect(coordinator).toContain(
-      '<SidebarGridCell slot="trailing" className={labelCls} aria-hidden="true">',
-    );
-    expect(coordinator).toContain(
-      '<WorkflowIcon className="size-3.5 shrink-0" />',
-    );
     expect(source).not.toContain('"inline-flex size-4 shrink-0');
   });
 

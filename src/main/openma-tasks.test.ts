@@ -1,5 +1,7 @@
 import { sessionInputIdentityPrefix } from "@openma/common/protocol/managed";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { configureAppLog, flushAppLog } from "./app-log.js";
+import { readFile } from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -57,7 +59,7 @@ async function setup() {
   await account.login(target.baseUrl);
   const tasks = new OpenmaTasks({ directory, account, fetchImpl, reconnectMs: 10, onSnapshot: (snapshot) => state.pushes.push(snapshot), catalog: async () => ({ runners: [], cloudAgents: [{ id: "agent", name: "Helper" }], environments: [{ id: "env", name: "Cloud project", type: "cloud", runtimeId: null }] }) });
   cleanups.push(async () => { tasks.close(); await rm(directory, { recursive: true, force: true }); });
-  return { tasks, state, account };
+  return { tasks, state, account, directory };
 }
 
 describe("OpenMA desktop task observer", () => {
@@ -296,4 +298,25 @@ it("exposes remote repository configuration without reading local paths or chang
   expect(environment).toMatchObject({ environmentId: "env", checkouts: [{ path: "/tmp/same-path-as-local", state: "configured", branch: null, headSha: null, changes: null, reviews: null, configuredRevision: { type: "branch", name: "main" } }] });
   expect(tasks.snapshot(task.id).task.status).toBe("idle");
   expect(state.mutations).toEqual(["POST /v1/sessions"]);
+});
+
+
+it("records cloud connection stages without credentials or conversation content", async () => {
+  const { tasks, directory } = await setup();
+  configureAppLog(directory);
+  try {
+    const { task } = await tasks.create(target, "PRIVATE CONVERSATION TITLE");
+    tasks.open(task.id);
+    await vi.waitFor(() => expect(tasks.snapshot(task.id).connection).toBe("online"));
+    await flushAppLog();
+    const raw = await readFile(join(directory, "logs", "backchat.log"), "utf8");
+    const rows = raw.trim().split("\n").map(line => JSON.parse(line));
+    expect(rows.map(row => row.event)).toEqual(expect.arrayContaining([
+      "openma.task.connecting", "openma.task.stream_connected", "openma.task.history_loaded", "openma.task.online",
+    ]));
+    expect(rows.find(row => row.event === "openma.task.online")).toMatchObject({ session_id: "remote", workspace_id: "team" });
+    expect(raw).not.toContain("PRIVATE CONVERSATION TITLE");
+    expect(raw).not.toContain('"apiKey"');
+    expect(raw).not.toContain('"token"');
+  } finally { tasks.close(); await flushAppLog(); configureAppLog(null); }
 });

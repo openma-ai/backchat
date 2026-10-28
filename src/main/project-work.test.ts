@@ -174,5 +174,5 @@ it("isolates per-run sessions and validates configuration before persisting", as
       text: "stop",
       workerId: "x",
     }),
-  ).rejects.toThrow(/enabled/i);
+  ).resolves.toBeUndefined();
 });

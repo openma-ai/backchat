@@ -31,6 +31,7 @@ interface ProjectAgentHost {
   prompt(params: SessionPromptParams): Promise<void>;
   cancel(sessionId: string, turnId: string): void;
   dispose(sessionId: string): Promise<void>;
+  setConfigOption?(params: { session_id: string; config_id: string; value: string | boolean }): Promise<void>;
   findSession(id: string): { acp_session_id: string } | null;
 }
 /** Adapts the existing Backchat ACP host. No second process launcher or turn scheduler. */
@@ -51,6 +52,7 @@ export class ProjectAgentBridge {
       db,
       join(openmaRoot(), "backchat", "projects", "workspaces"),
     ),
+    readonly runConfig: (projectId: string, commandId: string) => Record<string, string | boolean> = () => ({}),
   ) {
     db.exec(
       "CREATE TABLE IF NOT EXISTS backchat_project_dispatch(turn_id TEXT PRIMARY KEY)",
@@ -280,7 +282,15 @@ export class ProjectAgentBridge {
                     context: input.context.items,
                   }),
                 ].join("\n\n");
-            const promptPromise = self.host.prompt({
+            const promptPromise = (async () => {
+              if (role === "coordinator" && userPrompt.clientId) {
+                const values = self.runConfig(project.id, userPrompt.clientId);
+                for (const [config_id, value] of Object.entries(values)) {
+                  if (!self.host.setConfigOption) throw new Error("Project run configuration is unavailable");
+                  await self.host.setConfigOption({ session_id: input.sessionId, config_id, value });
+                }
+              }
+              await self.host.prompt({
                 session_id: input.sessionId,
                 turn_id: input.turnId,
                 text: prompt,
@@ -288,6 +298,7 @@ export class ProjectAgentBridge {
                 ...(userPrompt.clientId ? { client_id: userPrompt.clientId } : {}),
                 attachments,
               });
+            })();
             void promptPromise
               .then(() => {
                 // Only a prompt the agent accepted and answered without a

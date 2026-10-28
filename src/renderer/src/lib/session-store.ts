@@ -2232,6 +2232,7 @@ export class SessionStore {
     sessionReferences: PromptSessionReference[] = [],
     attachments: PromptAttachment[] = [],
     annotations: PromptAnnotation[] = [],
+    runSelection?: Turn["runSelection"],
   ): void {
     const row = this.#sessions.get(sessionId);
     const isSteering =
@@ -2244,6 +2245,7 @@ export class SessionStore {
       id: turnId,
       sessionId,
       promptText,
+      ...(runSelection ? { runSelection } : {}),
       annotations: annotations.length ? annotations : undefined,
       attachments: attachments.length > 0
         ? attachments.map(({ data: _data, ...attachment }) => attachment)
@@ -3322,7 +3324,23 @@ export class SessionStore {
     opts: { hasMore: boolean },
   ): void {
     this.#historyPending.delete(sessionId);
-    if (!this.#shouldMaterializeHistoryFromSql(sessionId)) { this.#emit(); return; }
+    if (!this.#shouldMaterializeHistoryFromSql(sessionId)) {
+      // I11: live ownership wins for existing turns, not for the entire
+      // session. A late initial history fetch must still expose older turns.
+      if (!this.#history.has(sessionId)) {
+        const liveTurns = this.turnsFor(sessionId);
+        const agentLifecycle = this.#prependReplay(sessionId, rows, opts.hasMore);
+        for (const turn of liveTurns) {
+          this.#turns.set(turn.id, turn);
+          this.#turnProjectionCache.delete(turn.id);
+        }
+        this.#history.set(sessionId, {
+          oldestSeq: rows[0]?.seq, hasMore: opts.hasMore, loading: false, agentLifecycle,
+        });
+      }
+      this.#emit();
+      return;
+    }
     this.#clearMaterializableTurns(sessionId);
     const agentLifecycle = this.#replayRows(sessionId, rows, {
       partialHead: opts.hasMore,

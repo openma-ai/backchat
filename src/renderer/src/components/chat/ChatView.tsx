@@ -226,7 +226,7 @@ export function ChatView({
     setBoundLoadError(null);
     sessionStore.ensureBoundSession({
       id: binding.sessionId,
-      agentId: binding.agentId,
+      agentId: binding.loadHistory ? binding.agentId : "",
       cwd: binding.cwd,
       label: binding.label,
       projectId: binding.projectId,
@@ -372,7 +372,7 @@ export function ChatView({
 
   const onSubmit = useChatSubmission({
     isSide,
-    pickedAgentId: binding ? binding.agentId : pickedAgentId,
+    pickedAgentId: pickedAgentId ?? binding?.agentId ?? null,
     pickedCwd,
     onSuggestionSubmitted: consumeSuggestionDraft,
     boundSessionId: binding?.sessionId,
@@ -466,7 +466,7 @@ export function ChatView({
       availableCommands={active?.availableCommands}
       attachmentDefaultPath={active?.cwd || pickedCwd || undefined}
       lockedAgentId={composerAgentBinding.lockedAgentId}
-      pickedAgentId={pickedAgentId}
+      pickedAgentId={pickedAgentId ?? (binding && !binding.loadHistory ? binding.agentId || null : null)}
       sessionAuthRequired={!!active?.authRequired}
       sessionAuthRetryAllowed={active?.authRetryAllowed}
       sessionAuth={active?.auth}
@@ -548,7 +548,7 @@ export function ChatView({
       open={authSetupOpen}
       sessionId={active?.id}
       sessionAgentId={composerAgentBinding.sessionAgentId}
-      pickedAgentId={pickedAgentId}
+      pickedAgentId={pickedAgentId ?? (binding && !binding.loadHistory ? binding.agentId || null : null)}
       authRequired={!!active?.authRequired}
       sessionAuth={active?.auth}
       sessionSupportsLogout={!!active?.supportsLogout}
