@@ -176,7 +176,7 @@ describe("preserveScrollAnchor", () => {
     preserveScrollAnchor({
       scrollElement,
       anchorElement: {
-        getBoundingClientRect: () => ({ top: 360 - currentScrollTop }),
+        getBoundingClientRect: () => ({ top: 360 - currentScrollTop }) as DOMRect,
       },
       contentElement,
       update: () => {
@@ -256,7 +256,7 @@ describe("preserveScrollAnchor", () => {
     utils.preserveScrollAnchor({
       scrollElement,
       anchorElement: {
-        getBoundingClientRect: () => ({ top: 360 - currentScrollTop }),
+        getBoundingClientRect: () => ({ top: 360 - currentScrollTop }) as DOMRect,
       },
       contentElement: contentElement as unknown as HTMLElement,
       update: () => {

@@ -1106,9 +1106,10 @@ describe("SessionEventOut → OpenMA event boundary", () => {
     }, { ...options, harness: "codex-acp", adapter: "codex" });
 
     expect(event?.type).toBe("session.error");
-    expect(event?.data.code).toBe("auth_required");
-    expect(String(event?.data.message)).toContain("auth_unavailable");
-    expect(event?.data.error_details).toMatchObject({
+    const authData = event?.data as Record<string, unknown> | undefined;
+    expect(authData?.code).toBe("auth_required");
+    expect(String(authData?.message)).toContain("auth_unavailable");
+    expect(authData?.error_details).toMatchObject({
       message: expect.stringContaining("auth_unavailable"),
       data: { codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } },
     });
@@ -1130,8 +1131,9 @@ describe("SessionEventOut → OpenMA event boundary", () => {
     }, { ...options, harness: "codex-acp", adapter: "codex" });
 
     expect(event?.type).toBe("session.error");
-    expect(event?.data.message).toBe("the model returned an invalid response");
-    expect(event?.data.code).toBeUndefined();
+    const stopData = event?.data as Record<string, unknown> | undefined;
+    expect(stopData?.message).toBe("the model returned an invalid response");
+    expect(stopData?.code).toBeUndefined();
   });
 
   it("keeps a soft reconnect notice-only but explains it with the provider detail", () => {
@@ -1154,8 +1156,9 @@ describe("SessionEventOut → OpenMA event boundary", () => {
     }, { ...options, harness: "codex-acp", adapter: "codex" });
 
     expect(event?.type).toBe("session.running");
-    expect(event?.data.retrying).toBe(true);
-    expect(event?.data.message).toBe("upstream connect timeout, retrying");
+    const softData = event?.data as Record<string, unknown> | undefined;
+    expect(softData?.retrying).toBe(true);
+    expect(softData?.message).toBe("upstream connect timeout, retrying");
   });
 
   it("maps Pi running metadata into canonical session lifecycle without dropping queue depth", () => {
