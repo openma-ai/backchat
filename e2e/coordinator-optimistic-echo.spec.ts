@@ -1,7 +1,13 @@
 import { expect, test } from "./fixtures";
-import { persistSessionFixture } from "./helpers";
+import { fileURLToPath } from "node:url";
+import { reloadRenderer, waitForRunnableHarness, persistSessionFixture } from "./helpers";
 
 test("coordinator chat shows the user message before the host accepts it", async ({ page, capture, app }) => {
+  await page.evaluate(async ({ node, agent }) => {
+    await window.backchat.settingsPatch({ agents: [{ id: "codex-acp", enabled: true, command_override: node, args_override: [agent], env: [] }] });
+  }, { node: process.execPath, agent: fileURLToPath(new URL("./fixtures/fake-acp-agent.mjs", import.meta.url)) });
+  await reloadRenderer(page);
+  await waitForRunnableHarness(page);
   await page.evaluate(async () => {
     await window.backchat.projectSave({
       project_id: "optimistic-coordinator",
@@ -26,7 +32,7 @@ test("coordinator chat shows the user message before the host accepts it", async
   await capture("normal-chat.png", "Normal chat composer");
   const project = page.locator('[data-sidebar-project="project:optimistic-coordinator"]');
   await project.getByRole("button", { name: "Expand project: Optimistic coordinator" }).click();
-  await project.locator("..").getByRole("link").click();
+  await project.locator('[data-sidebar-grid="label"] button').click();
   const composer = page.getByLabel("Message coordinator", { exact: true });
   await expect(composer).toBeVisible();
   await app.evaluate(({ BrowserWindow }) => {
@@ -95,7 +101,7 @@ test("coordinator chat shows the user message before the host accepts it", async
   }).toBe(true);
   const elapsed = timing.shownAt - timing.enterAt;
   console.log(`coordinator optimistic echo visible in ${elapsed.toFixed(1)}ms`);
-  await capture("coordinator-optimistic-pending.png", "User message is visible while the send is still pending");
+  await capture("coordinator-optimistic-pending.png", "Coordinator user message");
   await expect(page.getByText(message, { exact: true })).toHaveCount(1);
 
   await persistSessionFixture(page, {

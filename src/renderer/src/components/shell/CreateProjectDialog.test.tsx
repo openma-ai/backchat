@@ -30,7 +30,7 @@ import {
 } from "./CreateProjectDialog";
 
 describe("CreateProjectDialog", () => {
-  it("keeps source folders in one project form and disables creation without a name", () => {
+  it("keeps source folders optional and allows creation without a name", () => {
     const html = renderToStaticMarkup(
       <CreateProjectDialog
         open
@@ -43,7 +43,7 @@ describe("CreateProjectDialog", () => {
     expect(html).toContain("Project name");
     expect(html).toContain("Source folders");
     expect(html).toContain("Add folders OpenMA can read and edit");
-    expect(html).toContain('disabled=""');
+    expect(html).not.toContain('disabled=""');
   });
 
   it("distinguishes the primary cwd from secondary source folders", () => {
