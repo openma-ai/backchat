@@ -1,6 +1,6 @@
 import { useProjects } from "@/lib/projects-query";
 import { ProjectIcon } from "@/components/ProjectIcon";
-import { MoreIcon as MoreHorizontalIcon, PinIcon as PinIcon, PinOffIcon as PinOffIcon, SearchIcon as SearchIcon, SettingsIcon as Settings2Icon, ComposeIcon as SquarePenIcon, ArchiveIcon as ArchiveIcon, ScheduleIcon as CalendarClockIcon, FolderOpenIcon as FolderOpenIcon, BranchIcon as GitBranchIcon, PlusIcon as PlusIcon, TrashIcon as Trash2Icon, ParticipantsIcon as UsersRoundIcon, CoordinationIcon as WorkflowIcon } from "@/components/BackchatIcons";
+import { MoreIcon as MoreHorizontalIcon, PinIcon as PinIcon, PinOffIcon as PinOffIcon, SearchIcon as SearchIcon, SettingsIcon as Settings2Icon, ComposeIcon as SquarePenIcon, ArchiveIcon as ArchiveIcon, ScheduleIcon as CalendarClockIcon, FolderOpenIcon as FolderOpenIcon, BranchIcon as GitBranchIcon, PlusIcon as PlusIcon, TrashIcon as Trash2Icon, ParticipantsIcon as UsersRoundIcon } from "@/components/BackchatIcons";
 import { rememberRemovedProject, useRemovedProjectPaths } from "@/lib/removed-projects";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -465,8 +465,6 @@ export function Sidebar() {
   useEffect(() => saveDisclosureKeys("backchat:closed-custom-sidebar-sections:v1", closedCustomSectionIds), [closedCustomSectionIds]);
   useEffect(() => {
     if (!location.pathname.startsWith("/projects/")) return;
-    const key = `project:${location.pathname.slice("/projects/".length)}`;
-    setOpenProjectKeys(current => current.has(key) ? current : new Set(current).add(key));
     setOpenSectionKeys(current => current.has("projects") ? current : new Set(current).add("projects"));
   }, [location.pathname]);
   const { data: savedProjects = [] } = useProjects();
@@ -478,14 +476,12 @@ export function Sidebar() {
       staleTime: 30_000,
       select: (view: import("@shared/project-work").ProjectWorkView) => ({
         projectId: project.id,
-        hasCoordinator: !!view.config?.coordinatorAgent,
         coordinatorAgent: view.config?.coordinatorAgent,
         sessionIds: view.facts.sessions.filter(session => session.agentId === "coordinator").map(session => session.id),
       }),
     })),
   });
   const coordinatorSessionIds = new Set(coordinatorViews.flatMap(view => view.data?.sessionIds ?? []));
-  const coordinatorsByProject = new Map(coordinatorViews.flatMap(view => view.data ? [[view.data.projectId, view.data] as const] : []));
   const { data: workspaces = [] } = useQuery({
     queryKey: WORKSPACES_QUERY_KEY,
     queryFn: () => window.backchat.workspacesList(),
@@ -557,8 +553,7 @@ export function Sidebar() {
         await queryClient.invalidateQueries({ queryKey: ["projects"] });
         setOpenProjectKeys(current => {
           const next = new Set(current);
-          next.delete(group.key);
-          next.add(`project:${project.id}`);
+          if (next.delete(group.key)) next.add(`project:${project.id}`);
           return next;
         });
         await navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
@@ -808,7 +803,7 @@ export function Sidebar() {
               onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))}
               aria-label={t("sidebar.search")}
               title={`${t("sidebar.search")} (⌘K)`}
-              data-sidebar-grid-action="penultimate"
+              data-sidebar-grid-action="last"
               className="app-no-drag sidebar-row-action"
             >
               <SearchIcon aria-hidden="true" />
@@ -1001,20 +996,18 @@ export function Sidebar() {
                     <ul className="m-0 list-none space-y-0.5 p-0">
                       {projects.map((project) => {
                         const open = openProjectKeys.has(project.key);
-                        const coordinator = project.projectId ? coordinatorsByProject.get(project.projectId) : undefined;
-                        const hasCoordinator = !!coordinator?.hasCoordinator;
                         return (
                           <li key={project.key}>
                             <ProjectSidebarRow
                               group={project}
+                              active={!!project.projectId && location.pathname === `/projects/${project.projectId}`}
                               open={open}
                               labelCls={labelCls}
                               onToggle={() => toggleProject(project.key)}
+                              onOpen={() => void onOpenProject(project)}
                               onNewChat={() =>
                                 onNewProjectChat(project)
                               }
-                              hasCoordinator={hasCoordinator}
-                              onSetupCoordinator={() => void onOpenProject(project)}
                               onArchiveChats={() => setProjectAction({ kind: "archive", project })}
                               onRemove={() => setProjectAction({ kind: "remove", project })}
                               menuOpen={openMenuId === `project:${project.key}`}
@@ -1036,28 +1029,6 @@ export function Sidebar() {
                                   their chats under a quiet collapsible label instead
                                   of a nested tree level with its own icon. */}
                               <ul className="m-0 mt-0.5 list-none space-y-0.5 p-0">
-                                {hasCoordinator && (
-                                  <li>
-                                    <ProjectCoordinatorRow
-                                      group={project}
-                                      active={location.pathname === `/projects/${project.projectId}`}
-                                      agentId={coordinator?.coordinatorAgent}
-                                      agentIconUrl={coordinator?.coordinatorAgent ? agentIconUrls.get(coordinator.coordinatorAgent) : undefined}
-                                      agentLabel={agents.find(agent => agent.id === coordinator?.coordinatorAgent)?.label ?? coordinator?.coordinatorAgent}
-                                      onOpen={() => void onOpenProject(project)}
-                                      labelCls={labelCls}
-                                    />
-                                  </li>
-                                )}
-                                {!hasCoordinator && project.sessions.length === 0 && project.workspaces.length === 0 && (
-                                  <li>
-                                    <SidebarGridRow depth={1} leading="none" trailingTrack="none"
-                                      role="status" className="text-caption text-fg-faint"
-                                      data-sidebar-empty-project="true">
-                                      <SidebarGridCell slot="label"><span>{t("sidebar.emptyWorkspace")}</span></SidebarGridCell>
-                                    </SidebarGridRow>
-                                  </li>
-                                )}
                                 {project.sessions.map((s) => (
                                   <li key={s.id}>{renderProjectSession(s)}</li>
                                 ))}
@@ -1394,24 +1365,24 @@ function SidebarSection({
 
 function ProjectSidebarRow({
   group,
+  active,
   open,
   labelCls,
   onToggle,
+  onOpen,
   onNewChat,
-  hasCoordinator,
-  onSetupCoordinator,
   onArchiveChats,
   onRemove,
   menuOpen,
   onMenuOpenChange,
 }: {
   group: SidebarProjectGroup;
+  active: boolean;
   open: boolean;
   labelCls: string;
   onToggle: () => void;
+  onOpen: () => void;
   onNewChat: () => void;
-  hasCoordinator: boolean;
-  onSetupCoordinator: () => void;
   onArchiveChats: () => void;
   onRemove: () => void;
   menuOpen: boolean;
@@ -1428,7 +1399,6 @@ function ProjectSidebarRow({
       onSelect={() => group.primaryRoot ? void window.backchat.uiFsOpenPath({ path: group.primaryRoot }) : undefined}>
       {t("sidebar.revealProject")}
     </kit.Item>
-    {!hasCoordinator && <kit.Item icon={<WorkflowIcon />} onSelect={onSetupCoordinator}>{t("project.setupCoordinator")}</kit.Item>}
     <RepositoryMenuItems kit={kit} paths={[group.primaryRoot, ...group.sourceFolders]} />
     <kit.Separator />
     <kit.Item icon={<ArchiveIcon />} onSelect={onArchiveChats}>{t("sidebar.archiveProjectChats")}</kit.Item>
@@ -1439,21 +1409,30 @@ function ProjectSidebarRow({
       <SidebarGridRow
         depth={0}
         trailingTrack="double"
-        className="app-no-drag sidebar-project-row sidebar-project-surface rounded-md text-left text-ui text-fg-subtle transition-colors"
+        className={cn("app-no-drag sidebar-project-row sidebar-project-surface rounded-md text-left text-ui transition-colors", active ? "app-selected-surface text-fg" : "text-fg-subtle")}
         data-sidebar-project={group.key}
         data-sidebar-card={`project:${group.key}`}
         data-sidebar-row-hover="true"
         data-menu-open={menuOpen || undefined}
       >
         <SidebarGridCell slot="icon">
-          <ProjectIcon identity={group.key} name={group.label} sourceFolders={group.sourceFolders} primaryRoot={group.primaryRoot} className="sidebar-row-icon" />
-        </SidebarGridCell>
-        <SidebarGridCell slot="label">
           <button
             type="button"
             onClick={onToggle}
             aria-label={`${open ? t("project.collapse") : t("project.expand")}: ${group.label}`}
             aria-expanded={open}
+            className="sidebar-project-disclosure relative flex size-full items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <span className="sidebar-project-identity"><ProjectIcon identity={group.key} name={group.label} sourceFolders={group.sourceFolders} primaryRoot={group.primaryRoot} className="sidebar-row-icon" /></span>
+            <span className="sidebar-project-caret absolute inset-0 flex items-center justify-center"><DisclosureCaret open={open} /></span>
+          </button>
+        </SidebarGridCell>
+        <SidebarGridCell slot="label">
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-current={active ? "page" : undefined}
+            aria-label={`${t("project.openCoordinator")}: ${group.label}`}
             className="flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-ring"
           >
             <span className={cn("sidebar-project-label min-w-0 truncate", labelCls)}>{group.label}</span>
@@ -1474,81 +1453,6 @@ function ProjectSidebarRow({
         </SidebarGridCell>
       </SidebarGridRow>
     </RowContextMenu>
-  );
-}
-
-/** The project's configured coordinator, first under the project. An
- *  unconfigured project offers setup from its menu instead of a row. */
-function ProjectCoordinatorRow({
-  group,
-  active,
-  agentId,
-  agentIconUrl,
-  agentLabel,
-  onOpen,
-  labelCls,
-}: {
-  group: SidebarProjectGroup;
-  active: boolean;
-  agentId?: string;
-  agentIconUrl?: string;
-  agentLabel?: string;
-  onOpen: () => void;
-  labelCls: string;
-}) {
-  const { t } = useI18n();
-  const label = t("project.coordinator");
-  const rowClassName = cn(
-    "sidebar-coordinator-row rounded-md",
-    active && "app-selected-surface",
-  );
-  const rowProps = {
-    "aria-label": `${t("project.openCoordinator")}: ${group.label}`,
-    "aria-current": active ? "page" as const : undefined,
-    "data-project-coordinator": group.key,
-    "data-testid": "project-coordinator-row",
-    "data-sidebar-ink": "primary",
-    "data-configured": true,
-  };
-  const content = <>
-    <SidebarGridCell slot="icon">
-      <span className="sidebar-coordinator-icon" title={agentLabel}>
-        {agentId ? (
-          <AgentIcon agentId={agentId} iconUrl={agentIconUrl} title={agentLabel} className="size-3.5" />
-        ) : <WorkflowIcon aria-hidden="true" />}
-      </span>
-    </SidebarGridCell>
-    <SidebarGridCell slot="label">
-      <span className={cn("min-w-0 truncate", labelCls)}>{label}</span>
-    </SidebarGridCell>
-    <SidebarGridCell slot="trailing" className={labelCls} aria-hidden="true">
-      <WorkflowIcon className="size-3.5 shrink-0" />
-    </SidebarGridCell>
-  </>;
-  return group.projectId ? (
-    <SidebarGridRow
-      asChild
-      depth={1}
-      trailingTrack="single"
-      className={rowClassName}
-      {...rowProps}
-    >
-      <Link to="/projects/$projectId" params={{ projectId: group.projectId }}>
-        {content}
-      </Link>
-    </SidebarGridRow>
-  ) : (
-    <SidebarGridRow
-      as="button"
-      type="button"
-      onClick={onOpen}
-      depth={1}
-      trailingTrack="single"
-      className={rowClassName}
-      {...rowProps}
-    >
-      {content}
-    </SidebarGridRow>
   );
 }
 

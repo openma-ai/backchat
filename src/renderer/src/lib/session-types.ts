@@ -408,6 +408,8 @@ export type StreamDelta =
 export type StreamSubscriber = (d: StreamDelta) => void;
 
 export interface Turn {
+  /** Retain first-send composer choices for an explicit failed-send retry. */
+  runSelection?: { agentId: string; configOverrides: Record<string, string | boolean> };
   /** Remount the stream projection when authoritative text corrects a delta. */
   streamRevision?: number;
   id: string;

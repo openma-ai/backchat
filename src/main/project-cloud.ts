@@ -1,3 +1,4 @@
+import { coordinatorConfig } from "../shared/project-coordinator.js";
 import { snapshotProjectAttachments } from "./project-attachments.js";
 import type { ProjectWorkService } from "./project-work.js";
 import type { OpenmaConnection } from "./openma-account.js";
@@ -76,6 +77,7 @@ export class ProjectCloudRouter {
     }
   }
   async save(config: ProjectWorkConfig): Promise<ProjectWorkConfig> {
+    config = coordinatorConfig(config.projectId, config);
     const previous = this.binding(config.projectId);
     if (config.execution?.kind !== "cloud") {
       if (previous)

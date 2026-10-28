@@ -4293,3 +4293,10 @@ textarea:disabled::selection {
 .sidebar-grid-row[data-sidebar-ink="primary"] .sidebar-new-chat-primary:hover {
   color: var(--fg);
 }
+
+/* Project name opens the coordinator; the icon is an independent disclosure. */
+.sidebar-project-caret { opacity: 0; }
+.sidebar-project-row:hover .sidebar-project-identity,
+.sidebar-project-row:has(:focus-visible) .sidebar-project-identity { opacity: 0; }
+.sidebar-project-row:hover .sidebar-project-caret,
+.sidebar-project-row:has(:focus-visible) .sidebar-project-caret { opacity: 1; }

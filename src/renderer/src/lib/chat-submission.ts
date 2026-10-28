@@ -49,7 +49,7 @@ export function resolveChatSubmitAgentId({
   selectedAgentId?: string;
   pickedAgentId?: string | null;
 }): string {
-  if (target && target.status !== "draft") return target.agent_id;
+  if (target && target.status !== "draft" && target.agent_id) return target.agent_id;
   return selectedAgentId || pickedAgentId || target?.agent_id || "";
 }
 
@@ -219,6 +219,8 @@ export function chatIdleDeliveryMeta(
 }
 
 export interface ChatDelivery {
+  agentId?: string;
+  configOverrides?: Record<string, string | boolean>;
   sessionId: string;
   turnId: string;
   text: string;
@@ -369,11 +371,14 @@ export function useChatSubmission({
       sessionReferences,
       attachments,
       annotations,
+      deliver ? { agentId: draftAgentId, configOverrides } : undefined,
     );
 
     if (deliver) {
       try {
         await deliver({
+          agentId: draftAgentId,
+          configOverrides,
           sessionId: target.id,
           turnId,
           text,
@@ -496,6 +501,7 @@ export async function retryBoundChatSend(
   sessionStore.reopenSend(turn.id);
   try {
     await deliver({
+      ...turn.runSelection,
       sessionId: turn.sessionId,
       turnId: turn.id,
       text: turn.promptText,
