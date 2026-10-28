@@ -366,15 +366,17 @@ export const TurnBlock = memo(function TurnBlock({
           ) : null;
         },
         // The turn did end in failure, so the stream keeps a mark — but one
-        // quiet line, not a card. Retry lives in the footer's icon row.
-        renderError: ({ message }) => hideErrorNotice ? null : (
+        // quiet line, not a card. Retry lives in the footer's icon row. A
+        // cleared explanation (a later turn succeeded) owns no row at all;
+        // never replace it with generic "Session errored" copy.
+        renderError: ({ message }) => hideErrorNotice || !message?.trim() ? null : (
           <StatusNotice
             tone="danger"
             appearance="quiet"
             data-turn-error-fallback="true"
-            title={message || undefined}
+            title={message}
           >
-            {message || t("chat.sessionErrored")}
+            {message}
           </StatusNotice>
         ),
         renderResponseBeforeProcess: () =>

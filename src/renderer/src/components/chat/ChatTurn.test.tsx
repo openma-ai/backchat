@@ -1722,4 +1722,23 @@ describe("ConversationLoadingState", () => {
     expect(html).not.toContain('data-turn-error-retry="true"');
     expect(html).toMatch(/data-turn-regenerate-action="true"[^>]*aria-label="common.retry"/);
   });
+
+  it("shows no danger row when a failed turn's explanation has been cleared", () => {
+    const html = renderToStaticMarkup(
+      <TurnBlock
+        turn={turn({
+          status: "error",
+          promptText: "Check logs",
+          errorMessage: undefined,
+        })}
+        onRegenerate={() => undefined}
+      />,
+    );
+
+    expect(html).not.toContain('data-turn-error-fallback="true"');
+    expect(html).not.toContain('data-session-turn-status-message="error"');
+    // A cleared sticky error must not fall back to generic "Session errored".
+    expect(html).not.toContain("chat.sessionErrored");
+    expect(html).not.toContain("Turn failed.");
+  });
 });
