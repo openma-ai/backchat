@@ -110,6 +110,39 @@ export function filterQueuedTurns<T extends { status: string }>(
   return turns.filter((turn) => turn.status !== "queued");
 }
 
+/**
+ * After a later success clears sticky provider copy, pure error shells must
+ * leave the feed — not sit as an empty "worked for" / article husk. Keep the
+ * turn when it still has assistant text or tools worth reading.
+ */
+export function turnHasStickyFeedKeepContent(
+  turn: Pick<Turn, "assistantText" | "events">,
+): boolean {
+  if (turn.assistantText.trim().length > 0) return true;
+  for (const { payload } of turn.events) {
+    if (!payload || typeof payload !== "object") continue;
+    const record = payload as Record<string, unknown>;
+    const update = record.sessionUpdate;
+    if (update === "tool_call" || update === "tool_call_update") return true;
+    const type = record.type;
+    if (typeof type === "string" && type.startsWith("tool.")) return true;
+  }
+  return false;
+}
+
+/** Cleared sticky provider shells with nothing left to show in the feed. */
+export function isClearedStickyProviderFeedShell(
+  turn: Pick<
+    Turn,
+    "status" | "errorMessage" | "stickyFeedCleared" | "assistantText" | "events"
+  >,
+): boolean {
+  if (!turn.stickyFeedCleared) return false;
+  if (turn.status !== "error") return false;
+  if (turn.errorMessage?.trim()) return false;
+  return !turnHasStickyFeedKeepContent(turn);
+}
+
 export function resolveAgentChatPhase(
   active: Pick<SessionRow, "status"> | null | undefined,
 ): "missing" | "draft" | "active" {
@@ -120,16 +153,18 @@ export function resolveAgentChatPhase(
 function projectChatSurfaceTurns(
   turns: readonly Turn[],
 ): AgentUITurnState[] {
-  return turns.map((turn) => ({
-    id: turn.id,
-    status:
-      turn.status === "complete"
-        ? "completed"
-        : turn.status === "error"
-          ? "failed"
-          : turn.status,
-    items: [],
-  }));
+  return turns
+    .filter((turn) => !isClearedStickyProviderFeedShell(turn))
+    .map((turn) => ({
+      id: turn.id,
+      status:
+        turn.status === "complete"
+          ? "completed"
+          : turn.status === "error"
+            ? "failed"
+            : turn.status,
+      items: [],
+    }));
 }
 
 /** Provider queue depth is display-only; local queued prompts remain the
@@ -278,7 +313,9 @@ export function ChatView({
     [active?.id, turns, visibleEchoes],
   );
   const transcriptTurns = useMemo(
-    () => filterQueuedTurns(echoedTurns),
+    () => filterQueuedTurns(echoedTurns).filter(
+      (turn) => !isClearedStickyProviderFeedShell(turn),
+    ),
     [echoedTurns],
   );
   const historyPendingSelector = useMemo(
