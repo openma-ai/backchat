@@ -40,6 +40,7 @@ import type { SearchHitInfo } from "@shared/api.js";
 import type { OpenmaTask } from "@shared/openma";
 import { useOpenmaAccount } from "@/lib/openma-account";
 import { requestSessionSearchJump } from "@/lib/history-paging";
+import { markdownToPlainText } from "@/lib/markdown-plain-text";
 
 /** Lives in localStorage; ring of last opened session ids, MRU. */
 const RECENT_KEY = "openma:recent-sessions";
@@ -272,14 +273,14 @@ export function CommandPalette() {
                 {recentRows.map((s) => (
                   <Command.Item
                     key={s.id}
-                    value={`recent-${s.id} ${s.label}`}
+                    value={`recent-${s.id} ${markdownToPlainText(s.label)}`}
                     onSelect={() => goSession(s.id)}
                     className={itemClass}
                   >
                     <CmdSlot>
                       <ClockIcon className="size-3.5 text-fg-subtle" />
                     </CmdSlot>
-                    <span className="flex-1 truncate text-fg">{s.label}</span>
+                    <span className="flex-1 truncate text-fg">{markdownToPlainText(s.label)}</span>
                     {s.agent_id && (
                       <AgentIcon
                         agentId={s.agent_id}
@@ -369,7 +370,7 @@ export function CommandPalette() {
                     .map((s) => (
                       <Command.Item
                         key={`all-${s.id}`}
-                        value={`all-${s.id} ${s.label}`}
+                        value={`all-${s.id} ${markdownToPlainText(s.label)}`}
                         onSelect={() => goSession(s.id)}
                         className={itemClass}
                       >
@@ -382,7 +383,7 @@ export function CommandPalette() {
                             />
                           )}
                         </CmdSlot>
-                        <span className="flex-1 truncate text-fg">{s.label}</span>
+                        <span className="flex-1 truncate text-fg">{markdownToPlainText(s.label)}</span>
                       </Command.Item>
                     ))}
                 </CmdGroup>
