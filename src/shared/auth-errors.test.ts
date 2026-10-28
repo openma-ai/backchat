@@ -4,6 +4,7 @@ import {
   inspectCodexProviderError,
   isAuthenticationFailureMessage,
   isAuthenticationRequiredError,
+  isStickyProviderErrorMessage,
   sessionErrorDetails,
   sanitizeAuthenticationMessage,
 } from "./auth-errors.js";
@@ -170,5 +171,28 @@ describe("sanitizeAuthenticationMessage", () => {
     ).toBe(
       "Internal error: turn failed: Authentication Fails, Your api key=[redacted] is invalid",
     );
+  });
+});
+
+describe("isStickyProviderErrorMessage", () => {
+  it("recognizes terminal provider explanations that own a failed turn", () => {
+    expect(isStickyProviderErrorMessage(
+      "auth_unavailable: no auth available (providers=devin, model=devin/gpt-6-1-sol)",
+    )).toBe(true);
+    expect(isStickyProviderErrorMessage(
+      "usageLimitExceeded: You have reached your usage limit",
+    )).toBe(true);
+    expect(isStickyProviderErrorMessage("Reconnecting... 5/5")).toBe(true);
+    expect(isStickyProviderErrorMessage("Too many failed attempts")).toBe(true);
+  });
+
+  it("leaves ordinary turn failures alone", () => {
+    expect(isStickyProviderErrorMessage("provider rejected the prompt")).toBe(false);
+    expect(isStickyProviderErrorMessage(
+      "Internal error: turn failed: model overloaded",
+    )).toBe(false);
+    expect(isStickyProviderErrorMessage("ENOSPC: no space left on device")).toBe(false);
+    expect(isStickyProviderErrorMessage(undefined)).toBe(false);
+    expect(isStickyProviderErrorMessage("   ")).toBe(false);
   });
 });

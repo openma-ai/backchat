@@ -2281,6 +2281,140 @@ describe("SessionStore turn-scoped provider errors", () => {
   });
 });
 
+describe("SessionStore sticky provider feed errors", () => {
+  const sessionId = "sess-sticky-provider-feed";
+  const source = { kind: "harness", harness: "codex-acp", adapter: "acp" } as const;
+  const authMessage =
+    "auth_unavailable: no auth available (providers=devin, model=devin/gpt-6-1-sol)";
+  const ready = {
+    type: "session.ready",
+    session_id: sessionId,
+    acp_session_id: "acp-sticky-provider-feed",
+    agent_id: "codex-acp",
+    cwd: "/tmp/project",
+  } as const;
+
+  const canonical = (
+    eventId: string,
+    type: string,
+    turnId: string,
+    data: Record<string, unknown>,
+    second: number,
+  ) => createOpenMAEvent({
+    event_id: eventId,
+    type,
+    session_id: sessionId,
+    turn_id: turnId,
+    source,
+    occurred_at: `2026-10-13T13:41:${String(second).padStart(2, "0")}.000Z`,
+    data,
+  });
+
+  it("clears a preceding sticky explanation only after a later turn succeeds", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.registerTurn("turn-sticky", sessionId, "first");
+    store.apply({
+      type: "session.error",
+      session_id: sessionId,
+      turn_id: "turn-sticky",
+      message: authMessage,
+      code: "auth_required",
+      agent_id: "codex-acp",
+    });
+
+    const failed = () => store.turnsFor(sessionId)[0];
+    expect(failed()).toMatchObject({ status: "error", errorMessage: authMessage });
+
+    // Starting the retry must keep the explanation visible while it runs.
+    store.registerTurn("turn-retry", sessionId, "retry");
+    expect(failed()?.errorMessage).toBe(authMessage);
+
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-retry",
+    });
+
+    expect(failed()).toMatchObject({ status: "error", errorMessage: undefined });
+    expect(store.turnsFor(sessionId)[1]?.status).toBe("complete");
+  });
+
+  it("does not clear the sticky explanation on auth recovery alone", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.registerTurn("turn-sticky", sessionId, "first");
+    store.apply({
+      type: "session.error",
+      session_id: sessionId,
+      turn_id: "turn-sticky",
+      message: authMessage,
+      code: "auth_required",
+      agent_id: "codex-acp",
+    });
+
+    store.clearAuthRequired(sessionId);
+
+    expect(store.get(sessionId)?.authRequired).toBe(false);
+    expect(store.turnsFor(sessionId)[0]?.errorMessage).toBe(authMessage);
+  });
+
+  it("leaves ordinary turn failures alone when a later turn succeeds", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.registerTurn("turn-rejected", sessionId, "first");
+    store.apply({
+      type: "session.error",
+      session_id: sessionId,
+      turn_id: "turn-rejected",
+      message: "provider rejected the prompt",
+    });
+    store.registerTurn("turn-success", sessionId, "retry");
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-success",
+    });
+
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      status: "error",
+      errorMessage: "provider rejected the prompt",
+    });
+  });
+
+  it("replay clears the preceding sticky explanation after turn.completed", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    const events = [
+      canonical("sticky-user", "user.message", "turn-sticky", {
+        text: "first",
+        input_kind: "prompt",
+      }, 1),
+      canonical("sticky-error", "session.error", "turn-sticky", {
+        message: authMessage,
+        code: "auth_required",
+      }, 2),
+      canonical("retry-user", "user.message", "turn-retry", {
+        text: "retry",
+        input_kind: "prompt",
+      }, 3),
+      canonical("retry-done", "turn.completed", "turn-retry", {
+        stop_reason: "end_turn",
+      }, 4),
+    ];
+    store.replayHistory(sessionId, events.map((event, index) => ({
+      seq: index + 1,
+      type: "openma_event",
+      data: JSON.stringify(event),
+      ts: index + 1,
+    })));
+
+    const turns = store.turnsFor(sessionId);
+    expect(turns.map((turn) => turn.status)).toEqual(["error", "complete"]);
+    expect(turns[0]?.errorMessage).toBeUndefined();
+  });
+});
+
 describe("SessionStore replay of a legacy prompt row with canonical turn content", () => {
   // Histories written before the canonical user.message existed (and the
   // fixtures that model them) open the turn with a bare `user_prompt` row,
