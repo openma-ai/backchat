@@ -179,6 +179,9 @@ interface OutOfBandSteeringTurn {
   settled: boolean;
 }
 
+/** State of a user cancel for one turn. See `SessionManager.#cancels`. */
+type CancelState = "pending" | "applied";
+
 interface QueuedPrompt {
   params: SessionPromptParams;
   options: RunPromptOptions;
@@ -311,6 +314,13 @@ export class SessionManager {
   #lifecycles = new Map<string, SessionLifecycle>();
   #starting = new Map<string, Promise<SessionStartResult>>();
   #cancelledStarts = new Set<string>();
+  /** Cancel bookkeeping per session, keyed by turn id.
+   *
+   *  `pending` — the cancel arrived before the prompt reached the host, so
+   *  the prompt that arrives later has to be aborted on arrival.
+   *  `applied` — the cancel reached a turn. Kept so a second stop press on
+   *  an already settled turn is reported instead of re-recorded. */
+  #cancels = new Map<string, Map<string, CancelState>>();
   #acceptingStarts = true;
   #hasSessionBackgroundWork: (sessionId: string) => boolean;
   #suspended = new Map<string, SessionStartParams>();
@@ -632,7 +642,13 @@ export class SessionManager {
     const operation = this.#startOnce(p);
     this.#starting.set(p.session_id, operation);
     try {
-      return await operation;
+      const result = await operation;
+      if (result.status === "cancelled") {
+        // The start was cancelled, so no prompt will arrive for the turn the
+        // user stopped. Drop the pending cancel with it.
+        this.#clearCancels(p.session_id);
+      }
+      return result;
     } finally {
       if (this.#starting.get(p.session_id) === operation) {
         this.#starting.delete(p.session_id);
@@ -1808,6 +1824,20 @@ export class SessionManager {
     const ctrl = new AbortController();
     this.#transition(p.session_id, { type: "prompt.requested", turnId: p.turn_id });
     sess.turns.set(p.turn_id, ctrl);
+    // A stop pressed while this prompt was still on its way to the host has
+    // to win over the prompt: abort it before the agent is ever asked.
+    const cancelledBeforeStart =
+      this.#cancelState(p.session_id, p.turn_id) === "pending";
+    if (cancelledBeforeStart) {
+      this.#recordCancel(p.session_id, p.turn_id, "applied");
+      ctrl.abort();
+      this.#transition(p.session_id, { type: "prompt.cancelled", turnId: p.turn_id });
+      logAppEvent("session.cancel", {
+        session_id: p.session_id,
+        turn_id: p.turn_id,
+        outcome: "cancelled",
+      });
+    }
     let promptErr: string | null = null;
     let promptErrorDetails: unknown;
 
@@ -1899,7 +1929,12 @@ export class SessionManager {
         agentPrompt = { ...p, text: `${note}\n\n${p.text}` };
       }
       const promptBlocks = buildAcpPromptBlocks(agentPrompt, sess.acp.promptCapabilities);
-      for await (const ev of sess.acp.prompt(promptBlocks, { abortSignal: ctrl.signal })) {
+      // A prompt that was cancelled before it reached the host is never sent:
+      // the agent must not start work the user already stopped.
+      const promptEvents = cancelledBeforeStart
+        ? emptyPromptEvents()
+        : sess.acp.prompt(promptBlocks, { abortSignal: ctrl.signal });
+      for await (const ev of promptEvents) {
         if (sess.orchestration.disposed) break;
         const t = (ev as { type?: string } | null | undefined)?.type;
         if (t === "promptComplete") {
@@ -2153,23 +2188,104 @@ export class SessionManager {
     });
   }
 
+  /** Record a cancel so it survives the window between the stop press and the
+   *  moment the prompt reaches the host. */
+  #recordCancel(sessionId: string, turnId: string, state: CancelState): void {
+    let byTurn = this.#cancels.get(sessionId);
+    if (!byTurn) {
+      byTurn = new Map<string, CancelState>();
+      this.#cancels.set(sessionId, byTurn);
+    }
+    byTurn.set(turnId, state);
+  }
+
+  #cancelState(sessionId: string, turnId: string): CancelState | undefined {
+    return this.#cancels.get(sessionId)?.get(turnId);
+  }
+
+  /** Drop the cancel bookkeeping of a session — the turn will never run. */
+  #clearCancels(sessionId: string): void {
+    this.#cancels.delete(sessionId);
+  }
+
+  /** Stop every live turn of a session except the one the cancel addressed.
+   *  The stop control belongs to the session, not to a single turn. */
+  #cancelOtherLiveTurns(sess: ActiveSession, exceptTurnId: string): void {
+    for (const [liveTurnId, liveCtrl] of [...sess.turns]) {
+      if (liveTurnId === exceptTurnId) continue;
+      liveCtrl.abort();
+      this.#transition(sess.id, { type: "prompt.cancelled", turnId: liveTurnId });
+    }
+  }
+
   cancel(
     session_id: string,
     turn_id: string,
     options?: { suppressStreamResult?: boolean },
   ): void {
     const sess = this.#sessions.get(session_id);
-    if (!sess) return;
+    if (!sess) {
+      // The turn does not exist yet. The stop press can land while the
+      // session is still starting (a long create_agent handshake) or before
+      // the prompt was dispatched — remember it so the prompt that arrives
+      // later is cancelled instead of running on.
+      if (this.#starting.has(session_id)) {
+        this.#cancelledStarts.add(session_id);
+        this.#recordCancel(session_id, turn_id, "pending");
+        logAppEvent("session.cancel", {
+          session_id,
+          turn_id,
+          outcome: "start_aborted",
+        });
+        return;
+      }
+      this.#recordCancel(session_id, turn_id, "pending");
+      logAppEvent("session.cancel", {
+        session_id,
+        turn_id,
+        outcome: "ignored_no_session",
+      });
+      return;
+    }
     const turn = sess.turns.get(turn_id);
     if (!turn) {
       const outOfBandTurn = sess.outOfBandSteeringTurn;
       if (
-        !outOfBandTurn
-        || outOfBandTurn.turnId !== turn_id
-        || outOfBandTurn.settled
-        || outOfBandTurn.cancelRequested
-      ) return;
-      outOfBandTurn.cancelRequested = true;
+        outOfBandTurn
+        && outOfBandTurn.turnId === turn_id
+        && !outOfBandTurn.settled
+        && !outOfBandTurn.cancelRequested
+      ) {
+        outOfBandTurn.cancelRequested = true;
+        this.#send({
+          type: "session.cancel_requested",
+          session_id,
+          turn_id,
+          ...(options?.suppressStreamResult ? { suppress_result: true } : {}),
+        });
+        this.#preemptivelyCancelOpenTools(sess, turn_id);
+        void sess.acp.cancelCurrentTurn().catch(() => {});
+        this.#onSessionPendingWorkCancelled?.(session_id);
+        logAppEvent("session.cancel", {
+          session_id,
+          turn_id,
+          outcome: "cancelled",
+        });
+        return;
+      }
+      if (this.#cancelState(session_id, turn_id) === "applied") {
+        // The turn was already cancelled and has settled. Nothing left to do.
+        logAppEvent("session.cancel", {
+          session_id,
+          turn_id,
+          outcome: "ignored_settled",
+        });
+        return;
+      }
+      // The turn is not live: its prompt has not been dispatched yet. Keep
+      // the cancel for that prompt, tell the host to drop whatever it is
+      // running and stop the other live turns of this session.
+      this.#recordCancel(session_id, turn_id, "pending");
       this.#send({
         type: "session.cancel_requested",
         session_id,
@@ -2178,7 +2294,13 @@ export class SessionManager {
       });
       this.#preemptivelyCancelOpenTools(sess, turn_id);
       void sess.acp.cancelCurrentTurn().catch(() => {});
+      this.#cancelOtherLiveTurns(sess, turn_id);
       this.#onSessionPendingWorkCancelled?.(session_id);
+      logAppEvent("session.cancel", {
+        session_id,
+        turn_id,
+        outcome: "pending",
+      });
       return;
     }
     this.#send({
@@ -2189,8 +2311,14 @@ export class SessionManager {
     });
     this.#preemptivelyCancelOpenTools(sess, turn_id);
     turn.abort();
+    this.#recordCancel(session_id, turn_id, "applied");
     this.#transition(session_id, { type: "prompt.cancelled", turnId: turn_id });
     this.#onSessionPendingWorkCancelled?.(session_id);
+    logAppEvent("session.cancel", {
+      session_id,
+      turn_id,
+      outcome: "cancelled",
+    });
   }
 
   /** ACP `logout` on the live connection. Returns false when that session is not running. */
@@ -2279,6 +2407,7 @@ export class SessionManager {
   async dispose(session_id: string, opts?: { removeCwd?: boolean }): Promise<void> {
     if (this.#reclaiming.has(session_id)) await this.#reclaiming.get(session_id);
     this.#suspended.delete(session_id);
+    this.#clearCancels(session_id);
     const starting = this.#starting.get(session_id);
     if (starting) {
       this.#cancelledStarts.add(session_id);
@@ -2673,6 +2802,10 @@ async function prepareAcpToolEnvironment(
   await mkdir(join(cacheRoot, "fontconfig"), { recursive: true });
   return { ...withPath, XDG_CACHE_HOME: cacheRoot };
 }
+
+/** An ACP prompt stream that never yields: used for a prompt the user
+ *  cancelled before it reached the host. */
+async function* emptyPromptEvents(): AsyncIterable<unknown> {}
 
 function buildAcpPromptBlocks(
   p: SessionPromptParams,

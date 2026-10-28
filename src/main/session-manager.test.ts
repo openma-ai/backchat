@@ -4497,6 +4497,151 @@ describe("SessionManager prompt queue", () => {
 
 });
 
+describe("SessionManager cancel telemetry and pending cancels", () => {
+  function makeManager(events: unknown[]): SessionManager {
+    return new SessionManager({
+      send: (message) => { events.push(message); },
+      resolveMcpServers: () => [],
+      buildCallbacks: () => ({}),
+      resolveDefaults: () => ({}),
+      resolveAgentOverride: () => undefined,
+    });
+  }
+
+  async function readCancelLog(root: string): Promise<Array<Record<string, unknown>>> {
+    const raw = await readFile(join(root, "logs", "backchat.log"), "utf8").catch(() => "");
+    return raw
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.event === "session.cancel");
+  }
+
+  it("keeps a cancel that arrives before the prompt and applies it to that prompt", async () => {
+    // The stop press lands while the prompt is still on its way to the host.
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = makeManager(events);
+    try {
+      await manager.start({ session_id: "cancel-before-prompt", agent_id: "codex-acp", cwd: "/repo" });
+
+      manager.cancel("cancel-before-prompt", "turn-early");
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "session.cancel_requested",
+        turn_id: "turn-early",
+      }));
+      expect(fake.cancelCount()).toBe(1);
+
+      await manager.prompt({ session_id: "cancel-before-prompt", turn_id: "turn-early", text: "hello" });
+
+      // The agent is never asked, and the turn settles as cancelled.
+      expect(fake.prompts).toHaveLength(0);
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "session.cancelled",
+        turn_id: "turn-early",
+      }));
+      expect(events).not.toContainEqual(expect.objectContaining({
+        type: "session.complete",
+        turn_id: "turn-early",
+      }));
+    } finally {
+      await manager.disposeAll();
+      mocks.runtimeStart.mockReset();
+    }
+  });
+
+  it("cancels a session start that is still in flight", async () => {
+    let releaseStart!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseStart = resolve; });
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockImplementationOnce(async () => {
+      await gate;
+      return fake.session;
+    });
+    const events: unknown[] = [];
+    const manager = makeManager(events);
+    try {
+      const starting = manager.start({ session_id: "cancel-start", agent_id: "codex-acp", cwd: "/repo" });
+      await vi.waitFor(() => expect(mocks.runtimeStart).toHaveBeenCalled());
+      manager.cancel("cancel-start", "turn-1");
+      releaseStart();
+      const result = await starting;
+      expect(result.status).toBe("cancelled");
+    } finally {
+      await manager.disposeAll();
+      mocks.runtimeStart.mockReset();
+    }
+  });
+
+  it("records the outcome of every cancel attempt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "backchat-cancel-log-"));
+    configureAppLog(root);
+    const fake = createControllableAcpSession();
+    mocks.runtimeStart.mockReset();
+    mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+    const events: unknown[] = [];
+    const manager = makeManager(events);
+    try {
+      await manager.start({ session_id: "cancel-log", agent_id: "codex-acp", cwd: "/repo" });
+
+      // The turn has not started yet: the cancel waits for its prompt.
+      manager.cancel("cancel-log", "turn-early");
+      // An unknown session cannot be cancelled, but the attempt is recorded.
+      manager.cancel("cancel-log-unknown", "turn-early");
+      // A live turn is cancelled right away.
+      const running = manager.prompt({ session_id: "cancel-log", turn_id: "turn-live", text: "work" });
+      await vi.waitFor(() => expect(fake.prompts).toHaveLength(1));
+      manager.cancel("cancel-log", "turn-live");
+      fake.releaseNext();
+      await running;
+      // A second press on the settled turn changes nothing.
+      manager.cancel("cancel-log", "turn-live");
+
+      await flushAppLog();
+      const entries = await readCancelLog(root);
+      expect(entries).toContainEqual(expect.objectContaining({
+        event: "session.cancel",
+        session_id: "cancel-log",
+        turn_id: "turn-early",
+        outcome: "pending",
+      }));
+      expect(entries).toContainEqual(expect.objectContaining({
+        event: "session.cancel",
+        session_id: "cancel-log-unknown",
+        turn_id: "turn-early",
+        outcome: "ignored_no_session",
+      }));
+      expect(entries).toContainEqual(expect.objectContaining({
+        event: "session.cancel",
+        session_id: "cancel-log",
+        turn_id: "turn-live",
+        outcome: "cancelled",
+      }));
+      expect(entries).toContainEqual(expect.objectContaining({
+        event: "session.cancel",
+        session_id: "cancel-log",
+        turn_id: "turn-live",
+        outcome: "ignored_settled",
+      }));
+      // The log carries ids and the outcome only — never the prompt text.
+      for (const entry of entries) {
+        expect(Object.keys(entry).sort()).toEqual(
+          expect.arrayContaining(["event", "session_id", "turn_id", "outcome"]),
+        );
+        expect(JSON.stringify(entry)).not.toContain("work");
+      }
+    } finally {
+      configureAppLog(null);
+      await manager.disposeAll();
+      mocks.runtimeStart.mockReset();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 function cursorWriteModes(): NonNullable<AcpSession["modes"]> {
   return {
     currentModeId: "agent",
