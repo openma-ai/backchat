@@ -57,6 +57,7 @@ vi.mock("electron", () => ({
 vi.mock("./agent-setup.js", () => ({
   createAgentSetupService: () => setup,
   launchTerminalAuth: vi.fn(),
+  startOpenMaNpmHarnessAutoUpdater: vi.fn(() => () => undefined),
 }));
 
 import { InvokeChannel } from "../shared/ipc-channels.js";
