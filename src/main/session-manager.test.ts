@@ -165,6 +165,44 @@ it("keeps late out-of-band tool patches on the original completed prompt",async(
  await manager.disposeAll();
 });
 
+it("fails the active turn when a reconnecting Codex provider error has no usable auth",async()=>{
+ const fake=createControllableAcpSession();
+ mocks.runtimeStart.mockResolvedValueOnce(fake.session);
+ const send=vi.fn();
+ const manager=new SessionManager({send,resolveMcpServers:()=>[],buildCallbacks:()=>({}),resolveDefaults:()=>({}),resolveAgentOverride:()=>undefined});
+ try {
+  await manager.start({session_id:"codex-auth-unavailable",agent_id:"codex-acp",cwd:"/repo"});
+  const running=manager.prompt({session_id:"codex-auth-unavailable",turn_id:"turn-auth",text:"work"});
+  await vi.waitFor(()=>expect(fake.prompts).toHaveLength(1));
+  mocks.runtimeStart.mock.calls.at(-1)![0].onOutOfBandSessionUpdate({
+   sessionUpdate:"session_info_update",
+   _meta:{codex:{error:{
+    message:"Reconnecting... 2/5",
+    willRetry:true,
+    additionalDetails:"auth_unavailable: no auth available (providers=devin, model=devin/gpt-6-1-sol)",
+    codexErrorInfo:{responseStreamDisconnected:{httpStatusCode:503}},
+   }}},
+  });
+  await vi.waitFor(()=>expect(send).toHaveBeenCalledWith(expect.objectContaining({
+   type:"session.error",
+   session_id:"codex-auth-unavailable",
+   turn_id:"turn-auth",
+   code:"auth_required",
+  })));
+  const status=await manager.getRuntimeStatus("codex-auth-unavailable");
+  expect(status?.busy).toBe(false);
+  expect(status?.active_turn_ids).toEqual([]);
+  fake.releaseNext();
+  await running;
+  // The abort was ours; the provider error must not be overwritten by a
+  // cancellation of the same turn.
+  expect(send).not.toHaveBeenCalledWith(expect.objectContaining({type:"session.cancelled",turn_id:"turn-auth"}));
+ } finally {
+  await manager.disposeAll();
+  mocks.runtimeStart.mockReset();
+ }
+});
+
 describe("SessionManager prompt queue", () => {
   it("settles queued prompts and ignores late agent events when the session is disposed", async () => {
     const fake = createControllableAcpSession({ eventsAfterAbort: [{ type: "sessionUpdate", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "late output" } } }] });

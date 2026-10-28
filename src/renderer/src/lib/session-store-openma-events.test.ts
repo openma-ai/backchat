@@ -481,6 +481,7 @@ describe("SessionStore canonical OpenMA events", () => {
     });
     expect(store.get("sess-codex-lifecycle")?.notice?.message).toBe("connection reset");
 
+
     applyCanonicalSession("codex-idle", "session.idle", {
       thread_status: { type: "idle" },
     });
@@ -501,6 +502,126 @@ describe("SessionStore canonical OpenMA events", () => {
       reason: "provider_closed",
     });
     expect(store.get("sess-codex-lifecycle")?.status).toBe("disposed");
+  });
+
+  it("fails the running turn when a canonical provider error arrives without a turn id", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-codex-provider-failure",
+      acp_session_id: "acp-codex-provider-failure",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn(
+      "turn-provider-failure",
+      "sess-codex-provider-failure",
+      "hello",
+    );
+    expect(store.get("sess-codex-provider-failure")?.status).toBe("running");
+
+    // Out-of-band provider failures carry no turn id; the session's active
+    // turn is the one that failed.
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-provider-failure",
+      turn_id: "",
+      event: { sessionUpdate: "session_info_update" },
+      openma_event: createOpenMAEvent({
+        event_id: "codex-provider-failure",
+        type: "session.error",
+        session_id: "sess-codex-provider-failure",
+        turn_id: "",
+        source: { kind: "harness", harness: "codex-acp", adapter: "codex" },
+        occurred_at: "2026-08-04T10:00:00.000Z",
+        data: {
+          message: "auth_unavailable: no auth available (providers=devin)",
+          code: "auth_required",
+          provider_error: { message: "Reconnecting... 2/5", willRetry: true },
+        },
+      }),
+    });
+
+    const turn = store.turnsFor("sess-codex-provider-failure")[0];
+    expect(turn?.status).toBe("error");
+    expect(turn?.errorMessage).toContain("auth_unavailable");
+    expect(store.get("sess-codex-provider-failure")?.status).not.toBe("running");
+    expect(store.get("sess-codex-provider-failure")?.activeTurnId).toBeUndefined();
+  });
+
+  it("fails the running turn for a non-auth provider error too", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-codex-provider-failure-plain",
+      acp_session_id: "acp-codex-provider-failure-plain",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn(
+      "turn-provider-failure-plain",
+      "sess-codex-provider-failure-plain",
+      "hello",
+    );
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-provider-failure-plain",
+      turn_id: "",
+      event: { sessionUpdate: "session_info_update" },
+      openma_event: createOpenMAEvent({
+        event_id: "codex-provider-failure-plain",
+        type: "session.error",
+        session_id: "sess-codex-provider-failure-plain",
+        turn_id: "",
+        source: { kind: "harness", harness: "codex-acp", adapter: "codex" },
+        occurred_at: "2026-08-04T10:00:00.000Z",
+        data: { message: "the model returned an invalid response" },
+      }),
+    });
+
+    const turn = store.turnsFor("sess-codex-provider-failure-plain")[0];
+    expect(turn?.status).toBe("error");
+    expect(turn?.errorMessage).toBe("the model returned an invalid response");
+    expect(store.get("sess-codex-provider-failure-plain")?.activeTurnId).toBeUndefined();
+  });
+
+  it("keeps a soft provider reconnect notice-only and keeps the turn running", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-codex-soft-retry",
+      acp_session_id: "acp-codex-soft-retry",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn("turn-soft-retry", "sess-codex-soft-retry", "hello");
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-soft-retry",
+      turn_id: "",
+      event: { sessionUpdate: "session_info_update" },
+      openma_event: createOpenMAEvent({
+        event_id: "codex-soft-retry",
+        type: "session.running",
+        session_id: "sess-codex-soft-retry",
+        turn_id: "",
+        source: { kind: "harness", harness: "codex-acp", adapter: "codex" },
+        occurred_at: "2026-08-04T10:00:00.000Z",
+        data: {
+          retrying: true,
+          message: "upstream connect timeout, retrying",
+          provider_error: { message: "Reconnecting... 1/5", willRetry: true },
+        },
+      }),
+    });
+
+    expect(store.turnsFor("sess-codex-soft-retry")[0]?.status).toBe("running");
+    expect(store.get("sess-codex-soft-retry")?.status).toBe("running");
+    expect(store.get("sess-codex-soft-retry")?.notice?.message).toBe(
+      "upstream connect timeout, retrying",
+    );
   });
 
   it("drives message, thinking, plan, command, usage, and config slots from canonical events alone", () => {

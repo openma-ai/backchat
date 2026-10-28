@@ -1097,8 +1097,16 @@ export class SessionStore {
         providerQueueDepth:
           providerQueueDepth ?? session.providerQueueDepth,
       }));
-      if (providerError && typeof providerError.message === "string") {
-        this.#showNotice(event.session_id, providerError.message, "warning");
+      // A bare "Reconnecting... 2/5" is not actionable; the canonical event
+      // carries the provider's own detail when there is one.
+      const providerNotice =
+        typeof data.message === "string" && data.message.trim()
+          ? data.message.trim()
+          : providerError && typeof providerError.message === "string"
+            ? providerError.message
+            : undefined;
+      if (providerNotice) {
+        this.#showNotice(event.session_id, providerNotice, "warning");
       }
       return true;
     }
@@ -1147,6 +1155,11 @@ export class SessionStore {
         : this.#sessions.get(event.session_id)?.agent_id ?? event.source.harness;
       const errorDetails = sessionErrorDetails(data.error_details);
       const auth = canonicalSessionAuth(data.auth);
+      // Out-of-band provider failures arrive without a turn id. The session's
+      // active turn is the one that failed, and it has to settle so the chat
+      // stops showing a running turn.
+      const settleTurnId =
+        event.turn_id || this.#sessions.get(event.session_id)?.activeTurnId;
       if (
         data.code === "auth_required"
         || auth?.status === "needs-auth"
@@ -1162,11 +1175,11 @@ export class SessionStore {
           auth,
           error_details: errorDetails,
           openma_event: event,
-          ...(event.turn_id ? { turn_id: event.turn_id } : {}),
+          ...(settleTurnId ? { turn_id: settleTurnId } : {}),
         });
         return true;
       }
-      if (event.turn_id) {
+      if (settleTurnId) {
         // A provider failure inside one turn (capacity, bad request, stream
         // drop) ends that turn; the ACP session is still alive and can take
         // the next prompt. Same reducer as the live and auth paths, so replay
@@ -1174,7 +1187,7 @@ export class SessionStore {
         this.apply({
           type: "session.error",
           session_id: event.session_id,
-          turn_id: event.turn_id,
+          turn_id: settleTurnId,
           message,
           agent_id: agentId,
           error_details: errorDetails,
