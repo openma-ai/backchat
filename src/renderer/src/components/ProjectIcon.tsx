@@ -24,8 +24,8 @@ export function ProjectIcon({ identity, name, sourceFolders, primaryRoot, classN
   const image = useQuery({
     queryKey: ["repository-image", root],
     queryFn: () => window.backchat.uiFsRepositoryImage({ path: root }),
-    // Main keeps the last good image on disk and refreshes it in the
-    // background; the renderer only needs one answer per root.
+    // Main caches the CDN artwork URL and refreshes it in the background;
+    // Chromium HTTP-caches the image bytes. One answer per root is enough.
     staleTime: Infinity,
     gcTime: Infinity,
     refetchOnWindowFocus: false,
@@ -40,7 +40,6 @@ export function ProjectIcon({ identity, name, sourceFolders, primaryRoot, classN
         <img
           src={src}
           alt=""
-          crossOrigin="anonymous"
           referrerPolicy="no-referrer"
           className="project-image"
           onError={() => setFailed(src)}
