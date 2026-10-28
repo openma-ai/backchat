@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  inspectCodexProviderError,
   isAuthenticationFailureMessage,
   isAuthenticationRequiredError,
   sessionErrorDetails,
@@ -20,9 +21,93 @@ describe("isAuthenticationFailureMessage", () => {
     ).toBe(true);
   });
 
+  it("matches provider wording for missing credentials", () => {
+    expect(
+      isAuthenticationFailureMessage(
+        "auth_unavailable: no auth available (providers=devin, model=devin/gpt-6-1-sol)",
+      ),
+    ).toBe(true);
+    expect(isAuthenticationFailureMessage("no auth available")).toBe(true);
+    expect(isAuthenticationFailureMessage("Unauthorized")).toBe(true);
+  });
+
   it("does not match ordinary turn failures", () => {
     expect(isAuthenticationFailureMessage("Internal error: turn failed: model overloaded")).toBe(false);
     expect(isAuthenticationFailureMessage(undefined)).toBe(false);
+  });
+});
+
+describe("inspectCodexProviderError", () => {
+  it("keeps a soft reconnect retryable when there is no terminal evidence", () => {
+    const evidence = inspectCodexProviderError({
+      message: "Reconnecting... 1/5",
+      willRetry: true,
+      codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 502 } },
+    });
+    expect(evidence.terminal).toBe(false);
+    expect(evidence.authUnavailable).toBe(false);
+    expect(evidence.quotaUnavailable).toBe(false);
+    expect(evidence.message).toBe("Reconnecting... 1/5");
+  });
+
+  it("treats auth_unavailable in additionalDetails as terminal", () => {
+    const evidence = inspectCodexProviderError({
+      message: "Reconnecting... 2/5",
+      willRetry: true,
+      additionalDetails:
+        "auth_unavailable: no auth available (providers=devin, model=devin/gpt-6-1-sol); devin upstream error (invalid_argument)",
+      codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } },
+    });
+    expect(evidence.terminal).toBe(true);
+    expect(evidence.authUnavailable).toBe(true);
+    expect(evidence.quotaUnavailable).toBe(false);
+    expect(evidence.message).toContain("auth_unavailable");
+  });
+
+  it("treats exhausted quota as terminal without calling it an auth failure", () => {
+    const evidence = inspectCodexProviderError({
+      message: "Reconnecting... 1/5",
+      willRetry: true,
+      additionalDetails: "usageLimitExceeded: You have reached your usage limit",
+    });
+    expect(evidence.terminal).toBe(true);
+    expect(evidence.quotaUnavailable).toBe(true);
+    expect(evidence.authUnavailable).toBe(false);
+  });
+
+  it("treats exhausted reconnects as terminal", () => {
+    expect(
+      inspectCodexProviderError({
+        message: "Reconnecting... 5/5",
+        willRetry: true,
+      }).terminal,
+    ).toBe(true);
+    expect(
+      inspectCodexProviderError({
+        message: "stream failed",
+        willRetry: true,
+        codexErrorInfo: { responseTooManyFailedAttempts: { httpStatusCode: 500 } },
+      }).retriesExhausted,
+    ).toBe(true);
+  });
+
+  it("treats a non-retrying error as terminal", () => {
+    const evidence = inspectCodexProviderError({
+      message: "the model returned an invalid response",
+      willRetry: false,
+    });
+    expect(evidence.terminal).toBe(true);
+    expect(evidence.authUnavailable).toBe(false);
+  });
+
+  it("recognizes a 401 on the structured error info", () => {
+    const evidence = inspectCodexProviderError({
+      message: "Reconnecting... 1/5",
+      willRetry: true,
+      codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 401 } },
+    });
+    expect(evidence.terminal).toBe(true);
+    expect(evidence.authUnavailable).toBe(true);
   });
 });
 

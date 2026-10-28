@@ -7,6 +7,7 @@ import {
 } from "@openma/common/session-events/openma";
 import { ACP_NOTIFICATION_CONTEXT_KEY } from "@openma/common/session-events/acp";
 import { extractAcpSystemNotice } from "./acp-system-notices.js";
+import { inspectCodexProviderError } from "./auth-errors.js";
 import { toolCallOutcome, toolResultText } from "./tool-outcome.js";
 
 import type { SessionEventOut } from "./session-events.js";
@@ -165,6 +166,28 @@ function acpInner(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** The Codex provider error carried by a raw ACP session update. */
+export function codexProviderErrorFromSessionUpdate(
+  event: unknown,
+): Record<string, unknown> | null {
+  const inner = acpInner(event);
+  const codex = asRecord(asRecord(inner._meta)?.codex);
+  return asRecord(codex?.error);
+}
+
+/** Structured provider evidence that auth/quota detection can read. */
+function codexProviderErrorDetails(
+  error: Record<string, unknown>,
+  message: string | undefined,
+): { message: string; data: Record<string, unknown> } | null {
+  const data: Record<string, unknown> = {};
+  if (error.codexErrorInfo !== undefined) data.codexErrorInfo = error.codexErrorInfo;
+  if (error.additionalDetails !== undefined) data.additionalDetails = error.additionalDetails;
+  const text = message ?? stringValue(error.message);
+  if (!text && Object.keys(data).length === 0) return null;
+  return { message: text ?? "Provider error", ...(Object.keys(data).length ? { data } : {}) };
 }
 
 function acpText(inner: Record<string, unknown>): string | undefined {
@@ -340,18 +363,34 @@ function canonicalCodexSessionInfo(
   }
   const error = asRecord(codex.error);
   if (error) {
-    return error.willRetry === true
-      ? {
-          type: "session.running",
-          data: { retrying: true, provider_error: error },
-        }
-      : {
-          type: "session.error",
-          data: {
-            provider_error: error,
-            ...(stringValue(error.message) ? { message: error.message } : {}),
-          },
-        };
+    // `willRetry: true` only says the provider *plans* to retry. A reconnect
+    // storm around missing credentials or an exhausted quota never recovers,
+    // so those failures end the turn instead of reconnecting forever.
+    const evidence = inspectCodexProviderError(error);
+    if (evidence.terminal) {
+      const authRequired = evidence.authUnavailable || evidence.quotaUnavailable;
+      return {
+        type: "session.error",
+        data: {
+          provider_error: error,
+          ...(evidence.message ? { message: evidence.message } : {}),
+          ...(authRequired ? { code: "auth_required" } : {}),
+          ...(codexProviderErrorDetails(error, evidence.message)
+            ? { error_details: codexProviderErrorDetails(error, evidence.message) }
+            : {}),
+        },
+      };
+    }
+    return {
+      type: "session.running",
+      data: {
+        retrying: true,
+        provider_error: error,
+        // The bare "Reconnecting... 2/5" is not actionable on its own; the
+        // provider's own detail explains what is going wrong.
+        ...(evidence.notice ? { message: evidence.notice } : {}),
+      },
+    };
   }
   const threadStatus = asRecord(codex.threadStatus);
   const statusType = stringValue(threadStatus?.type)?.toLowerCase();

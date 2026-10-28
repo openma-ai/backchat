@@ -86,11 +86,13 @@ import type {
 } from "../shared/api.js";
 import { extractAcpSystemNotice } from "../shared/acp-system-notices.js";
 import {
+  inspectCodexProviderError,
   isAuthenticationFailureMessage,
   isAuthenticationRequiredError,
   sanitizeAuthenticationMessage,
   sessionErrorDetails,
 } from "../shared/auth-errors.js";
+import { codexProviderErrorFromSessionUpdate } from "../shared/openma-event.js";
 import type { AgentMessageDelivery } from "../shared/agent-interaction.js";
 import { ensureSessionCwd, removeSessionCwd } from "./session-cwd.js";
 import {
@@ -151,6 +153,9 @@ interface ActiveSession {
   openToolCallsByTurn: Map<string, Set<string>>;
   toolTurnOwners: Map<string, string>;
   orchestration: SessionOrchestrator<QueuedPrompt>;
+  /** Turns already failed by a terminal provider error. The ACP prompt RPC may
+   * still be unwinding, so the turn must not be failed a second time. */
+  providerFailedTurns: Set<string>;
   /** A vendor steering extension may start a full turn after the host-owned
    * prompt has already unwound. Its ACP updates then arrive through the
    * runtime's out-of-band callback until the harness adapter observes a
@@ -458,8 +463,12 @@ export class SessionManager {
     turn_id?: string;
     error?: unknown;
     agentId?: string;
+    /** Force the auth recovery path even when the provider words the failure
+     * in its own vocabulary ("auth_unavailable", quota exhausted). */
+    forceAuthRequired?: boolean;
   }): Promise<void> {
-    const authRequired = isAuthenticationRequiredError(p.error, p.agentId)
+    const authRequired = p.forceAuthRequired === true
+      || isAuthenticationRequiredError(p.error, p.agentId)
       || isAuthenticationFailureMessage(p.message);
     const errorDetails = sessionErrorDetails(p.error);
     const detailMessage = eventRecord(errorDetails?.data)?.message;
@@ -996,6 +1005,7 @@ export class SessionManager {
         orchestration: new SessionOrchestrator<QueuedPrompt>({
           sessionId: p.session_id,
         }),
+        providerFailedTurns: new Set(),
         outOfBandSteeringTurn: null,
         pendingOutOfBandSteeringUpdates: [],
         promptQueueEnabled: defaults.promptQueueEnabled !== false,
@@ -1644,6 +1654,59 @@ export class SessionManager {
       turn_id: turnId,
       event,
     });
+    this.#failTurnOnTerminalProviderError(sess, turnId, event);
+  }
+
+  /** A provider failure that cannot recover on its own — credentials gone,
+   * quota spent, reconnects exhausted — must end the turn. The ACP prompt RPC
+   * for such a turn may never return, so the turn is failed here instead of
+   * waiting for the RPC to unwind. Otherwise the session keeps reporting
+   * "busy" and the chat keeps spinning. */
+  #failTurnOnTerminalProviderError(
+    sess: ActiveSession,
+    turnId: string,
+    event: unknown,
+  ): void {
+    const providerError = codexProviderErrorFromSessionUpdate(event);
+    if (!providerError) return;
+    const evidence = inspectCodexProviderError(providerError);
+    if (!evidence.terminal) return;
+    const targetTurnId = turnId || sess.orchestration.activeTurnId || "";
+    if (!targetTurnId) return;
+    if (sess.providerFailedTurns.has(targetTurnId)) return;
+    sess.providerFailedTurns.add(targetTurnId);
+    const message = evidence.message ?? "The provider failed this turn.";
+    const authRequired = evidence.authUnavailable || evidence.quotaUnavailable;
+    this.#transition(sess.id, {
+      type: "session.error",
+      turnId: targetTurnId,
+      message,
+    });
+    void this.#sendSessionError({
+      session_id: sess.id,
+      turn_id: targetTurnId,
+      message,
+      agentId: sess.agentId,
+      forceAuthRequired: authRequired,
+      error: {
+        message,
+        data: {
+          ...(providerError.codexErrorInfo !== undefined
+            ? { codexErrorInfo: providerError.codexErrorInfo }
+            : {}),
+          ...(providerError.additionalDetails !== undefined
+            ? { additionalDetails: providerError.additionalDetails }
+            : {}),
+        },
+      },
+    });
+    // Release the orchestrator so the session stops reporting "busy" even if
+    // the ACP prompt RPC never returns, and ask the agent to stop the turn.
+    const controller = sess.turns.get(targetTurnId);
+    sess.turns.delete(targetTurnId);
+    sess.orchestration.finishTurn(targetTurnId);
+    controller?.abort();
+    this.#sendPromptQueueUpdate(sess);
   }
 
   #handleOutOfBandSessionUpdate(sess: ActiveSession, event: unknown): void {
@@ -1974,6 +2037,9 @@ export class SessionManager {
       };
       if (sess.orchestration.disposed) {
         return;
+      } else if (sess.providerFailedTurns.has(p.turn_id)) {
+        // The provider already failed this turn and the abort was ours. Do not
+        // overwrite that error with a cancellation.
       } else if (ctrl.signal.aborted) {
         appendEvent(p.session_id, "turn_cancelled", {
           turn_id: p.turn_id,
@@ -2043,7 +2109,9 @@ export class SessionManager {
       }
     } catch (e) {
       if (sess.orchestration.disposed) return;
-      if (ctrl.signal.aborted) {
+      if (sess.providerFailedTurns.has(p.turn_id)) {
+        // Already failed by the provider path; the abort was ours.
+      } else if (ctrl.signal.aborted) {
         appendEvent(p.session_id, "turn_cancelled", {
           turn_id: p.turn_id,
         });
@@ -2076,6 +2144,7 @@ export class SessionManager {
       sess.lastActivityAt = Date.now();
       sess.turns.delete(p.turn_id);
       sess.openToolCallsByTurn.delete(p.turn_id);
+      sess.providerFailedTurns.delete(p.turn_id);
       // thoughtText/assistantText accumulators are still maintained for
       // any in-process consumer; nothing reads them right now but we
       // keep the strings so the variable surface stays meaningful.
