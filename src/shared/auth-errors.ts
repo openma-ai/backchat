@@ -20,6 +20,9 @@ const RETRY_EXHAUSTED_RE =
 /** "Reconnecting... 5/5" — the last attempt already ran. */
 const LAST_ATTEMPT_RE = /\b(\d{1,2})\s*\/\s*\1\b/;
 
+/** Copy that says the provider was retrying when it gave up. */
+const RECONNECT_COPY_RE = /\breconnect(?:ing|ion|s)?\b|\bretr(?:y|ied|ying)\b/i;
+
 export interface SessionErrorDetails {
   message: string;
   code?: number;
@@ -196,4 +199,26 @@ export function inspectCodexProviderError(error: unknown): CodexProviderErrorEvi
     ...(explanationText ? { message: explanationText } : {}),
     ...(noticeText ? { notice: noticeText } : {}),
   };
+}
+
+/**
+ * Terminal provider copy that owns the failed turn in the session feed.
+ *
+ * These failures cannot recover on their own: the credentials are gone, the
+ * quota is spent, or the provider stopped reconnecting. The explanation
+ * therefore stays on the failed turn until a later turn in the same session
+ * succeeds ("成功了就清掉"). Ordinary failures — the provider rejected the
+ * request, the disk is full, a plain internal error — are not provider-sticky
+ * and are left alone by a later success.
+ */
+export function isStickyProviderErrorMessage(message: string | undefined): boolean {
+  if (typeof message !== "string") return false;
+  const text = message.trim();
+  if (!text) return false;
+  if (AUTH_UNAVAILABLE_RE.test(text)) return true;
+  if (QUOTA_UNAVAILABLE_RE.test(text)) return true;
+  if (RETRY_EXHAUSTED_RE.test(text)) return true;
+  // "Reconnecting... 5/5" — the last attempt already ran, so the provider
+  // gave up instead of retrying.
+  return LAST_ATTEMPT_RE.test(text) && RECONNECT_COPY_RE.test(text);
 }

@@ -45,6 +45,7 @@ import { splitAcpSystemNoticeText } from "@shared/acp-system-notices.js";
 import {
   isAuthenticationFailureMessage,
   isAuthenticationRequiredError,
+  isStickyProviderErrorMessage,
   sanitizeAuthenticationMessage,
   sessionErrorDetails,
 } from "@shared/auth-errors.js";
@@ -2828,6 +2829,47 @@ export class SessionStore {
     });
   }
 
+  /**
+   * Clear the sticky provider explanation from the failed turns of a session.
+   *
+   * A terminal Codex provider error (credentials gone, quota spent, reconnects
+   * exhausted) cannot recover on its own, so its copy owns the failed turn in
+   * the feed and stays there while the user retries — including while the new
+   * attempt is still in flight. Only a successful later turn in the same
+   * session clears it ("成功了就清掉"). Recovering the session itself (signing
+   * in again, reconnecting) does not: the feed still has to explain what
+   * happened.
+   *
+   * All preceding sticky provider rows in the session are cleared at once, so
+   * the feed never keeps a stale explanation next to a healthy conversation.
+   * Ordinary failures — the provider rejected the request, the disk is full —
+   * are not provider-sticky copy and are left untouched.
+   *
+   * The turn is mutated in place as well as replaced with a fresh object:
+   * replay keeps its own id→turn map while rebuilding history, so a clear has
+   * to reach those references too, while React needs the new object identity.
+   */
+  #clearStickyProviderFeedErrors(
+    sessionId: string,
+    completedTurnId: string,
+    completedStartedAt: number,
+  ): number {
+    let cleared = 0;
+    for (const [id, turn] of this.#turns) {
+      if (turn.sessionId !== sessionId) continue;
+      if (id === completedTurnId) continue;
+      // Only the turns that came before the successful one. A later failure
+      // is its own fact and must not be erased by an earlier retry.
+      if (turn.startedAt > completedStartedAt) continue;
+      if (turn.status !== "error") continue;
+      if (!isStickyProviderErrorMessage(turn.errorMessage)) continue;
+      turn.errorMessage = undefined;
+      this.#turns.set(id, { ...turn });
+      cleared++;
+    }
+    return cleared;
+  }
+
   /** Replace one row with a new object (immutable update). Keeps React happy
    *  with referential-equality identity tracking — see #snapshotCache and the
    *  comment in apply() below. */
@@ -3960,6 +4002,11 @@ export class SessionStore {
 
     let current: Turn | null = null;
     const turnsByCanonicalId = new Map<string, Turn>();
+    // Successful terminals are applied after the whole log is rebuilt: the
+    // canonical id map is written back over the store at the end, so clearing
+    // a sticky provider explanation mid-loop could be overwritten by the
+    // pre-clear turn object.
+    const completedTurns: Array<{ id: string; startedAt: number }> = [];
     // A legacy `user_prompt` row (pre-canonical histories) opens a turn but
     // carries no turn id. The canonical rows that follow it carry the host
     // turn id, so the first unknown id claims that turn instead of being
@@ -4110,6 +4157,11 @@ export class SessionStore {
             activeTurnId: undefined,
             lastError: undefined,
           }));
+          // The live path clears a terminal provider failure from the feed
+          // when a later turn succeeds; replay has to agree, or a restart
+          // would bring the stale explanation back. Do it after the rebuild
+          // below, once the final turn objects are in the store.
+          completedTurns.push({ id: turn.id, startedAt: turn.startedAt });
           continue;
         }
         if (canonical.type === "turn.cancelled") {
@@ -4282,6 +4334,13 @@ export class SessionStore {
     }
     if (current) this.#turns.set(current.id, current);
     for (const turn of turnsByCanonicalId.values()) this.#turns.set(turn.id, turn);
+    for (const completed of completedTurns) {
+      this.#clearStickyProviderFeedErrors(
+        sessionId,
+        completed.id,
+        completed.startedAt,
+      );
+    }
     return agentLifecycle;
   }
 
@@ -5130,6 +5189,21 @@ export class SessionStore {
           });
           this.#settleNativeSubagentsForTurn(ev.session_id, turn);
           this.#settleBackgroundWorkItemsForTurn(ev.session_id, turn);
+          // A successful turn is the only thing that clears a terminal
+          // provider failure from the feed. The failed turn keeps its
+          // explanation while the user retries; once a later turn in this
+          // session succeeds, the preceding sticky provider rows are gone.
+          this.#clearStickyProviderFeedErrors(
+            ev.session_id,
+            turn.id,
+            turn.startedAt,
+          );
+          // The session itself is healthy again, so the session-level error
+          // state must not survive the success either (the replay path already
+          // drops it on turn.completed).
+          this.#mutateSession(ev.session_id, (s) => (
+            s.lastError === undefined ? s : { ...s, lastError: undefined }
+          ));
         }
         // Mark unread ONLY if the user wasn't looking at this session
         // when the turn finished — there's nothing to "notify" about
