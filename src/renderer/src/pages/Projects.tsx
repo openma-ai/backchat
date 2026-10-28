@@ -56,7 +56,6 @@ import { openHistoryWindow } from "@/lib/history-paging";
 import { sessionStore } from "@/lib/session-store";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   CreateProjectDialog,
   ProjectFolderList,
@@ -298,16 +297,6 @@ export function ProjectEditor({
     setError("");
     try {
       if (
-        !creating &&
-        (!available?.some((a) => a.id === draft.coordinatorAgent) ||
-          !available?.some((a) => a.id === draft.workerAgent))
-      ) {
-        setSection("agents");
-        throw new Error(
-          "Choose a set-up coordinator and worker agent to finish setup.",
-        );
-      }
-      if (
         cloud &&
         (!draft.coordinatorEnvironment || !draft.workerEnvironment)
       ) {
@@ -476,34 +465,6 @@ export function ProjectEditor({
                     },
                   ]}
                 />
-                <fieldset>
-                  <legend className="mb-3 text-sm font-medium">
-                    Coordinator controls
-                  </legend>
-                  <div className="grid grid-cols-2 gap-3">
-                    {(["delegate", "steer", "cancel", "complete"] as const).map(
-                      (control) => (
-                        <label
-                          key={control}
-                          className="flex items-center gap-2 text-sm capitalize"
-                        >
-                          <Checkbox
-                            checked={draft.controls.includes(control)}
-                            onCheckedChange={(checked) =>
-                              field(
-                                "controls",
-                                checked === true
-                                  ? [...draft.controls, control]
-                                  : draft.controls.filter((c) => c !== control),
-                              )
-                            }
-                          />
-                          {control}
-                        </label>
-                      ),
-                    )}
-                  </div>
-                </fieldset>
               </div>
             </details>
           </TabsContent>
@@ -986,40 +947,34 @@ function ProjectWorkspace({
               onResume={() => void setCoordinatorOutcome("active")}
             />
           ) : null}
-          {!config?.coordinatorAgent || !config?.workerAgent ? (
-            <div className="projects-empty">
-              <h2>Make this project your own</h2>
-              <p>Choose your agents and add instructions to begin.</p>
-              <Button onClick={edit}>Set up coordinator</Button>
-            </div>
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <ChatView
-                binding={{
-                  projectId: project.id,
-                  runId: config.continuity === "per-run" ? runId : undefined,
-                  sessionId: coordinatorSessionId ?? placeholderSessionId,
-                  agentId: config.coordinatorAgent,
-                  cwd: project.primary_folder || "",
-                  label: project.name,
-                  placeholder: `Message ${project.name}…`,
-                  inputLabel: "Message coordinator",
-                  loadHistory: !!coordinatorSessionId,
-                  deliver: async ({ turnId, text, attachments }) => {
-                    await window.backchat.projectWorkSubmit({
-                      projectId: project.id,
-                      commandId: turnId,
-                      type: "message",
-                      text,
-                      attachments,
-                      ...(config.continuity === "per-run" ? { runId } : {}),
-                    });
-                    await refresh();
-                  },
-                }}
-              />
-            </div>
-          )}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ChatView
+              binding={{
+                projectId: project.id,
+                runId: config?.continuity === "per-run" ? runId : undefined,
+                sessionId: coordinatorSessionId ?? placeholderSessionId,
+                agentId: config?.coordinatorAgent ?? "",
+                cwd: project.primary_folder || "",
+                label: project.name,
+                placeholder: `Message ${project.name}…`,
+                inputLabel: "Message coordinator",
+                loadHistory: !!coordinatorSessionId,
+                deliver: async ({ turnId, text, attachments, agentId, configOverrides }) => {
+                  await window.backchat.projectWorkSubmit({
+                    projectId: project.id,
+                    commandId: turnId,
+                    type: "message",
+                    text,
+                    attachments,
+                    agentId,
+                    configOverrides,
+                    ...(config?.continuity === "per-run" ? { runId } : {}),
+                  });
+                  await refresh();
+                },
+              }}
+            />
+          </div>
           {error || view.error ? (
             <p role="alert" className="project-error">
               {error || view.error}

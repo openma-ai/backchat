@@ -71,3 +71,45 @@ describe("OpenMA task projection", () => {
     expect(result.row.status).toBe("running");
   });
 });
+
+it("shows an exhausted cloud execution error instead of a blank completed reply", () => {
+  const events = [...snapshot.events,
+    { type: "session.error", error: { type: "unknown_error", message: "Node ACP sandbox requires the pinned Session agent (child ACP capabilities are not supported)", retry_status: { type: "exhausted" } } },
+    { type: "session.status_idle", stop_reason: { type: "retries_exhausted" } },
+  ];
+  const result = projectOpenmaTask({ ...snapshot, task: { ...snapshot.task, status: "idle" }, events });
+  expect(result.turns[0]).toMatchObject({ status: "error", errorMessage: "Node ACP sandbox requires the pinned Session agent (child ACP capabilities are not supported)", stopReason: "retries_exhausted", assistantText: "Checking" });
+  expect(result.row.activeTurnId).toBeUndefined();
+  const store = new SessionStore();
+  store.applyOpenmaSnapshot({ ...snapshot, task: { ...snapshot.task, status: "idle" }, events });
+  expect(store.turnsFor("desktop")[0]).toMatchObject({ status: "error", errorMessage: result.turns[0]!.errorMessage });
+});
+
+it.each(["exhausted", "terminal"])("does not hide a %s error when a stale task snapshot still says running", retry => {
+  const result = projectOpenmaTask({ ...snapshot, events: [...snapshot.events,
+    { type: "session.error", error: { type: "new_server_error", message: "Execution failed", retry_status: { type: retry } } },
+  ] });
+  expect(result.turns[0]).toMatchObject({ status: "error", errorMessage: "Execution failed" });
+  expect(result.row.activeTurnId).toBeUndefined();
+});
+
+it("keeps a retryable cloud error running and clears it after successful recovery", () => {
+  const events = [...snapshot.events, { type: "session.error", error: { type: "model_overloaded", message: "Retrying provider", retry_status: { type: "retrying" } } }];
+  expect(projectOpenmaTask({ ...snapshot, events }).turns[0]).toMatchObject({ status: "running" });
+  const recovered = projectOpenmaTask({ ...snapshot, task: { ...snapshot.task, status: "idle" }, events: [...events,
+    { type: "agent.message", id: "recovered", content: [{ type: "text", text: "Recovered" }] },
+    { type: "session.status_idle", stop_reason: { type: "end_turn" } },
+  ] });
+  expect(recovered.turns[0]).toMatchObject({ status: "complete", errorMessage: undefined });
+});
+
+it("shows a fallback for exhausted retries without an error event and isolates the next turn", () => {
+  const result = projectOpenmaTask({ ...snapshot, task: { ...snapshot.task, status: "idle" }, events: [...snapshot.events,
+    { type: "session.status_idle", stop_reason: { type: "retries_exhausted" } },
+    { type: "user.message", id: "next", content: [{ type: "text", text: "Next" }] },
+    { type: "agent.message", id: "answer", content: [{ type: "text", text: "OK" }] },
+    { type: "session.status_idle", stop_reason: { type: "end_turn" } },
+  ] });
+  expect(result.turns[0]).toMatchObject({ status: "error", errorMessage: expect.any(String) });
+  expect(result.turns[1]).toMatchObject({ status: "complete", assistantText: "OK", errorMessage: undefined });
+});

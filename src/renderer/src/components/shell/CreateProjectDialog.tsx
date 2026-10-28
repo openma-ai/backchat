@@ -138,8 +138,8 @@ export function CreateProjectDialog({
   };
 
   const create = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName || saving) return;
+    const trimmedName = name.trim() || `${t("project.name")} ${projectId.slice(-6)}`;
+    if (saving) return;
     setSaving(true);
     try {
       const project = await window.backchat.projectSave({
@@ -228,7 +228,7 @@ export function CreateProjectDialog({
           <Button
             type="button"
             size="sm"
-            disabled={!name.trim() || saving}
+            disabled={saving}
             onClick={() => void create()}
             className="min-w-24"
           >

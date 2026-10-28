@@ -1,3 +1,4 @@
+import { coordinatorControls } from "../shared/project-coordinator.js";
 import { randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -61,7 +62,7 @@ export class ProjectMcpBridge {
           const mcp = makeProjectMcpServer({
             goal: this.service.goalControl(binding.projectId, binding.workThreadId),
             ...(binding.role === "coordinator" ? {
-              tools: this.service.config(binding.projectId)?.controls ?? [],
+              tools: [...coordinatorControls],
               readStatus: async (query: Parameters<typeof projectStatus>[1]) =>
                 projectStatus(await this.service.view(binding.projectId), query),
               control: {
