@@ -2336,7 +2336,11 @@ describe("SessionStore sticky provider feed errors", () => {
       turn_id: "turn-retry",
     });
 
-    expect(failed()).toMatchObject({ status: "error", errorMessage: undefined });
+    expect(failed()).toMatchObject({
+      status: "error",
+      errorMessage: undefined,
+      stickyFeedCleared: true,
+    });
     expect(store.turnsFor(sessionId)[1]?.status).toBe("complete");
   });
 
@@ -2412,6 +2416,37 @@ describe("SessionStore sticky provider feed errors", () => {
     const turns = store.turnsFor(sessionId);
     expect(turns.map((turn) => turn.status)).toEqual(["error", "complete"]);
     expect(turns[0]?.errorMessage).toBeUndefined();
+    expect(turns[0]?.stickyFeedCleared).toBe(true);
+  });
+
+  it("marks sticky clear even when the failed turn kept partial assistant text", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.registerTurn("turn-sticky-partial", sessionId, "first");
+    // Simulate a partial stream before the terminal provider failure.
+    const partial = store.turnsFor(sessionId)[0]!;
+    partial.assistantText = "Partial answer before auth failed";
+    store.apply({
+      type: "session.error",
+      session_id: sessionId,
+      turn_id: "turn-sticky-partial",
+      message: authMessage,
+      code: "auth_required",
+      agent_id: "codex-acp",
+    });
+    store.registerTurn("turn-retry-ok", sessionId, "retry");
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-retry-ok",
+    });
+
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      status: "error",
+      errorMessage: undefined,
+      stickyFeedCleared: true,
+      assistantText: "Partial answer before auth failed",
+    });
   });
 });
 

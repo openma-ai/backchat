@@ -2845,6 +2845,10 @@ export class SessionStore {
    * Ordinary failures — the provider rejected the request, the disk is full —
    * are not provider-sticky copy and are left untouched.
    *
+   * Clearing also marks `stickyFeedCleared` so the chat surface can drop pure
+   * sticky-error shells (no assistant/tools worth keeping) instead of leaving
+   * an empty "worked for" / article husk once the danger row is gone.
+   *
    * The turn is mutated in place as well as replaced with a fresh object:
    * replay keeps its own id→turn map while rebuilding history, so a clear has
    * to reach those references too, while React needs the new object identity.
@@ -2864,6 +2868,7 @@ export class SessionStore {
       if (turn.status !== "error") continue;
       if (!isStickyProviderErrorMessage(turn.errorMessage)) continue;
       turn.errorMessage = undefined;
+      turn.stickyFeedCleared = true;
       this.#turns.set(id, { ...turn });
       cleared++;
     }
