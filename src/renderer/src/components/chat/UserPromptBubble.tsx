@@ -13,8 +13,10 @@ import { useI18n } from "@/lib/i18n";
 import type { ScheduledTaskPromptSurface } from "@/lib/scheduled-task-presentation";
 import type { Turn } from "@/lib/session-store";
 import { derivePromptDisplayText } from "@/lib/composer-prompt";
+import { markdownToPlainText } from "@/lib/markdown-plain-text";
 import { ComposerAnnotationStrip } from "./ComposerAnnotations";
 import { PromptMessageAttachments } from "./PromptMessageAttachments";
+import { StreamdownText, USER_PROMPT_MARKDOWN_CLASS, useMarkdownCwd } from "./ChatMarkdown";
 import { cn } from "@/lib/utils";
 
 const LONG_PROMPT_CHAR_LIMIT = 480;
@@ -109,6 +111,7 @@ export function UserPromptBubble({
   onEditPrompt?: (turn: Turn, nextPromptText: string) => void;
 }) {
   const { t } = useI18n();
+  const cwd = useMarkdownCwd();
   // Legacy image-only prompts carry a generated display label. Suppress only
   // that exact label when structured attachments are actually available.
   const placeholderOnly = Boolean(turn.annotations?.length) && /^\[\d+ annotations?\]$/.test(text.trim());
@@ -184,14 +187,16 @@ export function UserPromptBubble({
           </div>
         ) : (
           <>
-            <p
+            <StreamdownText
               className={cn(
-                "whitespace-pre-wrap",
+                USER_PROMPT_MARKDOWN_CLASS,
                 isCollapsible && !expanded && "max-h-48 overflow-hidden",
               )}
-            >
-              {displayText}
-            </p>
+              text={displayText}
+              cwd={cwd}
+              sessionId={turn.sessionId}
+              surfacePrefix={`prompt-${turn.id}`}
+            />
             {isCollapsible && (
               <button
                 type="button"
@@ -254,6 +259,7 @@ export function ScheduledTaskUserPrompt({
   turn: Turn;
   surface: ScheduledTaskPromptSurface;
 }) {
+  const cwd = useMarkdownCwd();
   return (
     <div
       className="group is-user mb-2 ml-auto flex w-full max-w-[95%] flex-col items-end gap-2"
@@ -268,7 +274,13 @@ export function ScheduledTaskUserPrompt({
           <span className="min-w-0 truncate">{surface.name}</span>
         </p>
         {surface.prompt.length > 0 && (
-          <p className="whitespace-pre-wrap">{surface.prompt}</p>
+          <StreamdownText
+            className={USER_PROMPT_MARKDOWN_CLASS}
+            text={surface.prompt}
+            cwd={cwd}
+            sessionId={turn.sessionId}
+            surfacePrefix={`prompt-${turn.id}`}
+          />
         )}
       </div>
       <div
@@ -288,6 +300,7 @@ export function ScheduledTaskUserPrompt({
 export function ReferencedSessionPrompt({ turn }: { turn: Turn }) {
   const navigate = useNavigate();
   const { t } = useI18n();
+  const cwd = useMarkdownCwd();
   const references = turn.sessionReferences ?? [];
 
   return (
@@ -296,27 +309,38 @@ export function ReferencedSessionPrompt({ turn }: { turn: Turn }) {
       data-session-turn-prompt="true"
     >
       <div className="ml-auto flex w-fit min-w-0 max-w-full flex-wrap items-center gap-1.5 overflow-hidden rounded-lg bg-secondary px-4 py-3 text-sm text-foreground">
-        {references.map((reference) => (
-          <button
-            key={reference.session_id}
-            type="button"
-            data-session-reference={reference.session_id}
-            aria-label={`${t("chat.openSessionReference")}: ${reference.title}`}
-            title={`${t("chat.openSessionReference")}: ${reference.title}`}
-            onClick={() => {
-              void navigate({
-                to: "/chat/$sessionId",
-                params: { sessionId: reference.session_id },
-              });
-            }}
-            className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg bg-info/10 px-2 text-xs font-medium text-info ring-1 ring-info/25 hover:bg-info/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
-          >
-            <AtSignIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="min-w-0 truncate">{reference.title}</span>
-          </button>
-        ))}
+        {references.map((reference) => {
+          // The chip is one truncated line: the referenced session's title
+          // reads as its words, not as the markdown syntax it may carry.
+          const referenceTitle = markdownToPlainText(reference.title);
+          return (
+            <button
+              key={reference.session_id}
+              type="button"
+              data-session-reference={reference.session_id}
+              aria-label={`${t("chat.openSessionReference")}: ${referenceTitle}`}
+              title={`${t("chat.openSessionReference")}: ${referenceTitle}`}
+              onClick={() => {
+                void navigate({
+                  to: "/chat/$sessionId",
+                  params: { sessionId: reference.session_id },
+                });
+              }}
+              className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg bg-info/10 px-2 text-xs font-medium text-info ring-1 ring-info/25 hover:bg-info/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+            >
+              <AtSignIcon className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate">{referenceTitle}</span>
+            </button>
+          );
+        })}
         {turn.promptText && (
-          <p className="whitespace-pre-wrap">{turn.promptText}</p>
+          <StreamdownText
+            className={USER_PROMPT_MARKDOWN_CLASS}
+            text={turn.promptText}
+            cwd={cwd}
+            sessionId={turn.sessionId}
+            surfacePrefix={`prompt-${turn.id}`}
+          />
         )}
       </div>
       {/* The prompt's own time and copy, mirrored to its side of the column. */}

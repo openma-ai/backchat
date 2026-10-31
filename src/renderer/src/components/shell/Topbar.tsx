@@ -27,6 +27,7 @@ import type { SessionRow } from "@/lib/session-store";
 import { AgentIcon } from "@/components/AgentIcon";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { markdownToPlainText } from "@/lib/markdown-plain-text";
 import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
 import { RenameDialog } from "./RenameDialog";
 import {
@@ -57,6 +58,10 @@ export function Topbar(_props: { onCancel: () => void }) {
   if (!active || !isChat) return null;
 
   const pinned = active.pinnedAt != null;
+  // The topbar shows one truncated line: a title that carries markdown reads
+  // as its words, not as the syntax the user typed. The stored title stays
+  // raw — renaming edits what the session is actually called.
+  const title = markdownToPlainText(active.label);
   const archive = () => {
     void requestArchive([active.id], () => {
       sessionStore.setActive(null);
@@ -77,7 +82,7 @@ export function Topbar(_props: { onCancel: () => void }) {
   return (
     <div className="app-no-drag flex min-w-0 items-center gap-1.5 text-ui">
       <span className="app-drag-region max-w-[min(42vw,32rem)] truncate font-medium text-fg">
-        {active.label || t("sidebar.newChat")}
+        {title || t("sidebar.newChat")}
       </span>
       {active.externalClient ? <ExternalSourceBadge client={active.externalClient} /> : null}
       {active.status !== "draft" && !active.openma && (
