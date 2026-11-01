@@ -126,3 +126,17 @@ export function openmaWorkspaceScope(account: OpenmaAccountState, id: string): O
   const workspace = account.workspaces.find(w => w.id === id);
   return { baseUrl: workspace?.baseUrl ?? account.baseUrl, userId: workspace?.userId ?? account.user?.id ?? "", workspaceId: id };
 }
+
+/**
+ * Official CMA: while a session is idle on `requires_action` (or
+ * `budget_reached`) only settle events are accepted and `user.message` is a
+ * 400. The message was not queued. This fixed text crosses IPC (which drops
+ * error fields) so the renderer can put the text back in the composer.
+ */
+export const OPENMA_SETTLE_ONLY_MESSAGE = "OpenMA is waiting on a tool action. Approve or answer it, then send again. Your message was not queued.";
+export function isOpenmaSettleOnlyRejection(status: number | undefined, serverMessage: string | undefined): boolean {
+  return status === 400 && /only settle events are accepted/i.test(serverMessage ?? "");
+}
+export function isOpenmaSettleOnlyError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(OPENMA_SETTLE_ONLY_MESSAGE);
+}

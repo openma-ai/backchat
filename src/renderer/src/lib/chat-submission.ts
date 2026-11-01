@@ -16,6 +16,8 @@ import {
 import type { AcpForkPoint } from "@openma/common/acp-runtime";
 import { sessionUsesManagedWorkspace } from "./fork-workspace";
 import type { OptimisticUserEcho } from "./optimistic-user-echo";
+import { restoreComposerText } from "./composer-restore";
+import { OPENMA_SETTLE_ONLY_MESSAGE, isOpenmaSettleOnlyError } from "@shared/openma";
 import type {
   SessionRow,
   SideSessionParentLink,
@@ -303,6 +305,12 @@ export function useChatSubmission({
         onSuggestionSubmitted();
         await window.backchat.openmaTaskSend(target.id, crypto.randomUUID(), text);
       } catch (error) {
+        if (target && isOpenmaSettleOnlyError(error)) {
+          // Not queued: keep the user's text so they can resend after settling.
+          restoreComposerText(target.id, text);
+          toast.error(OPENMA_SETTLE_ONLY_MESSAGE);
+          return;
+        }
         toast.error(error instanceof Error ? error.message : "OpenMA request failed");
       }
       return;
