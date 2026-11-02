@@ -25,7 +25,7 @@ export function markdownToPlainText(markdown: string): string {
 }
 
 function stripMarkdown(markdown: string): string {
-  return markdown
+  let text = markdown
     // Fenced code keeps its content; only the fence markers go.
     .replace(/^[ \t]*(`{3,}|~{3,})[^\n]*$/gm, "")
     // Horizontal rules are decoration, never a title.
@@ -43,17 +43,27 @@ function stripMarkdown(markdown: string): string {
     .replace(/\[([^\]]+)\]\[[^\]]*\]/g, "$1")
     // Autolinks.
     .replace(/<((?:https?|mailto):[^>\s]+)>/g, "$1")
-    // Inline HTML.
-    .replace(/<\/?[a-zA-Z][^>]*>/g, "")
     // Strong, emphasis and strikethrough.
     .replace(/\*\*\*([^*]+)\*\*\*/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?![\w*])/g, "$1$2")
     .replace(/(^|[^\w_])__([^_]+)__(?![\w_])/g, "$1$2")
     .replace(/(^|[^\w_])_([^_\s][^_]*?)_(?![\w_])/g, "$1$2")
-    .replace(/~~([^~]+)~~/g, "$1")
-    // Whatever angle bracket is left is half a tag — drop it before the
-    // whitespace collapses, so the label reads as one clean line of text.
+    .replace(/~~([^~]+)~~/g, "$1");
+
+  // Inline HTML goes last, and it goes in a loop: one pass is not enough.
+  // Removing a tag can splice the two surviving halves of a split tag back
+  // together — `<scr<b>ipt>` loses its inner `<b>` and leaves a `<script>`
+  // behind — so the strip repeats until the text stops changing.
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<\/?[a-zA-Z][^>]*>/g, "");
+  } while (text !== previous);
+
+  // Whatever angle bracket is left is half a tag — drop it before the
+  // whitespace collapses, so the label reads as one clean line of text.
+  return text
     .replace(ANGLE_BRACKETS, "")
     // One label, one line.
     .replace(/\s+/g, " ")

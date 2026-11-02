@@ -49,6 +49,16 @@ describe("markdownToPlainText", () => {
     expect(markdownToPlainText("2 < 3")).toBe("2 3");
   });
 
+  test("strips inline HTML until it stops changing", () => {
+    // Removing the inner `<b>` leaves `<script>` behind. A single pass has
+    // already moved past that spot, so the strip has to run again to catch it.
+    const spliced = markdownToPlainText("<<b>script>");
+    expect(spliced).not.toContain("<");
+    expect(spliced).not.toContain(">");
+    expect(spliced).not.toContain("script");
+    expect(markdownToPlainText("<b>bold</b> html")).toBe("bold html");
+  });
+
   test("leaves ordinary words alone", () => {
     expect(markdownToPlainText("snake_case_name")).toBe("snake_case_name");
     expect(markdownToPlainText("2 * 3 * 4")).toBe("2 * 3 * 4");
