@@ -253,11 +253,14 @@ describe("preserveScrollAnchor", () => {
       },
     );
 
+    const anchorElement = {
+      getBoundingClientRect: () =>
+        ({ top: 360 - currentScrollTop }) as DOMRect,
+    };
+
     utils.preserveScrollAnchor({
       scrollElement,
-      anchorElement: {
-        getBoundingClientRect: () => ({ top: 360 - currentScrollTop }),
-      },
+      anchorElement,
       contentElement: contentElement as unknown as HTMLElement,
       update: () => {
         baseMaxScrollTop = 180;
