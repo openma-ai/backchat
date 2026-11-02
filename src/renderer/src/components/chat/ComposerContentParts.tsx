@@ -11,6 +11,7 @@ import type { HomeSuggestionTemplate } from "@/lib/home-suggestion-flow";
 import type { AcpAvailableCommand } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { markdownToPlainText } from "@/lib/markdown-plain-text";
 
 export function SuggestionTemplateEditor({
   inputRef,
@@ -223,35 +224,40 @@ export function SessionReferenceStrip({
       className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-1.5"
       aria-label={t("chat.referencedSessions")}
     >
-      {references.map((reference) => (
-        <span
-          key={reference.session_id}
-          className={cn(
-            "inline-flex h-7 max-w-full items-center rounded-lg",
-            "bg-info/10 text-xs font-medium text-info ring-1 ring-info/25",
-          )}
-        >
-          <button
-            type="button"
-            aria-label={`${t("chat.openSessionReference")}: ${reference.title}`}
-            title={`${t("chat.openSessionReference")}: ${reference.title}`}
-            onClick={() => onOpen(reference.session_id)}
-            className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-l-lg pl-2 pr-1 hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+      {references.map((reference) => {
+        // The chip is one truncated line: the referenced session's title reads
+        // as its words, not as the markdown syntax it may carry.
+        const referenceTitle = markdownToPlainText(reference.title);
+        return (
+          <span
+            key={reference.session_id}
+            className={cn(
+              "inline-flex h-7 max-w-full items-center rounded-lg",
+              "bg-info/10 text-xs font-medium text-info ring-1 ring-info/25",
+            )}
           >
-            <AtSignIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="min-w-0 truncate">{reference.title}</span>
-          </button>
-          <button
-            type="button"
-            aria-label={`${t("chat.removeSessionReference")}: ${reference.title}`}
-            title={`${t("chat.removeSessionReference")}: ${reference.title}`}
-            onClick={() => onRemove(reference.session_id)}
-            className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
-          >
-            <XIcon className="size-3 opacity-70" aria-hidden="true" />
-          </button>
-        </span>
-      ))}
+            <button
+              type="button"
+              aria-label={`${t("chat.openSessionReference")}: ${referenceTitle}`}
+              title={`${t("chat.openSessionReference")}: ${referenceTitle}`}
+              onClick={() => onOpen(reference.session_id)}
+              className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-l-lg pl-2 pr-1 hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+            >
+              <AtSignIcon className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate">{referenceTitle}</span>
+            </button>
+            <button
+              type="button"
+              aria-label={`${t("chat.removeSessionReference")}: ${referenceTitle}`}
+              title={`${t("chat.removeSessionReference")}: ${referenceTitle}`}
+              onClick={() => onRemove(reference.session_id)}
+              className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-info/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info/45"
+            >
+              <XIcon className="size-3 opacity-70" aria-hidden="true" />
+            </button>
+          </span>
+        );
+      })}
     </div>
   );
 }

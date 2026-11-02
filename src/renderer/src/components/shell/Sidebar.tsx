@@ -54,6 +54,7 @@ import {
 } from "@/components/shell/SidebarGridRow";
 import { SidebarSectionHeading } from "@/components/shell/SidebarSectionHeading";
 import { folderName, projectKeyForCwd } from "@/lib/project-path";
+import { markdownToPlainText } from "@/lib/markdown-plain-text";
 import { useI18n } from "@/lib/i18n";
 import { AGENTS_QUERY_KEY } from "@/lib/agent-query";
 import { SCHEDULES_QUERY_KEY, scheduledSourceSessionIds } from "@/lib/scheduled-task-presentation";
@@ -735,7 +736,7 @@ export function Sidebar() {
       return row
         ? {
             kind: "session",
-            title: row.label,
+            title: markdownToPlainText(row.label),
             agent: agentLabel(row.agent_id),
             cwd: row.chosenCwd || row.cwd || undefined,
             error: row.status === "errored" ? row.lastError : undefined,
@@ -745,7 +746,7 @@ export function Sidebar() {
     if (kind === "pair") {
       const pair = pairs.find((item) => item.id === id);
       return pair
-        ? { kind: "pair", title: pair.label, members: pair.members.map((member) => agentLabel(sessionStore.get(member)?.agent_id) ?? member) }
+        ? { kind: "pair", title: markdownToPlainText(pair.label), members: pair.members.map((member) => agentLabel(sessionStore.get(member)?.agent_id) ?? member) }
         : null;
     }
     return null;
@@ -1665,6 +1666,9 @@ function PairSidebarRow({
   onMenuOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
+  // The row shows one short label: a title that carries markdown reads as
+  // its words, not as the syntax the user typed.
+  const pairLabel = useMemo(() => markdownToPlainText(row.label), [row.label]);
   const menu: RowMenu = (kit) => <>
     <kit.Item icon={<SquarePenIcon />} onSelect={onRename}>{t("sidebar.rename")}</kit.Item>
     <kit.Separator />
@@ -1697,11 +1701,11 @@ function PairSidebarRow({
           <button
             type="button"
             onClick={onSelect}
-            aria-label={row.label || t("sidebar.pairChat")}
+            aria-label={pairLabel || t("sidebar.pairChat")}
             className="flex h-full min-w-0 flex-1 items-center rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <span className={cn("min-w-0 truncate", labelCls)}>
-              {row.label || t("sidebar.pairChat")}
+              {pairLabel || t("sidebar.pairChat")}
             </span>
           </button>
         </SidebarGridCell>
@@ -1761,6 +1765,10 @@ export function SessionRow({
   const activity = getSessionSidebarStatus(row, active);
   const errored = activity === "error";
   const pinned = row.pinnedAt != null;
+  // The row shows one short label: a title that carries markdown reads as
+  // its words, not as the syntax the user typed. The stored title stays raw
+  // — renaming edits what the session is actually called.
+  const sessionLabel = useMemo(() => markdownToPlainText(row.label), [row.label]);
   const workingDirectory = row.chosenCwd || row.cwd;
   const copy = (value: string, done: string) => {
     navigator.clipboard.writeText(value).then(
@@ -1819,10 +1827,10 @@ export function SessionRow({
           <button
             type="button"
             onClick={onSelect}
-            aria-label={row.label}
+            aria-label={sessionLabel}
             className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left text-ui focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
-            <span className={cn("min-w-0 truncate text-left", labelCls)}>{row.label}</span>
+            <span className={cn("min-w-0 truncate text-left", labelCls)}>{sessionLabel}</span>
             {row.externalClient ? <ExternalSourceBadge client={row.externalClient} /> : null}
           </button>
         </SidebarGridCell>

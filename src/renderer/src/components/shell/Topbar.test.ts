@@ -7,7 +7,7 @@ const singleChatTopbar = source.slice(0, source.indexOf("export function PairTop
 describe("single-chat topbar contract", () => {
   it("keeps task-level runtime updates in top chrome, never in the composer", () => {
     expect(singleChatTopbar).toContain(
-      '{active.label || t("sidebar.newChat")}',
+      '{title || t("sidebar.newChat")}',
     );
     expect(singleChatTopbar).toContain(
       "<SessionRuntimeUpdateControl",
@@ -20,6 +20,12 @@ describe("single-chat topbar contract", () => {
     expect(singleChatTopbar).not.toContain("<RuntimeChip");
     expect(singleChatTopbar).not.toContain("<ModeChip");
     expect(singleChatTopbar).not.toContain("<ContextUsageChip");
+  });
+
+  it("shows the task title as readable text, not as markdown syntax", () => {
+    expect(singleChatTopbar).toContain("markdownToPlainText(active.label)");
+    // Renaming still edits the stored title.
+    expect(singleChatTopbar).toContain("currentTitle={active.label}");
   });
 
   it("keeps the select menu limited to working task actions", () => {

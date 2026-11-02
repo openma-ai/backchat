@@ -1,6 +1,6 @@
 import type { SessionMessage } from "@/lib/subagent-sessions";
 import { StreamdownText } from "./ChatMarkdown";
-import { ASSISTANT_MARKDOWN_CLASS } from "./ChatMarkdown";
+import { ASSISTANT_MARKDOWN_CLASS, USER_PROMPT_MARKDOWN_CLASS } from "./ChatMarkdown";
 import { ToolContentRenderer } from "./ToolPresentation";
 import type { ToolContentBlock } from "@/lib/reduce-turn";
 import { cn } from "@/lib/utils";
@@ -74,9 +74,14 @@ export function SessionMessages({
                 const block = content as Record<string, unknown>;
                 return block.type === "text" && typeof block.text === "string" ? (
                   fromParent ? (
-                    <p key={index} className="whitespace-pre-wrap break-words">
-                      {block.text}
-                    </p>
+                    <StreamdownText
+                      key={index}
+                      className={USER_PROMPT_MARKDOWN_CLASS}
+                      text={block.text}
+                      cwd={null}
+                      sessionId=""
+                      surfacePrefix="session-message"
+                    />
                   ) : (
                     <StreamdownText
                       key={index}

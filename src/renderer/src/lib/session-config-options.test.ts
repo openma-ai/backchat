@@ -150,6 +150,89 @@ describe("session config options", () => {
     }, "Lane").hint).toBe("Use strict validation");
   });
 
+  test("a row subtitle that repeats the row's own name is dropped", () => {
+    const laneOption: AcpSessionConfigOption = {
+      id: "lane",
+      name: "Lane",
+      type: "select",
+      currentValue: "strict",
+      options: [{ value: "strict", name: "Strict", description: "Strict" }],
+    };
+
+    expect(configSelectItemHint(laneOption, {
+      value: "strict",
+      name: "Strict",
+      description: "Strict",
+    })).toBeUndefined();
+    expect(configSelectItemHint(laneOption, {
+      value: "strict",
+      name: "Strict",
+      description: "  strict  ",
+    })).toBeUndefined();
+    expect(configModeOptionPresentation({
+      value: "strict",
+      name: "Strict",
+      description: "Strict",
+    }, "Lane").hint).toBeUndefined();
+    expect(configModeOptionPresentation({
+      value: "strict",
+      name: "Strict",
+      description: "strict",
+    }, "Lane").hint).toBeUndefined();
+  });
+
+  test("a model row whose description repeats its own name falls back to the provider", () => {
+    const minimaxOption: AcpSessionConfigOption = {
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: "minimax-m78",
+      options: [
+        {
+          group: "minimax",
+          name: "minimax",
+          options: [
+            {
+              value: "minimax-m78",
+              name: "MiniMax M78 (AITL)",
+              description: "MiniMax M78 (AITL)",
+            },
+          ],
+        },
+      ],
+    };
+
+    // The description says exactly what the row title says, so it is noise —
+    // the provider is what the row can still add.
+    expect(configSelectItemHint(minimaxOption, {
+      value: "minimax-m78",
+      name: "MiniMax M78 (AITL)",
+      description: "MiniMax M78 (AITL)",
+      groupName: "minimax",
+    })).toBe("minimax");
+    // Case and padding do not make it a different sentence.
+    expect(configSelectItemHint(minimaxOption, {
+      value: "minimax-m78",
+      name: "MiniMax M78 (AITL)",
+      description: "  minimax m78 (aitl)  ",
+      groupName: "minimax",
+    })).toBe("minimax");
+    // No provider and no new information: no subtitle at all.
+    expect(configSelectItemHint(minimaxOption, {
+      value: "minimax-m78",
+      name: "MiniMax M78 (AITL)",
+      description: "MiniMax M78 (AITL)",
+    })).toBeUndefined();
+    // A description that says something the title does not still shows.
+    expect(configSelectItemHint(minimaxOption, {
+      value: "minimax-m78",
+      name: "MiniMax M78 (AITL)",
+      description: "128k context",
+      groupName: "minimax",
+    })).toBe("128k context");
+  });
+
   test("flattens grouped select options without losing labels", () => {
     const flat = flattenSelectOptions({
       id: "mode",
