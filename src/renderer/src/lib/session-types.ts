@@ -444,6 +444,13 @@ export interface Turn {
   effectiveDelivery?: AgentMessageDelivery;
   deliveryDegraded?: boolean;
   errorMessage?: string;
+  /**
+   * Set when a later successful turn cleared this turn's sticky provider
+   * feed explanation. Empty shells (no assistant/tools worth keeping) are
+   * then omitted from the chat surface so the feed does not leave a blank
+   * "worked for" husk behind.
+   */
+  stickyFeedCleared?: boolean;
   startedAt: number;
   endedAt?: number;
   /** Read-only parent transcript mounted into a forked child session. */

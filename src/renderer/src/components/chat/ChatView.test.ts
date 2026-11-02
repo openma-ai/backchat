@@ -251,6 +251,76 @@ describe("transcript projection", () => {
       { id: "complete", status: "complete" },
     ]);
   });
+
+  it("drops cleared sticky provider shells from the chat surface", () => {
+    const {
+      isClearedStickyProviderFeedShell,
+      turnHasStickyFeedKeepContent,
+    } = chatViewModule as unknown as {
+      isClearedStickyProviderFeedShell?: (turn: {
+        status: string;
+        errorMessage?: string;
+        stickyFeedCleared?: boolean;
+        assistantText: string;
+        events: Array<{ payload: unknown; receivedAt: number }>;
+      }) => boolean;
+      turnHasStickyFeedKeepContent?: (turn: {
+        assistantText: string;
+        events: Array<{ payload: unknown; receivedAt: number }>;
+      }) => boolean;
+    };
+
+    expect(isClearedStickyProviderFeedShell).toBeTypeOf("function");
+    expect(turnHasStickyFeedKeepContent).toBeTypeOf("function");
+    if (!isClearedStickyProviderFeedShell || !turnHasStickyFeedKeepContent) return;
+
+    const emptyShell = {
+      status: "error",
+      errorMessage: undefined,
+      stickyFeedCleared: true,
+      assistantText: "",
+      // Thought-only capture shells still collapse — thought is not keep content.
+      events: [
+        {
+          payload: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: "思考中…" },
+          },
+          receivedAt: 1,
+        },
+      ],
+    };
+    expect(turnHasStickyFeedKeepContent(emptyShell)).toBe(false);
+    expect(isClearedStickyProviderFeedShell(emptyShell)).toBe(true);
+
+    const withAssistant = {
+      ...emptyShell,
+      assistantText: "Partial answer before the provider failed",
+    };
+    expect(turnHasStickyFeedKeepContent(withAssistant)).toBe(true);
+    expect(isClearedStickyProviderFeedShell(withAssistant)).toBe(false);
+
+    const withTool = {
+      ...emptyShell,
+      events: [
+        {
+          payload: { sessionUpdate: "tool_call", toolCallId: "t1" },
+          receivedAt: 1,
+        },
+      ],
+    };
+    expect(turnHasStickyFeedKeepContent(withTool)).toBe(true);
+    expect(isClearedStickyProviderFeedShell(withTool)).toBe(false);
+
+    // Uncleared sticky failures stay visible.
+    expect(
+      isClearedStickyProviderFeedShell({
+        ...emptyShell,
+        stickyFeedCleared: false,
+        errorMessage: "auth_unavailable: no auth available",
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("provider queue projection", () => {

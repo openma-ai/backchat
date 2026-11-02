@@ -481,6 +481,7 @@ describe("SessionStore canonical OpenMA events", () => {
     });
     expect(store.get("sess-codex-lifecycle")?.notice?.message).toBe("connection reset");
 
+
     applyCanonicalSession("codex-idle", "session.idle", {
       thread_status: { type: "idle" },
     });
@@ -501,6 +502,126 @@ describe("SessionStore canonical OpenMA events", () => {
       reason: "provider_closed",
     });
     expect(store.get("sess-codex-lifecycle")?.status).toBe("disposed");
+  });
+
+  it("fails the running turn when a canonical provider error arrives without a turn id", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-codex-provider-failure",
+      acp_session_id: "acp-codex-provider-failure",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn(
+      "turn-provider-failure",
+      "sess-codex-provider-failure",
+      "hello",
+    );
+    expect(store.get("sess-codex-provider-failure")?.status).toBe("running");
+
+    // Out-of-band provider failures carry no turn id; the session's active
+    // turn is the one that failed.
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-provider-failure",
+      turn_id: "",
+      event: { sessionUpdate: "session_info_update" },
+      openma_event: createOpenMAEvent({
+        event_id: "codex-provider-failure",
+        type: "session.error",
+        session_id: "sess-codex-provider-failure",
+        turn_id: "",
+        source: { kind: "harness", harness: "codex-acp", adapter: "codex" },
+        occurred_at: "2026-08-04T10:00:00.000Z",
+        data: {
+          message: "auth_unavailable: no auth available (providers=devin)",
+          code: "auth_required",
+          provider_error: { message: "Reconnecting... 2/5", willRetry: true },
+        },
+      }),
+    });
+
+    const turn = store.turnsFor("sess-codex-provider-failure")[0];
+    expect(turn?.status).toBe("error");
+    expect(turn?.errorMessage).toContain("auth_unavailable");
+    expect(store.get("sess-codex-provider-failure")?.status).not.toBe("running");
+    expect(store.get("sess-codex-provider-failure")?.activeTurnId).toBeUndefined();
+  });
+
+  it("fails the running turn for a non-auth provider error too", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-codex-provider-failure-plain",
+      acp_session_id: "acp-codex-provider-failure-plain",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn(
+      "turn-provider-failure-plain",
+      "sess-codex-provider-failure-plain",
+      "hello",
+    );
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-provider-failure-plain",
+      turn_id: "",
+      event: { sessionUpdate: "session_info_update" },
+      openma_event: createOpenMAEvent({
+        event_id: "codex-provider-failure-plain",
+        type: "session.error",
+        session_id: "sess-codex-provider-failure-plain",
+        turn_id: "",
+        source: { kind: "harness", harness: "codex-acp", adapter: "codex" },
+        occurred_at: "2026-08-04T10:00:00.000Z",
+        data: { message: "the model returned an invalid response" },
+      }),
+    });
+
+    const turn = store.turnsFor("sess-codex-provider-failure-plain")[0];
+    expect(turn?.status).toBe("error");
+    expect(turn?.errorMessage).toBe("the model returned an invalid response");
+    expect(store.get("sess-codex-provider-failure-plain")?.activeTurnId).toBeUndefined();
+  });
+
+  it("keeps a soft provider reconnect notice-only and keeps the turn running", () => {
+    const store = new SessionStore();
+    store.apply({
+      type: "session.ready",
+      session_id: "sess-codex-soft-retry",
+      acp_session_id: "acp-codex-soft-retry",
+      agent_id: "codex-acp",
+      cwd: "/tmp/project",
+    });
+    store.registerTurn("turn-soft-retry", "sess-codex-soft-retry", "hello");
+
+    store.apply({
+      type: "session.event",
+      session_id: "sess-codex-soft-retry",
+      turn_id: "",
+      event: { sessionUpdate: "session_info_update" },
+      openma_event: createOpenMAEvent({
+        event_id: "codex-soft-retry",
+        type: "session.running",
+        session_id: "sess-codex-soft-retry",
+        turn_id: "",
+        source: { kind: "harness", harness: "codex-acp", adapter: "codex" },
+        occurred_at: "2026-08-04T10:00:00.000Z",
+        data: {
+          retrying: true,
+          message: "upstream connect timeout, retrying",
+          provider_error: { message: "Reconnecting... 1/5", willRetry: true },
+        },
+      }),
+    });
+
+    expect(store.turnsFor("sess-codex-soft-retry")[0]?.status).toBe("running");
+    expect(store.get("sess-codex-soft-retry")?.status).toBe("running");
+    expect(store.get("sess-codex-soft-retry")?.notice?.message).toBe(
+      "upstream connect timeout, retrying",
+    );
   });
 
   it("drives message, thinking, plan, command, usage, and config slots from canonical events alone", () => {
@@ -2157,6 +2278,175 @@ describe("SessionStore turn-scoped provider errors", () => {
     }]);
 
     expect(store.get(sessionId)).toMatchObject({ status: "errored", lastError: "agent binary missing" });
+  });
+});
+
+describe("SessionStore sticky provider feed errors", () => {
+  const sessionId = "sess-sticky-provider-feed";
+  const source = { kind: "harness", harness: "codex-acp", adapter: "acp" } as const;
+  const authMessage =
+    "auth_unavailable: no auth available (providers=devin, model=devin/gpt-6-1-sol)";
+  const ready = {
+    type: "session.ready",
+    session_id: sessionId,
+    acp_session_id: "acp-sticky-provider-feed",
+    agent_id: "codex-acp",
+    cwd: "/tmp/project",
+  } as const;
+
+  const canonical = (
+    eventId: string,
+    type: string,
+    turnId: string,
+    data: Record<string, unknown>,
+    second: number,
+  ) => createOpenMAEvent({
+    event_id: eventId,
+    type,
+    session_id: sessionId,
+    turn_id: turnId,
+    source,
+    occurred_at: `2026-10-13T13:41:${String(second).padStart(2, "0")}.000Z`,
+    data,
+  });
+
+  it("clears a preceding sticky explanation only after a later turn succeeds", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.registerTurn("turn-sticky", sessionId, "first");
+    store.apply({
+      type: "session.error",
+      session_id: sessionId,
+      turn_id: "turn-sticky",
+      message: authMessage,
+      code: "auth_required",
+      agent_id: "codex-acp",
+    });
+
+    const failed = () => store.turnsFor(sessionId)[0];
+    expect(failed()).toMatchObject({ status: "error", errorMessage: authMessage });
+
+    // Starting the retry must keep the explanation visible while it runs.
+    store.registerTurn("turn-retry", sessionId, "retry");
+    expect(failed()?.errorMessage).toBe(authMessage);
+
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-retry",
+    });
+
+    expect(failed()).toMatchObject({
+      status: "error",
+      errorMessage: undefined,
+      stickyFeedCleared: true,
+    });
+    expect(store.turnsFor(sessionId)[1]?.status).toBe("complete");
+  });
+
+  it("does not clear the sticky explanation on auth recovery alone", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.registerTurn("turn-sticky", sessionId, "first");
+    store.apply({
+      type: "session.error",
+      session_id: sessionId,
+      turn_id: "turn-sticky",
+      message: authMessage,
+      code: "auth_required",
+      agent_id: "codex-acp",
+    });
+
+    store.clearAuthRequired(sessionId);
+
+    expect(store.get(sessionId)?.authRequired).toBe(false);
+    expect(store.turnsFor(sessionId)[0]?.errorMessage).toBe(authMessage);
+  });
+
+  it("leaves ordinary turn failures alone when a later turn succeeds", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.registerTurn("turn-rejected", sessionId, "first");
+    store.apply({
+      type: "session.error",
+      session_id: sessionId,
+      turn_id: "turn-rejected",
+      message: "provider rejected the prompt",
+    });
+    store.registerTurn("turn-success", sessionId, "retry");
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-success",
+    });
+
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      status: "error",
+      errorMessage: "provider rejected the prompt",
+    });
+  });
+
+  it("replay clears the preceding sticky explanation after turn.completed", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    const events = [
+      canonical("sticky-user", "user.message", "turn-sticky", {
+        text: "first",
+        input_kind: "prompt",
+      }, 1),
+      canonical("sticky-error", "session.error", "turn-sticky", {
+        message: authMessage,
+        code: "auth_required",
+      }, 2),
+      canonical("retry-user", "user.message", "turn-retry", {
+        text: "retry",
+        input_kind: "prompt",
+      }, 3),
+      canonical("retry-done", "turn.completed", "turn-retry", {
+        stop_reason: "end_turn",
+      }, 4),
+    ];
+    store.replayHistory(sessionId, events.map((event, index) => ({
+      seq: index + 1,
+      type: "openma_event",
+      data: JSON.stringify(event),
+      ts: index + 1,
+    })));
+
+    const turns = store.turnsFor(sessionId);
+    expect(turns.map((turn) => turn.status)).toEqual(["error", "complete"]);
+    expect(turns[0]?.errorMessage).toBeUndefined();
+    expect(turns[0]?.stickyFeedCleared).toBe(true);
+  });
+
+  it("marks sticky clear even when the failed turn kept partial assistant text", () => {
+    const store = new SessionStore();
+    store.apply(ready);
+    store.registerTurn("turn-sticky-partial", sessionId, "first");
+    // Simulate a partial stream before the terminal provider failure.
+    const partial = store.turnsFor(sessionId)[0]!;
+    partial.assistantText = "Partial answer before auth failed";
+    store.apply({
+      type: "session.error",
+      session_id: sessionId,
+      turn_id: "turn-sticky-partial",
+      message: authMessage,
+      code: "auth_required",
+      agent_id: "codex-acp",
+    });
+    store.registerTurn("turn-retry-ok", sessionId, "retry");
+    store.apply({
+      type: "session.complete",
+      session_id: sessionId,
+      turn_id: "turn-retry-ok",
+    });
+
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      status: "error",
+      errorMessage: undefined,
+      stickyFeedCleared: true,
+      assistantText: "Partial answer before auth failed",
+    });
   });
 });
 

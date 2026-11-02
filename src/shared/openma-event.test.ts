@@ -15,6 +15,17 @@ const options = {
   adapter: "claude",
 };
 
+/** Canonical OpenMA events carry an opaque `data` payload. Narrow it once so
+ * field-level assertions stay typed instead of reaching through `unknown`. */
+function eventData(event: ReturnType<typeof toOpenMAEvent>): Record<string, unknown> {
+  expect(event).toBeDefined();
+  expect(event).not.toBeNull();
+  const data = event?.data;
+  expect(data).toBeTypeOf("object");
+  expect(data).not.toBeNull();
+  return data as Record<string, unknown>;
+}
+
 describe("SessionEventOut → OpenMA event boundary", () => {
   it("keeps an uncorrelated Monitor notification as a session event", () => {
     expect(runtimeMonitorEventToOpenMAEvent({
@@ -1082,6 +1093,83 @@ describe("SessionEventOut → OpenMA event boundary", () => {
         provider_error: { message: "connection reset", willRetry: true, turnId: "turn-1" },
       },
     });
+  });
+
+  it("fails the turn when a reconnecting Codex provider error has no usable auth", () => {
+    const event = toOpenMAEvent({
+      type: "session.event",
+      session_id: "sess-codex",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          codex: {
+            error: {
+              message: "Reconnecting... 2/5",
+              willRetry: true,
+              additionalDetails:
+                "auth_unavailable: no auth available (providers=devin, model=devin/gpt-6-1-sol); devin upstream error (invalid_argument)",
+              codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } },
+            },
+          },
+        },
+      },
+    }, { ...options, harness: "codex-acp", adapter: "codex" });
+
+    const data = eventData(event);
+    expect(event?.type).toBe("session.error");
+    expect(data.code).toBe("auth_required");
+    expect(String(data.message)).toContain("auth_unavailable");
+    expect(data.error_details).toMatchObject({
+      message: expect.stringContaining("auth_unavailable"),
+      data: { codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } },
+    });
+  });
+
+  it("fails the turn when the provider stops retrying", () => {
+    const event = toOpenMAEvent({
+      type: "session.event",
+      session_id: "sess-codex",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          codex: {
+            error: { message: "the model returned an invalid response", willRetry: false },
+          },
+        },
+      },
+    }, { ...options, harness: "codex-acp", adapter: "codex" });
+
+    const data = eventData(event);
+    expect(event?.type).toBe("session.error");
+    expect(data.message).toBe("the model returned an invalid response");
+    expect(data.code).toBeUndefined();
+  });
+
+  it("keeps a soft reconnect notice-only but explains it with the provider detail", () => {
+    const event = toOpenMAEvent({
+      type: "session.event",
+      session_id: "sess-codex",
+      turn_id: "turn-1",
+      event: {
+        sessionUpdate: "session_info_update",
+        _meta: {
+          codex: {
+            error: {
+              message: "Reconnecting... 1/5",
+              willRetry: true,
+              additionalDetails: "upstream connect timeout, retrying",
+            },
+          },
+        },
+      },
+    }, { ...options, harness: "codex-acp", adapter: "codex" });
+
+    const data = eventData(event);
+    expect(event?.type).toBe("session.running");
+    expect(data.retrying).toBe(true);
+    expect(data.message).toBe("upstream connect timeout, retrying");
   });
 
   it("maps Pi running metadata into canonical session lifecycle without dropping queue depth", () => {
