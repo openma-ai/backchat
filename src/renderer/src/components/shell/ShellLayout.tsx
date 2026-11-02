@@ -21,6 +21,7 @@ import {
   selectActive,
 } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
+import { cancelChatActiveTurn } from "@/lib/chat-session-actions";
 import { useSettings } from "@/lib/settings-store";
 import { createSideWorkspacePersistence } from "@/lib/side-workspace-persistence";
 import { SettingsSidebar } from "@/pages/settings/SettingsLayout";
@@ -282,14 +283,10 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
   }, [navigate]);
 
   const cancelActive = useCallback(() => {
+    // The topbar and the composer share one resolver: a stop press must
+    // reach the host even when `activeTurnId` was never set.
     const active = sessionStore.active();
-    if (active?.openma) { void window.backchat.openmaTaskInterrupt(active.id); return; }
-    if (active?.activeTurnId) {
-      void window.backchat.sessionCancel({
-        session_id: active.id,
-        turn_id: active.activeTurnId,
-      });
-    }
+    cancelChatActiveTurn(active ?? null, active?.sideKind === "subagent");
   }, []);
 
   // Expose the right-rail collapse setter to module-level imperative

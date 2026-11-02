@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   resolveChatAskResponse,
+  resolveChatCancelFallbackTurnIds,
   resolveChatCancelTarget,
   resolveChatConfigSessionId,
   resolveResponseSideChatDraft,
@@ -56,6 +57,54 @@ describe("chat session actions", () => {
     expect(resolveChatCancelTarget({
       id: "session-1",
     }, false)).toBeNull();
+  });
+
+  it("falls back to a running or pending turn when the active turn id is missing", () => {
+    // The stop control is shown for a running turn and for a send that is
+    // still pending — both must reach the host even when the session row
+    // never carried an activeTurnId.
+    expect(resolveChatCancelTarget({
+      id: "session-1",
+    }, false, ["turn-running"])).toEqual({
+      session_id: "session-1",
+      turn_id: "turn-running",
+    });
+    expect(resolveChatCancelTarget({
+      id: "session-1",
+      activeTurnId: undefined,
+    }, false, ["turn-pending"])).toEqual({
+      session_id: "session-1",
+      turn_id: "turn-pending",
+    });
+    // The active turn still wins over a fallback.
+    expect(resolveChatCancelTarget({
+      id: "session-1",
+      activeTurnId: "turn-active",
+    }, false, ["turn-running"])).toEqual({
+      session_id: "session-1",
+      turn_id: "turn-active",
+    });
+    // A native subagent turn is driven by its parent, never cancelled here.
+    expect(resolveChatCancelTarget({
+      id: "session-1",
+    }, true, ["turn-running"])).toBeNull();
+    // Nothing to cancel without a target.
+    expect(resolveChatCancelTarget({
+      id: "session-1",
+    }, false, [])).toBeNull();
+    expect(resolveChatCancelTarget(null, false, ["turn-running"])).toBeNull();
+  });
+
+  it("offers running and pending-send turns as cancel targets, never settled ones", () => {
+    expect(resolveChatCancelFallbackTurnIds([
+      { id: "turn-running", status: "running", sendState: undefined },
+      { id: "turn-sending", status: "running", sendState: "pending" },
+      { id: "turn-queued", status: "queued", sendState: undefined },
+      { id: "turn-cancelled", status: "cancelled", sendState: "pending" },
+      { id: "turn-failed", status: "error", sendState: "pending" },
+      { id: "turn-done", status: "complete", sendState: undefined },
+    ])).toEqual(["turn-running", "turn-sending"]);
+    expect(resolveChatCancelFallbackTurnIds([])).toEqual([]);
   });
 
   it("builds a forked response side chat with the parent agent and cwd", () => {

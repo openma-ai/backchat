@@ -30,12 +30,29 @@ on.
 | `invoke_agent` | main | One agent turn, from `session.prompt_accepted` to its finish reason. |
 | `execute_tool` | main | One tool call, child of its turn. |
 | `ui.prompt.send` | renderer | The GUI action that sent a prompt; its turn's `invoke_agent` is a child. |
+| `ui.turn.cancel` | renderer | A stop press; carries the session and turn it targeted, or `no_target`. |
 | `ui.startup` | renderer | Renderer start until the first route resolves. |
 | `ui.error` | renderer | An uncaught error or unhandled rejection: error type and route only. |
 | `ui.long_frame` | renderer | A long animation frame of at least 100 ms. |
 
 The ACP spans follow the OpenTelemetry GenAI semantic conventions and come
 from `@openma/common/telemetry`.
+
+### Cancel telemetry
+
+Every stop press reaches the local log, so a cancelled turn can be followed
+end to end:
+
+| Record | Where | Meaning |
+| --- | --- | --- |
+| `session.cancel` | main | One cancel attempt: `session_id`, `turn_id` and an `outcome`. |
+| `ui.turn.cancel` | renderer | The stop press and the turn it resolved. |
+
+The `outcome` is one of `cancelled` (a live turn was aborted), `pending` (the
+turn had not started; the cancel waits for its prompt), `start_aborted` (the
+session start was cancelled), `ignored_settled` (the turn had already settled)
+or `ignored_no_session` (no such session). Only ids and the outcome are
+recorded — never prompt text.
 
 Renderer spans cross IPC (`telemetry:exportSpans`) to the main process, which
 validates and bounds them, attaches its own resource

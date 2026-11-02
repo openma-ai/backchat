@@ -6,6 +6,8 @@ import { promptAnnotationStore } from "./prompt-annotations";
 import { wholeSessionForkEnabled } from "./fork-support";
 import type { SessionRow, SubagentInheritance } from "./session-store";
 import { sessionStore } from "./session-store";
+import type { Turn } from "./session-types";
+import { withActionTrace } from "./ui-trace";
 
 type AskResponseInput =
   | { kind: "permission"; ask: { requestId: string } }
@@ -50,13 +52,81 @@ export function resolveChatConfigSessionId(
   return active && active.status !== "draft" ? active.id : null;
 }
 
+/**
+ * Turn ids a stop press may still cancel.
+ *
+ * The composer shows its stop control whenever a turn is running *or* a send
+ * is still pending, but `SessionRow.activeTurnId` is not guaranteed to be set
+ * in both cases: the store clears it when a turn settles and it is never
+ * filled for a send the host has not accepted yet. Without a fallback the
+ * stop button is a silent no-op.
+ *
+ * Terminal turns are excluded — a cancelled, failed or completed turn cannot
+ * be cancelled again.
+ */
+export function resolveChatCancelFallbackTurnIds(
+  turns: readonly Pick<Turn, "id" | "status" | "sendState">[],
+): string[] {
+  return turns
+    .filter(
+      (turn) =>
+        (turn.status === "running" || turn.sendState === "pending")
+        && turn.status !== "cancelled"
+        && turn.status !== "error"
+        && turn.status !== "complete",
+    )
+    .map((turn) => turn.id);
+}
+
+/**
+ * The turn a stop press targets. `activeTurnId` wins; otherwise the first
+ * fallback turn (running or pending send) is used so the stop control always
+ * reaches the host.
+ */
 export function resolveChatCancelTarget(
   active: Pick<SessionRow, "id" | "activeTurnId"> | null,
   isNativeSubagent: boolean,
+  fallbackTurnIds: readonly string[] = [],
 ): { session_id: string; turn_id: string } | null {
-  return !isNativeSubagent && active?.activeTurnId
-    ? { session_id: active.id, turn_id: active.activeTurnId }
-    : null;
+  if (isNativeSubagent || !active) return null;
+  const turnId = active.activeTurnId ?? fallbackTurnIds[0];
+  return turnId ? { session_id: active.id, turn_id: turnId } : null;
+}
+
+/**
+ * Cancel the active turn of a session. Shared by the composer and the
+ * topbar so both stop paths resolve the same target and leave the same
+ * telemetry behind.
+ */
+export function cancelChatActiveTurn(
+  active: Pick<SessionRow, "id" | "activeTurnId" | "openma"> | null | undefined,
+  isNativeSubagent: boolean,
+): void {
+  if (active?.openma) {
+    void window.backchat
+      .openmaTaskInterrupt(active.id)
+      .catch((error) => toast.error(String(error)));
+    return;
+  }
+  const fallbacks = active
+    ? resolveChatCancelFallbackTurnIds(sessionStore.turnsFor(active.id))
+    : [];
+  const target = resolveChatCancelTarget(active ?? null, isNativeSubagent, fallbacks);
+  withActionTrace(
+    "turn.cancel",
+    {
+      "backchat.cancel.session_id": active?.id ?? "",
+      "backchat.cancel.turn_id": target?.turn_id ?? "",
+      "backchat.cancel.result": target ? "targeted" : "no_target",
+    },
+    () => {
+      if (!target) return;
+      void window.backchat.sessionCancel(target).catch((error) => {
+        // Telemetry only — a failed cancel must not break the composer.
+        console.warn("Cancel failed", error);
+      });
+    },
+  );
 }
 
 export interface ResponseSideChatDraftInput {
@@ -172,12 +242,7 @@ export function useChatSessionActions({
   };
 
   const cancelActiveTurn = () => {
-    if (active?.openma) { void window.backchat.openmaTaskInterrupt(active.id).catch((error) => toast.error(String(error))); return; }
-    const target = resolveChatCancelTarget(
-      active ?? null,
-      isNativeSubagent,
-    );
-    if (target) void window.backchat.sessionCancel(target);
+    cancelChatActiveTurn(active ?? null, isNativeSubagent);
   };
 
   const askInSideChat = isSide || active?.openma

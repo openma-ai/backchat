@@ -2954,6 +2954,50 @@ describe("SessionStore prompt queue state", () => {
     expect(store.get(sessionId)?.status).toBe("ready");
   });
 
+  test("drops the pending send state when a Stop is acknowledged", () => {
+    // "Sending…" and the cancelled notice must never show for one turn.
+    const store = new SessionStore();
+    const sessionId = "sess-cancelled-sending";
+    store.registerStarting(sessionId, "claude-acp", "Stop during send");
+    store.apply({
+      type: "session.ready",
+      session_id: sessionId,
+      acp_session_id: "acp-cancelled-sending",
+      agent_id: "claude-acp",
+      cwd: "/repo",
+    });
+    store.registerTurn("turn-cancelled-sending", sessionId, "stop while sending");
+    expect(store.turnsFor(sessionId)[0]?.sendState).toBe("pending");
+
+    store.apply({
+      type: "session.cancelled",
+      session_id: sessionId,
+      turn_id: "turn-cancelled-sending",
+    });
+
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      status: "cancelled",
+      sendState: undefined,
+    });
+  });
+
+  test("settles a stopped send as interrupted instead of failed", () => {
+    const store = new SessionStore();
+    const sessionId = "sess-send-stopped";
+    store.registerStarting(sessionId, "codex-acp", "Stop before the prompt");
+    store.registerTurn("turn-send-stopped", sessionId, "stop before the prompt");
+
+    store.cancelSend("turn-send-stopped");
+
+    expect(store.turnsFor(sessionId)[0]).toMatchObject({
+      status: "cancelled",
+      stopReason: "interrupted",
+      sendState: undefined,
+      sendError: undefined,
+    });
+    expect(store.get(sessionId)?.activeTurnId).toBeUndefined();
+  });
+
   test("promotes the next FIFO turn after the active turn is cancelled", () => {
     const store = new SessionStore();
     const sessionId = "sess-cancel-fifo";
