@@ -187,7 +187,9 @@ function codexProviderErrorDetails(
   if (error.additionalDetails !== undefined) data.additionalDetails = error.additionalDetails;
   const text = message ?? stringValue(error.message);
   if (!text && Object.keys(data).length === 0) return null;
-  return { message: text ?? "Provider error", ...(Object.keys(data).length ? { data } : {}) };
+  // `data` is always present — an empty record still satisfies the declared
+  // shape, so consumers can read `error_details.data` without a null check.
+  return { message: text ?? "Provider error", data };
 }
 
 function acpText(inner: Record<string, unknown>): string | undefined {
@@ -369,15 +371,14 @@ function canonicalCodexSessionInfo(
     const evidence = inspectCodexProviderError(error);
     if (evidence.terminal) {
       const authRequired = evidence.authUnavailable || evidence.quotaUnavailable;
+      const errorDetails = codexProviderErrorDetails(error, evidence.message);
       return {
         type: "session.error",
         data: {
           provider_error: error,
           ...(evidence.message ? { message: evidence.message } : {}),
           ...(authRequired ? { code: "auth_required" } : {}),
-          ...(codexProviderErrorDetails(error, evidence.message)
-            ? { error_details: codexProviderErrorDetails(error, evidence.message) }
-            : {}),
+          ...(errorDetails ? { error_details: errorDetails } : {}),
         },
       };
     }
