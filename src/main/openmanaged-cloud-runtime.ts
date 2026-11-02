@@ -19,6 +19,8 @@ export interface CloudSessionCreateInput {
 export interface CloudSessionCreateResult { sessionId: string }
 export type OpenmaRemoteEvent = Record<string, unknown> & { type: string; id?: string; seq?: number };
 
+import { OPENMA_SETTLE_ONLY_MESSAGE, isOpenmaSettleOnlyRejection } from "../shared/openma.js";
+
 /** Preserve rejection status without exposing the server response body. */
 export class OpenmaRequestError extends Error {
   constructor(message: string, readonly status: number | undefined) { super(message); }
@@ -47,6 +49,7 @@ export class OpenManagedCloudRuntimeClient {
   publicError(error: unknown): Error {
     if (error instanceof Anthropic.APIError) {
       if (error.status === 401) this.#onUnauthorized?.();
+      if (isOpenmaSettleOnlyRejection(error.status, error.message)) return new OpenmaRequestError(OPENMA_SETTLE_ONLY_MESSAGE, error.status);
       return new OpenmaRequestError(error.status === 401 ? "OpenMA authorization expired. Sign in again."
         : `OpenMA request failed (${error.status ?? "connection"}). Refresh the task to check its current state.`, error.status);
     }

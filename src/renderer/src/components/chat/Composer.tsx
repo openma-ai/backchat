@@ -94,6 +94,7 @@ import {
 } from "@/lib/composer-mentions";
 import { ComposerSessionMentionMenu } from "./ComposerSessionMentionMenu";
 import { ComposerBrokerAsk } from "./ComposerAskPanel";
+import { subscribeComposerRestore } from "../../lib/composer-restore";
 
 function composerDraftStorage(): Storage | undefined {
   try {
@@ -209,6 +210,14 @@ export function Composer({
       return resolved;
     });
   };
+  useEffect(() => {
+    if (!sessionId) return;
+    return subscribeComposerRestore(sessionId, (restored) => {
+      setText((current) => (current.trim() ? current : restored));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
   useEffect(() => {
     setTextState(composerTextBySession.read(composerTextKey));
   }, [composerTextKey]);
