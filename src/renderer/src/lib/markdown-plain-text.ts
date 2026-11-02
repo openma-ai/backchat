@@ -1,3 +1,9 @@
+/** A leftover angle bracket is half a tag: `[<script](1)` strips to
+ *  `<script`, and the inline-HTML rule never matches it because it never sees
+ *  the closing `>`. These labels are plain text, so the brackets go: no angle
+ *  bracket reaches the DOM. */
+const ANGLE_BRACKETS = /[<>]/g;
+
 /** Session titles come from a prompt or from the agent, so they can carry
  *  markdown: a first message of `[#65](https://github.com/openma-ai/backchat/issues/65)`
  *  titles the chat with the whole link syntax.
@@ -15,7 +21,7 @@ export function markdownToPlainText(markdown: string): string {
   const plain = stripMarkdown(markdown);
   // A title made of nothing but markup (an image, a rule) still has to read
   // as something: fall back to the raw text rather than an empty label.
-  return plain || markdown.trim();
+  return plain || markdown.trim().replace(ANGLE_BRACKETS, "");
 }
 
 function stripMarkdown(markdown: string): string {
@@ -46,6 +52,9 @@ function stripMarkdown(markdown: string): string {
     .replace(/(^|[^\w_])__([^_]+)__(?![\w_])/g, "$1$2")
     .replace(/(^|[^\w_])_([^_\s][^_]*?)_(?![\w_])/g, "$1$2")
     .replace(/~~([^~]+)~~/g, "$1")
+    // Whatever angle bracket is left is half a tag — drop it before the
+    // whitespace collapses, so the label reads as one clean line of text.
+    .replace(ANGLE_BRACKETS, "")
     // One label, one line.
     .replace(/\s+/g, " ")
     .trim();

@@ -36,6 +36,19 @@ describe("markdownToPlainText", () => {
     expect(markdownToPlainText("<b>bold</b> html")).toBe("bold html");
   });
 
+  test("leaves no angle bracket behind when a tag is incomplete", () => {
+    // `[<script](1)` strips to `<script`: the link rule keeps the label and
+    // the inline-HTML rule never matches a tag without its closing `>`.
+    const incomplete = markdownToPlainText("[<script](1)");
+    expect(incomplete).not.toContain("<");
+    expect(incomplete).not.toContain(">");
+    expect(incomplete).toBe("script");
+    expect(markdownToPlainText("<script")).not.toContain("<");
+    expect(markdownToPlainText("<b>bold")).toBe("bold");
+    expect(markdownToPlainText("a < b > c")).toBe("a b c");
+    expect(markdownToPlainText("2 < 3")).toBe("2 3");
+  });
+
   test("leaves ordinary words alone", () => {
     expect(markdownToPlainText("snake_case_name")).toBe("snake_case_name");
     expect(markdownToPlainText("2 * 3 * 4")).toBe("2 * 3 * 4");
