@@ -13,9 +13,56 @@ concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  # dorny/paths-filter lists changed files through the Pulls API on pull_request.
+  pull-requests: read
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.resolve.outputs.code }}
+    steps:
+      - name: Check out source
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+        uses: actions/checkout@v7
+
+      - name: Detect code-path changes
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          # 'some' ignores '!' patterns; 'some-with-excludes' makes a file
+          # match only when it hits at least one pattern and no negated one.
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            code:
+              - "**"
+              - "!docs/**"
+              - "!src/website/**"
+              - "!tsconfig.website.json"
+              - "!website.vite.config.ts"
+              - "!wrangler.jsonc"
+              - "!build/**"
+              - "!artifacts/**"
+              - "!*.md"
+              - "!LICENSE"
+              - "!SHOW"
+
+      - name: Resolve the code flag
+        id: resolve
+        env:
+          FILTER_CODE: ${{ steps.filter.outputs.code }}
+        run: |
+          # No diff context (dispatch, schedule): run everything.
+          echo "code=${FILTER_CODE:-true}" >> "$GITHUB_OUTPUT"
+
   analyze:
     name: Analyze JavaScript and TypeScript
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
