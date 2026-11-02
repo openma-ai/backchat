@@ -253,7 +253,6 @@ index ecdd857..63b15aa 100644
          isStreaming,
          labels,
          finalItem,
-
 diff --git a/dist/chat-ui/utils.d.ts b/dist/chat-ui/utils.d.ts
 index 9760f0f..29f89a3 100644
 --- a/dist/chat-ui/utils.d.ts
