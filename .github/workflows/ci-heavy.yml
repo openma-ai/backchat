@@ -1,15 +1,16 @@
 name: CI heavy
 
 # Post-merge home for the heavy suites. The macOS Electron e2e checks run on
-# every code-carrying push to main, on demand on a pull request carrying the
-# `full-ci` label, and manually through workflow_dispatch. A failed post-merge
-# or dispatched run opens or updates a `ci-failure` issue linking the run and
-# the commit.
+# every code-carrying push to main and on pushes to release/**, on demand on a
+# pull request carrying the `full-ci` label, and manually through
+# workflow_dispatch. A failed post-merge or dispatched run opens or updates a
+# `ci-failure` issue linking the run and the commit.
 
 on:
   push:
     branches:
       - main
+      - release/**
   pull_request:
     types:
       - opened

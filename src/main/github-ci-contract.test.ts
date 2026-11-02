@@ -60,6 +60,18 @@ describe("github ci", () => {
     expect(heavy).toContain("actions/runs/${{ github.run_id }}");
   });
 
+
+  it("runs fast checks and CodeQL on main and release branches", () => {
+    for (const workflow of [ci, heavy, codeql]) {
+      expect(workflow).toMatch(/branches:\s*\n\s*- main\s*\n\s*- release\/\*\*/);
+    }
+    const releaseCheck = readFileSync(
+      resolve(".github/workflows/release-check.yml"),
+      "utf8",
+    );
+    expect(releaseCheck).toMatch(/branches:\s*\n\s*- main\s*\n\s*- release\/\*\*/);
+  });
+
   it("uses official GitHub and pnpm setup actions", () => {
     expect(ci).toContain("./.github/actions/setup-node-pnpm");
     expect(setup).toMatch(/uses: pnpm\/action-setup@v\d+/);
@@ -113,7 +125,9 @@ describe("github ci", () => {
     expect(dmg).not.toContain("continue-on-error");
     expect(dmg).toContain("prepare-stable-release-assets.mjs");
     expect(dmg).toContain("previous-stable-blockmap.json");
-    expect(dmg).toContain("github.ref == 'refs/heads/main'");
+    expect(dmg).toContain("startsWith(github.ref, 'refs/heads/release/')");
+    expect(dmg).toMatch(/branches:\s*\n\s*- release\/\*\*/);
+    expect(dmg).not.toMatch(/branches:\s*\n\s*- main\s*\n\s*tags:/);
     expect(dmg).toContain("startsWith(github.ref, 'refs/tags/')");
   });
 

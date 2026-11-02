@@ -76,7 +76,7 @@ test("creates the stable preview release and asset when it does not exist", asyn
       "--title",
       "Backchat Preview",
       "--notes",
-      "Latest successful build from the main branch.",
+      "Latest successful build from a release branch.",
     ]);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
@@ -111,7 +111,7 @@ test("replaces the stable asset when the preview release already exists", async 
         "--title",
         "Backchat Preview",
         "--notes",
-        "Latest successful build from the main branch.",
+        "Latest successful build from a release branch.",
       ],
     ]);
   } finally {
