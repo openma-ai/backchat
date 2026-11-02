@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - release/**
     tags:
       - "v*"
 
@@ -132,7 +132,7 @@ jobs:
       # preview-mac.yml is uploaded by publish-preview-release.mjs.
       # latest-mac.yml is uploaded with the tagged release below.
       - name: Publish latest preview download
-        if: github.ref == 'refs/heads/main'
+        if: startsWith(github.ref, 'refs/heads/release/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/publish-preview-release.mjs release

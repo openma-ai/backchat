@@ -2,14 +2,15 @@ name: CI
 
 # Fast path only: dependency review, type-check and unit tests on every change
 # that can affect them. The macOS Electron e2e suites moved to ci-heavy.yml —
-# they run post-merge on main, on a pull request carrying the `full-ci` label,
-# or manually through workflow_dispatch.
+# they run post-merge on main and on pushes to release/**, on a pull request
+# carrying the `full-ci` label, or manually through workflow_dispatch.
 
 on:
   pull_request:
   push:
     branches:
       - main
+      - release/**
   workflow_dispatch:
 
 concurrency:

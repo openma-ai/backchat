@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 
 const previewTag = "preview";
 const previewTitle = "Backchat Preview";
-const previewNotes = "Latest successful build from the main branch.";
+const previewNotes = "Latest successful build from a release branch.";
 const previewAssetName = "Backchat-preview-arm64.dmg";
 const previewMacYml = "preview-mac.yml";
 
