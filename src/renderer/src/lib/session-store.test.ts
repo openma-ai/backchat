@@ -1428,6 +1428,9 @@ describe("SessionStore performance invariants", () => {
     expect(a.events).toHaveLength(0);
     expect(b.events).toHaveLength(0);
     expect(a.assistantText).toBe(b.assistantText);
+    // Second materialization is a thin Object.create shell over the first.
+    expect(Object.getPrototypeOf(b)).toBe(a);
+    expect(Object.hasOwn(b, "assistantText")).toBe(false);
     expect(store.projectTurn(a).assistantText).toBe(
       store.projectTurn(b).assistantText,
     );

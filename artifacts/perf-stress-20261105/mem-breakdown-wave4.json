@@ -1,0 +1,18 @@
+{
+  "empty": 25.55,
+  "afterNew": 25.56,
+  "afterSetup100x200": 30.31,
+  "afterLong3000": 34.48,
+  "afterLiveRegister": 32.67,
+  "afterStream": 33.38,
+  "afterStructural": 33.66,
+  "afterCompleteLive": 33.32,
+  "deltas": {
+    "setup": 4.75,
+    "long": 4.17,
+    "liveReg": -1.81,
+    "stream": 0.71,
+    "structural": 0.28,
+    "completeLive": -0.34
+  }
+}
