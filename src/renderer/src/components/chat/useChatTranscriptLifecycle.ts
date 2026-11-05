@@ -8,34 +8,75 @@ import { sessionStore, type Turn } from "@/lib/session-store";
 
 const PAINTED_SESSION_IDS = new Set<string>();
 
+/** Test-only: clear first-screen paint memory between cases. */
+export function resetPaintedSessionIdsForTests(): void {
+  PAINTED_SESSION_IDS.clear();
+}
+
+/**
+ * Whether the conversation surface should hold an empty-transcript loading
+ * affordance. Sessions that already have in-memory turns (first-send optimistic
+ * path) or were painted earlier never hold — that is what used to flash a
+ * full-surface overlay over Sending….
+ */
+export function shouldHoldFirstScreen({
+  persistedSessionId,
+  historyPending,
+  hasTranscriptContent,
+  alreadyPainted,
+  paintedSessionId,
+}: {
+  persistedSessionId: string | null;
+  historyPending: boolean;
+  hasTranscriptContent: boolean;
+  alreadyPainted: boolean;
+  paintedSessionId: string | null;
+}): boolean {
+  if (!persistedSessionId) return false;
+  if (hasTranscriptContent || alreadyPainted) return false;
+  return historyPending || paintedSessionId !== persistedSessionId;
+}
+
 /**
  * Tracks whether a persisted session's first screen has settled so re-visiting
- * an already-rendered session does not flash an overlay or clobber scroll memory.
+ * an already-rendered session does not flash a loading state or clobber scroll
+ * memory. Returns true only for empty cold loads that still need an in-list
+ * status — never a reason to hide the composer behind an overlay.
  */
 export function useSessionFirstScreenPaint({
   persistedSessionId,
   historyPending,
+  hasTranscriptContent,
   transcriptRef,
 }: {
   persistedSessionId: string | null;
   historyPending: boolean;
+  hasTranscriptContent: boolean;
   transcriptRef?: RefObject<HTMLElement | null>;
 }): boolean {
   const [paintedSessionId, setPaintedSessionId] = useState<string | null>(null);
   const alreadyPainted =
     !!persistedSessionId && PAINTED_SESSION_IDS.has(persistedSessionId);
-  const loadingFirstScreen =
-    !!persistedSessionId &&
-    (historyPending ||
-      (!alreadyPainted && paintedSessionId !== persistedSessionId));
+  const loadingFirstScreen = shouldHoldFirstScreen({
+    persistedSessionId,
+    historyPending,
+    hasTranscriptContent,
+    alreadyPainted,
+    paintedSessionId,
+  });
 
   useLayoutEffect(() => {
-    if (!persistedSessionId || historyPending) {
+    if (!persistedSessionId) {
       setPaintedSessionId(null);
       return;
     }
-    if (PAINTED_SESSION_IDS.has(persistedSessionId)) {
+    if (hasTranscriptContent || PAINTED_SESSION_IDS.has(persistedSessionId)) {
+      PAINTED_SESSION_IDS.add(persistedSessionId);
       setPaintedSessionId(persistedSessionId);
+      return;
+    }
+    if (historyPending) {
+      setPaintedSessionId(null);
       return;
     }
     let revealFrame = 0;
@@ -51,7 +92,7 @@ export function useSessionFirstScreenPaint({
       cancelAnimationFrame(layoutFrame);
       cancelAnimationFrame(revealFrame);
     };
-  }, [persistedSessionId, historyPending, transcriptRef]);
+  }, [persistedSessionId, historyPending, hasTranscriptContent, transcriptRef]);
 
   return loadingFirstScreen;
 }

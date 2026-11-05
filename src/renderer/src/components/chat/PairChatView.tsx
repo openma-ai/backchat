@@ -28,10 +28,10 @@ import { TurnBlock } from "./ChatTurn";
 import {
   ConversationErrorBoundary,
   ConversationErrorFallback,
-  ConversationSurfaceLoader,
 } from "./ConversationLoadingState";
 import { HistoryPager } from "./HistoryPager";
 import { openHistoryWindow } from "@/lib/history-paging";
+import { ShimmerText } from "@/components/ui/ShimmerText";
 import { cn } from "@/lib/utils";
 import {
   Conversation,
@@ -187,13 +187,6 @@ function PairColumn({
       aria-busy={loadingHistory}
       aria-label={t("chat.pairPane")}
     >
-      {loadingHistory && (
-        <ConversationSurfaceLoader
-          overlay
-          compact
-          label={t("chat.loadingHistory")}
-        />
-      )}
       {!loadingHistory && loadError && turns.length === 0 && (
         <ConversationErrorFallback
           overlay
@@ -212,6 +205,17 @@ function PairColumn({
           >
             <MarkdownCwdProvider cwd={session.cwd}>
               <div className={CHAT_TURN_FRAME_CLASS} data-chat-column="turns">
+                {loadingHistory && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    aria-label={t("chat.loadingHistory")}
+                    data-chat-transcript-loading="true"
+                    className="flex min-h-[120px] items-center justify-center px-4 py-6 text-[13px] leading-6 text-fg-muted"
+                  >
+                    <ShimmerText>{t("chat.loadingHistory")}</ShimmerText>
+                  </div>
+                )}
                 {turns.length === 0 && !loadingHistory && !loadError && session.status !== "running" && (
                   <div className="flex min-h-[160px] items-center justify-center text-[12px] text-fg-subtle">
                     {t("pair.noMessages")}

@@ -18,6 +18,15 @@ import { runtimePresentation } from "./ComposerSessionControls";
 import * as chatViewModule from "./ChatView";
 
 describe("chat module boundaries", () => {
+  it("keeps first-screen loading in the transcript empty slot, not a surface overlay", () => {
+    const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
+    expect(source).toContain('data-chat-transcript-loading="true"');
+    expect(source).toContain("hasTranscriptContent");
+    expect(source).not.toContain("<ConversationSurfaceLoader");
+    expect(source).not.toContain('visibility: "hidden"');
+    expect(source).not.toContain("inert={loadingFirstScreen}");
+  });
+
   it("projects compact runtime evidence below the composer", () => {
     const source = readFileSync(resolve(__dirname, "ChatView.tsx"), "utf8");
 
@@ -342,7 +351,8 @@ describe("home suggestions", () => {
 
     expect(source).toContain("<AgentChatView");
     expect(source).toContain("slots={{");
-    expect(source).toContain("empty: (");
+    expect(source).toContain("empty: loadingFirstScreen ? (");
+    expect(source).toContain('data-chat-transcript-loading="true"');
     expect(source).toContain("<EmptyStateIntro");
     expect(source).not.toContain("function SessionIntro");
   });
