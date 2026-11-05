@@ -1,0 +1,72 @@
+{
+  "validated_source": "fd60424c4ecd0c297d4390a0c3d2b1fc0b0d3e77 plus SettingsLayout spacer and stream-cache regression test",
+  "baseline_source": "clean 0d2dcf6",
+  "dependency_isolation": "Final validation pinned a private copy of the original b39220e47d71 common package (overscan 3 / estimate 240). This excludes concurrent worktree edits and dependency changes.",
+  "typecheck": {
+    "commands": [
+      "node_modules/.bin/tsc -p tsconfig.node.json --noEmit",
+      "node_modules/.bin/tsc -p tsconfig.web.json --noEmit"
+    ],
+    "result": "passed"
+  },
+  "build": {
+    "command": "node_modules/.bin/electron-vite build",
+    "result": "passed"
+  },
+  "unit": {
+    "command": "node_modules/.bin/vitest run src/renderer/src/lib/session-turn-map.test.ts src/renderer/src/lib/session-store.stream-cache-regression.test.ts src/renderer/src/pages/settings/SettingsLayout.test.ts src/renderer/src/lib/session-store.test.ts src/renderer/src/lib/session-store-openma-events.test.ts src/renderer/src/components/chat/ChatView.test.ts --maxWorkers=1",
+    "after": {
+      "passed": 234,
+      "failed": 10,
+      "files": 6
+    },
+    "baseline_command": "node_modules/.bin/vitest run src/renderer/src/lib/session-store.test.ts src/renderer/src/lib/session-store-openma-events.test.ts src/renderer/src/components/chat/ChatView.test.ts --maxWorkers=1",
+    "baseline": {
+      "passed": 222,
+      "failed": 10,
+      "files": 3
+    },
+    "identical_baseline_failures": [
+      " src/renderer/src/components/chat/ChatView.test.ts > home suggestions > isolates each composer action interaction state from its siblings",
+      " src/renderer/src/components/chat/ChatView.test.ts > home suggestions > keeps the composer body and internal action boxes compact",
+      " src/renderer/src/lib/session-store-openma-events.test.ts > SessionStore canonical OpenMA events > marks an unfinished Codex child unknown when its parent turn ends without a child terminal event",
+      " src/renderer/src/lib/session-store-openma-events.test.ts > SessionStore canonical OpenMA events > reconciles Claude background membership without inventing a terminal status",
+      " src/renderer/src/lib/session-store-openma-events.test.ts > SessionStore canonical OpenMA events > reduces ACP background-process transport into a completed bash work item",
+      " src/renderer/src/lib/session-store-openma-events.test.ts > SessionStore canonical OpenMA events > repairs a missed Claude background start from the non-agent level rows",
+      " src/renderer/src/lib/session-store-openma-events.test.ts > SessionStore canonical OpenMA events > tracks structured Claude Bash and TaskStop lifecycle without inventing completion",
+      " src/renderer/src/lib/session-store.test.ts > SessionStore performance invariants > publishes trailing final-answer events when a turn completes after its last tool",
+      " src/renderer/src/lib/session-store.test.ts > SessionStore replay > replays repeated numeric thought chunks without dropping the equation",
+      " src/renderer/src/lib/session-store.test.ts > SessionStore side chats and native subagents > tracks Claude Code Task tool invocations as native subagent activity"
+    ],
+    "new_tests": "5 SessionTurnMap tests, 1 active-session isolation invariant, 1 final-stream projection regression all pass. Existing passing tests stay passing in this targeted comparison.",
+    "regression_evidence": "Active-session isolation invariant fails on original global scan (41 unrelated reads), passes with index. In-place stream-event mutation experiment fails final-text regression (First vs First and last); it is excluded."
+  },
+  "electron": {
+    "high_load": "Three baseline + three after runs passed; same harness and envelope. Raw JSON retained.",
+    "final_command": "BACKCHAT_E2E_VISIBLE=1 BACKCHAT_E2E_DISABLE_TRACING=1 xvfb-run -a node_modules/.bin/playwright test e2e/interaction-performance.spec.ts e2e/virtual-conversation-context.spec.ts e2e/renderer-recovery.spec.ts --workers=1",
+    "final_result": {
+      "passed": 3,
+      "failed": 0
+    },
+    "baseline_reproduced_failures": [
+      {
+        "test": "e2e/long-transcript-performance.spec.ts",
+        "reason": "Expects content-visibility skipped events > 0; current common virtualizes the transcript. Baseline skipped=0. New high-load test asserts bounded mounted turns and preserves text selection."
+      },
+      {
+        "test": "e2e/message-fork.spec.ts \u2014 managed CWD fork",
+        "reason": "New chat pointer intercepted by existing global history controls; also fails on clean main. Other five fork cases passed in the additional after run."
+      }
+    ],
+    "fixed_new_regression": "Supplied full-width Settings back row overlapped floating history controls on Linux. Reserve its spacer on all platforms; original interaction-performance now passes."
+  },
+  "not_run": [
+    "Full repository test suite",
+    "Real provider processes / inference",
+    "Long-duration memory soak",
+    "Hardware accelerated desktop rendering",
+    "Maximum Electron main-thread blocking trace"
+  ],
+  "status": "Draft PR; baseline suite is not fully green. No failing expectation was weakened.",
+  "rejected_revision": "48d4c102c027327907caa1408475f73046666215 (1 failed / 5 passed focused stream/index tests; final stream text truncated)"
+}

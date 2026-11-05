@@ -1,0 +1,177 @@
+{
+  "phase": "baseline",
+  "aggregation": "Median of five warm store rounds and three independent Electron runs; raw samples retained in sibling JSON files.",
+  "store_envelope": {
+    "sessions": 100,
+    "turnsPerSession": 200,
+    "longTurns": 3000,
+    "chunks": 20000,
+    "structuralEvents": 500,
+    "switches": 500,
+    "warmupRounds": 1,
+    "measuredRounds": 5,
+    "subscribers": "list + 3 stable turn selectors + active turn read",
+    "workerCount": 1,
+    "explicitGc": true,
+    "cpuUnits": "microseconds (user + system); measured separately from wall time",
+    "command": "BACKCHAT_PERF_PHASE=baseline node_modules/.bin/vitest run src/renderer/src/lib/session-store.stress.test.ts --maxWorkers=1 --execArgv=--expose-gc",
+    "node": "v24.22.1",
+    "platform": "linux",
+    "release": "6.12.94+",
+    "cpu": "Intel(R) Xeon(R) Processor",
+    "cpuCount": 8,
+    "cache": "fresh store per round; first round discarded; warm module/JIT",
+    "concurrentBenchmarks": 0
+  },
+  "electron_envelope": {
+    "sessions": 24,
+    "turns": 500,
+    "smallTurns": 50,
+    "streamingSessions": 20,
+    "chunksPerSession": 40,
+    "scrollJumps": 24,
+    "warmSwitches": 24,
+    "burstSwitches": 12,
+    "workerCount": 1,
+    "tracing": false,
+    "cpuProfile": false,
+    "visible": true,
+    "display": "Xvfb 1280x1024x24, --disable-gpu",
+    "cache": "fresh Electron/temp DB, one reload, cold history followed by warm switches",
+    "command": "BACKCHAT_PERF_PHASE=baseline BACKCHAT_E2E_VISIBLE=1 BACKCHAT_E2E_DISABLE_TRACING=1 xvfb-run -a node_modules/.bin/playwright test e2e/high-load-performance.spec.ts --workers=1",
+    "versions": {
+      "node": "24.19.0",
+      "acorn": "8.17.0",
+      "ada": "3.4.4",
+      "amaro": "1.1.10",
+      "ares": "1.34.6",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.2",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "146",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.69.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "openssl": "0.0.0",
+      "simdjson": "4.6.4",
+      "simdutf": "7.7.0",
+      "sqlite": "3.53.3",
+      "tz": "2025c",
+      "undici": "7.29.0",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "14.8.178.38-electron.0",
+      "zlib": "1.3.2.1-motley",
+      "zstd": "1.6.0",
+      "electron": "42.11.16",
+      "chrome": "148.0.7778.280"
+    }
+  },
+  "store": {
+    "wall_ms": {
+      "setupMs": 170.22090600000047,
+      "longReplayMs": 19.133363000000827,
+      "streamingMs": 215.11355599999843,
+      "switches_median": 1.5944800000015675,
+      "switches_p95": 1.710596999999325,
+      "structural_median": 3.2470329999996466,
+      "structural_p95": 3.7615400000013324,
+      "read100_median": 48.44610399999874,
+      "read100_p95": 52.44253700000081
+    },
+    "cpu_ms": {
+      "setup": 223.81,
+      "replay": 34.078,
+      "switch": 818.167,
+      "streaming": 236.121,
+      "structural": 1747.072,
+      "reads": 491.589
+    },
+    "memory_mib": {
+      "heapUsed": 54.004150390625,
+      "rss": 256.875
+    },
+    "incremental_heap_after_gc_mib": 27.782684326171875
+  },
+  "electron": {
+    "wall_ms": {
+      "cold_switch_median": 122.44999999925494,
+      "cold_switch_p95": 170.59999999962747,
+      "warm_switch_median": 96.75,
+      "warm_switch_p95": 144.30000000074506,
+      "burst_switch_median": 117.29999999981374,
+      "burst_switch_p95": 167.7000000011176,
+      "long_history_ready": 315.5,
+      "scroll_double_frame_median": 51.54999999888241,
+      "scroll_double_frame_p95": 63.69999999925494,
+      "burst_total": 3083.756045
+    },
+    "cpu_ms": {
+      "Browser": {
+        "long_load": 99.99999999999987,
+        "long_scroll": 40.000000000000036,
+        "parallel_cold": 200.00000000000017,
+        "warm_switches": 160.00000000000014,
+        "burst": 720.0000000000002,
+        "settled_churn": 180.00000000000017
+      },
+      "Tab": {
+        "long_load": 600.0,
+        "long_scroll": 2060.0,
+        "parallel_cold": 5670.0,
+        "warm_switches": 4970.000000000001,
+        "burst": 4350.000000000002,
+        "settled_churn": 5140.000000000001
+      }
+    },
+    "rss_mib": {
+      "Browser": {
+        "ready": 395.6640625,
+        "long-history-ready": 438.33203125,
+        "long-scroll-done": 439.42578125,
+        "all-history-loaded": 438.28125,
+        "warm-switches": 438.56640625,
+        "after-burst": 440.546875,
+        "settled-churn-0": 440.578125,
+        "settled-churn-1": 440.6015625,
+        "settled-churn-2": 440.6484375,
+        "settled_churn_last_minus_first": 0.0703125
+      },
+      "Tab": {
+        "ready": 187.91015625,
+        "long-history-ready": 254.94921875,
+        "long-scroll-done": 379.890625,
+        "all-history-loaded": 438.6328125,
+        "warm-switches": 450.80859375,
+        "after-burst": 487.9765625,
+        "settled-churn-0": 486.53515625,
+        "settled-churn-1": 478.0859375,
+        "settled-churn-2": 474.76953125,
+        "settled_churn_last_minus_first": -8.93359375
+      }
+    },
+    "long_tasks": {
+      "count": 93,
+      "sum_ms": 7516,
+      "max_ms": 198
+    },
+    "mounted_turns": [
+      5,
+      5,
+      5
+    ]
+  },
+  "limitations": [
+    "Synthetic local sessions, no provider processes or network inference.",
+    "Xvfb/software rendering; double-rAF timings are scroll responsiveness proxies, not hardware FPS.",
+    "Electron CPU is cumulative process CPU, including internal threads; long tasks are a separate renderer blocking proxy.",
+    "RSS and post-GC heap measure different things. The short churn observation is not a long-duration leak certification.",
+    "No latency gate; correctness assertions must pass before timings are accepted."
+  ]
+}

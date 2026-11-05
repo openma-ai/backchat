@@ -1,0 +1,143 @@
+diff --git a/src/renderer/src/components/chat/ChatView.tsx b/src/renderer/src/components/chat/ChatView.tsx
+index abac2ab..865b530 100644
+--- a/src/renderer/src/components/chat/ChatView.tsx
++++ b/src/renderer/src/components/chat/ChatView.tsx
+@@ -53,6 +53,7 @@ import { ResponseAnnotationController } from "./ResponseAnnotations";
+ import { ProjectChipRow } from "./ComposerProjectControls";
+ import { MarkdownCwdProvider } from "./ChatMarkdown";
+ import { TurnBlock } from "./ChatTurn";
++import { ProjectIcon } from "@/components/ProjectIcon";
+ import {
+   EmptyStateIntro,
+   HomeSuggestionSelect,
+@@ -842,7 +843,22 @@ export function ChatView({
+                 <ShimmerText>{t("chat.loadingHistory")}</ShimmerText>
+               </div>
+             ) : (
+-              binding ? null : (
++              binding ? (
++                <div
++                  className="project-empty-state flex w-full flex-col items-center justify-center py-8"
++                  data-slot="project-empty-state"
++                >
++                  <div className="project-empty-icon" aria-hidden="true">
++                    <ProjectIcon
++                      identity={`project:${binding.projectId}`}
++                      name={binding.label}
++                      sourceFolders={binding.cwd ? [binding.cwd] : []}
++                      primaryRoot={binding.cwd}
++                      className="size-full"
++                    />
++                  </div>
++                </div>
++              ) : (
+                 <EmptyStateIntro
+                   hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
+                   selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}
+diff --git a/src/renderer/src/components/shell/Sidebar.tsx b/src/renderer/src/components/shell/Sidebar.tsx
+index c63dd67..a56b35c 100644
+--- a/src/renderer/src/components/shell/Sidebar.tsx
++++ b/src/renderer/src/components/shell/Sidebar.tsx
+@@ -798,6 +798,13 @@ export function Sidebar() {
+             </SidebarGridCell>
+           </button>
+           <SidebarGridCell slot="trailing">
++            {/* Double trailing track: keep an empty penultimate slot so search
++                occupies the rightmost action column (aligned further right). */}
++            <span
++              aria-hidden="true"
++              data-sidebar-grid-action="penultimate"
++              className="pointer-events-none"
++            />
+             <button
+               type="button"
+               onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))}
+@@ -808,7 +815,6 @@ export function Sidebar() {
+             >
+               <SearchIcon aria-hidden="true" />
+             </button>
+-
+           </SidebarGridCell>
+         </SidebarGridRow>
+       </div>
+@@ -1513,9 +1519,17 @@ function WorkspaceGroupHeading({
+             label starts on the chats' icon rail, so the heading reads as a
+             divider over its chats rather than as another chat beside them. */}
+         <SidebarGridCell slot="icon">
+-          <span className="sidebar-row-icon">
+-            <DisclosureCaret open={open} />
+-          </span>
++          <button
++            type="button"
++            onClick={onToggle}
++            aria-label={`${open ? t("project.collapse") : t("project.expand")}: ${label}`}
++            aria-expanded={open}
++            className="sidebar-workspace-disclosure relative flex size-full items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
++          >
++            <span className="sidebar-row-icon">
++              <DisclosureCaret open={open} />
++            </span>
++          </button>
+         </SidebarGridCell>
+         <SidebarGridCell slot="label">
+           <button
+diff --git a/src/renderer/src/pages/settings/SettingsLayout.tsx b/src/renderer/src/pages/settings/SettingsLayout.tsx
+index 883286e..aa3efa1 100644
+--- a/src/renderer/src/pages/settings/SettingsLayout.tsx
++++ b/src/renderer/src/pages/settings/SettingsLayout.tsx
+@@ -117,7 +117,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
+             active: false,
+             // Leaving settings is non-essential (Esc and the icon carry it):
+             // quaternary tier, one full step under the tertiary nav rows.
+-            className: "app-no-drag mb-2 w-fit text-fg-faint",
++            className: "app-no-drag mb-2 w-full text-fg-faint",
+           })}
+         >
+           <SidebarGridCell slot="icon">
+diff --git a/src/renderer/src/styles/index.css b/src/renderer/src/styles/index.css
+index 7f59188..c57b353 100644
+--- a/src/renderer/src/styles/index.css
++++ b/src/renderer/src/styles/index.css
+@@ -1162,6 +1162,31 @@ html[data-theme-asset-sidebar-background="true"]
+   opacity: 0.82;
+ }
+ 
++
++/* Bound project empty chat: mirror the project's mark in the empty stage,
++   same footprint as .theme-empty-state-art so the center isn't blank. */
++.project-empty-icon {
++  display: grid;
++  width: 76px;
++  height: 76px;
++  place-items: center;
++}
++.project-empty-icon .project-letter {
++  border-radius: 18px;
++  font-size: 36px;
++}
++.project-empty-icon .project-image {
++  border-radius: 18px;
++}
++.project-empty-icon [data-project-glyph]:not([data-project-glyph="letter"]) {
++  width: 48px;
++  height: 48px;
++}
++.project-empty-icon .text-\[14px\] {
++  font-size: 40px;
++  line-height: 1;
++}
++
+ .theme-empty-state-art {
+   display: grid;
+   width: 76px;
+@@ -3411,6 +3436,10 @@ body,
+   isolation: isolate;
+ }
+ 
++.sidebar-grid-row[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"] > [data-sidebar-grid-action="last"] {
++  grid-column: 2 / -1;
++}
++
+ .sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action {
+   /* Hit box and wash are both 24px. Neither paints outside its own track. */
+   --sidebar-row-action-radius: 6px;
