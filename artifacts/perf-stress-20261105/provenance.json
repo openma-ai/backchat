@@ -1,0 +1,105 @@
+{
+  "baseline": {
+    "revision": "0d2dcf6",
+    "worktree": "/workspace/bc-perf-baseline-20261105",
+    "additional_ui_changes": "baseline-ui.patch (the supplied secondary UX changes, also present in after)"
+  },
+  "after": {
+    "revision": "fd60424c4ecd0c297d4390a0c3d2b1fc0b0d3e77",
+    "worktree": "/workspace/bc-perf-verified-after-20261105"
+  },
+  "sha256_recorded_after_runs": {
+    "src/renderer/src/lib/session-store.ts": {
+      "baseline": "538087eaa1d0974e009c174f6a1fe5b6f61a53f8b25c942eaeb18dff2e8cf4a3",
+      "after": "31cd4da4d9f5d61c9b37a7689a1cff30aca16227056e013dd6ce4fb674ae2716"
+    },
+    "src/renderer/src/lib/session-turn-map.ts": {
+      "baseline": null,
+      "after": "a5f9e253b595f34644dbe83b78a4515e7a40f78ce636dc04970ee0418b8e0f1b"
+    },
+    "src/renderer/src/components/chat/ChatView.tsx": {
+      "baseline": "9099d528bee177f1c83cf8a3ea761baa9c1b24d6404376603640cc1f62bc3d78",
+      "after": "9099d528bee177f1c83cf8a3ea761baa9c1b24d6404376603640cc1f62bc3d78"
+    },
+    "src/renderer/src/components/chat/HistoryPager.tsx": {
+      "baseline": "4d0a51f439f58adf8ad6d968913be3384be9c35d2390feea5bf6a4355568b709",
+      "after": "4d0a51f439f58adf8ad6d968913be3384be9c35d2390feea5bf6a4355568b709"
+    },
+    "src/renderer/src/components/shell/Sidebar.tsx": {
+      "baseline": "1ec3bb3cf47f6c84f1128d5ac3c82f2c3df97dac82590868f634cb8ca107f58c",
+      "after": "1ec3bb3cf47f6c84f1128d5ac3c82f2c3df97dac82590868f634cb8ca107f58c"
+    },
+    "src/renderer/src/pages/settings/SettingsLayout.tsx": {
+      "baseline": "6c1ad3c802951c46fbde2ff66f872221d70c07cef0294f10c477f7f6c96175a9",
+      "after": "6c1ad3c802951c46fbde2ff66f872221d70c07cef0294f10c477f7f6c96175a9"
+    },
+    "src/renderer/src/styles/index.css": {
+      "baseline": "98d957e749b79c592bf171e7bbcdbfad0d8705bf06fcc12ab9eb98b2dec69df7",
+      "after": "98d957e749b79c592bf171e7bbcdbfad0d8705bf06fcc12ab9eb98b2dec69df7"
+    },
+    "src/renderer/src/lib/session-store.stress.test.ts": {
+      "baseline": "888918865040d3f78e09282398b623dc903e5ddbf577272b94b824af09f4e943",
+      "after": "888918865040d3f78e09282398b623dc903e5ddbf577272b94b824af09f4e943"
+    },
+    "e2e/high-load-performance.spec.ts": {
+      "baseline": "9db2e4f1c11e3a95da37f8022665256ce9d67ae03bf4825a36e21a335be1b197",
+      "after": "9db2e4f1c11e3a95da37f8022665256ce9d67ae03bf4825a36e21a335be1b197"
+    },
+    "pnpm-lock.yaml": {
+      "baseline": "f98f64bf64c1366e0b520967c8c8a1354539797b2d578033e4bd520360ed05f5",
+      "after": "f98f64bf64c1366e0b520967c8c8a1354539797b2d578033e4bd520360ed05f5"
+    },
+    "out/main/index.js": {
+      "baseline": "59e8363a7bf1bf0eebd8942bb2f90c19d84aa201d35924f04ca03931c9856358",
+      "after": "59e8363a7bf1bf0eebd8942bb2f90c19d84aa201d35924f04ca03931c9856358"
+    },
+    "out/preload/index.cjs": {
+      "baseline": "e4ebf63a5457dc062cd3a188f832f88c0a16f3673709789db43b997f2b2bb29d",
+      "after": "e4ebf63a5457dc062cd3a188f832f88c0a16f3673709789db43b997f2b2bb29d"
+    },
+    "out/renderer/index.html": {
+      "baseline": "b00eebb347209ca4fc9299aa3c61e463b00dbc8f401fcd186ff1786f646fe3af",
+      "after": "ff8dff92bc815c6bd56e06d6a09c747615beceb89dfe3ad2edeac2bd1675f7f5"
+    }
+  },
+  "host": "Shared Linux host, eight logical CPUs. This harness ran its benchmarks serially; unrelated host activity was not fully controlled. Treat small changes as noise, not an improvement claim.",
+  "accepted_runs": {
+    "store": "one warmup + five measured fresh-store rounds per phase, explicit GC enabled",
+    "electron": "three independent visible Electron launches per phase; Xvfb/software rendering; tracing/profiling disabled"
+  },
+  "excluded_runs": [
+    "Initial pnpm invocation failed before build due to a Corepack cache permission; installed binaries used instead.",
+    "Three original stress attempts assumed offscreen rows remained mounted; current common virtualizes them. No measurements from those failures are used.",
+    "Hidden-window attempts were interrupted when requestAnimationFrame was throttled. Accepted runs use visible windows under Xvfb.",
+    "One visible fixture attempt used the legacy session.prompt test event and failed. The accepted harness uses the existing canonical startedNewTurn fixture pattern from virtual-conversation-context.",
+    "Earlier store diagnostics without working explicit GC were superseded. store-baseline-no-gc.json is historical only and is not aggregated.",
+    "One root-worktree result was overwritten by concurrent work. Accepted results were copied from the fixed isolated baseline and after worktrees.",
+    "The renderer CPU profile is a separate attribution run and is excluded from latency/CPU/RSS comparisons."
+  ],
+  "final_followup": {
+    "changes": [
+      "SettingsLayout.tsx spacer only",
+      "Final-stream projection regression test",
+      "Evidence aggregation and reports"
+    ],
+    "chat_performance_source_unchanged": true,
+    "validation": "validation.json",
+    "shared_worktree_experiments_excluded": true,
+    "shared_worktree_experiment": {
+      "revision": "48d4c102c027327907caa1408475f73046666215",
+      "disposition": "Excluded by creating isolated branch perf/common-hotpaths-validated-20261105 from fd60424. Original experimental branch/PR #115 preserved. Chat performance source and dependency patch match measured fd60424.",
+      "evidence": "Final-stream regression fails at 48d4c10: expected First and last, received First."
+    }
+  },
+  "raw_artifact_sha256": {
+    "electron-after-0.json": "08823133516bc56155acb932e9fba238c366b20d8bfebe17ec6eb8e91ed003d5",
+    "electron-after-1.json": "705fd814761fb1483c13cd79aa5464ecc7557d4cc26428920428f60b68dc1f40",
+    "electron-after-2.json": "8c13ccffa858b2eda30b34deeb2cb7fb8e190ba5fe57dffcc3dce03a8fc7efb8",
+    "electron-baseline-0.json": "541b03b74a37ad40a106c6156435c6d99873ea0b01fa0af4a27882dfd81c62dc",
+    "electron-baseline-1.json": "15b739cdade39d7fe661fd70114924470cd00dab6240ac96b58062ccc08a5287",
+    "electron-baseline-2.json": "6be2a3b54a697e3532216d4d60211612847aa15ade3c950bedc9888fad222bf9",
+    "store-after.json": "8a206d69f86d745b72df6e93e2abc48a5fec6c652cc64adad1730e845b197a24",
+    "store-baseline.json": "2c2ddee5d001515e2ca8fde0c771af1fa3bcb0a4cc979ddec0261ecc4c7e3d5d"
+  },
+  "raw_hash_note": "Hashes recorded from the isolated accepted worktrees immediately before the evidence commit, after discarding shared-root overwrites."
+}

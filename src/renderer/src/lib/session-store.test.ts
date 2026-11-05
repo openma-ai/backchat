@@ -1295,6 +1295,28 @@ describe("SessionStore turn projection cache", () => {
 });
 
 describe("SessionStore performance invariants", () => {
+  test("active transcript reads do not visit unrelated sessions' turns", () => {
+    const store = new SessionStore();
+    store.registerStarting("active", "codex-acp", "Active");
+    store.registerTurn("active-turn", "active", "hello");
+    store.registerStarting("inactive", "codex-acp", "Inactive");
+    store.registerTurn("inactive-turn", "inactive", "other history");
+    const inactive = store.turnsFor("inactive")[0]!;
+    let unrelatedReads = 0;
+    Object.defineProperty(inactive, "sessionId", {
+      get: () => { unrelatedReads++; return "inactive"; },
+      configurable: true,
+    });
+    const selector = selectTurnsFor("active");
+    const before = store.snapshot(selector);
+    for (let i = 0; i < 20; i++) {
+      store.setSideActive(`side-${i}`);
+      expect(store.snapshot(selector)).toBe(before);
+      expect(store.turnsFor("active").map(turn => turn.id)).toEqual(["active-turn"]);
+    }
+    expect(unrelatedReads).toBe(0);
+  });
+
   test("keeps prompt attachments on a live optimistic turn", () => {
     const store = new SessionStore();
     store.registerStarting("sess-attachments", "codex-acp", "Attachments");
