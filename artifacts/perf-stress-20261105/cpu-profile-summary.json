@@ -1,0 +1,123 @@
+{
+  "purpose": "Attribution only. Separate profiled baseline run excluded from before/after latency samples.",
+  "command": "BACKCHAT_PERF_PHASE=profile-baseline BACKCHAT_PERF_PROFILE=1 BACKCHAT_E2E_VISIBLE=1 BACKCHAT_E2E_DISABLE_TRACING=1 xvfb-run -a node_modules/.bin/playwright test e2e/high-load-performance.spec.ts --workers=1",
+  "duration_ms": 22035.763,
+  "profile_sha256": "ee5d9a3fb2bd9bb622f6a9a674724df7a5d8dcc7e04e6f1486101e323779b211",
+  "top_self": [
+    {
+      "sampled_ms": 3835.131,
+      "function": "(program)",
+      "bundle_line_1based": 0
+    },
+    {
+      "sampled_ms": 3694.626,
+      "function": "(idle)",
+      "bundle_line_1based": 0
+    },
+    {
+      "sampled_ms": 2093.278,
+      "function": "",
+      "bundle_line_1based": 96890
+    },
+    {
+      "sampled_ms": 1173.751,
+      "function": "focus",
+      "bundle_line_1based": 0
+    },
+    {
+      "sampled_ms": 878.427,
+      "function": "Virtualizer.getMaxScrollOffset",
+      "bundle_line_1based": 72437
+    },
+    {
+      "sampled_ms": 867.926,
+      "function": "getBoundingClientRect",
+      "bundle_line_1based": 0
+    },
+    {
+      "sampled_ms": 720.669,
+      "function": "",
+      "bundle_line_1based": 71740
+    },
+    {
+      "sampled_ms": 671.165,
+      "function": "measureElement",
+      "bundle_line_1based": 71744
+    },
+    {
+      "sampled_ms": 383.595,
+      "function": "getBoundingClientRect",
+      "bundle_line_1based": 0
+    },
+    {
+      "sampled_ms": 362.515,
+      "function": "(garbage collector)",
+      "bundle_line_1based": 0
+    },
+    {
+      "sampled_ms": 247.725,
+      "function": "focus",
+      "bundle_line_1based": 0
+    },
+    {
+      "sampled_ms": 176.796,
+      "function": "TurnMetaActions",
+      "bundle_line_1based": 114094
+    },
+    {
+      "sampled_ms": 122.307,
+      "function": "splice",
+      "bundle_line_1based": 51262
+    },
+    {
+      "sampled_ms": 101.561,
+      "function": "a",
+      "bundle_line_1based": 70950
+    },
+    {
+      "sampled_ms": 92.83,
+      "function": "loop",
+      "bundle_line_1based": 30257
+    },
+    {
+      "sampled_ms": 92.239,
+      "function": "syntaxExtension",
+      "bundle_line_1based": 51344
+    },
+    {
+      "sampled_ms": 84.973,
+      "function": "",
+      "bundle_line_1based": 1
+    },
+    {
+      "sampled_ms": 79.902,
+      "function": "splice",
+      "bundle_line_1based": 51262
+    },
+    {
+      "sampled_ms": 79.508,
+      "function": "renderWithHooks",
+      "bundle_line_1based": 2875
+    },
+    {
+      "sampled_ms": 65.434,
+      "function": "syntaxExtension",
+      "bundle_line_1based": 51344
+    }
+  ],
+  "selected_inclusive_ms": {
+    "fromMarkdown": 1423.918,
+    "tick": 2103.901,
+    "measure": 1350.684,
+    "Virtualizer.getMaxScrollOffset": 901.923,
+    "focus": 1440.603,
+    "TurnMetaActions": 276.702,
+    "Sidebar": 25.869,
+    "SessionRow": 15.19,
+    "snapshot": 41.253,
+    "turnsFor": 29.544,
+    "#ownTurnsFor": 27.768,
+    "replayHistoryWindow": 21.466
+  },
+  "interpretation": "The largest named costs are layout/scroll measurements, focus and Markdown parsing. Sidebar and store costs are small in this 24-session Electron envelope; do not extrapolate store-only gains to end-to-end UI latency. Inclusive samples overlap and cannot be added."
+}

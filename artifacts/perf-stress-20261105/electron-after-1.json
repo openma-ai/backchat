@@ -1,6 +1,6 @@
 {
   "phase": "after",
-  "revision": "0d2dcf63df6bb8fbc966c52a480af492f516d8a5",
+  "revision": "fd60424c4ecd0c297d4390a0c3d2b1fc0b0d3e77",
   "envelope": {
     "sessions": 24,
     "turns": 500,
@@ -52,467 +52,460 @@
     }
   },
   "scrollFrames": [
-    76.19999999925494,
-    101.70000000111759,
-    81.79999999888241,
-    70.90000000037253,
-    73.5,
-    52.80000000074506,
-    61.30000000074506,
-    57.899999998509884,
-    57.5,
-    55.20000000111759,
-    60.19999999925494,
-    48.40000000037253,
-    49.40000000037253,
+    61.40000000037253,
+    53.59999999962747,
+    58.90000000037253,
+    59.59999999962747,
+    53,
+    49.600000001490116,
+    50.19999999925494,
     49.59999999962747,
-    52.69999999925494,
-    48,
-    52.80000000074506,
-    48.59999999962747,
-    50.80000000074506,
+    48.70000000111759,
+    50.29999999888241,
+    48.5,
+    45.80000000074506,
+    49.09999999962747,
+    52.09999999962747,
+    50.90000000037253,
     49.5,
-    49.79999999888241,
-    49.5,
-    54.40000000037253,
-    47.09999999962747
+    52.59999999962747,
+    46.70000000111759,
+    49.29999999888241,
+    51.09999999962747,
+    50.70000000111759,
+    47.90000000037253,
+    52.59999999962747,
+    48.90000000037253
   ],
   "mountedTurns": 5,
-  "burstMs": 3099.0620679999975,
+  "burstMs": 2919.6922959999993,
   "metrics": {
     "history": [
       {
         "id": 0,
-        "ms": 362.59999999962747
+        "ms": 298.09999999962747
       },
       {
         "id": 1,
-        "ms": 126.19999999925494
+        "ms": 115.30000000074506
       },
       {
         "id": 2,
-        "ms": 123.19999999925494
+        "ms": 115.20000000111759
       },
       {
         "id": 3,
-        "ms": 118.69999999925494
+        "ms": 119.40000000037253
       },
       {
         "id": 4,
-        "ms": 143.90000000037253
-      },
-      {
-        "id": 5,
         "ms": 119.5
       },
       {
+        "id": 5,
+        "ms": 125.89999999850988
+      },
+      {
         "id": 6,
-        "ms": 136
+        "ms": 110.79999999888241
       },
       {
         "id": 7,
-        "ms": 155.90000000037253
+        "ms": 118.20000000111759
       },
       {
         "id": 8,
-        "ms": 158.80000000074506
+        "ms": 113.59999999962747
       },
       {
         "id": 9,
-        "ms": 128
+        "ms": 114.79999999888241
       },
       {
         "id": 10,
-        "ms": 125.70000000111759
+        "ms": 118.90000000037253
       },
       {
         "id": 11,
-        "ms": 176.80000000074506
+        "ms": 108
       },
       {
         "id": 12,
-        "ms": 135.30000000074506
+        "ms": 126.40000000037253
       },
       {
         "id": 13,
-        "ms": 126.30000000074506
+        "ms": 123.29999999888241
       },
       {
         "id": 14,
-        "ms": 126.09999999962747
+        "ms": 145.69999999925494
       },
       {
         "id": 15,
-        "ms": 111.80000000074506
+        "ms": 122.5
       },
       {
         "id": 16,
-        "ms": 174
+        "ms": 112.29999999888241
       },
       {
         "id": 17,
-        "ms": 144.19999999925494
+        "ms": 110.80000000074506
       },
       {
         "id": 18,
-        "ms": 113.09999999962747
+        "ms": 108.39999999850988
       },
       {
         "id": 19,
-        "ms": 113.30000000074506
+        "ms": 165.5
       },
       {
         "id": 20,
-        "ms": 138.2999999988824
+        "ms": 112.09999999962747
       },
       {
         "id": 21,
-        "ms": 123.40000000037253
+        "ms": 114.20000000111759
       },
       {
         "id": 22,
-        "ms": 126.5
+        "ms": 107.69999999925494
       },
       {
         "id": 23,
-        "ms": 163.5
+        "ms": 163.2000000011176
       },
       {
         "id": 0,
-        "ms": 122.40000000037253
+        "ms": 130.89999999850988
       },
       {
         "id": 1,
-        "ms": 112.30000000074506
+        "ms": 101.40000000037253
       },
       {
         "id": 2,
-        "ms": 95.19999999925494
+        "ms": 120.79999999888241
       },
       {
         "id": 3,
-        "ms": 97
+        "ms": 109.69999999925494
       },
       {
         "id": 4,
-        "ms": 97.20000000111759
+        "ms": 108.90000000037253
       },
       {
         "id": 5,
-        "ms": 97.80000000074506
+        "ms": 127.10000000149012
       },
       {
         "id": 6,
-        "ms": 90.19999999925494
+        "ms": 105.40000000037253
       },
       {
         "id": 7,
-        "ms": 92.5
+        "ms": 132.7000000011176
       },
       {
         "id": 8,
-        "ms": 97.59999999962747
+        "ms": 108.59999999962747
       },
       {
         "id": 9,
-        "ms": 101.5
+        "ms": 90.80000000074506
       },
       {
         "id": 10,
-        "ms": 115.19999999925494
+        "ms": 132.2000000011176
       },
       {
         "id": 11,
-        "ms": 94.5
+        "ms": 91.5
       },
       {
         "id": 12,
-        "ms": 92.5
+        "ms": 93.5
       },
       {
         "id": 13,
-        "ms": 94.40000000037253
+        "ms": 86.69999999925494
       },
       {
         "id": 14,
-        "ms": 115.89999999850988
+        "ms": 91.79999999888241
       },
       {
         "id": 15,
-        "ms": 99.60000000149012
+        "ms": 94
       },
       {
         "id": 16,
-        "ms": 93.30000000074506
+        "ms": 92.80000000074506
       },
       {
         "id": 17,
-        "ms": 112.20000000111759
+        "ms": 92.89999999850988
       },
       {
         "id": 18,
-        "ms": 90.29999999888241
+        "ms": 89.40000000037253
       },
       {
         "id": 19,
-        "ms": 94.20000000111759
+        "ms": 91.40000000037253
       },
       {
         "id": 20,
-        "ms": 94.69999999925494
+        "ms": 95
       },
       {
         "id": 21,
-        "ms": 93.40000000037253
+        "ms": 88.59999999962747
       },
       {
         "id": 22,
-        "ms": 118.89999999850988
+        "ms": 102
       },
       {
         "id": 23,
-        "ms": 102.5
+        "ms": 101.69999999925494
       },
       {
         "id": 0,
-        "ms": 130.90000000037253
+        "ms": 114.59999999962747
       },
       {
         "id": 1,
-        "ms": 118.70000000111759
+        "ms": 116
       },
       {
         "id": 2,
-        "ms": 108.5
+        "ms": 107.40000000037253
       },
       {
         "id": 3,
-        "ms": 153.30000000074506
+        "ms": 107.59999999962747
       },
       {
         "id": 4,
-        "ms": 123
+        "ms": 121.59999999962747
       },
       {
         "id": 5,
-        "ms": 161.09999999962747
+        "ms": 118.69999999925494
       },
       {
         "id": 6,
-        "ms": 108.20000000111759
+        "ms": 101.20000000111759
       },
       {
         "id": 7,
-        "ms": 131.09999999962747
+        "ms": 101.80000000074506
       },
       {
         "id": 8,
-        "ms": 114.80000000074506
+        "ms": 113.59999999962747
       },
       {
         "id": 9,
-        "ms": 120.09999999962747
+        "ms": 109.5
       },
       {
         "id": 10,
-        "ms": 114.69999999925494
+        "ms": 122.69999999925494
       },
       {
         "id": 11,
-        "ms": 112.69999999925494
+        "ms": 122.80000000074506
       },
       {
         "id": 0,
-        "ms": 148.7999999988824
+        "ms": 143.7000000011176
       },
       {
         "id": 1,
-        "ms": 130.2000000011176
+        "ms": 114.59999999962747
       },
       {
         "id": 2,
-        "ms": 106.60000000149012
+        "ms": 121.40000000037253
       },
       {
         "id": 3,
-        "ms": 104.5
+        "ms": 132
       },
       {
         "id": 4,
-        "ms": 155.7999999988824
+        "ms": 137.19999999925494
       },
       {
         "id": 5,
-        "ms": 115.40000000037253
+        "ms": 145.09999999962747
       },
       {
         "id": 6,
-        "ms": 116.60000000149012
+        "ms": 151.5
       },
       {
         "id": 7,
-        "ms": 107.30000000074506
+        "ms": 106
       },
       {
         "id": 0,
-        "ms": 124.10000000149012
+        "ms": 155.40000000037253
       },
       {
         "id": 1,
-        "ms": 110.19999999925494
+        "ms": 137.09999999962747
       },
       {
         "id": 2,
-        "ms": 107.79999999888241
+        "ms": 112.79999999888241
       },
       {
         "id": 3,
-        "ms": 106.40000000037253
+        "ms": 106.69999999925494
       },
       {
         "id": 4,
-        "ms": 108.30000000074506
+        "ms": 112.90000000037253
       },
       {
         "id": 5,
-        "ms": 113.80000000074506
+        "ms": 113.40000000037253
       },
       {
         "id": 6,
-        "ms": 116.69999999925494
-      },
-      {
-        "id": 7,
         "ms": 119.09999999962747
       },
       {
+        "id": 7,
+        "ms": 112.90000000037253
+      },
+      {
         "id": 0,
-        "ms": 125.59999999962747
+        "ms": 165.40000000037253
       },
       {
         "id": 1,
-        "ms": 101.60000000149012
+        "ms": 121.90000000037253
       },
       {
         "id": 2,
-        "ms": 99.59999999962747
+        "ms": 126.09999999962747
       },
       {
         "id": 3,
-        "ms": 113
+        "ms": 102.70000000111759
       },
       {
         "id": 4,
-        "ms": 104.5
+        "ms": 110.40000000037253
       },
       {
         "id": 5,
-        "ms": 168.5
+        "ms": 102.40000000037253
       },
       {
         "id": 6,
-        "ms": 110.90000000037253
+        "ms": 100.69999999925494
       },
       {
         "id": 7,
-        "ms": 110.69999999925494
+        "ms": 96.40000000037253
       }
     ],
     "longTasks": [
-      107,
-      204,
-      52,
-      67,
-      86,
-      68,
-      57,
-      55,
-      59,
-      58,
-      60,
-      68,
-      60,
-      66,
-      73,
-      78,
-      66,
-      64,
-      60,
-      64,
-      61,
-      62,
-      60,
-      55,
-      53,
-      84,
-      61,
+      72,
+      188,
+      50,
+      50,
       55,
       56,
-      71,
+      55,
+      55,
       60,
-      64,
-      80,
-      100,
-      81,
-      76,
-      78,
-      75,
-      78,
-      72,
-      74,
-      78,
-      84,
-      97,
-      76,
-      69,
+      55,
+      63,
+      57,
+      58,
+      58,
+      54,
+      57,
+      63,
+      71,
+      61,
+      53,
+      57,
+      52,
+      92,
+      57,
+      53,
+      53,
       73,
-      97,
-      99,
-      76,
-      93,
-      72,
+      109,
       75,
+      96,
+      89,
+      87,
+      99,
+      79,
+      106,
+      81,
+      68,
+      106,
+      73,
+      74,
+      68,
+      73,
+      76,
       76,
       74,
-      98,
-      83,
-      104,
-      99,
-      90,
-      127,
-      105,
-      94,
-      70,
-      91,
-      111,
-      95,
-      98,
-      95,
-      93,
-      121,
-      106,
-      85,
-      84,
-      127,
-      94,
-      93,
-      87,
-      93,
-      89,
+      72,
+      72,
+      77,
+      71,
       78,
-      87,
-      87,
-      90,
-      94,
-      98,
-      102,
-      81,
-      79,
-      93,
       84,
-      135,
+      93,
+      92,
+      90,
+      88,
+      99,
+      98,
+      84,
+      84,
+      92,
+      89,
+      97,
+      98,
+      118,
+      93,
+      99,
+      106,
+      114,
+      117,
+      126,
+      84,
+      120,
+      118,
+      92,
+      85,
       91,
-      89
+      93,
+      95,
+      90,
+      139,
+      86,
+      103,
+      81,
+      88,
+      82,
+      81,
+      76
     ],
     "frames": [],
     "skippedTurns": 0
@@ -520,40 +513,40 @@
   "memory": [
     {
       "stage": "ready",
-      "at": 1793873853165,
+      "at": 1793874253905,
       "processes": [
         {
-          "pid": 166835,
+          "pid": 176392,
           "type": "Browser",
           "memory": {
-            "workingSetSize": 393544,
-            "peakWorkingSetSize": 395580
+            "workingSetSize": 405872,
+            "peakWorkingSetSize": 407136
           },
           "cpu": {
-            "cumulativeCPUUsage": 1.22,
+            "cumulativeCPUUsage": 1.36,
             "percentCPUUsage": 0,
             "idleWakeupsPerSecond": 0
           }
         },
         {
-          "pid": 166863,
+          "pid": 176425,
           "type": "GPU",
           "memory": {
-            "workingSetSize": 61116,
-            "peakWorkingSetSize": 61116
+            "workingSetSize": 61084,
+            "peakWorkingSetSize": 61084
           },
           "cpu": {
-            "cumulativeCPUUsage": 0.01,
+            "cumulativeCPUUsage": 0.03,
             "percentCPUUsage": 0,
             "idleWakeupsPerSecond": 0
           }
         },
         {
-          "pid": 166872,
+          "pid": 176435,
           "type": "Utility",
           "memory": {
-            "workingSetSize": 79580,
-            "peakWorkingSetSize": 79580
+            "workingSetSize": 78916,
+            "peakWorkingSetSize": 78916
           },
           "cpu": {
             "cumulativeCPUUsage": 0.04,
@@ -562,14 +555,14 @@
           }
         },
         {
-          "pid": 166895,
+          "pid": 176457,
           "type": "Tab",
           "memory": {
-            "workingSetSize": 193668,
-            "peakWorkingSetSize": 222484
+            "workingSetSize": 193156,
+            "peakWorkingSetSize": 225032
           },
           "cpu": {
-            "cumulativeCPUUsage": 0.87,
+            "cumulativeCPUUsage": 1.04,
             "percentCPUUsage": 0,
             "idleWakeupsPerSecond": 0
           }
@@ -578,40 +571,40 @@
     },
     {
       "stage": "long-history-ready",
-      "at": 1793873853710,
+      "at": 1793874254403,
       "processes": [
         {
-          "pid": 166835,
+          "pid": 176392,
           "type": "Browser",
           "memory": {
-            "workingSetSize": 441812,
-            "peakWorkingSetSize": 441872
+            "workingSetSize": 449600,
+            "peakWorkingSetSize": 449600
           },
           "cpu": {
-            "cumulativeCPUUsage": 1.31,
-            "percentCPUUsage": 2.0725445873425556,
-            "idleWakeupsPerSecond": 265
+            "cumulativeCPUUsage": 1.46,
+            "percentCPUUsage": 2.518064595407453,
+            "idleWakeupsPerSecond": 248
           }
         },
         {
-          "pid": 166863,
+          "pid": 176425,
           "type": "GPU",
           "memory": {
-            "workingSetSize": 69692,
-            "peakWorkingSetSize": 69692
+            "workingSetSize": 69892,
+            "peakWorkingSetSize": 69892
           },
           "cpu": {
             "cumulativeCPUUsage": 0.08,
-            "percentCPUUsage": 1.6120117907148122,
-            "idleWakeupsPerSecond": 41
+            "percentCPUUsage": 1.259085561411143,
+            "idleWakeupsPerSecond": 40
           }
         },
         {
-          "pid": 166872,
+          "pid": 176435,
           "type": "Utility",
           "memory": {
-            "workingSetSize": 79580,
-            "peakWorkingSetSize": 79580
+            "workingSetSize": 78916,
+            "peakWorkingSetSize": 78916
           },
           "cpu": {
             "cumulativeCPUUsage": 0.04,
@@ -620,56 +613,56 @@
           }
         },
         {
-          "pid": 166895,
+          "pid": 176457,
           "type": "Tab",
           "memory": {
-            "workingSetSize": 258884,
-            "peakWorkingSetSize": 258884
+            "workingSetSize": 261072,
+            "peakWorkingSetSize": 261072
           },
           "cpu": {
-            "cumulativeCPUUsage": 1.54,
-            "percentCPUUsage": 15.429397838963144,
-            "idleWakeupsPerSecond": 94
+            "cumulativeCPUUsage": 1.7,
+            "percentCPUUsage": 16.620465131271455,
+            "idleWakeupsPerSecond": 149
           }
         }
       ]
     },
     {
       "stage": "long-scroll-done",
-      "at": 1793873855506,
+      "at": 1793874255988,
       "processes": [
         {
-          "pid": 166835,
+          "pid": 176392,
           "type": "Browser",
           "memory": {
-            "workingSetSize": 442952,
-            "peakWorkingSetSize": 444448
+            "workingSetSize": 450632,
+            "peakWorkingSetSize": 451784
           },
           "cpu": {
-            "cumulativeCPUUsage": 1.36,
-            "percentCPUUsage": 0.34792328764683056,
-            "idleWakeupsPerSecond": 146
+            "cumulativeCPUUsage": 1.49,
+            "percentCPUUsage": 0.23662948744159984,
+            "idleWakeupsPerSecond": 163
           }
         },
         {
-          "pid": 166863,
+          "pid": 176425,
           "type": "GPU",
           "memory": {
-            "workingSetSize": 70364,
-            "peakWorkingSetSize": 70364
+            "workingSetSize": 70400,
+            "peakWorkingSetSize": 70400
           },
           "cpu": {
-            "cumulativeCPUUsage": 0.19,
-            "percentCPUUsage": 0.7654239892228303,
-            "idleWakeupsPerSecond": 7
+            "cumulativeCPUUsage": 0.18,
+            "percentCPUUsage": 0.7887679444707367,
+            "idleWakeupsPerSecond": 6
           }
         },
         {
-          "pid": 166872,
+          "pid": 176435,
           "type": "Utility",
           "memory": {
-            "workingSetSize": 79580,
-            "peakWorkingSetSize": 79580
+            "workingSetSize": 78916,
+            "peakWorkingSetSize": 78916
           },
           "cpu": {
             "cumulativeCPUUsage": 0.04,
@@ -678,172 +671,56 @@
           }
         },
         {
-          "pid": 166895,
+          "pid": 176457,
           "type": "Tab",
           "memory": {
-            "workingSetSize": 391804,
-            "peakWorkingSetSize": 391804
+            "workingSetSize": 390856,
+            "peakWorkingSetSize": 390856
           },
           "cpu": {
-            "cumulativeCPUUsage": 3.79,
-            "percentCPUUsage": 15.65629519450546,
-            "idleWakeupsPerSecond": 116
-          }
-        }
-      ]
-    },
-    {
-      "stage": "all-history-loaded",
-      "at": 1793873860656,
-      "processes": [
-        {
-          "pid": 166835,
-          "type": "Browser",
-          "memory": {
-            "workingSetSize": 443260,
-            "peakWorkingSetSize": 444448
-          },
-          "cpu": {
-            "cumulativeCPUUsage": 1.56,
-            "percentCPUUsage": 0.4854672466899872,
-            "idleWakeupsPerSecond": 257
-          }
-        },
-        {
-          "pid": 166863,
-          "type": "GPU",
-          "memory": {
-            "workingSetSize": 70832,
-            "peakWorkingSetSize": 71924
-          },
-          "cpu": {
-            "cumulativeCPUUsage": 0.49,
-            "percentCPUUsage": 0.7282042638204431,
-            "idleWakeupsPerSecond": 33
-          }
-        },
-        {
-          "pid": 166872,
-          "type": "Utility",
-          "memory": {
-            "workingSetSize": 79704,
-            "peakWorkingSetSize": 79704
-          },
-          "cpu": {
-            "cumulativeCPUUsage": 0.04,
-            "percentCPUUsage": 0,
-            "idleWakeupsPerSecond": 0
-          }
-        },
-        {
-          "pid": 166895,
-          "type": "Tab",
-          "memory": {
-            "workingSetSize": 448640,
-            "peakWorkingSetSize": 448684
-          },
-          "cpu": {
-            "cumulativeCPUUsage": 9.64,
-            "percentCPUUsage": 14.199974872112842,
-            "idleWakeupsPerSecond": 92
-          }
-        }
-      ]
-    },
-    {
-      "stage": "warm-switches",
-      "at": 1793873864907,
-      "processes": [
-        {
-          "pid": 166835,
-          "type": "Browser",
-          "memory": {
-            "workingSetSize": 448948,
-            "peakWorkingSetSize": 448948
-          },
-          "cpu": {
-            "cumulativeCPUUsage": 1.82,
-            "percentCPUUsage": 0.7644772586833444,
-            "idleWakeupsPerSecond": 292
-          }
-        },
-        {
-          "pid": 166863,
-          "type": "GPU",
-          "memory": {
-            "workingSetSize": 74104,
-            "peakWorkingSetSize": 74104
-          },
-          "cpu": {
-            "cumulativeCPUUsage": 0.77,
-            "percentCPUUsage": 0.8232810714509177,
-            "idleWakeupsPerSecond": 43
-          }
-        },
-        {
-          "pid": 166872,
-          "type": "Utility",
-          "memory": {
-            "workingSetSize": 79704,
-            "peakWorkingSetSize": 79704
-          },
-          "cpu": {
-            "cumulativeCPUUsage": 0.04,
-            "percentCPUUsage": 0,
-            "idleWakeupsPerSecond": 0
-          }
-        },
-        {
-          "pid": 166895,
-          "type": "Tab",
-          "memory": {
-            "workingSetSize": 464364,
-            "peakWorkingSetSize": 472664
-          },
-          "cpu": {
-            "cumulativeCPUUsage": 14.42,
-            "percentCPUUsage": 14.054643513082226,
+            "cumulativeCPUUsage": 3.66,
+            "percentCPUUsage": 15.459832200874333,
             "idleWakeupsPerSecond": 131
           }
         }
       ]
     },
     {
-      "stage": "after-burst",
-      "at": 1793873868759,
+      "stage": "all-history-loaded",
+      "at": 1793874260752,
       "processes": [
         {
-          "pid": 166835,
+          "pid": 176392,
           "type": "Browser",
           "memory": {
-            "workingSetSize": 452004,
-            "peakWorkingSetSize": 452004
+            "workingSetSize": 449488,
+            "peakWorkingSetSize": 451784
           },
           "cpu": {
-            "cumulativeCPUUsage": 2.49,
-            "percentCPUUsage": 2.174542404875129,
-            "idleWakeupsPerSecond": 498
+            "cumulativeCPUUsage": 1.68,
+            "percentCPUUsage": 0.4985067885080227,
+            "idleWakeupsPerSecond": 271
           }
         },
         {
-          "pid": 166863,
+          "pid": 176425,
           "type": "GPU",
           "memory": {
-            "workingSetSize": 84720,
-            "peakWorkingSetSize": 84720
+            "workingSetSize": 71032,
+            "peakWorkingSetSize": 72136
           },
           "cpu": {
-            "cumulativeCPUUsage": 1.16,
-            "percentCPUUsage": 1.2657751282327572,
-            "idleWakeupsPerSecond": 62
+            "cumulativeCPUUsage": 0.47,
+            "percentCPUUsage": 0.7608784630464944,
+            "idleWakeupsPerSecond": 33
           }
         },
         {
-          "pid": 166872,
+          "pid": 176435,
           "type": "Utility",
           "memory": {
-            "workingSetSize": 79704,
-            "peakWorkingSetSize": 79704
+            "workingSetSize": 79108,
+            "peakWorkingSetSize": 79108
           },
           "cpu": {
             "cumulativeCPUUsage": 0.04,
@@ -852,56 +729,172 @@
           }
         },
         {
-          "pid": 166895,
+          "pid": 176457,
           "type": "Tab",
           "memory": {
-            "workingSetSize": 491104,
-            "peakWorkingSetSize": 491104
+            "workingSetSize": 477340,
+            "peakWorkingSetSize": 483872
           },
           "cpu": {
-            "cumulativeCPUUsage": 18.65,
-            "percentCPUUsage": 13.728716918660565,
-            "idleWakeupsPerSecond": 310
+            "cumulativeCPUUsage": 9.3,
+            "percentCPUUsage": 14.797752504755746,
+            "idleWakeupsPerSecond": 99
+          }
+        }
+      ]
+    },
+    {
+      "stage": "warm-switches",
+      "at": 1793874264871,
+      "processes": [
+        {
+          "pid": 176392,
+          "type": "Browser",
+          "memory": {
+            "workingSetSize": 449696,
+            "peakWorkingSetSize": 451784
+          },
+          "cpu": {
+            "cumulativeCPUUsage": 1.83,
+            "percentCPUUsage": 0.4552247049840429,
+            "idleWakeupsPerSecond": 292
+          }
+        },
+        {
+          "pid": 176425,
+          "type": "GPU",
+          "memory": {
+            "workingSetSize": 73940,
+            "peakWorkingSetSize": 73940
+          },
+          "cpu": {
+            "cumulativeCPUUsage": 0.71,
+            "percentCPUUsage": 0.728359881646375,
+            "idleWakeupsPerSecond": 41
+          }
+        },
+        {
+          "pid": 176435,
+          "type": "Utility",
+          "memory": {
+            "workingSetSize": 79108,
+            "peakWorkingSetSize": 79108
+          },
+          "cpu": {
+            "cumulativeCPUUsage": 0.04,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          }
+        },
+        {
+          "pid": 176457,
+          "type": "Tab",
+          "memory": {
+            "workingSetSize": 485592,
+            "peakWorkingSetSize": 495948
+          },
+          "cpu": {
+            "cumulativeCPUUsage": 13.97,
+            "percentCPUUsage": 14.17266936370238,
+            "idleWakeupsPerSecond": 132
+          }
+        }
+      ]
+    },
+    {
+      "stage": "after-burst",
+      "at": 1793874268536,
+      "processes": [
+        {
+          "pid": 176392,
+          "type": "Browser",
+          "memory": {
+            "workingSetSize": 452588,
+            "peakWorkingSetSize": 452588
+          },
+          "cpu": {
+            "cumulativeCPUUsage": 2.54,
+            "percentCPUUsage": 2.4213960282557134,
+            "idleWakeupsPerSecond": 689
+          }
+        },
+        {
+          "pid": 176425,
+          "type": "GPU",
+          "memory": {
+            "workingSetSize": 84640,
+            "peakWorkingSetSize": 84640
+          },
+          "cpu": {
+            "cumulativeCPUUsage": 1.11,
+            "percentCPUUsage": 1.3641597049049727,
+            "idleWakeupsPerSecond": 74
+          }
+        },
+        {
+          "pid": 176435,
+          "type": "Utility",
+          "memory": {
+            "workingSetSize": 79108,
+            "peakWorkingSetSize": 79108
+          },
+          "cpu": {
+            "cumulativeCPUUsage": 0.04,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          }
+        },
+        {
+          "pid": 176457,
+          "type": "Tab",
+          "memory": {
+            "workingSetSize": 504548,
+            "peakWorkingSetSize": 508980
+          },
+          "cpu": {
+            "cumulativeCPUUsage": 18.06,
+            "percentCPUUsage": 13.948502537877175,
+            "idleWakeupsPerSecond": 284
           }
         }
       ]
     },
     {
       "stage": "settled-churn-0",
-      "at": 1793873870774,
+      "at": 1793874270619,
       "processes": [
         {
-          "pid": 166835,
+          "pid": 176392,
           "type": "Browser",
           "memory": {
-            "workingSetSize": 451988,
-            "peakWorkingSetSize": 451988
+            "workingSetSize": 452604,
+            "peakWorkingSetSize": 452604
           },
           "cpu": {
-            "cumulativeCPUUsage": 2.55,
-            "percentCPUUsage": 0.3720193807216581,
-            "idleWakeupsPerSecond": 213
+            "cumulativeCPUUsage": 2.61,
+            "percentCPUUsage": 0.4199980512090424,
+            "idleWakeupsPerSecond": 206
           }
         },
         {
-          "pid": 166863,
+          "pid": 176425,
           "type": "GPU",
           "memory": {
-            "workingSetSize": 81788,
-            "peakWorkingSetSize": 85208
+            "workingSetSize": 85520,
+            "peakWorkingSetSize": 85520
           },
           "cpu": {
-            "cumulativeCPUUsage": 1.28,
-            "percentCPUUsage": 0.7440468809058721,
-            "idleWakeupsPerSecond": 41
+            "cumulativeCPUUsage": 1.23,
+            "percentCPUUsage": 0.7200018432047186,
+            "idleWakeupsPerSecond": 42
           }
         },
         {
-          "pid": 166872,
+          "pid": 176435,
           "type": "Utility",
           "memory": {
-            "workingSetSize": 79704,
-            "peakWorkingSetSize": 79704
+            "workingSetSize": 79108,
+            "peakWorkingSetSize": 79108
           },
           "cpu": {
             "cumulativeCPUUsage": 0.04,
@@ -910,56 +903,56 @@
           }
         },
         {
-          "pid": 166895,
+          "pid": 176457,
           "type": "Tab",
           "memory": {
-            "workingSetSize": 486636,
-            "peakWorkingSetSize": 500188
+            "workingSetSize": 500104,
+            "peakWorkingSetSize": 510360
           },
           "cpu": {
-            "cumulativeCPUUsage": 20.53,
-            "percentCPUUsage": 11.656861675215032,
-            "idleWakeupsPerSecond": 96
+            "cumulativeCPUUsage": 20.06,
+            "percentCPUUsage": 12.000048000192,
+            "idleWakeupsPerSecond": 100
           }
         }
       ]
     },
     {
       "stage": "settled-churn-1",
-      "at": 1793873872656,
+      "at": 1793874272563,
       "processes": [
         {
-          "pid": 166835,
+          "pid": 176392,
           "type": "Browser",
           "memory": {
-            "workingSetSize": 452016,
-            "peakWorkingSetSize": 452016
+            "workingSetSize": 452640,
+            "peakWorkingSetSize": 452640
           },
           "cpu": {
-            "cumulativeCPUUsage": 2.6,
-            "percentCPUUsage": 0.33206511026421226,
-            "idleWakeupsPerSecond": 206
+            "cumulativeCPUUsage": 2.66,
+            "percentCPUUsage": 0.3215076806898886,
+            "idleWakeupsPerSecond": 205
           }
         },
         {
-          "pid": 166863,
+          "pid": 176425,
           "type": "GPU",
           "memory": {
-            "workingSetSize": 80068,
-            "peakWorkingSetSize": 85208
+            "workingSetSize": 80492,
+            "peakWorkingSetSize": 84972
           },
           "cpu": {
-            "cumulativeCPUUsage": 1.38,
-            "percentCPUUsage": 0.6641154009424063,
-            "idleWakeupsPerSecond": 39
+            "cumulativeCPUUsage": 1.34,
+            "percentCPUUsage": 0.7073107120792723,
+            "idleWakeupsPerSecond": 43
           }
         },
         {
-          "pid": 166872,
+          "pid": 176435,
           "type": "Utility",
           "memory": {
-            "workingSetSize": 79704,
-            "peakWorkingSetSize": 79704
+            "workingSetSize": 79108,
+            "peakWorkingSetSize": 79108
           },
           "cpu": {
             "cumulativeCPUUsage": 0.04,
@@ -968,56 +961,56 @@
           }
         },
         {
-          "pid": 166895,
+          "pid": 176457,
           "type": "Tab",
           "memory": {
-            "workingSetSize": 480244,
-            "peakWorkingSetSize": 500188
+            "workingSetSize": 497036,
+            "peakWorkingSetSize": 510360
           },
           "cpu": {
-            "cumulativeCPUUsage": 22.15,
-            "percentCPUUsage": 10.758440860186491,
-            "idleWakeupsPerSecond": 129
+            "cumulativeCPUUsage": 21.6,
+            "percentCPUUsage": 9.902217530885917,
+            "idleWakeupsPerSecond": 101
           }
         }
       ]
     },
     {
       "stage": "settled-churn-2",
-      "at": 1793873874579,
+      "at": 1793874274480,
       "processes": [
         {
-          "pid": 166835,
+          "pid": 176392,
           "type": "Browser",
           "memory": {
-            "workingSetSize": 452044,
-            "peakWorkingSetSize": 452044
+            "workingSetSize": 452684,
+            "peakWorkingSetSize": 452684
           },
           "cpu": {
-            "cumulativeCPUUsage": 2.65,
-            "percentCPUUsage": 0.3251831171169109,
-            "idleWakeupsPerSecond": 205
+            "cumulativeCPUUsage": 2.71,
+            "percentCPUUsage": 0.3260836673299643,
+            "idleWakeupsPerSecond": 206
           }
         },
         {
-          "pid": 166863,
+          "pid": 176425,
           "type": "GPU",
           "memory": {
-            "workingSetSize": 75764,
-            "peakWorkingSetSize": 85208
+            "workingSetSize": 75620,
+            "peakWorkingSetSize": 84972
           },
           "cpu": {
-            "cumulativeCPUUsage": 1.49,
-            "percentCPUUsage": 0.7154177467306709,
-            "idleWakeupsPerSecond": 44
+            "cumulativeCPUUsage": 1.44,
+            "percentCPUUsage": 0.6521737996219479,
+            "idleWakeupsPerSecond": 43
           }
         },
         {
-          "pid": 166872,
+          "pid": 176435,
           "type": "Utility",
           "memory": {
-            "workingSetSize": 79704,
-            "peakWorkingSetSize": 79704
+            "workingSetSize": 79108,
+            "peakWorkingSetSize": 79108
           },
           "cpu": {
             "cumulativeCPUUsage": 0.04,
@@ -1026,16 +1019,16 @@
           }
         },
         {
-          "pid": 166895,
+          "pid": 176457,
           "type": "Tab",
           "memory": {
-            "workingSetSize": 476856,
-            "peakWorkingSetSize": 500188
+            "workingSetSize": 487764,
+            "peakWorkingSetSize": 510360
           },
           "cpu": {
-            "cumulativeCPUUsage": 23.69,
-            "percentCPUUsage": 10.016046486943237,
-            "idleWakeupsPerSecond": 114
+            "cumulativeCPUUsage": 23.31,
+            "percentCPUUsage": 11.15235235068109,
+            "idleWakeupsPerSecond": 102
           }
         }
       ]
