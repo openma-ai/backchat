@@ -614,6 +614,8 @@ describe("TurnBlock", () => {
     expect(html).toContain('data-client-id="client-1"');
     expect(html).toContain("Ship it now");
     expect(html).toContain("chat.sending");
+    expect(html).toContain('data-pre-thinking-phase="sending"');
+    expect(html).toContain("shimmer-text");
     expect(html).not.toContain("chat.thinking");
     expect(html).not.toContain("chat.workingFor");
   });

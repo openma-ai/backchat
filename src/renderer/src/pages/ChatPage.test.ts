@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/chat/ChatView", () => ({
@@ -48,3 +50,13 @@ function sessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
     ...overrides,
   };
 }
+
+
+describe("ChatPage first-send loading gate", () => {
+  it("does not gate the surface on activeId mismatch after navigate", () => {
+    const source = readFileSync(resolve(__dirname, "ChatPage.tsx"), "utf8");
+    expect(source).not.toContain("activeId !== params.sessionId");
+    expect(source).toContain("sessionStore.turnsFor(sessionId).length > 0");
+    expect(source).toContain("if (params.sessionId && !routeSession)");
+  });
+});

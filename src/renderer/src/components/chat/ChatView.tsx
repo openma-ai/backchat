@@ -8,6 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import { BugIcon, SendIcon } from "@/components/Icons";
+import { ShimmerText } from "@/components/ui/ShimmerText";
 import { useNavigate } from "@tanstack/react-router";
 import { AgentChatView } from "@openma/common/chat-ui";
 import type { AgentUITurnState } from "@openma/common/agent-ui";
@@ -22,7 +23,6 @@ import { cn } from "@/lib/utils";
 import {
   ConversationErrorBoundary,
   ConversationErrorFallback,
-  ConversationSurfaceLoader,
 } from "./ConversationLoadingState";
 import {
   useSessionFirstScreenPaint,
@@ -336,9 +336,11 @@ export function ChatView({
   const isNativeSubagent = active?.sideKind === "subagent";
   const transcriptRef = useRef<HTMLDivElement>(null);
   const persistedSessionId = active && active.status !== "draft" ? active.id : null;
+  const hasTranscriptContent = transcriptTurns.length > 0;
   const loadingFirstScreen = useSessionFirstScreenPaint({
     persistedSessionId,
     historyPending,
+    hasTranscriptContent,
     transcriptRef,
   });
 
@@ -758,14 +760,7 @@ export function ChatView({
       data-fork-support={active?.forkSupport?.level ?? "unknown"}
       data-chat-binding={binding ? "coordinator" : mode}
     >
-      {loadingFirstScreen && (
-        <ConversationSurfaceLoader
-          overlay
-          compact={isSide}
-          label={t("chat.loadingHistory")}
-        />
-      )}
-      {!loadingFirstScreen && boundLoadError && turns.length === 0 && (
+      {boundLoadError && turns.length === 0 && !loadingFirstScreen && (
         <ConversationErrorFallback
           overlay
           compact={isSide}
@@ -777,9 +772,7 @@ export function ChatView({
         resetKey={active?.id ?? binding?.sessionId ?? null}
         compact={isSide}
       >
-      <div className="flex h-full min-h-0 flex-1 flex-col"
-        style={loadingFirstScreen ? { visibility: "hidden" } : undefined}
-        inert={loadingFirstScreen}>
+      <div className="flex h-full min-h-0 flex-1 flex-col">
         <AgentChatView
           key={active?.id}
           sessionId={active?.id}
@@ -838,7 +831,17 @@ export function ChatView({
             );
           }}
           slots={{
-            empty: (
+            empty: loadingFirstScreen ? (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-label={t("chat.loadingHistory")}
+                data-chat-transcript-loading="true"
+                className="flex min-h-[120px] items-center justify-center px-4 py-8 text-[13px] leading-6 text-fg-muted"
+              >
+                <ShimmerText>{t("chat.loadingHistory")}</ShimmerText>
+              </div>
+            ) : (
               binding ? null : (
                 <EmptyStateIntro
                   hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
