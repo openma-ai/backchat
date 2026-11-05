@@ -112,6 +112,14 @@ it("persists project context and routes independent workers back to the coordina
       c.items.some((i) => i.kind === "coordinator-worker-result"),
     ),
   ).toBe(true);
+  const coordinatorSession = before.facts.sessions.find(s => s.agentId === "coordinator")!;
+  const coordinatorTurns = before.facts.turns.filter(t => t.sessionId === coordinatorSession.id);
+  expect(coordinatorTurns).toHaveLength(2);
+  expect(coordinatorTurns.every(turn => turn.state === "completed")).toBe(true);
+  const handoff = before.facts.contexts.find(context => context.items.some(item => item.kind === "coordinator-worker-result"))!;
+  expect(handoff.workThreadId).toBe(coordinatorSession.workThreadId);
+  expect(JSON.stringify(handoff.items)).toContain("worker result");
+  expect(before.facts.agentEvents.some(event => event.turn_id === coordinatorTurns.at(-1)!.id && event.type === "agent.message")).toBe(true);
   await service.close();
   const reopened = setup(path).service;
   expect((await reopened.view(project.id)).config?.instructions).toBe(

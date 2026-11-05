@@ -1,3 +1,5 @@
+import { useProjectOverview, useProjectOverviewTab } from "@/lib/use-project-overview";
+import { ProjectOverviewTabs, ProjectPullRequests, ProjectRoutines } from "@/components/projects/ProjectOverview";
 import { useProjects } from "@/lib/projects-query";
 import { useI18n } from "@/lib/i18n";
 import { ExternalSourceBadge } from "@/components/shell/ExternalSourceBadge";
@@ -72,12 +74,8 @@ export function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(false);
   const projects = useProjects();
-  const workspace = useQuery({
-    queryKey: ["project-work", projectId],
-    queryFn: () => window.backchat.projectWorkView(projectId!),
-    enabled: !!projectId,
-    refetchInterval: 1500,
-  });
+  const overview = useProjectOverview(projectId);
+  const { workspace } = overview;
   const project = workspace.data?.project;
   const refresh = async () => {
     await Promise.all([
@@ -174,6 +172,7 @@ export function ProjectsPage() {
           <ProjectWorkspace
             key={projectId}
             view={workspace.data}
+            overview={overview}
             refresh={refresh}
             edit={() => void navigate({ to: "/settings/projects/$projectId", params: { projectId: projectId! } })}
           />
@@ -751,18 +750,18 @@ function ProjectOutcomeBar({
 
 function ProjectWorkspace({
   view,
+  overview,
   refresh,
   edit,
 }: {
   view: ProjectWorkView;
+  overview: ReturnType<typeof useProjectOverview>;
   refresh: () => Promise<void>;
   edit: () => void;
 }) {
   const { project, config, facts } = view;
   const { t } = useI18n();
-  const [tab, setTab] = useState<
-    "conversation" | "workers" | "activity" | "overview"
-  >("conversation");
+  const [tab, setTab] = useProjectOverviewTab(overview.pullRequests.length > 0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [action, setAction] = useState<{
@@ -900,7 +899,7 @@ function ProjectWorkspace({
             }}
           >
             <ListTodoIcon className="size-3.5" />
-            {t("project.tasks")}
+            {t("project.overview")}
           </Button>
 
           <Button
@@ -988,8 +987,9 @@ function ProjectWorkspace({
             onValueChange={(value) => {
               if (
                 value === "workers" ||
-                value === "overview" ||
-                value === "activity"
+                value === "library" ||
+                value === "pull-requests" ||
+                value === "routine"
               ) {
                 setSelectedWorker(null);
                 setTab(value);
@@ -998,13 +998,7 @@ function ProjectWorkspace({
           >
             <aside
               className="project-side-panel"
-              aria-label={
-                tab === "overview"
-                  ? "Project overview"
-                  : tab === "workers"
-                    ? "Project workers"
-                    : "Project activity"
-              }
+              aria-label={t("project.overview")}
             >
               <div className="project-side-heading">
                 {selectedWorker && tab === "workers" ? (
@@ -1014,19 +1008,10 @@ function ProjectWorkspace({
                     onClick={() => setSelectedWorker(null)}
                   >
                     <ArrowLeftIcon />
-                    {t("project.threads")}
+                    {t("project.workers")}
                   </Button>
                 ) : (
-                  <TabsList
-                    aria-label={t("project.views")}
-                    className="project-panel-tabs"
-                  >
-                    <TabsTrigger value="workers">
-                      {t("project.threads")}
-                    </TabsTrigger>
-                    <TabsTrigger value="overview">Library</TabsTrigger>
-                    <TabsTrigger value="activity">Activity</TabsTrigger>
-                  </TabsList>
+                  <ProjectOverviewTabs hasPullRequests={overview.pullRequests.length > 0} />
                 )}
                 <Button
                   variant="ghost"
@@ -1050,7 +1035,7 @@ function ProjectWorkspace({
                     }
                     edit={edit}
                   />
-                ) : tab === "overview" ? (
+                ) : tab === "library" ? (
                   <div
                     className="project-knowledge"
                     aria-label={t("project.knowledge")}
@@ -1138,7 +1123,7 @@ function ProjectWorkspace({
                     <div className="project-panel-summary">
                       <span>
                         {workers.length + (view.external_tasks?.length ?? 0)
-                          ? `${workers.length + (view.external_tasks?.length ?? 0)} ${t("project.threads").toLowerCase()}`
+                          ? `${workers.length + (view.external_tasks?.length ?? 0)} ${t("project.workers").toLowerCase()}`
                           : t("project.noTasks")}
                       </span>
                       {config?.controls.includes("delegate") ? (
@@ -1294,7 +1279,7 @@ function ProjectWorkspace({
                                     variant="ghost"
                                     onClick={() => setSelectedWorker(workerId)}
                                   >
-                                    View thread
+                                    View worker
                                   </Button>
                                 </div>
                               </article>
@@ -1314,51 +1299,16 @@ function ProjectWorkspace({
                         </div>
                       </article>
                     ))}
-                  </div>
-                ) : (
-                  <div className="project-work-list">
-                    <div className="project-section-heading">
-                      <h2>Activity history</h2>
-                      {config?.controls.includes("complete") ? (
-                        <Button
-                          variant="outline"
-                          onClick={() => setAction({ type: "complete" })}
-                        >
-                          <CheckIcon />
-                          Complete project
-                        </Button>
-                      ) : null}
-                    </div>
-                    {!facts.events.length ? (
-                      <p className="project-help">
-                        Activity appears when you send a message or delegate
-                        work.
-                      </p>
+                    {config?.controls.includes("complete") ? (
+                      <Button variant="outline" onClick={() => setAction({ type: "complete" })}>
+                        <CheckIcon />Complete project
+                      </Button>
                     ) : null}
-                    {[...facts.events].reverse().map((e) => {
-                      const reaction = facts.reactions.find(
-                        (r) => r.eventId === e.id,
-                      );
-                      return (
-                        <details key={e.id} className="project-activity">
-                          <summary>
-                            <span>
-                              {e.type
-                                .replace("backchat.project.", "")
-                                .replace("project.", "")
-                                .replaceAll(".", " ")}
-                            </span>
-                            <span>{reaction?.status ?? "Processing"}</span>
-                            <time>
-                              {new Date(e.occurredAt).toLocaleTimeString()}
-                            </time>
-                          </summary>
-                          <pre>{JSON.stringify(e.payload, null, 2)}</pre>
-                          {reaction?.reason ? <p>{reaction.reason}</p> : null}
-                        </details>
-                      );
-                    })}
                   </div>
+                ) : tab === "pull-requests" ? (
+                  <ProjectPullRequests reviews={overview.pullRequests} />
+                ) : (
+                  <ProjectRoutines routines={overview.routines} pending={overview.routinesPending} error={overview.routinesError} />
                 )}
               </TabsContent>
             </aside>
