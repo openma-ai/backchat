@@ -5216,3 +5216,40 @@ describe("SessionStore Browser plugin rail sync", () => {
     expect(store.turnsFor("annotated")[0]).toMatchObject({ annotations });
   });
 });
+
+test("loads persisted older turns even when a live turn arrived before the initial history window", () => {
+  const store = new SessionStore();
+  const id = "history-live-race";
+  store.registerTurn("live-newest", id, "Latest live prompt");
+  const live = store.turnsFor(id)[0]!;
+  store.replayHistoryWindow(id, [
+    { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "Older persisted prompt" }), ts: 1000 },
+    { seq: 2, type: "agent_message_chunk", data: JSON.stringify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Older answer" } }), ts: 1001 },
+  ], { hasMore: true });
+  expect(store.turnsFor(id).map(turn => turn.promptText)).toEqual(["Older persisted prompt", "Latest live prompt"]);
+  expect(store.turnsFor(id).at(-1)).toBe(live);
+  expect(store.historyWindowFor(id)).toMatchObject({ oldestSeq: 1, hasMore: true });
+});
+
+test("late SQL history preserves the live canonical turn once without reverting its current output", () => {
+  const store = new SessionStore();
+  const id = "late-canonical-history";
+  store.registerTurn("current", id, "Current prompt");
+  const live = store.turnsFor(id)[0]!;
+  const eventRow = (seq: number, turnId: string, type: "user.message" | "agent.message_chunk", data: Record<string, unknown>) => ({
+    seq, type: "openma_event", ts: seq * 1000,
+    data: JSON.stringify(createOpenMAEvent({ event_id: `event-${seq}`, session_id: id, turn_id: turnId, seq, type,
+      source: { kind: "harness", harness: "codex-acp" }, occurred_at: new Date(seq * 1000).toISOString(), data })),
+  });
+  store.replayHistoryWindow(id, [
+    eventRow(1, "older", "user.message", { text: "Older prompt", input_kind: "prompt" }),
+    eventRow(2, "older", "agent.message_chunk", { text: "Older answer" }),
+    eventRow(3, "current", "user.message", { text: "Current prompt", input_kind: "prompt" }),
+    eventRow(4, "current", "agent.message_chunk", { text: "Stale persisted output" }),
+  ], { hasMore: false });
+  expect(store.turnsFor(id).map(turn => turn.id)).toEqual(["older", "current"]);
+  expect(store.turnsFor(id).at(-1)).toBe(live);
+  expect(store.projectTurn(store.turnsFor(id)[0]!).assistantText).toBe("Older answer");
+  expect(store.projectTurn(live).assistantText).toBe("");
+  expect(store.historyWindowFor(id)?.hasMore).toBe(false);
+});

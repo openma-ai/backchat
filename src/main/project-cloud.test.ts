@@ -123,3 +123,13 @@ it("keeps cloud commands on the configured worker and rejects switching an activ
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+it("defaults the worker and mandatory controls before persisting local project settings", async () => {
+  const db = new DatabaseSync(":memory:");
+  let saved: unknown;
+  const router = new ProjectCloudRouter({ db, save: async (config: unknown) => { saved = config; return config; } } as never, () => { throw new Error("unexpected cloud connection"); }, () => null, undefined);
+  try {
+    await router.save({ projectId: "p", coordinatorAgent: "selected", workerAgent: "", controls: [], continuity: "per-run", description: "", instructions: "Keep", context: "", resources: [] });
+    expect(saved).toMatchObject({ workerAgent: "selected", controls: ["delegate", "steer", "cancel", "complete"], continuity: "per-run", instructions: "Keep" });
+  } finally { db.close(); }
+});

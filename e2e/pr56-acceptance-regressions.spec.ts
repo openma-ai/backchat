@@ -556,9 +556,8 @@ test("selected session row stays opaque on hover", async ({ page }) => {
 
 test("project sessions share the coordinator grid without clipping", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  // 5e2f2f9 shows the coordinator row only once one is configured
-  // (Sidebar.tsx ProjectCoordinatorRow; Sidebar.new-chat-grid.test.tsx
-  // expects no row for an unconfigured project), so seed one.
+  // Direct-chat UX removed the persistent coordinator child row; seed a
+  // configured project so a session nests under the project for the grid check.
   const cwd = "/tmp/pr56-grid-alignment";
   await mkdir(cwd, { recursive: true });
   await page.evaluate(async (dir) => {
@@ -603,24 +602,12 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
   expect(Math.abs(projectsHeadingMetrics.y - 129)).toBeLessThanOrEqual(0.5);
   expect(projectsHeadingMetrics.fontWeight).toBe("500");
   expect(projectsHeadingMetrics.color).toBe(await readColorToken(page, "--fg-subtle"));
-  const coordinator = navigation.getByTestId("project-coordinator-row").first();
+  await expect(navigation.getByTestId("project-coordinator-row")).toHaveCount(0);
   const sessionActions = navigation.getByRole("button", {
     name: "Session actions",
     exact: true,
   });
-  await expect(coordinator).toBeVisible();
   await expect(sessionActions).toBeAttached();
-
-  const [coordinatorIcon, sessionIcon] = await Promise.all([
-    coordinator.locator('[data-sidebar-grid="icon"]').boundingBox(),
-    sessionActions
-      .locator("xpath=ancestor::div[contains(@class,'sidebar-grid-row')]")
-      .locator('[data-sidebar-grid="icon"]')
-      .boundingBox(),
-  ]);
-  expect(coordinatorIcon).not.toBeNull();
-  expect(sessionIcon).not.toBeNull();
-  expect(Math.abs(sessionIcon!.x - coordinatorIcon!.x)).toBeLessThanOrEqual(0.5);
 
   const projectActions = navigation.getByRole("button", {
     name: "Project actions",
@@ -632,15 +619,20 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
   const sessionRow = sessionActions.locator(
     "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
   );
-  const [projectGlyph, coordinatorGlyph, sessionGlyph] = await Promise.all([
+  const [projectIcon, sessionIcon] = await Promise.all([
+    projectRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
+    sessionRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
+  ]);
+  expect(projectIcon).not.toBeNull();
+  expect(sessionIcon).not.toBeNull();
+
+  const [projectGlyph, sessionGlyph] = await Promise.all([
     projectRow.locator(".sidebar-row-icon > *").first().boundingBox(),
-    coordinator.locator(".sidebar-coordinator-icon > *").first().boundingBox(),
     sessionRow.locator(".sidebar-row-icon > *").first().boundingBox(),
   ]);
   expect(projectGlyph).not.toBeNull();
-  expect(coordinatorGlyph).not.toBeNull();
   expect(sessionGlyph).not.toBeNull();
-  // 5e2f2f9 made the step a calc() (icon track + column gap); resolve it.
+  // Nest step is a calc() (icon track + column gap); resolve it.
   const nestStep = await navigation.evaluate((element) => {
     const probe = document.createElement("div");
     probe.style.width = "var(--sidebar-grid-nest-step)";
@@ -649,19 +641,13 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
     probe.remove();
     return width;
   });
-  expect(Math.abs(coordinatorGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(sessionIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(sessionGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(sessionGlyph!.x - coordinatorGlyph!.x)).toBeLessThanOrEqual(0.5);
-  // 5e2f2f9 rail: row edge 14 + 8px padding, 20px nest step.
+  // Rail: row edge 14 + 8px padding, 20px nest step.
   expect(Math.abs(projectGlyph!.x - 22)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(coordinatorGlyph!.x - 42)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(sessionGlyph!.x - 42)).toBeLessThanOrEqual(0.5);
 
-  const coordinatorBox = await coordinator.boundingBox();
-  expect(coordinatorBox).not.toBeNull();
-  expect(Math.abs(coordinatorBox!.x - 34)).toBeLessThanOrEqual(0.5);
-  // 5e2f2f9 lightened the sidebar hover step (--control-bg-hover, 4.5%)
-  // below selection; read the token instead of a fixed RGBA.
+  // Project row hover uses the light control wash, not selection.
   const hoverWash = await navigation.evaluate((nav) => {
     const probe = document.createElement("div");
     probe.style.background = "var(--control-bg-hover)";
@@ -675,8 +661,8 @@ test("project sessions share the coordinator grid without clipping", async ({ pa
     context.fillRect(0, 0, 1, 1);
     return Array.from(context.getImageData(0, 0, 1, 1).data);
   });
-  await coordinator.hover();
-  await expect.poll(() => coordinator.evaluate((el) => {
+  await projectRow.hover();
+  await expect.poll(() => projectRow.evaluate((el) => {
     const style = getComputedStyle(el);
     const canvas = document.createElement("canvas");
     canvas.width = 1;

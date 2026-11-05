@@ -25,6 +25,7 @@ export function projectOpenmaTask(snapshot: OpenmaTaskSnapshot): { row: SessionR
   const { task } = snapshot;
   const turns: Turn[] = [];
   const messageKeys = new Map<Turn, { text?: unknown; thought?: unknown }>();
+  const executionErrors = new Map<Turn, string>();
   let current: Turn | undefined;
   const seenOperations = new Set<string>();
   const committed = new Set(snapshot.events.filter((e) => e.type === "agent.message" || e.type === "agent.thinking").map((e) => e.message_id ?? e.thinking_id).filter(Boolean));
@@ -40,11 +41,30 @@ export function projectOpenmaTask(snapshot: OpenmaTaskSnapshot): { row: SessionR
       current = createTurn(op ?? event.id ?? String(event.seq), openmaText(event.content), time);
       continue;
     }
+    if (event.type === "session.error") {
+      const error = event.error as { message?: unknown; retry_status?: { type?: string } } | undefined;
+      current ??= createTurn(event.id ?? "error", "", time);
+      const message = typeof error?.message === "string" && error.message.trim()
+        ? error.message : "Cloud execution failed.";
+      executionErrors.set(current, message);
+      if (error?.retry_status?.type === "exhausted" || error?.retry_status?.type === "terminal") {
+        current.status = "error";
+        current.errorMessage = message;
+        current.endedAt = time;
+      }
+      continue;
+    }
     if (event.type === "session.status_idle" || event.type === "session.status_terminated") {
       if (current) {
         const reason = event.stop_reason as { type?: string } | undefined;
         if (reason?.type !== "requires_action") {
-          current.status = event.type === "session.status_terminated" ? "cancelled" : "complete";
+          if (reason?.type === "retries_exhausted" || current.status === "error") {
+            current.status = "error";
+            current.errorMessage ??= executionErrors.get(current) ?? "Cloud execution failed after exhausting retries.";
+          } else {
+            current.status = event.type === "session.status_terminated" ? "cancelled" : "complete";
+            current.errorMessage = undefined;
+          }
           current.stopReason = reason?.type; current.endedAt = time;
         }
       }
@@ -81,7 +101,6 @@ export function projectOpenmaTask(snapshot: OpenmaTaskSnapshot): { row: SessionR
     if (kind === "text") current.assistantText += text;
     if (kind === "thought") current.thoughtText += text;
   }
-  if (current && (task.status === "running" || task.status === "rescheduling")) current.status = "running";
   const active = turns.findLast((turn) => turn.status === "running");
   const replied = new Set(snapshot.operations.filter((op) => op.id.startsWith("response:")).map((op) => op.id.slice("response:".length)));
   const pendingAsks: BrokerAsk[] = openmaPendingActions(snapshot.events).filter((action) => !replied.has(action.id)).map((action): BrokerAsk => {

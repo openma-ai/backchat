@@ -276,3 +276,12 @@ describe("chat submission decisions", () => {
    await expect(applyChatConfigOverrides("pi", {model: "anthropic/opus", effort: "high"}, async ({config_id}) => { calls.push(config_id); throw new Error("model rejected"); })).rejects.toThrow("model rejected");
    expect(calls).toEqual(["model"]);
  });
+
+it("retries a coordinator's first message with its original harness and model", async () => {
+  sessionStore.ensureBoundSession({ id: "first-send-retry", agentId: "", cwd: "", label: "Project", projectId: "p" });
+  sessionStore.registerTurn("retry-options", "first-send-retry", "Hello", undefined, [], [], [], { agentId: "chosen", configOverrides: { model: "selected" } });
+  sessionStore.failSend("retry-options", "offline");
+  let delivery: unknown;
+  await retryBoundChatSend(sessionStore.turnsFor("first-send-retry")[0]!, async input => { delivery = input; });
+  expect(delivery).toMatchObject({ turnId: "retry-options", agentId: "chosen", configOverrides: { model: "selected" } });
+});

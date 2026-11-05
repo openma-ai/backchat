@@ -88,6 +88,7 @@ describe("OpenManagedCloudRuntimeClient v1", () => {
     expect(new URL(requests[0]!.url).pathname).toBe("/v1/sessions/sess-cloud/events");
     expect(requests[1]!.headers.has("last-event-id")).toBe(false);
     expect(new URL(requests[1]!.url).searchParams.get("include")).toBe("chunks");
+    expect(new URL(requests[1]!.url).searchParams.getAll("event_deltas[]")).toEqual(["agent.message", "agent.thinking"]);
     expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
   });
 
