@@ -13,8 +13,11 @@ export function SidebarActivityIndicator({ status }: { status: SidebarActivitySt
       data-sidebar-unread-indicator={status === "unread" ? "true" : undefined}
       data-sidebar-grid-action="last"
       className="sidebar-row-action sidebar-row-rest sidebar-activity-indicator pointer-events-none">
-      {status === "running" ? <Loader2Icon className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-        : status === "approval" ? <ShieldAlertIcon aria-hidden="true" />
+      {status === "running" ? (
+        <span className="sidebar-activity-spinner animate-spin motion-reduce:animate-none">
+          <Loader2Icon aria-hidden="true" />
+        </span>
+      ) : status === "approval" ? <ShieldAlertIcon aria-hidden="true" />
         : status === "error" ? <CircleAlertIcon aria-hidden="true" />
         : <CircleCheckIcon aria-hidden="true" />}
     </span>

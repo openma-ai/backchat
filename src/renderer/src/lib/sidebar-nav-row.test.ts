@@ -74,8 +74,10 @@ describe("sidebar nav row", () => {
     expect(navigation).toMatch(
       /\.sidebar-navigation \.space-y-0\\.5 > :not\(\[hidden\]\) ~ :not\(\[hidden\]\),\s*\.sidebar-navigation \.mt-0\\.5 \{[^}]*margin-top:\s*var\(--sidebar-row-step\);/,
     );
-    // Two rounded washes are kept apart by the 2px step, not by trimming paint.
-    expect(navigation).toMatch(/--sidebar-row-step:\s*2px;/);
+    // Adjacent washes meet without spacing or paint trimming; sections keep their gap.
+    expect(navigation).toMatch(/--sidebar-row-step:\s*0px;/);
+    expect(styles).toMatch(/--sidebar-section-gap:\s*20px;/);
+    expect(styles).toMatch(/\.sidebar-scroll-area nav > \.sidebar-section \+ \.sidebar-section\s*\{\s*margin-top:\s*var\(--sidebar-section-gap\);/);
     expect(styles).not.toContain("--sidebar-twin-wash-trim");
     expect(settings).toContain('className="space-y-0.5"');
     expect(styles).toMatch(/\.sidebar-nav-row\s*\{[^}]*height:\s*var\(--sidebar-row-h\);/);
