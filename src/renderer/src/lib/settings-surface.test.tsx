@@ -255,8 +255,9 @@ describe("settings surfaces render the shared box and row", () => {
       "app-selected-surface",
     );
     const back = view.host.querySelector("button.sidebar-nav-row");
-    expect(back?.className).toContain("w-fit");
-    expect(back?.className).not.toContain("w-full");
+    // Full chrome-row wash for 「返回应用」(#115 UX); not content-sized w-fit.
+    expect(back?.className).toContain("w-full");
+    expect(back?.className).not.toContain("w-fit");
     await act(async () => view.root.unmount());
 
     harness.pathname = "/settings/openma";
