@@ -58,7 +58,7 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
       projectId,
     });
     await page.reload();
-    const coordinator = page.getByRole("link", { name: "Open project coordinator: Auth recovery project" });
+    const coordinator = page.getByRole("button", { name: "Open project coordinator: Auth recovery project" });
     const expand = page.getByRole("button", { name: "Expand project: Auth recovery project" });
     await coordinator.or(expand).first().waitFor();
     if (await expand.isVisible()) await expand.click();
@@ -93,7 +93,7 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
     )).toBe(true);
     if (recovery === "Check sign-in") {
       await page.reload();
-      await page.getByRole("link", { name: "Open project coordinator: Auth recovery project", exact: true }).click();
+      await page.getByRole("button", { name: "Open project coordinator: Auth recovery project", exact: true }).click();
     }
     const setupTitle = page.getByText("Set up Codex", { exact: true });
     if (await setupTitle.isVisible()) {
@@ -154,7 +154,7 @@ for (const recovery of ["Sign in", "Check sign-in"] as const) {
     const finalSessions = await page.evaluate(() => window.backchat.sessionsList());
     expect(finalSessions.find((session) => session.id === original.id)?.acp_session_id).toBe(original.acpId);
     await page.reload();
-    await page.getByRole("link", { name: "Open project coordinator: Auth recovery project", exact: true }).click();
+    await page.getByRole("button", { name: "Open project coordinator: Auth recovery project", exact: true }).click();
     await expect(composer).toBeVisible();
     await expect(signIn).toBeHidden();
     await expect(checkSignIn).toBeHidden();

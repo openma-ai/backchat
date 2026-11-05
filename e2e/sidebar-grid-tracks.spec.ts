@@ -115,12 +115,6 @@ test("sidebar rows share icon and trailing column x-positions", async () => {
         expect(Math.abs(hostMenuCenter - await actionCenterX(projectMenu))).toBeLessThanOrEqual(0.75);
       }
     }
-
-    const coordinatorRow = page.locator('[data-testid="project-coordinator-row"]').first();
-    if (await coordinatorRow.count()) {
-      const coordinatorIcon = await gridColumnLeft(coordinatorRow, "icon");
-      expect(Math.abs(coordinatorIcon - sessionIcon)).toBeLessThanOrEqual(0.75);
-    }
   } finally {
     await cleanup();
   }

@@ -291,8 +291,8 @@ test.describe("backchat smoke", () => {
   test("uses the compact row-action matrix for every sidebar overflow menu", async ({
       page,
   }) => {
-      // 5e2f2f9 only renders a coordinator row once one is configured
-      // (Sidebar.tsx ProjectCoordinatorRow), so seed one for the grid check.
+      // Seed a configured project so the session nests under a project row
+      // for the overflow / nest-step matrix check.
       await mkdir("/tmp/sidebar-row-actions", { recursive: true });
       await page.evaluate(async () => {
         await window.backchat.projectSave({
@@ -361,26 +361,23 @@ test.describe("backchat smoke", () => {
       const projectRow = projectActions.locator(
         "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
       );
-      const coordinatorRow = navigation.getByTestId("project-coordinator-row").first();
       const sessionRow = sessionActions.locator(
         "xpath=ancestor::div[contains(@class,'sidebar-grid-row')]",
       );
-      // 5e2f2f9 dropped the Projects heading icon (compact text label) and the
-      // depth base inset; nesting is one calc() step (icon track + gap).
+      // Direct-chat UX removed the persistent coordinator child row; project
+      // sessions nest one calc() step under the project (icon track + gap).
       const iconBoxes = await Promise.all([
         projectRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
-        coordinatorRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
         sessionRow.locator('[data-sidebar-grid="icon"]').boundingBox(),
       ]);
       for (const box of iconBoxes) expect(box).not.toBeNull();
-      const [projectIcon, coordinatorIcon, childIcon] = iconBoxes;
+      const [projectIcon, childIcon] = iconBoxes;
       const glyphBoxes = await Promise.all([
         projectRow.locator(".sidebar-row-icon > *").first().boundingBox(),
-        coordinatorRow.locator(".sidebar-coordinator-icon > *").first().boundingBox(),
         sessionRow.locator(".sidebar-row-icon > *").first().boundingBox(),
       ]);
       for (const box of glyphBoxes) expect(box).not.toBeNull();
-      const [projectGlyph, coordinatorGlyph, childGlyph] = glyphBoxes;
+      const [projectGlyph, childGlyph] = glyphBoxes;
       const [nestStep, iconTrack] = await navigation.evaluate((element) => {
         const measure = (value: string) => {
           const probe = document.createElement("div");
@@ -396,13 +393,8 @@ test.describe("backchat smoke", () => {
         ];
       });
       expect(Math.abs(childIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(coordinatorIcon!.x - projectIcon!.x - nestStep)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(childIcon!.x - coordinatorIcon!.x)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(coordinatorGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childGlyph!.x - projectGlyph!.x - nestStep)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(childGlyph!.x - coordinatorGlyph!.x)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(projectGlyph!.x - 22)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(coordinatorGlyph!.x - 42)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(childGlyph!.x - 42)).toBeLessThanOrEqual(0.5);
       expect(projectIcon!.width).toBeCloseTo(iconTrack, 3);
       expect(childIcon!.width).toBeCloseTo(iconTrack, 3);

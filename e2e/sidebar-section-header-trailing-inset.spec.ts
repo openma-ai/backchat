@@ -92,19 +92,6 @@ test("section header and row trailing icons share one column", async () => {
     expect(await rowVerticalCenterDelta(".sidebar-grid-row", chatRowAction)).toBeLessThanOrEqual(
       0.75,
     );
-
-    const coordinatorRow = page.locator('[data-testid="project-coordinator-row"]').first();
-    if (await coordinatorRow.count()) {
-      await coordinatorRow.hover();
-      const coordinatorIcon = coordinatorRow.locator('[data-sidebar-grid="trailing"] svg');
-      if (await coordinatorIcon.count()) {
-        const coordinatorCenter = await iconCenter(coordinatorIcon);
-        expect(Math.abs(plusCenter.x - coordinatorCenter.x)).toBeLessThanOrEqual(0.75);
-        expect(
-          await rowVerticalCenterDelta(".sidebar-coordinator-row", coordinatorIcon),
-        ).toBeLessThanOrEqual(0.75);
-      }
-    }
   } finally {
     await cleanup();
   }

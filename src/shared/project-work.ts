@@ -10,6 +10,10 @@ import type { ProjectWorkCommand as HostCommand } from "@openmatter/project-host
 import type { PromptAttachment } from "./session-events.js";
 export type ProjectWorkCommand = Omit<HostCommand, "attachments"> & {
   attachments?: PromptAttachment[];
+  /** First-send harness selection. Existing coordinator sessions retain their harness. */
+  agentId?: string;
+  /** Composer choices, applied through ACP before delivering this message. */
+  configOverrides?: Record<string, string | boolean>;
 };
 /** Host-controlled outcome state for one stable WorkThread. */
 export interface ProjectWorkGoalInput {

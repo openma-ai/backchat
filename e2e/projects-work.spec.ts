@@ -192,21 +192,14 @@ test("project workspace saves instructions and runs durable coordinator and work
     .click();
   await expect(page.locator("aside").first()).toHaveCSS("opacity", "1");
   const sidebar = page.getByRole("complementary").first();
-  const projectLink = sidebar.getByRole("link", {
+  const projectOpen = sidebar.getByRole("button", {
     name: "Open project coordinator: Research workspace",
     exact: true,
   });
-  await expect(projectLink).toBeVisible();
-  await expect(projectLink).toHaveAttribute("aria-current", "page");
-  await expect(projectLink.getByTitle("Codex", { exact: true })).toBeVisible();
-  expect(
-    await projectLink
-      .locator("xpath=ancestor::li[1]")
-      .evaluate((row) => row.previousElementSibling === null),
-  ).toBe(true);
-  await expect(
-    sidebar.getByText("Project coordinator", { exact: true }),
-  ).toHaveCount(1);
+  await expect(projectOpen).toBeVisible();
+  await expect(projectOpen).toHaveAttribute("aria-current", "page");
+  await expect(sidebar.getByTestId("project-coordinator-row")).toHaveCount(0);
+  await expect(sidebar.getByText("Project coordinator", { exact: true })).toHaveCount(0);
   await expect(sidebar.getByText("Tasks", { exact: true })).toHaveCount(0);
   await expect(projectChrome).not.toContainText("Project coordinator");
   await expect(projectChrome).not.toContainText(
