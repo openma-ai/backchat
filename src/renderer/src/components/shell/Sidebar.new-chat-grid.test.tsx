@@ -202,8 +202,9 @@ describe("new chat sidebar grid", () => {
     expect(primary?.contains(icon!)).toBe(true);
     expect(label?.textContent).toContain("New chat");
     expect(primary?.contains(trailing!)).toBe(false);
-    expect(trailing?.querySelector('[data-sidebar-grid-action="penultimate"]')).toBeNull();
+    expect(trailing?.querySelector('[data-sidebar-grid-action="penultimate"]')).not.toBeNull();
     expect(trailing?.querySelector('[data-sidebar-grid-action="last"]')).not.toBeNull();
+    expect(trailing?.querySelector('[data-sidebar-grid-action="last"]')?.getAttribute("aria-label")).toBe("Search");
 
     await act(async () => {
       if (primary instanceof HTMLButtonElement) primary.click();
