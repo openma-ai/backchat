@@ -128,8 +128,13 @@ export function ChatPage() {
     // replayed them. (Live session.event continues to layer on top via
     // sessionStore.apply.) Only the newest page is fetched here; the chat
     // view pages older rows in as the user scrolls up.
+    // Exception: inactive sessions may be parked (turns dematerialized) to
+    // cut Tab WS — takeNeedsHistoryReload forces a SQL rematerialize.
     const sessionId = params.sessionId;
-    if (!HISTORY_LOADED.has(sessionId)) {
+    if (sessionStore.takeNeedsHistoryReload(sessionId)) {
+      HISTORY_LOADED.delete(sessionId);
+      loadLocalHistory(sessionId);
+    } else if (!HISTORY_LOADED.has(sessionId)) {
       // First-send already has optimistic turns in memory. Replaying history
       // would flip historyPending and used to flash a full-surface loader over
       // the in-transcript Sending… row. Mark loaded and skip the fetch.

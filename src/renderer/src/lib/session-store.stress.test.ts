@@ -81,10 +81,17 @@ test.skipIf(!phase)("high-load store: history, session churn, parallel streaming
     const reads: number[] = [];
     for (let batch = 0; batch < 10; batch++) {
       const start = performance.now();
-      for (let i = 0; i < 100; i++) expect(store.turnsFor(`s${i % sessions}`)).toHaveLength(turnsPerSession + 1);
+      for (let i = 0; i < 100; i++) {
+        const id = `s${i % sessions}`;
+        store.ensureHistoryMaterialized(id);
+        expect(store.turnsFor(id)).toHaveLength(turnsPerSession + 1);
+      }
       reads.push(performance.now() - start);
     }
     const cpuReads = process.cpuUsage(cpuReadsStart);
+    // Reads rematerialize every session; park inactive histories before the
+    // heap sample so MEMORY reflects the focused-session steady state.
+    store.setActive("s0");
     const memoryBeforeGc = process.memoryUsage();
     global.gc?.();
     const memoryAfterGc = process.memoryUsage();

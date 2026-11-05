@@ -613,6 +613,15 @@ export class SessionStore {
   /** Sessions whose first history fetch is in flight. The chat view shows a
    *  loading surface instead of flashing the home empty state. */
   #historyPending = new Set<string>();
+  /** Last full-window HistoryRow[] per session for sync rematerialize after
+   *  park (unit/stress). Cleared when Electron can reload from SQL so Tab WS
+   *  does not retain row JSON for inactive sessions. */
+  #retainedHistoryRows = new Map<string, { rows: HistoryRow[]; hasMore: boolean }>();
+  /** Parked sessions that need openHistoryWindow (SQL) on next activate. */
+  #needsHistoryReload = new Set<string>();
+  /** Sessions whose completed history is currently dematerialized. O(1) skip
+   *  in parkAll so setActive switch stays cheap after the first park pass. */
+  #historyParked = new Set<string>();
   /** Pair-chats. Each pair owns N member session ids; the members
    *  themselves live in `#sessions` like any other session — the pair
    *  is just metadata. Routing is by id: navigating to /pair/<id>
@@ -1047,6 +1056,10 @@ id: `inherited-${childId}-${turn.id}`,
   }
 
   turnsFor(sessionId: string): Turn[] {
+    // Lazy hydrate: inactive sessions stay dematerialized until focused.
+    if (sessionId === this.#activeId || sessionId === this.#sideActiveId) {
+      this.#ensureMaterializedHistory(sessionId);
+    }
     // Registration order, which is what this Map already holds: replayed turns
     // are built from persisted rows in stored sequence, and live turns are
     // appended as they start. Re-registering an existing id keeps its original
@@ -1730,7 +1743,115 @@ id: `inherited-${childId}-${turn.id}`,
     // retain timeline/tool snapshots proportional to event count; keeping every
     // session hot doubles retained heap under multi-session soak (MEMORY).
     this.#evictInactiveTurnProjections();
+    // Dematerialize completed history for inactive sessions so renderer heap /
+    // Tab WS scale with the focused surface, not every loaded session.
+    this.#parkAllInactiveSessionHistories();
     this.#emit();
+  }
+
+  /** True when activate must re-fetch history from main (rows were dropped
+   *  on park to free Tab WS). ChatPage consumes via takeNeedsHistoryReload. */
+  needsHistoryReload(sessionId: string): boolean {
+    return this.#needsHistoryReload.has(sessionId);
+  }
+
+  takeNeedsHistoryReload(sessionId: string): boolean {
+    if (!this.#needsHistoryReload.has(sessionId)) return false;
+    this.#needsHistoryReload.delete(sessionId);
+    return true;
+  }
+
+  /** Rematerialize parked history for sessionId (retained rows). No-op when
+   *  already materialized or rows were dropped for SQL reload. */
+  ensureHistoryMaterialized(sessionId: string): void {
+    this.#ensureMaterializedHistory(sessionId);
+  }
+
+  /** True when completed history was dematerialized and is awaiting reload. */
+  isHistoryParked(sessionId: string): boolean {
+    return this.#historyParked.has(sessionId);
+  }
+
+  #canReloadHistoryFromSql(): boolean {
+    return typeof window !== "undefined"
+      && typeof (window as Window & {
+        backchat?: { sessionsLoadHistory?: unknown };
+      }).backchat?.sessionsLoadHistory === "function";
+  }
+
+  #isParkableHistoryTurn(turn: Turn): boolean {
+    if (turn.inherited) return false;
+    // Only SQL-replayed turns are safe to dematerialize. Live / injected
+    // turns (registerTurn, steering, etc.) are not in the retained rows and
+    // must survive park or settled-churn loses them after complete.
+    if (!turn.id.startsWith("replay-")) return false;
+    if (turn.status === "running" || turn.status === "queued") return false;
+    if (turn.sendState === "pending") return false;
+    return true;
+  }
+
+  #ensureMaterializedHistory(sessionId: string): void {
+    if (this.#history.has(sessionId)) {
+      this.#historyParked.delete(sessionId);
+      return;
+    }
+    const retained = this.#retainedHistoryRows.get(sessionId);
+    if (!retained) return;
+    // replayHistoryWindow handles live-turn coexistence via prepend path.
+    this.replayHistoryWindow(sessionId, retained.rows, { hasMore: retained.hasMore });
+    this.#historyParked.delete(sessionId);
+  }
+
+  #parkAllInactiveSessionHistories(): void {
+    for (const sessionId of this.#sessions.keys()) {
+      if (sessionId === this.#activeId || sessionId === this.#sideActiveId) continue;
+      this.#parkSessionHistory(sessionId);
+    }
+  }
+
+  /** Drop completed (non-live) turns for an inactive session. Rematerialize
+   *  later from retained rows (Node/tests) or SQL openHistoryWindow (Electron).
+   *  Zero business-logic change: same turns come back on activate. */
+  #parkSessionHistory(sessionId: string): void {
+    if (sessionId === this.#activeId || sessionId === this.#sideActiveId) return;
+    if (this.#historyParked.has(sessionId)) return;
+    const windowState = this.#history.get(sessionId);
+    // Paged windows need older pages; keep them hot rather than losing hasMore.
+    if (windowState?.hasMore) return;
+    const retained = this.#retainedHistoryRows.get(sessionId);
+    const canSql = this.#canReloadHistoryFromSql();
+    if (!retained && !canSql) return;
+    let parked = 0;
+    for (const turn of [...this.#turns.valuesForSession(sessionId)]) {
+      if (!this.#isParkableHistoryTurn(turn)) continue;
+      this.#deleteTurn(turn.id);
+      parked++;
+    }
+    if (parked === 0 && !windowState) return;
+    this.#history.delete(sessionId);
+    this.#historyParked.add(sessionId);
+    // Drop structural-share source only when no other session still retains
+    // the same rows (unique transcripts like "long"). Shared stress/fixture
+    // rows keep the source Turns pinned so switch rematerialize stays an
+    // O(turns) Object.create shell clone instead of a full re-parse.
+    if (retained && !retained.hasMore) {
+      const shared = this.#replayRowsShare.get(retained.rows);
+      if (shared?.sourceSessionId === sessionId) {
+        let sharedElsewhere = false;
+        for (const [sid, entry] of this.#retainedHistoryRows) {
+          if (sid !== sessionId && entry.rows === retained.rows) {
+            sharedElsewhere = true;
+            break;
+          }
+        }
+        if (!sharedElsewhere) this.#replayRowsShare.delete(retained.rows);
+      }
+    }
+    if (canSql) {
+      // Free row JSON from the renderer Tab process; ChatPage reloads on focus.
+      this.#retainedHistoryRows.delete(sessionId);
+      this.#needsHistoryReload.add(sessionId);
+    }
   }
 
   #evictInactiveTurnProjections(): void {
@@ -1895,6 +2016,8 @@ id: `inherited-${childId}-${turn.id}`,
   setSideActive(id: string | null): void {
     if (this.#sideActiveId === id) return;
     this.#sideActiveId = id;
+    this.#evictInactiveTurnProjections();
+    this.#parkAllInactiveSessionHistories();
     this.#emit();
   }
 
@@ -2114,6 +2237,11 @@ id: `inherited-${childId}-${turn.id}`,
     this.#sessions.delete(sessionId);
     this.#autoOpenedHtmlBySession.delete(sessionId);
     this.#artifactsBySession.delete(sessionId);
+    this.#retainedHistoryRows.delete(sessionId);
+    this.#needsHistoryReload.delete(sessionId);
+    this.#historyParked.delete(sessionId);
+    this.#history.delete(sessionId);
+    this.#historyPending.delete(sessionId);
     for (const turn of [...this.#turns.valuesForSession(sessionId)]) {
       this.#deleteTurn(turn.id);
     }
@@ -4129,7 +4257,48 @@ status: "running",
       // I11: live ownership wins for existing turns, not for the entire
       // session. A late initial history fetch must still expose older turns.
       if (!this.#history.has(sessionId)) {
-        const liveTurns = this.turnsFor(sessionId);
+        // Avoid turnsFor here — it must not recurse into ensure→replay.
+        const liveTurns = this.#ownTurnsFor(sessionId);
+        // Park rematerialize with live turns: prefer structural share (O(turns)
+        // shells) over prependReplay's full row parse (switch SPEED).
+        if (!opts.hasMore) {
+          const shared = this.#replayRowsShare.get(rows);
+          if (shared) {
+            // Detach live rows first so re-append puts them after history
+            // (SessionTurnMap keeps original position on set of existing id).
+            for (const turn of liveTurns) this.#turns.delete(turn.id);
+            const prefix = `replay-${shared.sourceSessionId}-`;
+            for (const src of shared.turns) {
+              const suffix = src.id.startsWith(prefix)
+                ? src.id.slice(prefix.length)
+                : src.id;
+              const tid = `replay-${sessionId}-${suffix}`;
+              const turn = Object.create(src) as Turn;
+              turn.id = tid;
+              turn.sessionId = sessionId;
+              if (src.events.length > 0) {
+                turn.events = src.events.slice();
+              }
+              this.#turns.set(tid, turn);
+            }
+            for (const turn of liveTurns) {
+              this.#turns.set(turn.id, turn);
+              this.#turnProjectionCache.delete(turn.id);
+            }
+            this.#history.set(sessionId, {
+              oldestSeq: rows[0]?.seq,
+              hasMore: false,
+              loading: false,
+              agentLifecycle: shared.agentLifecycle,
+            });
+            this.#retainedHistoryRows.set(sessionId, { rows, hasMore: false });
+            this.#needsHistoryReload.delete(sessionId);
+            this.#historyParked.delete(sessionId);
+            this.#pruneNonCanonicalSubagents(sessionId, shared.agentLifecycle);
+            this.#emit();
+            return;
+          }
+        }
         const agentLifecycle = this.#prependReplay(sessionId, rows, opts.hasMore);
         for (const turn of liveTurns) {
           this.#turns.set(turn.id, turn);
@@ -4138,6 +4307,9 @@ status: "running",
         this.#history.set(sessionId, {
           oldestSeq: rows[0]?.seq, hasMore: opts.hasMore, loading: false, agentLifecycle,
         });
+        this.#retainedHistoryRows.set(sessionId, { rows, hasMore: opts.hasMore });
+        this.#needsHistoryReload.delete(sessionId);
+        this.#historyParked.delete(sessionId);
       }
       this.#emit();
       return;
@@ -4172,6 +4344,9 @@ status: "running",
           loading: false,
           agentLifecycle: shared.agentLifecycle,
         });
+        this.#retainedHistoryRows.set(sessionId, { rows, hasMore: false });
+        this.#needsHistoryReload.delete(sessionId);
+        this.#historyParked.delete(sessionId);
         this.#pruneNonCanonicalSubagents(sessionId, shared.agentLifecycle);
         this.#emit();
         return;
@@ -4199,6 +4374,9 @@ status: "running",
         agentLifecycle,
       });
     }
+    this.#retainedHistoryRows.set(sessionId, { rows, hasMore: opts.hasMore });
+    this.#needsHistoryReload.delete(sessionId);
+    this.#historyParked.delete(sessionId);
     this.#emit();
   }
 

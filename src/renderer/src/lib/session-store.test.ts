@@ -1436,6 +1436,47 @@ describe("SessionStore performance invariants", () => {
     );
   });
 
+  test("parks inactive session history and rematerializes on setActive", () => {
+    const store = new SessionStore();
+    const rows = [
+      { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "Park me" }), ts: 1 },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Parked answer." },
+        }),
+        ts: 2,
+      },
+    ];
+    store.registerStarting("park-a", "codex-acp", "A");
+    store.registerStarting("park-b", "codex-acp", "B");
+    store.replayHistoryWindow("park-a", rows, { hasMore: false });
+    store.replayHistoryWindow("park-b", rows, { hasMore: false });
+    store.registerTurn("live-a", "park-a", "Live");
+    store.setActive("park-a");
+    // B dematerialized; A keeps history + live.
+    expect(store.isHistoryParked("park-b")).toBe(true);
+    expect(store.isHistoryParked("park-a")).toBe(false);
+    expect(store.turnsFor("park-a")).toHaveLength(2);
+    expect(store.turnsFor("park-a").map((t) => t.promptText)).toEqual([
+      "Park me",
+      "Live",
+    ]);
+    store.setActive("park-b");
+    expect(store.turnsFor("park-b")).toHaveLength(1); // lazy hydrate on read
+    expect(store.isHistoryParked("park-b")).toBe(false);
+    expect(store.turnsFor("park-b")[0]?.assistantText).toBe("Parked answer.");
+    // A history parked; live turn kept.
+    expect(store.isHistoryParked("park-a")).toBe(true);
+    expect(store.turnsFor("park-a")).toHaveLength(1);
+    expect(store.turnsFor("park-a")[0]?.id).toBe("live-a");
+    store.setActive("park-a");
+    expect(store.turnsFor("park-a")).toHaveLength(2);
+    expect(store.turnsFor("park-a").at(-1)?.id).toBe("live-a");
+  });
+
   test("compacts text-only completed turns and shares ropes across sessions", () => {
     const store = new SessionStore();
     const rows = [
