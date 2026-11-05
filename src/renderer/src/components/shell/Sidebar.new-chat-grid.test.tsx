@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { OpenmaAccountState, OpenmaTask } from "@shared/openma";
 import type { ProjectInfo } from "@shared/projects";
 import { sessionStore } from "@/lib/session-store";
@@ -188,6 +190,14 @@ describe("new chat sidebar grid", () => {
     installBackchat();
   });
 
+  it("paints a single full-row wash for primary and search hover or keyboard focus", () => {
+    const css = readFileSync(resolve(__dirname, "../../styles/index.css"), "utf8");
+    expect(css).toContain('.sidebar-grid-row[data-sidebar-row="new-chat"]:is(:hover, :has(:focus-visible)) {\n  background: var(--control-bg-hover);');
+    expect(css).toContain('.sidebar-grid-row[data-sidebar-row="new-chat"]:has(> .sidebar-new-chat-primary:focus-visible) {\n  outline: 2px solid var(--focus-ring);');
+    expect(css).not.toMatch(/\.sidebar-new-chat-primary[^{}]*::before/);
+    expect(css).toContain('.sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action::before {\n  background: transparent;');
+  });
+
   it("keeps the new chat icon cell on the shared grid inside the primary control", async () => {
     const { root, host } = await mount();
     const row = host.querySelector('.sidebar-host-chrome .sidebar-grid-row');
@@ -206,9 +216,19 @@ describe("new chat sidebar grid", () => {
     expect(trailing?.querySelector('[data-sidebar-grid-action="last"]')).not.toBeNull();
     expect(trailing?.querySelector('[data-sidebar-grid-action="last"]')?.getAttribute("aria-label")).toBe("Search");
 
+    const onSearch = vi.fn();
+    window.addEventListener("keydown", onSearch);
+    await act(async () => {
+      (trailing?.querySelector('button[aria-label="Search"]') as HTMLButtonElement).click();
+    });
+    expect(onSearch).toHaveBeenCalledOnce();
+    expect(onSearch.mock.calls[0][0]).toMatchObject({ key: "k", metaKey: true });
+    onSearch.mockClear();
     await act(async () => {
       if (primary instanceof HTMLButtonElement) primary.click();
     });
+    expect(onSearch).not.toHaveBeenCalled();
+    window.removeEventListener("keydown", onSearch);
     await act(async () => root.unmount());
   });
 

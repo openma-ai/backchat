@@ -809,6 +809,19 @@ describe("groupSidebarSessions", () => {
     expect(html).toContain('aria-label="Session actions"');
   });
 
+  it("spins a sized HTML child inside the stationary, clipped status slot", () => {
+    const html = renderToStaticMarkup(React.createElement(SidebarActivityIndicator, { status: "running" }));
+    expect(html).toMatch(/data-sidebar-grid-action="last" class="sidebar-row-action sidebar-row-rest sidebar-activity-indicator pointer-events-none"/);
+    expect(html).toContain('<span class="sidebar-activity-spinner animate-spin motion-reduce:animate-none"><svg');
+    expect(html).not.toMatch(/<svg[^>]*animate-spin/);
+    const css = readFileSync(resolve(__dirname, "../../styles/index.css"), "utf8");
+    expect(css).toMatch(/\.sidebar-activity-indicator\s*\{\s*overflow:\s*clip;/);
+    expect(css).toMatch(/\.sidebar-activity-spinner\s*\{[^}]*width:\s*var\(--sidebar-row-action-icon-size\);[^}]*height:\s*var\(--sidebar-row-action-icon-size\);/);
+    expect(css).toMatch(/\[data-sidebar-grid="trailing"\] > \[data-sidebar-grid-action\]\s*\{[^}]*grid-row:\s*1;[^}]*grid-column:\s*-2 \/ -1;/);
+    expect(css).toMatch(/\.sidebar-grid-row:is\([^\n]+\) \.sidebar-row-rest\s*\{\s*opacity:\s*0;/);
+    expect(css).toMatch(/\.sidebar-grid-row:is\([^\n]+\) \.sidebar-row-reveal\s*\{\s*opacity:\s*1;/);
+  });
+
   it("renders a dedicated Pinned section before every other conversation section", () => {
     const source = readFileSync(resolve(__dirname, "Sidebar.tsx"), "utf8");
 
