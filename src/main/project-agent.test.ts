@@ -482,6 +482,30 @@ it("sends only the next event context after the first prompt in an ACP session",
   }
 });
 
+it.each(["primed", "resumed"])("delivers worker outcomes and cancellation to the %s coordinator ACP session", async (mode) => {
+  const { db, driver, prompts } = projectAgentPromptRig();
+  try {
+    let session = await createProjectAgentSession(driver);
+    if (mode === "resumed") session = await Effect.runPromise(driver.resumeSession!(session));
+    else await runProjectAgentTurn(driver, session, "initial", [
+      projectEvent("project:message:first", "project.message", { text: "Delegate work" }),
+    ]);
+    for (const kind of ["coordinator-worker-result", "coordinator-worker-cancellation"]) {
+      const handoff = contextItem("handoff", kind, {
+        workerId: "fix-api", outcome: "completed", output: "Committed abc123; tests passed",
+      });
+      await runProjectAgentTurn(driver, session, kind, [
+        projectEvent("delegate", "project.delegate", { workerId: "fix-api" }),
+        handoff,
+        contextItem("instructions", "project-instructions", { text: "Stable preamble" }),
+      ]);
+      const prompt = prompts.at(-1)!.text;
+      expect(prompt).toContain(JSON.stringify(handoff));
+      expect(prompt).not.toContain("Stable preamble");
+    }
+  } finally { db.close(); }
+});
+
 it("omits the coordinator preamble when the ACP session is resumed", async () => {
   const { db, driver, prompts } = projectAgentPromptRig();
   try {

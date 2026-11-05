@@ -256,7 +256,13 @@ export class ProjectAgentBridge {
             const prompt = primed
               ? [
                   "New project work event follows.",
-                  projectContextText({ context: eventItems }),
+                  // I1: keep the existing prompt boundary; only preserve the
+                  // host's dynamic handoff context when trimming the preamble.
+                  projectContextText({ context: input.context.items.filter(item =>
+                    item.kind === "event"
+                    || item.kind === "coordinator-worker-result"
+                    || item.kind === "coordinator-worker-cancellation",
+                  ) }),
                 ].join("\n\n")
               : [
                   "You are the " +
