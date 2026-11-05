@@ -1425,12 +1425,15 @@ describe("SessionStore performance invariants", () => {
     expect(a.id).not.toBe(b.id);
     expect(a.sessionId).toBe("share-a");
     expect(b.sessionId).toBe("share-b");
-    expect(a.events[0]).toBe(b.events[0]);
+    expect(a.events).toHaveLength(0);
+    expect(b.events).toHaveLength(0);
     expect(a.assistantText).toBe(b.assistantText);
-    expect(a.events).not.toBe(b.events);
+    expect(store.projectTurn(a).assistantText).toBe(
+      store.projectTurn(b).assistantText,
+    );
   });
 
-  test("flyweights identical completed text events across sessions", () => {
+  test("compacts text-only completed turns and shares ropes across sessions", () => {
     const store = new SessionStore();
     const rows = [
       { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "Same question" }), ts: 1 },
@@ -1450,12 +1453,18 @@ describe("SessionStore performance invariants", () => {
     store.replayHistoryWindow("fly-b", rows, { hasMore: false });
     const a = store.turnsFor("fly-a")[0]!;
     const b = store.turnsFor("fly-b")[0]!;
-    expect(a.events).toHaveLength(1);
-    expect(b.events).toHaveLength(1);
-    expect(a.events[0]).toBe(b.events[0]);
-    expect(a.events[0]!.payload).toBe(b.events[0]!.payload);
+    // Event objects elided; accumulators + projectTurn keep the transcript.
+    expect(a.events).toHaveLength(0);
+    expect(b.events).toHaveLength(0);
+    expect(a.events).toBe(b.events);
     expect(a.promptText).toBe(b.promptText);
     expect(a.assistantText).toBe(b.assistantText);
+    expect(store.projectTurn(a).assistantText).toBe(
+      "Same answer across sessions for MEMORY.",
+    );
+    expect(store.projectTurn(b).assistantText).toBe(
+      "Same answer across sessions for MEMORY.",
+    );
   });
 
   test("shares coalesced stream text with turn.assistantText (single string rope)", () => {

@@ -199,7 +199,7 @@ index ecdd857..63b15aa 100644
          paddingStart: 24,
          paddingEnd: 24,
 -        overscan: 3,
-+        overscan: 1,
++        overscan: 0,
          anchorTo: "end",
          followOnAppend: "auto",
          scrollEndThreshold: 48,
