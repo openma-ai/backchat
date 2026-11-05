@@ -183,7 +183,7 @@ import type {
 /** Shared empty events shell for compacted text-only completed turns.
  *  assistantText/thoughtText remain the source of truth; projectTurn
  *  synthesizes ACP chunks on read (MEMORY: drop per-turn event objects). */
-const EMPTY_TURN_EVENTS: Turn["events"] = Object.freeze([]) as Turn["events"];
+const EMPTY_TURN_EVENTS: Turn["events"] = Object.freeze([]) as unknown as Turn["events"];
 
 
 /** Copy-on-write before mutating events[]. Compacted turns share a frozen
