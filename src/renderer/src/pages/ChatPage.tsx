@@ -29,7 +29,6 @@ const PREWARMED = new Set<string>();
 export function ChatPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const activeId = useSessionStore(s => s.active()?.id);
   const params = useParams({ strict: false }) as { sessionId?: string };
   const routeSessionSelector = useMemo(() => {
     const sessionId = params.sessionId;
@@ -131,7 +130,14 @@ export function ChatPage() {
     // view pages older rows in as the user scrolls up.
     const sessionId = params.sessionId;
     if (!HISTORY_LOADED.has(sessionId)) {
-      loadLocalHistory(sessionId);
+      // First-send already has optimistic turns in memory. Replaying history
+      // would flip historyPending and used to flash a full-surface loader over
+      // the in-transcript Sending… row. Mark loaded and skip the fetch.
+      if (sessionStore.turnsFor(sessionId).length > 0) {
+        HISTORY_LOADED.add(sessionId);
+      } else {
+        loadLocalHistory(sessionId);
+      }
     }
     const onFocusComposer = (event: FocusEvent) => {
       const target = event.target;
@@ -157,7 +163,10 @@ export function ChatPage() {
       />
     );
   }
-  if (params.sessionId && (!routeSession || activeId !== params.sessionId)) {
+  // Gate only while the session row is missing (seed race). Do not wait on
+  // activeId === params.sessionId: first-send navigate briefly mismatches
+  // while setActive runs and used to flash a full-page loader over Sending….
+  if (params.sessionId && !routeSession) {
     return <ConversationSurfaceLoader label={t("chat.loadingHistory")} />;
   }
   if (loadError && turnsCount === 0 && params.sessionId) {

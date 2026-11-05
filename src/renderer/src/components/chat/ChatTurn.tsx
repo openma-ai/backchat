@@ -105,6 +105,11 @@ export const TurnBlock = memo(function TurnBlock({
     [turn.sessionId],
   );
   const agentId = useSessionStore(agentIdSelector);
+  const sessionStatusSelector = useMemo(
+    () => (s: typeof sessionStore) => s.get(turn.sessionId)?.status,
+    [turn.sessionId],
+  );
+  const sessionStatus = useSessionStore(sessionStatusSelector);
   const planDocument = useMemo(
     () => latestPlanDocumentForRender(rendered, agentId),
     [agentId, rendered],
@@ -451,8 +456,15 @@ export const TurnBlock = memo(function TurnBlock({
                   role="status"
                   aria-live="polite"
                   data-user-echo-status="pending"
+                  data-pre-thinking-phase={
+                    sessionStatus === "starting" ? "starting" : "sending"
+                  }
                 >
-                  {t("chat.sending")}
+                  <ShimmerText>
+                    {sessionStatus === "starting"
+                      ? t("chat.starting")
+                      : t("chat.sending")}
+                  </ShimmerText>
                 </p>
               </>
             ) : null}
