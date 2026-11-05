@@ -180,6 +180,11 @@ import type {
   WorkspaceSourceRef,
 } from "./session-types";
 
+/** Shared empty events shell for compacted text-only completed turns.
+ *  assistantText/thoughtText remain the source of truth; projectTurn
+ *  synthesizes ACP chunks on read (MEMORY: drop per-turn event objects). */
+const EMPTY_TURN_EVENTS: Turn["events"] = [];
+
 export type { AcpSessionConfigOption } from "./session-config-options";
 export type * from "./session-types";
 
@@ -192,6 +197,9 @@ interface TurnProjectionCacheEntry {
   applied: number;
   first?: Turn["events"][number];
   last?: Turn["events"][number];
+  /** Set when projecting a compacted turn (events elided). */
+  compactAssistant?: string;
+  compactThought?: string;
 }
 
 export class SessionStore {
@@ -710,6 +718,11 @@ export class SessionStore {
         } else {
           this.#streamRuns.set(lastEvent, { ...metadata, kind, text: shared });
         }
+        // Projector already applied the previous payload identity; drop the
+        // cache so the next projectTurn rebuilds from the mutated content
+        // (in-place mutate keeps event === cached.last, which would otherwise
+        // skip re-apply and freeze the first-token snapshot).
+        this.#turnProjectionCache.delete(turn.id);
         return false;
       }
       const event: TurnEvent = {
@@ -987,6 +1000,52 @@ export class SessionStore {
   }
 
   projectTurn = (turn: Turn): TurnRender => {
+    // Compacted text-only turns keep assistantText/thoughtText and drop
+    // events[]. Synthesize the same ACP chunks the projector expects.
+    if (
+      turn.events.length === 0
+      && (turn.assistantText.length > 0 || turn.thoughtText.length > 0)
+    ) {
+      const cached = this.#turnProjectionCache.get(turn.id);
+      if (
+        cached
+        && cached.compactAssistant === turn.assistantText
+        && cached.compactThought === turn.thoughtText
+      ) {
+        return cached.projector.snapshot();
+      }
+      const synthetic: Turn["events"] = [];
+      if (turn.thoughtText.length > 0) {
+        synthetic.push({
+          payload: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: turn.thoughtText },
+          },
+          receivedAt: turn.startedAt,
+        });
+      }
+      if (turn.assistantText.length > 0) {
+        synthetic.push({
+          payload: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: turn.assistantText },
+          },
+          receivedAt: turn.endedAt ?? turn.startedAt,
+        });
+      }
+      const projector = createBackchatTurnProjector();
+      for (const event of synthetic) projector.apply(event);
+      this.#turnProjectionCache.set(turn.id, {
+        projector,
+        applied: synthetic.length,
+        first: synthetic[0],
+        last: synthetic.at(-1),
+        compactAssistant: turn.assistantText,
+        compactThought: turn.thoughtText,
+      });
+      return projector.snapshot();
+    }
+
     const events = turn.events;
     const cached = this.#turnProjectionCache.get(turn.id);
     if (
@@ -1707,6 +1766,53 @@ export class SessionStore {
         events[index] = sharedEvent;
       }
     }
+    this.#compactCompletedTurnEvents(turn);
+  }
+
+  /** Drop plain text/thought event objects on terminal turns when the
+   *  accumulators already hold the full transcript. projectTurn synthesizes
+   *  the same chunks on read. Skips turns with tools/plan/messageId/phase so
+   *  timeline ordering and fork message ids stay verbatim. */
+  /** Drop strong refs in flyweight tables. Compacted turns no longer point at
+   *  those payloads; unreferenced entries become GC-eligible (MEMORY). Turns
+   *  that still hold flyweight events keep them alive via the event refs. */
+  #releaseFlyweightTables(): void {
+    if (this.#messageChunkPayloads.size > 0) this.#messageChunkPayloads.clear();
+    if (this.#thoughtChunkPayloads.size > 0) this.#thoughtChunkPayloads.clear();
+    if (this.#turnEventFlyweightsByTs.size > 0) this.#turnEventFlyweightsByTs.clear();
+  }
+
+  #compactCompletedTurnEvents(turn: Turn): void {
+    if (
+      turn.status !== "complete"
+      && turn.status !== "error"
+      && turn.status !== "cancelled"
+    ) {
+      return;
+    }
+    const events = turn.events;
+    if (events.length === 0) return;
+    for (const event of events) {
+      const payload = event.payload;
+      if (!payload || typeof payload !== "object") return;
+      const record = payload as Record<string, unknown>;
+      const sessionUpdate = record.sessionUpdate;
+      if (
+        sessionUpdate !== "agent_message_chunk"
+        && sessionUpdate !== "agent_thought_chunk"
+      ) {
+        return;
+      }
+      if (
+        "messageId" in record
+        || "phase" in record
+        || "_meta" in record
+      ) {
+        return;
+      }
+    }
+    this.#turnProjectionCache.delete(turn.id);
+    turn.events = EMPTY_TURN_EVENTS;
   }
 
   setSideActive(id: string | null): void {
@@ -3985,8 +4091,9 @@ export class SessionStore {
             ...src,
             id: tid,
             sessionId,
-            // New array shell; element identity stays shared/flyweighted.
-            events: src.events.slice(),
+            // Reuse the shared empty shell for compacted turns; otherwise
+            // copy the array while keeping flyweight element identity.
+            events: src.events.length === 0 ? EMPTY_TURN_EVENTS : src.events.slice(),
           };
           this.#turns.set(tid, turn);
         }
@@ -4015,6 +4122,7 @@ export class SessionStore {
     for (const turn of this.#turns.valuesForSession(sessionId)) {
       this.#internTurnText(turn);
     }
+    this.#releaseFlyweightTables();
     if (!opts.hasMore) {
       this.#replayRowsShare.set(rows, {
         sourceSessionId: sessionId,
@@ -5462,19 +5570,32 @@ export class SessionStore {
               assistantArtifacts.sources,
             );
           }
+          // Terminal first so #internTurnText → #compactCompletedTurnEvents
+          // can drop text-only event shells (MEMORY). Invalidate projection
+          // before compact/synthetic so a prior in-stream snapshot cannot
+          // stick past the boundary.
+          this.#turnProjectionCache.delete(ev.turn_id);
+          turn.status = "complete";
+          turn.endedAt = Date.now();
+          if (ev.stop_reason) turn.stopReason = ev.stop_reason;
+          turn.activeThoughtMessageId = undefined;
+          turn.activeThoughtSegmentText = undefined;
           this.#internTurnText(turn);
+          this.#releaseFlyweightTables();
           this.#turns.set(ev.turn_id, {
             ...turn,
-            // Streaming chunks compact into turn.events in place to avoid a
-            // React render per token. Publish a fresh array at the terminal
-            // boundary so consumers memoized by events identity reduce the
+            // Compacted turns keep the shared empty shell; otherwise publish
+            // a fresh array so consumers memoized by events identity see the
             // trailing text that arrived after the last structural event.
-            events: [...turn.events],
+            events:
+              turn.events.length === 0
+                ? EMPTY_TURN_EVENTS
+                : [...turn.events],
             activeThoughtMessageId: undefined,
             activeThoughtSegmentText: undefined,
             status: "complete",
             ...(ev.stop_reason ? { stopReason: ev.stop_reason } : {}),
-            endedAt: Date.now(),
+            endedAt: turn.endedAt,
           });
           this.#settleNativeSubagentsForTurn(ev.session_id, turn);
           this.#settleBackgroundWorkItemsForTurn(ev.session_id, turn);
