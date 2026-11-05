@@ -1402,6 +1402,87 @@ describe("SessionStore performance invariants", () => {
     expect(store.snapshot(turnsSelector)).not.toBe(turnsBefore);
   });
 
+  test("structurally shares turns when replaying the same HistoryRow[] reference", () => {
+    const store = new SessionStore();
+    const rows = [
+      { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "Shared rows" }), ts: 1 },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Cloned from first materialization." },
+        }),
+        ts: 2,
+      },
+    ];
+    store.registerStarting("share-a", "codex-acp", "A");
+    store.registerStarting("share-b", "codex-acp", "B");
+    store.replayHistoryWindow("share-a", rows, { hasMore: false });
+    store.replayHistoryWindow("share-b", rows, { hasMore: false });
+    const a = store.turnsFor("share-a")[0]!;
+    const b = store.turnsFor("share-b")[0]!;
+    expect(a.id).not.toBe(b.id);
+    expect(a.sessionId).toBe("share-a");
+    expect(b.sessionId).toBe("share-b");
+    expect(a.events[0]).toBe(b.events[0]);
+    expect(a.assistantText).toBe(b.assistantText);
+    expect(a.events).not.toBe(b.events);
+  });
+
+  test("flyweights identical completed text events across sessions", () => {
+    const store = new SessionStore();
+    const rows = [
+      { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "Same question" }), ts: 1 },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Same answer across sessions for MEMORY." },
+        }),
+        ts: 2,
+      },
+    ];
+    store.registerStarting("fly-a", "codex-acp", "A");
+    store.registerStarting("fly-b", "codex-acp", "B");
+    store.replayHistoryWindow("fly-a", rows, { hasMore: false });
+    store.replayHistoryWindow("fly-b", rows, { hasMore: false });
+    const a = store.turnsFor("fly-a")[0]!;
+    const b = store.turnsFor("fly-b")[0]!;
+    expect(a.events).toHaveLength(1);
+    expect(b.events).toHaveLength(1);
+    expect(a.events[0]).toBe(b.events[0]);
+    expect(a.events[0]!.payload).toBe(b.events[0]!.payload);
+    expect(a.promptText).toBe(b.promptText);
+    expect(a.assistantText).toBe(b.assistantText);
+  });
+
+  test("shares coalesced stream text with turn.assistantText (single string rope)", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-share", "codex-acp", "Share");
+    store.registerTurn("turn-share", "sess-share", "hello");
+    for (const text of ["Hello ", "world", "!"]) {
+      store.apply({
+        type: "session.event",
+        session_id: "sess-share",
+        turn_id: "turn-share",
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      });
+    }
+    const turn = store.turnsFor("sess-share")[0]!;
+    expect(turn.assistantText).toBe("Hello world!");
+    expect(turn.events).toHaveLength(1);
+    const payloadText = (turn.events[0]!.payload as { content: { text: string } }).content.text;
+    expect(payloadText).toBe("Hello world!");
+    // Implementation assigns turn.assistantText into the payload so the
+    // accumulator and event share one rope under V8 (see #appendStreamEvent).
+    expect(payloadText).toBe(turn.assistantText);
+  });
+
   test("coalesces adjacent streaming chunks without losing tool boundaries", () => {
     const store = new SessionStore();
     store.registerStarting("sess-1", "codex-acp", "First");

@@ -493,6 +493,36 @@ export class SessionStore {
     messageId?: string;
     phase?: "commentary" | "final_answer";
   }>();
+  /** Cross-session intern table for immutable transcript strings.
+   *  Parallel sessions often replay the same prompts/answers (and live
+   *  streams occasionally repeat); sharing one rope cuts retained heap
+   *  roughly in proportion to session count without changing contents. */
+  #stringPool = new Map<string, string>();
+  /** Flyweight ACP text/thought payloads keyed by interned text + shape.
+   *  After replay/complete, identical chunks across sessions share one
+   *  payload object (and one TurnEvent when receivedAt matches). */
+  /** When many sessions replay the *same* HistoryRow[] reference (stress /
+   *  restore fixtures), clone turns from the first materialization and share
+   *  interned strings + flyweight events — O(turns) pointer work instead of
+   *  re-parsing every row. WeakMap so the cache dies with the rows array. */
+  #replayRowsShare = new WeakMap<
+    HistoryRow[],
+    {
+      sourceSessionId: string;
+      turns: Turn[];
+      agentLifecycle: NativeAgentLifecycleFact[];
+    }
+  >();
+  /** Interned-text → plain agent_message_chunk payload (no messageId/phase). */
+  #messageChunkPayloads = new Map<string, Record<string, unknown>>();
+  /** Interned-text → plain agent_thought_chunk payload. */
+  #thoughtChunkPayloads = new Map<string, Record<string, unknown>>();
+  /** receivedAt → (payload → shared TurnEvent). Nested maps avoid hashing
+   *  long transcript strings on every lookup. */
+  #turnEventFlyweightsByTs = new Map<number, WeakMap<object, TurnEvent>>();
+  /** Detect shared flyweight payloads/content so stream coalesce copy-on-writes
+   *  instead of mutating a payload retained by other sessions. */
+  #flyweightPayloads = new WeakSet<object>();
   /** Turns created by the replay pass in progress; safe to extend in place. */
   #replayOwnedTurns = new WeakSet<Turn>();
   /** Persisted rows currently materialized per session when history was
@@ -641,8 +671,47 @@ export class SessionStore {
       (kind !== "text" ||
         (parsedLast.kind === "text" &&
           parsedLast.phase === metadata?.phase));
+    // Callers append onto turn.assistantText / thoughtText before invoking
+    // this. When the coalesced run equals that accumulator, reuse the same
+    // string so the turn field, event payload, and streamRuns share one
+    // rope instead of retaining 2–3 copies (MEMORY under multi-session load).
+    const accumulated = kind === "text" ? turn.assistantText : turn.thoughtText;
     if (sameMessage) {
-      const merged = parsedLast.text + text;
+      // Do NOT intern coalesced prefixes — every token would pin a unique
+      // rope in #stringPool and defeat both MEMORY and streaming CPU.
+      // Prefer the caller's accumulator rope when lengths match (caller
+      // already did turn.XText += text). Object.is / === on two separately
+      // concatenated long ropes is O(n) and reintroduced the quadratic
+      // per-token cost this method exists to avoid.
+      const expectedLen = parsedLast!.text.length + text.length;
+      const shared =
+        accumulated.length === expectedLen
+          ? accumulated
+          : parsedLast!.text + text;
+      const lastEvent = last!;
+      const payload = lastEvent.payload;
+      const content =
+        payload &&
+        typeof payload === "object" &&
+        "content" in payload
+          ? (payload as { content?: { type?: string; text?: string } }).content
+          : undefined;
+      if (
+        content
+        && content.type === "text"
+        && !this.#flyweightPayloads.has(content)
+        && !this.#flyweightPayloads.has(payload as object)
+      ) {
+        // In-place mutate: one object per run, not one allocation per token.
+        // Skip when the payload is a cross-session flyweight (COW below).
+        content.text = shared;
+        if (run) {
+          run.text = shared;
+        } else {
+          this.#streamRuns.set(lastEvent, { ...metadata, kind, text: shared });
+        }
+        return false;
+      }
       const event: TurnEvent = {
         payload: {
           sessionUpdate:
@@ -654,13 +723,20 @@ export class SessionStore {
           ...(metadata?.phase
             ? { _meta: { codex: { phase: metadata.phase } } }
             : {}),
-          content: { type: "text", text: merged },
+          content: { type: "text", text: shared },
         },
-        receivedAt: last!.receivedAt,
+        receivedAt: lastEvent.receivedAt,
       };
       turn.events[turn.events.length - 1] = event;
-      this.#streamRuns.set(event, { ...metadata, kind, text: merged });
+      this.#streamRuns.set(event, { ...metadata, kind, text: shared });
       return false;
+    }
+    // New segment: share with the turn accumulator when identical; interning
+    // happens later at replay/turn-complete boundaries (#internTurnText).
+    const shared = accumulated === text ? accumulated : text;
+    if (accumulated === text) {
+      if (kind === "text") turn.assistantText = shared;
+      else turn.thoughtText = shared;
     }
     const event: TurnEvent = {
       payload: {
@@ -671,12 +747,12 @@ export class SessionStore {
         ...(metadata?.phase
           ? { _meta: { codex: { phase: metadata.phase } } }
           : {}),
-        content: { type: "text", text },
+        content: { type: "text", text: shared },
       },
       receivedAt,
     };
     turn.events.push(event);
-    this.#streamRuns.set(event, { ...metadata, kind, text });
+    this.#streamRuns.set(event, { ...metadata, kind, text: shared });
     return true;
   }
 
@@ -1518,7 +1594,119 @@ export class SessionStore {
     } else {
       this.#sideActiveId = null;
     }
+    // Drop turn projections for sessions the UI is not looking at. Projectors
+    // retain timeline/tool snapshots proportional to event count; keeping every
+    // session hot doubles retained heap under multi-session soak (MEMORY).
+    this.#evictInactiveTurnProjections();
     this.#emit();
+  }
+
+  #evictInactiveTurnProjections(): void {
+    if (this.#turnProjectionCache.size === 0) return;
+    const keep = new Set<string>();
+    if (this.#activeId) keep.add(this.#activeId);
+    if (this.#sideActiveId) keep.add(this.#sideActiveId);
+    for (const [turnId] of this.#turnProjectionCache) {
+      const turn = this.#turns.get(turnId);
+      if (!turn || !keep.has(turn.sessionId)) {
+        this.#turnProjectionCache.delete(turnId);
+      }
+    }
+  }
+
+  #internString(value: string): string {
+    // Empty strings are already a singleton; skip the table.
+    if (value.length === 0) return value;
+    const hit = this.#stringPool.get(value);
+    if (hit !== undefined) return hit;
+    this.#stringPool.set(value, value);
+    return value;
+  }
+
+  /** Pin stable turn strings into the cross-session pool and flyweight
+   *  plain text/thought event payloads. Safe at replay / turn-complete
+   *  boundaries; never call per streaming token (would pin every prefix). */
+  #internTurnText(turn: Turn): void {
+    turn.promptText = this.#internString(turn.promptText);
+    turn.assistantText = this.#internString(turn.assistantText);
+    turn.thoughtText = this.#internString(turn.thoughtText);
+    const events = turn.events;
+    for (let index = 0; index < events.length; index += 1) {
+      const event = events[index]!;
+      const payload = event.payload;
+      if (!payload || typeof payload !== "object" || !("content" in payload)) continue;
+      const record = payload as Record<string, unknown>;
+      const content = record.content as
+        | { type?: string; text?: string }
+        | undefined;
+      if (!content || content.type !== "text" || typeof content.text !== "string") {
+        continue;
+      }
+      // Prefer the turn accumulator reference when values match; otherwise pool.
+      // V8 treats same-ref === as O(1); distinct equal ropes are rare after
+      // appendStreamEvent length-sharing and are pooled below.
+      if (content.text === turn.assistantText) content.text = turn.assistantText;
+      else if (content.text === turn.thoughtText) content.text = turn.thoughtText;
+      else content.text = this.#internString(content.text);
+      const run = this.#streamRuns.get(event);
+      if (run && run.text !== content.text) {
+        run.text = content.text;
+      }
+      // Live streaming turns keep private mutable payloads; flyweight only
+      // terminal turns so a late chunk cannot mutate a shared object.
+      if (
+        turn.status !== "complete"
+        && turn.status !== "error"
+        && turn.status !== "cancelled"
+      ) {
+        continue;
+      }
+      const sessionUpdate = record.sessionUpdate;
+      if (
+        sessionUpdate !== "agent_message_chunk"
+        && sessionUpdate !== "agent_thought_chunk"
+      ) {
+        continue;
+      }
+      // Only flyweight plain chunks — messageId/phase/_meta make the shape
+      // session-specific and are left on the per-turn payload.
+      if (
+        "messageId" in record
+        || "phase" in record
+        || "_meta" in record
+      ) {
+        continue;
+      }
+      const payloadPool =
+        sessionUpdate === "agent_message_chunk"
+          ? this.#messageChunkPayloads
+          : this.#thoughtChunkPayloads;
+      // Key by interned text directly — no concatenated flyKey allocation.
+      let fly = payloadPool.get(content.text);
+      if (!fly) {
+        const sharedContent = { type: "text" as const, text: content.text };
+        fly = { sessionUpdate, content: sharedContent };
+        this.#flyweightPayloads.add(fly);
+        this.#flyweightPayloads.add(sharedContent);
+        payloadPool.set(content.text, fly);
+      }
+      let byPayload = this.#turnEventFlyweightsByTs.get(event.receivedAt);
+      if (!byPayload) {
+        byPayload = new WeakMap<object, TurnEvent>();
+        this.#turnEventFlyweightsByTs.set(event.receivedAt, byPayload);
+      }
+      let sharedEvent = byPayload.get(fly);
+      if (!sharedEvent) {
+        sharedEvent = {
+          payload: fly,
+          receivedAt: event.receivedAt,
+        } as TurnEvent;
+        byPayload.set(fly, sharedEvent);
+      }
+      if (events[index] !== sharedEvent) {
+        events[index] = sharedEvent;
+      }
+    }
   }
 
   setSideActive(id: string | null): void {
@@ -2570,7 +2758,7 @@ export class SessionStore {
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
-      promptText,
+      promptText: this.#internString(promptText),
       ...(runSelection ? { runSelection } : {}),
       annotations: annotations.length ? annotations : undefined,
       attachments: attachments.length > 0
@@ -3782,6 +3970,37 @@ export class SessionStore {
       return;
     }
     this.#clearMaterializableTurns(sessionId);
+    // Structural share: identical rows array reference → clone from the first
+    // full-window materialization (shared ropes + flyweight events).
+    if (!opts.hasMore) {
+      const shared = this.#replayRowsShare.get(rows);
+      if (shared) {
+        const prefix = `replay-${shared.sourceSessionId}-`;
+        for (const src of shared.turns) {
+          const suffix = src.id.startsWith(prefix)
+            ? src.id.slice(prefix.length)
+            : src.id;
+          const tid = `replay-${sessionId}-${suffix}`;
+          const turn: Turn = {
+            ...src,
+            id: tid,
+            sessionId,
+            // New array shell; element identity stays shared/flyweighted.
+            events: src.events.slice(),
+          };
+          this.#turns.set(tid, turn);
+        }
+        this.#history.set(sessionId, {
+          oldestSeq: rows[0]?.seq,
+          hasMore: false,
+          loading: false,
+          agentLifecycle: shared.agentLifecycle,
+        });
+        this.#pruneNonCanonicalSubagents(sessionId, shared.agentLifecycle);
+        this.#emit();
+        return;
+      }
+    }
     const agentLifecycle = this.#replayRows(sessionId, rows, {
       partialHead: opts.hasMore,
       notices: true,
@@ -3793,6 +4012,16 @@ export class SessionStore {
       agentLifecycle,
     });
     if (!opts.hasMore) this.#pruneNonCanonicalSubagents(sessionId, agentLifecycle);
+    for (const turn of this.#turns.valuesForSession(sessionId)) {
+      this.#internTurnText(turn);
+    }
+    if (!opts.hasMore) {
+      this.#replayRowsShare.set(rows, {
+        sourceSessionId: sessionId,
+        turns: [...this.#turns.valuesForSession(sessionId)],
+        agentLifecycle,
+      });
+    }
     this.#emit();
   }
 
@@ -4137,7 +4366,7 @@ export class SessionStore {
               clientId: typeof input.client_id === "string" && input.client_id
                 ? input.client_id
                 : undefined,
-              promptText: typeof input.text === "string" ? input.text : "",
+              promptText: this.#internString(typeof input.text === "string" ? input.text : ""),
               annotations: Array.isArray(input.annotations) ? input.annotations as PromptAnnotation[] : undefined,
               attachments: Array.isArray(input.attachments)
                 ? input.attachments as PromptAttachment[]
@@ -4314,7 +4543,7 @@ export class SessionStore {
           clientId: typeof promptRecord.client_id === "string" && promptRecord.client_id
             ? promptRecord.client_id
             : undefined,
-          promptText: promptRecord.text ?? "",
+          promptText: this.#internString(promptRecord.text ?? ""),
           annotations: (data as { annotations?: PromptAnnotation[] })?.annotations,
           attachments: (
             data as { attachments?: PromptAttachment[] }
@@ -5233,6 +5462,7 @@ export class SessionStore {
               assistantArtifacts.sources,
             );
           }
+          this.#internTurnText(turn);
           this.#turns.set(ev.turn_id, {
             ...turn,
             // Streaming chunks compact into turn.events in place to avoid a
