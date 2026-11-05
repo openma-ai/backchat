@@ -798,6 +798,13 @@ export function Sidebar() {
             </SidebarGridCell>
           </button>
           <SidebarGridCell slot="trailing">
+            {/* Double trailing track: keep an empty penultimate slot so search
+                occupies the rightmost action column (aligned further right). */}
+            <span
+              aria-hidden="true"
+              data-sidebar-grid-action="penultimate"
+              className="pointer-events-none"
+            />
             <button
               type="button"
               onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))}
@@ -808,7 +815,6 @@ export function Sidebar() {
             >
               <SearchIcon aria-hidden="true" />
             </button>
-
           </SidebarGridCell>
         </SidebarGridRow>
       </div>
@@ -1513,9 +1519,17 @@ function WorkspaceGroupHeading({
             label starts on the chats' icon rail, so the heading reads as a
             divider over its chats rather than as another chat beside them. */}
         <SidebarGridCell slot="icon">
-          <span className="sidebar-row-icon">
-            <DisclosureCaret open={open} />
-          </span>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={`${open ? t("project.collapse") : t("project.expand")}: ${label}`}
+            aria-expanded={open}
+            className="sidebar-workspace-disclosure relative flex size-full items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <span className="sidebar-row-icon">
+              <DisclosureCaret open={open} />
+            </span>
+          </button>
         </SidebarGridCell>
         <SidebarGridCell slot="label">
           <button

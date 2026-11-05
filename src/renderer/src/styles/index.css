@@ -398,6 +398,22 @@
   height: var(--sidebar-row-action-icon-size);
 }
 
+/* Keep status paint inside the stationary action slot. Rotate an explicitly
+   sized HTML box rather than compositing the SVG viewport itself. */
+.sidebar-activity-indicator {
+  overflow: clip;
+}
+.sidebar-activity-spinner {
+  display: flex;
+  flex: none;
+  width: var(--sidebar-row-action-icon-size);
+  height: var(--sidebar-row-action-icon-size);
+}
+.sidebar-activity-spinner > svg {
+  width: 100%;
+  height: 100%;
+}
+
 .sidebar-project-row.sidebar-project-surface:is(:hover, [data-state="open"], [data-menu-open="true"]) {
   color: var(--control-fg-active);
 }
@@ -451,9 +467,8 @@
 
 /* Match the conversation list. Session rows and settings nav items both
    use `.sidebar-nav-row` inside `.sidebar-navigation`, so this is the
-   only height they can resolve. The 1px list step and the inset focus
-   ring below are the same rules the conversation list already uses —
-   settings does not keep a separate 2px gap or an outward ring. */
+   only height they can resolve. Adjacent washes meet without a list gap;
+   settings shares the same spacing and inset focus ring. */
 .sidebar-navigation {
   --sidebar-row-h: 28px;
   /* Hover is a lighter step than selection (--surface-selected, 8%). At the
@@ -474,13 +489,10 @@
 .sidebar-navigation .app-selected-surface {
   font-weight: 500;
 }
-/* One fixed step between sidebar rows. At 2px two rounded washes (hover
-   next to selection, a section label over its first row) never touch, so
-   no state has to trim another's paint and hover never moves a row.
-   Tailwind v4 space-y also adds margin-block-end; clear it so the step is
-   exactly this top margin. */
+/* Adjacent row washes meet; only sections retain their separate gap.
+   Clear Tailwind v4's margin-block-end as well as the top margin. */
 .sidebar-navigation {
-  --sidebar-row-step: 2px;
+  --sidebar-row-step: 0px;
 }
 .sidebar-navigation .space-y-0\.5 > :not([hidden]) {
   margin-block-end: 0;
@@ -538,7 +550,7 @@
   font-size: var(--type-meta-size);
 }
 
-/* Header toggles fill the 28px row so collapsed sections keep the 1px step. */
+/* Header toggles fill the 28px row so adjacent washes meet. */
 .sidebar-section-header.sidebar-grid-row {
   align-items: stretch;
 }
@@ -1160,6 +1172,31 @@ html[data-theme-asset-app-background="true"] .theme-app-background {
 html[data-theme-asset-sidebar-background="true"]
   .theme-sidebar-background::before {
   opacity: 0.82;
+}
+
+
+/* Bound project empty chat: mirror the project's mark in the empty stage,
+   same footprint as .theme-empty-state-art so the center isn't blank. */
+.project-empty-icon {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+}
+.project-empty-icon .project-letter {
+  border-radius: 18px;
+  font-size: 36px;
+}
+.project-empty-icon .project-image {
+  border-radius: 18px;
+}
+.project-empty-icon [data-project-glyph]:not([data-project-glyph="letter"]) {
+  width: 48px;
+  height: 48px;
+}
+.project-empty-icon .text-\[14px\] {
+  font-size: 40px;
+  line-height: 1;
 }
 
 .theme-empty-state-art {
@@ -3337,8 +3374,15 @@ body,
   background: var(--control-bg-hover);
 }
 
-/* The wash follows the shared row surface inset while the cells stay pinned
-   to the parent tracks. */
+/* One continuous wash covers both independently clickable new-chat controls. */
+.sidebar-grid-row[data-sidebar-row="new-chat"]:is(:hover, :has(:focus-visible)) {
+  background: var(--control-bg-hover);
+}
+.sidebar-grid-row[data-sidebar-row="new-chat"]:has(> .sidebar-new-chat-primary:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 .sidebar-grid-row[data-sidebar-row="new-chat"] > .sidebar-new-chat-primary {
   grid-column: 1 / 3;
   display: grid;
@@ -3351,47 +3395,19 @@ body,
   text-align: left;
   background: transparent;
   border: 0;
-  position: relative;
-  isolation: isolate;
   transition: color 0.15s ease;
 }
 
-.sidebar-grid-row[data-sidebar-row="new-chat"]
-  > .sidebar-new-chat-primary::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  /* Start where every other row's wash starts: the row edge, i.e. one row
-     padding before the icon track. */
-  inset-inline-start: calc(-1 * var(--sidebar-content-padding-inline-start));
-  /* Reach toward the trailing actions, leaving one compact gap before the
-     search wash so the two never touch. */
-  inset-inline-end: calc(
-    -1 * (var(--sidebar-grid-column-gap) - var(--sidebar-row-action-wash-bleed, 4px) - var(--control-gap-compact))
-  );
-  z-index: -1;
-  border-radius: var(--control-radius);
-}
-
-.sidebar-grid-row[data-sidebar-row="new-chat"]
-  > .sidebar-new-chat-primary:is(:hover, :focus-visible)::before {
-  background: var(--control-bg-hover);
-}
-
-/* The focus ring wraps the wash, not the narrower grid box. */
+/* The row owns the primary focus ring; search retains its own focus outline. */
 .sidebar-grid-row[data-sidebar-row="new-chat"]
   > .sidebar-new-chat-primary:focus-visible {
   outline: none;
 }
-
-.sidebar-grid-row[data-sidebar-row="new-chat"]
-  > .sidebar-new-chat-primary:focus-visible::before {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+.sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action::before {
+  background: transparent;
 }
 
-/* Reserve the entire highlight in the layout, not just the glyph. Two
-   simultaneously highlighted controls must still have a real 4px gap. */
+/* Keep search's hit target and rightmost alignment within the full-row wash. */
 .sidebar-grid-row[data-sidebar-row="new-chat"] {
   --sidebar-row-action-size: calc(var(--sidebar-row-h) - 4px);
   --sidebar-grid-trailing-effective: calc(2 * var(--sidebar-row-action-size) + var(--sidebar-grid-trailing-gap));
@@ -3400,8 +3416,7 @@ body,
 .sidebar-grid-row[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"] {
   align-self: stretch;
   height: 100%;
-  /* Keep the two header actions in their own local rail. In the collapsed
-     sidebar the hidden label must never let one hover wash overlap the other. */
+  /* Keep the search target in its local trailing rail. */
   display: grid;
   grid-template-columns: var(--sidebar-row-action-size) var(--sidebar-row-action-size);
   gap: var(--sidebar-grid-trailing-gap);
@@ -3409,6 +3424,10 @@ body,
   align-items: center;
   overflow: visible;
   isolation: isolate;
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"] > [data-sidebar-grid-action="last"] {
+  grid-column: 2 / -1;
 }
 
 .sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action {
@@ -3934,6 +3953,14 @@ button[data-chat-turn-disclosure-trigger]:disabled .activity-disclosure-chevron 
    (running) turn keeps the reveal. */
 [data-chat-column="turns"] [data-turn-id]:not([data-session-turn-status="running"]) {
   animation: none;
+}
+
+/* Off-screen virtual rows: skip layout/paint until scrolled near the
+   viewport. TanStack already unmounts far rows; this covers overscan
+   neighbors and non-virtual fallback paths (Electron scroll CPU). */
+[data-virtual-transcript] > [data-index] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 180px;
 }
 
 /* Older-history fetch: a hairline sweeping along the top edge of the

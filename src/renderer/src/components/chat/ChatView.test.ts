@@ -354,6 +354,7 @@ describe("home suggestions", () => {
     expect(source).toContain("empty: loadingFirstScreen ? (");
     expect(source).toContain('data-chat-transcript-loading="true"');
     expect(source).toContain("<EmptyStateIntro");
+    expect(source).toContain('data-slot="project-empty-state"');
     expect(source).not.toContain("function SessionIntro");
   });
 

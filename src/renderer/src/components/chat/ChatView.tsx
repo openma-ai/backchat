@@ -53,6 +53,7 @@ import { ResponseAnnotationController } from "./ResponseAnnotations";
 import { ProjectChipRow } from "./ComposerProjectControls";
 import { MarkdownCwdProvider } from "./ChatMarkdown";
 import { TurnBlock } from "./ChatTurn";
+import { ProjectIcon } from "@/components/ProjectIcon";
 import {
   EmptyStateIntro,
   HomeSuggestionSelect,
@@ -842,7 +843,22 @@ export function ChatView({
                 <ShimmerText>{t("chat.loadingHistory")}</ShimmerText>
               </div>
             ) : (
-              binding ? null : (
+              binding ? (
+                <div
+                  className="project-empty-state flex w-full flex-col items-center justify-center py-8"
+                  data-slot="project-empty-state"
+                >
+                  <div className="project-empty-icon" aria-hidden="true">
+                    <ProjectIcon
+                      identity={`project:${binding.projectId}`}
+                      name={binding.label}
+                      sourceFolders={binding.cwd ? [binding.cwd] : []}
+                      primaryRoot={binding.cwd}
+                      className="size-full"
+                    />
+                  </div>
+                </div>
+              ) : (
                 <EmptyStateIntro
                   hasAgent={settings?.agents.some((agent) => agent.enabled) ?? false}
                   selectedSuggestionKind={homeSuggestionSelection?.kind ?? null}

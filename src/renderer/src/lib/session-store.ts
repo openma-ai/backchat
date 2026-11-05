@@ -32,6 +32,7 @@ import {
  */
 
 import { useSyncExternalStore } from "react";
+import { SessionTurnMap } from "./session-turn-map";
 import type { OpenmaScope, OpenmaExecutionTarget, OpenmaTask, OpenmaTaskSnapshot, OpenmaTaskUpdate } from "@shared/openma";
 import { projectOpenmaTask } from "./openma-task-projection";
 import type {
@@ -179,6 +180,85 @@ import type {
   WorkspaceSourceRef,
 } from "./session-types";
 
+/** Shared empty events shell for compacted text-only completed turns.
+ *  assistantText/thoughtText remain the source of truth; projectTurn
+ *  synthesizes ACP chunks on read (MEMORY: drop per-turn event objects). */
+const EMPTY_TURN_EVENTS: Turn["events"] = Object.freeze([]) as unknown as Turn["events"];
+
+
+/** Copy-on-write before mutating events[]. Compacted turns share a frozen
+ *  empty shell; proto-shared turns may inherit it. */
+function ensureWritableEvents(turn: Turn): Turn["events"] {
+  if (turn.events === EMPTY_TURN_EVENTS) {
+    turn.events = [];
+  }
+  return turn.events;
+}
+
+
+function isProtoSharedTurn(turn: Turn): boolean {
+  const proto = Object.getPrototypeOf(turn);
+  return proto !== Object.prototype && proto !== null;
+}
+
+/** Flatten a Turn that may inherit fields from a structural-share prototype
+ *  (Object.create(src)). Property reads walk the chain; object spread does not. */
+function flattenTurn(turn: Turn): Turn {
+  if (!isProtoSharedTurn(turn)) return { ...turn };
+  return {
+    id: turn.id,
+    sessionId: turn.sessionId,
+    promptText: turn.promptText,
+    assistantText: turn.assistantText,
+    thoughtText: turn.thoughtText,
+    events: turn.events,
+    status: turn.status,
+    startedAt: turn.startedAt,
+    ...(turn.endedAt !== undefined ? { endedAt: turn.endedAt } : {}),
+    ...(turn.clientId !== undefined ? { clientId: turn.clientId } : {}),
+    ...(turn.sendState !== undefined ? { sendState: turn.sendState } : {}),
+    ...(turn.sendError !== undefined ? { sendError: turn.sendError } : {}),
+    ...(turn.attachments !== undefined ? { attachments: turn.attachments } : {}),
+    ...(turn.annotations !== undefined ? { annotations: turn.annotations } : {}),
+    ...(turn.sessionReferences !== undefined
+      ? { sessionReferences: turn.sessionReferences }
+      : {}),
+    ...(turn.streamRevision !== undefined
+      ? { streamRevision: turn.streamRevision }
+      : {}),
+    ...(turn.runSelection !== undefined ? { runSelection: turn.runSelection } : {}),
+    ...(turn.activeThoughtMessageId !== undefined
+      ? { activeThoughtMessageId: turn.activeThoughtMessageId }
+      : {}),
+    ...(turn.activeThoughtSegmentText !== undefined
+      ? { activeThoughtSegmentText: turn.activeThoughtSegmentText }
+      : {}),
+    ...(turn.stopReason !== undefined ? { stopReason: turn.stopReason } : {}),
+    ...(turn.promptIntent !== undefined ? { promptIntent: turn.promptIntent } : {}),
+    ...(turn.requestedDelivery !== undefined
+      ? { requestedDelivery: turn.requestedDelivery }
+      : {}),
+    ...(turn.effectiveDelivery !== undefined
+      ? { effectiveDelivery: turn.effectiveDelivery }
+      : {}),
+    ...(turn.deliveryDegraded !== undefined
+      ? { deliveryDegraded: turn.deliveryDegraded }
+      : {}),
+    ...(turn.errorMessage !== undefined ? { errorMessage: turn.errorMessage } : {}),
+    ...(turn.stickyFeedCleared !== undefined
+      ? { stickyFeedCleared: turn.stickyFeedCleared }
+      : {}),
+    ...(turn.inherited !== undefined ? { inherited: turn.inherited } : {}),
+  };
+}
+
+function patchTurn(turn: Turn, patch: Partial<Turn>): Turn {
+  // Fast path: plain turns are the streaming/structural hot path.
+  if (!isProtoSharedTurn(turn)) return { ...turn, ...patch };
+  return { ...flattenTurn(turn), ...patch };
+}
+
+
 export type { AcpSessionConfigOption } from "./session-config-options";
 export type * from "./session-types";
 
@@ -191,6 +271,9 @@ interface TurnProjectionCacheEntry {
   applied: number;
   first?: Turn["events"][number];
   last?: Turn["events"][number];
+  /** Set when projecting a compacted turn (events elided). */
+  compactAssistant?: string;
+  compactThought?: string;
 }
 
 export class SessionStore {
@@ -469,7 +552,7 @@ export class SessionStore {
       nextTurn.thoughtText += parsed.text;
       this.#appendStreamEvent(nextTurn, "thought", parsed.text, now);
     } else {
-      nextTurn.events.push({ payload: update, receivedAt: now });
+      ensureWritableEvents(nextTurn).push({ payload: update, receivedAt: now });
     }
     this.#turns.set(childTurn, nextTurn);
     return true;
@@ -483,7 +566,7 @@ export class SessionStore {
   /** Blocking broker asks can arrive before session.ready during reload.
    *  Retain them by session id until the matching row is restored. */
   #pendingAsksBeforeSession = new Map<string, BrokerAsk[]>();
-  #turns = new Map<string, Turn>();
+  #turns = new SessionTurnMap();
   #turnProjectionCache = new Map<string, TurnProjectionCacheEntry>();
   /** Coalesced text/thought runs built by #appendStreamEvent, by event. */
   #streamRuns = new WeakMap<TurnEvent, {
@@ -492,6 +575,36 @@ export class SessionStore {
     messageId?: string;
     phase?: "commentary" | "final_answer";
   }>();
+  /** Cross-session intern table for immutable transcript strings.
+   *  Parallel sessions often replay the same prompts/answers (and live
+   *  streams occasionally repeat); sharing one rope cuts retained heap
+   *  roughly in proportion to session count without changing contents. */
+  #stringPool = new Map<string, string>();
+  /** Flyweight ACP text/thought payloads keyed by interned text + shape.
+   *  After replay/complete, identical chunks across sessions share one
+   *  payload object (and one TurnEvent when receivedAt matches). */
+  /** When many sessions replay the *same* HistoryRow[] reference (stress /
+   *  restore fixtures), clone turns from the first materialization and share
+   *  interned strings + flyweight events — O(turns) pointer work instead of
+   *  re-parsing every row. WeakMap so the cache dies with the rows array. */
+  #replayRowsShare = new WeakMap<
+    HistoryRow[],
+    {
+      sourceSessionId: string;
+      turns: Turn[];
+      agentLifecycle: NativeAgentLifecycleFact[];
+    }
+  >();
+  /** Interned-text → plain agent_message_chunk payload (no messageId/phase). */
+  #messageChunkPayloads = new Map<string, Record<string, unknown>>();
+  /** Interned-text → plain agent_thought_chunk payload. */
+  #thoughtChunkPayloads = new Map<string, Record<string, unknown>>();
+  /** receivedAt → (payload → shared TurnEvent). Nested maps avoid hashing
+   *  long transcript strings on every lookup. */
+  #turnEventFlyweightsByTs = new Map<number, WeakMap<object, TurnEvent>>();
+  /** Detect shared flyweight payloads/content so stream coalesce copy-on-writes
+   *  instead of mutating a payload retained by other sessions. */
+  #flyweightPayloads = new WeakSet<object>();
   /** Turns created by the replay pass in progress; safe to extend in place. */
   #replayOwnedTurns = new WeakSet<Turn>();
   /** Persisted rows currently materialized per session when history was
@@ -500,6 +613,15 @@ export class SessionStore {
   /** Sessions whose first history fetch is in flight. The chat view shows a
    *  loading surface instead of flashing the home empty state. */
   #historyPending = new Set<string>();
+  /** Last full-window HistoryRow[] per session for sync rematerialize after
+   *  park (unit/stress). Cleared when Electron can reload from SQL so Tab WS
+   *  does not retain row JSON for inactive sessions. */
+  #retainedHistoryRows = new Map<string, { rows: HistoryRow[]; hasMore: boolean }>();
+  /** Parked sessions that need openHistoryWindow (SQL) on next activate. */
+  #needsHistoryReload = new Set<string>();
+  /** Sessions whose completed history is currently dematerialized. O(1) skip
+   *  in parkAll so setActive switch stays cheap after the first park pass. */
+  #historyParked = new Set<string>();
   /** Pair-chats. Each pair owns N member session ids; the members
    *  themselves live in `#sessions` like any other session — the pair
    *  is just metadata. Routing is by id: navigating to /pair/<id>
@@ -640,8 +762,52 @@ export class SessionStore {
       (kind !== "text" ||
         (parsedLast.kind === "text" &&
           parsedLast.phase === metadata?.phase));
+    // Callers append onto turn.assistantText / thoughtText before invoking
+    // this. When the coalesced run equals that accumulator, reuse the same
+    // string so the turn field, event payload, and streamRuns share one
+    // rope instead of retaining 2–3 copies (MEMORY under multi-session load).
+    const accumulated = kind === "text" ? turn.assistantText : turn.thoughtText;
     if (sameMessage) {
-      const merged = parsedLast.text + text;
+      // Do NOT intern coalesced prefixes — every token would pin a unique
+      // rope in #stringPool and defeat both MEMORY and streaming CPU.
+      // Prefer the caller's accumulator rope when lengths match (caller
+      // already did turn.XText += text). Object.is / === on two separately
+      // concatenated long ropes is O(n) and reintroduced the quadratic
+      // per-token cost this method exists to avoid.
+      const expectedLen = parsedLast!.text.length + text.length;
+      const shared =
+        accumulated.length === expectedLen
+          ? accumulated
+          : parsedLast!.text + text;
+      const lastEvent = last!;
+      const payload = lastEvent.payload;
+      const content =
+        payload &&
+        typeof payload === "object" &&
+        "content" in payload
+          ? (payload as { content?: { type?: string; text?: string } }).content
+          : undefined;
+      if (
+        content
+        && content.type === "text"
+        && !this.#flyweightPayloads.has(content)
+        && !this.#flyweightPayloads.has(payload as object)
+      ) {
+        // In-place mutate: one object per run, not one allocation per token.
+        // Skip when the payload is a cross-session flyweight (COW below).
+        content.text = shared;
+        if (run) {
+          run.text = shared;
+        } else {
+          this.#streamRuns.set(lastEvent, { ...metadata, kind, text: shared });
+        }
+        // Projector already applied the previous payload identity; drop the
+        // cache so the next projectTurn rebuilds from the mutated content
+        // (in-place mutate keeps event === cached.last, which would otherwise
+        // skip re-apply and freeze the first-token snapshot).
+        this.#turnProjectionCache.delete(turn.id);
+        return false;
+      }
       const event: TurnEvent = {
         payload: {
           sessionUpdate:
@@ -653,13 +819,20 @@ export class SessionStore {
           ...(metadata?.phase
             ? { _meta: { codex: { phase: metadata.phase } } }
             : {}),
-          content: { type: "text", text: merged },
+          content: { type: "text", text: shared },
         },
-        receivedAt: last!.receivedAt,
+        receivedAt: lastEvent.receivedAt,
       };
       turn.events[turn.events.length - 1] = event;
-      this.#streamRuns.set(event, { ...metadata, kind, text: merged });
+      this.#streamRuns.set(event, { ...metadata, kind, text: shared });
       return false;
+    }
+    // New segment: share with the turn accumulator when identical; interning
+    // happens later at replay/turn-complete boundaries (#internTurnText).
+    const shared = accumulated === text ? accumulated : text;
+    if (accumulated === text) {
+      if (kind === "text") turn.assistantText = shared;
+      else turn.thoughtText = shared;
     }
     const event: TurnEvent = {
       payload: {
@@ -670,12 +843,12 @@ export class SessionStore {
         ...(metadata?.phase
           ? { _meta: { codex: { phase: metadata.phase } } }
           : {}),
-        content: { type: "text", text },
+        content: { type: "text", text: shared },
       },
       receivedAt,
     };
-    turn.events.push(event);
-    this.#streamRuns.set(event, { ...metadata, kind, text });
+    ensureWritableEvents(turn).push(event);
+    this.#streamRuns.set(event, { ...metadata, kind, text: shared });
     return true;
   }
 
@@ -748,7 +921,7 @@ export class SessionStore {
     const previous = this.#sessions.get(row.id);
     this.#sessions.set(row.id, { ...previous, ...row });
     const ids = new Set(turns.map((turn) => turn.id));
-    for (const [id, turn] of this.#turns) if (turn.sessionId === row.id && !ids.has(id)) this.#deleteTurn(id);
+    for (const turn of [...this.#turns.valuesForSession(row.id)]) if (!ids.has(turn.id)) this.#deleteTurn(turn.id);
     for (const turn of turns) {
       const old = this.#turns.get(turn.id);
       const corrected = !!old && (!turn.assistantText.startsWith(old.assistantText) || !turn.thoughtText.startsWith(old.thoughtText));
@@ -771,7 +944,7 @@ export class SessionStore {
       const owner = row.openma ?? row.executionTarget;
       if (owner && !scopes.some((scope) => scope.baseUrl === owner.baseUrl && scope.userId === owner.userId && scope.workspaceId === owner.workspaceId)) {
         this.#sessions.delete(id);
-        for (const [turnId, turn] of this.#turns) if (turn.sessionId === id) this.#deleteTurn(turnId);
+        for (const turn of [...this.#turns.valuesForSession(id)]) this.#deleteTurn(turn.id);
       }
     }
     this.#emit();
@@ -842,9 +1015,18 @@ export class SessionStore {
   }
 
   #ownTurnsFor(sessionId: string): Turn[] {
-    return [...this.#turns.values()].filter(
-      (t) => t.sessionId === sessionId && !t.inherited,
-    );
+    // Indexed + array-cached by session — hot transcript selectors keep a
+    // stable reference across unchanged reads. Inherited clones are
+    // synthesized in turnsFor and never stored here; filter only if needed.
+    const own = this.#turns.arrayForSession(sessionId);
+    for (const turn of own) {
+      if (turn.inherited) {
+        return own.filter((t) => !t.inherited);
+      }
+    }
+    // SessionTurnMap returns a mutable Turn[] cached as readonly; callers
+    // treat the list as read-only. Cast keeps the existing Turn[] signature.
+    return own as Turn[];
   }
 
   #parentTurnsIncludedInFork(
@@ -864,17 +1046,20 @@ export class SessionStore {
   }
 
   #cloneInheritedTurn(childId: string, turn: Turn): Turn {
-    return {
-      ...turn,
-      id: `inherited-${childId}-${turn.id}`,
+    return patchTurn(turn, {
+id: `inherited-${childId}-${turn.id}`,
       sessionId: childId,
       inherited: true,
       status: turn.status === "running" ? "complete" : turn.status,
       events: turn.events,
-    };
+});
   }
 
   turnsFor(sessionId: string): Turn[] {
+    // Lazy hydrate: inactive sessions stay dematerialized until focused.
+    if (sessionId === this.#activeId || sessionId === this.#sideActiveId) {
+      this.#ensureMaterializedHistory(sessionId);
+    }
     // Registration order, which is what this Map already holds: replayed turns
     // are built from persisted rows in stored sequence, and live turns are
     // appended as they start. Re-registering an existing id keeps its original
@@ -901,6 +1086,52 @@ export class SessionStore {
   }
 
   projectTurn = (turn: Turn): TurnRender => {
+    // Compacted text-only turns keep assistantText/thoughtText and drop
+    // events[]. Synthesize the same ACP chunks the projector expects.
+    if (
+      turn.events.length === 0
+      && (turn.assistantText.length > 0 || turn.thoughtText.length > 0)
+    ) {
+      const cached = this.#turnProjectionCache.get(turn.id);
+      if (
+        cached
+        && cached.compactAssistant === turn.assistantText
+        && cached.compactThought === turn.thoughtText
+      ) {
+        return cached.projector.snapshot();
+      }
+      const synthetic: Turn["events"] = [];
+      if (turn.thoughtText.length > 0) {
+        synthetic.push({
+          payload: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: turn.thoughtText },
+          },
+          receivedAt: turn.startedAt,
+        });
+      }
+      if (turn.assistantText.length > 0) {
+        synthetic.push({
+          payload: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: turn.assistantText },
+          },
+          receivedAt: turn.endedAt ?? turn.startedAt,
+        });
+      }
+      const projector = createBackchatTurnProjector();
+      for (const event of synthetic) projector.apply(event);
+      this.#turnProjectionCache.set(turn.id, {
+        projector,
+        applied: synthetic.length,
+        first: synthetic[0],
+        last: synthetic.at(-1),
+        compactAssistant: turn.assistantText,
+        compactThought: turn.thoughtText,
+      });
+      return projector.snapshot();
+    }
+
     const events = turn.events;
     const cached = this.#turnProjectionCache.get(turn.id);
     if (
@@ -1467,7 +1698,7 @@ export class SessionStore {
         messageId: parsed.messageId,
       });
     } else {
-      turn.events.push({ payload: event, receivedAt });
+      ensureWritableEvents(turn).push({ payload: event, receivedAt });
     }
     this.#replayOwnedTurns.add(turn);
     this.#turns.set(childTurnId, turn);
@@ -1508,12 +1739,285 @@ export class SessionStore {
     } else {
       this.#sideActiveId = null;
     }
+    // Drop turn projections for sessions the UI is not looking at. Projectors
+    // retain timeline/tool snapshots proportional to event count; keeping every
+    // session hot doubles retained heap under multi-session soak (MEMORY).
+    this.#evictInactiveTurnProjections();
+    // Dematerialize completed history for inactive sessions so renderer heap /
+    // Tab WS scale with the focused surface, not every loaded session.
+    this.#parkAllInactiveSessionHistories();
     this.#emit();
+  }
+
+  /** True when activate must re-fetch history from main (rows were dropped
+   *  on park to free Tab WS). ChatPage consumes via takeNeedsHistoryReload. */
+  needsHistoryReload(sessionId: string): boolean {
+    return this.#needsHistoryReload.has(sessionId);
+  }
+
+  takeNeedsHistoryReload(sessionId: string): boolean {
+    if (!this.#needsHistoryReload.has(sessionId)) return false;
+    this.#needsHistoryReload.delete(sessionId);
+    return true;
+  }
+
+  /** Rematerialize parked history for sessionId (retained rows). No-op when
+   *  already materialized or rows were dropped for SQL reload. */
+  ensureHistoryMaterialized(sessionId: string): void {
+    this.#ensureMaterializedHistory(sessionId);
+  }
+
+  /** True when completed history was dematerialized and is awaiting reload. */
+  isHistoryParked(sessionId: string): boolean {
+    return this.#historyParked.has(sessionId);
+  }
+
+  #canReloadHistoryFromSql(): boolean {
+    return typeof window !== "undefined"
+      && typeof (window as Window & {
+        backchat?: { sessionsLoadHistory?: unknown };
+      }).backchat?.sessionsLoadHistory === "function";
+  }
+
+  #isParkableHistoryTurn(turn: Turn): boolean {
+    if (turn.inherited) return false;
+    // Only SQL-replayed turns are safe to dematerialize. Live / injected
+    // turns (registerTurn, steering, etc.) are not in the retained rows and
+    // must survive park or settled-churn loses them after complete.
+    if (!turn.id.startsWith("replay-")) return false;
+    if (turn.status === "running" || turn.status === "queued") return false;
+    if (turn.sendState === "pending") return false;
+    return true;
+  }
+
+  #ensureMaterializedHistory(sessionId: string): void {
+    if (this.#history.has(sessionId)) {
+      this.#historyParked.delete(sessionId);
+      return;
+    }
+    const retained = this.#retainedHistoryRows.get(sessionId);
+    if (!retained) return;
+    // replayHistoryWindow handles live-turn coexistence via prepend path.
+    this.replayHistoryWindow(sessionId, retained.rows, { hasMore: retained.hasMore });
+    this.#historyParked.delete(sessionId);
+  }
+
+  #parkAllInactiveSessionHistories(): void {
+    for (const sessionId of this.#sessions.keys()) {
+      if (sessionId === this.#activeId || sessionId === this.#sideActiveId) continue;
+      this.#parkSessionHistory(sessionId);
+    }
+  }
+
+  /** Drop completed (non-live) turns for an inactive session. Rematerialize
+   *  later from retained rows (Node/tests) or SQL openHistoryWindow (Electron).
+   *  Zero business-logic change: same turns come back on activate. */
+  #parkSessionHistory(sessionId: string): void {
+    if (sessionId === this.#activeId || sessionId === this.#sideActiveId) return;
+    if (this.#historyParked.has(sessionId)) return;
+    const windowState = this.#history.get(sessionId);
+    // Paged windows need older pages; keep them hot rather than losing hasMore.
+    if (windowState?.hasMore) return;
+    const retained = this.#retainedHistoryRows.get(sessionId);
+    const canSql = this.#canReloadHistoryFromSql();
+    if (!retained && !canSql) return;
+    let parked = 0;
+    for (const turn of [...this.#turns.valuesForSession(sessionId)]) {
+      if (!this.#isParkableHistoryTurn(turn)) continue;
+      this.#deleteTurn(turn.id);
+      parked++;
+    }
+    if (parked === 0 && !windowState) return;
+    this.#history.delete(sessionId);
+    this.#historyParked.add(sessionId);
+    // Drop structural-share source only when no other session still retains
+    // the same rows (unique transcripts like "long"). Shared stress/fixture
+    // rows keep the source Turns pinned so switch rematerialize stays an
+    // O(turns) Object.create shell clone instead of a full re-parse.
+    if (retained && !retained.hasMore) {
+      const shared = this.#replayRowsShare.get(retained.rows);
+      if (shared?.sourceSessionId === sessionId) {
+        let sharedElsewhere = false;
+        for (const [sid, entry] of this.#retainedHistoryRows) {
+          if (sid !== sessionId && entry.rows === retained.rows) {
+            sharedElsewhere = true;
+            break;
+          }
+        }
+        if (!sharedElsewhere) this.#replayRowsShare.delete(retained.rows);
+      }
+    }
+    if (canSql) {
+      // Free row JSON from the renderer Tab process; ChatPage reloads on focus.
+      this.#retainedHistoryRows.delete(sessionId);
+      this.#needsHistoryReload.add(sessionId);
+    }
+  }
+
+  #evictInactiveTurnProjections(): void {
+    if (this.#turnProjectionCache.size === 0) return;
+    const keep = new Set<string>();
+    if (this.#activeId) keep.add(this.#activeId);
+    if (this.#sideActiveId) keep.add(this.#sideActiveId);
+    for (const [turnId] of this.#turnProjectionCache) {
+      const turn = this.#turns.get(turnId);
+      if (!turn || !keep.has(turn.sessionId)) {
+        this.#turnProjectionCache.delete(turnId);
+      }
+    }
+  }
+
+  #internString(value: string): string {
+    // Empty strings are already a singleton; skip the table.
+    if (value.length === 0) return value;
+    const hit = this.#stringPool.get(value);
+    if (hit !== undefined) return hit;
+    this.#stringPool.set(value, value);
+    return value;
+  }
+
+  /** Pin stable turn strings into the cross-session pool and flyweight
+   *  plain text/thought event payloads. Safe at replay / turn-complete
+   *  boundaries; never call per streaming token (would pin every prefix). */
+  #internTurnText(turn: Turn): void {
+    turn.promptText = this.#internString(turn.promptText);
+    turn.assistantText = this.#internString(turn.assistantText);
+    turn.thoughtText = this.#internString(turn.thoughtText);
+    const events = turn.events;
+    for (let index = 0; index < events.length; index += 1) {
+      const event = events[index]!;
+      const payload = event.payload;
+      if (!payload || typeof payload !== "object" || !("content" in payload)) continue;
+      const record = payload as Record<string, unknown>;
+      const content = record.content as
+        | { type?: string; text?: string }
+        | undefined;
+      if (!content || content.type !== "text" || typeof content.text !== "string") {
+        continue;
+      }
+      // Prefer the turn accumulator reference when values match; otherwise pool.
+      // V8 treats same-ref === as O(1); distinct equal ropes are rare after
+      // appendStreamEvent length-sharing and are pooled below.
+      if (content.text === turn.assistantText) content.text = turn.assistantText;
+      else if (content.text === turn.thoughtText) content.text = turn.thoughtText;
+      else content.text = this.#internString(content.text);
+      const run = this.#streamRuns.get(event);
+      if (run && run.text !== content.text) {
+        run.text = content.text;
+      }
+      // Live streaming turns keep private mutable payloads; flyweight only
+      // terminal turns so a late chunk cannot mutate a shared object.
+      if (
+        turn.status !== "complete"
+        && turn.status !== "error"
+        && turn.status !== "cancelled"
+      ) {
+        continue;
+      }
+      const sessionUpdate = record.sessionUpdate;
+      if (
+        sessionUpdate !== "agent_message_chunk"
+        && sessionUpdate !== "agent_thought_chunk"
+      ) {
+        continue;
+      }
+      // Only flyweight plain chunks — messageId/phase/_meta make the shape
+      // session-specific and are left on the per-turn payload.
+      if (
+        "messageId" in record
+        || "phase" in record
+        || "_meta" in record
+      ) {
+        continue;
+      }
+      const payloadPool =
+        sessionUpdate === "agent_message_chunk"
+          ? this.#messageChunkPayloads
+          : this.#thoughtChunkPayloads;
+      // Key by interned text directly — no concatenated flyKey allocation.
+      let fly = payloadPool.get(content.text);
+      if (!fly) {
+        const sharedContent = { type: "text" as const, text: content.text };
+        fly = { sessionUpdate, content: sharedContent };
+        this.#flyweightPayloads.add(fly);
+        this.#flyweightPayloads.add(sharedContent);
+        payloadPool.set(content.text, fly);
+      }
+      let byPayload = this.#turnEventFlyweightsByTs.get(event.receivedAt);
+      if (!byPayload) {
+        byPayload = new WeakMap<object, TurnEvent>();
+        this.#turnEventFlyweightsByTs.set(event.receivedAt, byPayload);
+      }
+      let sharedEvent = byPayload.get(fly);
+      if (!sharedEvent) {
+        sharedEvent = {
+          payload: fly,
+          receivedAt: event.receivedAt,
+        } as TurnEvent;
+        byPayload.set(fly, sharedEvent);
+      }
+      if (events[index] !== sharedEvent) {
+        events[index] = sharedEvent;
+      }
+    }
+    this.#compactCompletedTurnEvents(turn);
+  }
+
+  /** Drop plain text/thought event objects on terminal turns when the
+   *  accumulators already hold the full transcript. projectTurn synthesizes
+   *  the same chunks on read. Skips turns with tools/plan/messageId/phase so
+   *  timeline ordering and fork message ids stay verbatim. */
+  /** Drop strong refs in flyweight tables. Compacted turns no longer point at
+   *  those payloads; unreferenced entries become GC-eligible (MEMORY). Turns
+   *  that still hold flyweight events keep them alive via the event refs. */
+  #releaseFlyweightTables(): void {
+    if (this.#messageChunkPayloads.size > 0) this.#messageChunkPayloads.clear();
+    if (this.#thoughtChunkPayloads.size > 0) this.#thoughtChunkPayloads.clear();
+    if (this.#turnEventFlyweightsByTs.size > 0) this.#turnEventFlyweightsByTs.clear();
+    // Interned strings remain reachable from turn fields; drop the Map
+    // scaffolding so multi-session replay does not retain a second strong
+    // index over the same ropes (MEMORY).
+    if (this.#stringPool.size > 0) this.#stringPool.clear();
+  }
+
+  #compactCompletedTurnEvents(turn: Turn): void {
+    if (
+      turn.status !== "complete"
+      && turn.status !== "error"
+      && turn.status !== "cancelled"
+    ) {
+      return;
+    }
+    const events = turn.events;
+    if (events.length === 0) return;
+    for (const event of events) {
+      const payload = event.payload;
+      if (!payload || typeof payload !== "object") return;
+      const record = payload as Record<string, unknown>;
+      const sessionUpdate = record.sessionUpdate;
+      if (
+        sessionUpdate !== "agent_message_chunk"
+        && sessionUpdate !== "agent_thought_chunk"
+      ) {
+        return;
+      }
+      if (
+        "messageId" in record
+        || "phase" in record
+        || "_meta" in record
+      ) {
+        return;
+      }
+    }
+    this.#turnProjectionCache.delete(turn.id);
+    turn.events = EMPTY_TURN_EVENTS;
   }
 
   setSideActive(id: string | null): void {
     if (this.#sideActiveId === id) return;
     this.#sideActiveId = id;
+    this.#evictInactiveTurnProjections();
+    this.#parkAllInactiveSessionHistories();
     this.#emit();
   }
 
@@ -1733,8 +2237,13 @@ export class SessionStore {
     this.#sessions.delete(sessionId);
     this.#autoOpenedHtmlBySession.delete(sessionId);
     this.#artifactsBySession.delete(sessionId);
-    for (const [tid, turn] of this.#turns) {
-      if (turn.sessionId === sessionId) this.#deleteTurn(tid);
+    this.#retainedHistoryRows.delete(sessionId);
+    this.#needsHistoryReload.delete(sessionId);
+    this.#historyParked.delete(sessionId);
+    this.#history.delete(sessionId);
+    this.#historyPending.delete(sessionId);
+    for (const turn of [...this.#turns.valuesForSession(sessionId)]) {
+      this.#deleteTurn(turn.id);
     }
     this.#emit();
   }
@@ -1854,10 +2363,7 @@ export class SessionStore {
         if (!row || row.kind !== "side") return [];
         return [{
           row: { ...row, pendingAsks: undefined },
-          turns: this.turnsFor(sessionId).map((turn) => ({
-            ...turn,
-            events: turn.events.map((event) => ({ ...event })),
-          })),
+          turns: this.turnsFor(sessionId).map((turn) => (patchTurn(turn, { events: turn.events.map((event) => ({ ...event })), }))),
         }];
       });
 
@@ -2560,7 +3066,7 @@ export class SessionStore {
     this.#turns.set(turnId, {
       id: turnId,
       sessionId,
-      promptText,
+      promptText: this.#internString(promptText),
       ...(runSelection ? { runSelection } : {}),
       annotations: annotations.length ? annotations : undefined,
       attachments: attachments.length > 0
@@ -2612,14 +3118,13 @@ export class SessionStore {
       if (turn.sessionId !== sessionId || !ids.has(turn.id) || activeIds.has(turn.id) || turn.status !== "running") continue;
       // A settled turn cannot still be sending: clearing sendState keeps
       // "Sending…" from sitting next to the interrupted notice.
-      this.#turns.set(turn.id, {
-        ...turn,
-        status: "cancelled",
+      this.#turns.set(turn.id, patchTurn(turn, {
+status: "cancelled",
         stopReason: "interrupted",
         sendState: undefined,
         sendError: undefined,
         endedAt: turn.endedAt ?? turn.startedAt,
-      });
+}));
     }
     this.#mutateSession(sessionId, session => {
       const active = session.activeTurnId && this.#turns.get(session.activeTurnId);
@@ -2644,12 +3149,11 @@ export class SessionStore {
     for (const turn of this.#turns.values()) {
       if (turn.sessionId !== sessionId || turn.status !== "running") continue;
       if (keep.has(turn.id) || turn.sendState === "pending") continue;
-      this.#turns.set(turn.id, {
-        ...turn,
-        status: "cancelled",
+      this.#turns.set(turn.id, patchTurn(turn, {
+status: "cancelled",
         stopReason: turn.stopReason ?? "interrupted",
         endedAt: turn.endedAt ?? turn.startedAt,
-      });
+}));
     }
   }
 
@@ -2657,11 +3161,10 @@ export class SessionStore {
     if (!turnId) return;
     const turn = this.#turns.get(turnId);
     if (turn?.status === "queued") {
-      this.#turns.set(turnId, {
-        ...turn,
-        status: "running",
+      this.#turns.set(turnId, patchTurn(turn, {
+status: "running",
         sendState: turn.sendState === "failed" ? "failed" : "pending",
-      });
+}));
     }
   }
 
@@ -2752,16 +3255,14 @@ export class SessionStore {
   rebindSession(fromId: string, toId: string): void {
     if (!fromId || fromId === toId) return;
     const from = this.#sessions.get(fromId);
-    const hasTurns = [...this.#turns.values()].some((turn) => turn.sessionId === fromId);
-    if (!from && !hasTurns) return;
+    const fromTurns = [...this.#turns.valuesForSession(fromId)];
+    if (!from && fromTurns.length === 0) return;
     if (from && !this.#sessions.has(toId)) {
       this.#sessions.set(toId, { ...from, id: toId });
     }
     if (from) this.#sessions.delete(fromId);
-    for (const [id, turn] of this.#turns) {
-      if (turn.sessionId === fromId) {
-        this.#turns.set(id, { ...turn, sessionId: toId });
-      }
+    for (const turn of fromTurns) {
+      this.#turns.set(turn.id, patchTurn(turn, { sessionId: toId }));
     }
     this.#emit();
   }
@@ -2771,25 +3272,23 @@ export class SessionStore {
     if (!turnId) return;
     const turn = this.#turns.get(turnId);
     if (turn?.sendState !== "pending") return;
-    this.#turns.set(turnId, {
-      ...turn,
-      sendState: undefined,
+    this.#turns.set(turnId, patchTurn(turn, {
+sendState: undefined,
       sendError: undefined,
-    });
+}));
   }
 
   /** The send never reached an accepted prompt. Keep the bubble and offer retry. */
   failSend(turnId: string, message: string): void {
     const turn = this.#turns.get(turnId);
     if (!turn) return;
-    this.#turns.set(turnId, {
-      ...turn,
-      status: "error",
+    this.#turns.set(turnId, patchTurn(turn, {
+status: "error",
       errorMessage: message,
       sendState: "failed",
       sendError: message,
       endedAt: Date.now(),
-    });
+}));
     this.#advanceAfterTurn(turn.sessionId, turnId);
     this.#emit();
   }
@@ -2800,14 +3299,13 @@ export class SessionStore {
   cancelSend(turnId: string): void {
     const turn = this.#turns.get(turnId);
     if (!turn) return;
-    this.#turns.set(turnId, {
-      ...turn,
-      status: "cancelled",
+    this.#turns.set(turnId, patchTurn(turn, {
+status: "cancelled",
       stopReason: "interrupted",
       sendState: undefined,
       sendError: undefined,
       endedAt: Date.now(),
-    });
+}));
     this.#advanceAfterTurn(turn.sessionId, turnId);
     this.#emit();
   }
@@ -2816,14 +3314,13 @@ export class SessionStore {
   reopenSend(turnId: string): void {
     const turn = this.#turns.get(turnId);
     if (!turn) return;
-    this.#turns.set(turnId, {
-      ...turn,
-      status: "running",
+    this.#turns.set(turnId, patchTurn(turn, {
+status: "running",
       errorMessage: undefined,
       sendState: "pending",
       sendError: undefined,
       endedAt: undefined,
-    });
+}));
     this.#mutateSession(turn.sessionId, (session) => ({
       ...session,
       activeTurnId: turnId,
@@ -2898,7 +3395,7 @@ export class SessionStore {
       if (!isStickyProviderErrorMessage(turn.errorMessage)) continue;
       turn.errorMessage = undefined;
       turn.stickyFeedCleared = true;
-      this.#turns.set(id, { ...turn });
+      this.#turns.set(id, flattenTurn(turn));
       cleared++;
     }
     return cleared;
@@ -3760,7 +4257,48 @@ export class SessionStore {
       // I11: live ownership wins for existing turns, not for the entire
       // session. A late initial history fetch must still expose older turns.
       if (!this.#history.has(sessionId)) {
-        const liveTurns = this.turnsFor(sessionId);
+        // Avoid turnsFor here — it must not recurse into ensure→replay.
+        const liveTurns = this.#ownTurnsFor(sessionId);
+        // Park rematerialize with live turns: prefer structural share (O(turns)
+        // shells) over prependReplay's full row parse (switch SPEED).
+        if (!opts.hasMore) {
+          const shared = this.#replayRowsShare.get(rows);
+          if (shared) {
+            // Detach live rows first so re-append puts them after history
+            // (SessionTurnMap keeps original position on set of existing id).
+            for (const turn of liveTurns) this.#turns.delete(turn.id);
+            const prefix = `replay-${shared.sourceSessionId}-`;
+            for (const src of shared.turns) {
+              const suffix = src.id.startsWith(prefix)
+                ? src.id.slice(prefix.length)
+                : src.id;
+              const tid = `replay-${sessionId}-${suffix}`;
+              const turn = Object.create(src) as Turn;
+              turn.id = tid;
+              turn.sessionId = sessionId;
+              if (src.events.length > 0) {
+                turn.events = src.events.slice();
+              }
+              this.#turns.set(tid, turn);
+            }
+            for (const turn of liveTurns) {
+              this.#turns.set(turn.id, turn);
+              this.#turnProjectionCache.delete(turn.id);
+            }
+            this.#history.set(sessionId, {
+              oldestSeq: rows[0]?.seq,
+              hasMore: false,
+              loading: false,
+              agentLifecycle: shared.agentLifecycle,
+            });
+            this.#retainedHistoryRows.set(sessionId, { rows, hasMore: false });
+            this.#needsHistoryReload.delete(sessionId);
+            this.#historyParked.delete(sessionId);
+            this.#pruneNonCanonicalSubagents(sessionId, shared.agentLifecycle);
+            this.#emit();
+            return;
+          }
+        }
         const agentLifecycle = this.#prependReplay(sessionId, rows, opts.hasMore);
         for (const turn of liveTurns) {
           this.#turns.set(turn.id, turn);
@@ -3769,11 +4307,51 @@ export class SessionStore {
         this.#history.set(sessionId, {
           oldestSeq: rows[0]?.seq, hasMore: opts.hasMore, loading: false, agentLifecycle,
         });
+        this.#retainedHistoryRows.set(sessionId, { rows, hasMore: opts.hasMore });
+        this.#needsHistoryReload.delete(sessionId);
+        this.#historyParked.delete(sessionId);
       }
       this.#emit();
       return;
     }
     this.#clearMaterializableTurns(sessionId);
+    // Structural share: identical rows array reference → clone from the first
+    // full-window materialization (shared ropes + flyweight events).
+    if (!opts.hasMore) {
+      const shared = this.#replayRowsShare.get(rows);
+      if (shared) {
+        const prefix = `replay-${shared.sourceSessionId}-`;
+        for (const src of shared.turns) {
+          const suffix = src.id.startsWith(prefix)
+            ? src.id.slice(prefix.length)
+            : src.id;
+          const tid = `replay-${sessionId}-${suffix}`;
+          // Thin shell: inherit prompt/assistant/thought/events/status from
+          // the shared completed source (MEMORY). Own only id + sessionId.
+          // Mutations must go through patchTurn/flattenTurn — object spread
+          // alone would drop inherited fields.
+          const turn = Object.create(src) as Turn;
+          turn.id = tid;
+          turn.sessionId = sessionId;
+          if (src.events.length > 0) {
+            turn.events = src.events.slice();
+          }
+          this.#turns.set(tid, turn);
+        }
+        this.#history.set(sessionId, {
+          oldestSeq: rows[0]?.seq,
+          hasMore: false,
+          loading: false,
+          agentLifecycle: shared.agentLifecycle,
+        });
+        this.#retainedHistoryRows.set(sessionId, { rows, hasMore: false });
+        this.#needsHistoryReload.delete(sessionId);
+        this.#historyParked.delete(sessionId);
+        this.#pruneNonCanonicalSubagents(sessionId, shared.agentLifecycle);
+        this.#emit();
+        return;
+      }
+    }
     const agentLifecycle = this.#replayRows(sessionId, rows, {
       partialHead: opts.hasMore,
       notices: true,
@@ -3785,6 +4363,20 @@ export class SessionStore {
       agentLifecycle,
     });
     if (!opts.hasMore) this.#pruneNonCanonicalSubagents(sessionId, agentLifecycle);
+    for (const turn of this.#turns.valuesForSession(sessionId)) {
+      this.#internTurnText(turn);
+    }
+    this.#releaseFlyweightTables();
+    if (!opts.hasMore) {
+      this.#replayRowsShare.set(rows, {
+        sourceSessionId: sessionId,
+        turns: [...this.#turns.valuesForSession(sessionId)],
+        agentLifecycle,
+      });
+    }
+    this.#retainedHistoryRows.set(sessionId, { rows, hasMore: opts.hasMore });
+    this.#needsHistoryReload.delete(sessionId);
+    this.#historyParked.delete(sessionId);
     this.#emit();
   }
 
@@ -3847,8 +4439,8 @@ export class SessionStore {
     // turn's position. The id-less legacy head continues the newest older turn.
     const headId = `replay-${sessionId}-head`;
     let owner: Turn | undefined;
-    for (const turn of this.#turns.values()) {
-      if (turn.sessionId === sessionId) owner = turn;
+    for (const turn of this.#turns.valuesForSession(sessionId)) {
+      owner = turn;
     }
     for (const turn of newer) {
       const older = this.#turns.get(turn.id);
@@ -3880,9 +4472,7 @@ export class SessionStore {
   }
 
   #hasSessionTurns(sessionId: string): boolean {
-    for (const turn of this.#turns.values()) {
-      if (turn.sessionId === sessionId) return true;
-    }
+    for (const _ of this.#turns.valuesForSession(sessionId)) return true;
     return false;
   }
 
@@ -3891,8 +4481,8 @@ export class SessionStore {
    *  a CLI-started thread whose GUI resume races ahead of history fetch. */
   #shouldMaterializeHistoryFromSql(sessionId: string): boolean {
     const replayPrefix = `replay-${sessionId}-`;
-    for (const turn of this.#turns.values()) {
-      if (turn.sessionId !== sessionId || turn.inherited) continue;
+    for (const turn of this.#turns.valuesForSession(sessionId)) {
+      if (turn.inherited) continue;
       if (turn.promptText?.trim()) return false;
       if (
         turn.id.startsWith(replayPrefix)
@@ -3932,10 +4522,8 @@ export class SessionStore {
   }
 
   #clearMaterializableTurns(sessionId: string): void {
-    for (const [id, turn] of this.#turns) {
-      if (turn.sessionId === sessionId && !turn.inherited) {
-        this.#deleteTurn(id);
-      }
+    for (const turn of [...this.#turns.valuesForSession(sessionId)]) {
+      if (!turn.inherited) this.#deleteTurn(turn.id);
     }
   }
 
@@ -3944,8 +4532,8 @@ export class SessionStore {
   #existingToolOwner(sessionId: string, payload: unknown): Turn | undefined {
     const parsed = parseAcpEvent(payload);
     if (parsed.kind !== "tool_call") return undefined;
-    const matches = [...this.#turns.values()].filter(turn => turn.sessionId === sessionId
-      && this.projectTurn(turn).tools.some(tool => tool.toolCallId === parsed.tool.toolCallId));
+    const matches = [...this.#turns.valuesForSession(sessionId)].filter(turn =>
+      this.projectTurn(turn).tools.some(tool => tool.toolCallId === parsed.tool.toolCallId));
     return matches.length === 1 ? matches[0] : undefined;
   }
 
@@ -4121,7 +4709,7 @@ export class SessionStore {
                 this.#turns.set(activeTurn.id, activeTurn);
               }
               if (activeTurn) {
-                activeTurn.events.push({ payload: canonical, receivedAt: r.ts });
+                ensureWritableEvents(activeTurn).push({ payload: canonical, receivedAt: r.ts });
                 activeTurn.endedAt = Math.max(activeTurn.endedAt ?? activeTurn.startedAt, r.ts);
               }
               continue;
@@ -4133,7 +4721,7 @@ export class SessionStore {
               clientId: typeof input.client_id === "string" && input.client_id
                 ? input.client_id
                 : undefined,
-              promptText: typeof input.text === "string" ? input.text : "",
+              promptText: this.#internString(typeof input.text === "string" ? input.text : ""),
               annotations: Array.isArray(input.annotations) ? input.annotations as PromptAnnotation[] : undefined,
               attachments: Array.isArray(input.attachments)
                 ? input.attachments as PromptAttachment[]
@@ -4149,7 +4737,7 @@ export class SessionStore {
               endedAt: r.ts,
             };
             if (inputKind === "steering") {
-              next.events.push({ payload: canonical, receivedAt: r.ts });
+              ensureWritableEvents(next).push({ payload: canonical, receivedAt: r.ts });
             }
             if (canonical.turn_id) turnsByCanonicalId.set(canonical.turn_id, next);
             this.#turns.set(tid, next);
@@ -4280,7 +4868,7 @@ export class SessionStore {
           || (canonical.type === "raw.event" && canonical.data.method === "session/update" &&
             (canonical.data.event_type === "compaction_update" || canonical.data.event_type === "compaction_summary_chunk"))
         ) {
-          turn.events.push({ payload: canonical, receivedAt: r.ts });
+          ensureWritableEvents(turn).push({ payload: canonical, receivedAt: r.ts });
         }
         continue;
       }
@@ -4310,7 +4898,7 @@ export class SessionStore {
           clientId: typeof promptRecord.client_id === "string" && promptRecord.client_id
             ? promptRecord.client_id
             : undefined,
-          promptText: promptRecord.text ?? "",
+          promptText: this.#internString(promptRecord.text ?? ""),
           annotations: (data as { annotations?: PromptAnnotation[] })?.annotations,
           attachments: (
             data as { attachments?: PromptAttachment[] }
@@ -4377,7 +4965,7 @@ export class SessionStore {
               messageId: parsed.messageId,
             });
           } else {
-            current.events.push({ payload: data, receivedAt: r.ts });
+            ensureWritableEvents(current).push({ payload: data, receivedAt: r.ts });
           }
         }
       }
@@ -4870,10 +5458,7 @@ export class SessionStore {
               // object exactly once so the streaming answer or Reasoning
               // block actually mounts; later chunks keep mutating the
               // replacement in place.
-              this.#turns.set(eventTurnId, {
-                ...turn,
-                events: [...turn.events],
-              });
+              this.#turns.set(eventTurnId, patchTurn(turn, { events: [...turn.events], }));
             }
             const isHighFrequencyStreamChunk =
               ev.openma_event?.type === "agent.message_chunk" ||
@@ -4894,11 +5479,10 @@ export class SessionStore {
         // re-renders the affected turn block.
         const nextTurn =
           parsed.kind === "tool_call"
-            ? {
-                ...turn,
-                activeThoughtMessageId: undefined,
+            ? patchTurn(turn, {
+activeThoughtMessageId: undefined,
                 activeThoughtSegmentText: undefined,
-              }
+})
             : turn;
         this.#turns.set(eventTurnId, {
           ...nextTurn,
@@ -5077,24 +5661,22 @@ export class SessionStore {
             if (!turn.events.some((entry) =>
               isPlainRecord(entry.payload) && entry.payload.event_id === eventId
             )) {
-              this.#turns.set(activeTurnId, {
-                ...turn,
-                events: [
+              this.#turns.set(activeTurnId, patchTurn(turn, {
+events: [
                   ...turn.events,
                   { payload: openmaEvent, receivedAt: Date.now() },
                 ],
-              });
+}));
             }
             if (ev.turn_id !== activeTurnId) this.#deleteTurn(ev.turn_id);
           } else {
             const turn = this.#turns.get(ev.turn_id);
             if (turn) {
-              this.#turns.set(ev.turn_id, {
-                ...turn,
-                status: "complete",
+              this.#turns.set(ev.turn_id, patchTurn(turn, {
+status: "complete",
                 effectiveDelivery: ev.effective_delivery,
                 deliveryDegraded: ev.delivery_degraded ?? false,
-              });
+}));
             }
           }
         } else if (ev.outcome === "startedNewTurn") {
@@ -5124,16 +5706,15 @@ export class SessionStore {
             && data?.outcome === "startedNewTurn"
           ) {
             const eventId = openmaEvent.event_id;
-            this.#turns.set(ev.turn_id, {
-              ...turn,
-              events: turn.events.some((entry) =>
+            this.#turns.set(ev.turn_id, patchTurn(turn, {
+events: turn.events.some((entry) =>
                 isPlainRecord(entry.payload) && entry.payload.event_id === eventId
               )
                 ? turn.events
                 : [...turn.events, { payload: openmaEvent, receivedAt: Date.now() }],
               status: "running",
               endedAt: undefined,
-            });
+}));
           }
           this.#mutateSession(ev.session_id, (session) => {
             const queuedTurnIds = (session.queuedTurnIds ?? []).filter(
@@ -5156,9 +5737,8 @@ export class SessionStore {
       case "session.tool_cancelled": {
         const turn = this.#turns.get(ev.turn_id);
         if (turn) {
-          this.#turns.set(ev.turn_id, {
-            ...turn,
-            events: [...turn.events, {
+          this.#turns.set(ev.turn_id, patchTurn(turn, {
+events: [...turn.events, {
             payload: ev.openma_event ?? {
               schema_version: "oma.event.v1",
               event_id: `tool-cancelled:${ev.session_id}:${ev.turn_id}:${ev.tool_call_id}`,
@@ -5175,23 +5755,22 @@ export class SessionStore {
             },
             receivedAt: Date.now(),
             }],
-          });
+}));
         }
         break;
       }
       case "session.cancelled": {
         const turn = this.#turns.get(ev.turn_id);
         if (turn) {
-          this.#turns.set(ev.turn_id, {
-            ...turn,
-            status: "cancelled",
+          this.#turns.set(ev.turn_id, patchTurn(turn, {
+status: "cancelled",
             // The turn is over, so it cannot still be sending. Leaving
             // sendState pending would show "Sending…" next to the
             // interrupted notice for the same turn.
             sendState: undefined,
             sendError: undefined,
             endedAt: Date.now(),
-          });
+}));
         }
         this.#advanceAfterTurn(ev.session_id, ev.turn_id);
         break;
@@ -5229,19 +5808,32 @@ export class SessionStore {
               assistantArtifacts.sources,
             );
           }
-          this.#turns.set(ev.turn_id, {
-            ...turn,
-            // Streaming chunks compact into turn.events in place to avoid a
-            // React render per token. Publish a fresh array at the terminal
-            // boundary so consumers memoized by events identity reduce the
+          // Terminal first so #internTurnText → #compactCompletedTurnEvents
+          // can drop text-only event shells (MEMORY). Invalidate projection
+          // before compact/synthetic so a prior in-stream snapshot cannot
+          // stick past the boundary.
+          this.#turnProjectionCache.delete(ev.turn_id);
+          turn.status = "complete";
+          turn.endedAt = Date.now();
+          if (ev.stop_reason) turn.stopReason = ev.stop_reason;
+          turn.activeThoughtMessageId = undefined;
+          turn.activeThoughtSegmentText = undefined;
+          this.#internTurnText(turn);
+          this.#releaseFlyweightTables();
+          this.#turns.set(ev.turn_id, patchTurn(turn, {
+// Compacted turns keep the shared empty shell; otherwise publish
+            // a fresh array so consumers memoized by events identity see the
             // trailing text that arrived after the last structural event.
-            events: [...turn.events],
+            events:
+              turn.events.length === 0
+                ? EMPTY_TURN_EVENTS
+                : [...turn.events],
             activeThoughtMessageId: undefined,
             activeThoughtSegmentText: undefined,
             status: "complete",
             ...(ev.stop_reason ? { stopReason: ev.stop_reason } : {}),
-            endedAt: Date.now(),
-          });
+            endedAt: turn.endedAt,
+}));
           this.#settleNativeSubagentsForTurn(ev.session_id, turn);
           this.#settleBackgroundWorkItemsForTurn(ev.session_id, turn);
           // A successful turn is the only thing that clears a terminal
@@ -5322,11 +5914,10 @@ export class SessionStore {
         for (const prompt of ev.queued.filter(prompt => nextQueued.has(prompt.turn_id))) {
           const turn = this.#turns.get(prompt.turn_id);
           if (turn?.sessionId === ev.session_id) {
-            this.#turns.set(prompt.turn_id, {
-              ...turn,
-              promptText: prompt.text,
+            this.#turns.set(prompt.turn_id, patchTurn(turn, {
+promptText: prompt.text,
               status: "queued",
-            });
+}));
           }
         }
         this.#markTurnRunning(activeTurnId);
@@ -5359,15 +5950,14 @@ export class SessionStore {
           const turn = this.#turns.get(turnId);
           if (turn) {
             const sendFailed = turn.sendState === "pending" && turn.events.length === 0;
-            this.#turns.set(turnId, {
-              ...turn,
-              status: interrupted ? "cancelled" : "error",
+            this.#turns.set(turnId, patchTurn(turn, {
+status: interrupted ? "cancelled" : "error",
               stopReason: interrupted ? "interrupted" : turn.stopReason,
               errorMessage: interrupted ? undefined : message,
               sendState: !interrupted && sendFailed ? "failed" : undefined,
               sendError: !interrupted && sendFailed ? message : undefined,
               endedAt: Date.now(),
-            });
+}));
           }
           this.#advanceAfterTurn(ev.session_id, turnId);
           this.#recordSubagentActivity(ev.session_id, {

@@ -104,8 +104,9 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
 
   return (
     <div className="sidebar-navigation flex h-full min-h-0 flex-col text-ui text-fg">
-      {/* macOS traffic-light spacer; collapsed on linux/windows (see index.css). */}
-      <div className="app-drag-region h-[36px] shrink-0" data-traffic-light-spacer="" />
+      {/* The full-width back row must sit below the floating history controls
+          on every OS, including platforms with a native title bar. */}
+      <div className="app-drag-region h-[36px] shrink-0" data-traffic-light-spacer="" style={{ display: "block" }} />
       <div className="sidebar-content-inset pt-[var(--row-gap-y)]">
         <SidebarGridRow
           as="button"
@@ -117,7 +118,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
             active: false,
             // Leaving settings is non-essential (Esc and the icon carry it):
             // quaternary tier, one full step under the tertiary nav rows.
-            className: "app-no-drag mb-2 w-fit text-fg-faint",
+            className: "app-no-drag mb-2 w-full text-fg-faint",
           })}
         >
           <SidebarGridCell slot="icon">

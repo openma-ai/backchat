@@ -1295,6 +1295,28 @@ describe("SessionStore turn projection cache", () => {
 });
 
 describe("SessionStore performance invariants", () => {
+  test("active transcript reads do not visit unrelated sessions' turns", () => {
+    const store = new SessionStore();
+    store.registerStarting("active", "codex-acp", "Active");
+    store.registerTurn("active-turn", "active", "hello");
+    store.registerStarting("inactive", "codex-acp", "Inactive");
+    store.registerTurn("inactive-turn", "inactive", "other history");
+    const inactive = store.turnsFor("inactive")[0]!;
+    let unrelatedReads = 0;
+    Object.defineProperty(inactive, "sessionId", {
+      get: () => { unrelatedReads++; return "inactive"; },
+      configurable: true,
+    });
+    const selector = selectTurnsFor("active");
+    const before = store.snapshot(selector);
+    for (let i = 0; i < 20; i++) {
+      store.setSideActive(`side-${i}`);
+      expect(store.snapshot(selector)).toBe(before);
+      expect(store.turnsFor("active").map(turn => turn.id)).toEqual(["active-turn"]);
+    }
+    expect(unrelatedReads).toBe(0);
+  });
+
   test("keeps prompt attachments on a live optimistic turn", () => {
     const store = new SessionStore();
     store.registerStarting("sess-attachments", "codex-acp", "Attachments");
@@ -1378,6 +1400,140 @@ describe("SessionStore performance invariants", () => {
 
     store.registerTurn("turn-2", "sess-1", "changed");
     expect(store.snapshot(turnsSelector)).not.toBe(turnsBefore);
+  });
+
+  test("structurally shares turns when replaying the same HistoryRow[] reference", () => {
+    const store = new SessionStore();
+    const rows = [
+      { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "Shared rows" }), ts: 1 },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Cloned from first materialization." },
+        }),
+        ts: 2,
+      },
+    ];
+    store.registerStarting("share-a", "codex-acp", "A");
+    store.registerStarting("share-b", "codex-acp", "B");
+    store.replayHistoryWindow("share-a", rows, { hasMore: false });
+    store.replayHistoryWindow("share-b", rows, { hasMore: false });
+    const a = store.turnsFor("share-a")[0]!;
+    const b = store.turnsFor("share-b")[0]!;
+    expect(a.id).not.toBe(b.id);
+    expect(a.sessionId).toBe("share-a");
+    expect(b.sessionId).toBe("share-b");
+    expect(a.events).toHaveLength(0);
+    expect(b.events).toHaveLength(0);
+    expect(a.assistantText).toBe(b.assistantText);
+    // Second materialization is a thin Object.create shell over the first.
+    expect(Object.getPrototypeOf(b)).toBe(a);
+    expect(Object.hasOwn(b, "assistantText")).toBe(false);
+    expect(store.projectTurn(a).assistantText).toBe(
+      store.projectTurn(b).assistantText,
+    );
+  });
+
+  test("parks inactive session history and rematerializes on setActive", () => {
+    const store = new SessionStore();
+    const rows = [
+      { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "Park me" }), ts: 1 },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Parked answer." },
+        }),
+        ts: 2,
+      },
+    ];
+    store.registerStarting("park-a", "codex-acp", "A");
+    store.registerStarting("park-b", "codex-acp", "B");
+    store.replayHistoryWindow("park-a", rows, { hasMore: false });
+    store.replayHistoryWindow("park-b", rows, { hasMore: false });
+    store.registerTurn("live-a", "park-a", "Live");
+    store.setActive("park-a");
+    // B dematerialized; A keeps history + live.
+    expect(store.isHistoryParked("park-b")).toBe(true);
+    expect(store.isHistoryParked("park-a")).toBe(false);
+    expect(store.turnsFor("park-a")).toHaveLength(2);
+    expect(store.turnsFor("park-a").map((t) => t.promptText)).toEqual([
+      "Park me",
+      "Live",
+    ]);
+    store.setActive("park-b");
+    expect(store.turnsFor("park-b")).toHaveLength(1); // lazy hydrate on read
+    expect(store.isHistoryParked("park-b")).toBe(false);
+    expect(store.turnsFor("park-b")[0]?.assistantText).toBe("Parked answer.");
+    // A history parked; live turn kept.
+    expect(store.isHistoryParked("park-a")).toBe(true);
+    expect(store.turnsFor("park-a")).toHaveLength(1);
+    expect(store.turnsFor("park-a")[0]?.id).toBe("live-a");
+    store.setActive("park-a");
+    expect(store.turnsFor("park-a")).toHaveLength(2);
+    expect(store.turnsFor("park-a").at(-1)?.id).toBe("live-a");
+  });
+
+  test("compacts text-only completed turns and shares ropes across sessions", () => {
+    const store = new SessionStore();
+    const rows = [
+      { seq: 1, type: "user_prompt", data: JSON.stringify({ text: "Same question" }), ts: 1 },
+      {
+        seq: 2,
+        type: "agent_message_chunk",
+        data: JSON.stringify({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Same answer across sessions for MEMORY." },
+        }),
+        ts: 2,
+      },
+    ];
+    store.registerStarting("fly-a", "codex-acp", "A");
+    store.registerStarting("fly-b", "codex-acp", "B");
+    store.replayHistoryWindow("fly-a", rows, { hasMore: false });
+    store.replayHistoryWindow("fly-b", rows, { hasMore: false });
+    const a = store.turnsFor("fly-a")[0]!;
+    const b = store.turnsFor("fly-b")[0]!;
+    // Event objects elided; accumulators + projectTurn keep the transcript.
+    expect(a.events).toHaveLength(0);
+    expect(b.events).toHaveLength(0);
+    expect(a.events).toBe(b.events);
+    expect(a.promptText).toBe(b.promptText);
+    expect(a.assistantText).toBe(b.assistantText);
+    expect(store.projectTurn(a).assistantText).toBe(
+      "Same answer across sessions for MEMORY.",
+    );
+    expect(store.projectTurn(b).assistantText).toBe(
+      "Same answer across sessions for MEMORY.",
+    );
+  });
+
+  test("shares coalesced stream text with turn.assistantText (single string rope)", () => {
+    const store = new SessionStore();
+    store.registerStarting("sess-share", "codex-acp", "Share");
+    store.registerTurn("turn-share", "sess-share", "hello");
+    for (const text of ["Hello ", "world", "!"]) {
+      store.apply({
+        type: "session.event",
+        session_id: "sess-share",
+        turn_id: "turn-share",
+        event: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      });
+    }
+    const turn = store.turnsFor("sess-share")[0]!;
+    expect(turn.assistantText).toBe("Hello world!");
+    expect(turn.events).toHaveLength(1);
+    const payloadText = (turn.events[0]!.payload as { content: { text: string } }).content.text;
+    expect(payloadText).toBe("Hello world!");
+    // Implementation assigns turn.assistantText into the payload so the
+    // accumulator and event share one rope under V8 (see #appendStreamEvent).
+    expect(payloadText).toBe(turn.assistantText);
   });
 
   test("coalesces adjacent streaming chunks without losing tool boundaries", () => {
