@@ -1105,12 +1105,16 @@ describe("SessionEventOut → OpenMA event boundary", () => {
       },
     }, { ...options, harness: "codex-acp", adapter: "codex" });
 
-    expect(event?.type).toBe("session.error");
-    expect(event?.data.code).toBe("auth_required");
-    expect(String(event?.data.message)).toContain("auth_unavailable");
-    expect(event?.data.error_details).toMatchObject({
-      message: expect.stringContaining("auth_unavailable"),
-      data: { codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } },
+    expect(event).toMatchObject({
+      type: "session.error",
+      data: {
+        code: "auth_required",
+        message: expect.stringContaining("auth_unavailable"),
+        error_details: {
+          message: expect.stringContaining("auth_unavailable"),
+          data: { codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } },
+        },
+      },
     });
   });
 
@@ -1129,9 +1133,11 @@ describe("SessionEventOut → OpenMA event boundary", () => {
       },
     }, { ...options, harness: "codex-acp", adapter: "codex" });
 
-    expect(event?.type).toBe("session.error");
-    expect(event?.data.message).toBe("the model returned an invalid response");
-    expect(event?.data.code).toBeUndefined();
+    expect(event).toMatchObject({
+      type: "session.error",
+      data: { message: "the model returned an invalid response" },
+    });
+    expect(event).not.toMatchObject({ data: { code: expect.anything() } });
   });
 
   it("keeps a soft reconnect notice-only but explains it with the provider detail", () => {
@@ -1153,9 +1159,13 @@ describe("SessionEventOut → OpenMA event boundary", () => {
       },
     }, { ...options, harness: "codex-acp", adapter: "codex" });
 
-    expect(event?.type).toBe("session.running");
-    expect(event?.data.retrying).toBe(true);
-    expect(event?.data.message).toBe("upstream connect timeout, retrying");
+    expect(event).toMatchObject({
+      type: "session.running",
+      data: {
+        retrying: true,
+        message: "upstream connect timeout, retrying",
+      },
+    });
   });
 
   it("maps Pi running metadata into canonical session lifecycle without dropping queue depth", () => {

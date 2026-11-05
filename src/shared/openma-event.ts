@@ -187,7 +187,7 @@ function codexProviderErrorDetails(
   if (error.additionalDetails !== undefined) data.additionalDetails = error.additionalDetails;
   const text = message ?? stringValue(error.message);
   if (!text && Object.keys(data).length === 0) return null;
-  return { message: text ?? "Provider error", ...(Object.keys(data).length ? { data } : {}) };
+  return { message: text ?? "Provider error", data };
 }
 
 function acpText(inner: Record<string, unknown>): string | undefined {
