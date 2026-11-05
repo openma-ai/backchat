@@ -1,0 +1,8 @@
+{
+  "heapDeltaMB": 7.1,
+  "heapAfterMB": 32.5,
+  "rssDeltaMB": 4.8,
+  "eventShared01": true,
+  "liveEqualLen": 200,
+  "checkedOnS0": 200
+}

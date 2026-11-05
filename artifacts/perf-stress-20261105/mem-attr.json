@@ -1,0 +1,12 @@
+{
+  "heapDeltaMB": 21.7,
+  "rssDeltaMB": 53,
+  "heapAfterMB": 46.9,
+  "turns": 20000,
+  "events": 20000,
+  "assistantMB": 13.6,
+  "eventTextMB": 13.6,
+  "promptMB": 0.4,
+  "sameValAsAssistant": 20000,
+  "approxTextDupMB": 27.6
+}

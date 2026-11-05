@@ -184,6 +184,25 @@ diff --git a/dist/chat-ui/components.js b/dist/chat-ui/components.js
 index ecdd857..63b15aa 100644
 --- a/dist/chat-ui/components.js
 +++ b/dist/chat-ui/components.js
+@@ -295,12 +295,15 @@ function ChatVirtualConversation({ turns, renderTurn, slots, transcriptRef }) {
+         count: turns.length,
+         getScrollElement: () => scrollRef.current,
+         getItemKey,
+-        estimateSize: () => 240,
++        // Tighter estimate + overscan: fewer mounted ChatTurn trees during
++        // scroll/switch under high-load e2e (DOM/CPU/MEMORY). measureElement
++        // still corrects real heights; 180 matches dense Backchat prose.
++        estimateSize: () => 180,
+         initialRect: { width: 0, height: 600 },
+-        initialOffset: () => Math.max(0, turns.length * 240 + 48 - 600),
++        initialOffset: () => Math.max(0, turns.length * 180 + 48 - 600),
+         paddingStart: 24,
+         paddingEnd: 24,
+-        overscan: 3,
++        overscan: 1,
+         anchorTo: "end",
+         followOnAppend: "auto",
+         scrollEndThreshold: 48,
 @@ -420,17 +420,6 @@ export function AgentUITurnView({ sessionId, turn, thoughts, labels, slots, clas
          hasSupplementalProcess ||
          (isStreaming && answerItems.length === 0);

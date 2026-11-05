@@ -137,31 +137,45 @@ export function ConversationTimeline({ turns }: { turns: Turn[] }) {
       onMouseLeave={leave}
     >
       <div
-        // The ticks column. Limited to ~50vh so a chat with 100+ turns
-        // still leaves room for the conversation itself. pr-2 widens
-        // the click target horizontally beyond the 2-px ticks so the
-        // strip is easy to hit.
+        // One scrubber track instead of N tick buttons. A 500-turn chat
+        // used to mount 500 DOM nodes on the left rail (Electron long-task
+        // + layout cost during session switch); hit-testing by Y keeps the
+        // same jump-to-turn behavior with O(1) nodes.
         className={cn(
-          "flex max-h-[40vh] flex-col items-start overflow-hidden py-1 pr-2",
+          "relative max-h-[40vh] w-4 py-1 pr-2",
           "transition-opacity duration-150",
           open ? "opacity-0" : "opacity-100",
         )}
-        style={{ gap: `${gap}px` }}
+        style={{ height: `${Math.min(280, Math.max(80, promptCount * (gap + 2)))}px` }}
         aria-hidden={open}
+        role="slider"
+        aria-valuemin={0}
+        aria-valuemax={promptCount - 1}
+        aria-valuenow={Math.max(0, prompts.findIndex((turn) => turn.id === activeId))}
+        aria-label={t("chat.conversationTimeline")}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const ratio = (event.clientY - rect.top) / Math.max(1, rect.height);
+          const index = Math.min(
+            promptCount - 1,
+            Math.max(0, Math.floor(ratio * promptCount)),
+          );
+          const turn = prompts[index];
+          if (turn) scrollToTurn(turn.id);
+        }}
       >
-        {prompts.map((turn) => (
-          <button
-            key={turn.id}
-            type="button"
-            tabIndex={-1}
-            aria-label={turn.promptText.slice(0, 80)}
-            onClick={() => scrollToTurn(turn.id)}
-            className={cn(
-              "h-0.5 rounded-full transition-all duration-150",
-              turn.id === activeId ? "w-4 bg-fg" : "w-2.5 bg-fg/20",
-            )}
-          />
-        ))}
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 rounded-full bg-fg/15" />
+        {activeId && (() => {
+          const index = prompts.findIndex((turn) => turn.id === activeId);
+          if (index < 0) return null;
+          const top = promptCount <= 1 ? 0 : (index / (promptCount - 1)) * 100;
+          return (
+            <div
+              className="absolute left-0 h-0.5 w-4 rounded-full bg-fg transition-[top] duration-150"
+              style={{ top: `${top}%` }}
+            />
+          );
+        })()}
       </div>
 
       {open && (
@@ -186,10 +200,12 @@ export function ConversationTimeline({ turns }: { turns: Turn[] }) {
               onClick={() => scrollToTurn(turn.id)}
               className={cn(
                 "block w-full truncate rounded-lg px-2.5 py-1.5 text-left text-sm",
+                "content-visibility-auto",
                 turn.id === activeId
                   ? "bg-fg/8 text-fg"
                   : "text-fg-muted hover:bg-fg/5 hover:text-fg",
               )}
+              style={{ contentVisibility: "auto", containIntrinsicSize: "auto 36px" }}
             >
               {turn.promptText}
             </button>

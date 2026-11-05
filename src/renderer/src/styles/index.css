@@ -3965,6 +3965,14 @@ button[data-chat-turn-disclosure-trigger]:disabled .activity-disclosure-chevron 
   animation: none;
 }
 
+/* Off-screen virtual rows: skip layout/paint until scrolled near the
+   viewport. TanStack already unmounts far rows; this covers overscan
+   neighbors and non-virtual fallback paths (Electron scroll CPU). */
+[data-virtual-transcript] > [data-index] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 180px;
+}
+
 /* Older-history fetch: a hairline sweeping along the top edge of the
    transcript. Reads as activity without claiming space or attention. */
 @keyframes history-progress {
