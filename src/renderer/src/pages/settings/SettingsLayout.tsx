@@ -117,7 +117,7 @@ export function SettingsSidebar({ returnTo = "/" }: { returnTo?: string }) {
             active: false,
             // Leaving settings is non-essential (Esc and the icon carry it):
             // quaternary tier, one full step under the tertiary nav rows.
-            className: "app-no-drag mb-2 w-fit text-fg-faint",
+            className: "app-no-drag mb-2 w-full text-fg-faint",
           })}
         >
           <SidebarGridCell slot="icon">

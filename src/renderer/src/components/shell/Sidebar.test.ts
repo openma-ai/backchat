@@ -444,6 +444,8 @@ describe("groupSidebarSessions", () => {
 
     expect(row).toContain("depth={0}");
     expect(heading.indexOf("<DisclosureCaret")).toBeLessThan(heading.indexOf('slot="label"'));
+    expect(heading).toContain('className="sidebar-workspace-disclosure');
+    expect(heading.indexOf("sidebar-workspace-disclosure")).toBeLessThan(heading.indexOf("<DisclosureCaret"));
   });
 
   it("lifts rows only for hover, open menus and keyboard focus, never for a retained mouse focus", () => {

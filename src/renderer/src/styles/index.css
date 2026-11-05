@@ -1162,6 +1162,31 @@ html[data-theme-asset-sidebar-background="true"]
   opacity: 0.82;
 }
 
+
+/* Bound project empty chat: mirror the project's mark in the empty stage,
+   same footprint as .theme-empty-state-art so the center isn't blank. */
+.project-empty-icon {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+}
+.project-empty-icon .project-letter {
+  border-radius: 18px;
+  font-size: 36px;
+}
+.project-empty-icon .project-image {
+  border-radius: 18px;
+}
+.project-empty-icon [data-project-glyph]:not([data-project-glyph="letter"]) {
+  width: 48px;
+  height: 48px;
+}
+.project-empty-icon .text-\[14px\] {
+  font-size: 40px;
+  line-height: 1;
+}
+
 .theme-empty-state-art {
   display: grid;
   width: 76px;
@@ -3409,6 +3434,10 @@ body,
   align-items: center;
   overflow: visible;
   isolation: isolate;
+}
+
+.sidebar-grid-row[data-sidebar-row="new-chat"] [data-sidebar-grid="trailing"] > [data-sidebar-grid-action="last"] {
+  grid-column: 2 / -1;
 }
 
 .sidebar-grid-row[data-sidebar-row="new-chat"] .sidebar-row-action {

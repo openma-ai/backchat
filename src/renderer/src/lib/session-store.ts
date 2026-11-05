@@ -32,6 +32,7 @@ import {
  */
 
 import { useSyncExternalStore } from "react";
+import { SessionTurnMap } from "./session-turn-map";
 import type { OpenmaScope, OpenmaExecutionTarget, OpenmaTask, OpenmaTaskSnapshot, OpenmaTaskUpdate } from "@shared/openma";
 import { projectOpenmaTask } from "./openma-task-projection";
 import type {
@@ -483,7 +484,7 @@ export class SessionStore {
   /** Blocking broker asks can arrive before session.ready during reload.
    *  Retain them by session id until the matching row is restored. */
   #pendingAsksBeforeSession = new Map<string, BrokerAsk[]>();
-  #turns = new Map<string, Turn>();
+  #turns = new SessionTurnMap();
   #turnProjectionCache = new Map<string, TurnProjectionCacheEntry>();
   /** Coalesced text/thought runs built by #appendStreamEvent, by event. */
   #streamRuns = new WeakMap<TurnEvent, {
@@ -748,7 +749,7 @@ export class SessionStore {
     const previous = this.#sessions.get(row.id);
     this.#sessions.set(row.id, { ...previous, ...row });
     const ids = new Set(turns.map((turn) => turn.id));
-    for (const [id, turn] of this.#turns) if (turn.sessionId === row.id && !ids.has(id)) this.#deleteTurn(id);
+    for (const turn of [...this.#turns.valuesForSession(row.id)]) if (!ids.has(turn.id)) this.#deleteTurn(turn.id);
     for (const turn of turns) {
       const old = this.#turns.get(turn.id);
       const corrected = !!old && (!turn.assistantText.startsWith(old.assistantText) || !turn.thoughtText.startsWith(old.thoughtText));
@@ -771,7 +772,7 @@ export class SessionStore {
       const owner = row.openma ?? row.executionTarget;
       if (owner && !scopes.some((scope) => scope.baseUrl === owner.baseUrl && scope.userId === owner.userId && scope.workspaceId === owner.workspaceId)) {
         this.#sessions.delete(id);
-        for (const [turnId, turn] of this.#turns) if (turn.sessionId === id) this.#deleteTurn(turnId);
+        for (const turn of [...this.#turns.valuesForSession(id)]) this.#deleteTurn(turn.id);
       }
     }
     this.#emit();
@@ -842,9 +843,18 @@ export class SessionStore {
   }
 
   #ownTurnsFor(sessionId: string): Turn[] {
-    return [...this.#turns.values()].filter(
-      (t) => t.sessionId === sessionId && !t.inherited,
-    );
+    // Indexed + array-cached by session — hot transcript selectors keep a
+    // stable reference across unchanged reads. Inherited clones are
+    // synthesized in turnsFor and never stored here; filter only if needed.
+    const own = this.#turns.arrayForSession(sessionId);
+    for (const turn of own) {
+      if (turn.inherited) {
+        return own.filter((t) => !t.inherited);
+      }
+    }
+    // SessionTurnMap returns a mutable Turn[] cached as readonly; callers
+    // treat the list as read-only. Cast keeps the existing Turn[] signature.
+    return own as Turn[];
   }
 
   #parentTurnsIncludedInFork(
@@ -1733,8 +1743,8 @@ export class SessionStore {
     this.#sessions.delete(sessionId);
     this.#autoOpenedHtmlBySession.delete(sessionId);
     this.#artifactsBySession.delete(sessionId);
-    for (const [tid, turn] of this.#turns) {
-      if (turn.sessionId === sessionId) this.#deleteTurn(tid);
+    for (const turn of [...this.#turns.valuesForSession(sessionId)]) {
+      this.#deleteTurn(turn.id);
     }
     this.#emit();
   }
@@ -2752,16 +2762,14 @@ export class SessionStore {
   rebindSession(fromId: string, toId: string): void {
     if (!fromId || fromId === toId) return;
     const from = this.#sessions.get(fromId);
-    const hasTurns = [...this.#turns.values()].some((turn) => turn.sessionId === fromId);
-    if (!from && !hasTurns) return;
+    const fromTurns = [...this.#turns.valuesForSession(fromId)];
+    if (!from && fromTurns.length === 0) return;
     if (from && !this.#sessions.has(toId)) {
       this.#sessions.set(toId, { ...from, id: toId });
     }
     if (from) this.#sessions.delete(fromId);
-    for (const [id, turn] of this.#turns) {
-      if (turn.sessionId === fromId) {
-        this.#turns.set(id, { ...turn, sessionId: toId });
-      }
+    for (const turn of fromTurns) {
+      this.#turns.set(turn.id, { ...turn, sessionId: toId });
     }
     this.#emit();
   }
@@ -3847,8 +3855,8 @@ export class SessionStore {
     // turn's position. The id-less legacy head continues the newest older turn.
     const headId = `replay-${sessionId}-head`;
     let owner: Turn | undefined;
-    for (const turn of this.#turns.values()) {
-      if (turn.sessionId === sessionId) owner = turn;
+    for (const turn of this.#turns.valuesForSession(sessionId)) {
+      owner = turn;
     }
     for (const turn of newer) {
       const older = this.#turns.get(turn.id);
@@ -3880,9 +3888,7 @@ export class SessionStore {
   }
 
   #hasSessionTurns(sessionId: string): boolean {
-    for (const turn of this.#turns.values()) {
-      if (turn.sessionId === sessionId) return true;
-    }
+    for (const _ of this.#turns.valuesForSession(sessionId)) return true;
     return false;
   }
 
@@ -3891,8 +3897,8 @@ export class SessionStore {
    *  a CLI-started thread whose GUI resume races ahead of history fetch. */
   #shouldMaterializeHistoryFromSql(sessionId: string): boolean {
     const replayPrefix = `replay-${sessionId}-`;
-    for (const turn of this.#turns.values()) {
-      if (turn.sessionId !== sessionId || turn.inherited) continue;
+    for (const turn of this.#turns.valuesForSession(sessionId)) {
+      if (turn.inherited) continue;
       if (turn.promptText?.trim()) return false;
       if (
         turn.id.startsWith(replayPrefix)
@@ -3932,10 +3938,8 @@ export class SessionStore {
   }
 
   #clearMaterializableTurns(sessionId: string): void {
-    for (const [id, turn] of this.#turns) {
-      if (turn.sessionId === sessionId && !turn.inherited) {
-        this.#deleteTurn(id);
-      }
+    for (const turn of [...this.#turns.valuesForSession(sessionId)]) {
+      if (!turn.inherited) this.#deleteTurn(turn.id);
     }
   }
 
@@ -3944,8 +3948,8 @@ export class SessionStore {
   #existingToolOwner(sessionId: string, payload: unknown): Turn | undefined {
     const parsed = parseAcpEvent(payload);
     if (parsed.kind !== "tool_call") return undefined;
-    const matches = [...this.#turns.values()].filter(turn => turn.sessionId === sessionId
-      && this.projectTurn(turn).tools.some(tool => tool.toolCallId === parsed.tool.toolCallId));
+    const matches = [...this.#turns.valuesForSession(sessionId)].filter(turn =>
+      this.projectTurn(turn).tools.some(tool => tool.toolCallId === parsed.tool.toolCallId));
     return matches.length === 1 ? matches[0] : undefined;
   }
 
